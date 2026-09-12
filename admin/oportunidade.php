@@ -80,6 +80,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($acao === 'marcar_perdida') {
                 marcarPerdida($id, clean((string)($_POST['motivo'] ?? '')), (int)$_SESSION['admin_id'], !empty($_POST['sem_perfil']));
                 $sucesso = 'Oportunidade encerrada.';
+            } elseif ($acao === 'enviar_link_documentos') {
+                $token = getOuCriarTokenDocumentos($id);
+                $baseUrl = getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'];
+                $link = rtrim($baseUrl, '/') . '/public/documentos.php?token=' . $token;
+                $msg = "Olá! Pra continuar a avaliação do seu veículo, preencha seus dados e envie os documentos por aqui:\n{$link}";
+                if (zapiEnviarTexto($op['cliente_telefone'], $msg)) {
+                    $sucesso = 'Link enviado por WhatsApp.';
+                } else {
+                    $erro = "Não deu pra enviar por WhatsApp (confira as credenciais em Configurações). Link: {$link}";
+                }
+            } elseif ($acao === 'upload_documento_staff') {
+                $tipoDoc = (string)($_POST['tipo_documento'] ?? '');
+                $tiposValidos = array_keys(TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO);
+                if (!in_array($tipoDoc, $tiposValidos, true)) {
+                    $erro = 'Tipo de documento inválido.';
+                } elseif (empty($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                    $erro = 'Selecione um arquivo pra enviar.';
+                } else {
+                    $resultado = salvarUploadDocumento($id, $tipoDoc, $_FILES['arquivo'], false);
+                    if ($resultado['ok']) {
+                        $sucesso = 'Documento anexado.';
+                    } else {
+                        $erro = $resultado['erro'] ?? 'Falha ao anexar documento.';
+                    }
+                }
             }
         } catch (Throwable $e) {
             $erro = $e->getMessage();
@@ -116,6 +141,13 @@ $usuarios = listarUsuarios();
 $etapasFechaveis = array_merge(ETAPAS_ATIVAS, ['fechado']);
 $checklistOk = checklistFechamentoCompleto($id);
 $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s');
+// Garante que os 6 tipos obrigatórios existem como linha assim que a tela
+// é aberta — não só quando o link é mandado — pra checklistFechamentoCompleto()
+// nunca dar falso-positivo por causa de tipo que ainda nem virou linha.
+garantirLinhasDocumentosObrigatorios($id);
+$documentos = listarDocumentos($id);
+$linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'], '/')
+    . '/public/documentos.php?token=' . ($op['documentos_token'] ?: '(gerado ao clicar em enviar)');
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -140,6 +172,7 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
             </button>
         </form>
     <?php endif; ?>
+    <a href="/admin/clientes.php">👥 Clientes</a>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
@@ -220,6 +253,55 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
             </div>
         </div>
         <button type="submit">Salvar dados do veículo</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>📎 Documentos</h3>
+    <p><small>O cliente sobe CNH, comprovante de endereço e contrato de financiamento sozinho, sem login, pelo link
+       abaixo. Documentos da pasta fechada (bloco 8) o consultor/Jean anexa manualmente aqui mesmo.</small></p>
+
+    <p>
+        <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentos) ?></code><br>
+        <form method="post" class="inline" style="display:inline-block;margin-top:8px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="enviar_link_documentos">
+            <button type="submit" style="margin-top:0">Enviar link por WhatsApp</button>
+        </form>
+    </p>
+
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Documento</th><th>Status</th><th>Enviado por</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach (TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO as $tipo => $label): ?>
+            <?php $doc = $documentos[$tipo] ?? null; ?>
+            <tr>
+                <td><?= e($label) ?></td>
+                <td>
+                    <?php if ($doc && $doc['arquivo_url']): ?>
+                        <span class="badge badge-ok">✅ enviado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
+                    <?php else: ?>
+                        <span class="badge badge-atraso">⏳ pendente</span>
+                    <?php endif; ?>
+                </td>
+                <td><?= $doc ? ($doc['enviado_pelo_cliente'] ? 'cliente' : 'equipe') : '—' ?></td>
+                <td><?= ($doc && $doc['arquivo_url']) ? '<a href="/admin/ver_documento.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <form method="post" enctype="multipart/form-data" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="upload_documento_staff">
+        <label>Anexar documento manualmente</label>
+        <select name="tipo_documento">
+            <?php foreach (TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO as $tipo => $label): ?>
+                <option value="<?= e($tipo) ?>"><?= e($label) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="file" name="arquivo" accept="image/jpeg,image/png,image/webp,application/pdf" style="margin-top:8px">
+        <button type="submit">Anexar</button>
     </form>
 </div>
 

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS clientes (
     telefone TEXT NOT NULL UNIQUE,
     cidade TEXT DEFAULT '',
     estado TEXT DEFAULT '',
+    cpf TEXT DEFAULT '',
+    endereco TEXT DEFAULT '',
     canal_origem TEXT DEFAULT '',      -- facebook_ads, google_ads, whatsapp_direto, etc
     campanha_origem TEXT DEFAULT '',
     anuncio_origem TEXT DEFAULT '',
@@ -49,6 +51,11 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     responsavel_id INTEGER REFERENCES usuarios(id),   -- quem é dono da oportunidade agora
     proxima_acao TEXT DEFAULT '',                     -- texto livre: "ligar às 15h", etc
     proxima_acao_em DATETIME,                         -- pra alerta de atraso
+
+    -- Token do formulário público de upload de documentos (includes/documentos.php)
+    -- — gerado sob demanda (lazy) na 1ª vez que o consultor manda o link;
+    -- é a "senha" do link, cliente nunca faz login de verdade.
+    documentos_token TEXT,
 
     -- Bloco 3 — Qualificação IA (dados do veículo/financiamento)
     -- Marca separada do modelo pra dar pra validar contra a lista oficial
@@ -88,6 +95,8 @@ CREATE TABLE IF NOT EXISTS oportunidades (
 CREATE INDEX IF NOT EXISTS idx_oportunidades_cliente ON oportunidades(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_oportunidades_etapa ON oportunidades(etapa);
 CREATE INDEX IF NOT EXISTS idx_oportunidades_proxima_acao ON oportunidades(proxima_acao_em);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_oportunidades_documentos_token
+    ON oportunidades(documentos_token) WHERE documentos_token IS NOT NULL;
 
 -- "Mudanças de etapa ficam no histórico, com data e responsável" — regra
 -- explícita do Jean. Nunca fazer UPDATE direto em oportunidades.etapa sem
@@ -160,16 +169,23 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessoes (
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 
--- Pasta fechada (bloco 8) — documentos e comprovantes vinculados à
--- oportunidade. "Compra concluída exige checklist" — cada tipo obrigatório
--- deve ter uma linha aqui antes de liberar etapa='fechado' na aplicação.
+-- Documentos vinculados à oportunidade — tanto os que o CLIENTE sobe
+-- sozinho no formulário público (CNH, comprovante de endereço, contrato de
+-- financiamento do banco — includes/documentos.php) quanto os da pasta
+-- fechada (bloco 8: contrato da Fastcar, comprovante de pagamento, laudo
+-- de avaliação), que o consultor/Jean anexa depois da reunião presencial.
+-- "Compra concluída exige checklist" — cada tipo obrigatório precisa ter
+-- arquivo_url preenchido antes de liberar etapa='fechado' na aplicação.
 CREATE TABLE IF NOT EXISTS oportunidade_documentos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
-    tipo TEXT NOT NULL,                 -- contrato, comprovante_pagamento, laudo_avaliacao, etc
+    tipo TEXT NOT NULL,                 -- cnh, comprovante_endereco, contrato_financiamento, contrato_compra, comprovante_pagamento, laudo_avaliacao, etc
     arquivo_url TEXT DEFAULT '',
     obrigatorio INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT (datetime('now','localtime'))
+    enviado_pelo_cliente INTEGER DEFAULT 0, -- 1 = veio do formulário público, 0 = staff anexou
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime')),
+    UNIQUE(oportunidade_id, tipo)       -- upsert por tipo — reenvio substitui, nunca duplica linha
 );
 CREATE INDEX IF NOT EXISTS idx_docs_oportunidade ON oportunidade_documentos(oportunidade_id);
 

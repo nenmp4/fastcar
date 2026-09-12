@@ -5,7 +5,9 @@ database/*.db-wal
 
 storage/logs/*
 storage/backups/*
+storage/uploads/*
 !storage/logs/.gitkeep
 !storage/backups/.gitkeep
+!storage/uploads/.gitkeep
 
 .DS_Store
