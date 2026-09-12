@@ -120,6 +120,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'definir_plantao') {
             definirPlantaoFimExpediente((int)($_POST['usuario_id'] ?? 0), !empty($_POST['ativo']));
             $sucesso = 'Plantão de fim de expediente atualizado.';
+        } elseif ($acao === 'salvar_deploy') {
+            $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
+            if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
+            $sucesso = 'Configurações de deploy salvas.';
         } elseif ($acao === 'salvar_backup') {
             setConfig('backup_auto_ativo', isset($_POST['backup_auto_ativo']) ? '1' : '0');
             setConfig('drive_backup_ativo', isset($_POST['drive_backup_ativo']) ? '1' : '0');
@@ -405,6 +409,28 @@ $fila = listarFilaConsultores();
         <?php endforeach; ?>
         </tbody>
     </table>
+</div>
+
+<div class="card">
+    <h3>🚀 Deploy automático (git push → servidor atualiza sozinho)</h3>
+    <p><small>Configura o webhook do GitHub apontando pra
+       <code>https://SEU-DOMINIO/api/webhook_deploy.php</code> (evento "push", só a
+       branch <code>main</code>) usando esta mesma chave como secret. Ver
+       <code>install/SETUP_VPS.md</code> pra configurar o cron que aplica de verdade.</small></p>
+    <p>
+        Status:
+        <span class="badge <?= getConfig('webhook_secret') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('webhook_secret') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_deploy">
+        <label>Secret do webhook</label>
+        <input type="password" name="webhook_secret" value="<?= e(getConfig('webhook_secret') ?? '') ?>" autocomplete="off"
+               placeholder="<?= getConfig('webhook_secret') ? '••••••••' : 'não configurado' ?>">
+        <button type="submit">Salvar</button>
+    </form>
 </div>
 
 <div class="card">
