@@ -134,7 +134,7 @@ button { width: 100%; margin-top: 20px; padding: 12px; border: none; border-radi
             <?php foreach (TIPOS_DOCUMENTOS_CLIENTE as $tipo => $label): ?>
                 <label>
                     <?= e($label) ?><br>
-                    <?php if (!empty($documentos[$tipo]['arquivo_url'])): ?>
+                    <?php if (!empty($documentos[$tipo]['arquivo_url']) || !empty($documentos[$tipo]['drive_file_id'])): ?>
                         <span class="status-ok">✅ já enviado — envie de novo abaixo pra substituir</span>
                     <?php else: ?>
                         <span class="status-pendente">⏳ pendente</span>

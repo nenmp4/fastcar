@@ -167,15 +167,21 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
  */
 function checklistFechamentoCompleto(int $oportunidadeId): bool {
     $db = getDB();
-    // ⚠️ Bug real já pego em teste: contar só "pendentes" (obrigatorio=1
+    // ⚠️ Bug real #1 (achado em teste): contar só "pendentes" (obrigatorio=1
     // com arquivo vazio) dá 0 tanto faz se está tudo preenchido quanto se
     // NENHUM documento foi cadastrado ainda — falso-positivo de COUNT em
     // query vazia. Por isso exige explicitamente total>0: sem nenhum
     // documento obrigatório cadastrado, o checklist NUNCA está completo.
+    //
+    // ⚠️ Bug real #2 (achado em teste E2E do funil completo, depois que o
+    // Google Drive foi integrado): um documento "presente" pode estar em
+    // arquivo_url (fallback local) OU em drive_file_id (Drive, preferido) —
+    // checar só arquivo_url fazia o checklist NUNCA fechar depois que o
+    // Drive foi configurado, mesmo com os 6 documentos enviados de verdade.
     $stmt = $db->prepare("
         SELECT
             COUNT(*) as total,
-            SUM(CASE WHEN arquivo_url IS NULL OR arquivo_url = '' THEN 1 ELSE 0 END) as pendentes
+            SUM(CASE WHEN (arquivo_url IS NULL OR arquivo_url = '') AND (drive_file_id IS NULL OR drive_file_id = '') THEN 1 ELSE 0 END) as pendentes
         FROM oportunidade_documentos
         WHERE oportunidade_id = ? AND obrigatorio = 1
     ");

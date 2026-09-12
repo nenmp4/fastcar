@@ -387,18 +387,24 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <thead><tr><th>Documento</th><th>Status</th><th>Enviado por</th><th></th></tr></thead>
         <tbody>
         <?php foreach (TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO as $tipo => $label): ?>
-            <?php $doc = $documentos[$tipo] ?? null; ?>
+            <?php
+                $doc = $documentos[$tipo] ?? null;
+                // Documento pode estar em arquivo_url (fallback local) OU
+                // drive_file_id (Drive, preferido) — checar só um dos dois
+                // já causou "pendente" falso pra doc que tava no Drive.
+                $temArquivo = $doc && ($doc['arquivo_url'] || $doc['drive_file_id']);
+            ?>
             <tr>
                 <td><?= e($label) ?></td>
                 <td>
-                    <?php if ($doc && $doc['arquivo_url']): ?>
+                    <?php if ($temArquivo): ?>
                         <span class="badge badge-ok">✅ enviado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
                     <?php else: ?>
                         <span class="badge badge-atraso">⏳ pendente</span>
                     <?php endif; ?>
                 </td>
                 <td><?= $doc ? ($doc['enviado_pelo_cliente'] ? 'cliente' : 'equipe') : '—' ?></td>
-                <td><?= ($doc && $doc['arquivo_url']) ? '<a href="/admin/ver_documento.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
+                <td><?= $temArquivo ? '<a href="/admin/ver_documento.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
