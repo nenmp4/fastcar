@@ -155,14 +155,16 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 3. **IA de qualificação** — decidir Gemini/OpenAI (mesmo padrão de fallback
    duplo do JurídicoSaaS?) e o prompt de qualificação (o que perguntar, em
    que ordem, quando desistir e marcar "sem perfil de compra")
-4. ~~**Login/perfis do admin**~~ — ✅ confirmado (12/09/2026): `super_admin`
+4. **Login/perfis do admin** — combinado em 12/09/2026: `super_admin`
    (Jean), `closer` (negocia/aprova valor, bloco 6), `consultor` (atendimento,
-   bloco 5, não define valor) — schema e `requireSuperAdmin()` já refletem isso.
-5. ~~**Anúncio/tráfego (bloco 1)**~~ — ✅ decidido (12/09/2026): anúncio
-   "Clique para WhatsApp" do Meta — a WhatsApp Cloud API manda um `referral`
+   bloco 5, não define valor) — schema e `requireSuperAdmin()` já refletem
+   isso, mas fica em aberto até validar com o time em produção.
+5. **Anúncio/tráfego (bloco 1)** — combinado em 12/09/2026: anúncio "Clique
+   para WhatsApp" do Meta — a WhatsApp Cloud API manda um `referral`
    (headline, source_id) na 1ª mensagem, capturado automaticamente em
-   `extrairOrigemAnuncio()`. Sem link/UTM manual. Ver pendência de validação
-   #2 abaixo — formato exato ainda não confirmado contra instância real.
+   `extrairOrigemAnuncio()`. Sem link/UTM manual. Fica em aberto até validar
+   contra uma instância Z-API real e um clique de anúncio de teste (ver
+   seção de validação em produção abaixo) — formato exato ainda não confirmado.
 6. **Módulo de contrato** — vai ser mail-merge de um modelo próprio da
    Fastcar (não gerado do zero), mas falta o arquivo/formato do modelo
    (Word? PDF com campos? texto com placeholder?) pra saber onde os dados
