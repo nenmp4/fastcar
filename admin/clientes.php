@@ -12,7 +12,8 @@ $db = getDB();
 
 $sql = "
     SELECT c.*, COUNT(o.id) AS total_oportunidades,
-           SUM(CASE WHEN o.etapa IN (" . implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?')) . ") THEN 1 ELSE 0 END) AS ativas
+           SUM(CASE WHEN o.etapa IN (" . implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?')) . ") THEN 1 ELSE 0 END) AS ativas,
+           SUM(CASE WHEN o.etapa = 'fechado' THEN 1 ELSE 0 END) AS convertidas
     FROM clientes c
     LEFT JOIN oportunidades o ON o.cliente_id = c.id
 ";
@@ -55,11 +56,11 @@ $clientes = $stmt->fetchAll();
 
 <table class="tabela-oportunidades">
     <thead>
-        <tr><th>Nome</th><th>Telefone</th><th>Cidade/UF</th><th>Origem</th><th>Oportunidades</th><th></th></tr>
+        <tr><th>Nome</th><th>Telefone</th><th>Cidade/UF</th><th>Origem</th><th>Oportunidades</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
     <?php if (!$clientes): ?>
-        <tr><td colspan="6">Nenhum cliente encontrado.</td></tr>
+        <tr><td colspan="7">Nenhum cliente encontrado.</td></tr>
     <?php endif; ?>
     <?php foreach ($clientes as $c): ?>
         <tr>
@@ -70,6 +71,13 @@ $clientes = $stmt->fetchAll();
             <td>
                 <?= (int)$c['total_oportunidades'] ?> total
                 <?php if ($c['ativas'] > 0): ?><span class="badge badge-ok"><?= (int)$c['ativas'] ?> ativa(s)</span><?php endif; ?>
+            </td>
+            <td>
+                <?php if ((int)$c['convertidas'] > 0): ?>
+                    <span class="badge badge-ok" title="Já teve pelo menos um veículo com negócio fechado">🏆 Cliente convertido</span>
+                <?php else: ?>
+                    <span class="badge">Lead</span>
+                <?php endif; ?>
             </td>
             <td><a href="/admin/cliente_detalhe.php?id=<?= (int)$c['id'] ?>">Abrir →</a></td>
         </tr>

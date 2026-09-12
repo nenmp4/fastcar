@@ -50,6 +50,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmtOps = $db->prepare("SELECT * FROM oportunidades WHERE cliente_id = ? ORDER BY id DESC");
 $stmtOps->execute([$id]);
 $oportunidades = $stmtOps->fetchAll();
+
+// Convertido = já teve pelo menos 1 veículo com negócio fechado (etapa='fechado').
+// Cliente continua o mesmo cadastro mesmo convertido — pode abrir nova oportunidade
+// com outro veículo depois (regra do Jean: 1 cadastro por telefone, N oportunidades).
+$convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fechado');
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -72,7 +77,12 @@ $oportunidades = $stmtOps->fetchAll();
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
 <div class="card">
-    <h2><?= e($cliente['nome'] ?: '(sem nome)') ?></h2>
+    <h2>
+        <?= e($cliente['nome'] ?: '(sem nome)') ?>
+        <?php if ($convertido): ?>
+            <span class="badge badge-ok" title="Já teve pelo menos um veículo com negócio fechado">🏆 Cliente convertido</span>
+        <?php endif; ?>
+    </h2>
     <form method="post">
         <?= csrfField() ?>
         <div class="grid-2">
