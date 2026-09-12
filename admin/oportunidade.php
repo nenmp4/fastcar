@@ -40,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $marca = clean((string)($_POST['veiculo_marca'] ?? ''));
                 $db->prepare("
                     UPDATE oportunidades
-                    SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, banco_financiamento = ?,
+                    SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, veiculo_placa = ?,
+                        veiculo_renavam = ?, veiculo_chassi = ?, banco_financiamento = ?,
                         valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
                         updated_at = datetime('now','localtime')
                     WHERE id = ?
@@ -48,6 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $marca,
                     clean((string)($_POST['veiculo_modelo'] ?? '')),
                     clean((string)($_POST['veiculo_ano'] ?? '')),
+                    clean((string)($_POST['veiculo_placa'] ?? '')),
+                    clean((string)($_POST['veiculo_renavam'] ?? '')),
+                    clean((string)($_POST['veiculo_chassi'] ?? '')),
                     clean((string)($_POST['banco_financiamento'] ?? '')),
                     $_POST['valor_parcela'] !== '' ? (float)$_POST['valor_parcela'] : null,
                     $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
@@ -62,6 +66,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $marcaFeedback = fipeValidarMarca($marca);
                 }
                 $sucesso = 'Dados do veículo atualizados.';
+            } elseif ($acao === 'atualizar_contrato') {
+                $db->prepare("
+                    UPDATE oportunidades
+                    SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
+                        saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
+                        data_entrega_posse = ?, updated_at = datetime('now','localtime')
+                    WHERE id = ?
+                ")->execute([
+                    $_POST['valor_fipe_referencia'] !== '' ? (float)$_POST['valor_fipe_referencia'] : null,
+                    $_POST['valor_ofertado'] !== '' ? (float)$_POST['valor_ofertado'] : null,
+                    clean((string)($_POST['contrato_financiamento_numero'] ?? '')),
+                    $_POST['saldo_financiamento_atual'] !== '' ? (float)$_POST['saldo_financiamento_atual'] : null,
+                    clean((string)($_POST['terceiro_quitacao'] ?? '')),
+                    clean((string)($_POST['seguro_texto'] ?? '')),
+                    clean((string)($_POST['encargos_texto'] ?? '')),
+                    $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
+                    $id,
+                ]);
+                $sucesso = 'Dados do contrato atualizados.';
+            } elseif ($acao === 'gerar_contrato') {
+                $resultadoContrato = gerarEEnviarContratoCompra($id, (int)$_SESSION['admin_id']);
+                if ($resultadoContrato['ok']) {
+                    $sucesso = 'Contrato gerado e enviado pra assinatura.' . ($resultadoContrato['aviso'] ? ' ⚠️ ' . $resultadoContrato['aviso'] : '');
+                } else {
+                    $erro = $resultadoContrato['erro'];
+                }
             } elseif ($acao === 'atualizar_proxima_acao') {
                 $db->prepare("
                     UPDATE oportunidades
@@ -146,6 +176,10 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
 // nunca dar falso-positivo por causa de tipo que ainda nem virou linha.
 garantirLinhasDocumentosObrigatorios($id);
 $documentos = listarDocumentos($id);
+
+$stmtContratos = $db->prepare("SELECT * FROM contratos WHERE oportunidade_id = ? ORDER BY id DESC");
+$stmtContratos->execute([$id]);
+$contratos = $stmtContratos->fetchAll();
 $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'], '/')
     . '/public/documentos.php?token=' . ($op['documentos_token'] ?: '(gerado ao clicar em enviar)');
 ?>
@@ -238,6 +272,12 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="text" name="veiculo_modelo" value="<?= e($op['veiculo_modelo'] ?? '') ?>" placeholder="Ex: Corolla">
                 <label>Ano</label>
                 <input type="text" name="veiculo_ano" value="<?= e($op['veiculo_ano'] ?? '') ?>" placeholder="Ex: 2019">
+                <label>Placa</label>
+                <input type="text" name="veiculo_placa" value="<?= e($op['veiculo_placa'] ?? '') ?>">
+                <label>RENAVAM</label>
+                <input type="text" name="veiculo_renavam" value="<?= e($op['veiculo_renavam'] ?? '') ?>">
+                <label>Chassi</label>
+                <input type="text" name="veiculo_chassi" value="<?= e($op['veiculo_chassi'] ?? '') ?>">
             </div>
             <div>
                 <label>Banco do financiamento</label>
@@ -254,6 +294,79 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         </div>
         <button type="submit">Salvar dados do veículo</button>
     </form>
+</div>
+
+<div class="card">
+    <h3>📝 Financiamento e contrato de compra</h3>
+    <p><small>Esses dados alimentam o Quadro-Resumo do contrato-mestre de compra (includes/contratos_pdf.php) — o
+       closer confirma com o cliente antes de gerar, a IA/sistema nunca preenche isso sozinho.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="atualizar_contrato">
+        <div class="grid-2">
+            <div>
+                <label>Valor FIPE de referência (R$)</label>
+                <input type="number" step="0.01" name="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
+                <label>Valor ofertado ao vendedor (R$) — limitado a 25% da FIPE</label>
+                <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)($op['valor_ofertado'] ?? '')) ?>">
+                <label>Nº do contrato de financiamento</label>
+                <input type="text" name="contrato_financiamento_numero" value="<?= e($op['contrato_financiamento_numero'] ?? '') ?>">
+                <label>Saldo do financiamento atual (R$)</label>
+                <input type="number" step="0.01" name="saldo_financiamento_atual" value="<?= e((string)($op['saldo_financiamento_atual'] ?? '')) ?>">
+            </div>
+            <div>
+                <label>Terceiro indicado pra quitação</label>
+                <input type="text" name="terceiro_quitacao" value="<?= e($op['terceiro_quitacao'] ?? '') ?>" placeholder="a indicar, se ainda não tiver">
+                <label>Data de entrega da posse</label>
+                <input type="date" name="data_entrega_posse" value="<?= e($op['data_entrega_posse'] ?? '') ?>">
+                <label>Seguro/proteção durante a posse da FASTCAR</label>
+                <input type="text" name="seguro_texto" value="<?= e($op['seguro_texto'] ?? '') ?>">
+                <label>IPVA/licenciamento/multas após a entrega</label>
+                <input type="text" name="encargos_texto" value="<?= e($op['encargos_texto'] ?? '') ?>">
+            </div>
+        </div>
+        <button type="submit">Salvar dados do contrato</button>
+    </form>
+
+    <?php if ($op['valor_fipe_referencia'] && $op['valor_ofertado']): ?>
+        <?php $percentualAtual = round((float)$op['valor_ofertado'] / (float)$op['valor_fipe_referencia'] * 100, 2); ?>
+        <p><small>Percentual atual: <strong><?= $percentualAtual ?>%</strong> da FIPE
+            <?php if ($percentualAtual > 25): ?><span class="badge badge-atraso">⚠️ acima do limite de 25%</span><?php endif; ?>
+        </small></p>
+    <?php endif; ?>
+
+    <hr>
+    <form method="post" onsubmit="return confirm('Gerar o contrato e enviar pra assinatura eletrônica?');">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="gerar_contrato">
+        <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>
+    </form>
+
+    <?php if ($contratos): ?>
+        <table class="tabela-oportunidades" style="margin-top:12px">
+            <thead><tr><th>Documento</th><th>Status</th><th>Gerado em</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($contratos as $ct): ?>
+                <tr>
+                    <td><?= e($ct['nome']) ?></td>
+                    <td>
+                        <?php
+                            $badgeClasse = ['assinado' => 'badge-ok', 'recusado' => 'badge-atraso', 'erro' => 'badge-atraso'][$ct['status']] ?? '';
+                            $badgeIcone = ['gerado' => '📄', 'enviado' => '📤', 'visualizado' => '👀', 'assinado' => '✅', 'recusado' => '❌', 'erro' => '⚠️'][$ct['status']] ?? '';
+                        ?>
+                        <span class="badge <?= $badgeClasse ?>"><?= $badgeIcone ?> <?= e($ct['status']) ?></span>
+                    </td>
+                    <td><?= date('d/m/Y H:i', strtotime($ct['created_at'])) ?></td>
+                    <td>
+                        <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
+                            <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
 </div>
 
 <div class="card">

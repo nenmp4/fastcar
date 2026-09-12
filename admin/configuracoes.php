@@ -19,6 +19,11 @@ $camposIA = [
     'gemini_api_key' => 'Chave da API Gemini',
 ];
 
+$camposAssinafy = [
+    'assinafy_api_key'    => 'Chave da API Assinafy',
+    'assinafy_account_id' => 'Account ID da Assinafy',
+];
+
 $erro = '';
 $sucesso = '';
 $testeResultado = null;
@@ -54,6 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sucesso = 'Gemini respondeu: "' . $resp . '" — conexão funcionando.';
                 }
             }
+        } elseif ($acao === 'salvar_assinafy') {
+            foreach (array_keys($camposAssinafy) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da Assinafy salvas.';
         } elseif ($acao === 'testar_zapi') {
             $telefoneTeste = (string)($_POST['telefone_teste'] ?? '');
             if (!$telefoneTeste) {
@@ -207,6 +217,29 @@ $fila = listarFilaConsultores();
         <p><small>E-mail da service account: <code><?= e($drive->getCredentialEmail()) ?></code></small></p>
         <p><small>Pasta raiz no Drive: <code><?= e(getConfig('drive_folder_id') ?: '(criada automaticamente no 1º upload)') ?></code></small></p>
     <?php endif; ?>
+</div>
+
+<div class="card">
+    <h2>✍️ Assinafy (assinatura eletrônica)</h2>
+    <p><small>Mesmo provedor do JurídicoSaaS — o contrato de compra gerado em cada oportunidade é enviado por aqui
+       pra assinatura eletrônica do vendedor.</small></p>
+    <p>
+        Status:
+        <span class="badge <?= getConfig('assinafy_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('assinafy_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_assinafy">
+        <?php foreach ($camposAssinafy as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
+                   placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar</button>
+    </form>
 </div>
 
 <div class="card">

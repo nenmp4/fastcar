@@ -39,7 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $op['cliente_id'],
             (string)($_POST['nome'] ?? ''),
             (string)($_POST['cpf'] ?? ''),
-            (string)($_POST['endereco'] ?? '')
+            (string)($_POST['endereco'] ?? ''),
+            (string)($_POST['rg'] ?? ''),
+            (string)($_POST['cnh'] ?? ''),
+            (string)($_POST['nacionalidade'] ?? ''),
+            (string)($_POST['estado_civil'] ?? ''),
+            (string)($_POST['profissao'] ?? '')
         );
 
         $algumEnviado = false;
@@ -108,6 +113,16 @@ button { width: 100%; margin-top: 20px; padding: 12px; border: none; border-radi
             <input type="text" name="nome" value="<?= e($op['nome'] ?? '') ?>" required>
             <label>CPF</label>
             <input type="text" name="cpf" value="<?= e($op['cpf'] ?? '') ?>" placeholder="000.000.000-00">
+            <label>RG</label>
+            <input type="text" name="rg" value="<?= e($op['rg'] ?? '') ?>">
+            <label>CNH (se tiver)</label>
+            <input type="text" name="cnh" value="<?= e($op['cnh'] ?? '') ?>">
+            <label>Nacionalidade</label>
+            <input type="text" name="nacionalidade" value="<?= e($op['nacionalidade'] ?: 'Brasileiro(a)') ?>">
+            <label>Estado civil</label>
+            <input type="text" name="estado_civil" value="<?= e($op['estado_civil'] ?? '') ?>" placeholder="Solteiro(a), casado(a)...">
+            <label>Profissão</label>
+            <input type="text" name="profissao" value="<?= e($op['profissao'] ?? '') ?>">
             <label>Endereço completo</label>
             <input type="text" name="endereco" value="<?= e($op['endereco'] ?? '') ?>" placeholder="Rua, número, bairro, cidade">
             <label>Telefone (WhatsApp)</label>

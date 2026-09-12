@@ -79,7 +79,8 @@ function buscarOportunidadePorToken(string $token): ?array {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT o.id AS oportunidade_id, o.etapa, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
-               c.id AS cliente_id, c.nome, c.telefone, c.cpf, c.endereco
+               c.id AS cliente_id, c.nome, c.telefone, c.cpf, c.endereco,
+               c.rg, c.cnh, c.nacionalidade, c.estado_civil, c.profissao
         FROM oportunidades o
         JOIN clientes c ON c.id = o.cliente_id
         WHERE o.documentos_token = ?
@@ -89,11 +90,23 @@ function buscarOportunidadePorToken(string $token): ?array {
     return $row ?: null;
 }
 
-/** Atualiza os dados pessoais do cliente a partir do formulário público. */
-function atualizarDadosPessoaisCliente(int $clienteId, string $nome, string $cpf, string $endereco): void {
+/**
+ * Atualiza os dados pessoais do cliente a partir do formulário público —
+ * inclui a qualificação civil (RG, CNH, nacionalidade, estado civil,
+ * profissão) exigida pelo contrato-mestre de compra (includes/contratos.php).
+ */
+function atualizarDadosPessoaisCliente(
+    int $clienteId, string $nome, string $cpf, string $endereco,
+    string $rg = '', string $cnh = '', string $nacionalidade = '', string $estadoCivil = '', string $profissao = ''
+): void {
     $db = getDB();
-    $db->prepare("UPDATE clientes SET nome = ?, cpf = ?, endereco = ? WHERE id = ?")
-       ->execute([clean($nome), clean($cpf), clean($endereco), $clienteId]);
+    $db->prepare("
+        UPDATE clientes SET nome = ?, cpf = ?, endereco = ?, rg = ?, cnh = ?, nacionalidade = ?, estado_civil = ?, profissao = ?
+        WHERE id = ?
+    ")->execute([
+        clean($nome), clean($cpf), clean($endereco), clean($rg), clean($cnh),
+        clean($nacionalidade), clean($estadoCivil), clean($profissao), $clienteId,
+    ]);
 }
 
 /**
