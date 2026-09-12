@@ -1,0 +1,11 @@
+# Banco de produção — NUNCA versionar (mesma regra do JurídicoSaaS)
+database/*.db
+database/*.db-shm
+database/*.db-wal
+
+storage/logs/*
+storage/backups/*
+!storage/logs/.gitkeep
+!storage/backups/.gitkeep
+
+.DS_Store
