@@ -4,6 +4,9 @@
  * logada) — senão vira loop de redirect pra si mesmo.
  */
 
+// Mesmo header de admin/_bootstrap.php — este arquivo não passa por lá.
+header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
+
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';

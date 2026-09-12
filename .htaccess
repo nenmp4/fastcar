@@ -1,0 +1,6 @@
+# Sistema interno — CRM com dados pessoais/financeiros de cliente, nunca pode
+# ser indexado nem rastreado por robô. Só tem efeito em Apache/cPanel — no
+# nginx da VPS o equivalente vai na config do server block (ver install/SETUP_VPS.md).
+<IfModule mod_headers.c>
+    Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>

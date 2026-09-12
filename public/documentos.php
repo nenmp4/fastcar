@@ -6,6 +6,10 @@
  * includes/documentos.php::getOuCriarTokenDocumentos().
  */
 
+// Link com token na URL, sem login — nunca pode ser indexado nem cacheado
+// por robô (um crawler que seguisse o link exporia o token de um cliente).
+header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
+
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/documentos.php';
