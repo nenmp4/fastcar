@@ -124,6 +124,21 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 
 ---
 
+## Cron Jobs
+
+| Cron | Horário sugerido | Função |
+|------|-------------------|--------|
+| `cron/followup.php` | a cada 30 min | Dois papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup via `config.reeng_sent_{telefone}` |
+
+> Testado localmente com banco de teste isolado: identificou corretamente 1
+> oportunidade atrasada + 1 esfriando, e o dedup de 4h bloqueou reenvio do
+> alerta na 2ª execução imediata (o reengajamento seguiu tentando porque a
+> tentativa anterior falhou por falta de credencial Z-API real — o guard só
+> marca "enviado" em caso de sucesso, de propósito).
+>
+> Ainda falta cadastrar no crontab real quando a hospedagem for definida
+> (pendência #1 abaixo) — por enquanto só existe o script, sem agendamento.
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — ainda não definido se é o mesmo padrão cPanel+webhook
