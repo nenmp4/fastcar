@@ -143,7 +143,7 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 
 1. **Hospedagem/deploy** — ainda não definido se é o mesmo padrão cPanel+webhook
    do JurídicoSaaS ou outro provedor; sem isso não dá pra configurar
-   `webhook_deploy.php`/crontab
+   `webhook_deploy.php`/crontab. VPS também travado em acesso root/sudo.
 2. ~~**WhatsApp**~~ — ✅ decidido: **Z-API**, mesmo provedor do JurídicoSaaS.
    Instância própria da Fastcar (não reaproveita a do escritório de
    advocacia) — precisa criar instância nova no painel Z-API e configurar
@@ -155,9 +155,37 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 3. **IA de qualificação** — decidir Gemini/OpenAI (mesmo padrão de fallback
    duplo do JurídicoSaaS?) e o prompt de qualificação (o que perguntar, em
    que ordem, quando desistir e marcar "sem perfil de compra")
-4. **Login/perfis do admin** — `usuarios.perfil` proposto: `super_admin`
-   (Jean), `closer`, `consultor` — confirmar se bate com a realidade da
-   equipe antes de travar permissões
-5. **Anúncio/tráfego (bloco 1)** — como o UTM chega até o WhatsApp (link
-   com parâmetro? cada anúncio manda pra um número diferente?) — decide
-   como preencher `clientes.canal_origem/campanha_origem/anuncio_origem`
+4. ~~**Login/perfis do admin**~~ — ✅ confirmado (12/09/2026): `super_admin`
+   (Jean), `closer` (negocia/aprova valor, bloco 6), `consultor` (atendimento,
+   bloco 5, não define valor) — schema e `requireSuperAdmin()` já refletem isso.
+5. ~~**Anúncio/tráfego (bloco 1)**~~ — ✅ decidido (12/09/2026): anúncio
+   "Clique para WhatsApp" do Meta — a WhatsApp Cloud API manda um `referral`
+   (headline, source_id) na 1ª mensagem, capturado automaticamente em
+   `extrairOrigemAnuncio()`. Sem link/UTM manual. Ver pendência de validação
+   #2 abaixo — formato exato ainda não confirmado contra instância real.
+6. **Módulo de contrato** — vai ser mail-merge de um modelo próprio da
+   Fastcar (não gerado do zero), mas falta o arquivo/formato do modelo
+   (Word? PDF com campos? texto com placeholder?) pra saber onde os dados
+   da negociação entram. Não começar a codar sem isso.
+7. **Leads do Supabase (Leandro Soragi)** — aguardando CSV ou acesso ao
+   painel pra importar a base existente; sem isso, script de importação
+   fica só desenhado, sem rodar de verdade.
+
+### A validar assim que subir em produção (internet livre + credenciais reais)
+
+Este ambiente de dev bloqueia acesso externo (só libera alguns hosts tipo
+GitHub/npm), então o que segue foi construído seguindo documentação e
+testado com servidor fake local — nunca contra o serviço real:
+
+- **Formato do payload do webhook Z-API** — `messageId`, `phone`, `fromMe`,
+  `isGroup`, `text.message`, `instanceId` — construído pelo padrão do
+  JurídicoSaaS, nunca confirmado contra uma instância Z-API de verdade.
+- **Campo `referral` do clique em anúncio Meta Ads** — `extrairOrigemAnuncio()`
+  aceita tanto `referral` solto quanto `message.referral`, mas o nome/formato
+  exato dos campos (`source_id`, `headline`, `ctwa_clid`) só dá pra confirmar
+  com um clique de anúncio de teste passando pela Z-API real.
+- **API de marcas da FIPE (BrasilAPI)** — `includes/fipe.php` só foi testado
+  contra um servidor fake local simulando `/marcas/v1/carros`; validar o
+  formato de resposta real assim que rodar com internet livre.
+- **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
+  falha graciosa (sem credencial/rede); nunca um envio de verdade.
