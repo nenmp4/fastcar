@@ -149,6 +149,17 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
 - **Configurações de super admin** — `admin/configuracoes.php`: Z-API
   principal, IA (Gemini + OpenAI fallback), Google Drive, Assinafy, fila de
   leads/plantão, instâncias dos consultores
+- **PWA (instalável como app)** — `admin/manifest.json` + `admin/sw.js`
+  (service worker mínimo, sem cache agressivo — dados do CRM são sempre
+  dinâmicos), mesmo padrão do JurídicoSaaS. Como o admin da Fastcar (ao
+  contrário do JurídicoSaaS) não tem um `layout.php` compartilhado — cada
+  página tem seu próprio `<head>`/`<body>` — as tags entram via 2 partials
+  (`admin/_pwa_head.php`, `admin/_pwa_register.php`) incluídos em toda
+  página cheia; guard `admin-pagina-sem-pwa` no `tests/smoke.php` garante
+  que uma página nova nunca esqueça de incluir os dois (mesma classe de bug
+  do head_scripts nas landing pages do JurídicoSaaS). Ícones em
+  `admin/assets/img/icon-192.png`/`icon-512.png` são **placeholder** (gerado
+  localmente, "FC" em fundo escuro) até a logo real da Fastcar ser enviada.
 - **Smoke test** — `tests/smoke.php` (rodar antes de todo commit: `php
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os
@@ -191,6 +202,9 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   (`includes/google_drive.php`, JWT RS256 via service account) — portados
   quase 1:1 do JurídicoSaaS, só adaptando pra `getConfig()`/`setConfig()`
   em vez de SQL cru inline
+- **PWA** (`admin/manifest.json`, `admin/sw.js`) — mesmo `SameSite=Lax` (não
+  `Strict`) em `startSecureSession()` continua valendo pelo mesmo motivo do
+  JurídicoSaaS: `Strict` quebra a sessão no modo standalone instalado
 - Guard `sqlite-sem-busy-timeout` do `tests/smoke.php` do JurídicoSaaS —
   **já recriado aqui** em `tests/smoke.php` (ver seção de módulos acima),
   junto com outros guards específicos dos bugs reais encontrados nesta sessão

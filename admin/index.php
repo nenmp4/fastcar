@@ -48,6 +48,7 @@ $agora = date('Y-m-d H:i:s');
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css">
+<?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
 <header class="topbar">
@@ -118,5 +119,6 @@ $agora = date('Y-m-d H:i:s');
     </tbody>
 </table>
 </main>
+<?php include __DIR__ . '/_pwa_register.php'; ?>
 </body>
 </html>

@@ -53,6 +53,7 @@ $resumoCanal = $db->query("
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Origem dos leads — Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css">
+<?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
 <header class="topbar">
@@ -118,5 +119,6 @@ $resumoCanal = $db->query("
     </table>
 </div>
 </main>
+<?php include __DIR__ . '/_pwa_register.php'; ?>
 </body>
 </html>

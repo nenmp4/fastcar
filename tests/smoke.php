@@ -180,6 +180,29 @@ foreach (['includes/oportunidades.php', 'admin/oportunidade.php', 'public/docume
     }
 }
 
+// admin-pagina-sem-pwa guard — toda página cheia do admin (tem <html>, não é
+// _bootstrap/_pwa_*/login) precisa incluir os dois partials de PWA, senão a
+// instalação como app quebra silenciosamente numa tela específica (mesmo
+// tipo de bug do head_scripts nas landing pages do JurídicoSaaS: página com
+// <head> próprio que não passa pelo snippet compartilhado).
+$semPwa = [];
+foreach (glob($root . '/admin/*.php') as $f) {
+    $rel = str_replace($root . '/', '', $f);
+    $base = basename($f);
+    if (in_array($base, ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', 'login.php'], true)) continue;
+    $conteudo = (string)file_get_contents($f);
+    if (!str_contains($conteudo, '<html')) continue; // não é página cheia (endpoint/ajax)
+    $faltando = [];
+    if (!str_contains($conteudo, '_pwa_head.php')) $faltando[] = 'head';
+    if (!str_contains($conteudo, '_pwa_register.php')) $faltando[] = 'register';
+    if ($faltando) $semPwa[] = "{$rel} (falta " . implode('+', $faltando) . ')';
+}
+if ($semPwa) {
+    falha('[admin-pagina-sem-pwa] página cheia do admin sem include de PWA — em: ' . implode(', ', $semPwa));
+} else {
+    ok('[admin-pagina-sem-pwa] limpo');
+}
+
 // version.json precisa ser JSON válido e semver
 $vj = json_decode((string)@file_get_contents($root . '/version.json'), true);
 if (!$vj || empty($vj['version']) || !preg_match('/^\d+\.\d+\.\d+$/', $vj['version'])) {

@@ -63,6 +63,7 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($cliente['nome'] ?: $cliente['telefone']) ?> — Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css">
+<?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
 <header class="topbar">
@@ -131,5 +132,6 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
     </table>
 </div>
 </main>
+<?php include __DIR__ . '/_pwa_register.php'; ?>
 </body>
 </html>

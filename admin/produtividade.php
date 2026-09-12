@@ -24,6 +24,7 @@ $linhas = zapiContarMensagensPorConsultor($dias);
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Produtividade — Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css">
+<?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
 <header class="topbar">
@@ -75,5 +76,6 @@ $linhas = zapiContarMensagensPorConsultor($dias);
     </table>
 </div>
 </main>
+<?php include __DIR__ . '/_pwa_register.php'; ?>
 </body>
 </html>

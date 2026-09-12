@@ -190,6 +190,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Oportunidade #<?= (int)$op['id'] ?> — Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css">
+<?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
 <header class="topbar">
@@ -520,5 +521,6 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 </main>
+<?php include __DIR__ . '/_pwa_register.php'; ?>
 </body>
 </html>
