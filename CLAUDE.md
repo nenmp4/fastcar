@@ -164,6 +164,24 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os
   bugs reais já corrigidos aqui (ver seção de bugs corrigidos abaixo)
+- **E-mail** — `includes/mail.php`, via API da Brevo (não SMTP puro — mesmo
+  motivo do JurídicoSaaS: porta bloqueada em VPS nova + reputação/SPF/DKIM),
+  configurável em Configurações → E-mail (Brevo), com teste de envio
+- **Backup** — `includes/backup.php` (compartilhado entre `cron/` e
+  `admin/backup.php`, nunca duplicado): banco copiado várias vezes ao dia,
+  ZIP completo (banco + uploads locais + credencial do Drive) 1x/dia, envio
+  automático pra pasta "Backups" dedicada no Drive com rotação — botão
+  manual pros 3 em `admin/backup.php` (super_admin), download via proxy com
+  defesa de path traversal em `admin/baixar_backup.php`
+- **Deploy automático** — `api/webhook_deploy.php` (valida assinatura do
+  GitHub, agenda `storage/.deploy`) + `install/setup_crontab.sh` (linha de
+  crontab que aplica o `git pull` quando o marcador existe) — mesmo padrão
+  decouplado do JurídicoSaaS (nunca roda git disparado direto pela request
+  HTTP, só agenda)
+- **Setup da VPS** — `install/SETUP_VPS.md`: guia completo (nginx+PHP-FPM,
+  Cloudflare com SSL Full-strict + Origin Certificate + Bot Fight Mode,
+  firewall restrito a IPs da Cloudflare, crontab, deploy, e-mail, backup) —
+  ver pendência #1
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
@@ -223,6 +241,11 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | Cron | Horário sugerido | Função |
 |------|-------------------|--------|
 | `cron/followup.php` | a cada 30 min | Dois papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup via `config.reeng_sent_{telefone}` |
+| `cron/assinafy_sync.php` | a cada 1 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook do Assinafy não chegue) |
+| `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
+| `cron/backup.php` | 1x/dia (3h) | ZIP completo (`.db` + `storage/uploads/` + credencial do Drive), mantém os últimos 5 dias — código não entra, já está no git |
+| `cron/backup_drive.php` | 1x/dia (4h, depois do `backup.php`) | Sobe o ZIP mais recente pra pasta "Backups" dedicada no Drive, dedup por data, mantém os últimos 5 lá também |
+| *(linha de deploy)* | a cada 1 min | Não é um script `cron/*.php` — é uma linha direta no crontab (`install/setup_crontab.sh`) que aplica `git pull` quando `api/webhook_deploy.php` agenda `storage/.deploy` |
 
 > Testado localmente com banco de teste isolado: identificou corretamente 1
 > oportunidade atrasada + 1 esfriando, e o dedup de 4h bloqueou reenvio do
@@ -238,17 +261,22 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
    própria em vez do padrão cPanel+webhook do JurídicoSaaS, pra ter acesso
    root de verdade e liberdade de configuração (a VPS anterior estava
-   travada em acesso root/sudo). Cotação em andamento na Hostinger — indicado
-   plano **KVM 2** (2 vCPU, 8GB RAM, 100GB NVMe): a stack é leve (PHP+SQLite,
-   sem processamento pesado local — as chamadas de IA/Drive/Assinafy são
-   todas HTTP saindo pra fora) e o volume é baixo (ver pendência #3), então
-   o KVM 1 já daria conta, mas o KVM 2 dá margem de segurança em cima da
-   contenção que o SQLite já tem por natureza (mesmo motivo do
-   `PRAGMA busy_timeout` obrigatório) e espaço pra crescer sem trocar de
-   plano de novo. Ainda falta: confirmar a compra, escolher a distro
-   (sugestão Ubuntu LTS) e montar o stack do zero (nginx/PHP-FPM, extensão
-   sqlite3, certbot, crontab real, deploy via git) — sem isso não dá pra
-   configurar `webhook_deploy.php`/crontab de verdade.
+   travada em acesso root/sudo). Fechado com a **HostGator** (não Hostinger —
+   cotação inicial não tinha datacenter no Brasil nem nos EUA na lista de
+   localização; a HostGator tem "Servidores cloud no Brasil" em todos os
+   planos): **VPS NVMe 4** (2 vCPU, 4GB RAM, 100GB NVMe), localização **São
+   Paulo**, sistema operacional **Ubuntu sem painel de controle** (não
+   instalar o cPanel que a HostGator oferece como opcional — o motivo de
+   sair da hospedagem anterior era justamente ter root de verdade). Guia
+   completo de setup em `install/SETUP_VPS.md` (nginx+PHP-FPM, Cloudflare
+   com SSL Full-strict + Origin Certificate + Bot Fight Mode, firewall
+   restrito a IPs da Cloudflare, `install/setup_crontab.sh`, deploy via
+   webhook do GitHub + `api/webhook_deploy.php`, e-mail via Brevo, backup).
+   **Ainda falta:** finalizar a compra e provisionar a VPS de verdade, e o
+   **domínio da Fastcar ainda não existe** — os passos que dependem dele
+   (Cloudflare/SSL, webhook de deploy com URL pública) ficam marcados com
+   ⏳ no guia até lá; o resto (nginx, crontab, e-mail, backup) não depende
+   de domínio e já pode ser feito assim que a VPS existir.
 2. ~~**WhatsApp**~~ — ✅ decidido: **Z-API**, mesmo provedor do JurídicoSaaS.
    Instância própria da Fastcar (não reaproveita a do escritório de
    advocacia) — precisa criar instância nova no painel Z-API e configurar
@@ -337,6 +365,15 @@ testado com servidor fake local — nunca contra o serviço real:
   servidor fake local; nunca contra a API do Google de verdade. Precisa de
   `config/google_drive_credentials.json` (nunca commitar) com uma service
   account real da Fastcar antes de validar.
+- **API Brevo** (`includes/mail.php`) — só testada contra servidor fake
+  local simulando o formato de resposta; nunca um envio real. Validar
+  também se o plano grátis da Brevo dá conta do volume (baixo, mas nunca
+  testado de verdade) e se o domínio de e-mail precisa de SPF/DKIM
+  configurado no DNS pra não cair em spam.
+- **Webhook do GitHub** (`api/webhook_deploy.php`) — header
+  `X-Hub-Signature-256` e formato do payload (`ref`, `pusher.name`,
+  `commits`, `head_commit.message`) testados só com payload sintético
+  local, nunca contra um push de verdade do GitHub.
 - **PDF do contrato de compra** — conteúdo e estrutura verificados
   decodificando os content streams internos do PDF gerado (sem
   `pdftoppm`/LibreOffice funcionando neste sandbox pra renderizar
