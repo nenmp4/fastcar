@@ -142,6 +142,7 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
     <?php endif; ?>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
+        <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
         <a href="/admin/configuracoes.php">⚙️ Configurações</a>
     <?php endif; ?>
     <a href="/admin/logout.php">Sair</a>

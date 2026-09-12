@@ -39,7 +39,16 @@ function etapaLabel(string $etapa): string {
  * etapa 'whatsapp' — regra #2: "salvar desde o primeiro contato", mesmo
  * antes de qualquer qualificação.
  */
-function criarOuAbrirOportunidade(string $telefone, string $nome = ''): array {
+/**
+ * @param array $origem Atribuição de anúncio (bloco 1) — canal_origem,
+ *   campanha_origem, anuncio_origem. Só é gravada na CRIAÇÃO do cliente
+ *   (first-touch); se o telefone já existe, a origem original é mantida
+ *   — inclusive se essa pessoa clicar num anúncio diferente meses depois
+ *   pra negociar um 2º veículo (limitação conhecida: origem vive em
+ *   `clientes`, não em `oportunidades`, então não temos atribuição por
+ *   negócio pra quem repete contato — só first-touch por telefone).
+ */
+function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $origem = []): array {
     $db = getDB();
     $telNorm = normalizarTelefone($telefone);
     if (!$telNorm || strlen($telNorm) < 12) {
@@ -51,8 +60,16 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = ''): array {
     $cliente = $stmt->fetch();
 
     if (!$cliente) {
-        $db->prepare("INSERT INTO clientes (nome, telefone) VALUES (?, ?)")
-           ->execute([clean($nome), $telNorm]);
+        $db->prepare("
+            INSERT INTO clientes (nome, telefone, canal_origem, campanha_origem, anuncio_origem)
+            VALUES (?, ?, ?, ?, ?)
+        ")->execute([
+            clean($nome),
+            $telNorm,
+            clean((string)($origem['canal_origem'] ?? '')),
+            clean((string)($origem['campanha_origem'] ?? '')),
+            clean((string)($origem['anuncio_origem'] ?? '')),
+        ]);
         $clienteId = (int)$db->lastInsertId();
     } else {
         $clienteId = (int)$cliente['id'];

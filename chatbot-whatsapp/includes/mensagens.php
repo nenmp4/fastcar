@@ -38,6 +38,35 @@ function extrairTexto(array $payload): ?string {
     return null;
 }
 
+/**
+ * Extrai a atribuição de anúncio (bloco 1 do funil) de um clique em
+ * anúncio "Clique para WhatsApp" do Meta — decisão confirmada com o Jean
+ * (pendência #5 do CLAUDE.md). A WhatsApp Cloud API manda um objeto
+ * `referral` na primeira mensagem originada de um anúncio desses:
+ * { source_id, source_type: "ad"|"post", source_url, headline, body,
+ *   media_type, ctwa_clid, ... }. A Z-API deve repassar isso no webhook,
+ * mas o formato exato (nome do campo, se vem plano ou aninhado) só dá pra
+ * confirmar contra uma instância real — sem instância ainda (pendência #1
+ * do CLAUDE.md), então esta função aceita tanto `referral` quanto
+ * `message.referral` (variações comuns de proxy de webhook) e nunca
+ * lança: sem `referral` no payload, retorna tudo vazio (contato direto,
+ * sem anúncio) — nunca inventa atribuição que não veio no evento.
+ */
+function extrairOrigemAnuncio(array $payload): array {
+    $referral = $payload['referral'] ?? $payload['message']['referral'] ?? null;
+    if (!is_array($referral) || empty($referral['source_id'])) {
+        return ['canal_origem' => '', 'campanha_origem' => '', 'anuncio_origem' => ''];
+    }
+
+    return [
+        'canal_origem' => 'meta_ads',
+        // headline é o texto do anúncio exibido — mais legível que só um ID
+        // pra identificar "de qual campanha" na hora de olhar o relatório.
+        'campanha_origem' => (string)($referral['headline'] ?? ''),
+        'anuncio_origem' => (string)($referral['source_id'] ?? $referral['ctwa_clid'] ?? ''),
+    ];
+}
+
 /** Nome legível do tipo de mídia recebida, pra registrar um marcador no histórico. */
 function tipoMidia(array $payload): string {
     foreach (['image', 'audio', 'video', 'document', 'sticker', 'location', 'contact'] as $tipo) {
@@ -186,10 +215,11 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // existe oportunidade ativa (ex: cliente já em atendimento com um
     // consultor), só reaproveita — vale pra mensagem vinda de qualquer instância.
     $nomeContato = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
+    $origemAnuncio = extrairOrigemAnuncio($payload);
     $oportunidade = null;
     $erroOportunidade = null;
     try {
-        $oportunidade = criarOuAbrirOportunidade($phone, $nomeContato);
+        $oportunidade = criarOuAbrirOportunidade($phone, $nomeContato, $origemAnuncio);
     } catch (Throwable $e) {
         $erroOportunidade = $e->getMessage();
     }

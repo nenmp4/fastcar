@@ -30,6 +30,10 @@
  *   /grupo <msg>        simula mensagem de grupo (deve ser ignorada)
  *   /midia <tipo>       simula mídia sem texto (image, audio, document...)
  *   /repetir            reenvia a última mensagem com o mesmo messageId (testa dedup)
+ *   /anuncio <headline> simula a PRÓXIMA mensagem como clique num anúncio
+ *                       "Clique para WhatsApp" do Meta (referral) — só
+ *                       funciona em cliente novo (telefone nunca visto),
+ *                       origem é first-touch (ver includes/oportunidades.php)
  *   /status             mostra estado atual (etapa, ia_pausada, nº mensagens)
  *   /historico          mostra histórico de etapas da oportunidade
  *   /sair               encerra
@@ -53,6 +57,7 @@ $telefone = $argv[1] ?? '5531999990000';
 $nome     = $argv[2] ?? 'Cliente Simulado';
 $ultimoMessageId = null;
 $instanciaAtual = ''; // '' = instância principal
+$referralPendente = null; // referral simulado (/anuncio), consumido na próxima mensagem só
 
 function novoMessageId(): string {
     return 'SIM-' . bin2hex(random_bytes(4));
@@ -175,6 +180,15 @@ while (true) {
                 }
                 continue 2;
 
+            case '/anuncio':
+                $referralPendente = [
+                    'source_id' => 'AD-SIM-' . substr(md5($arg ?: 'anuncio'), 0, 8),
+                    'source_type' => 'ad',
+                    'headline' => $arg ?: 'Anúncio simulado',
+                ];
+                echo "   📣 próxima mensagem vai simular clique no anúncio \"" . ($arg ?: 'Anúncio simulado') . "\"\n";
+                continue 2;
+
             case '/status':
                 mostrarStatus($telefone);
                 continue 2;
@@ -242,11 +256,16 @@ while (true) {
 
     $id = novoMessageId();
     $ultimoMessageId = $id;
-    mostrarResultado(processarMensagemZapi([
+    $payload = [
         'instanceId' => $instanciaAtual,
         'messageId' => $id,
         'phone' => $telefone,
         'senderName' => $nome,
         'text' => ['message' => $linha],
-    ]));
+    ];
+    if ($referralPendente) {
+        $payload['referral'] = $referralPendente;
+        $referralPendente = null; // consumido — só a próxima mensagem simula o clique
+    }
+    mostrarResultado(processarMensagemZapi($payload));
 }
