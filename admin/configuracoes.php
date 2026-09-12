@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach (array_keys($camposIA) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
-            setConfig('gemini_model', trim((string)($_POST['gemini_model'] ?? '')) ?: 'gemini-2.5-flash');
+            setConfig('gemini_model', trim((string)($_POST['gemini_model'] ?? '')) ?: 'gemini-2.5-flash-lite');
             setConfig('openai_model', trim((string)($_POST['openai_model'] ?? '')) ?: 'gpt-4o-mini');
             $sucesso = 'Configurações de IA salvas.';
         } elseif ($acao === 'testar_ia') {
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$apiKey) {
                 $erro = 'Configure e salve a chave Gemini antes de testar.';
             } else {
-                $resp = geminiCall('Responda só "ok" pra confirmar que a conexão está funcionando.', $apiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash', 20);
+                $resp = geminiCall('Responda só "ok" pra confirmar que a conexão está funcionando.', $apiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash-lite', 20);
                 if (is_array($resp)) {
                     $erro = 'Falha no teste: ' . ($resp['erro'] ?? 'erro desconhecido');
                 } else {
@@ -190,9 +190,11 @@ $fila = listarFilaConsultores();
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
         <label>Modelo Gemini</label>
-        <input type="text" name="gemini_model" value="<?= e(getConfig('gemini_model') ?: 'gemini-2.5-flash') ?>">
+        <input type="text" name="gemini_model" value="<?= e(getConfig('gemini_model') ?: 'gemini-2.5-flash-lite') ?>">
+        <small>Padrão é o mais barato da família (flash-lite) — volume de leads é baixo, não precisa de um modelo mais caro. Se um dia trocar, o gemini-2.5-flash (mais caro e mais capaz) entra como fallback automático se o configurado falhar.</small>
         <label>Modelo OpenAI (fallback)</label>
         <input type="text" name="openai_model" value="<?= e(getConfig('openai_model') ?: 'gpt-4o-mini') ?>">
+        <small>Só entra em cena se o Gemini falhar ou não estiver configurado — gpt-4o-mini já é o nível mais barato da OpenAI pra esse uso.</small>
         <button type="submit">Salvar</button>
     </form>
 

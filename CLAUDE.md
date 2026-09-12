@@ -221,9 +221,20 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 
 ## Pendências (aguardando definição antes de codar mais)
 
-1. **Hospedagem/deploy** — ainda não definido se é o mesmo padrão cPanel+webhook
-   do JurídicoSaaS ou outro provedor; sem isso não dá pra configurar
-   `webhook_deploy.php`/crontab. VPS também travado em acesso root/sudo.
+1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
+   própria em vez do padrão cPanel+webhook do JurídicoSaaS, pra ter acesso
+   root de verdade e liberdade de configuração (a VPS anterior estava
+   travada em acesso root/sudo). Cotação em andamento na Hostinger — indicado
+   plano **KVM 2** (2 vCPU, 8GB RAM, 100GB NVMe): a stack é leve (PHP+SQLite,
+   sem processamento pesado local — as chamadas de IA/Drive/Assinafy são
+   todas HTTP saindo pra fora) e o volume é baixo (ver pendência #3), então
+   o KVM 1 já daria conta, mas o KVM 2 dá margem de segurança em cima da
+   contenção que o SQLite já tem por natureza (mesmo motivo do
+   `PRAGMA busy_timeout` obrigatório) e espaço pra crescer sem trocar de
+   plano de novo. Ainda falta: confirmar a compra, escolher a distro
+   (sugestão Ubuntu LTS) e montar o stack do zero (nginx/PHP-FPM, extensão
+   sqlite3, certbot, crontab real, deploy via git) — sem isso não dá pra
+   configurar `webhook_deploy.php`/crontab de verdade.
 2. ~~**WhatsApp**~~ — ✅ decidido: **Z-API**, mesmo provedor do JurídicoSaaS.
    Instância própria da Fastcar (não reaproveita a do escritório de
    advocacia) — precisa criar instância nova no painel Z-API e configurar
@@ -232,11 +243,19 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    `chatbot-whatsapp/webhook/whatsapp.php` do JurídicoSaaS: dedup de
    `messageId`, checar `fromMe`/grupo antes de processar, salvar mensagem
    sempre (mesmo em pausa de IA)
-3. ~~**IA de qualificação**~~ — ✅ decidido: **Gemini** (`gemini-2.5-flash`)
-   como provedor principal, com fallback automático pro **OpenAI GPT**
-   (`gpt-4o-mini`) quando o Gemini falha ou não está configurado — mesmo
-   padrão de fallback duplo do JurídicoSaaS (`includes/gemini.php`,
-   `includes/openai.php`, `includes/ia_qualificacao.php`). Código
+3. ~~**IA de qualificação**~~ — ✅ decidido: **Gemini** (`gemini-2.5-flash-lite`,
+   o mais barato da família 2.5) como provedor principal, com fallback
+   automático pro **OpenAI GPT** (`gpt-4o-mini`, também o nível mais barato)
+   quando o Gemini falha ou não está configurado. Modelo padrão trocado de
+   `gemini-2.5-flash` pra `gemini-2.5-flash-lite` depois que o volume real
+   de leads foi confirmado (12/09/2026): média de 16-30 leads/dia, pico de
+   ~50/dia — volume baixo o bastante que o custo por chamada praticamente
+   não muda de um modelo pro outro, mas o Jean pediu pra já sair configurado
+   no nível mais barato por padrão; `gemini-2.5-flash` (mais caro e mais
+   capaz) continua disponível como fallback automático interno se o lite
+   falhar de verdade (`includes/gemini.php`). Mesmo padrão de fallback duplo
+   Gemini→GPT do JurídicoSaaS (`includes/gemini.php`, `includes/openai.php`,
+   `includes/ia_qualificacao.php`). Código
    implementado e testado contra servidor fake local (nunca contra as APIs
    reais, ver seção de validação em produção abaixo). O **prompt** de
    qualificação (`IA_QUALIFICACAO_PROMPT_SISTEMA`) e o de extração
