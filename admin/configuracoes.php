@@ -25,6 +25,12 @@ $camposAssinafy = [
     'assinafy_account_id' => 'Account ID da Assinafy',
 ];
 
+$camposEmail = [
+    'brevo_api_key'   => 'Chave da API Brevo',
+    'email_from'      => 'E-mail remetente (ex: contato@fastcar.com.br)',
+    'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
+];
+
 $erro = '';
 $sucesso = '';
 $testeResultado = null;
@@ -66,6 +72,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
             $sucesso = 'Configurações da Assinafy salvas.';
+        } elseif ($acao === 'salvar_email') {
+            foreach (array_keys($camposEmail) as $chave) {
+                // brevo_api_key é opaco (só trim); os outros dois passam por clean()
+                $valor = $chave === 'brevo_api_key' ? trim((string)($_POST[$chave] ?? '')) : clean((string)($_POST[$chave] ?? ''));
+                setConfig($chave, $valor);
+            }
+            $sucesso = 'Configurações de e-mail salvas.';
+        } elseif ($acao === 'testar_email') {
+            $emailTeste = trim((string)($_POST['email_teste'] ?? ''));
+            if (!$emailTeste) {
+                $erro = 'Informe um e-mail pra receber o teste.';
+            } else {
+                $resp = enviarEmail($emailTeste, 'Teste de conexão — Fastcar CRM', '<p>✅ Se você recebeu isso, o envio de e-mail está funcionando.</p>');
+                if ($resp === true) {
+                    $sucesso = 'E-mail de teste enviado com sucesso.';
+                } else {
+                    $erro = 'Falha no teste: ' . ($resp['erro'] ?? 'erro desconhecido');
+                }
+            }
         } elseif ($acao === 'testar_zapi') {
             $telefoneTeste = (string)($_POST['telefone_teste'] ?? '');
             if (!$telefoneTeste) {
@@ -95,6 +120,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'definir_plantao') {
             definirPlantaoFimExpediente((int)($_POST['usuario_id'] ?? 0), !empty($_POST['ativo']));
             $sucesso = 'Plantão de fim de expediente atualizado.';
+        } elseif ($acao === 'salvar_backup') {
+            setConfig('backup_auto_ativo', isset($_POST['backup_auto_ativo']) ? '1' : '0');
+            setConfig('drive_backup_ativo', isset($_POST['drive_backup_ativo']) ? '1' : '0');
+            $chaveBackup = trim((string)($_POST['backup_cron_key'] ?? ''));
+            if ($chaveBackup !== '') setConfig('backup_cron_key', $chaveBackup);
+            $sucesso = 'Configurações de backup salvas.';
         }
     }
 }
@@ -250,6 +281,41 @@ $fila = listarFilaConsultores();
 </div>
 
 <div class="card">
+    <h2>✉️ E-mail (Brevo)</h2>
+    <p><small>Mesmo provedor do JurídicoSaaS — apesar do nome popular ser "SMTP", o envio é via API HTTP da Brevo, não
+       protocolo SMTP puro: VPS nova costuma vir com porta de SMTP bloqueada por padrão antispam, e mandar direto pelo
+       IP do servidor sem reputação/SPF/DKIM cai em spam quase sempre. A Brevo resolve isso por fora.</small></p>
+    <p>
+        Status:
+        <span class="badge <?= getConfig('brevo_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('brevo_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_email">
+        <?php foreach ($camposEmail as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <?php if ($chave === 'brevo_api_key'): ?>
+                <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                       value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
+                       placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+            <?php else: ?>
+                <input type="text" id="<?= e($chave) ?>" name="<?= e($chave) ?>" value="<?= e(getConfig($chave) ?? '') ?>">
+            <?php endif; ?>
+        <?php endforeach; ?>
+        <button type="submit">Salvar</button>
+    </form>
+    <form method="post" style="margin-top:1rem">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_email">
+        <label>Enviar teste pra</label>
+        <input type="email" name="email_teste" placeholder="seu@email.com">
+        <button type="submit" <?= getConfig('brevo_api_key') ? '' : 'disabled' ?>>Enviar e-mail de teste</button>
+    </form>
+</div>
+
+<div class="card">
     <h3>👤 Instâncias dos consultores/closers</h3>
     <p><small>A partir do bloco 5 (atendimento), a conversa com o cliente passa a rodar SEMPRE pelo número/instância
        própria de quem estiver com a oportunidade — não pela instância principal. É registrado no mesmo histórico do
@@ -339,6 +405,22 @@ $fila = listarFilaConsultores();
         <?php endforeach; ?>
         </tbody>
     </table>
+</div>
+
+<div class="card">
+    <h3>💾 Backup automático</h3>
+    <p><small>Liga/desliga o que roda pelo cron (ver <a href="/admin/backup.php">tela de Backup</a> pra disparo
+       manual e listagem). Desativado aqui não apaga backup que já existe, só para de gerar novo.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_backup">
+        <label><input type="checkbox" name="backup_auto_ativo" <?= getConfig('backup_auto_ativo') !== '0' ? 'checked' : '' ?> style="width:auto;display:inline-block"> Backup completo automático (1x/dia)</label>
+        <label><input type="checkbox" name="drive_backup_ativo" <?= getConfig('drive_backup_ativo') !== '0' ? 'checked' : '' ?> style="width:auto;display:inline-block"> Enviar backup pro Google Drive automaticamente</label>
+        <label>Chave pra disparar backup via URL (opcional — só necessário se o cron não puder chamar via CLI)</label>
+        <input type="password" name="backup_cron_key" value="<?= e(getConfig('backup_cron_key') ?? '') ?>" autocomplete="off"
+               placeholder="<?= getConfig('backup_cron_key') ? '••••••••' : 'não configurado' ?>">
+        <button type="submit">Salvar</button>
+    </form>
 </div>
 </main>
 

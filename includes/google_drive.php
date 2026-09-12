@@ -91,6 +91,40 @@ class GoogleDrive {
         return $data['id'] ?? false;
     }
 
+    /**
+     * Lista arquivos dentro de uma pasta (opcionalmente filtrando pelo nome
+     * conter $prefix) — usado pela rotação de backups no Drive
+     * (cron/backup_drive.php): precisa saber quais já existem lá pra decidir
+     * o que apagar e não subir duplicado no mesmo dia.
+     * @return array<int, array{id:string,name:string,createdTime:string,size?:string}>
+     */
+    public function list(string $folder_id, string $prefix = ''): array {
+        if (!$this->token) return [];
+        $q = "'{$folder_id}' in parents and trashed=false";
+        if ($prefix) $q .= " and name contains '{$prefix}'";
+
+        $params = http_build_query([
+            'q'                         => $q,
+            'orderBy'                   => 'createdTime',
+            'supportsAllDrives'         => 'true',
+            'includeItemsFromAllDrives' => 'true',
+            'fields'                    => 'files(id,name,createdTime,size)',
+        ]);
+
+        $ch = curl_init($this->apiUrl() . '/files?' . $params);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $this->token],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp   = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($status !== 200) return [];
+        $data = json_decode($resp, true);
+        return $data['files'] ?? [];
+    }
+
     public function uploadFile(string $tmp_path, string $nome, string $mime, string $folder_id): string|false {
         if (!$this->token) return false;
         $conteudo = file_get_contents($tmp_path);
