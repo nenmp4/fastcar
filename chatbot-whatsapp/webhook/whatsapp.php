@@ -17,6 +17,11 @@
  * não foi decidida. Este webhook garante a parte que já é regra fechada —
  * dedup, registro da conversa, abertura da oportunidade — e deixa o ponto
  * de entrada da IA marcado como TODO, pra plugar sem reabrir o resto.
+ *
+ * A lógica de processamento em si mora em processarMensagemZapi()
+ * (chatbot-whatsapp/includes/mensagens.php) — compartilhada com o
+ * simulador de conversa (chatbot-whatsapp/simulate.php), pra nunca a
+ * lógica real e a de teste divergirem.
  */
 
 define('ROOT', dirname(__DIR__, 2));
@@ -65,56 +70,29 @@ if ($clientTokenEsperado) {
 // Formato do ReceivedCallback do Z-API:
 // { messageId, phone, fromMe, isGroup, momment, senderName, chatName,
 //   text: {message: "..."}, image: {...}, audio: {...}, ... }
-$messageId = (string)($payload['messageId'] ?? $payload['id'] ?? '');
-$phone     = (string)($payload['phone'] ?? '');
-$fromMe    = !empty($payload['fromMe']);
-$isGroup   = !empty($payload['isGroup']) || str_contains($phone, '-group');
+$resultado = processarMensagemZapi($payload);
 
-if (!$phone) {
+if ($resultado['ignored'] === 'no_phone') {
     log_webhook('Webhook sem phone, ignorando. Payload: ' . substr($raw, 0, 300));
     responderOk(['ignored' => 'no_phone']);
 }
-
-if ($fromMe) {
-    // Registrado no histórico (consultor pode ter respondido manualmente
-    // pelo próprio WhatsApp/app oficial, fora do nosso código), mas não é
-    // "entrada" — não roda nenhuma lógica de bot/oportunidade em cima.
-    registrarMensagem($phone, 'out', extrairTexto($payload) ?? '[' . tipoMidia($payload) . ']', $messageId ?: null, false);
-    responderOk(['ignored' => 'from_me']);
-}
-
-if ($isGroup) {
-    log_webhook("Mensagem de grupo ignorada ({$phone}).");
+if ($resultado['ignored'] === 'group') {
+    log_webhook("Mensagem de grupo ignorada ({$resultado['telefone']}).");
     responderOk(['ignored' => 'group']);
 }
-
-if ($messageId && jaProcessado($messageId)) {
-    responderOk(['ignored' => 'duplicate']);
+if ($resultado['ignored']) {
+    // from_me / duplicate — nada de anormal, não precisa virar linha de log.
+    responderOk(['ignored' => $resultado['ignored']]);
 }
 
-$texto = extrairTexto($payload);
-$tipoRegistro = 'text';
-if ($texto === null) {
-    $tipoRegistro = tipoMidia($payload);
-    $texto = '[' . $tipoRegistro . ']'; // marcador — mantém a mensagem no histórico mesmo sem interpretar o conteúdo
-}
-
-registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro);
-
-// Cria/abre a oportunidade desde o 1º contato (regra #2) — nunca esperar a
-// qualificação terminar pra existir registro, senão conversa abandonada
-// não fica salva em lugar nenhum.
-$nomeContato = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
-try {
-    criarOuAbrirOportunidade($phone, $nomeContato);
-} catch (Throwable $e) {
-    log_webhook("Erro ao criar/abrir oportunidade ({$phone}): " . $e->getMessage());
+if ($resultado['erro_oportunidade']) {
+    log_webhook("Erro ao criar/abrir oportunidade ({$resultado['telefone']}): {$resultado['erro_oportunidade']}");
 }
 
 // Passagem pro consultor pausa a IA (regra #4) — se já está pausada, só
 // guardamos a mensagem; um humano está respondendo por fora do fluxo
 // automático, a IA não pode responder por cima.
-if (iaPausada($phone)) {
+if ($resultado['ia_pausada']) {
     responderOk(['ia_pausada' => true]);
 }
 

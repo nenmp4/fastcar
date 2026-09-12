@@ -7,6 +7,7 @@
 
 require_once dirname(__DIR__, 2) . '/includes/db.php';
 require_once dirname(__DIR__, 2) . '/includes/security.php';
+require_once dirname(__DIR__, 2) . '/includes/oportunidades.php';
 
 /**
  * Já processamos esse messageId antes? Checagem antecipada pra dedup de
@@ -107,4 +108,82 @@ function retomarIA(string $telefone): void {
         VALUES (?, 0, datetime('now','localtime'))
         ON CONFLICT(telefone) DO UPDATE SET ia_pausada = 0, updated_at = datetime('now','localtime')
     ")->execute([normalizarTelefone($telefone)]);
+}
+
+/**
+ * Núcleo do processamento de uma mensagem recebida via Z-API — dedup,
+ * fromMe/grupo, salvar histórico, abrir oportunidade, checar IA pausada.
+ * Usada pelo webhook real (chatbot-whatsapp/webhook/whatsapp.php) E pelo
+ * simulador de conversa (chatbot-whatsapp/simulate.php), de propósito:
+ * assim o que o simulador mostra é garantidamente o que o webhook real
+ * faria com o mesmo payload — nenhuma lógica duplicada pra divergir.
+ *
+ * Não faz nada HTTP-específico (não loga em arquivo, não decide status
+ * code) — quem chama decide o que fazer com o retorno.
+ *
+ * Retorno:
+ *   ignored: null|'no_phone'|'from_me'|'group'|'duplicate'
+ *   telefone, texto, tipo: dados da mensagem processada (null se ignorada)
+ *   ia_pausada: bool — true = humano assumiu, nenhuma resposta automática
+ *   oportunidade: ['cliente_id','oportunidade_id','nova'] | null
+ *   erro_oportunidade: string|null — erro ao criar/abrir oportunidade, se houve
+ */
+function processarMensagemZapi(array $payload): array {
+    $vazio = ['ignored' => null, 'telefone' => '', 'texto' => null, 'tipo' => null,
+              'ia_pausada' => false, 'oportunidade' => null, 'erro_oportunidade' => null];
+
+    $messageId = (string)($payload['messageId'] ?? $payload['id'] ?? '');
+    $phone     = (string)($payload['phone'] ?? '');
+    $fromMe    = !empty($payload['fromMe']);
+    $isGroup   = !empty($payload['isGroup']) || str_contains($phone, '-group');
+
+    if (!$phone) {
+        return ['ignored' => 'no_phone'] + $vazio;
+    }
+
+    if ($fromMe) {
+        // Registrado no histórico (consultor pode ter respondido manualmente
+        // pelo próprio WhatsApp/app oficial, fora do nosso código), mas não
+        // é "entrada" — não roda lógica de bot/oportunidade em cima.
+        registrarMensagem($phone, 'out', extrairTexto($payload) ?? '[' . tipoMidia($payload) . ']', $messageId ?: null, false);
+        return ['ignored' => 'from_me', 'telefone' => $phone, 'ia_pausada' => iaPausada($phone)] + $vazio;
+    }
+
+    if ($isGroup) {
+        return ['ignored' => 'group', 'telefone' => $phone] + $vazio;
+    }
+
+    if ($messageId && jaProcessado($messageId)) {
+        return ['ignored' => 'duplicate', 'telefone' => $phone, 'ia_pausada' => iaPausada($phone)] + $vazio;
+    }
+
+    $texto = extrairTexto($payload);
+    $tipoRegistro = 'text';
+    if ($texto === null) {
+        $tipoRegistro = tipoMidia($payload);
+        $texto = '[' . $tipoRegistro . ']'; // marcador — mantém a mensagem no histórico mesmo sem interpretar o conteúdo
+    }
+
+    registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro);
+
+    // Cria/abre a oportunidade desde o 1º contato (regra #2) — nunca esperar
+    // a qualificação terminar pra existir registro.
+    $nomeContato = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
+    $oportunidade = null;
+    $erroOportunidade = null;
+    try {
+        $oportunidade = criarOuAbrirOportunidade($phone, $nomeContato);
+    } catch (Throwable $e) {
+        $erroOportunidade = $e->getMessage();
+    }
+
+    return [
+        'ignored' => null,
+        'telefone' => $phone,
+        'texto' => $texto,
+        'tipo' => $tipoRegistro,
+        'ia_pausada' => iaPausada($phone),
+        'oportunidade' => $oportunidade,
+        'erro_oportunidade' => $erroOportunidade,
+    ];
 }
