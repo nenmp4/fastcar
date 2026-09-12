@@ -53,6 +53,16 @@ $agora = date('Y-m-d H:i:s');
 <header class="topbar">
     <strong>🚗 Fastcar CRM</strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?> (<?= e($_SESSION['admin_perfil']) ?>)</span>
+    <?php if (in_array($_SESSION['admin_perfil'], ['consultor', 'closer'], true)): ?>
+        <?php $euAtual = buscarUsuario((int)$_SESSION['admin_id']); ?>
+        <form method="post" action="/admin/toggle_disponivel.php" class="inline">
+            <?= csrfField() ?>
+            <input type="hidden" name="voltar" value="/admin/index.php">
+            <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
+                <?= $euAtual['disponivel'] ? '🟢 Disponível' : '⚪ Offline' ?>
+            </button>
+        </form>
+    <?php endif; ?>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/configuracoes.php">⚙️ Configurações</a>

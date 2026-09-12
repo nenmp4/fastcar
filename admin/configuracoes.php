@@ -58,6 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'remover_instancia_consultor') {
             zapiRemoverInstanciaConsultor((int)($_POST['usuario_id'] ?? 0));
             $sucesso = 'Instância do consultor removida.';
+        } elseif ($acao === 'definir_plantao') {
+            definirPlantaoFimExpediente((int)($_POST['usuario_id'] ?? 0), !empty($_POST['ativo']));
+            $sucesso = 'Plantão de fim de expediente atualizado.';
         }
     }
 }
@@ -68,6 +71,7 @@ foreach (array_keys($campos) as $chave) {
 }
 $configuradoZapi = $valores['zapi_instance_id'] && $valores['zapi_token'];
 $instancias = zapiListarInstanciasConsultores();
+$fila = listarFilaConsultores();
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -175,6 +179,51 @@ $instancias = zapiListarInstanciasConsultores();
             </form>
         </div>
     <?php endforeach; ?>
+</div>
+
+<div class="card">
+    <h3>📥 Fila de distribuição automática de leads</h3>
+    <p><small>Lead novo (bloco 2, na entrada) vai automaticamente pra quem estiver com "Disponível" ligado, em rodízio.
+       Se ninguém estiver disponível, cai em quem estiver marcado como plantão de fim de expediente abaixo — vira
+       responsável da oportunidade normalmente, nenhum lead fica sem dono fora do horário.</small></p>
+
+    <?php if (!$fila): ?>
+        <p><small>Nenhum consultor/closer cadastrado ainda.</small></p>
+    <?php endif; ?>
+
+    <table class="tabela-oportunidades">
+        <thead>
+            <tr><th>Nome</th><th>Status</th><th>Último lead recebido</th><th>Plantão fim de expediente</th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($fila as $f): ?>
+            <tr>
+                <td><?= e($f['nome']) ?> <span class="badge"><?= e($f['perfil']) ?></span></td>
+                <td>
+                    <?php if ($f['plantao_fim_expediente']): ?>
+                        <span class="badge">🌙 só plantão</span>
+                    <?php elseif ($f['disponivel']): ?>
+                        <span class="badge badge-ok">🟢 disponível</span>
+                    <?php else: ?>
+                        <span class="badge badge-atraso">⚪ offline</span>
+                    <?php endif; ?>
+                </td>
+                <td><?= $f['ultimo_lead_recebido_em'] ? date('d/m H:i', strtotime($f['ultimo_lead_recebido_em'])) : '— nunca —' ?></td>
+                <td>
+                    <form method="post" class="inline">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="definir_plantao">
+                        <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
+                        <input type="hidden" name="ativo" value="<?= $f['plantao_fim_expediente'] ? '0' : '1' ?>">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
+                            <?= $f['plantao_fim_expediente'] ? 'Remover plantão' : 'Marcar como plantão' ?>
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
 </div>
 </main>
 

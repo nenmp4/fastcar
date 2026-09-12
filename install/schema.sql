@@ -194,5 +194,23 @@ CREATE TABLE IF NOT EXISTS usuarios (
     senha_hash TEXT NOT NULL,
     perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor')),
     bloqueado INTEGER DEFAULT 0,
+
+    -- Fila de distribuição automática de leads (decisão do Jean,
+    -- includes/fila_leads.php): toggle manual que o próprio consultor liga/
+    -- desliga no admin ao começar/terminar o expediente.
+    disponivel INTEGER DEFAULT 0,
+    -- Marca o(s) usuário(s) de plantão de fim de expediente — só entram na
+    -- distribuição quando NINGUÉM normal está com disponivel=1, nunca
+    -- competem pelo rodízio normal mesmo que também estejam "disponível".
+    plantao_fim_expediente INTEGER DEFAULT 0,
+    -- Round-robin: quem recebeu lead há mais tempo (ou nunca recebeu, NULL
+    -- primeiro) é o próximo da fila — evita sempre sobrecarregar o mesmo.
+    -- ultimo_lead_recebido_em é só informativo (mostrado no admin); a ordem
+    -- de verdade usa posicao_fila (contador monotônico) — timestamp sozinho
+    -- empata quando 2 leads chegam no mesmo segundo (granularidade do SQLite),
+    -- e o contador nunca empata depois da 1ª atribuição de cada pessoa.
+    ultimo_lead_recebido_em DATETIME,
+    posicao_fila INTEGER DEFAULT 0,
+
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );

@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/fila_leads.php';
 
 const ETAPAS_VALIDAS = [
     'whatsapp', 'qualificacao_ia', 'crm_preenchido', 'atendimento',
@@ -84,9 +85,20 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = ''): array {
        ->execute([$clienteId]);
     $opId = (int)$db->lastInsertId();
 
-    mudarEtapa($opId, 'whatsapp', null, 'Oportunidade criada — entrada pelo WhatsApp');
+    // Distribuição automática de leads (decisão do Jean): já na entrada
+    // (bloco 2), não só quando a IA termina de qualificar — quem estiver
+    // disponível no rodízio pega o lead; se ninguém, cai no plantão de fim
+    // de expediente; se nem isso, fica sem responsável (igual antes de
+    // existir essa fila).
+    $responsavelId = atribuirResponsavelAutomatico();
+    if ($responsavelId !== null) {
+        $db->prepare("UPDATE oportunidades SET responsavel_id = ? WHERE id = ?")->execute([$responsavelId, $opId]);
+    }
 
-    return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId, 'nova' => true];
+    mudarEtapa($opId, 'whatsapp', $responsavelId, 'Oportunidade criada — entrada pelo WhatsApp'
+        . ($responsavelId ? ' (atribuída automaticamente)' : ''));
+
+    return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId, 'nova' => true, 'responsavel_id' => $responsavelId];
 }
 
 /**
