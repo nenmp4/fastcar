@@ -89,8 +89,20 @@ function mostrarResultado(array $r): void {
     }
     if ($r['ia_pausada']) {
         echo "   ⏸️  IA pausada — humano assumiu, nenhuma resposta automática seria enviada\n";
+    } elseif ($r['ia_resultado']) {
+        $ia = $r['ia_resultado'];
+        if ($ia['resposta'] !== '') {
+            echo "   🤖 Fastcar> {$ia['resposta']}\n";
+            if (!$ia['enviada']) {
+                echo "      (⚠️ não enviado de verdade — sem credencial Z-API real neste ambiente)\n";
+            }
+        } else {
+            echo "   🤖 [sem resposta da IA — confira gemini_api_key em Configurações]\n";
+        }
+        if ($ia['sem_perfil']) echo "   ⚪ IA marcou como SEM PERFIL DE COMPRA e encerrou.\n";
+        if ($ia['qualificacao_completa']) echo "   ✅ IA concluiu a qualificação — oportunidade avançou pro bloco 4.\n";
     } else {
-        echo "   🤖 [IA de qualificação ainda não plugada — pendência #3 do CLAUDE.md]\n";
+        echo "   🤖 [IA não rodou nesse turno — fora dos blocos 2/3, ou veio de instância de consultor]\n";
     }
 }
 

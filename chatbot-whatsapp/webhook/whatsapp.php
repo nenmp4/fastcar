@@ -13,10 +13,11 @@
  *      mesmo com IA pausada ou mídia sem suporte de leitura ainda
  *   6. IA pausada (regra #4) → só guarda a mensagem, não roda lógica de bot
  *
- * ⚠️ Pendência #3 do CLAUDE.md: a IA de qualificação (Gemini/OpenAI) ainda
- * não foi decidida. Este webhook garante a parte que já é regra fechada —
- * dedup, registro da conversa, abertura da oportunidade — e deixa o ponto
- * de entrada da IA marcado como TODO, pra plugar sem reabrir o resto.
+ * Qualificação por IA (bloco 3, pendência #3 resolvida — Gemini, mesmo
+ * padrão do JurídicoSaaS): roda dentro de processarMensagemZapi(), não
+ * aqui — ver includes/ia_qualificacao.php. Sem `gemini_api_key`
+ * configurado em Configurações, a IA simplesmente não responde (mensagem
+ * e oportunidade continuam sendo salvas normalmente).
  *
  * A lógica de processamento em si mora em processarMensagemZapi()
  * (chatbot-whatsapp/includes/mensagens.php) — compartilhada com o
@@ -116,11 +117,6 @@ if ($resultado['ia_pausada']) {
     responderOk(['ia_pausada' => true]);
 }
 
-// TODO(pendência #3 do CLAUDE.md): plugar aqui a IA de qualificação
-// (Gemini/OpenAI — provedor e prompt ainda não decididos). Quando existir,
-// entra depois deste ponto: já tem mensagem salva, oportunidade aberta e
-// garantia de que a IA não está pausada — só falta gerar e enviar a
-// resposta (via zapiEnviarTexto) e atualizar oportunidades.* com o que for
-// extraído da conversa (nunca inventando valor não informado).
-
+// A qualificação por IA já rodou dentro de processarMensagemZapi() (se
+// aplicável) — nada mais a fazer aqui, é só responder OK.
 responderOk();

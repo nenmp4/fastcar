@@ -15,6 +15,10 @@ $campos = [
     'zapi_client_token' => 'Client-Token (segurança da conta Z-API)',
 ];
 
+$camposIA = [
+    'gemini_api_key' => 'Chave da API Gemini',
+];
+
 $erro = '';
 $sucesso = '';
 $testeResultado = null;
@@ -32,6 +36,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
             $sucesso = 'Configurações salvas.';
+        } elseif ($acao === 'salvar_ia') {
+            foreach (array_keys($camposIA) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            setConfig('gemini_model', trim((string)($_POST['gemini_model'] ?? '')) ?: 'gemini-2.5-flash');
+            $sucesso = 'Configurações de IA salvas.';
+        } elseif ($acao === 'testar_ia') {
+            $apiKey = getConfig('gemini_api_key') ?: '';
+            if (!$apiKey) {
+                $erro = 'Configure e salve a chave Gemini antes de testar.';
+            } else {
+                $resp = geminiCall('Responda só "ok" pra confirmar que a conexão está funcionando.', $apiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash', 20);
+                if (is_array($resp)) {
+                    $erro = 'Falha no teste: ' . ($resp['erro'] ?? 'erro desconhecido');
+                } else {
+                    $sucesso = 'Gemini respondeu: "' . $resp . '" — conexão funcionando.';
+                }
+            }
         } elseif ($acao === 'testar_zapi') {
             $telefoneTeste = (string)($_POST['telefone_teste'] ?? '');
             if (!$telefoneTeste) {
@@ -131,6 +153,39 @@ $fila = listarFilaConsultores();
         <?php if (!$configuradoZapi): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
         <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🤖 IA de Qualificação (Gemini)</h2>
+    <p><small>Resolve a pendência #3 do CLAUDE.md — mesmo provedor do JurídicoSaaS. Sem chave configurada, a IA
+       simplesmente não responde (mensagem e oportunidade continuam sendo salvas normalmente).</small></p>
+
+    <p>
+        Status:
+        <span class="badge <?= getConfig('gemini_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('gemini_api_key') ? '✅ chave configurada' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_ia">
+        <?php foreach ($camposIA as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
+                   placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <label>Modelo</label>
+        <input type="text" name="gemini_model" value="<?= e(getConfig('gemini_model') ?: 'gemini-2.5-flash') ?>">
+        <button type="submit">Salvar</button>
+    </form>
+
+    <form method="post" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_ia">
+        <button type="submit" <?= getConfig('gemini_api_key') ? '' : 'disabled' ?>>Testar conexão</button>
     </form>
 </div>
 

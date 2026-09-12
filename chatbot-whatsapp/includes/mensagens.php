@@ -9,6 +9,8 @@ require_once dirname(__DIR__, 2) . '/includes/db.php';
 require_once dirname(__DIR__, 2) . '/includes/security.php';
 require_once dirname(__DIR__, 2) . '/includes/oportunidades.php';
 require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
+require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
+require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
 
 /**
  * Já processamos esse messageId antes? Checagem antecipada pra dedup de
@@ -174,7 +176,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
     $vazio = ['ignored' => null, 'telefone' => '', 'texto' => null, 'tipo' => null,
               'ia_pausada' => false, 'oportunidade' => null, 'erro_oportunidade' => null,
-              'instancia' => $instancia];
+              'instancia' => $instancia, 'ia_resultado' => null];
 
     $messageId = (string)($payload['messageId'] ?? $payload['id'] ?? '');
     $phone     = (string)($payload['phone'] ?? '');
@@ -224,14 +226,44 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         $erroOportunidade = $e->getMessage();
     }
 
+    $ia_pausada = iaPausada($phone);
+    $iaResultado = null;
+
+    // Qualificação por IA (bloco 3, pendência #3 resolvida) — só roda pela
+    // instância principal (nunca sobre uma conversa que já é de um
+    // consultor), só com IA não pausada, só em texto de verdade (não em
+    // marcador de mídia) e só enquanto a oportunidade ainda está nos
+    // blocos 2/3 do funil. iaProcessarTurno() nunca lança — falha de rede/
+    // API não pode derrubar o webhook, só significa "IA não respondeu
+    // dessa vez", igual quando não tem chave configurada ainda.
+    if ($oportunidade && !$ia_pausada && $instancia['tipo'] === 'principal' && $tipoRegistro === 'text') {
+        $db = getDB();
+        $stmtEtapa = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
+        $stmtEtapa->execute([$oportunidade['oportunidade_id']]);
+        $etapaAtual = $stmtEtapa->fetchColumn();
+
+        if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
+            if ($etapaAtual === 'whatsapp') {
+                mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
+            }
+            try {
+                $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone);
+            } catch (Throwable $e) {
+                // Nunca deixa uma falha da IA quebrar o resto do webhook —
+                // mensagem do cliente já está salva, oportunidade já existe.
+            }
+        }
+    }
+
     return [
         'ignored' => null,
         'telefone' => $phone,
         'texto' => $texto,
         'tipo' => $tipoRegistro,
-        'ia_pausada' => iaPausada($phone),
+        'ia_pausada' => $ia_pausada,
         'oportunidade' => $oportunidade,
         'erro_oportunidade' => $erroOportunidade,
         'instancia' => $instancia,
+        'ia_resultado' => $iaResultado,
     ];
 }

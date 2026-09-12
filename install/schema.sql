@@ -19,9 +19,20 @@ CREATE TABLE IF NOT EXISTS clientes (
     estado TEXT DEFAULT '',
     cpf TEXT DEFAULT '',
     endereco TEXT DEFAULT '',
+    -- Qualificação civil — exigida pelo contrato-mestre de compra
+    -- (includes/contratos.php) pra identificar o VENDEDOR no instrumento.
+    -- Coletado no mesmo formulário público de documentos (public/documentos.php).
+    rg TEXT DEFAULT '',
+    cnh TEXT DEFAULT '',
+    nacionalidade TEXT DEFAULT '',
+    estado_civil TEXT DEFAULT '',
+    profissao TEXT DEFAULT '',
     canal_origem TEXT DEFAULT '',      -- facebook_ads, google_ads, whatsapp_direto, etc
     campanha_origem TEXT DEFAULT '',
     anuncio_origem TEXT DEFAULT '',
+    -- Pasta do cliente no Google Drive (includes/google_drive.php), criada sob
+    -- demanda dentro da pasta raiz "Fastcar" — mesmo padrão do JurídicoSaaS.
+    drive_folder_id TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_clientes_telefone ON clientes(telefone);
@@ -64,6 +75,9 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     veiculo_marca TEXT DEFAULT '',
     veiculo_modelo TEXT DEFAULT '',
     veiculo_ano TEXT DEFAULT '',
+    veiculo_placa TEXT DEFAULT '',
+    veiculo_renavam TEXT DEFAULT '',
+    veiculo_chassi TEXT DEFAULT '',
     banco_financiamento TEXT DEFAULT '',
     valor_parcela REAL,
     parcelas_restantes INTEGER,
@@ -71,18 +85,30 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     valor_pretendido REAL,             -- quanto o cliente quer pelo veículo
     resumo_ia TEXT DEFAULT '',         -- resumo da conversa gerado pela IA pro consultor
 
+    -- Dados do financiamento pro contrato-mestre de compra
+    -- (includes/contratos.php) — nunca preenchidos automaticamente, o
+    -- closer confirma com o cliente antes de gerar o contrato.
+    valor_fipe_referencia REAL,           -- valor FIPE na data da negociação (% pago ao vendedor é limitado a 25% disso)
+    contrato_financiamento_numero TEXT DEFAULT '',
+    saldo_financiamento_atual REAL,
+
     -- Bloco 6 — Negociação (Jean/closer)
     valor_ofertado REAL,
     valor_contraproposta REAL,
     condicoes_negociacao TEXT DEFAULT '',
     aprovado_por INTEGER REFERENCES usuarios(id),
     motivo_perda TEXT DEFAULT '',
+    terceiro_quitacao TEXT DEFAULT '', -- quem a FASTCAR indica pra quitar o financiamento (Quadro-Resumo do contrato)
+    seguro_texto TEXT DEFAULT '',      -- condição de seguro/proteção durante a posse da FASTCAR (Quadro-Resumo do contrato)
+    encargos_texto TEXT DEFAULT '',    -- responsável por IPVA/licenciamento/multas após a entrega (Quadro-Resumo do contrato)
 
     -- Bloco 7 — Presencial/fechamento
     reuniao_agendada_em DATETIME,
+    data_entrega_posse DATE,           -- quando o veículo/posse física passa pra FASTCAR (Quadro-Resumo do contrato)
     avaliacao_veiculo TEXT DEFAULT '',
     documentos_ok INTEGER DEFAULT 0,   -- checklist obrigatório antes de liberar "fechado"
     contrato_assinado INTEGER DEFAULT 0,
+    contrato_gerado_em DATETIME,       -- última vez que o contrato foi gerado (includes/contratos.php)
 
     -- Bloco 8 — Pasta fechada
     valor_final REAL,
@@ -230,3 +256,28 @@ CREATE TABLE IF NOT EXISTS usuarios (
 
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
+
+-- Contratos gerados e enviados pra assinatura eletrônica (Assinafy) — mesmo
+-- padrão do JurídicoSaaS (includes/assinafy.php). 1:N com oportunidades
+-- porque pode gerar de novo (reenvio, correção) — histórico fica todo aqui.
+CREATE TABLE IF NOT EXISTS contratos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    tipo TEXT NOT NULL DEFAULT 'compra' CHECK (tipo IN ('compra', 'venda')),
+    nome TEXT DEFAULT '',              -- nome do documento (ex: "Contrato de Compra - João Silva")
+    campos_json TEXT DEFAULT '{}',     -- snapshot dos dados usados no merge, pra auditoria
+    assinafy_doc_id TEXT DEFAULT '',
+    assinafy_assignment_id TEXT DEFAULT '',
+    assinafy_signer_id TEXT DEFAULT '',
+    sign_url TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'gerado'
+        CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro')),
+    motivo_recusa TEXT DEFAULT '',
+    drive_file_id TEXT DEFAULT '',     -- PDF assinado, já salvo na pasta do cliente no Drive
+    pdf_assinado_url TEXT DEFAULT '',
+    created_by INTEGER REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_contratos_oportunidade ON contratos(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_contratos_assinafy_doc ON contratos(assinafy_doc_id);
