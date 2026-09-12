@@ -10,5 +10,6 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';
 require_once __DIR__ . '/../includes/oportunidades.php';
+require_once __DIR__ . '/../includes/fipe.php';
 
 requireAdmin();

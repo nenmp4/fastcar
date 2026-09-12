@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     proxima_acao_em DATETIME,                         -- pra alerta de atraso
 
     -- Bloco 3 — Qualificação IA (dados do veículo/financiamento)
+    -- Marca separada do modelo pra dar pra validar contra a lista oficial
+    -- da FIPE (includes/fipe.php::fipeValidarMarca()) sem heurística de
+    -- "primeira palavra do texto" — nunca 100% confiável.
+    veiculo_marca TEXT DEFAULT '',
     veiculo_modelo TEXT DEFAULT '',
     veiculo_ano TEXT DEFAULT '',
     banco_financiamento TEXT DEFAULT '',

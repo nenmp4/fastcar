@@ -28,6 +28,7 @@ if (!$op) {
 
 $erro = '';
 $sucesso = '';
+$marcaFeedback = null; // resultado de fipeValidarMarca() após salvar dados do veículo
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -35,7 +36,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         try {
-            if ($acao === 'atualizar_proxima_acao') {
+            if ($acao === 'atualizar_veiculo') {
+                $marca = clean((string)($_POST['veiculo_marca'] ?? ''));
+                $db->prepare("
+                    UPDATE oportunidades
+                    SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, banco_financiamento = ?,
+                        valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
+                        updated_at = datetime('now','localtime')
+                    WHERE id = ?
+                ")->execute([
+                    $marca,
+                    clean((string)($_POST['veiculo_modelo'] ?? '')),
+                    clean((string)($_POST['veiculo_ano'] ?? '')),
+                    clean((string)($_POST['banco_financiamento'] ?? '')),
+                    $_POST['valor_parcela'] !== '' ? (float)$_POST['valor_parcela'] : null,
+                    $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
+                    $_POST['parcelas_atraso'] !== '' ? (int)$_POST['parcelas_atraso'] : 0,
+                    $_POST['valor_pretendido'] !== '' ? (float)$_POST['valor_pretendido'] : null,
+                    $id,
+                ]);
+                // Só um sinal visual pro consultor — nunca sobrescreve o que
+                // foi digitado (regra do Jean: não inventar/corrigir por
+                // conta própria), a marca salva acima é sempre a literal.
+                if ($marca !== '') {
+                    $marcaFeedback = fipeValidarMarca($marca);
+                }
+                $sucesso = 'Dados do veículo atualizados.';
+            } elseif ($acao === 'atualizar_proxima_acao') {
                 $db->prepare("
                     UPDATE oportunidades
                     SET responsavel_id = ?, proxima_acao = ?, proxima_acao_em = ?, updated_at = datetime('now','localtime')
@@ -101,6 +128,17 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
+<?php if ($marcaFeedback): ?>
+    <?php if ($marcaFeedback['status'] === 'ok'): ?>
+        <div class="alerta-sucesso">✅ Marca "<?= e($marcaFeedback['sugestao']) ?>" reconhecida na FIPE.</div>
+    <?php elseif ($marcaFeedback['status'] === 'corrigida'): ?>
+        <div class="alerta-erro">⚠️ Marca não bateu exatamente — você quis dizer "<?= e($marcaFeedback['sugestao']) ?>"? (o que foi digitado ficou salvo do jeito que está)</div>
+    <?php elseif ($marcaFeedback['status'] === 'nao_encontrada'): ?>
+        <div class="alerta-erro">⚠️ Marca não encontrada na lista da FIPE — confira a digitação.</div>
+    <?php else: ?>
+        <div class="alerta-erro">ℹ️ FIPE indisponível agora, não deu pra validar a marca.</div>
+    <?php endif; ?>
+<?php endif; ?>
 
 <div class="card">
     <h2>#<?= (int)$op['id'] ?> — <?= e($op['cliente_nome'] ?: '(sem nome)') ?>
@@ -116,7 +154,9 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
                <?= $op['anuncio_origem'] ? ' · ' . e($op['anuncio_origem']) : '' ?></p>
         </div>
         <div>
-            <p><strong>Veículo:</strong> <?= e($op['veiculo_modelo'] ?: 'não identificado ainda') ?> <?= e($op['veiculo_ano']) ?></p>
+            <p><strong>Veículo:</strong>
+               <?= e(trim(($op['veiculo_marca'] ?? '') . ' ' . $op['veiculo_modelo']) ?: 'não identificado ainda') ?>
+               <?= e($op['veiculo_ano']) ?></p>
             <p><strong>Financiamento:</strong> <?= e($op['banco_financiamento'] ?: '—') ?>
                <?= $op['valor_parcela'] !== null ? ' · parcela R$ ' . number_format((float)$op['valor_parcela'], 2, ',', '.') : '' ?>
                <?= $op['parcelas_restantes'] !== null ? ' · ' . (int)$op['parcelas_restantes'] . ' restantes' : '' ?></p>
@@ -127,6 +167,37 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
     <?php if ($op['resumo_ia']): ?>
         <p><strong>Resumo da IA:</strong><br><?= nl2br(e($op['resumo_ia'])) ?></p>
     <?php endif; ?>
+</div>
+
+<div class="card">
+    <h3>Dados do veículo <small>(marca é conferida contra a lista oficial da FIPE ao salvar)</small></h3>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="atualizar_veiculo">
+        <div class="grid-2">
+            <div>
+                <label>Marca</label>
+                <input type="text" name="veiculo_marca" value="<?= e($op['veiculo_marca'] ?? '') ?>" placeholder="Ex: Toyota">
+                <label>Modelo</label>
+                <input type="text" name="veiculo_modelo" value="<?= e($op['veiculo_modelo'] ?? '') ?>" placeholder="Ex: Corolla">
+                <label>Ano</label>
+                <input type="text" name="veiculo_ano" value="<?= e($op['veiculo_ano'] ?? '') ?>" placeholder="Ex: 2019">
+            </div>
+            <div>
+                <label>Banco do financiamento</label>
+                <input type="text" name="banco_financiamento" value="<?= e($op['banco_financiamento'] ?? '') ?>">
+                <label>Valor da parcela (R$)</label>
+                <input type="number" step="0.01" name="valor_parcela" value="<?= e((string)($op['valor_parcela'] ?? '')) ?>">
+                <label>Parcelas restantes</label>
+                <input type="number" name="parcelas_restantes" value="<?= e((string)($op['parcelas_restantes'] ?? '')) ?>">
+                <label>Parcelas em atraso</label>
+                <input type="number" name="parcelas_atraso" value="<?= e((string)($op['parcelas_atraso'] ?? 0)) ?>">
+                <label>Valor pretendido pelo cliente (R$)</label>
+                <input type="number" step="0.01" name="valor_pretendido" value="<?= e((string)($op['valor_pretendido'] ?? '')) ?>">
+            </div>
+        </div>
+        <button type="submit">Salvar dados do veículo</button>
+    </form>
 </div>
 
 <div class="grid-2">
