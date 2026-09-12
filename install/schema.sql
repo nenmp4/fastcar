@@ -206,7 +206,8 @@ CREATE TABLE IF NOT EXISTS oportunidade_documentos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
     tipo TEXT NOT NULL,                 -- cnh, comprovante_endereco, contrato_financiamento, contrato_compra, comprovante_pagamento, laudo_avaliacao, etc
-    arquivo_url TEXT DEFAULT '',
+    arquivo_url TEXT DEFAULT '',        -- caminho relativo em storage/uploads/ — só usado quando NÃO subiu pro Drive (fallback)
+    drive_file_id TEXT DEFAULT '',      -- preenchido quando o arquivo foi pro Google Drive (includes/google_drive.php) — mesmo padrão do JurídicoSaaS
     obrigatorio INTEGER DEFAULT 1,
     enviado_pelo_cliente INTEGER DEFAULT 0, -- 1 = veio do formulário público, 0 = staff anexou
     created_at DATETIME DEFAULT (datetime('now','localtime')),

@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/google_drive.php';
 
 /** Tipos que o CLIENTE sobe sozinho no formulário público. */
 const TIPOS_DOCUMENTOS_CLIENTE = [
@@ -95,6 +96,41 @@ function atualizarDadosPessoaisCliente(int $clienteId, string $nome, string $cpf
        ->execute([clean($nome), clean($cpf), clean($endereco), $clienteId]);
 }
 
+/**
+ * Pasta raiz "Fastcar" no Drive — criada uma única vez, guardada em
+ * config.drive_folder_id. Estrutura pedida: Fastcar > Cliente - Fulano > arquivos.
+ */
+function garantirPastaRaizFastcar(GoogleDrive $drive): ?string {
+    $raizId = getConfig('drive_folder_id');
+    if ($raizId) return $raizId;
+    $novaId = $drive->createFolder('Fastcar');
+    if ($novaId) setConfig('drive_folder_id', $novaId);
+    return $novaId ?: null;
+}
+
+/**
+ * Pasta do cliente dentro da raiz Fastcar — criada sob demanda, guardada em
+ * clientes.drive_folder_id (nunca recriada depois de existir). Recebe a
+ * instância GoogleDrive já autenticada de quem chamou, pra não autenticar
+ * 2x à toa.
+ */
+function garantirPastaDriveCliente(GoogleDrive $drive, int $clienteId, string $nomeCliente): ?string {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT drive_folder_id FROM clientes WHERE id = ?");
+    $stmt->execute([$clienteId]);
+    $pastaId = $stmt->fetchColumn();
+    if ($pastaId) return $pastaId;
+
+    $raizId = garantirPastaRaizFastcar($drive);
+    if (!$raizId) return null;
+
+    $novaId = $drive->createFolder('Cliente - ' . $nomeCliente, $raizId);
+    if ($novaId) {
+        $db->prepare("UPDATE clientes SET drive_folder_id = ? WHERE id = ?")->execute([$novaId, $clienteId]);
+    }
+    return $novaId ?: null;
+}
+
 /** Lista os documentos já registrados de uma oportunidade, indexado por tipo. */
 function listarDocumentos(int $oportunidadeId): array {
     $db = getDB();
@@ -133,33 +169,58 @@ function salvarUploadDocumento(int $oportunidadeId, string $tipo, array $arquivo
         return ['ok' => false, 'erro' => 'Formato não aceito — envie foto (JPG/PNG/WEBP) ou PDF.'];
     }
 
-    $dir = UPLOADS_DIR . '/' . $oportunidadeId;
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-        return ['ok' => false, 'erro' => 'Não foi possível salvar o arquivo no servidor.'];
-    }
-
     $ext = UPLOAD_MIME_PERMITIDOS[$mime];
     $nomeArquivo = $tipo . '_' . time() . '.' . $ext; // nome fixo, nunca o original
-    $caminhoFinal = $dir . '/' . $nomeArquivo;
-
-    if (!move_uploaded_file($arquivo['tmp_name'], $caminhoFinal)) {
-        return ['ok' => false, 'erro' => 'Falha ao gravar o arquivo no servidor.'];
-    }
-
-    // arquivo_url guarda o caminho RELATIVO a storage/uploads/ — nunca a URL
-    // pública direta, porque essa pasta não é servida diretamente (só via
-    // admin/ver_documento.php, que exige login).
-    $relativo = $oportunidadeId . '/' . $nomeArquivo;
 
     $db = getDB();
+    $driveFileId = '';
+    $relativoLocal = '';
+
+    // Google Drive é o destino preferido (pasta do cliente, pedido do
+    // Jean) — local (storage/uploads/) é só fallback enquanto a
+    // credencial não existir ou se a chamada falhar; nunca pode travar o
+    // envio do documento por causa de um provedor externo fora do ar.
+    $stmtCli = $db->prepare("
+        SELECT c.id AS cliente_id, c.nome FROM oportunidades o
+        JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?
+    ");
+    $stmtCli->execute([$oportunidadeId]);
+    $cli = $stmtCli->fetch();
+
+    if ($cli) {
+        $drive = new GoogleDrive();
+        if ($drive->hasCredentials() && $drive->authenticate()) {
+            $pastaId = garantirPastaDriveCliente($drive, (int)$cli['cliente_id'], $cli['nome'] ?: "Cliente #{$cli['cliente_id']}");
+            if ($pastaId) {
+                $idDrive = $drive->uploadFile($arquivo['tmp_name'], $nomeArquivo, $mime, $pastaId);
+                if ($idDrive) $driveFileId = $idDrive;
+            }
+        }
+    }
+
+    if (!$driveFileId) {
+        $dir = UPLOADS_DIR . '/' . $oportunidadeId;
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            return ['ok' => false, 'erro' => 'Não foi possível salvar o arquivo no servidor.'];
+        }
+        $caminhoFinal = $dir . '/' . $nomeArquivo;
+        if (!move_uploaded_file($arquivo['tmp_name'], $caminhoFinal)) {
+            return ['ok' => false, 'erro' => 'Falha ao gravar o arquivo no servidor.'];
+        }
+        // Caminho RELATIVO a storage/uploads/ — nunca a URL pública direta,
+        // essa pasta não é servida diretamente (só via admin/ver_documento.php).
+        $relativoLocal = $oportunidadeId . '/' . $nomeArquivo;
+    }
+
     $db->prepare("
-        INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, enviado_pelo_cliente, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now','localtime'))
+        INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))
         ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
             arquivo_url = excluded.arquivo_url,
+            drive_file_id = excluded.drive_file_id,
             enviado_pelo_cliente = excluded.enviado_pelo_cliente,
             updated_at = datetime('now','localtime')
-    ")->execute([$oportunidadeId, $tipo, $relativo, $enviadoPeloCliente ? 1 : 0]);
+    ")->execute([$oportunidadeId, $tipo, $relativoLocal, $driveFileId, $enviadoPeloCliente ? 1 : 0]);
 
     return ['ok' => true, 'erro' => null];
 }

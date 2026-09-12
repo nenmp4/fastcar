@@ -189,6 +189,26 @@ $fila = listarFilaConsultores();
     </form>
 </div>
 
+<?php $drive = new GoogleDrive(); ?>
+<div class="card">
+    <h2>📁 Google Drive</h2>
+    <p><small>Mesmo padrão do JurídicoSaaS — pasta "Fastcar" com uma subpasta por cliente, onde ficam os documentos
+       enviados (CNH, comprovante de endereço, contrato de financiamento, contratos assinados). A credencial é um
+       JSON de service account do Google Cloud, dropado manualmente no servidor (não tem upload por aqui, de
+       propósito — é uma chave sensível) em <code>config/google_drive_credentials.json</code> (pasta protegida por
+       .htaccess).</small></p>
+    <p>
+        Status:
+        <span class="badge <?= $drive->hasCredentials() ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $drive->hasCredentials() ? '✅ credencial encontrada' : '⏳ arquivo não encontrado' ?>
+        </span>
+    </p>
+    <?php if ($drive->hasCredentials()): ?>
+        <p><small>E-mail da service account: <code><?= e($drive->getCredentialEmail()) ?></code></small></p>
+        <p><small>Pasta raiz no Drive: <code><?= e(getConfig('drive_folder_id') ?: '(criada automaticamente no 1º upload)') ?></code></small></p>
+    <?php endif; ?>
+</div>
+
 <div class="card">
     <h3>👤 Instâncias dos consultores/closers</h3>
     <p><small>A partir do bloco 5 (atendimento), a conversa com o cliente passa a rodar SEMPRE pelo número/instância
