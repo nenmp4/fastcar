@@ -90,12 +90,86 @@ na primeira conexão (banco não existe ainda → roda o schema inteiro).
 
 Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 `whatsapp_mensagens`, `whatsapp_sessoes`, `oportunidade_documentos`,
-`oportunidade_pendencias_pos_venda`, `usuarios`, `config`.
+`oportunidade_pendencias_pos_venda`, `usuarios`, `config`,
+`zapi_instancias_consultores` (instância Z-API própria de cada consultor/closer,
+só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
+`contratos` (contrato gerado + rastreio de assinatura eletrônica via Assinafy).
 
 > ⚠️ Igual ao JurídicoSaaS: `config` é só `chave TEXT PRIMARY KEY, valor TEXT`,
 > sem `updated_at`. Cache com TTL usa o padrão `"timestamp|json"` no valor.
 
 ---
+
+## Módulos implementados (código pronto e testado contra fakes locais)
+
+- **Webhook WhatsApp + funil** — `chatbot-whatsapp/webhook/whatsapp.php` +
+  `chatbot-whatsapp/includes/mensagens.php` (lógica compartilhada com o
+  simulador de CLI `chatbot-whatsapp/simulate.php`, útil pra testar o bot
+  sem precisar de credencial Z-API real)
+- **Arquitetura multi-instância Z-API** — a instância **principal** cuida só
+  dos blocos 2-4 (entrada, qualificação IA, followup automático); a partir do
+  bloco 5 (atendimento), toda comunicação com aquele cliente passa a ser pela
+  instância própria do consultor/closer responsável (`zapi_instancias_consultores`),
+  nunca mais pelo número principal naquele negócio. As instâncias dos
+  consultores servem só pra **monitorar produtividade** (`admin/produtividade.php`),
+  não pra rodar o bot
+- **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
+  consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
+  (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
+  de bugs corrigidos); se ninguém estiver disponível, cai no plantão
+  (`usuarios.plantao_fim_expediente`)
+- **Qualificação por IA** — `includes/ia_qualificacao.php` +
+  `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
+  como fallback (ver pendência #3)
+- **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
+  "Clique para WhatsApp", campo `referral` do 1º contato) +
+  `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
+- **Módulo cliente** — `admin/clientes.php` (lista/busca) +
+  `admin/cliente_detalhe.php` (dados cadastrais + histórico de todas as
+  oportunidades daquele telefone) — badge "🏆 Cliente convertido" quando o
+  cliente já teve pelo menos um veículo com `etapa='fechado'`
+- **Módulo de formulário/documentos** — `public/documentos.php` (link com
+  token, sem login, cliente sobe CNH/comprovante de endereço/contrato de
+  financiamento + completa dados pessoais); arquivos vão pro **Google Drive**
+  (`includes/google_drive.php`, service account, mesmo padrão do
+  JurídicoSaaS: pasta raiz "Fastcar" → subpasta por cliente → arquivos),
+  com `storage/uploads/` local como fallback só se o Drive não estiver
+  configurado ou uma chamada falhar
+- **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
+  `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
+  shared hosting não teria isso — transcrito do modelo real
+  `01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`) + assinatura
+  eletrônica via **Assinafy** (`includes/assinafy.php`, webhook
+  `api/assinafy_webhook.php` + fallback de polling `cron/assinafy_sync.php`).
+  Fluxo confirmado com o Jean: cliente preenche dados pelo link do
+  formulário → consultor confere → **closer preenche os campos
+  financeiros/de negociação só na hora de fechar o negócio** (bloco 6) →
+  dispara o contrato. Contrato de **VENDA** (Fastcar revende o carro) fica
+  pro módulo de vendas, fora de escopo agora (ver "Segunda etapa" abaixo)
+- **Configurações de super admin** — `admin/configuracoes.php`: Z-API
+  principal, IA (Gemini + OpenAI fallback), Google Drive, Assinafy, fila de
+  leads/plantão, instâncias dos consultores
+- **Smoke test** — `tests/smoke.php` (rodar antes de todo commit: `php
+  tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
+  JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os
+  bugs reais já corrigidos aqui (ver seção de bugs corrigidos abaixo)
+
+## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
+
+Itens explicitamente adiados durante a conversa, pra não se perderem:
+
+- **Módulo de vendas** (Fastcar revende o veículo pro próximo comprador) —
+  inclui o contrato-modelo de VENDA (`01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`,
+  já lido/estruturado, mas nada implementado)
+- **Módulo financeiro** — relatórios financeiros, reaproveitando o módulo
+  financeiro do JurídicoSaaS
+- **Módulo de saúde do sistema** — dashboard de monitoramento/logs,
+  reaproveitando o módulo de saúde do JurídicoSaaS
+- **2FA no login do admin** — reaproveitando o padrão do JurídicoSaaS
+- **Verificação de documentos por IA** (OCR/conferência automática do que o
+  cliente subiu contra o que foi digitado) — depende de decidir o provedor
+  de IA (✅ já decidido, Gemini+GPT) mas o **fluxo de verificação em si**
+  ainda não foi desenhado nem pedido de volta
 
 ## O que reaproveitar do JurídicoSaaS (padrões já testados em produção)
 
@@ -110,10 +184,16 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
   instância própria da Fastcar) — padrão de webhook: dedup de `messageId`
   (evita processar 2x o mesmo webhook), salvar mensagem antes de processar,
   checar `fromMe`/grupo antes de rodar qualquer lógica de bot
+- **Gemini + fallback OpenAI** (`includes/gemini.php`, `includes/openai.php`)
+  — mesmo padrão de fallback duplo do JurídicoSaaS: tenta Gemini primeiro,
+  só cai pro GPT se o Gemini falhar/não estiver configurado
+- **Assinafy** (`includes/assinafy.php`) e **Google Drive**
+  (`includes/google_drive.php`, JWT RS256 via service account) — portados
+  quase 1:1 do JurídicoSaaS, só adaptando pra `getConfig()`/`setConfig()`
+  em vez de SQL cru inline
 - Guard `sqlite-sem-busy-timeout` do `tests/smoke.php` do JurídicoSaaS —
-  vale recriar aqui assim que existir mais de uma conexão SQLite avulsa no
-  código (webhook em alta concorrência é exatamente o cenário que gerou
-  aquele bug lá)
+  **já recriado aqui** em `tests/smoke.php` (ver seção de módulos acima),
+  junto com outros guards específicos dos bugs reais encontrados nesta sessão
 
 ## O que NÃO reaproveitar (é outro negócio, cuidado pra não copiar sem revisar)
 
@@ -152,9 +232,18 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
    `chatbot-whatsapp/webhook/whatsapp.php` do JurídicoSaaS: dedup de
    `messageId`, checar `fromMe`/grupo antes de processar, salvar mensagem
    sempre (mesmo em pausa de IA)
-3. **IA de qualificação** — decidir Gemini/OpenAI (mesmo padrão de fallback
-   duplo do JurídicoSaaS?) e o prompt de qualificação (o que perguntar, em
-   que ordem, quando desistir e marcar "sem perfil de compra")
+3. ~~**IA de qualificação**~~ — ✅ decidido: **Gemini** (`gemini-2.5-flash`)
+   como provedor principal, com fallback automático pro **OpenAI GPT**
+   (`gpt-4o-mini`) quando o Gemini falha ou não está configurado — mesmo
+   padrão de fallback duplo do JurídicoSaaS (`includes/gemini.php`,
+   `includes/openai.php`, `includes/ia_qualificacao.php`). Código
+   implementado e testado contra servidor fake local (nunca contra as APIs
+   reais, ver seção de validação em produção abaixo). O **prompt** de
+   qualificação (`IA_QUALIFICACAO_PROMPT_SISTEMA`) e o de extração
+   estruturada (`IA_EXTRACAO_PROMPT`) existem mas seguem marcados como
+   rascunho — o que perguntar, em que ordem e quando desistir/marcar "sem
+   perfil de compra" ainda precisa de revisão do Jean antes de rodar com
+   lead de verdade.
 4. **Login/perfis do admin** — combinado em 12/09/2026: `super_admin`
    (Jean), `closer` (negocia/aprova valor, bloco 6), `consultor` (atendimento,
    bloco 5, não define valor) — schema e `requireSuperAdmin()` já refletem
@@ -165,10 +254,15 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
    `extrairOrigemAnuncio()`. Sem link/UTM manual. Fica em aberto até validar
    contra uma instância Z-API real e um clique de anúncio de teste (ver
    seção de validação em produção abaixo) — formato exato ainda não confirmado.
-6. **Módulo de contrato** — vai ser mail-merge de um modelo próprio da
-   Fastcar (não gerado do zero), mas falta o arquivo/formato do modelo
-   (Word? PDF com campos? texto com placeholder?) pra saber onde os dados
-   da negociação entram. Não começar a codar sem isso.
+6. ~~**Módulo de contrato**~~ — ✅ decidido e implementado (só **COMPRA**):
+   modelo real recebido do Jean (`01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`,
+   30 cláusulas + Quadro-Resumo), transcrito pra geração via FPDF puro
+   (`includes/contratos_pdf.php`, sem LibreOffice/Composer — shared hosting
+   não teria isso) e enviado pra assinatura eletrônica via Assinafy
+   (`includes/contratos.php`, `includes/assinafy.php`). Contrato de
+   **VENDA** (`01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`, já
+   recebido e lido, mas nada implementado) fica pro módulo de vendas —
+   segunda etapa, ver seção própria acima.
 7. **Leads do Supabase (Leandro Soragi)** — aguardando CSV ou acesso ao
    painel pra importar a base existente; sem isso, script de importação
    fica só desenhado, sem rodar de verdade.
@@ -191,3 +285,27 @@ testado com servidor fake local — nunca contra o serviço real:
   formato de resposta real assim que rodar com internet livre.
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
+- **API Gemini e OpenAI** (`includes/gemini.php`, `includes/openai.php`) —
+  chamadas, formato de resposta e o fallback Gemini→GPT só testados contra
+  servidor fake local simulando os dois formatos de resposta; nunca uma
+  chamada real com chave de API de verdade. Validar também se o modelo
+  configurado (`gemini-2.5-flash`/`gpt-4o-mini`) ainda existe/responde bem
+  quando a instância for configurada de verdade.
+- **API Assinafy** (`includes/assinafy.php`, `includes/contratos.php`) —
+  upload de PDF, criação de signatário/assignment, webhook
+  (`api/assinafy_webhook.php`) e polling de status (`cron/assinafy_sync.php`)
+  só testados contra servidor fake local; nunca uma assinatura real de
+  ponta a ponta. Confirmar o formato exato do payload do webhook contra uma
+  conta Assinafy de verdade.
+- **API Google Drive** (`includes/google_drive.php`) — autenticação via JWT
+  RS256 de service account testada com par de chaves RSA real gerado
+  localmente (a assinatura em si é genuína), mas a troca por token OAuth e
+  as chamadas de criar pasta/subir arquivo só foram validadas contra
+  servidor fake local; nunca contra a API do Google de verdade. Precisa de
+  `config/google_drive_credentials.json` (nunca commitar) com uma service
+  account real da Fastcar antes de validar.
+- **PDF do contrato de compra** — conteúdo e estrutura verificados
+  decodificando os content streams internos do PDF gerado (sem
+  `pdftoppm`/LibreOffice funcionando neste sandbox pra renderizar
+  visualmente); vale abrir o PDF de verdade num leitor real assim que
+  possível pra conferir layout/quebra de página.
