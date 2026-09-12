@@ -16,7 +16,8 @@ $campos = [
 ];
 
 $camposIA = [
-    'gemini_api_key' => 'Chave da API Gemini',
+    'gemini_api_key' => 'Chave da API Gemini (principal)',
+    'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
 ];
 
 $camposAssinafy = [
@@ -46,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
             setConfig('gemini_model', trim((string)($_POST['gemini_model'] ?? '')) ?: 'gemini-2.5-flash');
+            setConfig('openai_model', trim((string)($_POST['openai_model'] ?? '')) ?: 'gpt-4o-mini');
             $sucesso = 'Configurações de IA salvas.';
         } elseif ($acao === 'testar_ia') {
             $apiKey = getConfig('gemini_api_key') ?: '';
@@ -187,8 +189,10 @@ $fila = listarFilaConsultores();
                    value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
-        <label>Modelo</label>
+        <label>Modelo Gemini</label>
         <input type="text" name="gemini_model" value="<?= e(getConfig('gemini_model') ?: 'gemini-2.5-flash') ?>">
+        <label>Modelo OpenAI (fallback)</label>
+        <input type="text" name="openai_model" value="<?= e(getConfig('openai_model') ?: 'gpt-4o-mini') ?>">
         <button type="submit">Salvar</button>
     </form>
 

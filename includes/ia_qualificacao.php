@@ -1,8 +1,12 @@
 <?php
 /**
  * Qualificação por IA — bloco 3 do funil. Resolve a pendência #3 do
- * CLAUDE.md: mesmo provedor e padrão do JurídicoSaaS (Gemini, via
- * includes/gemini.php — fallback de modelos já embutido lá).
+ * CLAUDE.md: mesmo provedor e padrão do JurídicoSaaS — Gemini como
+ * principal (includes/gemini.php, fallback de modelo aposentado já
+ * embutido lá), OpenAI/GPT como fallback duplo (includes/openai.php)
+ * quando o Gemini falha ou não está configurado — mesmo padrão de
+ * chatbot-whatsapp/includes/whatsapp_bot.php::classificarAreaComGemini()
+ * do JurídicoSaaS.
  *
  * ⚠️ O ROTEIRO/PROMPT abaixo é um RASCUNHO baseado só no que o CLAUDE.md já
  * define que precisa ser coletado (modelo, ano, banco, parcela, parcelas
@@ -18,6 +22,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/gemini.php';
+require_once __DIR__ . '/openai.php';
 require_once __DIR__ . '/oportunidades.php';
 
 const IA_QUALIFICACAO_PROMPT_SISTEMA = <<<PROMPT
@@ -92,12 +97,44 @@ function iaMontarHistoricoGemini(string $telefone, int $limite = 30): array {
 
 /** Gera a próxima resposta conversacional da IA — '' se falhar ou sem chave configurada. */
 function iaGerarResposta(string $telefone): string {
-    $apiKey = getConfig('gemini_api_key') ?: '';
-    if (!$apiKey) return '';
-    $modelo = getConfig('gemini_model') ?: 'gemini-2.5-flash';
     $historico = iaMontarHistoricoGemini($telefone);
     if (!$historico) return '';
-    return geminiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $apiKey, $modelo);
+
+    $geminiKey = getConfig('gemini_api_key') ?: '';
+    if ($geminiKey) {
+        $resposta = geminiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash');
+        if ($resposta !== '') return $resposta;
+    }
+
+    // Fallback duplo (mesmo padrão do JurídicoSaaS) — só entra em cena se
+    // o Gemini falhou ou não está configurado.
+    $openaiKey = getConfig('openai_api_key') ?: '';
+    if ($openaiKey) {
+        return openaiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $openaiKey, getConfig('openai_model') ?: 'gpt-4o-mini');
+    }
+
+    return '';
+}
+
+/**
+ * Chama Gemini (prompt único, sem histórico) com fallback pro GPT — mesmo
+ * padrão do JurídicoSaaS: tenta o principal, só cai pro GPT se o Gemini
+ * falhar ou não tiver chave configurada.
+ */
+function iaChamarComFallback(string $prompt, int $maxTokens, float $temp): string {
+    $geminiKey = getConfig('gemini_api_key') ?: '';
+    if ($geminiKey) {
+        $resposta = geminiCall($prompt, $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash', $maxTokens, $temp);
+        if (!is_array($resposta) && $resposta !== '') return $resposta;
+    }
+
+    $openaiKey = getConfig('openai_api_key') ?: '';
+    if ($openaiKey) {
+        $resposta = openaiCall($prompt, $openaiKey, getConfig('openai_model') ?: 'gpt-4o-mini', $maxTokens, $temp);
+        if (!is_array($resposta) && $resposta !== '') return $resposta;
+    }
+
+    return '';
 }
 
 /**
@@ -105,12 +142,9 @@ function iaGerarResposta(string $telefone): string {
  * falhar ou não tiver chave — nunca lança, nunca bloqueia o fluxo principal.
  */
 function iaExtrairDados(string $telefone): ?array {
-    $apiKey = getConfig('gemini_api_key') ?: '';
-    if (!$apiKey) return null;
-    $modelo = getConfig('gemini_model') ?: 'gemini-2.5-flash';
-
     $historico = iaMontarHistoricoGemini($telefone, 40);
     if (!$historico) return null;
+    if (!getConfig('gemini_api_key') && !getConfig('openai_api_key')) return null;
 
     $transcript = '';
     foreach ($historico as $h) {
@@ -118,22 +152,20 @@ function iaExtrairDados(string $telefone): ?array {
         $transcript .= "{$quem}: " . $h['parts'][0]['text'] . "\n";
     }
 
-    $resposta = geminiCall(IA_EXTRACAO_PROMPT . $transcript, $apiKey, $modelo, 400, 0.1);
-    if (is_array($resposta)) return null; // erro — resposta seria ['erro' => ...]
+    $resposta = iaChamarComFallback(IA_EXTRACAO_PROMPT . $transcript, 400, 0.1);
+    if ($resposta === '') return null;
 
-    // Gemini às vezes envolve o JSON em ```json ... ``` mesmo pedindo texto puro
-    $limpo = trim(preg_replace('/^```(json)?|```$/m', '', trim($resposta)));
+    // Gemini/GPT às vezes envolvem o JSON em ```json ... ``` mesmo pedindo texto puro
+    $limpo = trim(preg_replace('/^```(json)?|```$/m', '', $resposta));
     $json = json_decode($limpo, true);
     return is_array($json) ? $json : null;
 }
 
 /** Gera um resumo curto da conversa pro consultor (oportunidades.resumo_ia). */
 function iaGerarResumo(string $telefone): string {
-    $apiKey = getConfig('gemini_api_key') ?: '';
-    if (!$apiKey) return '';
-    $modelo = getConfig('gemini_model') ?: 'gemini-2.5-flash';
     $historico = iaMontarHistoricoGemini($telefone, 40);
     if (!$historico) return '';
+    if (!getConfig('gemini_api_key') && !getConfig('openai_api_key')) return '';
 
     $transcript = '';
     foreach ($historico as $h) {
@@ -144,8 +176,7 @@ function iaGerarResumo(string $telefone): string {
     $prompt = "Resuma em até 4 linhas, pra um consultor humano que vai assumir o atendimento, "
         . "o que já foi conversado com esse cliente sobre o veículo e a intenção de venda. "
         . "Seja objetivo, sem repetir a conversa palavra por palavra.\n\nConversa:\n{$transcript}";
-    $resposta = geminiCall($prompt, $apiKey, $modelo, 300, 0.3);
-    return is_array($resposta) ? '' : $resposta;
+    return iaChamarComFallback($prompt, 300, 0.3);
 }
 
 /**
