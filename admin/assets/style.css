@@ -1,0 +1,117 @@
+/* Fastcar CRM — admin, estilo mínimo (sem framework front-end por enquanto) */
+
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f4f5f7;
+    color: #1c1e21;
+}
+a { color: #1a5fb4; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: #1c2b3a;
+    color: #fff;
+}
+.topbar a { color: #cfe0f2; margin-left: auto; }
+.topbar span { color: #b9c4cf; }
+
+.etapas-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 10px 20px;
+    background: #fff;
+    border-bottom: 1px solid #dcdfe3;
+}
+.etapas-nav a {
+    padding: 6px 12px;
+    border-radius: 16px;
+    background: #eef1f4;
+    color: #333;
+    font-size: 13px;
+}
+.etapas-nav a.ativo { background: #1a5fb4; color: #fff; }
+
+main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+
+.tabela-oportunidades, .tabela-mensagens {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.tabela-oportunidades th, .tabela-oportunidades td,
+.tabela-mensagens th, .tabela-mensagens td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    font-size: 14px;
+    vertical-align: top;
+}
+.tabela-oportunidades th { background: #fafbfc; font-size: 12px; text-transform: uppercase; color: #666; }
+.linha-atrasada { background: #fff3f2; }
+.sem-proxima-acao { color: #999; font-style: italic; font-size: 12px; }
+
+.card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.card h2, .card h3 { margin-top: 0; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; background: #eef1f4; }
+.badge-atraso { background: #fbe4e1; color: #a33; }
+.badge-ok { background: #e3f3e6; color: #2a7a3b; }
+
+form.inline { display: inline; }
+label { display: block; font-size: 12px; color: #555; margin-top: 10px; margin-bottom: 4px; }
+input, select, textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccd0d5;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+}
+button {
+    margin-top: 12px;
+    padding: 9px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #1a5fb4;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+}
+button.perigo { background: #c0392b; }
+button:hover { opacity: .92; }
+
+.alerta-erro { padding: 10px 14px; background: #fbe4e1; color: #a33; border-radius: 6px; margin-bottom: 12px; }
+.alerta-sucesso { padding: 10px 14px; background: #e3f3e6; color: #2a7a3b; border-radius: 6px; margin-bottom: 12px; }
+
+.historico-item { border-left: 2px solid #dcdfe3; padding: 4px 0 4px 14px; margin-bottom: 8px; font-size: 13px; }
+.historico-item .quando { color: #888; font-size: 12px; }
+
+.msg { max-width: 70%; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; font-size: 13px; }
+.msg-in { background: #eef1f4; margin-right: auto; }
+.msg-out { background: #dcebff; margin-left: auto; text-align: right; }
+.msg-thread { display: flex; flex-direction: column; }
+
+.login-box {
+    max-width: 360px;
+    margin: 80px auto;
+    background: #fff;
+    padding: 28px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.08);
+}

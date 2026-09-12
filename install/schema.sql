@@ -111,9 +111,14 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
     tipo TEXT DEFAULT 'text',
     arquivo_url TEXT DEFAULT '',
     enviado_por_ia INTEGER DEFAULT 0,   -- 1 = resposta automática da IA, 0 = humano
+    zapi_message_id TEXT DEFAULT '',    -- messageId do Z-API — dedup de webhook reenviado
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_wpp_telefone ON whatsapp_mensagens(telefone, id DESC);
+-- Índice parcial: só exige unicidade quando zapi_message_id foi informado.
+-- Mensagens digitadas manualmente no CRM (sem messageId) não competem entre si.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wpp_zapi_message_id
+    ON whatsapp_mensagens(zapi_message_id) WHERE zapi_message_id != '';
 
 -- "IA deve pausar as respostas automáticas" quando o consultor assume —
 -- esse flag por telefone é o kill-switch, checado no webhook antes de
