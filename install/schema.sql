@@ -116,13 +116,37 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
     arquivo_url TEXT DEFAULT '',
     enviado_por_ia INTEGER DEFAULT 0,   -- 1 = resposta automática da IA, 0 = humano
     zapi_message_id TEXT DEFAULT '',    -- messageId do Z-API — dedup de webhook reenviado
+    -- NULL = veio pela instância principal (funil oficial). Preenchido = veio
+    -- pela instância Z-API própria de um consultor/closer (zapi_instancias_consultores)
+    -- — o telefone do cliente é o mesmo, então a conversa entra no mesmo
+    -- histórico automaticamente; isso só marca QUEM falou por qual canal,
+    -- pra dar pra ver o que cada consultor conversa com o cliente e medir
+    -- volume por pessoa.
+    usuario_id INTEGER REFERENCES usuarios(id),
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_wpp_telefone ON whatsapp_mensagens(telefone, id DESC);
+CREATE INDEX IF NOT EXISTS idx_wpp_usuario ON whatsapp_mensagens(usuario_id, created_at);
 -- Índice parcial: só exige unicidade quando zapi_message_id foi informado.
 -- Mensagens digitadas manualmente no CRM (sem messageId) não competem entre si.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wpp_zapi_message_id
     ON whatsapp_mensagens(zapi_message_id) WHERE zapi_message_id != '';
+
+-- Instância Z-API própria de cada consultor/closer — canal PARALELO ao
+-- funil oficial (que roda todo na instância principal, config.zapi_*):
+-- serve pra capturar o que o consultor conversa com o cliente por fora,
+-- pra dar visibilidade (compliance) e medir volume/produtividade por
+-- pessoa. 1 instância por usuário — normalizar o dado do cliente/telefone
+-- não muda, é o mesmo pipeline de sempre (processarMensagemZapi()).
+CREATE TABLE IF NOT EXISTS zapi_instancias_consultores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL UNIQUE REFERENCES usuarios(id),
+    instance_id TEXT NOT NULL UNIQUE,
+    token TEXT NOT NULL,
+    client_token TEXT DEFAULT '',
+    ativo INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
 
 -- "IA deve pausar as respostas automáticas" quando o consultor assume —
 -- esse flag por telefone é o kill-switch, checado no webhook antes de

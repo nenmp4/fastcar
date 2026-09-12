@@ -22,6 +22,14 @@
  * (chatbot-whatsapp/includes/mensagens.php) — compartilhada com o
  * simulador de conversa (chatbot-whatsapp/simulate.php), pra nunca a
  * lógica real e a de teste divergirem.
+ *
+ * ⚠️ Multi-instância: esta MESMA URL recebe webhook tanto da instância
+ * principal (funil oficial: entrada, qualificação IA, followup) quanto da
+ * instância própria de cada consultor/closer (atendimento a partir do
+ * bloco 5 sempre pelo número dele — decisão do Jean) — configuradas em
+ * admin/configuracoes.php. O Z-API manda `instanceId` no payload; usamos
+ * isso pra descobrir de qual instância veio (zapiIdentificarInstancia())
+ * e validar o client-token correto ANTES de processar qualquer coisa.
  */
 
 define('ROOT', dirname(__DIR__, 2));
@@ -29,6 +37,7 @@ require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
 require_once ROOT . '/includes/oportunidades.php';
+require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
 
 header('Content-Type: application/json');
@@ -54,23 +63,34 @@ if (!is_array($payload)) {
     responderOk(['ignored' => 'invalid_payload']);
 }
 
+// Formato do ReceivedCallback do Z-API:
+// { instanceId, messageId, phone, fromMe, isGroup, momment, senderName,
+//   chatName, text: {message: "..."}, image: {...}, audio: {...}, ... }
+$instancia = zapiIdentificarInstancia((string)($payload['instanceId'] ?? ''));
+
+if ($instancia['tipo'] === 'desconhecida') {
+    // instanceId que não bate nem com a principal nem com nenhum consultor
+    // cadastrado — nunca processa payload de origem que não reconhecemos.
+    log_webhook('instanceId desconhecido, rejeitando webhook: ' . (string)($payload['instanceId'] ?? ''));
+    http_response_code(401);
+    responderOk(['ignored' => 'unknown_instance']);
+}
+
 // client-token: Z-API devolve no header o mesmo token configurado na
-// instância. Só valida se já tiver instância configurada — em fase de
-// setup (sem credencial real ainda), deixa passar pra não travar teste.
-$clientTokenEsperado = getConfig('zapi_client_token');
-if ($clientTokenEsperado) {
+// instância que originou o evento (principal ou de um consultor — cada
+// uma tem o seu). Só valida se essa instância já tiver client_token
+// configurado — em fase de setup (sem credencial real ainda), deixa
+// passar pra não travar teste.
+if ($instancia['client_token']) {
     $recebido = $_SERVER['HTTP_CLIENT_TOKEN'] ?? '';
-    if (!hash_equals($clientTokenEsperado, $recebido)) {
+    if (!hash_equals($instancia['client_token'], $recebido)) {
         log_webhook('client-token inválido no header, ignorando webhook.');
         http_response_code(401);
         responderOk(['ignored' => 'invalid_token']);
     }
 }
 
-// Formato do ReceivedCallback do Z-API:
-// { messageId, phone, fromMe, isGroup, momment, senderName, chatName,
-//   text: {message: "..."}, image: {...}, audio: {...}, ... }
-$resultado = processarMensagemZapi($payload);
+$resultado = processarMensagemZapi($payload, $instancia);
 
 if ($resultado['ignored'] === 'no_phone') {
     log_webhook('Webhook sem phone, ignorando. Payload: ' . substr($raw, 0, 300));

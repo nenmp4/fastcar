@@ -49,6 +49,19 @@ function requireAdmin(): void {
 }
 
 /**
+ * Trava de permissão pra área restrita ao super_admin (Jean) — ex:
+ * configurações de API, que dão acesso a credenciais sensíveis (Z-API) e
+ * não devem ficar visíveis pra consultor/closer. Chamar DEPOIS de
+ * requireAdmin() (assume que já tem sessão logada).
+ */
+function requireSuperAdmin(): void {
+    if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
+        http_response_code(403);
+        exit('Acesso restrito ao super_admin.');
+    }
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra

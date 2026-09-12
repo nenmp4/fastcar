@@ -8,6 +8,7 @@
 require_once dirname(__DIR__, 2) . '/includes/db.php';
 require_once dirname(__DIR__, 2) . '/includes/security.php';
 require_once dirname(__DIR__, 2) . '/includes/oportunidades.php';
+require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
 
 /**
  * Já processamos esse messageId antes? Checagem antecipada pra dedup de
@@ -57,7 +58,8 @@ function registrarMensagem(
     string $mensagem,
     ?string $zapiMessageId = null,
     bool $enviadoPorIa = false,
-    string $tipo = 'text'
+    string $tipo = 'text',
+    ?int $usuarioId = null
 ): void {
     $db = getDB();
     $telNorm = normalizarTelefone($telefone);
@@ -68,8 +70,8 @@ function registrarMensagem(
 
     $db->prepare("
         INSERT OR IGNORE INTO whatsapp_mensagens
-            (telefone, cliente_id, direcao, mensagem, tipo, enviado_por_ia, zapi_message_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            (telefone, cliente_id, direcao, mensagem, tipo, enviado_por_ia, zapi_message_id, usuario_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
     ")->execute([
         $telNorm,
         $clienteId !== false ? (int)$clienteId : null,
@@ -78,6 +80,7 @@ function registrarMensagem(
         $tipo,
         $enviadoPorIa ? 1 : 0,
         $zapiMessageId ?: '',
+        $usuarioId,
     ]);
 }
 
@@ -121,16 +124,28 @@ function retomarIA(string $telefone): void {
  * Não faz nada HTTP-específico (não loga em arquivo, não decide status
  * code) — quem chama decide o que fazer com o retorno.
  *
+ * Aceita payload de QUALQUER instância — a principal (funil oficial:
+ * entrada, qualificação IA, followup) ou a de um consultor/closer
+ * (conversa paralela, capturada só pra visibilidade/produtividade). O
+ * telefone do cliente é sempre a chave que junta tudo na mesma conversa;
+ * $instancia (se não informado, resolvido a partir de payload.instanceId)
+ * só marca QUEM trouxe cada mensagem.
+ *
  * Retorno:
  *   ignored: null|'no_phone'|'from_me'|'group'|'duplicate'
  *   telefone, texto, tipo: dados da mensagem processada (null se ignorada)
  *   ia_pausada: bool — true = humano assumiu, nenhuma resposta automática
  *   oportunidade: ['cliente_id','oportunidade_id','nova'] | null
  *   erro_oportunidade: string|null — erro ao criar/abrir oportunidade, se houve
+ *   instancia: ['tipo' => 'principal'|'consultor'|'desconhecida', 'usuario_id' => ?int]
  */
-function processarMensagemZapi(array $payload): array {
+function processarMensagemZapi(array $payload, ?array $instancia = null): array {
+    $instancia ??= zapiIdentificarInstancia((string)($payload['instanceId'] ?? ''));
+    $usuarioId = $instancia['usuario_id'] ?? null;
+
     $vazio = ['ignored' => null, 'telefone' => '', 'texto' => null, 'tipo' => null,
-              'ia_pausada' => false, 'oportunidade' => null, 'erro_oportunidade' => null];
+              'ia_pausada' => false, 'oportunidade' => null, 'erro_oportunidade' => null,
+              'instancia' => $instancia];
 
     $messageId = (string)($payload['messageId'] ?? $payload['id'] ?? '');
     $phone     = (string)($payload['phone'] ?? '');
@@ -145,7 +160,7 @@ function processarMensagemZapi(array $payload): array {
         // Registrado no histórico (consultor pode ter respondido manualmente
         // pelo próprio WhatsApp/app oficial, fora do nosso código), mas não
         // é "entrada" — não roda lógica de bot/oportunidade em cima.
-        registrarMensagem($phone, 'out', extrairTexto($payload) ?? '[' . tipoMidia($payload) . ']', $messageId ?: null, false);
+        registrarMensagem($phone, 'out', extrairTexto($payload) ?? '[' . tipoMidia($payload) . ']', $messageId ?: null, false, 'text', $usuarioId);
         return ['ignored' => 'from_me', 'telefone' => $phone, 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
 
@@ -164,10 +179,12 @@ function processarMensagemZapi(array $payload): array {
         $texto = '[' . $tipoRegistro . ']'; // marcador — mantém a mensagem no histórico mesmo sem interpretar o conteúdo
     }
 
-    registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro);
+    registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro, $usuarioId);
 
     // Cria/abre a oportunidade desde o 1º contato (regra #2) — nunca esperar
-    // a qualificação terminar pra existir registro.
+    // a qualificação terminar pra existir registro. Idempotente: se já
+    // existe oportunidade ativa (ex: cliente já em atendimento com um
+    // consultor), só reaproveita — vale pra mensagem vinda de qualquer instância.
     $nomeContato = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
     $oportunidade = null;
     $erroOportunidade = null;
@@ -185,5 +202,6 @@ function processarMensagemZapi(array $payload): array {
         'ia_pausada' => iaPausada($phone),
         'oportunidade' => $oportunidade,
         'erro_oportunidade' => $erroOportunidade,
+        'instancia' => $instancia,
     ];
 }

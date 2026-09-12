@@ -20,7 +20,11 @@
  * cliente):
  *   /nome <nome>        muda o nome do contato simulado
  *   /tel <telefone>     muda o telefone simulado
- *   /consultor <msg>    simula o consultor respondendo manualmente (fromMe)
+ *   /instancia <id>     simula mensagens vindas da instância de um consultor
+ *                       (id igual ao cadastrado em admin/configuracoes.php);
+ *                       sem argumento volta pra instância principal
+ *   /consultor <msg>    simula o consultor respondendo manualmente (fromMe),
+ *                       pela instância ativa no momento (ver /instancia)
  *   /pausar             simula o consultor assumindo a conversa (pausa a IA)
  *   /retomar            devolve a conversa pra IA
  *   /grupo <msg>        simula mensagem de grupo (deve ser ignorada)
@@ -41,17 +45,30 @@ require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
 require_once ROOT . '/includes/oportunidades.php';
+require_once ROOT . '/includes/usuarios.php';
+require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
 
 $telefone = $argv[1] ?? '5531999990000';
 $nome     = $argv[2] ?? 'Cliente Simulado';
 $ultimoMessageId = null;
+$instanciaAtual = ''; // '' = instância principal
 
 function novoMessageId(): string {
     return 'SIM-' . bin2hex(random_bytes(4));
 }
 
+function descreverInstancia(array $instancia): string {
+    if ($instancia['tipo'] === 'principal') return 'instância principal';
+    if ($instancia['tipo'] === 'consultor') {
+        $u = $instancia['usuario_id'] ? buscarUsuario($instancia['usuario_id']) : null;
+        return 'instância do consultor: ' . ($u['nome'] ?? "usuário #{$instancia['usuario_id']}");
+    }
+    return 'instância desconhecida (não cadastrada em admin/configuracoes.php)';
+}
+
 function mostrarResultado(array $r): void {
+    echo '   📡 via ' . descreverInstancia($r['instancia']) . "\n";
     if ($r['ignored']) {
         echo "   ⏭️  ignorado: {$r['ignored']}\n";
         return;
@@ -148,6 +165,16 @@ while (true) {
                 echo "   telefone simulado agora é: {$telefone}\n";
                 continue 2;
 
+            case '/instancia':
+                $instanciaAtual = $arg;
+                if ($instanciaAtual === '') {
+                    echo "   📡 voltou pra instância principal.\n";
+                } else {
+                    $info = zapiIdentificarInstancia($instanciaAtual);
+                    echo '   📡 simulando a partir de: ' . descreverInstancia($info) . "\n";
+                }
+                continue 2;
+
             case '/status':
                 mostrarStatus($telefone);
                 continue 2;
@@ -167,12 +194,14 @@ while (true) {
                 continue 2;
 
             case '/consultor':
-                registrarMensagem($telefone, 'out', $arg, novoMessageId(), false);
-                echo "   💬 consultor> {$arg} (registrado como 'out')\n";
+                $infoConsultor = zapiIdentificarInstancia($instanciaAtual);
+                registrarMensagem($telefone, 'out', $arg, novoMessageId(), false, 'text', $infoConsultor['usuario_id']);
+                echo "   💬 consultor> {$arg} (registrado como 'out', via " . descreverInstancia($infoConsultor) . ")\n";
                 continue 2;
 
             case '/grupo':
                 mostrarResultado(processarMensagemZapi([
+                    'instanceId' => $instanciaAtual,
                     'messageId' => novoMessageId(),
                     'phone' => $telefone . '-group',
                     'isGroup' => true,
@@ -183,6 +212,7 @@ while (true) {
             case '/midia':
                 $tipo = $arg ?: 'image';
                 mostrarResultado(processarMensagemZapi([
+                    'instanceId' => $instanciaAtual,
                     'messageId' => novoMessageId(),
                     'phone' => $telefone,
                     'senderName' => $nome,
@@ -196,6 +226,7 @@ while (true) {
                     continue 2;
                 }
                 mostrarResultado(processarMensagemZapi([
+                    'instanceId' => $instanciaAtual,
                     'messageId' => $ultimoMessageId,
                     'phone' => $telefone,
                     'senderName' => $nome,
@@ -212,6 +243,7 @@ while (true) {
     $id = novoMessageId();
     $ultimoMessageId = $id;
     mostrarResultado(processarMensagemZapi([
+        'instanceId' => $instanciaAtual,
         'messageId' => $id,
         'phone' => $telefone,
         'senderName' => $nome,

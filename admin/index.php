@@ -53,6 +53,10 @@ $agora = date('Y-m-d H:i:s');
 <header class="topbar">
     <strong>🚗 Fastcar CRM</strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?> (<?= e($_SESSION['admin_perfil']) ?>)</span>
+    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+        <a href="/admin/produtividade.php">📊 Produtividade</a>
+        <a href="/admin/configuracoes.php">⚙️ Configurações</a>
+    <?php endif; ?>
     <a href="/admin/logout.php">Sair</a>
 </header>
 

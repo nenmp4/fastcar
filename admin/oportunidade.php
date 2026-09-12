@@ -100,7 +100,15 @@ $stmtHist = $db->prepare("
 $stmtHist->execute([$id]);
 $historico = $stmtHist->fetchAll();
 
-$stmtMsg = $db->prepare("SELECT * FROM whatsapp_mensagens WHERE telefone = ? ORDER BY id DESC LIMIT 50");
+// LEFT JOIN usuarios pra mostrar por qual canal cada mensagem passou —
+// NULL = instância principal (bot/IA/followup), preenchido = instância
+// própria de um consultor/closer (atendimento, sempre a partir do bloco 5).
+$stmtMsg = $db->prepare("
+    SELECT m.*, u.nome AS usuario_nome
+    FROM whatsapp_mensagens m
+    LEFT JOIN usuarios u ON u.id = m.usuario_id
+    WHERE m.telefone = ? ORDER BY m.id DESC LIMIT 50
+");
 $stmtMsg->execute([$op['cliente_telefone']]);
 $mensagens = array_reverse($stmtMsg->fetchAll());
 
@@ -122,6 +130,10 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong>🚗 Fastcar CRM</strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
+    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+        <a href="/admin/produtividade.php">📊 Produtividade</a>
+        <a href="/admin/configuracoes.php">⚙️ Configurações</a>
+    <?php endif; ?>
     <a href="/admin/logout.php">Sair</a>
 </header>
 
@@ -285,7 +297,11 @@ $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s
         <?php foreach ($mensagens as $m): ?>
             <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>">
                 <?= e($m['mensagem']) ?>
-                <br><small><?= date('d/m H:i', strtotime($m['created_at'])) ?><?= $m['enviado_por_ia'] ? ' · 🤖 IA' : '' ?></small>
+                <br><small>
+                    <?= date('d/m H:i', strtotime($m['created_at'])) ?>
+                    <?= $m['enviado_por_ia'] ? ' · 🤖 IA' : '' ?>
+                    · <?= $m['usuario_nome'] ? '👤 ' . e($m['usuario_nome']) : 'canal principal' ?>
+                </small>
             </div>
         <?php endforeach; ?>
     </div>
