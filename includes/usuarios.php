@@ -41,9 +41,27 @@ function autenticar(string $email, string $senha): ?array {
     return $u;
 }
 
-function criarUsuario(string $nome, string $email, string $senha, string $perfil = 'consultor'): int {
+function criarUsuario(string $nome, string $email, string $senha, string $perfil = 'consultor', string $whatsapp = ''): int {
     $db = getDB();
-    $db->prepare("INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES (?, ?, ?, ?)")
-       ->execute([clean($nome), trim(strtolower($email)), password_hash($senha, PASSWORD_DEFAULT), $perfil]);
+    $db->prepare("INSERT INTO usuarios (nome, email, senha_hash, perfil, whatsapp) VALUES (?, ?, ?, ?, ?)")
+       ->execute([clean($nome), trim(strtolower($email)), password_hash($senha, PASSWORD_DEFAULT), $perfil, clean($whatsapp)]);
     return (int)$db->lastInsertId();
+}
+
+/**
+ * Edita um usuário existente — NUNCA mexe em `perfil` pra 'super_admin'
+ * nem tira de 'super_admin' por aqui (só o CLI install/create_admin.php
+ * cria super_admin; admin/usuarios.php só deixa editar closer/consultor,
+ * mesma decisão de segurança de não ter tela de "criar admin" no painel).
+ */
+function atualizarUsuario(int $id, string $nome, string $email, string $whatsapp, string $perfil, bool $bloqueado): void {
+    $db = getDB();
+    $db->prepare("UPDATE usuarios SET nome = ?, email = ?, whatsapp = ?, perfil = ?, bloqueado = ? WHERE id = ?")
+       ->execute([clean($nome), trim(strtolower($email)), clean($whatsapp), $perfil, $bloqueado ? 1 : 0, $id]);
+}
+
+function redefinirSenhaUsuario(int $id, string $novaSenha): void {
+    $db = getDB();
+    $db->prepare("UPDATE usuarios SET senha_hash = ? WHERE id = ?")
+       ->execute([password_hash($novaSenha, PASSWORD_DEFAULT), $id]);
 }

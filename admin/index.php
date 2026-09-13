@@ -68,6 +68,7 @@ $agora = date('Y-m-d H:i:s');
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
+        <a href="/admin/usuarios.php">👤 Usuários</a>
         <a href="/admin/backup.php">💾 Backup</a>
         <a href="/admin/configuracoes.php">⚙️ Configurações</a>
     <?php endif; ?>
