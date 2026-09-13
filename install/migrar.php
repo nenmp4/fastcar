@@ -29,6 +29,14 @@ $migracoes = [
     'oportunidades.testemunha1_cpf'  => "ALTER TABLE oportunidades ADD COLUMN testemunha1_cpf TEXT DEFAULT ''",
     'oportunidades.testemunha2_nome' => "ALTER TABLE oportunidades ADD COLUMN testemunha2_nome TEXT DEFAULT ''",
     'oportunidades.testemunha2_cpf'  => "ALTER TABLE oportunidades ADD COLUMN testemunha2_cpf TEXT DEFAULT ''",
+
+    // 09/2026 — qualificação por IA mais completa (urgência, temperatura do
+    // lead, confirmação de ligação, e o contador de turnos sem avanço que
+    // decide quando escalar pro consultor humano)
+    'oportunidades.urgencia'                  => "ALTER TABLE oportunidades ADD COLUMN urgencia TEXT DEFAULT ''",
+    'oportunidades.temperatura_lead'          => "ALTER TABLE oportunidades ADD COLUMN temperatura_lead TEXT DEFAULT ''",
+    'oportunidades.aceita_ligacao_consultor'  => "ALTER TABLE oportunidades ADD COLUMN aceita_ligacao_consultor INTEGER",
+    'whatsapp_sessoes.turnos_sem_avanco'      => "ALTER TABLE whatsapp_sessoes ADD COLUMN turnos_sem_avanco INTEGER DEFAULT 0",
 ];
 
 foreach ($migracoes as $nome => $sql) {

@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     parcelas_atraso INTEGER DEFAULT 0,
     valor_pretendido REAL,             -- quanto o cliente quer pelo veículo
     resumo_ia TEXT DEFAULT '',         -- resumo da conversa gerado pela IA pro consultor
+    urgencia TEXT DEFAULT '',          -- percepção da IA: precisa vender rápido ou pode esperar (texto livre, nunca inventado)
+    temperatura_lead TEXT DEFAULT '' CHECK (temperatura_lead IN ('', 'frio', 'morno', 'quente')),
+    aceita_ligacao_consultor INTEGER,  -- NULL = ainda não perguntado; 1/0 = cliente topou/recusou receber ligação
 
     -- Dados do financiamento pro contrato-mestre de compra
     -- (includes/contratos.php) — nunca preenchidos automaticamente, o
@@ -200,6 +203,11 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessoes (
     etapa_bot TEXT DEFAULT 'inicio',
     ia_pausada INTEGER DEFAULT 0,
     extras TEXT DEFAULT '{}',           -- JSON — estado efêmero da conversa
+    -- Turnos seguidos de qualificação sem NENHUM dado novo extraído — reseta
+    -- a cada turno que avança algo; ao bater o limite (includes/ia_qualificacao.php),
+    -- passa pro consultor humano em vez de ficar girando a conversa à toa
+    -- (lead "só de bate-papo" ou que esfriou por desconfiar que é bot).
+    turnos_sem_avanco INTEGER DEFAULT 0,
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 

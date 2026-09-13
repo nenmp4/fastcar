@@ -123,6 +123,51 @@ function geminiCallChat(
     return '';
 }
 
+/**
+ * Chama Gemini com ÁUDIO ou IMAGEM inline (base64) + um prompt de texto —
+ * usado pra transcrever áudio de voz e descrever foto do veículo recebidos
+ * no WhatsApp (chatbot-whatsapp/includes/mensagens.php). Mesmo padrão de
+ * fallback de modelo do geminiCall(); sem chave ou qualquer falha, retorna
+ * '' — quem chama trata como "não deu pra processar essa mídia agora",
+ * nunca derruba o webhook.
+ */
+function geminiCallComMidia(
+    string $prompt, string $mimeType, string $dadosBase64,
+    string $key, string $model = 'gemini-2.5-flash-lite',
+    int $maxTokens = 300, float $temp = 0.2, int $timeout = 30
+): string {
+    if (!$key || !$dadosBase64) return '';
+
+    $modelos = array_unique([geminiModeloValido($model), 'gemini-2.5-flash-lite', 'gemini-2.5-flash']);
+
+    foreach ($modelos as $m) {
+        $url = geminiBaseUrl() . '/models/' . $m . ':generateContent?key=' . $key;
+        $genCfg = ['temperature' => $temp, 'maxOutputTokens' => $maxTokens];
+        if (preg_match('/-(2\.5|[3-9])/', $m)) {
+            $genCfg['thinkingConfig'] = ['thinkingBudget' => 0];
+        }
+        $body = json_encode([
+            'contents' => [['parts' => [
+                ['inlineData' => ['mimeType' => $mimeType, 'data' => $dadosBase64]],
+                ['text' => $prompt],
+            ]]],
+            'generationConfig' => $genCfg,
+        ]);
+
+        [$http, $data, $err] = geminiPost($url, $body, $timeout);
+        if ($err) continue;
+
+        if ($http === 200) {
+            $text = geminiExtrairTexto($data);
+            if ($text !== '') {
+                geminiRegistrarTokens($data['usageMetadata'] ?? []);
+                return $text;
+            }
+        }
+    }
+    return '';
+}
+
 /** POST cru pra API Gemini — devolve [http_code, data_decodificado, erro_curl]. */
 function geminiPost(string $url, string $body, int $timeout): array {
     $ch = curl_init($url);

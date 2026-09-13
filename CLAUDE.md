@@ -120,7 +120,36 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   (`usuarios.plantao_fim_expediente`)
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
-  como fallback (ver pendência #3)
+  como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
+  tom natural de WhatsApp (varia a forma de escrever, reage ao que a pessoa
+  disse) — saudação de abertura já pergunta o nome, avisa em 1 frase curta
+  que os dados são usados só pra avaliar a proposta (LGPD), pede foto do
+  veículo perto do fim sem insistir, e só marca `qualificacao_completa` depois
+  de recapitular o que entendeu e o cliente confirmar se aceita a ligação do
+  consultor (`oportunidades.aceita_ligacao_consultor`, NULL até ser
+  perguntado — 0/recusou é resposta válida, não "vazio"). Além dos campos
+  originais, coleta `urgencia` (texto livre — precisa vender rápido ou pode
+  esperar) e `temperatura_lead` (`frio`/`morno`/`quente` — leitura da própria
+  IA sobre o engajamento da conversa até ali, reavaliada a cada turno; de
+  propósito NÃO conta como "avanço real" pro contador de estagnação, senão
+  o contador nunca dispararia). `whatsapp_sessoes.turnos_sem_avanco`
+  incrementa a cada turno que não extraiu nenhum dado novo de verdade e
+  reseta quando extrai; ao chegar em `IA_LIMITE_TURNOS_SEM_AVANCO` (5)
+  turnos seguidos sem avanço, escala automaticamente pro consultor humano
+  (`mudarEtapa()` pra `crm_preenchido`, resumo marcado com o motivo) em vez
+  de deixar a IA girando à toa com quem só quer bater papo ou desconfiou
+  que é bot. `resumo_ia` sai em formato checklist (✅ confirmado / ⚠️ falta
+  confirmar) pro consultor entender rápido o que já foi coberto. Áudio e
+  imagem recebidos no WhatsApp entram no fluxo normalmente: áudio é
+  transcrito e imagem é descrita via Gemini multimodal
+  (`geminiCallComMidia()`, `inlineData` base64) e o texto resultante alimenta
+  a qualificação como se fosse mensagem digitada (salvo em
+  `whatsapp_mensagens` com `tipo='text'` e prefixo 🎤/📷, pra não precisar
+  tocar em mais nada que já filtra por `tipo='text'`); vídeo, figurinha,
+  documento, localização, contato — ou áudio/imagem que falhou o
+  processamento — recebem uma resposta de reconhecimento simples
+  (`chatbot-whatsapp/includes/mensagens.php`) em vez de deixar o lead sem
+  resposta nenhuma.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
@@ -353,6 +382,12 @@ testado com servidor fake local — nunca contra o serviço real:
 - **Formato do payload do webhook Z-API** — `messageId`, `phone`, `fromMe`,
   `isGroup`, `text.message`, `instanceId` — construído pelo padrão do
   JurídicoSaaS, nunca confirmado contra uma instância Z-API de verdade.
+- **URL de download de áudio/imagem no payload Z-API** —
+  `extrairUrlMidia()` (`chatbot-whatsapp/includes/mensagens.php`) tenta os
+  nomes de campo mais prováveis (`audioUrl`/`imageUrl`, `url`, `mediaUrl`,
+  `link`) dentro do bloco `audio`/`image` do payload, mas o nome exato nunca
+  foi confirmado contra uma instância real — só testado com servidor fake
+  local simulando essas variações.
 - **Campo `referral` do clique em anúncio Meta Ads** — `extrairOrigemAnuncio()`
   aceita tanto `referral` solto quanto `message.referral`, mas o nome/formato
   exato dos campos (`source_id`, `headline`, `ctwa_clid`) só dá pra confirmar

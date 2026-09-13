@@ -78,6 +78,57 @@ function tipoMidia(array $payload): string {
 }
 
 /**
+ * URL de download de áudio/imagem no payload — nome exato do campo ainda
+ * não confirmado contra uma instância Z-API real (mesma ressalva do resto
+ * do payload, CLAUDE.md → "a validar em produção"), por isso tenta as
+ * variações mais prováveis em vez de travar num nome só.
+ */
+function extrairUrlMidia(array $payload, string $tipo): ?string {
+    $bloco = $payload[$tipo] ?? null;
+    if (!is_array($bloco)) return null;
+    foreach (["{$tipo}Url", 'url', 'mediaUrl', 'link'] as $campo) {
+        if (!empty($bloco[$campo])) return (string)$bloco[$campo];
+    }
+    return null;
+}
+
+/** mimeType declarado no payload da mídia, com fallback razoável por tipo. */
+function mimeMidia(array $payload, string $tipo, string $default): string {
+    $bloco = $payload[$tipo] ?? [];
+    return (string)($bloco['mimeType'] ?? $default);
+}
+
+/**
+ * Baixa áudio/imagem e pede pro Gemini transcrever (áudio) ou descrever
+ * (imagem) — retorna o texto resultante, ou '' se não deu por qualquer
+ * motivo (sem URL, download falhou, sem chave Gemini configurada). Nunca
+ * lança: mídia é sempre melhor esforço, mesmo espírito de enviarEmail()/
+ * geminiRegistrarTokens() — se falhar, quem chama trata como mídia não
+ * processada (cai no reconhecimento simples em vez de travar o webhook).
+ */
+function processarMidiaComGemini(string $url, string $mimeType, string $tipo): string {
+    try {
+        $geminiKey = getConfig('gemini_api_key') ?: '';
+        if (!$geminiKey || !$url) return '';
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20]);
+        $conteudo = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($http !== 200 || !$conteudo) return '';
+
+        $prompt = $tipo === 'audio'
+            ? 'Transcreva literalmente o que a pessoa fala neste áudio, em português do Brasil. Responda só com a transcrição, sem comentário nenhum antes ou depois.'
+            : 'Descreva em 1-2 frases curtas o veículo nesta foto (marca/modelo se der pra identificar, cor, estado aparente de conservação). Se a imagem não for de um veículo, diga em poucas palavras o que é. Responda em português, direto, sem introdução tipo "a imagem mostra".';
+
+        return geminiCallComMidia($prompt, $mimeType, base64_encode($conteudo), $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash-lite');
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+/**
  * Salva uma mensagem no histórico (regra #2 do CLAUDE.md: salva desde o
  * 1º contato, mesmo sem cliente/oportunidade qualificados ainda).
  * INSERT OR IGNORE porque zapi_message_id tem índice único (parcial) —
@@ -206,8 +257,28 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     $texto = extrairTexto($payload);
     $tipoRegistro = 'text';
     if ($texto === null) {
-        $tipoRegistro = tipoMidia($payload);
-        $texto = '[' . $tipoRegistro . ']'; // marcador — mantém a mensagem no histórico mesmo sem interpretar o conteúdo
+        $tipoBruto = tipoMidia($payload);
+        $textoMidia = '';
+        if (in_array($tipoBruto, ['audio', 'image'], true)) {
+            $url = extrairUrlMidia($payload, $tipoBruto);
+            if ($url) {
+                $mime = mimeMidia($payload, $tipoBruto, $tipoBruto === 'audio' ? 'audio/ogg' : 'image/jpeg');
+                $textoMidia = processarMidiaComGemini($url, $mime, $tipoBruto);
+            }
+        }
+        if ($textoMidia !== '') {
+            // Processado com sucesso (transcrito/descrito) — entra no histórico
+            // já como texto, prefixo só pra quem olhar a conversa saber que
+            // veio de mídia. tipoRegistro='text' de propósito: assim
+            // iaMontarHistoricoGemini() (que só lê tipo='text') e o gatilho de
+            // qualificação abaixo tratam igual a uma mensagem digitada.
+            $texto = ($tipoBruto === 'audio' ? '🎤 ' : '📷 ') . $textoMidia;
+        } else {
+            // Sem URL, download falhou, ou sem chave Gemini — marcador comum,
+            // mantém a mensagem no histórico mesmo sem interpretar o conteúdo.
+            $tipoRegistro = $tipoBruto;
+            $texto = '[' . $tipoRegistro . ']';
+        }
     }
 
     registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro, $usuarioId);
@@ -231,26 +302,37 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
     // Qualificação por IA (bloco 3, pendência #3 resolvida) — só roda pela
     // instância principal (nunca sobre uma conversa que já é de um
-    // consultor), só com IA não pausada, só em texto de verdade (não em
-    // marcador de mídia) e só enquanto a oportunidade ainda está nos
-    // blocos 2/3 do funil. iaProcessarTurno() nunca lança — falha de rede/
-    // API não pode derrubar o webhook, só significa "IA não respondeu
-    // dessa vez", igual quando não tem chave configurada ainda.
-    if ($oportunidade && !$ia_pausada && $instancia['tipo'] === 'principal' && $tipoRegistro === 'text') {
+    // consultor), só com IA não pausada, e só enquanto a oportunidade ainda
+    // está nos blocos 2/3 do funil. iaProcessarTurno() nunca lança — falha
+    // de rede/API não pode derrubar o webhook, só significa "IA não
+    // respondeu dessa vez", igual quando não tem chave configurada ainda.
+    if ($oportunidade && !$ia_pausada && $instancia['tipo'] === 'principal') {
         $db = getDB();
         $stmtEtapa = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
         $stmtEtapa->execute([$oportunidade['oportunidade_id']]);
         $etapaAtual = $stmtEtapa->fetchColumn();
 
         if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
-            if ($etapaAtual === 'whatsapp') {
-                mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
-            }
-            try {
-                $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone);
-            } catch (Throwable $e) {
-                // Nunca deixa uma falha da IA quebrar o resto do webhook —
-                // mensagem do cliente já está salva, oportunidade já existe.
+            if ($tipoRegistro === 'text') {
+                if ($etapaAtual === 'whatsapp') {
+                    mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
+                }
+                try {
+                    $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone);
+                } catch (Throwable $e) {
+                    // Nunca deixa uma falha da IA quebrar o resto do webhook —
+                    // mensagem do cliente já está salva, oportunidade já existe.
+                }
+            } else {
+                // Mídia que não deu pra processar (vídeo, figurinha, documento,
+                // localização, contato, ou áudio/imagem que falhou) — nunca
+                // deixa o lead sem resposta nenhuma (achado real: bot ficava
+                // mudo se a 1ª mensagem fosse um áudio), só não roda extração
+                // de dados em cima de algo que não conseguimos interpretar.
+                $textoAck = 'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?';
+                if (zapiEnviarTexto($phone, $textoAck)) {
+                    registrarMensagem($phone, 'out', $textoAck, null, true);
+                }
             }
         }
     }
