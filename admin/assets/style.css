@@ -107,6 +107,36 @@ button:hover { opacity: .92; }
 .msg-out { background: #dcebff; margin-left: auto; text-align: right; }
 .msg-thread { display: flex; flex-direction: column; }
 
+/* Dashboard por perfil — cards de KPI + funil em barra, sem lib de gráfico
+   (mesma restrição do projeto todo: PHP puro, sem build step). */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    border-left: 4px solid #1a5fb4;
+}
+.stat-card .valor { font-size: 26px; font-weight: 700; color: #1c1e21; line-height: 1.2; }
+.stat-card .rotulo { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: .02em; margin-top: 2px; }
+.stat-card.alerta { border-left-color: #c0392b; }
+.stat-card.alerta .valor { color: #a33; }
+.stat-card.sucesso { border-left-color: #2a7a3b; }
+.stat-card.sucesso .valor { color: #2a7a3b; }
+.stat-card.neutro { border-left-color: #8a8f98; }
+
+.funil-barra { margin: 10px 0; }
+.funil-linha { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 13px; }
+.funil-linha .etapa-nome { width: 140px; flex-shrink: 0; color: #444; }
+.funil-linha .barra-fundo { flex: 1; background: #eef1f4; border-radius: 6px; height: 18px; overflow: hidden; }
+.funil-linha .barra-preenchida { background: #1a5fb4; height: 100%; border-radius: 6px 0 0 6px; min-width: 2px; }
+.funil-linha .qtd { width: 30px; text-align: right; color: #666; flex-shrink: 0; }
+
 .login-box {
     max-width: 360px;
     margin: 80px auto;

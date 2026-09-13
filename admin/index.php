@@ -7,8 +7,15 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/dashboard.php';
 
 $db = getDB();
+$perfil = $_SESSION['admin_perfil'];
+$meuId = (int)$_SESSION['admin_id'];
+// Consultor e closer só veem as próprias oportunidades no funil — cada um
+// cuida da carteira dele; super_admin vê a empresa inteira (visão geral).
+$souDono = in_array($perfil, ['consultor', 'closer'], true);
+
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $placeholders = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
 
@@ -21,6 +28,10 @@ $sql = "
     WHERE o.etapa IN ({$placeholders})
 ";
 $params = ETAPAS_ATIVAS;
+if ($souDono) {
+    $sql .= " AND o.responsavel_id = ?";
+    $params[] = $meuId;
+}
 if ($etapaFiltro && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
     $sql .= " AND o.etapa = ?";
     $params[] = $etapaFiltro;
@@ -31,15 +42,28 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $oportunidades = $stmt->fetchAll();
 
-$stmtContagem = $db->prepare("
-    SELECT etapa, COUNT(*) AS total FROM oportunidades
-    WHERE etapa IN ({$placeholders}) GROUP BY etapa
-");
-$stmtContagem->execute(ETAPAS_ATIVAS);
+$sqlContagem = "SELECT etapa, COUNT(*) AS total FROM oportunidades WHERE etapa IN ({$placeholders})";
+$paramsContagem = ETAPAS_ATIVAS;
+if ($souDono) {
+    $sqlContagem .= " AND responsavel_id = ?";
+    $paramsContagem[] = $meuId;
+}
+$sqlContagem .= " GROUP BY etapa";
+$stmtContagem = $db->prepare($sqlContagem);
+$stmtContagem->execute($paramsContagem);
 $contagemPorEtapa = array_column($stmtContagem->fetchAll(), 'total', 'etapa');
 $totalAtivas = array_sum($contagemPorEtapa);
 
+$stats = match ($perfil) {
+    'consultor'   => dashboardConsultor($meuId),
+    'closer'      => dashboardCloser($meuId),
+    'super_admin' => dashboardSuperAdmin(),
+    default       => [],
+};
+
 $agora = date('Y-m-d H:i:s');
+
+function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.'); }
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -76,7 +100,7 @@ $agora = date('Y-m-d H:i:s');
 </header>
 
 <nav class="etapas-nav">
-    <a href="/admin/index.php" class="<?= $etapaFiltro === '' ? 'ativo' : '' ?>">Todas (<?= (int)$totalAtivas ?>)</a>
+    <a href="/admin/index.php" class="<?= $etapaFiltro === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
     <?php foreach (ETAPAS_ATIVAS as $et): ?>
         <a href="/admin/index.php?etapa=<?= urlencode($et) ?>" class="<?= $etapaFiltro === $et ? 'ativo' : '' ?>">
             <?= e(etapaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
@@ -85,6 +109,96 @@ $agora = date('Y-m-d H:i:s');
 </nav>
 
 <main>
+
+<?php if ($perfil === 'consultor'): ?>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="valor"><?= (int)$stats['ativas'] ?></div>
+            <div class="rotulo">Minhas oportunidades ativas</div>
+        </div>
+        <div class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>">
+            <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
+            <div class="rotulo">Atrasadas</div>
+        </div>
+        <div class="stat-card neutro">
+            <div class="valor"><?= (int)$stats['recebidas_semana'] ?></div>
+            <div class="rotulo">Recebidas nos últimos 7 dias</div>
+        </div>
+        <div class="stat-card <?= $stats['disponivel'] ? 'sucesso' : 'neutro' ?>">
+            <div class="valor"><?= $stats['disponivel'] ? '🟢' : '⚪' ?></div>
+            <div class="rotulo"><?= $stats['disponivel'] ? 'Disponível pra fila' : ($stats['plantao'] ? 'Offline (plantão)' : 'Offline') ?></div>
+        </div>
+    </div>
+<?php elseif ($perfil === 'closer'): ?>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="valor"><?= (int)$stats['em_negociacao'] ?></div>
+            <div class="rotulo">Em negociação/presencial</div>
+        </div>
+        <div class="stat-card neutro">
+            <div class="valor"><?= moeda($stats['valor_em_negociacao']) ?></div>
+            <div class="rotulo">Valor em negociação</div>
+        </div>
+        <div class="stat-card sucesso">
+            <div class="valor"><?= (int)$stats['fechadas_mes'] ?></div>
+            <div class="rotulo">Fechadas este mês</div>
+        </div>
+        <div class="stat-card sucesso">
+            <div class="valor"><?= moeda($stats['valor_fechado_mes']) ?></div>
+            <div class="rotulo">Valor fechado este mês</div>
+        </div>
+        <div class="stat-card neutro">
+            <div class="valor"><?= $stats['taxa_conversao'] === null ? '—' : $stats['taxa_conversao'] . '%' ?></div>
+            <div class="rotulo">Taxa de conversão</div>
+        </div>
+    </div>
+<?php elseif ($perfil === 'super_admin'): ?>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="valor"><?= (int)$stats['ativas'] ?></div>
+            <div class="rotulo">Oportunidades ativas</div>
+        </div>
+        <div class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>">
+            <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
+            <div class="rotulo">Atrasadas</div>
+        </div>
+        <div class="stat-card neutro">
+            <div class="valor"><?= (int)$stats['novas_hoje'] ?></div>
+            <div class="rotulo">Leads novos hoje</div>
+        </div>
+        <div class="stat-card neutro">
+            <div class="valor"><?= (int)$stats['novas_semana'] ?></div>
+            <div class="rotulo">Leads novos (7 dias)</div>
+        </div>
+        <div class="stat-card sucesso">
+            <div class="valor"><?= (int)$stats['fechadas_mes'] ?></div>
+            <div class="rotulo">Fechadas este mês</div>
+        </div>
+        <div class="stat-card sucesso">
+            <div class="valor"><?= moeda($stats['valor_fechado_mes']) ?></div>
+            <div class="rotulo">Valor fechado este mês</div>
+        </div>
+        <div class="stat-card neutro">
+            <div class="valor"><?= $stats['taxa_conversao'] === null ? '—' : $stats['taxa_conversao'] . '%' ?></div>
+            <div class="rotulo">Taxa de conversão geral</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Funil (oportunidades ativas)</h3>
+        <div class="funil-barra">
+            <?php foreach (ETAPAS_ATIVAS as $et): ?>
+                <?php $qtd = (int)($contagemPorEtapa[$et] ?? 0); $pct = $totalAtivas > 0 ? round($qtd / $totalAtivas * 100) : 0; ?>
+                <div class="funil-linha">
+                    <span class="etapa-nome"><?= e(etapaLabel($et)) ?></span>
+                    <span class="barra-fundo"><span class="barra-preenchida" style="width:<?= $pct ?>%"></span></span>
+                    <span class="qtd"><?= $qtd ?></span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+<?php endif; ?>
+
 <table class="tabela-oportunidades">
     <thead>
         <tr>
