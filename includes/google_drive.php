@@ -71,7 +71,7 @@ class GoogleDrive {
         return true;
     }
 
-    public function createFolder(string $nome, ?string $parent_id = null): string|false {
+    public function createFolder(string $nome, ?string $parent_id = null): string|bool {
         if (!$this->token) return false;
         $meta = ['name' => $nome, 'mimeType' => 'application/vnd.google-apps.folder'];
         if ($parent_id) $meta['parents'] = [$parent_id];
@@ -125,7 +125,7 @@ class GoogleDrive {
         return $data['files'] ?? [];
     }
 
-    public function uploadFile(string $tmp_path, string $nome, string $mime, string $folder_id): string|false {
+    public function uploadFile(string $tmp_path, string $nome, string $mime, string $folder_id): string|bool {
         if (!$this->token) return false;
         $conteudo = file_get_contents($tmp_path);
         if ($conteudo === false) return false;
@@ -164,7 +164,7 @@ class GoogleDrive {
      * tornar o arquivo público no Drive só pra exibir pro admin logado.
      * Retorna ['content'=>string,'mime'=>string,'name'=>string] ou false.
      */
-    public function download(string $file_id): array|false {
+    public function download(string $file_id): array|bool {
         if (!$this->token) return false;
 
         $chMeta = curl_init($this->apiUrl() . "/files/{$file_id}?supportsAllDrives=true&fields=mimeType,name");

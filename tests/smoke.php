@@ -89,6 +89,20 @@ guard(
     'Chamada direta à API OpenAI fora do helper (use openaiCall()/openaiCallChat())'
 );
 
+// Bug real 09/2026: includes/mail.php usava `: true|array` como tipo de
+// retorno — `true`/`false` como tipo standalone (union ou sozinho) só
+// existe a partir do PHP 8.2. `php -l` nunca pegou isso no dev (roda PHP
+// 8.4 aqui), só quebrou de verdade rodando na VPS de produção (Ubuntu
+// 22.04 só tem PHP 8.1 no repositório padrão) — "Cannot use 'true' as
+// class name as it is reserved". Trocar sempre por `bool|array` (ou só
+// `bool`) em vez do tipo standalone.
+guard(
+    'tipo-standalone-true-false-php82',
+    '/function\s+\w+\([^)]*\)\s*:\s*\??[\w|]*\b(?:true|false)\b[\w|]*\s*\{/',
+    ['tests/'],
+    'Tipo standalone true/false em assinatura de função exige PHP 8.2+ — produção roda PHP 8.1, use bool|... no lugar'
+);
+
 // Bug 09/2026 (achado neste projeto, mesmo padrão do JurídicoSaaS): 41
 // conexões SQLite avulsas lá; aqui a regra é a mesma desde o primeiro
 // commit — só includes/db.php::getDB() pode abrir conexão direta, com

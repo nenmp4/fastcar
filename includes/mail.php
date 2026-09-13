@@ -20,12 +20,17 @@ function mailBaseUrl(): string {
 
 /**
  * Envia um e-mail HTML via Brevo.
- * @return true|array true em sucesso, ['erro' => 'mensagem'] em falha —
+ * @return bool|array true em sucesso, ['erro' => 'mensagem'] em falha —
  *   mesmo padrão string|array dos outros helpers (gemini/openai), nunca
  *   lança exceção: e-mail é sempre "melhor esforço", nunca pode derrubar o
  *   fluxo principal (mesmo motivo de geminiRegistrarTokens() ser blindado).
+ *   `bool|array` em vez do tipo standalone `true` de propósito — `true|array`
+ *   só existe a partir do PHP 8.2, e a VPS de produção roda 8.1 (achado
+ *   assim: `php -l` passava aqui no dev, que tem PHP 8.4, e só quebrou de
+ *   verdade rodando na VPS de verdade — ver guard version-php-82-plus no
+ *   tests/smoke.php).
  */
-function enviarEmail(string $para, string $assunto, string $corpoHtml, string $paraNome = ''): true|array {
+function enviarEmail(string $para, string $assunto, string $corpoHtml, string $paraNome = ''): bool|array {
     $apiKey = getConfig('brevo_api_key') ?: '';
     if (!$apiKey) return ['erro' => 'Chave Brevo não configurada. Vá em Configurações → E-mail.'];
 
