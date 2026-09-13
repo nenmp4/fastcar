@@ -1,11 +1,16 @@
 <?php
 /**
- * Gestão de usuários (closer/consultor) — restrito ao super_admin, mesma
- * trava de admin/configuracoes.php. NUNCA cria nem promove pra
- * 'super_admin' por aqui — só o CLI install/create_admin.php faz isso,
- * decisão de segurança de propósito (evita qualquer um com acesso ao
- * painel criar outro super_admin sozinho). Editar um usuário que já é
- * super_admin não mexe no perfil dele (fica travado, só mostrado).
+ * Gestão de usuários (consultor) — restrito ao super_admin, mesma trava de
+ * admin/configuracoes.php. NUNCA cria nem promove pra 'super_admin' por
+ * aqui — só o CLI install/create_admin.php faz isso, decisão de segurança
+ * de propósito (evita qualquer um com acesso ao painel criar outro
+ * super_admin sozinho). Editar um usuário que já é super_admin não mexe no
+ * perfil dele (fica travado, só mostrado).
+ *
+ * Perfis 'consultor' e 'closer' foram mesclados em 13/09/2026 (pedido do
+ * José) — na prática é a mesma pessoa que atende (bloco 5) e negocia/fecha
+ * (bloco 6), então não existe mais escolha de perfil aqui: todo usuário
+ * criado por essa tela é 'consultor'.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -25,12 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nome  = trim((string)($_POST['nome'] ?? ''));
             $email = trim((string)($_POST['email'] ?? ''));
             $senha = (string)($_POST['senha'] ?? '');
-            $perfil = (string)($_POST['perfil'] ?? 'consultor');
+            // Único perfil possível de criar por aqui desde a mesclagem
+            // consultor/closer (13/09/2026) — nunca lê de $_POST.
+            $perfil = 'consultor';
             $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
 
-            if (!in_array($perfil, ['consultor', 'closer'], true)) {
-                $erro = 'Perfil inválido.';
-            } elseif (!$nome || !$email || strlen($senha) < 8) {
+            if (!$nome || !$email || strlen($senha) < 8) {
                 $erro = 'Preencha nome, e-mail e uma senha com pelo menos 8 caracteres.';
             } elseif (buscarUsuarioPorEmail($email)) {
                 $erro = 'Já existe um usuário ativo com esse e-mail.';
@@ -51,12 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $nome  = trim((string)($_POST['nome'] ?? ''));
                 $email = trim((string)($_POST['email'] ?? ''));
                 $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
-                // Perfil só muda se o alvo NÃO for super_admin — preserva o
-                // perfil atual em qualquer outro caso (nunca promove nem
-                // rebaixa super_admin por aqui).
-                $perfil = $alvo['perfil'] === 'super_admin'
-                    ? 'super_admin'
-                    : (in_array($_POST['perfil'] ?? '', ['consultor', 'closer'], true) ? $_POST['perfil'] : $alvo['perfil']);
+                // Nunca promove nem rebaixa super_admin por aqui; pra
+                // qualquer outro usuário só existe 'consultor' desde a
+                // mesclagem consultor/closer (13/09/2026) — não lê de $_POST.
+                $perfil = $alvo['perfil'] === 'super_admin' ? 'super_admin' : 'consultor';
                 $bloqueado = !empty($_POST['bloqueado']);
 
                 if ($id === (int)$_SESSION['admin_id'] && $bloqueado) {
@@ -101,11 +104,11 @@ $usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, dis
 $instanciasPorUsuario = array_column(zapiListarInstanciasConsultores(), null, 'usuario_id');
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
-$instanciaZapi = ($editando && in_array($editando['perfil'], ['consultor', 'closer'], true))
+$instanciaZapi = ($editando && $editando['perfil'] === 'consultor')
     ? zapiInstanciaDoConsultor($editandoId)
     : null;
 
-$labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor' => 'Consultor'];
+$labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor'];
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -153,10 +156,8 @@ $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor
                 <?php if ($editando && $editando['perfil'] === 'super_admin'): ?>
                     <input type="text" value="Super admin" disabled>
                 <?php else: ?>
-                    <select name="perfil">
-                        <option value="consultor" <?= ($editando['perfil'] ?? 'consultor') === 'consultor' ? 'selected' : '' ?>>Consultor (atendimento, não define valor)</option>
-                        <option value="closer" <?= ($editando['perfil'] ?? '') === 'closer' ? 'selected' : '' ?>>Closer (negocia/aprova valor)</option>
-                    </select>
+                    <input type="text" value="Consultor (atendimento e negociação)" disabled>
+                    <small>Único perfil possível por aqui — atende e negocia/fecha o mesmo negócio.</small>
                 <?php endif; ?>
                 <label><?= $editando ? 'Nova senha (deixe em branco pra manter a atual)' : 'Senha (mínimo 8 caracteres)' ?></label>
                 <input type="password" name="<?= $editando ? 'nova_senha' : 'senha' ?>" autocomplete="new-password" <?= $editando ? '' : 'required minlength="8"' ?>>
@@ -176,7 +177,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor
     </form>
 </div>
 
-<?php if ($editando && in_array($editando['perfil'], ['consultor', 'closer'], true)): ?>
+<?php if ($editando && $editando['perfil'] === 'consultor'): ?>
 <div class="card">
     <h3>📱 Instância Z-API — <?= e($editando['nome']) ?></h3>
     <p><small>A partir do bloco 5 (atendimento), a conversa com o cliente passa a rodar SEMPRE pela instância
@@ -236,7 +237,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor
                 </td>
                 <td><?= $u['disponivel'] ? '🟢 disponível' : '⚪ offline' ?></td>
                 <td>
-                    <?php if (!in_array($u['perfil'], ['consultor', 'closer'], true)): ?>
+                    <?php if ($u['perfil'] !== 'consultor'): ?>
                         <span style="color:var(--texto-fraco)">—</span>
                     <?php elseif (!empty($instanciasPorUsuario[$u['id']]['instance_id'])): ?>
                         <span class="badge badge-ok">✅ configurada</span>

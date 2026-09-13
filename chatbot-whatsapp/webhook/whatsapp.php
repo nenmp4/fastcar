@@ -26,7 +26,7 @@
  *
  * ⚠️ Multi-instância: esta MESMA URL recebe webhook tanto da instância
  * principal (funil oficial: entrada, qualificação IA, followup) quanto da
- * instância própria de cada consultor/closer (atendimento a partir do
+ * instância própria de cada consultor (atendimento a partir do
  * bloco 5 sempre pelo número dele — decisão do Jean) — configuradas em
  * admin/configuracoes.php. O Z-API manda `instanceId` no payload; usamos
  * isso pra descobrir de qual instância veio (zapiIdentificarInstancia())

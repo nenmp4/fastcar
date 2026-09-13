@@ -12,9 +12,10 @@ require_once __DIR__ . '/../includes/dashboard.php';
 $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId = (int)$_SESSION['admin_id'];
-// Consultor e closer só veem as próprias oportunidades no funil — cada um
-// cuida da carteira dele; super_admin vê a empresa inteira (visão geral).
-$souDono = in_array($perfil, ['consultor', 'closer'], true);
+// Consultor só vê as próprias oportunidades no funil — cuida da carteira
+// dele (atendimento + negociação, blocos 5-6 mesclados); super_admin vê a
+// empresa inteira (visão geral).
+$souDono = $perfil === 'consultor';
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $placeholders = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
@@ -56,7 +57,6 @@ $totalAtivas = array_sum($contagemPorEtapa);
 
 $stats = match ($perfil) {
     'consultor'   => dashboardConsultor($meuId),
-    'closer'      => dashboardCloser($meuId),
     'super_admin' => dashboardSuperAdmin(),
     default       => [],
 };
@@ -78,7 +78,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 <header class="topbar">
     <strong>🚗 Fastcar CRM</strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?> (<?= e($_SESSION['admin_perfil']) ?>)</span>
-    <?php if (in_array($_SESSION['admin_perfil'], ['consultor', 'closer'], true)): ?>
+    <?php if ($_SESSION['admin_perfil'] === 'consultor'): ?>
         <?php $euAtual = buscarUsuario((int)$_SESSION['admin_id']); ?>
         <form method="post" action="/admin/toggle_disponivel.php" class="inline">
             <?= csrfField() ?>
@@ -129,9 +129,6 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
             <div class="valor"><?= $stats['disponivel'] ? '🟢' : '⚪' ?></div>
             <div class="rotulo"><?= $stats['disponivel'] ? 'Disponível pra fila' : ($stats['plantao'] ? 'Offline (plantão)' : 'Offline') ?></div>
         </div>
-    </div>
-<?php elseif ($perfil === 'closer'): ?>
-    <div class="stat-grid">
         <div class="stat-card">
             <div class="valor"><?= (int)$stats['em_negociacao'] ?></div>
             <div class="rotulo">Em negociação/presencial</div>

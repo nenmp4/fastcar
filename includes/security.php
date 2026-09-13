@@ -51,7 +51,7 @@ function requireAdmin(): void {
 /**
  * Trava de permissão pra área restrita ao super_admin (Jean) — ex:
  * configurações de API, que dão acesso a credenciais sensíveis (Z-API) e
- * não devem ficar visíveis pra consultor/closer. Chamar DEPOIS de
+ * não devem ficar visíveis pro consultor. Chamar DEPOIS de
  * requireAdmin() (assume que já tem sessão logada).
  */
 function requireSuperAdmin(): void {

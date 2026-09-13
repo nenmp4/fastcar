@@ -1,8 +1,8 @@
 <?php
 /**
- * Consulta e autenticação de usuários do admin (super_admin, closer,
- * consultor — perfis definidos no schema, pendência #4 do CLAUDE.md até
- * confirmar com o Jean se bate com a equipe real).
+ * Consulta e autenticação de usuários do admin (super_admin, consultor —
+ * perfis definidos no schema; 'consultor' e o antigo 'closer' foram
+ * mesclados em 13/09/2026, mesma pessoa atende e negocia/fecha).
  */
 
 require_once __DIR__ . '/db.php';
@@ -51,8 +51,8 @@ function criarUsuario(string $nome, string $email, string $senha, string $perfil
 /**
  * Edita um usuário existente — NUNCA mexe em `perfil` pra 'super_admin'
  * nem tira de 'super_admin' por aqui (só o CLI install/create_admin.php
- * cria super_admin; admin/usuarios.php só deixa editar closer/consultor,
- * mesma decisão de segurança de não ter tela de "criar admin" no painel).
+ * cria super_admin; admin/usuarios.php só deixa editar 'consultor', mesma
+ * decisão de segurança de não ter tela de "criar admin" no painel).
  */
 function atualizarUsuario(int $id, string $nome, string $email, string $whatsapp, string $perfil, bool $bloqueado): void {
     $db = getDB();

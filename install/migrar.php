@@ -52,4 +52,16 @@ foreach ($migracoes as $nome => $sql) {
     }
 }
 
+// 13/09/2026 — perfis 'consultor' e 'closer' mesclados (pedido do José): a
+// mesma pessoa atende (bloco 5) e negocia/fecha (bloco 6). Não dá pra tirar
+// 'closer' da CHECK sem reconstruir a tabela no SQLite, mas dá pra garantir
+// que nenhuma linha existente continue com esse valor — idempotente, rodar
+// de novo só afeta 0 linhas depois da 1ª vez.
+try {
+    $afetadas = $db->exec("UPDATE usuarios SET perfil = 'consultor' WHERE perfil = 'closer'");
+    echo ($afetadas > 0 ? "✅" : "⏭️ ") . " usuarios.perfil (closer→consultor): {$afetadas} linha(s) convertida(s)\n";
+} catch (Throwable $e) {
+    echo "❌ usuarios.perfil (closer→consultor): {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

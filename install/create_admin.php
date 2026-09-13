@@ -6,7 +6,7 @@
  *
  * Uso:
  *   php install/create_admin.php "Nome" email@fastcar.com senha123 [perfil]
- *   perfil padrão: super_admin — outros valores válidos: closer, consultor
+ *   perfil padrão: super_admin — outro valor válido: consultor
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -22,11 +22,11 @@ require_once __DIR__ . '/../includes/usuarios.php';
 $perfil = $perfil ?? 'super_admin';
 
 if (!$nome || !$email || !$senha) {
-    fwrite(STDERR, "Uso: php install/create_admin.php \"Nome\" email@fastcar.com senha123 [super_admin|closer|consultor]\n");
+    fwrite(STDERR, "Uso: php install/create_admin.php \"Nome\" email@fastcar.com senha123 [super_admin|consultor]\n");
     exit(1);
 }
 
-if (!in_array($perfil, ['super_admin', 'closer', 'consultor'], true)) {
+if (!in_array($perfil, ['super_admin', 'consultor'], true)) {
     fwrite(STDERR, "Perfil inválido: {$perfil}\n");
     exit(1);
 }

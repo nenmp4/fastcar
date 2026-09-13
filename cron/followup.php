@@ -4,7 +4,7 @@
  * Follow-up de oportunidades — mesmo espírito do cron/followup_leads.php
  * do JurídicoSaaS: dois papéis num cron só.
  *
- * 1. Alerta de "próxima ação atrasada" — pro responsável (consultor/closer),
+ * 1. Alerta de "próxima ação atrasada" — pro responsável (consultor),
  *    conforme a regra do Jean: "toda oportunidade aberta precisa de
  *    responsável e próxima ação, com alertas para atrasados".
  * 2. Reengajamento de lead esfriando — oportunidade parada na etapa

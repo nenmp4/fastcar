@@ -12,7 +12,7 @@
  * em includes/fila_leads.php).
  *
  * super_admin: notifica sobre QUALQUER lead novo (created_at) — visão da
- * empresa inteira. consultor/closer: notifica quando uma oportunidade
+ * empresa inteira. consultor: notifica quando uma oportunidade
  * passa a ser dele (updated_at, cobre atribuição automática da fila E
  * reatribuição manual em admin/oportunidade.php, que faz UPDATE direto
  * sem passar por mudarEtapa()/oportunidade_historico).

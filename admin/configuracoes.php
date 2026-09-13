@@ -327,7 +327,7 @@ $fila = listarFilaConsultores();
 </div>
 
 <div class="card">
-    <h3>👤 Instâncias dos consultores/closers</h3>
+    <h3>👤 Instâncias dos consultores</h3>
     <p><small>Mudou de lugar — configura direto no perfil de cada pessoa, em
        <a href="/admin/usuarios.php">Usuários</a> → editar → "Instância Z-API".</small></p>
 </div>
@@ -339,7 +339,7 @@ $fila = listarFilaConsultores();
        responsável da oportunidade normalmente, nenhum lead fica sem dono fora do horário.</small></p>
 
     <?php if (!$fila): ?>
-        <p><small>Nenhum consultor/closer cadastrado ainda.</small></p>
+        <p><small>Nenhum consultor cadastrado ainda.</small></p>
     <?php endif; ?>
 
     <table class="tabela-oportunidades">

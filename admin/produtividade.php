@@ -1,6 +1,6 @@
 <?php
 /**
- * Produtividade dos consultores/closers — volume de mensagens trocadas
+ * Produtividade dos consultores — volume de mensagens trocadas
  * com clientes pela instância própria de cada um (bloco 5+ do funil).
  * Restrito ao super_admin, mesma trava de admin/configuracoes.php.
  *
@@ -38,7 +38,7 @@ $linhas = zapiContarMensagensPorConsultor($dias);
 <main>
 <div class="card">
     <h2>📊 Produtividade — volume de mensagens</h2>
-    <p><small>Conta mensagens trocadas pela instância própria de cada consultor/closer (bloco 5+) — a instância
+    <p><small>Conta mensagens trocadas pela instância própria de cada consultor (bloco 5+) — a instância
        principal (entrada/IA/follow-up) não entra nessa contagem de propósito, é volume do funil oficial, não de
        atendimento individual.</small></p>
 
@@ -51,7 +51,7 @@ $linhas = zapiContarMensagensPorConsultor($dias);
     <table class="tabela-oportunidades">
         <thead>
             <tr>
-                <th>Consultor/closer</th>
+                <th>Consultor</th>
                 <th>Enviadas</th>
                 <th>Recebidas</th>
                 <th>Clientes distintos</th>

@@ -28,7 +28,7 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
         ↓                                 │
 5. Atendimento do consultor ←─────────────┤
         ↓                                 │
-6. Negociação — Jean/Closer ←─────────────┘
+6. Negociação — Jean/Consultor ←─────────────┘
         ↓
 7. Reunião presencial / fechamento
         ↓
@@ -42,7 +42,7 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
 | 3. Qualificação IA | IA identifica veículo e entende financiamento/intenção | Modelo, ano, banco, valor parcela, parcelas restantes, atraso, cidade/estado, valor pretendido (`oportunidades.*`) — **campo não informado fica NULL (pendência), IA nunca inventa** |
 | 4. CRM automático | Cria/atualiza cadastro, preenche dados coletados, encaminha pra consultor | Dados cliente+veículo, resumo da IA, pendências, responsável, etapa (`oportunidades`) |
 | 5. Consultor | Liga/manda mensagem humanizada, confirma dados | Tentativas de contato, observações, fotos, resultado, próxima ação |
-| 6. Jean/Closer | Avalia oportunidade, define proposta, negocia | Valor ofertado, contraproposta, condições, aprovação, motivo de perda (`oportunidades.valor_ofertado` etc) |
+| 6. Jean/Consultor | Avalia oportunidade, define proposta, negocia | Valor ofertado, contraproposta, condições, aprovação, motivo de perda (`oportunidades.valor_ofertado` etc) |
 | 7. Presencial/fechamento | Agenda reunião, avalia veículo, confirma condições, executa compra | Agendamento, avaliação, documentos, contrato, transferência, pagamento |
 | 8. Pasta fechada | Consolida negócio, marca compra concluída | Pasta digital: documentos, contrato, comprovantes, valor final, data, responsável — **só libera com checklist completo** |
 
@@ -91,7 +91,7 @@ na primeira conexão (banco não existe ainda → roda o schema inteiro).
 Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 `whatsapp_mensagens`, `whatsapp_sessoes`, `oportunidade_documentos`,
 `oportunidade_pendencias_pos_venda`, `usuarios`, `config`,
-`zapi_instancias_consultores` (instância Z-API própria de cada consultor/closer,
+`zapi_instancias_consultores` (instância Z-API própria de cada consultor,
 só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
 `contratos` (contrato gerado + rastreio de assinatura eletrônica via Assinafy).
 
@@ -109,7 +109,7 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
 - **Arquitetura multi-instância Z-API** — a instância **principal** cuida só
   dos blocos 2-4 (entrada, qualificação IA, followup automático); a partir do
   bloco 5 (atendimento), toda comunicação com aquele cliente passa a ser pela
-  instância própria do consultor/closer responsável (`zapi_instancias_consultores`),
+  instância própria do consultor responsável (`zapi_instancias_consultores`),
   nunca mais pelo número principal naquele negócio. As instâncias dos
   consultores servem só pra **monitorar produtividade** (`admin/produtividade.php`),
   não pra rodar o bot
@@ -171,8 +171,9 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   eletrônica via **Assinafy** (`includes/assinafy.php`, webhook
   `api/assinafy_webhook.php` + fallback de polling `cron/assinafy_sync.php`).
   Fluxo confirmado com o Jean: cliente preenche dados pelo link do
-  formulário → consultor confere → **closer preenche os campos
-  financeiros/de negociação só na hora de fechar o negócio** (bloco 6) →
+  formulário → consultor confere → **consultor preenche os campos
+  financeiros/de negociação só na hora de fechar o negócio** (bloco 6, mesma
+  pessoa que atendeu desde a mesclagem consultor/closer, ver pendência #4) →
   dispara o contrato. Contrato de **VENDA** (Fastcar revende o carro) fica
   pro módulo de vendas, fora de escopo agora (ver "Segunda etapa" abaixo)
 - **Configurações de super admin** — `admin/configuracoes.php`: Z-API
@@ -212,16 +213,19 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   firewall restrito a IPs da Cloudflare, crontab, deploy, e-mail, backup) —
   ver pendência #1
 - **Gestão de usuários** — `admin/usuarios.php`: lista/cria/edita
-  closer/consultor, restrito ao super_admin. Nunca cria nem promove
-  ninguém pra `super_admin` por essa tela (só o CLI
-  `install/create_admin.php`, decisão de segurança de propósito) e um
-  super_admin não consegue bloquear a própria conta por aqui.
+  consultor, restrito ao super_admin. Nunca cria nem promove ninguém pra
+  `super_admin` por essa tela (só o CLI `install/create_admin.php`,
+  decisão de segurança de propósito) e um super_admin não consegue
+  bloquear a própria conta por aqui. Sem seletor de perfil na tela — desde
+  a mesclagem consultor/closer (pendência #4) só existe um perfil pra criar.
 - **Dashboard por perfil** — `admin/index.php` mostra cards diferentes pra
-  cada perfil (`includes/dashboard.php`): consultor vê só a carteira dele
-  (ativas/atrasadas/recebidas na semana/status da fila), closer vê pipeline
-  de negociação + resultado do mês + taxa de conversão, super_admin vê
-  visão geral da empresa + funil em barra por etapa. Tabela principal e nav
-  de etapas também filtram por `responsavel_id` pra consultor/closer.
+  cada perfil (`includes/dashboard.php`): consultor vê a própria carteira
+  de atendimento (ativas/atrasadas/recebidas na semana/status da fila) E o
+  pipeline de negociação (em negociação/presencial, fechadas do mês, taxa
+  de conversão) juntos — mesma pessoa cuida dos blocos 5 e 6 desde a
+  mesclagem; super_admin vê visão geral da empresa + funil em barra por
+  etapa. Tabela principal e nav de etapas também filtram por
+  `responsavel_id` pra consultor.
 - **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da
@@ -354,10 +358,22 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    rascunho — o que perguntar, em que ordem e quando desistir/marcar "sem
    perfil de compra" ainda precisa de revisão do Jean antes de rodar com
    lead de verdade.
-4. **Login/perfis do admin** — combinado em 12/09/2026: `super_admin`
-   (Jean), `closer` (negocia/aprova valor, bloco 6), `consultor` (atendimento,
-   bloco 5, não define valor) — schema e `requireSuperAdmin()` já refletem
-   isso, mas fica em aberto até validar com o time em produção.
+4. ~~**Login/perfis do admin**~~ — ✅ decidido: `super_admin` (Jean) +
+   `consultor` (atende E negocia/fecha, blocos 5-6). Combinado em
+   12/09/2026 como `super_admin`/`closer`/`consultor` separados, mas o
+   José confirmou em 13/09/2026 que na prática é a mesma pessoa que atende
+   e negocia — perfis `consultor` e `closer` **mesclados**: dashboard único
+   (`includes/dashboard.php::dashboardConsultor()`, mostra carteira de
+   atendimento E pipeline de negociação/resultado do mês), fila de leads
+   (`includes/fila_leads.php`) e instâncias Z-API por pessoa
+   (`includes/zapi_instancias.php`) já tratavam os dois perfis de forma
+   idêntica antes disso (só o dashboard e a tela de usuários distinguiam).
+   `install/migrar.php` converte qualquer usuário `closer` existente pra
+   `consultor`; `'closer'` continua um valor tecnicamente aceito na CHECK
+   de `usuarios.perfil` (recriar a tabela sem ele no SQLite exigiria
+   reconstruir a tabela toda, sem ganho real) mas a aplicação nunca mais
+   escreve nem oferece esse valor — `admin/usuarios.php` não tem mais
+   seletor de perfil, todo usuário novo criado por lá é `consultor`.
 5. **Anúncio/tráfego (bloco 1)** — combinado em 12/09/2026: anúncio "Clique
    para WhatsApp" do Meta — a WhatsApp Cloud API manda um `referral`
    (headline, source_id) na 1ª mensagem, capturado automaticamente em

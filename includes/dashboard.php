@@ -1,15 +1,20 @@
 <?php
 /**
- * includes/dashboard.php — métricas do dashboard de cada perfil (bloco 5
- * pro consultor, bloco 6 pro closer, visão geral pro super_admin). Só
- * consulta e soma, nunca muda dado — separado de includes/oportunidades.php
- * (que é regra de negócio de verdade, mudarEtapa() etc).
+ * includes/dashboard.php — métricas do dashboard de cada perfil (consultor
+ * cuida sozinho dos blocos 5+6 desde a mesclagem de 13/09/2026 — atende E
+ * negocia/fecha —, super_admin tem visão geral). Só consulta e soma, nunca
+ * muda dado — separado de includes/oportunidades.php (que é regra de
+ * negócio de verdade, mudarEtapa() etc).
  */
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/oportunidades.php';
 
-/** Dashboard do consultor (bloco 5) — só o que é dele. */
+/**
+ * Dashboard do consultor — carteira dele (bloco 5: ativas/atrasadas/
+ * recebidas na semana/status da fila) + pipeline de negociação e resultado
+ * do mês (bloco 6, ex-dashboard do closer, mesclado aqui em 13/09/2026).
+ */
 function dashboardConsultor(int $usuarioId): array {
     $db = getDB();
     $ph = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
@@ -38,19 +43,6 @@ function dashboardConsultor(int $usuarioId): array {
     $stmt->execute([$usuarioId]);
     $eu = $stmt->fetch() ?: ['disponivel' => 0, 'posicao_fila' => null, 'plantao_fim_expediente' => 0];
 
-    return [
-        'ativas'           => $ativas,
-        'atrasadas'        => $atrasadas,
-        'recebidas_semana' => $recebidasSemana,
-        'disponivel'       => (bool)$eu['disponivel'],
-        'plantao'          => (bool)$eu['plantao_fim_expediente'],
-    ];
-}
-
-/** Dashboard do closer (bloco 6) — pipeline de negociação + resultado do mês. */
-function dashboardCloser(int $usuarioId): array {
-    $db = getDB();
-
     $stmt = $db->prepare("
         SELECT COUNT(*), COALESCE(SUM(valor_ofertado), 0)
         FROM oportunidades WHERE responsavel_id = ? AND etapa IN ('negociacao', 'presencial')
@@ -66,8 +58,8 @@ function dashboardCloser(int $usuarioId): array {
     $stmt->execute([$usuarioId]);
     [$fechadasMes, $valorFechadoMes] = $stmt->fetch(PDO::FETCH_NUM);
 
-    // Taxa de conversão: das que passaram pela mão desse closer (fechou ou
-    // perdeu, contando tudo desde sempre), quantas viraram negócio de verdade.
+    // Taxa de conversão: das que passaram pela mão desse consultor (fechou
+    // ou perdeu, contando tudo desde sempre), quantas viraram negócio de verdade.
     $stmt = $db->prepare("
         SELECT
             SUM(CASE WHEN etapa = 'fechado' THEN 1 ELSE 0 END) AS fechadas,
@@ -80,6 +72,11 @@ function dashboardCloser(int $usuarioId): array {
     $taxaConversao = $totalDecididas > 0 ? round(((int)$r['fechadas'] / $totalDecididas) * 100) : null;
 
     return [
+        'ativas'              => $ativas,
+        'atrasadas'           => $atrasadas,
+        'recebidas_semana'    => $recebidasSemana,
+        'disponivel'          => (bool)$eu['disponivel'],
+        'plantao'             => (bool)$eu['plantao_fim_expediente'],
         'em_negociacao'       => (int)$emNegociacao,
         'valor_em_negociacao' => (float)$valorEmNegociacao,
         'fechadas_mes'        => (int)$fechadasMes,

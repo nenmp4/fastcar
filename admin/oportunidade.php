@@ -1,7 +1,7 @@
 <?php
 /**
  * Detalhe da oportunidade — histórico de etapas, conversa do WhatsApp,
- * resumo da IA e ações do consultor/closer (próxima ação, mudar etapa,
+ * resumo da IA e ações do consultor (próxima ação, mudar etapa,
  * marcar perdida). Toda mudança de etapa passa por mudarEtapa()/
  * marcarPerdida() (includes/oportunidades.php) — nunca UPDATE direto.
  */
@@ -162,7 +162,7 @@ $historico = $stmtHist->fetchAll();
 
 // LEFT JOIN usuarios pra mostrar por qual canal cada mensagem passou —
 // NULL = instância principal (bot/IA/followup), preenchido = instância
-// própria de um consultor/closer (atendimento, sempre a partir do bloco 5).
+// própria de um consultor (atendimento, sempre a partir do bloco 5).
 $stmtMsg = $db->prepare("
     SELECT m.*, u.nome AS usuario_nome
     FROM whatsapp_mensagens m
@@ -202,7 +202,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong>🚗 Fastcar CRM</strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
-    <?php if (in_array($_SESSION['admin_perfil'], ['consultor', 'closer'], true)): ?>
+    <?php if ($_SESSION['admin_perfil'] === 'consultor'): ?>
         <?php $euAtual = buscarUsuario((int)$_SESSION['admin_id']); ?>
         <form method="post" action="/admin/toggle_disponivel.php" class="inline">
             <?= csrfField() ?>
@@ -305,7 +305,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 <div class="card">
     <h3>📝 Financiamento e contrato de compra</h3>
     <p><small>Esses dados alimentam o Quadro-Resumo do contrato-mestre de compra (includes/contratos_pdf.php) — o
-       closer confirma com o cliente antes de gerar, a IA/sistema nunca preenche isso sozinho.</small></p>
+       consultor confirma com o cliente antes de gerar, a IA/sistema nunca preenche isso sozinho.</small></p>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="atualizar_contrato">

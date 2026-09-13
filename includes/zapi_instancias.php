@@ -1,6 +1,6 @@
 <?php
 /**
- * Instâncias Z-API por consultor/closer — canal paralelo ao funil oficial
+ * Instâncias Z-API por consultor — canal paralelo ao funil oficial
  * (que roda inteiro na instância principal, config.zapi_*). Serve pra
  * capturar o que cada consultor conversa com o cliente por fora do fluxo
  * automático, dar visibilidade pro Jean e medir volume por pessoa.
@@ -13,7 +13,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/usuarios.php';
 
-/** Lista consultores/closers com (ou sem) instância própria configurada. */
+/** Lista consultores com (ou sem) instância própria configurada. */
 function zapiListarInstanciasConsultores(): array {
     $db = getDB();
     return $db->query("
@@ -21,12 +21,12 @@ function zapiListarInstanciasConsultores(): array {
                i.instance_id, i.token, i.client_token, i.ativo
         FROM usuarios u
         LEFT JOIN zapi_instancias_consultores i ON i.usuario_id = u.id
-        WHERE u.perfil IN ('consultor', 'closer') AND u.bloqueado = 0
+        WHERE u.perfil = 'consultor' AND u.bloqueado = 0
         ORDER BY u.nome
     ")->fetchAll();
 }
 
-/** Instância Z-API de UM consultor/closer — usado na tela de perfil dele (admin/usuarios.php). */
+/** Instância Z-API de UM consultor — usado na tela de perfil dele (admin/usuarios.php). */
 function zapiInstanciaDoConsultor(int $usuarioId): ?array {
     $db = getDB();
     $stmt = $db->prepare("SELECT * FROM zapi_instancias_consultores WHERE usuario_id = ?");
@@ -85,7 +85,7 @@ function zapiIdentificarInstancia(string $instanceId): array {
 }
 
 /**
- * Volume de mensagens por consultor/closer nos últimos $dias — métrica de
+ * Volume de mensagens por consultor nos últimos $dias — métrica de
  * produtividade mais simples (contagem), pedida como primeiro corte.
  * NULL de usuario_id (instância principal) fica de fora de propósito —
  * isso é volume do funil oficial, não de conversa paralela de alguém.

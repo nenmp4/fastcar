@@ -207,7 +207,7 @@ function retomarIA(string $telefone): void {
  * code) — quem chama decide o que fazer com o retorno.
  *
  * Aceita payload de QUALQUER instância — a principal (funil oficial:
- * entrada, qualificação IA, followup) ou a de um consultor/closer
+ * entrada, qualificação IA, followup) ou a de um consultor
  * (conversa paralela, capturada só pra visibilidade/produtividade). O
  * telefone do cliente é sempre a chave que junta tudo na mesma conversa;
  * $instancia (se não informado, resolvido a partir de payload.instanceId)

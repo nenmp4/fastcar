@@ -251,6 +251,13 @@ CREATE TABLE IF NOT EXISTS usuarios (
     email TEXT UNIQUE,
     whatsapp TEXT DEFAULT '',
     senha_hash TEXT NOT NULL,
+    -- Perfis 'consultor' e 'closer' foram mesclados em 13/09/2026 (pedido
+    -- do José): na prática é a mesma pessoa que atende (bloco 5) E negocia/
+    -- fecha (bloco 6), não faz sentido dois perfis. 'closer' fica aceito
+    -- aqui só por segurança histórica (nunca mais escrito pela aplicação —
+    -- install/migrar.php converte qualquer linha antiga pra 'consultor');
+    -- recriar a CHECK sem ele exigiria reconstruir a tabela toda no SQLite,
+    -- sem ganho real.
     perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor')),
     bloqueado INTEGER DEFAULT 0,
 

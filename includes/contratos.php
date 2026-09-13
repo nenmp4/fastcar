@@ -114,7 +114,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     }
 
     // Limite contratual de 25% da FIPE (cláusula 1.2) — nunca decide sozinho
-    // se segue ou não, só avisa; a decisão de negociação é sempre do closer.
+    // se segue ou não, só avisa; a decisão de negociação é sempre do consultor.
     $aviso = ($campos['percentual_fipe'] > 25)
         ? "Percentual pago ({$campos['percentual_fipe']}%) excede o limite contratual de 25% da FIPE — confira antes de enviar pra assinatura."
         : null;
