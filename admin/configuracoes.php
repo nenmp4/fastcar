@@ -108,19 +108,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $numerosDigitados = array_filter(array_map('trim', explode(',', (string)($_POST['notificacao_leads_whatsapp'] ?? ''))));
             setConfig('notificacao_leads_whatsapp', implode(',', $numerosDigitados));
             $sucesso = 'Números de notificação de lead novo salvos.';
-        } elseif ($acao === 'salvar_instancia_consultor') {
-            $usuarioId = (int)($_POST['usuario_id'] ?? 0);
-            $instanceId = trim((string)($_POST['instance_id'] ?? ''));
-            $token = trim((string)($_POST['token'] ?? ''));
-            if (!$usuarioId || !$instanceId || !$token) {
-                $erro = 'Preencha ID da instância e token pra salvar.';
-            } else {
-                zapiSalvarInstanciaConsultor($usuarioId, $instanceId, $token, (string)($_POST['client_token'] ?? ''));
-                $sucesso = 'Instância do consultor salva.';
-            }
-        } elseif ($acao === 'remover_instancia_consultor') {
-            zapiRemoverInstanciaConsultor((int)($_POST['usuario_id'] ?? 0));
-            $sucesso = 'Instância do consultor removida.';
         } elseif ($acao === 'definir_plantao') {
             definirPlantaoFimExpediente((int)($_POST['usuario_id'] ?? 0), !empty($_POST['ativo']));
             $sucesso = 'Plantão de fim de expediente atualizado.';
@@ -143,7 +130,6 @@ foreach (array_keys($campos) as $chave) {
     $valores[$chave] = getConfig($chave) ?? '';
 }
 $configuradoZapi = $valores['zapi_instance_id'] && $valores['zapi_token'];
-$instancias = zapiListarInstanciasConsultores();
 $fila = listarFilaConsultores();
 ?>
 <!doctype html>
@@ -342,49 +328,8 @@ $fila = listarFilaConsultores();
 
 <div class="card">
     <h3>👤 Instâncias dos consultores/closers</h3>
-    <p><small>A partir do bloco 5 (atendimento), a conversa com o cliente passa a rodar SEMPRE pelo número/instância
-       própria de quem estiver com a oportunidade — não pela instância principal. É registrado no mesmo histórico do
-       cliente (mesmo telefone), só marcando quem falou por qual canal — dá visibilidade do que cada um conversa e o
-       volume de mensagens (ver <a href="/admin/produtividade.php">produtividade</a>).</small></p>
-
-    <?php if (!$instancias): ?>
-        <p><small>Nenhum consultor/closer cadastrado ainda em <code>usuarios</code>.</small></p>
-    <?php endif; ?>
-
-    <?php foreach ($instancias as $inst): ?>
-        <div class="historico-item" style="border-left-color:#1a5fb4">
-            <strong><?= e($inst['nome']) ?></strong> <span class="badge"><?= e($inst['perfil']) ?></span>
-            <?php if ($inst['instance_id']): ?>
-                <span class="badge badge-ok">✅ instância configurada</span>
-            <?php else: ?>
-                <span class="badge badge-atraso">⏳ sem instância</span>
-            <?php endif; ?>
-
-            <form method="post" style="margin-top:8px">
-                <?= csrfField() ?>
-                <input type="hidden" name="acao" value="salvar_instancia_consultor">
-                <input type="hidden" name="usuario_id" value="<?= (int)$inst['usuario_id'] ?>">
-                <div class="grid-2">
-                    <input type="text" name="instance_id" placeholder="ID da instância" value="<?= e($inst['instance_id'] ?? '') ?>">
-                    <input type="text" name="token" placeholder="Token" value="<?= e($inst['token'] ?? '') ?>">
-                </div>
-                <input type="text" name="client_token" placeholder="Client-Token (opcional)" value="<?= e($inst['client_token'] ?? '') ?>">
-                <button type="submit">Salvar</button>
-                <?php if ($inst['instance_id']): ?>
-                    <button type="button" class="perigo" onclick="
-                        if (confirm('Remover a instância de <?= e($inst['nome']) ?>?')) {
-                            var f = document.createElement('form');
-                            f.method = 'post';
-                            f.innerHTML = <?= json_encode(csrfField()) ?> +
-                                '<input type=\'hidden\' name=\'acao\' value=\'remover_instancia_consultor\'>' +
-                                '<input type=\'hidden\' name=\'usuario_id\' value=\'<?= (int)$inst['usuario_id'] ?>\'>';
-                            document.body.appendChild(f);
-                            f.submit();
-                        }">Remover</button>
-                <?php endif; ?>
-            </form>
-        </div>
-    <?php endforeach; ?>
+    <p><small>Mudou de lugar — configura direto no perfil de cada pessoa, em
+       <a href="/admin/usuarios.php">Usuários</a> → editar → "Instância Z-API".</small></p>
 </div>
 
 <div class="card">

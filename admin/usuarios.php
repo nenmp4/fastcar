@@ -80,13 +80,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($acao === 'salvar_instancia_zapi') {
+            $usuarioIdInst = (int)($_POST['usuario_id'] ?? 0);
+            $instanceId = trim((string)($_POST['instance_id'] ?? ''));
+            $token = trim((string)($_POST['token'] ?? ''));
+            if (!$usuarioIdInst || !$instanceId || !$token) {
+                $erro = 'Preencha ID da instância e token pra salvar.';
+            } else {
+                zapiSalvarInstanciaConsultor($usuarioIdInst, $instanceId, $token, (string)($_POST['client_token'] ?? ''));
+                $sucesso = 'Instância Z-API salva.';
+            }
+        } elseif ($acao === 'remover_instancia_zapi') {
+            zapiRemoverInstanciaConsultor((int)($_POST['usuario_id'] ?? 0));
+            $sucesso = 'Instância Z-API removida.';
         }
     }
 }
 
 $usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, disponivel FROM usuarios ORDER BY (perfil = 'super_admin') DESC, perfil, nome")->fetchAll();
+$instanciasPorUsuario = array_column(zapiListarInstanciasConsultores(), null, 'usuario_id');
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
+$instanciaZapi = ($editando && in_array($editando['perfil'], ['consultor', 'closer'], true))
+    ? zapiInstanciaDoConsultor($editandoId)
+    : null;
 
 $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor' => 'Consultor'];
 ?>
@@ -159,10 +176,51 @@ $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor
     </form>
 </div>
 
+<?php if ($editando && in_array($editando['perfil'], ['consultor', 'closer'], true)): ?>
+<div class="card">
+    <h3>📱 Instância Z-API — <?= e($editando['nome']) ?></h3>
+    <p><small>A partir do bloco 5 (atendimento), a conversa com o cliente passa a rodar SEMPRE pela instância
+       própria de quem estiver com a oportunidade — não pela instância principal. Cria uma instância nova pra
+       essa pessoa no painel da Z-API (não reaproveita a principal), conecta via QR Code com o WhatsApp dela e
+       cola os dados abaixo.</small></p>
+    <p>
+        Status:
+        <?php if ($instanciaZapi && $instanciaZapi['instance_id']): ?>
+            <span class="badge badge-ok">✅ instância configurada</span>
+        <?php else: ?>
+            <span class="badge badge-atraso">⏳ sem instância</span>
+        <?php endif; ?>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_instancia_zapi">
+        <input type="hidden" name="usuario_id" value="<?= (int)$editando['id'] ?>">
+        <div class="grid-2">
+            <input type="text" name="instance_id" placeholder="ID da instância" value="<?= e($instanciaZapi['instance_id'] ?? '') ?>">
+            <input type="text" name="token" placeholder="Token" value="<?= e($instanciaZapi['token'] ?? '') ?>">
+        </div>
+        <input type="text" name="client_token" placeholder="Client-Token (opcional)" value="<?= e($instanciaZapi['client_token'] ?? '') ?>">
+        <button type="submit">Salvar</button>
+        <?php if ($instanciaZapi && $instanciaZapi['instance_id']): ?>
+            <button type="button" class="perigo" onclick="
+                if (confirm('Remover a instância de <?= e($editando['nome']) ?>?')) {
+                    var f = document.createElement('form');
+                    f.method = 'post';
+                    f.innerHTML = <?= json_encode(csrfField()) ?> +
+                        '<input type=\'hidden\' name=\'acao\' value=\'remover_instancia_zapi\'>' +
+                        '<input type=\'hidden\' name=\'usuario_id\' value=\'<?= (int)$editando['id'] ?>\'>';
+                    document.body.appendChild(f);
+                    f.submit();
+                }">Remover</button>
+        <?php endif; ?>
+    </form>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <h3>👥 Usuários (<?= count($usuarios) ?>)</h3>
     <table class="tabela-oportunidades">
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Fila</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Fila</th><th>Z-API</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($usuarios as $u): ?>
             <tr>
@@ -177,6 +235,15 @@ $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor
                     <?php endif; ?>
                 </td>
                 <td><?= $u['disponivel'] ? '🟢 disponível' : '⚪ offline' ?></td>
+                <td>
+                    <?php if (!in_array($u['perfil'], ['consultor', 'closer'], true)): ?>
+                        <span style="color:var(--texto-fraco)">—</span>
+                    <?php elseif (!empty($instanciasPorUsuario[$u['id']]['instance_id'])): ?>
+                        <span class="badge badge-ok">✅ configurada</span>
+                    <?php else: ?>
+                        <span class="badge badge-atraso">⏳ sem instância</span>
+                    <?php endif; ?>
+                </td>
                 <td><a href="/admin/usuarios.php?editar=<?= (int)$u['id'] ?>">Editar →</a></td>
             </tr>
         <?php endforeach; ?>

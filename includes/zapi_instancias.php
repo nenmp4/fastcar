@@ -26,6 +26,14 @@ function zapiListarInstanciasConsultores(): array {
     ")->fetchAll();
 }
 
+/** Instância Z-API de UM consultor/closer — usado na tela de perfil dele (admin/usuarios.php). */
+function zapiInstanciaDoConsultor(int $usuarioId): ?array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT * FROM zapi_instancias_consultores WHERE usuario_id = ?");
+    $stmt->execute([$usuarioId]);
+    return $stmt->fetch() ?: null;
+}
+
 /** Cria ou atualiza a instância de um consultor (upsert por usuario_id). */
 function zapiSalvarInstanciaConsultor(int $usuarioId, string $instanceId, string $token, string $clientToken): void {
     $db = getDB();
