@@ -254,8 +254,39 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real
-  `01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`) + assinatura
-  eletrônica via **ZapSign** (`includes/zapsign.php`, webhook
+  `01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`).
+  **Endereço da sede corrigido em 13/09/2026** (o modelo original trazia um
+  endereço genérico de Santana de Parnaíba/SP): sede real é **Av.
+  Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo
+  Alpha Square Offices, Alphaville Conde II, Barueri/SP, CEP 06473-073**
+  (confirmado pelo José) — corrigido nos 4 lugares do PDF que citavam a
+  cidade/endereço antigos: cláusula de qualificação das partes (abertura),
+  cidade da linha de assinatura, foro de eleição (cláusula 29.2) e um
+  rodapé novo (nome/CNPJ/endereço em letra pequena) logo após o bloco de
+  testemunhas — pedido explícito ("coloca no rodapé do contrato"). O mesmo
+  endereço também aparece no rodapé do **wizard de documentos**
+  (`public/documentos.php`, wizard e tela de link inválido) — pedido
+  separado ("coloca no rodapé endereço nos links que enviar para
+  cliente"), reforça pro cliente que o link não é golpe (mesma
+  preocupação já coberta no prompt de qualificação da IA sobre
+  desconfiança com dado financeiro por WhatsApp).
+  **Link do wizard enviado como imagem+legenda, não texto puro** (mesmo
+  dia, "link enviado para cliente no whatsap vai como templade com imagem
+  e texto" / "puxa logo da fastcar bem caprichado nesse templade"):
+  `includes/whatsapp_config.php::zapiEnviarImagem()` (novo, `POST
+  /send-image` — `image` URL pública + `caption`, formato confirmado via
+  busca na documentação oficial Z-API) manda a logo (`public/assets/logo.png`)
+  como capa da mensagem com o link na legenda, sempre que já tiver logo
+  configurada (`marcaLogoConfigurada()`); sem logo ainda, cai no texto puro
+  de sempre (`zapiEnviarTexto()`) — nunca trava o envio do link por causa
+  disso. Testado contra servidor Z-API fake local confirmando o payload
+  exato (`phone`/`image`/`caption`) batendo com o formato documentado. O
+  rodapé com endereço (wizard e tela de link inválido) ganhou acabamento
+  na cor da marca (azul, não cinza neutro) a pedido ("personaliza rodapé
+  com cores fica legal") — borda superior em gradiente azul no wizard,
+  "FASTCAR SOLUTIONS" em azul vivo no fundo escuro da tela de link
+  inválido.
+  Assinatura eletrônica via **ZapSign** (`includes/zapsign.php`, webhook
   `api/zapsign_webhook.php` + fallback de polling `cron/zapsign_sync.php` —
   substituiu a Assinafy em 13/09/2026, pedido do José/Jean).
   Fluxo confirmado com o Jean: cliente preenche dados pelo link do

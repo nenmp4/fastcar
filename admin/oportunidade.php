@@ -118,7 +118,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $baseUrl = getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'];
                 $link = rtrim($baseUrl, '/') . '/public/documentos.php?token=' . $token;
                 $msg = "Olá! Pra continuar a avaliação do seu veículo, preencha seus dados e envie os documentos por aqui:\n{$link}";
-                if (zapiEnviarTexto($op['cliente_telefone'], $msg)) {
+
+                // Manda com a logo como capa (mais confiança/profissional do
+                // que texto puro, pedido do José/Jean, 13/09/2026 — mesma
+                // preocupação de "isso não é golpe?" do rodapé com endereço
+                // real) sempre que já tiver logo enviada em Configurações;
+                // sem logo ainda, cai no texto puro de sempre.
+                $enviado = marcaLogoConfigurada()
+                    ? zapiEnviarImagem($op['cliente_telefone'], rtrim($baseUrl, '/') . '/public/assets/logo.png', $msg)
+                    : zapiEnviarTexto($op['cliente_telefone'], $msg);
+
+                if ($enviado) {
                     $sucesso = 'Link enviado por WhatsApp.';
                 } else {
                     $erro = "Não deu pra enviar por WhatsApp (confira as credenciais em Configurações). Link: {$link}";

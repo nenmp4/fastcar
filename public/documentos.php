@@ -47,6 +47,9 @@ if (!$op) {
         <img src="/public/assets/logo.png" alt="Fastcar" style="max-height:56px;margin-bottom:24px" onerror="this.style.display='none'">
         <h2>⚠️ Link inválido ou expirado</h2>
         <p style="color:#aab4d4">Fale com seu consultor da Fastcar pra receber um novo link.</p>
+        <p style="color:#6b7aa0;font-size:11.5px;margin-top:40px;padding-top:16px;border-top:1px solid #2a3352">
+        <strong style="color:#5b91ff">FASTCAR SOLUTIONS</strong> — CNPJ 66.934.500/0001-09<br>
+        Av. Sagitário, 138 — Alphaville Conde II, Barueri/SP</p>
     </body></html>
     <?php
     exit;
@@ -252,6 +255,22 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
 .passos span.atual { background: var(--blue); }
 .resumo dt { font-size: 12px; color: #888; margin-top: 10px; }
 .resumo dd { margin: 2px 0 0; font-size: 15px; }
+/* Endereço real da empresa no rodapé — ajuda a passar confiança de que o
+   link não é golpe (pedido explícito do José/Jean, mesma preocupação já
+   coberta no prompt da IA de qualificação: pedir dado financeiro por
+   WhatsApp de um número desconhecido levanta desconfiança legítima hoje
+   em dia). */
+.rodape-empresa {
+    text-align: center;
+    font-size: 11.5px;
+    color: #6b7aa0;
+    line-height: 1.7;
+    margin-top: 28px;
+    padding: 18px 16px 4px;
+    border-top: 2px solid transparent;
+    border-image: linear-gradient(90deg, transparent, var(--blue) 50%, transparent) 1;
+}
+.rodape-empresa strong { color: var(--blue-dark); font-size: 12.5px; letter-spacing: .02em; }
 </style>
 </head>
 <body>
@@ -373,6 +392,12 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
             <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a> ou
             <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a>.</small></p>
     <?php endif; ?>
+
+    <footer class="rodape-empresa">
+        <strong>FASTCAR SOLUTIONS</strong> — CNPJ 66.934.500/0001-09<br>
+        Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices<br>
+        Alphaville Conde II, Barueri/SP — CEP 06473-073
+    </footer>
 </div>
 </body>
 </html>

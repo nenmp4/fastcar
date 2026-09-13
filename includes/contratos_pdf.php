@@ -92,8 +92,9 @@ function gerarPdfContratoCompra(array $c): string {
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->MultiCell(0, 5, _pdfTexto(
         "Pelo presente instrumento particular, de um lado, FASTCAR SOLUTIONS, pessoa jurídica de direito " .
-        "privado, inscrita no CNPJ/MF sob o nº 66.934.500/0001-09, com sede na Av. Marcos Penteado de Ulhôa " .
-        "Rodrigues, nº 4053, Centro Empresarial Tamboré 7, Santana de Parnaíba/SP, CEP 06543-001, doravante " .
+        "privado, inscrita no CNPJ/MF sob o nº 66.934.500/0001-09, com sede na Avenida Sagitário, nº 138, " .
+        "Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices, Alphaville Conde II, " .
+        "Barueri/SP, CEP 06473-073, doravante " .
         "denominada COMPRADORA/FASTCAR; e, de outro lado, {$c['vendedor_nome']}, {$c['vendedor_nacionalidade']}, " .
         "{$c['vendedor_estado_civil']}, {$c['vendedor_profissao']}, RG nº {$c['vendedor_rg']}, CPF nº {$c['vendedor_cpf']}, " .
         "CNH nº {$c['vendedor_cnh']}, residente em {$c['vendedor_endereco']}, doravante VENDEDOR/PROPRIETÁRIO " .
@@ -130,7 +131,7 @@ function gerarPdfContratoCompra(array $c): string {
 
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
-    $pdf->Cell(0, 6, _pdfTexto("Santana de Parnaíba/SP, {$c['data_extenso']}."), 0, 1, 'L');
+    $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
     $pdf->Ln(14);
 
     $y = $pdf->GetY();
@@ -159,6 +160,18 @@ function gerarPdfContratoCompra(array $c): string {
     $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+
+    // Rodapé com o endereço real da sede — pedido do José/Jean em
+    // 13/09/2026, endereço correto confirmado por ele (o modelo original
+    // trazia um endereço genérico de Santana de Parnaíba/SP, corrigido em
+    // todo o contrato — abertura, cidade da assinatura e foro).
+    $pdf->Ln(10);
+    $pdf->SetFont('Helvetica', '', 7.5);
+    $pdf->SetTextColor(120, 120, 120);
+    $pdf->Cell(0, 4, _pdfTexto('FASTCAR SOLUTIONS — CNPJ 66.934.500/0001-09'), 0, 1, 'C');
+    $pdf->Cell(0, 4, _pdfTexto('Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices'), 0, 1, 'C');
+    $pdf->Cell(0, 4, _pdfTexto('Alphaville Conde II, Barueri/SP — CEP 06473-073'), 0, 1, 'C');
+    $pdf->SetTextColor(0, 0, 0);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_compra_') . '.pdf';
     $pdf->Output('F', $caminho);
@@ -276,7 +289,7 @@ function clausulasContratoCompra(): array {
             "28.2. Obrigações dependentes de apuração deverão ser acompanhadas do respectivo demonstrativo."],
         ['CLÁUSULA 29ª – SOLUÇÃO DE CONTROVÉRSIAS',
             "29.1. As partes buscarão solução negocial antes do litígio, sem impedir tutela urgente.\n\n" .
-            "29.2. Respeitadas regras cogentes de competência, fica eleito o foro de Santana de Parnaíba/SP."],
+            "29.2. Respeitadas regras cogentes de competência, fica eleito o foro de Barueri/SP."],
         ['CLÁUSULA 30ª – DISPOSIÇÕES FINAIS',
             "30.1. Tolerância não constitui novação ou renúncia.\n\n" .
             "30.2. Invalidade parcial não prejudica cláusulas autônomas preserváveis.\n\n" .
