@@ -182,6 +182,24 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   Cloudflare com SSL Full-strict + Origin Certificate + Bot Fight Mode,
   firewall restrito a IPs da Cloudflare, crontab, deploy, e-mail, backup) —
   ver pendência #1
+- **Gestão de usuários** — `admin/usuarios.php`: lista/cria/edita
+  closer/consultor, restrito ao super_admin. Nunca cria nem promove
+  ninguém pra `super_admin` por essa tela (só o CLI
+  `install/create_admin.php`, decisão de segurança de propósito) e um
+  super_admin não consegue bloquear a própria conta por aqui.
+- **Dashboard por perfil** — `admin/index.php` mostra cards diferentes pra
+  cada perfil (`includes/dashboard.php`): consultor vê só a carteira dele
+  (ativas/atrasadas/recebidas na semana/status da fila), closer vê pipeline
+  de negociação + resultado do mês + taxa de conversão, super_admin vê
+  visão geral da empresa + funil em barra por etapa. Tabela principal e nav
+  de etapas também filtram por `responsavel_id` pra consultor/closer.
+- **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
+  (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
+  subsistemas reais do Fastcar: banco, servidor, Z-API (status real da
+  instância), IA (conectividade + custo de tokens do dia/mês), Google
+  Drive (autenticação JWT real), Assinafy, Brevo, backup, crons (frescor
+  de log), fila de leads (alerta se ninguém disponível), erros recentes.
+  Restrito ao super_admin.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
@@ -192,8 +210,6 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   já lido/estruturado, mas nada implementado)
 - **Módulo financeiro** — relatórios financeiros, reaproveitando o módulo
   financeiro do JurídicoSaaS
-- **Módulo de saúde do sistema** — dashboard de monitoramento/logs,
-  reaproveitando o módulo de saúde do JurídicoSaaS
 - **2FA no login do admin** — reaproveitando o padrão do JurídicoSaaS
 - **Verificação de documentos por IA** (OCR/conferência automática do que o
   cliente subiu contra o que foi digitado) — depende de decidir o provedor
