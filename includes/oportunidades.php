@@ -8,6 +8,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/fila_leads.php';
+require_once __DIR__ . '/whatsapp_config.php';
 
 const ETAPAS_VALIDAS = [
     'whatsapp', 'qualificacao_ia', 'crm_preenchido', 'atendimento',
@@ -115,7 +116,37 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
     mudarEtapa($opId, 'whatsapp', $responsavelId, 'Oportunidade criada — entrada pelo WhatsApp'
         . ($responsavelId ? ' (atribuída automaticamente)' : ''));
 
+    notificarNovoLeadWhatsapp($opId, $nome ?: '(sem nome)', $telNorm);
+
     return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId, 'nova' => true, 'responsavel_id' => $responsavelId];
+}
+
+/**
+ * Avisa por WhatsApp os números cadastrados em Configurações quando um
+ * lead novo entra (bloco 2) — igual ao sino de notificação sonora no
+ * admin (admin/_notify.php), mas alcança quem não está de olho no painel
+ * na hora. `notificacao_leads_whatsapp` em config: números separados por
+ * vírgula, mesmo padrão de lista que o JurídicoSaaS usa pra números
+ * bloqueados. Nunca lança exceção nem bloqueia a criação do lead — aviso
+ * é sempre melhor esforço (mesmo espírito de enviarEmail()/
+ * geminiRegistrarTokens()).
+ */
+function notificarNovoLeadWhatsapp(int $oportunidadeId, string $nomeCliente, string $telefoneCliente): void {
+    try {
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        $numeros = array_filter(array_map('trim', explode(',', $lista)));
+        if (!$numeros) return;
+
+        $baseUrl = getConfig('app_base_url') ?: '';
+        $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/oportunidade.php?id={$oportunidadeId}" : "oportunidade #{$oportunidadeId}";
+        $msg = "🚗 Novo lead no Fastcar CRM!\nCliente: {$nomeCliente}\nTelefone: {$telefoneCliente}\n{$link}";
+
+        foreach ($numeros as $numero) {
+            zapiEnviarTexto($numero, $msg);
+        }
+    } catch (Throwable $e) {
+        // notificação nunca pode derrubar a criação do lead
+    }
 }
 
 /**

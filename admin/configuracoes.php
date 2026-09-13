@@ -104,6 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Falha ao enviar — confira as credenciais e se a instância está conectada.';
                 }
             }
+        } elseif ($acao === 'salvar_notificacao_leads') {
+            $numerosDigitados = array_filter(array_map('trim', explode(',', (string)($_POST['notificacao_leads_whatsapp'] ?? ''))));
+            setConfig('notificacao_leads_whatsapp', implode(',', $numerosDigitados));
+            $sucesso = 'Números de notificação de lead novo salvos.';
         } elseif ($acao === 'salvar_instancia_consultor') {
             $usuarioId = (int)($_POST['usuario_id'] ?? 0);
             $instanceId = trim((string)($_POST['instance_id'] ?? ''));
@@ -200,6 +204,23 @@ $fila = listarFilaConsultores();
         <button type="submit" <?= $configuradoZapi ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
         <?php if (!$configuradoZapi): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h3>🔔 Notificação de lead novo (WhatsApp)</h3>
+    <p><small>Assim que um lead entra pelo WhatsApp (bloco 2), a instância principal manda um aviso automático
+       pros números abaixo — além do sino sonoro que já aparece no admin pra quem estiver com a tela aberta
+       (<code>admin/_notify.php</code>), isso alcança quem não está de olho no painel na hora.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_notificacao_leads">
+        <label>Números (com DDD, separados por vírgula)</label>
+        <input type="text" name="notificacao_leads_whatsapp" value="<?= e(getConfig('notificacao_leads_whatsapp') ?: '') ?>" placeholder="Ex: 31999998888, 31988887777">
+        <button type="submit">Salvar</button>
+        <?php if (!getConfig('notificacao_leads_whatsapp')): ?>
+            <p><small>Nenhum número configurado ainda — ninguém recebe aviso de lead novo por WhatsApp.</small></p>
         <?php endif; ?>
     </form>
 </div>
