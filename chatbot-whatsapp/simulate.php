@@ -45,6 +45,10 @@ if (PHP_SAPI !== 'cli') {
 }
 
 define('ROOT', dirname(__DIR__));
+// Conversa aqui é digitada linha a linha, ao vivo — não faz sentido esperar
+// WHATSAPP_DEBOUNCE_SEGUNDOS (ver chatbot-whatsapp/includes/mensagens.php)
+// depois de cada mensagem simulada.
+define('WHATSAPP_DEBOUNCE_SEGUNDOS', 0);
 require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';

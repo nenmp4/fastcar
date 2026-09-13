@@ -12,6 +12,15 @@ require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
 
+// Segundos de silêncio esperados antes da IA responder — evita o bot
+// respondendo picotado quando o cliente manda várias mensagens curtas em
+// sequência (ex: "Oi" / "quero vender meu carro" / "é um Onix 2019" como 3
+// mensagens separadas em poucos segundos: sem isso, o bot respondia à
+// primeira sozinha, com jeito de robô mal escutando). `0` desliga (usado
+// pelo simulador de CLI — não faz sentido esperar segundos numa conversa
+// digitada linha a linha ao vivo).
+if (!defined('WHATSAPP_DEBOUNCE_SEGUNDOS')) define('WHATSAPP_DEBOUNCE_SEGUNDOS', 4);
+
 /**
  * Já processamos esse messageId antes? Checagem antecipada pra dedup de
  * webhook reenviado (Z-API pode reentregar o mesmo evento em timeout/retry)
@@ -142,7 +151,7 @@ function registrarMensagem(
     bool $enviadoPorIa = false,
     string $tipo = 'text',
     ?int $usuarioId = null
-): void {
+): int {
     $db = getDB();
     $telNorm = normalizarTelefone($telefone);
 
@@ -164,6 +173,42 @@ function registrarMensagem(
         $zapiMessageId ?: '',
         $usuarioId,
     ]);
+
+    // id da linha inserida — 0 se foi ignorado por dedup de zapi_message_id
+    // (não deveria acontecer aqui: quem chama já checou jaProcessado() antes
+    // pra mensagem recebida; pra mensagem 'out' não tem dedup, sempre insere).
+    return (int)$db->lastInsertId();
+}
+
+/**
+ * Espera WHATSAPP_DEBOUNCE_SEGUNDOS de silêncio antes de deixar a IA
+ * responder. Se chegar uma mensagem MAIS NOVA desse mesmo telefone
+ * enquanto essa request está dormindo (cliente mandou outra mensagem
+ * separada, um webhook concorrente já está processando), essa request
+ * aborta silenciosamente — a request da mensagem mais nova vai fazer sua
+ * própria espera e responder pra todas de uma vez, já que
+ * iaMontarHistoricoGemini() sempre lê o histórico completo do telefone,
+ * não só a última mensagem recebida. Sem isso, um cliente que manda "Oi" /
+ * "quero vender meu carro" / "é um Onix 2019" como 3 mensagens separadas
+ * recebia 3 respostas picotadas, uma pra cada, em vez de 1 resposta lendo
+ * tudo junto.
+ *
+ * @param int $idMensagem id (whatsapp_mensagens.id) da mensagem que ESSA
+ *   request acabou de registrar — geralmente o retorno de registrarMensagem().
+ * @return bool true = pode responder agora (essa é a última mensagem do
+ *   burst); false = abortar, uma request mais nova vai responder por ela.
+ */
+function aguardarSilencioOuAbortar(string $telefone, int $idMensagem): bool {
+    if (WHATSAPP_DEBOUNCE_SEGUNDOS <= 0 || $idMensagem <= 0) return true;
+
+    sleep(WHATSAPP_DEBOUNCE_SEGUNDOS);
+
+    $db = getDB();
+    $stmt = $db->prepare("SELECT MAX(id) FROM whatsapp_mensagens WHERE telefone = ? AND direcao = 'in'");
+    $stmt->execute([normalizarTelefone($telefone)]);
+    $ultimoId = (int)$stmt->fetchColumn();
+
+    return $ultimoId <= $idMensagem;
 }
 
 /** IA está pausada pra esse telefone? (regra #4 — consultor assumiu a conversa) */
@@ -281,7 +326,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         }
     }
 
-    registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro, $usuarioId);
+    $idMensagemRecebida = registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro, $usuarioId);
 
     // Cria/abre a oportunidade desde o 1º contato (regra #2) — nunca esperar
     // a qualificação terminar pra existir registro. Idempotente: se já
@@ -317,11 +362,16 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 if ($etapaAtual === 'whatsapp') {
                     mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
                 }
-                try {
-                    $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone);
-                } catch (Throwable $e) {
-                    // Nunca deixa uma falha da IA quebrar o resto do webhook —
-                    // mensagem do cliente já está salva, oportunidade já existe.
+                // Debounce (ver aguardarSilencioOuAbortar) — se chegar mensagem
+                // mais nova desse telefone enquanto essa dorme, aborta: a mais
+                // nova vai responder pelas duas juntas.
+                if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
+                    try {
+                        $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone);
+                    } catch (Throwable $e) {
+                        // Nunca deixa uma falha da IA quebrar o resto do webhook —
+                        // mensagem do cliente já está salva, oportunidade já existe.
+                    }
                 }
             } else {
                 // Mídia que não deu pra processar (vídeo, figurinha, documento,

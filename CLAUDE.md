@@ -149,7 +149,31 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   documento, localização, contato — ou áudio/imagem que falhou o
   processamento — recebem uma resposta de reconhecimento simples
   (`chatbot-whatsapp/includes/mensagens.php`) em vez de deixar o lead sem
-  resposta nenhuma.
+  resposta nenhuma. **Debounce de mensagens picotadas** (13/09/2026,
+  auditoria de "como fica na prática" pedida pelo José/Jean): sem isso, um
+  cliente que manda "Oi" / "quero vender meu carro" / "é um Onix 2019" como
+  3 mensagens separadas em poucos segundos recebia 3 respostas picotadas da
+  IA, uma pra cada, com jeito nítido de robô mal escutando. Agora, antes de
+  chamar a IA, `aguardarSilencioOuAbortar()` espera
+  `WHATSAPP_DEBOUNCE_SEGUNDOS` (4s) de silêncio; se chegar mensagem mais
+  nova desse telefone nesse meio tempo (outro worker do PHP-FPM já
+  processando em paralelo), essa chamada aborta silenciosamente — a
+  chamada da mensagem mais nova é quem responde, já lendo o histórico
+  completo (inclui as anteriores). `0` desliga o debounce, usado pelo
+  simulador de CLI (`chatbot-whatsapp/simulate.php` — não faz sentido
+  esperar segundos numa conversa digitada linha a linha ao vivo). Validado
+  diretamente (2 processos reais concorrentes disputando o mesmo telefone,
+  com `sleep()` de verdade) confirmando abortar quando chega mensagem nova
+  e prosseguir quando não chega; a prova de ponta a ponta via HTTP fica
+  pendente de um servidor com concorrência real de verdade (PHP-FPM da
+  VPS) — o servidor embutido do PHP usado em dev processa uma request por
+  vez por padrão, o que mascara exatamente essa corrida.
+  **Prompt revisado** (mesma auditoria): adicionada orientação explícita
+  pra "quanto vocês pagam?" (quase sempre a 1ª pergunta do lead — antes só
+  tinha "nunca prometa valor", sem indicar como desviar sem soar evasivo) e
+  pra desconfiança em passar dado financeiro por WhatsApp (explicar em 1
+  frase por que a Fastcar precisa saber do banco/parcela, sem insistir se a
+  pessoa não quiser).
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
