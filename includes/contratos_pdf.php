@@ -31,8 +31,26 @@ function _pdfNovo(): FPDF {
 }
 
 function _pdfCabecalho(FPDF $pdf): void {
-    $pdf->SetFillColor(30, 58, 95); // navy
+    $pdf->SetFillColor(21, 23, 34); // navy da marca (#151722)
     $pdf->Rect(0, 0, 210, 24, 'F');
+
+    // Logo real no canto esquerdo do cabeçalho, se já tiver sido enviada
+    // via Configurações (includes/marca.php) — pedido explícito ("faltou
+    // logo topo para fechar"). Sem logo ainda, cabeçalho segue só com o
+    // texto, igual sempre foi — nunca trava a geração do contrato por
+    // causa de imagem ausente/corrompida.
+    $logoPath = dirname(__DIR__) . '/public/assets/logo.png';
+    if (is_file($logoPath)) {
+        try {
+            $dimensoes = @getimagesize($logoPath);
+            if ($dimensoes) {
+                $pdf->Image($logoPath, 20, 4, 0, 16);
+            }
+        } catch (Throwable $e) {
+            // Logo corrompida ou formato que o FPDF não lê — segue sem ela.
+        }
+    }
+
     $pdf->SetY(5);
     $pdf->SetTextColor(255, 255, 255);
     $pdf->SetFont('Helvetica', 'B', 13);

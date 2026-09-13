@@ -308,6 +308,18 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   PDF gerado de ponta a ponta: as 3 linhas que antes estouravam (91mm/
   104mm/90mm calculados via `GetStringWidth()`, > 85mm da célula) agora
   quebram corretamente em 2 linhas.
+  **Logo real no cabeçalho do PDF** ("ficou bom só faltou logo topo pra
+  fechar"): `_pdfCabecalho()` coloca `public/assets/logo.png` (a mesma
+  gerada por `includes/marca.php` no upload em Configurações) no canto
+  esquerdo da faixa navy, altura fixa 16mm com largura calculada
+  automaticamente pelo FPDF preservando proporção; cor da faixa também
+  ajustada pra bater com a marca (`#151722`, era um navy genérico antes).
+  Sem logo ainda enviada — ou arquivo corrompido/formato que o FPDF não lê
+  — o cabeçalho segue só com o texto "FASTCAR SOLUTIONS", igual sempre
+  foi, nunca trava a geração do contrato por causa de imagem. Testado com
+  logo de teste real (PNG com transparência) confirmando que entra sem
+  erro, e os casos "sem logo" e "logo corrompida" confirmados gerando o
+  PDF normalmente do mesmo jeito.
   Assinatura eletrônica via **ZapSign** (`includes/zapsign.php`, webhook
   `api/zapsign_webhook.php` + fallback de polling `cron/zapsign_sync.php` —
   substituiu a Assinafy em 13/09/2026, pedido do José/Jean).
