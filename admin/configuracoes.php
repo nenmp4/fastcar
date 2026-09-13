@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/marca.php';
 requireSuperAdmin();
 
 $campos = [
@@ -130,6 +131,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, clean((string)($_POST[$chave] ?? '')));
             }
             $sucesso = 'Testemunhas do contrato salvas.';
+        } elseif ($acao === 'salvar_logo') {
+            $resultado = processarUploadLogo($_FILES['logo'] ?? []);
+            if ($resultado['ok']) {
+                $sucesso = 'Logo enviada! Favicon e ícones do PWA atualizados — pode levar alguns segundos pra aparecer se o navegador tinha em cache.';
+            } else {
+                $erro = $resultado['erro'];
+            }
         } elseif ($acao === 'salvar_backup') {
             setConfig('backup_auto_ativo', isset($_POST['backup_auto_ativo']) ? '1' : '0');
             setConfig('drive_backup_ativo', isset($_POST['drive_backup_ativo']) ? '1' : '0');
@@ -167,6 +175,30 @@ $fila = listarFilaConsultores();
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
+
+<div class="card">
+    <h2>🎨 Identidade visual</h2>
+    <p><small>1 upload só atualiza a logo do wizard de documentos (cabeçalho de
+       <code>public/documentos.php</code>), o favicon e os ícones do PWA (192px/512px) — nunca mais precisa mexer em
+       arquivo direto no servidor pra trocar a marca. Aceita PNG, JPG ou WEBP; o sistema redimensiona sozinho pra cada
+       uso.</small></p>
+    <?php if (marcaLogoConfigurada()): ?>
+        <p>
+            <img src="/public/assets/logo.png?v=<?= (int)strtotime(getConfig('marca_logo_atualizada_em') ?: 'now') ?>"
+                 alt="Logo atual" style="max-height:64px;background:#0a1229;padding:10px;border-radius:8px">
+        </p>
+        <p><small>Enviada em <?= e(getConfig('marca_logo_atualizada_em') ?: '—') ?>.</small></p>
+    <?php else: ?>
+        <p><span class="badge badge-atraso">⏳ nenhuma logo enviada ainda — usando placeholder "FC"</span></p>
+    <?php endif; ?>
+    <form method="post" enctype="multipart/form-data">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_logo">
+        <label>Arquivo da logo (PNG, JPG ou WEBP)</label>
+        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required>
+        <button type="submit">Enviar e gerar favicon/ícones</button>
+    </form>
+</div>
 
 <div class="card">
     <h2>⚙️ Instância principal (entrada, qualificação IA e follow-up)</h2>

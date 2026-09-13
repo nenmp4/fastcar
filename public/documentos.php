@@ -41,7 +41,8 @@ if (!$op) {
     http_response_code(404);
     ?>
     <!doctype html><html lang="pt-br"><head><meta charset="utf-8"><title>Link inválido — Fastcar</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1"></head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/public/assets/favicon.png"></head>
     <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;padding:60px 20px;background:#0a1229;color:#fff;min-height:100vh;margin:0">
         <img src="/public/assets/logo.png" alt="Fastcar" style="max-height:56px;margin-bottom:24px" onerror="this.style.display='none'">
         <h2>⚠️ Link inválido ou expirado</h2>
@@ -200,6 +201,7 @@ $numeroEtapa = array_search($tipoAtual, ORDEM_ETAPAS, true);
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Envio de documentos — Fastcar</title>
+<link rel="icon" type="image/png" href="/public/assets/favicon.png">
 <style>
 /* Paleta da marca Fast Car — azul-marinho escuro + azul de destaque + branco
    (mesma logo enviada pelo Jean/José, 13/09/2026: fundo #0a1229, "Fast"

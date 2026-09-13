@@ -283,6 +283,24 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   a troca de provedor: sem esse retry, um contrato já `assinado` sem cópia
   salva (download falhou 1x) ficava pra sempre sem nenhuma versão
   visualizável, porque o status já bater impedia qualquer tentativa nova.
+- **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
+  (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
+  pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em
+  vez de mandar o arquivo por fora pra um dev trocar na mão a cada deploy).
+  1 upload (`admin/configuracoes.php` → card "🎨 Identidade visual", PNG/
+  JPG/WEBP) gera, via **GD puro** (extensão padrão do PHP, sem Imagick —
+  mesmo espírito de "sem dependência exótica" do resto do projeto):
+  `public/assets/logo.png` (proporção original preservada, fundo
+  transparente, só reduz se passar de 200px de altura — é o que aparece no
+  cabeçalho do wizard) e `admin/assets/img/icon-192.png`/`icon-512.png` +
+  `favicon.png`/`public/assets/favicon.png` (quadrados, a imagem inteira
+  encaixada sem cortar, sobra preenchida com o azul-marinho da marca
+  `#0a1229` — nunca fundo transparente nesses, fica ilegível dependendo do
+  tema de quem instalar o PWA). Testado em banco isolado com uma imagem
+  retangular de teste (600×300, com transparência): saída proporcional
+  correta (400×200, mesma proporção 2:1), os 3 quadrados com a elipse de
+  teste centralizada e redimensionada sem distorcer, e a transparência do
+  `logo.png` confirmada pixel a pixel (canto transparente, centro opaco).
 - **Configurações de super admin** — `admin/configuracoes.php`: Z-API
   principal, IA (Gemini + OpenAI fallback), Google Drive, ZapSign,
   testemunhas do contrato (fixas — ver abaixo), fila de leads/plantão,
@@ -305,11 +323,12 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   que uma página nova nunca esqueça de incluir os dois (mesma classe de bug
   do head_scripts nas landing pages do JurídicoSaaS). Ícones em
   `admin/assets/img/icon-192.png`/`icon-512.png` ainda são **placeholder**
-  ("FC" em fundo escuro) — a logo real da Fastcar chegou em 13/09/2026
+  ("FC" em fundo escuro) até alguém enviar a logo de verdade pela tela de
+  Configurações (ver `includes/marca.php` abaixo) — a logo real da Fastcar
   (fundo azul-marinho `#0a1229`, wordmark "Fast**Car**" branco+azul,
-  "Soluções Financeiras" como subtítulo) mas só como imagem colada na
-  conversa, sem arquivo — falta o José reenviar como anexo de verdade pra
-  gerar os ícones e o favicon a partir dela.
+  "Soluções Financeiras" como subtítulo) chegou colada direto na conversa
+  em 13/09/2026, sem dar pra salvar os pixels exatos; falta reenviar como
+  arquivo de verdade.
 - **Smoke test** — `tests/smoke.php` (rodar antes de todo commit: `php
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os

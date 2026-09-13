@@ -7,3 +7,4 @@
 <link rel="manifest" href="/admin/manifest.json">
 <meta name="theme-color" content="#1e293b">
 <link rel="apple-touch-icon" href="/admin/assets/img/icon-192.png">
+<link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
