@@ -122,6 +122,17 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     $pdfPath = gerarPdfContratoCompra($campos);
     $nomeDoc = 'Contrato de Compra - ' . ($campos['vendedor_nome'] ?: "Oportunidade #{$oportunidadeId}");
 
+    // Guarda uma cópia própria (Drive preferido, storage/uploads/ como
+    // fallback — mesmo padrão de includes/documentos.php) ANTES de mandar
+    // pra Assinafy, pra dar pra visualizar o contrato no sistema
+    // (admin/ver_contrato.php) mesmo enquanto ainda está esperando
+    // assinatura — nunca dependeu disso pra decidir se segue com o envio.
+    $nomeArquivoCopia = 'contrato_compra_' . $oportunidadeId . '_' . time() . '.pdf';
+    $copia = salvarArquivoGeradoComoDocumento(
+        $campos['_cliente_id'], $campos['vendedor_nome'], $pdfPath, $nomeArquivoCopia,
+        'application/pdf', 'contratos/' . $oportunidadeId
+    );
+
     $uploadRes = assinafyUploadPdf($pdfPath, $nomeDoc);
     @unlink($pdfPath);
     if (isset($uploadRes['error'])) {
@@ -146,11 +157,12 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     $db = getDB();
     $db->prepare("
         INSERT INTO contratos
-            (oportunidade_id, tipo, nome, campos_json, assinafy_doc_id, assinafy_assignment_id, assinafy_signer_id, sign_url, status, created_by)
-        VALUES (?, 'compra', ?, ?, ?, ?, ?, ?, 'enviado', ?)
+            (oportunidade_id, tipo, nome, campos_json, assinafy_doc_id, assinafy_assignment_id, assinafy_signer_id, sign_url, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, 'compra', ?, ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
     ")->execute([
         $oportunidadeId, $nomeDoc, json_encode($campos), $docId,
-        $assignRes['assignment_id'], $signerRes['signer_id'], $assignRes['sign_url'] ?? '', $usuarioId,
+        $assignRes['assignment_id'], $signerRes['signer_id'], $assignRes['sign_url'] ?? '',
+        $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
 
     return [
@@ -182,8 +194,12 @@ function assinafySincronizarContrato(int $contratoId): void {
     if ($novoStatus === $c['status']) return; // nada mudou, evita trabalho à toa
 
     $driveFileId = $c['drive_file_id'];
+    $arquivoUrl = $c['arquivo_url'];
 
-    if ($novoStatus === 'assinado' && !$c['drive_file_id']) {
+    // Transição pra 'assinado' só acontece 1x por contrato (o early-return
+    // de "nada mudou" acima garante isso) — baixa o PDF final e substitui a
+    // cópia salva na geração (ainda sem assinar) pela versão assinada.
+    if ($novoStatus === 'assinado') {
         $conteudo = assinafyBaixarAssinado($c['assinafy_doc_id']);
         if ($conteudo) {
             $tmp = tempnam(sys_get_temp_dir(), 'contrato_assinado_') . '.pdf';
@@ -195,24 +211,31 @@ function assinafySincronizarContrato(int $contratoId): void {
             $stmtCli->execute([$c['oportunidade_id']]);
             $cli = $stmtCli->fetch();
 
-            $drive = new GoogleDrive();
-            if ($cli && $drive->hasCredentials() && $drive->authenticate()) {
-                $pastaId = garantirPastaDriveCliente($drive, (int)$cli['id'], $cli['nome'] ?: "Cliente #{$cli['id']}");
-                if ($pastaId) {
-                    $nomeArquivo = 'contrato_compra_assinado_' . $c['oportunidade_id'] . '.pdf';
-                    $idDrive = $drive->uploadFile($tmp, $nomeArquivo, 'application/pdf', $pastaId);
-                    if ($idDrive) $driveFileId = $idDrive;
+            if ($cli) {
+                $nomeArquivo = 'contrato_compra_assinado_' . $c['oportunidade_id'] . '.pdf';
+                $copia = salvarArquivoGeradoComoDocumento(
+                    (int)$cli['id'], $cli['nome'] ?: "Cliente #{$cli['id']}", $tmp, $nomeArquivo,
+                    'application/pdf', 'contratos/' . $c['oportunidade_id']
+                );
+                if ($copia['drive_file_id'] || $copia['arquivo_url']) {
+                    $driveFileId = $copia['drive_file_id'];
+                    $arquivoUrl  = $copia['arquivo_url'];
                 }
             }
             @unlink($tmp);
 
-            if ($driveFileId) {
+            // A pasta fechada (bloco 8, regra #7) só conta esse documento
+            // como presente aqui — na geração (ainda sem assinar) de
+            // propósito NÃO grava em oportunidade_documentos, senão o
+            // checklist de fechamento passaria mesmo sem assinatura.
+            if ($driveFileId || $arquivoUrl) {
                 $db->prepare("
-                    INSERT INTO oportunidade_documentos (oportunidade_id, tipo, drive_file_id, obrigatorio, enviado_pelo_cliente, updated_at)
-                    VALUES (?, 'contrato_compra', ?, 1, 0, datetime('now','localtime'))
+                    INSERT INTO oportunidade_documentos (oportunidade_id, tipo, drive_file_id, arquivo_url, obrigatorio, enviado_pelo_cliente, updated_at)
+                    VALUES (?, 'contrato_compra', ?, ?, 1, 0, datetime('now','localtime'))
                     ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
-                        drive_file_id = excluded.drive_file_id, updated_at = datetime('now','localtime')
-                ")->execute([$c['oportunidade_id'], $driveFileId]);
+                        drive_file_id = excluded.drive_file_id, arquivo_url = excluded.arquivo_url,
+                        updated_at = datetime('now','localtime')
+                ")->execute([$c['oportunidade_id'], $driveFileId, $arquivoUrl]);
 
                 $db->prepare("UPDATE oportunidades SET contrato_assinado = 1 WHERE id = ?")->execute([$c['oportunidade_id']]);
             }
@@ -220,6 +243,6 @@ function assinafySincronizarContrato(int $contratoId): void {
     }
 
     $db->prepare("
-        UPDATE contratos SET status = ?, drive_file_id = ?, updated_at = datetime('now','localtime') WHERE id = ?
-    ")->execute([$novoStatus, $driveFileId, $contratoId]);
+        UPDATE contratos SET status = ?, drive_file_id = ?, arquivo_url = ?, updated_at = datetime('now','localtime') WHERE id = ?
+    ")->execute([$novoStatus, $driveFileId, $arquivoUrl, $contratoId]);
 }

@@ -382,8 +382,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     </td>
                     <td><?= date('d/m/Y H:i', strtotime($ct['created_at'])) ?></td>
                     <td>
+                        <?php if ($ct['drive_file_id'] || $ct['arquivo_url']): ?>
+                            <a href="/admin/ver_contrato.php?id=<?= (int)$ct['id'] ?>" target="_blank">ver PDF</a>
+                        <?php endif; ?>
                         <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
-                            <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
+                            · <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
                         <?php endif; ?>
                     </td>
                 </tr>

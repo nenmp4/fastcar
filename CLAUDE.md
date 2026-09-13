@@ -175,7 +175,20 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   financeiros/de negociação só na hora de fechar o negócio** (bloco 6, mesma
   pessoa que atendeu desde a mesclagem consultor/closer, ver pendência #4) →
   dispara o contrato. Contrato de **VENDA** (Fastcar revende o carro) fica
-  pro módulo de vendas, fora de escopo agora (ver "Segunda etapa" abaixo)
+  pro módulo de vendas, fora de escopo agora (ver "Segunda etapa" abaixo).
+  **Visualização do PDF no próprio sistema** (`admin/ver_contrato.php`):
+  desde 13/09/2026, o PDF fica salvo (Drive preferido, `storage/uploads/`
+  como fallback — mesmo padrão de `includes/documentos.php`) já na geração,
+  antes mesmo de assinado — `contratos.drive_file_id`/`arquivo_url` guardam
+  sempre a versão mais atual (a assinada sobrescreve a rascunho quando
+  chega via `assinafySincronizarContrato()`). Isso é **separado** de
+  `oportunidade_documentos.contrato_compra` (o que conta pro checklist da
+  regra #7) — esse só é gravado quando o status vira `assinado` de
+  propósito, senão o checklist de fechamento passaria com um contrato só
+  gerado, ainda sem assinatura. Lógica de servir o arquivo (Drive ou local,
+  com defesa contra path traversal) compartilhada entre
+  `admin/ver_documento.php` e `admin/ver_contrato.php` via
+  `includes/documentos.php::servirArquivoDriveOuLocal()`.
 - **Configurações de super admin** — `admin/configuracoes.php`: Z-API
   principal, IA (Gemini + OpenAI fallback), Google Drive, Assinafy, fila de
   leads/plantão, instâncias dos consultores

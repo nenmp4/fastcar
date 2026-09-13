@@ -297,8 +297,14 @@ CREATE TABLE IF NOT EXISTS contratos (
     status TEXT NOT NULL DEFAULT 'gerado'
         CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro')),
     motivo_recusa TEXT DEFAULT '',
-    drive_file_id TEXT DEFAULT '',     -- PDF assinado, já salvo na pasta do cliente no Drive
-    pdf_assinado_url TEXT DEFAULT '',
+    -- PDF do contrato — Drive é preferido, arquivo_url é fallback local
+    -- (storage/uploads/, mesmo padrão de oportunidade_documentos); começa a
+    -- existir já na geração (ainda sem assinar) e é sobrescrito pela versão
+    -- assinada quando ela chega — sempre é "a versão mais atual", pra dar
+    -- pra visualizar em admin/ver_contrato.php a qualquer momento.
+    drive_file_id TEXT DEFAULT '',
+    arquivo_url TEXT DEFAULT '',
+    pdf_assinado_url TEXT DEFAULT '',  -- não usado (nunca escrito) — mantido só por compat com bancos já criados
     created_by INTEGER REFERENCES usuarios(id),
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

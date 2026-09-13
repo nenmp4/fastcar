@@ -37,6 +37,10 @@ $migracoes = [
     'oportunidades.temperatura_lead'          => "ALTER TABLE oportunidades ADD COLUMN temperatura_lead TEXT DEFAULT ''",
     'oportunidades.aceita_ligacao_consultor'  => "ALTER TABLE oportunidades ADD COLUMN aceita_ligacao_consultor INTEGER",
     'whatsapp_sessoes.turnos_sem_avanco'      => "ALTER TABLE whatsapp_sessoes ADD COLUMN turnos_sem_avanco INTEGER DEFAULT 0",
+
+    // 13/09/2026 — dá pra visualizar o PDF do contrato no próprio sistema
+    // (admin/ver_contrato.php) desde a geração, não só depois de assinado
+    'contratos.arquivo_url' => "ALTER TABLE contratos ADD COLUMN arquivo_url TEXT DEFAULT ''",
 ];
 
 foreach ($migracoes as $nome => $sql) {

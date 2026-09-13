@@ -237,3 +237,90 @@ function salvarUploadDocumento(int $oportunidadeId, string $tipo, array $arquivo
 
     return ['ok' => true, 'erro' => null];
 }
+
+/**
+ * Sobe um arquivo já em disco (gerado pelo próprio sistema — ex: PDF de
+ * contrato, includes/contratos_pdf.php — não um upload de $_FILES) pra
+ * pasta do cliente no Drive, com o mesmo fallback local de
+ * salvarUploadDocumento() (storage/uploads/{subpasta}/{nome}). Nunca move
+ * nem apaga o arquivo de origem — quem chama decide o que fazer com ele
+ * depois. Retorna ['drive_file_id' => string, 'arquivo_url' => string] —
+ * sempre um dos dois preenchido e o outro vazio, ou ambos vazios se os
+ * dois caminhos falharem (Drive indisponível/falhou E não deu pra gravar
+ * local — quem chama decide se isso é erro fatal ou só "sem cópia visível
+ * dessa vez", nunca deve travar o fluxo principal por causa disso).
+ */
+function salvarArquivoGeradoComoDocumento(int $clienteId, string $nomeCliente, string $caminhoOrigem, string $nomeArquivo, string $mime, string $subpasta): array {
+    $driveFileId = '';
+    $relativoLocal = '';
+
+    $drive = new GoogleDrive();
+    if ($drive->hasCredentials() && $drive->authenticate()) {
+        $pastaId = garantirPastaDriveCliente($drive, $clienteId, $nomeCliente ?: "Cliente #{$clienteId}");
+        if ($pastaId) {
+            $idDrive = $drive->uploadFile($caminhoOrigem, $nomeArquivo, $mime, $pastaId);
+            if ($idDrive) $driveFileId = $idDrive;
+        }
+    }
+
+    if (!$driveFileId) {
+        $dir = UPLOADS_DIR . '/' . $subpasta;
+        if ((is_dir($dir) || mkdir($dir, 0755, true)) && copy($caminhoOrigem, $dir . '/' . $nomeArquivo)) {
+            $relativoLocal = $subpasta . '/' . $nomeArquivo;
+        }
+    }
+
+    return ['drive_file_id' => $driveFileId, 'arquivo_url' => $relativoLocal];
+}
+
+/**
+ * Serve (inline, nunca força download) um arquivo salvo via Drive
+ * (drive_file_id) ou fallback local (arquivo_url, relativo a UPLOADS_DIR) —
+ * compartilhado entre admin/ver_documento.php e admin/ver_contrato.php pra
+ * não duplicar a lógica de download/defesa contra path traversal em dois
+ * arquivos. Sempre termina a request (exit).
+ */
+function servirArquivoDriveOuLocal(?string $driveFileId, ?string $arquivoUrl): void {
+    if (!$driveFileId && !$arquivoUrl) {
+        http_response_code(404);
+        exit('Arquivo não encontrado.');
+    }
+
+    if ($driveFileId) {
+        $drive = new GoogleDrive();
+        if (!$drive->hasCredentials() || !$drive->authenticate()) {
+            http_response_code(503);
+            exit('Google Drive indisponível no momento.');
+        }
+        $arquivo = $drive->download($driveFileId);
+        if (!$arquivo) {
+            http_response_code(502);
+            exit('Não foi possível baixar o documento agora. Tente novamente.');
+        }
+        header('Content-Type: ' . $arquivo['mime']);
+        header('Content-Disposition: inline; filename="' . rawurlencode($arquivo['name']) . '"');
+        header('Content-Length: ' . strlen($arquivo['content']));
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store');
+        echo $arquivo['content'];
+        exit;
+    }
+
+    // Fallback local — arquivo_url é sempre relativo a UPLOADS_DIR, mesmo
+    // assim nunca confia cegamente: normaliza e confere que o caminho final
+    // continua dentro de UPLOADS_DIR antes de abrir (defesa contra path
+    // traversal).
+    $caminho = realpath(UPLOADS_DIR . '/' . $arquivoUrl);
+    if (!$caminho || !str_starts_with($caminho, realpath(UPLOADS_DIR) . DIRECTORY_SEPARATOR)) {
+        http_response_code(404);
+        exit('Arquivo não encontrado.');
+    }
+
+    $mime = mime_content_type($caminho) ?: 'application/octet-stream';
+    header('Content-Type: ' . $mime);
+    header('Content-Disposition: inline; filename="' . basename($caminho) . '"');
+    header('Content-Length: ' . filesize($caminho));
+    header('Cache-Control: private, no-store');
+    readfile($caminho);
+    exit;
+}
