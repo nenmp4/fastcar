@@ -253,6 +253,19 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   Drive (autenticação JWT real), ZapSign, Brevo, backup, crons (frescor
   de log), fila de leads (alerta se ninguém disponível), erros recentes.
   Restrito ao super_admin.
+- **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
+  (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
+  afiado"): cruza o que a IA decidiu na qualificação com o resultado real
+  depois — funil de resultado (ainda em qualificação / sem perfil / escalou
+  por estagnação / qualificação completa), `temperatura_lead` × taxa de
+  fechamento real (fechadas/perdidas/ativas por frio-morno-quente), e pra
+  onde foram as oportunidades que a IA escalou por estagnação (o consultor
+  reverteu ou esfriou mesmo). **Não é fine-tuning nem re-treino automático**
+  — o modelo (Gemini/GPT) continua o mesmo; o ganho vem de olhar esse
+  relatório periodicamente e ajustar o texto do
+  `IA_QUALIFICACAO_PROMPT_SISTEMA`/`IA_EXTRACAO_PROMPT`
+  (`includes/ia_qualificacao.php`) com padrão real em vez de achismo — fica
+  "afiado" guiado por humano, não sozinho. Restrito ao super_admin.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
