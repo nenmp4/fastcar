@@ -267,9 +267,14 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   defesa de path traversal em `admin/baixar_backup.php`
 - **Deploy automático** — `api/webhook_deploy.php` (valida assinatura do
   GitHub, agenda `storage/.deploy`) + `install/setup_crontab.sh` (linha de
-  crontab que aplica o `git pull` quando o marcador existe) — mesmo padrão
-  decouplado do JurídicoSaaS (nunca roda git disparado direto pela request
-  HTTP, só agenda)
+  crontab que aplica o `git pull` **e roda `install/migrar.php` em
+  seguida**, sempre, quando o marcador existe — 13/09/2026: sem isso, uma
+  migração chegando por auto-deploy atualizava o código mas nunca o banco,
+  e a 1ª tela que tocasse na coluna nova quebrava com "no such column";
+  `migrar.php` é idempotente, então rodar em todo deploy — mesmo quando não
+  tem coluna nova nenhuma — é seguro e barato) — mesmo padrão decouplado do
+  JurídicoSaaS (nunca roda git disparado direto pela request HTTP, só
+  agenda)
 - **Setup da VPS** — `install/SETUP_VPS.md`: guia completo (nginx+PHP-FPM,
   Cloudflare com SSL Full-strict + Origin Certificate + Bot Fight Mode,
   firewall restrito a IPs da Cloudflare, crontab, deploy, e-mail, backup) —
@@ -372,7 +377,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
 | `cron/backup.php` | 1x/dia (3h) | ZIP completo (`.db` + `storage/uploads/` + credencial do Drive), mantém os últimos 5 dias — código não entra, já está no git |
 | `cron/backup_drive.php` | 1x/dia (4h, depois do `backup.php`) | Sobe o ZIP mais recente pra pasta "Backups" dedicada no Drive, dedup por data, mantém os últimos 5 lá também |
-| *(linha de deploy)* | a cada 1 min | Não é um script `cron/*.php` — é uma linha direta no crontab (`install/setup_crontab.sh`) que aplica `git pull` quando `api/webhook_deploy.php` agenda `storage/.deploy` |
+| *(linha de deploy)* | a cada 1 min | Não é um script `cron/*.php` — é uma linha direta no crontab (`install/setup_crontab.sh`) que aplica `git pull` **+ `php install/migrar.php`** quando `api/webhook_deploy.php` agenda `storage/.deploy` |
 
 > Testado localmente com banco de teste isolado e servidor Z-API fake (pra
 > validar o caminho de SUCESSO de envio também, não só o de falha

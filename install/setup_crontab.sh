@@ -35,7 +35,7 @@ CRON_LINES=$(cat <<EOF
 0 2,8,13,18 * * * $PHP_BIN $BASE_DIR/cron/backup_db.php >> $BASE_DIR/storage/logs/backup_db.log 2>&1 $MARK
 0 3 * * * $PHP_BIN $BASE_DIR/cron/backup.php >> $BASE_DIR/storage/logs/backup.log 2>&1 $MARK
 0 4 * * * $PHP_BIN $BASE_DIR/cron/backup_drive.php >> $BASE_DIR/storage/logs/backup_drive.log 2>&1 $MARK
-* * * * * [ -f $BASE_DIR/storage/.deploy ] && cd $BASE_DIR && git pull origin main >> $BASE_DIR/storage/logs/deploy_\$(date +\%Y-\%m).log 2>&1 && rm $BASE_DIR/storage/.deploy $MARK
+* * * * * [ -f $BASE_DIR/storage/.deploy ] && cd $BASE_DIR && git pull origin main >> $BASE_DIR/storage/logs/deploy_\$(date +\%Y-\%m).log 2>&1 && $PHP_BIN install/migrar.php >> $BASE_DIR/storage/logs/deploy_\$(date +\%Y-\%m).log 2>&1 && rm $BASE_DIR/storage/.deploy $MARK
 EOF
 )
 

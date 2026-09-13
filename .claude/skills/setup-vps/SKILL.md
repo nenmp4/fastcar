@@ -220,6 +220,16 @@ direto pela requisição HTTP do webhook** — o webhook só agenda um
 marcador (`storage/.deploy`), o cron que detecta e aplica no minuto
 seguinte. Decouplar assim evita puxar código no meio de uma request real.
 
+⚠️ Gotcha real (Fastcar, 13/09/2026): a linha de deploy do crontab tem que
+rodar `git pull` **e o script de migração de banco do projeto em seguida
+(ex: `php install/migrar.php`), sempre os dois juntos**. Só `git pull`
+sozinho atualiza o código mas nunca o schema — a 1ª tela que tocar numa
+coluna nova quebra com "no such column" até alguém entrar via SSH e rodar
+a migração na mão. Um script de migração bem feito é idempotente (rodar
+sem nada novo pra migrar não faz nada), então incluir ele em TODA rodada
+de deploy automático — não só quando "sei que teve migração dessa vez" —
+é seguro e evita esse gap ficar esquecido.
+
 ### 9. Deploy automático via GitHub ⏳ webhook precisa de domínio/URL pública
 
 ```bash
