@@ -47,9 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
 <link rel="stylesheet" href="/admin/assets/style.css">
 </head>
-<body>
+<body class="pagina-login">
 <div class="login-box">
-    <h2>🚗 Fastcar CRM</h2>
+    <h2><img class="login-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b> <span class="crm-tag">CRM</span></h2>
     <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
     <form method="post">
         <?= csrfField() ?>

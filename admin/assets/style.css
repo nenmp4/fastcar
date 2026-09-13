@@ -3,11 +3,16 @@
    tabelas e formulários com acabamento de SaaS moderno. */
 
 :root {
-    --azul: #4f46e5;
-    --azul-escuro: #3730a3;
-    --azul-claro: #eef2ff;
-    --navy: #0f172a;
-    --fundo: #f6f7fb;
+    /* Paleta oficial da marca Fast Car (logo enviada 13/09/2026): fundo
+       azul-marinho #0a1229, wordmark branco+azul. Antes disso o admin usava
+       um roxo/indigo genérico sem nada a ver com a identidade real. */
+    --azul: #2f6fed;
+    --azul-escuro: #1a4fc4;
+    --azul-vivo: #5b91ff;
+    --azul-claro: #e8f0fe;
+    --navy: #0a1229;
+    --navy-2: #101d40;
+    --fundo: #f4f5f9;
     --superficie: #ffffff;
     --borda: #e5e7eb;
     --texto: #1c1e26;
@@ -19,10 +24,10 @@
     --vermelho-bg: #fef2f2;
     --amarelo: #b45309;
     --amarelo-bg: #fffbeb;
-    --raio: 12px;
-    --raio-sm: 8px;
-    --sombra: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
-    --sombra-hover: 0 4px 10px rgba(16, 24, 40, .08), 0 2px 4px rgba(16, 24, 40, .06);
+    --raio: 14px;
+    --raio-sm: 9px;
+    --sombra: 0 1px 2px rgba(10, 18, 41, .05), 0 1px 3px rgba(10, 18, 41, .07);
+    --sombra-hover: 0 6px 16px rgba(10, 18, 41, .10), 0 2px 6px rgba(10, 18, 41, .07);
 }
 
 * { box-sizing: border-box; }
@@ -41,13 +46,25 @@ a:hover { text-decoration: underline; }
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 14px 24px;
-    background: linear-gradient(135deg, var(--navy) 0%, #1e293b 100%);
+    /* padding-right reserva espaço pro sino de notificação (position:fixed,
+       top:14px;right:20px;width:40px, z-index:1000 — includes/_notify.php),
+       que fica por cima de QUALQUER conteúdo naquele canto. Sem essa
+       reserva, o link "Sair" (sempre o último, empurrado pro fim pelo
+       margin-left:auto do <span> anterior) ficava embaixo do sino — bug
+       real achado em produção: o clique era capturado pelo sino, "Sair"
+       não funcionava. */
+    padding: 14px 76px 14px 24px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
     color: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.15);
     flex-wrap: wrap;
 }
-.topbar strong { font-size: 16px; letter-spacing: .01em; margin-right: 8px; }
+.topbar strong { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; letter-spacing: .01em; margin-right: 8px; font-weight: 700; }
+.topbar-logo { width: 28px; height: 28px; border-radius: 7px; object-fit: cover; }
+.topbar strong b, .login-box h2 b { font-weight: 800; }
+.topbar strong b { color: var(--azul-vivo); }
+.login-box h2 b { color: var(--azul); }
+.crm-tag { opacity: .65; font-weight: 500; font-size: .82em; margin-left: 2px; }
 .topbar a {
     color: #cbd5e1;
     font-size: 13.5px;
@@ -171,15 +188,15 @@ button {
     padding: 10px 18px;
     border: none;
     border-radius: var(--raio-sm);
-    background: var(--azul);
+    background: linear-gradient(135deg, var(--azul) 0%, var(--azul-escuro) 100%);
     color: #fff;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 1px 2px rgba(79,70,229,.25);
-    transition: background .15s, box-shadow .15s, transform .05s;
+    box-shadow: 0 1px 2px rgba(26,79,196,.25);
+    transition: filter .15s, box-shadow .15s, transform .05s;
 }
-button:hover { background: var(--azul-escuro); box-shadow: var(--sombra-hover); }
+button:hover { filter: brightness(1.08); box-shadow: var(--sombra-hover); }
 button:active { transform: translateY(1px); }
 button:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; }
 button.perigo { background: var(--vermelho); box-shadow: 0 1px 2px rgba(220,38,38,.25); }
@@ -208,15 +225,21 @@ button.perigo:hover { background: #b91c1c; }
 .msg-thread { display: flex; flex-direction: column; }
 
 /* ── Login ───────────────────────────────────────────────────────────── */
+body.pagina-login {
+    background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 45%, var(--fundo) 45%);
+    min-height: 100vh;
+}
 .login-box {
     max-width: 380px;
     margin: 90px auto;
     background: var(--superficie);
     padding: 32px 30px;
     border-radius: 16px;
-    box-shadow: 0 8px 30px rgba(16,24,40,.10);
+    box-shadow: 0 20px 45px rgba(10,18,41,.25);
     border: 1px solid var(--borda);
 }
+.login-box h2 { display: flex; align-items: center; gap: 10px; font-size: 22px; margin-bottom: 18px; }
+.login-logo { width: 36px; height: 36px; border-radius: 9px; object-fit: cover; }
 
 /* ── Dashboard por perfil: cards de KPI + funil ─────────────────────── */
 .stat-grid {

@@ -378,6 +378,27 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   mesclagem; super_admin vê visão geral da empresa + funil em barra por
   etapa. Tabela principal e nav de etapas também filtram por
   `responsavel_id` pra consultor.
+- **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
+  "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
+  roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
+  `--navy: #0a1229`, mesma da logo/wizard), botões com gradiente, cards com
+  raio maior e sombra mais suave. Topbar de toda página ganhou o logo
+  (`admin/assets/img/icon-192.png`) + wordmark "Fast**Car** CRM" estilizado
+  (mesmo padrão do cabeçalho do wizard); login ganhou fundo diagonal
+  azul-marinho. **Decisão explícita: manteve a topbar atual** (não migrou
+  pra sidebar fixa como o JurídicoSaaS) — mudança de estrutura em ~15
+  páginas sem `layout.php` compartilhado foi considerada risco/trabalho
+  desproporcional pro pedido, oferecida e recusada. **Bug real achado e
+  corrigido no meio do rebrand:** o sino de notificação
+  (`admin/_notify.php`, `position:fixed;top:14px;right:20px`, z-index alto)
+  ficava por cima do link "Sair" — que sempre cai no canto direito da
+  topbar (`<span>` anterior usa `margin-left:auto`) — em qualquer página
+  cujo conteúdo da topbar coubesse numa linha só; o clique era capturado
+  pelo sino, "Sair" não funcionava (achado em produção: "sair não
+  funciona"). Corrigido reservando `padding-right: 76px` na `.topbar`,
+  espaço suficiente pro sino nunca mais sobrepor conteúdo real. Conferido
+  via screenshot (Playwright) no login, dashboard e Configurações — a
+  mesma página onde o bug foi visto — antes de considerar pronto.
 - **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da

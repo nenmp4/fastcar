@@ -167,7 +167,7 @@ $fila = listarFilaConsultores();
 <body>
 <header class="topbar">
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
-    <strong>🚗 Fastcar CRM</strong>
+    <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b> <span class="crm-tag">CRM</span></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
     <a href="/admin/logout.php">Sair</a>
 </header>
