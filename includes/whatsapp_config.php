@@ -16,6 +16,11 @@ function _chatbot_getConfig(string $chave): string {
     return getConfig($chave) ?? '';
 }
 
+/** Base URL override via define() só em teste (fake server local) — mesmo padrão dos outros includes/*.php. */
+function zapiBaseUrl(): string {
+    return defined('ZAPI_BASE_URL') ? ZAPI_BASE_URL : 'https://api.z-api.io';
+}
+
 /**
  * Envia mensagem de texto via Z-API. Mesma assinatura/lógica do
  * aaspNotificarWpp() do JurídicoSaaS (includes/aasp.php), renomeada pro
@@ -33,7 +38,7 @@ function zapiEnviarTexto(string $phone, string $msg): bool {
     $headers = ['Content-Type: application/json'];
     if ($ctok) $headers[] = 'client-token: ' . $ctok;
 
-    $ch = curl_init("https://api.z-api.io/instances/{$inst}/token/{$tok}/send-text");
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-text");
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,

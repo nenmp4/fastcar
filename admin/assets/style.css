@@ -72,6 +72,8 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; background: #eef1f4; }
 .badge-atraso { background: #fbe4e1; color: #a33; }
 .badge-ok { background: #e3f3e6; color: #2a7a3b; }
+.badge-aviso { background: #fef3c7; color: #92600a; }
+.badge-info { background: #e3edfb; color: #1a5fb4; }
 
 form.inline { display: inline; }
 label { display: block; font-size: 12px; color: #555; margin-top: 10px; margin-bottom: 4px; }

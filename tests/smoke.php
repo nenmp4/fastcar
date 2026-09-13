@@ -89,6 +89,15 @@ guard(
     'Chamada direta à API OpenAI fora do helper (use openaiCall()/openaiCallChat())'
 );
 
+// Mesma lógica pra Z-API — introduzido junto com admin/saude.php, que
+// precisou do override ZAPI_BASE_URL pra ser testável contra fake server.
+guard(
+    'zapi-chamada-direta',
+    '/api\.z-api\.io/',
+    ['includes/whatsapp_config.php', 'tests/'],
+    'Chamada direta à API Z-API fora do helper (use zapiBaseUrl() de includes/whatsapp_config.php)'
+);
+
 // Bug real 09/2026: includes/mail.php usava `: true|array` como tipo de
 // retorno — `true`/`false` como tipo standalone (union ou sozinho) só
 // existe a partir do PHP 8.2. `php -l` nunca pegou isso no dev (roda PHP

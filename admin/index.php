@@ -94,6 +94,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
         <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
         <a href="/admin/usuarios.php">👤 Usuários</a>
         <a href="/admin/backup.php">💾 Backup</a>
+        <a href="/admin/saude.php">🩺 Saúde do sistema</a>
         <a href="/admin/configuracoes.php">⚙️ Configurações</a>
     <?php endif; ?>
     <a href="/admin/logout.php">Sair</a>
