@@ -145,13 +145,20 @@ function gerarPdfContratoCompra(array $c): string {
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['vendedor_nome']} / {$c['vendedor_cpf']}"), 0, 1, 'C');
 
+    // Testemunha não é obrigatória pra gerar o contrato — se ainda não foi
+    // preenchida (Configurações → oportunidade → dados do contrato), a
+    // linha sai em branco pro nome/CPF serem escritos à mão no presencial,
+    // mesmo comportamento de antes dessas colunas existirem.
+    $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
+    $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
+
     $pdf->Ln(12);
     $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto('Nome: ______________________ CPF: ______________________'), 0, 0, 'C');
+    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto('Nome: ______________________ CPF: ______________________'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_compra_') . '.pdf';
     $pdf->Output('F', $caminho);

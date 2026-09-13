@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     documentos_ok INTEGER DEFAULT 0,   -- checklist obrigatório antes de liberar "fechado"
     contrato_assinado INTEGER DEFAULT 0,
     contrato_gerado_em DATETIME,       -- última vez que o contrato foi gerado (includes/contratos.php)
+    -- Testemunhas do contrato-mestre de compra (assinatura, includes/contratos_pdf.php)
+    -- — não são obrigatórias pra gerar o contrato: quando não preenchidas,
+    -- o PDF sai com a linha em branco pra assinatura física na hora do
+    -- presencial, igual já era antes dessas colunas existirem.
+    testemunha1_nome TEXT DEFAULT '',
+    testemunha1_cpf TEXT DEFAULT '',
+    testemunha2_nome TEXT DEFAULT '',
+    testemunha2_cpf TEXT DEFAULT '',
 
     -- Bloco 8 — Pasta fechada
     valor_final REAL,
