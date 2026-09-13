@@ -285,18 +285,22 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 
 | Cron | Horário sugerido | Função |
 |------|-------------------|--------|
-| `cron/followup.php` | a cada 30 min | Dois papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup via `config.reeng_sent_{telefone}` |
+| `cron/followup.php` | a cada 30 min | Dois papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup de 24h por telefone via `config.reeng_sent_{telefone}` (não é permanente — um mesmo telefone pode esfriar de novo numa oportunidade futura, ex: 2º veículo meses depois — bug real corrigido); mensagem de reengajamento fica registrada em `whatsapp_mensagens` (`out`, `enviado_por_ia=1`) igual qualquer outra mensagem ao cliente, pro consultor que assumir depois ver a pergunta que gerou a resposta |
 | `cron/assinafy_sync.php` | a cada 1 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook do Assinafy não chegue) |
 | `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
 | `cron/backup.php` | 1x/dia (3h) | ZIP completo (`.db` + `storage/uploads/` + credencial do Drive), mantém os últimos 5 dias — código não entra, já está no git |
 | `cron/backup_drive.php` | 1x/dia (4h, depois do `backup.php`) | Sobe o ZIP mais recente pra pasta "Backups" dedicada no Drive, dedup por data, mantém os últimos 5 lá também |
 | *(linha de deploy)* | a cada 1 min | Não é um script `cron/*.php` — é uma linha direta no crontab (`install/setup_crontab.sh`) que aplica `git pull` quando `api/webhook_deploy.php` agenda `storage/.deploy` |
 
-> Testado localmente com banco de teste isolado: identificou corretamente 1
-> oportunidade atrasada + 1 esfriando, e o dedup de 4h bloqueou reenvio do
-> alerta na 2ª execução imediata (o reengajamento seguiu tentando porque a
-> tentativa anterior falhou por falta de credencial Z-API real — o guard só
-> marca "enviado" em caso de sucesso, de propósito).
+> Testado localmente com banco de teste isolado e servidor Z-API fake (pra
+> validar o caminho de SUCESSO de envio também, não só o de falha
+> graciosa): identificou corretamente 1 oportunidade atrasada + 1 esfriando
+> e mandou as duas mensagens; rodando de novo na sequência, nenhum dos dois
+> guards reenviou (dedup de 4h e de 24h intactos); simulando os dois guards
+> expirados (5h e 25h atrás) numa 3ª rodada, com uma NOVA mensagem do
+> cliente pra simular um esfriamento genuíno de novo, os dois voltaram a
+> disparar — confirma que corrigiu o bug do guard de reengajamento antigo,
+> que era permanente (nunca expirava) em vez de ter TTL.
 >
 > Ainda falta cadastrar no crontab real quando a hospedagem for definida
 > (pendência #1 abaixo) — por enquanto só existe o script, sem agendamento.

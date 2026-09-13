@@ -18,6 +18,7 @@ define('ROOT', dirname(__DIR__));
 require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem() — log do reengajamento no histórico do cliente
 
 function log_followup(string $msg): void {
     $dir = ROOT . '/storage/logs';
@@ -100,8 +101,15 @@ foreach ($esfriando as $op) {
     // não recebeu resposta nossa depois da última mensagem dele
     if ($minutosParado < 30 || $minutosParado > 120 || $respondeuDepois) continue;
 
+    // Dedup de 24h (mesmo padrão do alerta de atraso acima, só que com
+    // janela maior — reengajamento é abordagem fria, não alerta interno).
+    // Sem expiração o guard virava permanente: um cliente que já foi
+    // reengajado uma vez no passado nunca mais receberia o toque de novo,
+    // nem numa oportunidade futura completamente diferente (2º veículo,
+    // meses depois) — bug real, corrigido.
     $guardKey = 'reeng_sent_' . $op['telefone'];
-    if (getConfig($guardKey)) continue; // já reengajou esse contato uma vez
+    $ultimoReeng = getConfig($guardKey);
+    if ($ultimoReeng && (time() - strtotime($ultimoReeng)) < 24 * 3600) continue;
 
     $nome = $op['nome'] ?: '';
     $msg  = $nome
@@ -111,6 +119,11 @@ foreach ($esfriando as $op) {
     $ok = zapiEnviarTexto($op['telefone'], $msg);
     log_followup(($ok ? '✅' : '❌') . " Reengajamento → oportunidade #{$op['id']} ({$op['telefone']})");
     if ($ok) {
+        // Fica no histórico igual qualquer outra mensagem enviada ao cliente
+        // (senão o consultor que assumir depois vê a resposta do cliente
+        // sem a pergunta que a gerou, e o admin/oportunidade.php não mostra
+        // que esse toque saiu).
+        registrarMensagem($op['telefone'], 'out', $msg, null, true);
         setConfig($guardKey, date('Y-m-d H:i:s'));
         $reengajados++;
     }
