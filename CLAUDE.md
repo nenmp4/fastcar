@@ -286,6 +286,28 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   com cores fica legal") — borda superior em gradiente azul no wizard,
   "FASTCAR SOLUTIONS" em azul vivo no fundo escuro da tela de link
   inválido.
+  **Bug real achado no mockup do Quadro-Resumo** ("tem bug no quadro
+  resumo da operação tabela curta"): `_pdfLinhaResumo()` usava `Cell()` de
+  altura fixa (6mm, sem quebra de linha) pras duas colunas — 3 dos 17
+  campos (`Exploração econômica pela FASTCAR`, `Transferência final`,
+  `Seguro/proteção durante posse FASTCAR`) têm valor mais longo que os
+  85mm da célula, e o texto simplesmente vazava pra fora da borda em vez
+  de quebrar linha — visualmente parecia a célula "curta demais" pro
+  conteúdo (não é caso raro: são textos de negociação digitados livremente
+  pelo consultor, `includes/oportunidades.php`, tendem a crescer).
+  Corrigido: `_pdfLinhaResumo()` agora calcula ANTES de desenhar quantas
+  linhas rótulo/valor vão precisar quebrando por palavra
+  (`_pdfContarLinhas()`, mesma lógica de quebra que `MultiCell()` usa por
+  baixo dos panos) na largura útil real, usa a maior contagem pra decidir
+  a altura da linha, e desenha as duas células com `MultiCell()` em vez de
+  `Cell()` — nunca mais estoura, cresce sozinho quando o texto precisa.
+  Cuidado técnico: a medição usa o texto já convertido pra ISO-8859-1
+  (`_pdfTexto()`), nunca o UTF-8 original — a tabela de largura de
+  caractere do FPDF é por byte na fonte core, medir UTF-8 cru contaria
+  acento como 2 "caracteres" e dava conta de quebra errada. Testado com
+  PDF gerado de ponta a ponta: as 3 linhas que antes estouravam (91mm/
+  104mm/90mm calculados via `GetStringWidth()`, > 85mm da célula) agora
+  quebram corretamente em 2 linhas.
   Assinatura eletrônica via **ZapSign** (`includes/zapsign.php`, webhook
   `api/zapsign_webhook.php` + fallback de polling `cron/zapsign_sync.php` —
   substituiu a Assinafy em 13/09/2026, pedido do José/Jean).

@@ -57,13 +57,75 @@ function _pdfCorpo(FPDF $pdf, string $texto): void {
     $pdf->MultiCell(0, 5, _pdfTexto($texto));
 }
 
-/** Linha do Quadro-Resumo: rótulo à esquerda (cinza), valor à direita. */
+/**
+ * Conta em quantas linhas um texto vai quebrar dentro de $largura, na fonte
+ * já selecionada no $pdf no momento da chamada — mesma lógica de quebra por
+ * palavra que MultiCell() usa por baixo dos panos, só que sem desenhar nada
+ * (chamador precisa saber a altura ANTES de desenhar a célula ao lado).
+ */
+function _pdfContarLinhas(FPDF $pdf, string $texto, float $largura): int {
+    $palavras = preg_split('/\s+/', trim($texto));
+    if ($palavras === [''] || $palavras === false) return 1;
+    $linhas = 1;
+    $linhaAtual = '';
+    foreach ($palavras as $palavra) {
+        $tentativa = $linhaAtual === '' ? $palavra : $linhaAtual . ' ' . $palavra;
+        if ($pdf->GetStringWidth($tentativa) > $largura && $linhaAtual !== '') {
+            $linhas++;
+            $linhaAtual = $palavra;
+        } else {
+            $linhaAtual = $tentativa;
+        }
+    }
+    return $linhas;
+}
+
+/**
+ * Linha do Quadro-Resumo: rótulo à esquerda (cinza), valor à direita, cada
+ * célula com 85mm de largura fixa. Altura da linha calculada ANTES de
+ * desenhar (maior entre as linhas que rótulo/valor vão precisar quebrando
+ * por palavra) — bug real achado testando o mockup: a versão anterior
+ * usava Cell() de altura fixa (não quebra linha nunca), e valor mais
+ * comprido que 85mm simplesmente estourava pra fora da célula em vez de
+ * quebrar ("Exploração econômica pela FASTCAR", "Transferência final" e
+ * "Seguro/proteção durante posse FASTCAR" — todos valores de negociação
+ * que podem crescer, não é caso raro).
+ */
 function _pdfLinhaResumo(FPDF $pdf, string $label, string $valor): void {
+    $largura = 85;
+    $larguraUtil = $largura - 2; // ~1mm de margem de cada lado, mesmo espírito do cMargin padrão do FPDF
+    $alturaLinha = 4.2;
+
+    // Mede/desenha sempre o texto já convertido (ISO-8859-1) — GetStringWidth()
+    // usa a tabela de largura de caractere da fonte core do FPDF, que é por
+    // byte nessa codificação; medir a string UTF-8 original contaria cada
+    // acento como 2 "caracteres" (bytes) e dava conta errada de quantas
+    // linhas cabem.
+    $labelPdf = _pdfTexto($label);
+    $valorPdf = _pdfTexto($valor !== '' ? $valor : '—');
+
     $pdf->SetFont('Helvetica', 'B', 8.5);
-    $pdf->SetFillColor(245, 245, 245);
-    $pdf->Cell(85, 6, _pdfTexto($label), 1, 0, 'L', true);
+    $linhasLabel = _pdfContarLinhas($pdf, $labelPdf, $larguraUtil);
     $pdf->SetFont('Helvetica', '', 8.5);
-    $pdf->Cell(85, 6, _pdfTexto($valor ?: '—'), 1, 1, 'L');
+    $linhasValor = _pdfContarLinhas($pdf, $valorPdf, $larguraUtil);
+    $altura = max(6, max($linhasLabel, $linhasValor) * $alturaLinha + 1.5);
+
+    $x = $pdf->GetX();
+    $y = $pdf->GetY();
+
+    $pdf->SetFillColor(245, 245, 245);
+    $pdf->Rect($x, $y, $largura, $altura, 'DF');
+    $pdf->Rect($x + $largura, $y, $largura, $altura);
+
+    $pdf->SetFont('Helvetica', 'B', 8.5);
+    $pdf->SetXY($x + 1, $y + 1);
+    $pdf->MultiCell($larguraUtil, $alturaLinha, $labelPdf, 0, 'L');
+
+    $pdf->SetFont('Helvetica', '', 8.5);
+    $pdf->SetXY($x + $largura + 1, $y + 1);
+    $pdf->MultiCell($larguraUtil, $alturaLinha, $valorPdf, 0, 'L');
+
+    $pdf->SetXY($x, $y + $altura);
 }
 
 function _fmtMoeda(?float $v): string {
