@@ -237,5 +237,6 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 </table>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
+<?php include __DIR__ . '/_notify.php'; ?>
 </body>
 </html>

@@ -185,5 +185,6 @@ $labelPerfil = ['super_admin' => 'Super admin', 'closer' => 'Closer', 'consultor
 </div>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
+<?php include __DIR__ . '/_notify.php'; ?>
 </body>
 </html>

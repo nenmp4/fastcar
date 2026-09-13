@@ -133,5 +133,6 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
 </div>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
+<?php include __DIR__ . '/_notify.php'; ?>
 </body>
 </html>

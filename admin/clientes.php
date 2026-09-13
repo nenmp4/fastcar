@@ -87,5 +87,6 @@ $clientes = $stmt->fetchAll();
 </table>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
+<?php include __DIR__ . '/_notify.php'; ?>
 </body>
 </html>
