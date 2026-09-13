@@ -54,6 +54,10 @@ $migracoes = [
     // (public/documentos.php, includes/extracao_documentos.php)
     'oportunidade_documentos.dados_confirmados' => "ALTER TABLE oportunidade_documentos ADD COLUMN dados_confirmados INTEGER DEFAULT 0",
     'oportunidades.documentos_confirmados_em'   => "ALTER TABLE oportunidades ADD COLUMN documentos_confirmados_em DATETIME",
+
+    // 13/09/2026 — data real de assinatura do contrato, pro detalhe do
+    // cliente mostrar "que dia ele assina contrato"
+    'contratos.assinado_em' => "ALTER TABLE contratos ADD COLUMN assinado_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {

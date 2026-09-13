@@ -249,7 +249,14 @@ function zapsignSincronizarContrato(int $contratoId): void {
         }
     }
 
+    // assinado_em só grava na PRIMEIRA vez que o status vira 'assinado' de
+    // verdade (nunca sobrescreve numa sincronização seguinte, ex: retry
+    // baixando a cópia) — é "quando o cliente assinou", não "última vez
+    // que sincronizamos". Pedido: mostrar "que dia ele assina contrato"
+    // no detalhe do cliente (admin/cliente_detalhe.php).
+    $assinadoEm = ($novoStatus === 'assinado' && !$c['assinado_em']) ? date('Y-m-d H:i:s') : $c['assinado_em'];
+
     $db->prepare("
-        UPDATE contratos SET status = ?, drive_file_id = ?, arquivo_url = ?, updated_at = datetime('now','localtime') WHERE id = ?
-    ")->execute([$novoStatus, $driveFileId, $arquivoUrl, $contratoId]);
+        UPDATE contratos SET status = ?, drive_file_id = ?, arquivo_url = ?, assinado_em = ?, updated_at = datetime('now','localtime') WHERE id = ?
+    ")->execute([$novoStatus, $driveFileId, $arquivoUrl, $assinadoEm, $contratoId]);
 }

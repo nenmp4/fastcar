@@ -47,7 +47,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$stmtOps = $db->prepare("SELECT * FROM oportunidades WHERE cliente_id = ? ORDER BY id DESC");
+// LEFT JOIN contratos pra trazer a data real de assinatura junto — pedido
+// explícito ("ideal nos clientes ter qual veiculo comprado que dia ele
+// assina contrato"). Uma oportunidade pode nunca ter tido contrato gerado
+// ainda (LEFT JOIN cobre isso, coluna vem NULL) e, em tese, mais de um
+// registro em contratos por oportunidade (regerar depois de recusa) — pega
+// sempre o mais recente via MAX(c.id).
+$stmtOps = $db->prepare("
+    SELECT o.*, c.status AS contrato_status, c.assinado_em AS contrato_assinado_em
+    FROM oportunidades o
+    LEFT JOIN contratos c ON c.id = (
+        SELECT id FROM contratos WHERE oportunidade_id = o.id ORDER BY id DESC LIMIT 1
+    )
+    WHERE o.cliente_id = ?
+    ORDER BY o.id DESC
+");
 $stmtOps->execute([$id]);
 $oportunidades = $stmtOps->fetchAll();
 
@@ -114,17 +128,27 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
 <div class="card">
     <h3>Oportunidades (<?= count($oportunidades) ?>)</h3>
     <table class="tabela-oportunidades">
-        <thead><tr><th>#</th><th>Veículo</th><th>Etapa</th><th>Criada em</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Veículo</th><th>Placa</th><th>Etapa</th><th>Criada em</th><th>Contrato assinado em</th><th></th></tr></thead>
         <tbody>
         <?php if (!$oportunidades): ?>
-            <tr><td colspan="5">Nenhuma oportunidade ainda.</td></tr>
+            <tr><td colspan="7">Nenhuma oportunidade ainda.</td></tr>
         <?php endif; ?>
         <?php foreach ($oportunidades as $op): ?>
             <tr>
                 <td>#<?= (int)$op['id'] ?></td>
                 <td><?= e(trim($op['veiculo_marca'] . ' ' . $op['veiculo_modelo'])) ?: '—' ?> <?= e($op['veiculo_ano']) ?></td>
+                <td><?= e($op['veiculo_placa'] ?: '—') ?></td>
                 <td><?= e(etapaLabel($op['etapa'])) ?></td>
                 <td><?= date('d/m/Y', strtotime($op['created_at'])) ?></td>
+                <td>
+                    <?php if ($op['contrato_assinado_em']): ?>
+                        <span class="badge badge-ok">✅ <?= date('d/m/Y', strtotime($op['contrato_assinado_em'])) ?></span>
+                    <?php elseif ($op['contrato_status']): ?>
+                        <span class="badge badge-aviso"><?= e(ucfirst($op['contrato_status'])) ?></span>
+                    <?php else: ?>
+                        <span class="badge">— sem contrato ainda</span>
+                    <?php endif; ?>
+                </td>
                 <td><a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">Abrir →</a></td>
             </tr>
         <?php endforeach; ?>

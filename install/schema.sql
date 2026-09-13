@@ -314,6 +314,10 @@ CREATE TABLE IF NOT EXISTS contratos (
     status TEXT NOT NULL DEFAULT 'gerado'
         CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro')),
     motivo_recusa TEXT DEFAULT '',
+    -- Quando o status virou 'assinado' de verdade (não confundir com
+    -- updated_at, que muda em qualquer sincronização) — pedido pra mostrar
+    -- "que dia ele assina contrato" no detalhe do cliente.
+    assinado_em DATETIME,
     -- PDF do contrato — Drive é preferido, arquivo_url é fallback local
     -- (storage/uploads/, mesmo padrão de oportunidade_documentos); começa a
     -- existir já na geração (ainda sem assinar) e é sobrescrito pela versão

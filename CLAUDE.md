@@ -194,8 +194,26 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
 - **Módulo cliente** — `admin/clientes.php` (lista/busca) +
   `admin/cliente_detalhe.php` (dados cadastrais + histórico de todas as
-  oportunidades daquele telefone) — badge "🏆 Cliente convertido" quando o
-  cliente já teve pelo menos um veículo com `etapa='fechado'`
+  oportunidades daquele telefone, incluindo veículo/placa e **data real de
+  assinatura do contrato** — `contratos.assinado_em`, coluna nova de
+  13/09/2026, pedido explícito "qual veículo comprado, que dia ele assina
+  contrato"; diferente de `updated_at`, que muda em toda sincronização —
+  `assinado_em` só grava na 1ª vez que o status vira `assinado` de
+  verdade, em `zapsignSincronizarContrato()`) — badge "🏆 Cliente
+  convertido" quando o cliente já teve pelo menos um veículo com
+  `etapa='fechado'`.
+- **Frota (veículos comprados)** — `admin/veiculos.php` (novo, 13/09/2026,
+  pedido "no vendido ter dashboard todos carros" — nome de arquivo é
+  `veiculos.php` porque hoje só existe o lado de COMPRA; "vendido" aqui
+  significa "vendido *pro* Fastcar", não o módulo de revenda): lista toda
+  oportunidade com `etapa='fechado'`, busca por **placa, chassi**,
+  marca/modelo ou nome do vendedor, mostra valor pago, data da compra e
+  **meses com a Fastcar** (calculado a partir de `data_compra`). Restrito
+  ao super_admin, mesma trava de `admin/produtividade.php`. Busca por
+  placa/chassi (não só id da oportunidade) é de propósito: é a chave que
+  vai deixar dar pra relacionar o mesmo veículo físico com uma futura
+  revenda sem precisar remodelar nada — mas isso já é módulo de vendas
+  (segunda etapa, ver seção própria), não implementado.
 - **Módulo de formulário/documentos** — `public/documentos.php` (link com
   token, sem login): desde 13/09/2026 é um **wizard passo a passo** (CNH →
   comprovante de endereço → contrato de financiamento → resumo final), não
