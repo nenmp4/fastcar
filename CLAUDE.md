@@ -173,7 +173,22 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   tinha "nunca prometa valor", sem indicar como desviar sem soar evasivo) e
   pra desconfiança em passar dado financeiro por WhatsApp (explicar em 1
   frase por que a Fastcar precisa saber do banco/parcela, sem insistir se a
-  pessoa não quiser).
+  pessoa não quiser). **Notifica o consultor quando termina** (mesma
+  auditoria, achado real: `mudarEtapa()` pra `crm_preenchido` — tanto
+  qualificação completa quanto escalação por estagnação — mudava a etapa
+  em silêncio, sem avisar ninguém; o único aviso que existia
+  (`notificarNovoLeadWhatsapp()`, bloco 2) dispara na ENTRADA, antes da IA
+  nem perguntar o nome, pra uma lista genérica — não quando a qualificação
+  termina de verdade). `notificarConsultorLeadQualificado()`
+  (`includes/oportunidades.php`) manda o resumo_ia pro WhatsApp PESSOAL do
+  consultor responsável (`usuarios.whatsapp`) assim que a etapa vira
+  `crm_preenchido`; sem responsável definido (ex: ninguém disponível na
+  fila quando o lead entrou) ou sem WhatsApp cadastrado pra ele, cai no
+  aviso genérico de `notificacao_leads_whatsapp` como fallback — nunca
+  passa batido. Testado ponta a ponta via simulador: consultor certo
+  (escolhido pelo rodízio da fila) recebe a notificação com o resumo assim
+  que a IA conclui a qualificação, e o fallback dispara pra lista genérica
+  quando não tem responsável.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)

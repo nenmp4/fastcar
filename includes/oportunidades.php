@@ -150,6 +150,63 @@ function notificarNovoLeadWhatsapp(int $oportunidadeId, string $nomeCliente, str
 }
 
 /**
+ * Avisa o CONSULTOR RESPONSÁVEL, por WhatsApp, quando a IA termina de
+ * qualificar um lead (bloco 3→4) — seja qualificação completa normal ou
+ * escalada por estagnação (includes/ia_qualificacao.php::iaProcessarTurno()).
+ * Sem isso (bug real achado em 13/09/2026 auditando "e depois, tem processo
+ * pro consultor ligar?"): a oportunidade só mudava de etapa pra
+ * `crm_preenchido` silenciosamente — nenhum aviso saía, o consultor só
+ * descobria que tinha lead pronto se checasse o painel por conta própria.
+ * `notificarNovoLeadWhatsapp()` (acima) não resolve isso: ela dispara na
+ * ENTRADA (bloco 2, antes da IA perguntar até o nome) pra uma lista
+ * genérica de números — aqui é dirigido, pro WhatsApp pessoal
+ * (`usuarios.whatsapp`) de quem é responsável por essa oportunidade
+ * específica, com o resumo pronto pra já saber o que perguntar na ligação.
+ * Sem responsável definido (ex: ninguém disponível na fila quando o lead
+ * entrou) ou sem `usuarios.whatsapp` cadastrado, cai no aviso genérico de
+ * `notificacao_leads_whatsapp` como fallback — nunca deixa passar batido.
+ * Nunca lança, nunca bloqueia o fluxo principal (mesmo espírito de
+ * notificarNovoLeadWhatsapp()).
+ */
+function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo = 'Qualificação concluída'): void {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT o.resumo_ia, o.responsavel_id, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+                   u.whatsapp AS consultor_whatsapp
+            FROM oportunidades o
+            JOIN clientes c ON c.id = o.cliente_id
+            LEFT JOIN usuarios u ON u.id = o.responsavel_id
+            WHERE o.id = ?
+        ");
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op) return;
+
+        $baseUrl = getConfig('app_base_url') ?: '';
+        $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/oportunidade.php?id={$oportunidadeId}" : "oportunidade #{$oportunidadeId}";
+        $msg = "📋 Lead pronto pra ligar! ({$motivo})\n"
+             . "Cliente: {$op['cliente_nome']}\nTelefone: {$op['cliente_telefone']}\n\n"
+             . ($op['resumo_ia'] ? "{$op['resumo_ia']}\n\n" : '')
+             . $link;
+
+        if (!empty($op['consultor_whatsapp'])) {
+            zapiEnviarTexto($op['consultor_whatsapp'], $msg);
+            return;
+        }
+
+        // Sem responsável ou sem WhatsApp cadastrado pra ele — fallback pra
+        // não deixar o lead qualificado sem NENHUM aviso saindo.
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
+            zapiEnviarTexto($numero, $msg);
+        }
+    } catch (Throwable $e) {
+        // notificação nunca pode travar o fluxo da qualificação
+    }
+}
+
+/**
  * ÚNICO ponto do sistema que deve alterar oportunidades.etapa.
  * Grava o histórico (data + responsável) junto, sempre.
  */

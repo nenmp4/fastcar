@@ -414,6 +414,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
             $db->prepare("UPDATE oportunidades SET resumo_ia = ? WHERE id = ?")->execute([$resumo, $oportunidadeId]);
         }
         mudarEtapa($oportunidadeId, 'crm_preenchido', null, 'Qualificação IA concluída — encaminhado pro consultor');
+        notificarConsultorLeadQualificado($oportunidadeId, 'Qualificação concluída');
         $resultado['qualificacao_completa'] = true;
         return $resultado;
     }
@@ -434,6 +435,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
                 . IA_LIMITE_TURNOS_SEM_AVANCO . ' turnos sem novo dado confirmado.';
             $db->prepare("UPDATE oportunidades SET resumo_ia = ? WHERE id = ?")->execute([$resumoFinal, $oportunidadeId]);
             mudarEtapa($oportunidadeId, 'crm_preenchido', null, 'IA escalou pro consultor — conversa estagnada sem avanço de dados');
+            notificarConsultorLeadQualificado($oportunidadeId, 'IA escalou por estagnação');
             $resultado['escalado_sem_avanco'] = true;
         }
     }
