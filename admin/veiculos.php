@@ -19,25 +19,36 @@ requireSuperAdmin();
 $db = getDB();
 $busca = trim((string)($_GET['busca'] ?? ''));
 
+$where = "WHERE o.etapa = 'fechado'";
+$params = [];
+if ($busca !== '') {
+    $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ?)";
+    $like = '%' . $busca . '%';
+    $params = [$like, $like, $like, $like, $like];
+}
+
+$stmtTotal = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
+$stmtTotal->execute($params);
+$totalVeiculos = (int)$stmtTotal->fetchColumn();
+
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
-    WHERE o.etapa = 'fechado'
-";
-$params = [];
-if ($busca !== '') {
-    $sql .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ?)";
-    $like = '%' . $busca . '%';
-    $params = [$like, $like, $like, $like, $like];
-}
-$sql .= " ORDER BY o.data_compra DESC, o.updated_at DESC";
+    {$where}
+    ORDER BY o.data_compra DESC, o.updated_at DESC
+    LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $veiculos = $stmt->fetchAll();
 
-$totalPago = array_sum(array_column($veiculos, 'valor_final'));
+// Soma de TODOS os veículos que batem com a busca, não só os da página
+// atual — com paginação, array_sum() em cima de $veiculos somaria só os
+// 25 da tela, dando um "total pago" errado assim que passasse de 1 página.
+$stmtTotalPago = $db->prepare("SELECT SUM(o.valor_final) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
+$stmtTotalPago->execute($params);
+$totalPago = (float)($stmtTotalPago->fetchColumn() ?: 0);
 
 /** Meses inteiros desde a data de compra (ou updated_at se data_compra não foi preenchida) até hoje. */
 function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
@@ -81,7 +92,7 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
 
 <div class="stat-grid">
     <div class="stat-card">
-        <div class="valor"><?= count($veiculos) ?></div>
+        <div class="valor"><?= $totalVeiculos ?></div>
         <div class="rotulo">Veículos na frota</div>
     </div>
     <div class="stat-card sucesso">
@@ -123,6 +134,7 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
         <?php endforeach; ?>
         </tbody>
     </table>
+    <?php renderPaginacao($totalVeiculos); ?>
 </div>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>

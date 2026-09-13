@@ -136,6 +136,28 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .linha-atrasada:hover { background: #fde8e8 !important; }
 .sem-proxima-acao { color: var(--texto-fraco); font-style: italic; font-size: 12px; }
 
+/* ── Paginação (includes/paginacao.php::renderPaginacao()) ─────────────── */
+.paginacao {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 4px 4px;
+    margin-top: 4px;
+    border-top: 1px solid var(--borda);
+    font-size: 13px;
+    color: var(--texto-fraco);
+}
+.paginacao a {
+    color: var(--azul);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.paginacao a:hover { text-decoration: underline; }
+.paginacao span:first-child, .paginacao span:last-child { min-width: 90px; }
+.paginacao span:last-child { text-align: right; }
+
 /* ── Cards ───────────────────────────────────────────────────────────── */
 .card {
     background: var(--superficie);

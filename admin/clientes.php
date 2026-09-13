@@ -10,20 +10,32 @@ require_once __DIR__ . '/_bootstrap.php';
 $busca = trim((string)($_GET['q'] ?? ''));
 $db = getDB();
 
+// Total de clientes que batem com a busca ANTES de paginar — sem isso,
+// LIMIT 100 sozinho (como era antes) simplesmente escondia todo cliente
+// além do 100º (por created_at DESC), sem paginação nenhuma pra ver o
+// resto — bug real achado ("quantas negociações ficar na tela, já pensou
+// nisso?").
+$whereBusca = '';
+$paramsBusca = [];
+if ($busca) {
+    $whereBusca = " WHERE c.nome LIKE ? OR c.telefone LIKE ? OR c.cidade LIKE ?";
+    $like = '%' . $busca . '%';
+    $paramsBusca = [$like, $like, $like];
+}
+$stmtTotal = $db->prepare("SELECT COUNT(*) FROM clientes c{$whereBusca}");
+$stmtTotal->execute($paramsBusca);
+$totalClientes = (int)$stmtTotal->fetchColumn();
+
 $sql = "
     SELECT c.*, COUNT(o.id) AS total_oportunidades,
            SUM(CASE WHEN o.etapa IN (" . implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?')) . ") THEN 1 ELSE 0 END) AS ativas,
            SUM(CASE WHEN o.etapa = 'fechado' THEN 1 ELSE 0 END) AS convertidas
     FROM clientes c
     LEFT JOIN oportunidades o ON o.cliente_id = c.id
-";
-$params = ETAPAS_ATIVAS;
-if ($busca) {
-    $sql .= " WHERE c.nome LIKE ? OR c.telefone LIKE ? OR c.cidade LIKE ?";
-    $like = '%' . $busca . '%';
-    array_push($params, $like, $like, $like);
-}
-$sql .= " GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100";
+    {$whereBusca}
+    GROUP BY c.id ORDER BY c.created_at DESC
+    LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
+$params = array_merge(ETAPAS_ATIVAS, $paramsBusca);
 
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
@@ -85,6 +97,7 @@ $clientes = $stmt->fetchAll();
     <?php endforeach; ?>
     </tbody>
 </table>
+<?php renderPaginacao($totalClientes); ?>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

@@ -23,6 +23,7 @@ require_once __DIR__ . '/../includes/fila_leads.php';
 require_once __DIR__ . '/../includes/documentos.php';
 require_once __DIR__ . '/../includes/extracao_documentos.php';
 require_once __DIR__ . '/../includes/marca.php';
+require_once __DIR__ . '/../includes/paginacao.php';
 require_once __DIR__ . '/../includes/gemini.php';
 require_once __DIR__ . '/../includes/openai.php';
 require_once __DIR__ . '/../includes/contratos.php';

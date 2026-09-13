@@ -20,24 +20,34 @@ $souDono = $perfil === 'consultor';
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $placeholders = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
 
+// WHERE construído uma vez só e reaproveitado pra contar o total ANTES de
+// paginar (precisa ser o total que bate com ESSE filtro específico —
+// etapa + dono — não $totalAtivas mais abaixo, que é sempre a soma de
+// TODAS as etapas ativas, serve só pro contador "Todas (N)" da nav).
+$where = "WHERE o.etapa IN ({$placeholders})";
+$params = ETAPAS_ATIVAS;
+if ($souDono) {
+    $where .= " AND o.responsavel_id = ?";
+    $params[] = $meuId;
+}
+if ($etapaFiltro && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
+    $where .= " AND o.etapa = ?";
+    $params[] = $etapaFiltro;
+}
+
+$stmtTotalFiltrado = $db->prepare("SELECT COUNT(*) FROM oportunidades o {$where}");
+$stmtTotalFiltrado->execute($params);
+$totalFiltrado = (int)$stmtTotalFiltrado->fetchColumn();
+
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
            u.nome AS responsavel_nome
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
     LEFT JOIN usuarios u ON u.id = o.responsavel_id
-    WHERE o.etapa IN ({$placeholders})
-";
-$params = ETAPAS_ATIVAS;
-if ($souDono) {
-    $sql .= " AND o.responsavel_id = ?";
-    $params[] = $meuId;
-}
-if ($etapaFiltro && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
-    $sql .= " AND o.etapa = ?";
-    $params[] = $etapaFiltro;
-}
-$sql .= " ORDER BY (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.updated_at DESC";
+    {$where}
+    ORDER BY (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.updated_at DESC
+    LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
@@ -234,6 +244,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php endforeach; ?>
     </tbody>
 </table>
+<?php renderPaginacao($totalFiltrado); ?>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

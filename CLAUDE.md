@@ -214,6 +214,21 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   vai deixar dar pra relacionar o mesmo veículo físico com uma futura
   revenda sem precisar remodelar nada — mas isso já é módulo de vendas
   (segunda etapa, ver seção própria), não implementado.
+- **Paginação nas listagens do admin** — `includes/paginacao.php`
+  (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
+  pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
+  `admin/clientes.php` tinha `LIMIT 100` **sem paginação nenhuma** — cliente
+  além do 100º, por `created_at DESC`, simplesmente sumia da tela sem
+  aviso): `paginaAtual()`/`paginacaoOffset()`/`renderPaginacao()`
+  compartilhados, 25 registros por página (`ITENS_POR_PAGINA_PADRAO`),
+  preserva os outros parâmetros da URL (busca/etapa/q) nos links de
+  anterior/próxima. Aplicado em `admin/index.php`, `admin/clientes.php` e
+  `admin/veiculos.php` — cada um com uma query `COUNT(*)` própria pro total
+  real, e os cards de estatística que resumem o conjunto inteiro (total
+  pago, veículos na frota) vindo de uma query `SUM`/`COUNT` separada, nunca
+  de `array_sum()`/`count()` em cima do array já limitado a 25 linhas da
+  página atual (mesma classe de bug do `LIMIT 100`, corrigida antes de virar
+  problema de verdade).
 - **Módulo de formulário/documentos** — `public/documentos.php` (link com
   token, sem login): desde 13/09/2026 é um **wizard passo a passo** (CNH →
   comprovante de endereço → contrato de financiamento → resumo final), não
