@@ -98,6 +98,16 @@ guard(
     'Chamada direta à API Z-API fora do helper (use zapiBaseUrl() de includes/whatsapp_config.php)'
 );
 
+// Mesma lógica pra ZapSign — introduzido na troca de provedor de assinatura
+// (13/09/2026, substituiu a Assinafy). zapsignBaseUrl() já suporta override
+// via define() pra teste contra fake server local.
+guard(
+    'zapsign-chamada-direta',
+    '/api\.zapsign\.com\.br/',
+    ['includes/zapsign.php', 'tests/'],
+    'Chamada direta à API ZapSign fora do helper (use zapsignBaseUrl() de includes/zapsign.php)'
+);
+
 // Bug real 09/2026: includes/mail.php usava `: true|array` como tipo de
 // retorno — `true`/`false` como tipo standalone (union ou sozinho) só
 // existe a partir do PHP 8.2. `php -l` nunca pegou isso no dev (roda PHP
@@ -259,7 +269,7 @@ if (!file_exists($dbPath)) {
                 'oportunidade_documentos' => ['drive_file_id', 'arquivo_url', 'enviado_pelo_cliente'],
                 'usuarios'                => ['disponivel', 'plantao_fim_expediente', 'posicao_fila'],
                 'whatsapp_mensagens'      => ['usuario_id', 'zapi_message_id'],
-                'contratos'               => ['assinafy_doc_id', 'drive_file_id', 'status'],
+                'contratos'               => ['zapsign_doc_token', 'drive_file_id', 'arquivo_url', 'status'],
                 'zapi_instancias_consultores' => ['usuario_id', 'instance_id'],
             ];
             foreach ($esperado as $tabela => $colunas) {

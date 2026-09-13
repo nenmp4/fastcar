@@ -23,6 +23,14 @@ require_once __DIR__ . '/../includes/db.php';
 
 $db = getDB();
 
+/** Checa se uma coluna existe numa tabela (pra migração condicional, ex: RENAME COLUMN). */
+function colunaExiste(PDO $db, string $tabela, string $coluna): bool {
+    foreach ($db->query("PRAGMA table_info({$tabela})")->fetchAll() as $col) {
+        if ($col['name'] === $coluna) return true;
+    }
+    return false;
+}
+
 $migracoes = [
     // 09/2026 — testemunhas do contrato-mestre de compra
     'oportunidades.testemunha1_nome' => "ALTER TABLE oportunidades ADD COLUMN testemunha1_nome TEXT DEFAULT ''",
@@ -66,6 +74,32 @@ try {
     echo ($afetadas > 0 ? "✅" : "⏭️ ") . " usuarios.perfil (closer→consultor): {$afetadas} linha(s) convertida(s)\n";
 } catch (Throwable $e) {
     echo "❌ usuarios.perfil (closer→consultor): {$e->getMessage()}\n";
+}
+
+// 13/09/2026 — ZapSign substitui a Assinafy (pedido do José/Jean). Renomeia
+// as colunas de identificador em vez de só adicionar novas — preserva o
+// dado se algum contrato já tivesse sido enviado pra Assinafy antes da
+// troca (nunca aconteceu de verdade neste projeto até aqui, ver CLAUDE.md,
+// mas não custa não perder o histórico). RENAME COLUMN existe desde SQLite
+// 3.25 (2018), bem antes de qualquer PHP/SQLite que rode este projeto.
+foreach ([['assinafy_doc_id', 'zapsign_doc_token'], ['assinafy_signer_id', 'zapsign_signer_token']] as [$antiga, $nova]) {
+    if (colunaExiste($db, 'contratos', $nova)) {
+        echo "⏭️  contratos.{$nova}: já existia\n";
+    } elseif (colunaExiste($db, 'contratos', $antiga)) {
+        try {
+            $db->exec("ALTER TABLE contratos RENAME COLUMN {$antiga} TO {$nova}");
+            echo "✅ contratos.{$nova}: renomeada de {$antiga}\n";
+        } catch (Throwable $e) {
+            echo "❌ contratos.{$nova}: {$e->getMessage()}\n";
+        }
+    } else {
+        try {
+            $db->exec("ALTER TABLE contratos ADD COLUMN {$nova} TEXT DEFAULT ''");
+            echo "✅ contratos.{$nova}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ contratos.{$nova}: {$e->getMessage()}\n";
+        }
+    }
 }
 
 echo "\n🎉 Migração concluída.\n";

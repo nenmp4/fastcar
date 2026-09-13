@@ -20,9 +20,8 @@ $camposIA = [
     'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
 ];
 
-$camposAssinafy = [
-    'assinafy_api_key'    => 'Chave da API Assinafy',
-    'assinafy_account_id' => 'Account ID da Assinafy',
+$camposZapsign = [
+    'zapsign_api_token' => 'Token da API ZapSign',
 ];
 
 $camposEmail = [
@@ -67,11 +66,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sucesso = 'Gemini respondeu: "' . $resp . '" — conexão funcionando.';
                 }
             }
-        } elseif ($acao === 'salvar_assinafy') {
-            foreach (array_keys($camposAssinafy) as $chave) {
+        } elseif ($acao === 'salvar_zapsign') {
+            foreach (array_keys($camposZapsign) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
-            $sucesso = 'Configurações da Assinafy salvas.';
+            $sucesso = 'Configurações da ZapSign salvas.';
         } elseif ($acao === 'salvar_email') {
             foreach (array_keys($camposEmail) as $chave) {
                 // brevo_api_key é opaco (só trim); os outros dois passam por clean()
@@ -269,19 +268,20 @@ $fila = listarFilaConsultores();
 </div>
 
 <div class="card">
-    <h2>✍️ Assinafy (assinatura eletrônica)</h2>
-    <p><small>Mesmo provedor do JurídicoSaaS — o contrato de compra gerado em cada oportunidade é enviado por aqui
-       pra assinatura eletrônica do vendedor.</small></p>
+    <h2>✍️ ZapSign (assinatura eletrônica)</h2>
+    <p><small>Substituiu a Assinafy em 13/09/2026 — o contrato de compra gerado em cada oportunidade é enviado por
+       aqui pra assinatura eletrônica do vendedor. Token fica em Configurações → Integrações → ZAPSIGN API dentro da
+       própria conta ZapSign.</small></p>
     <p>
         Status:
-        <span class="badge <?= getConfig('assinafy_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= getConfig('assinafy_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        <span class="badge <?= getConfig('zapsign_api_token') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('zapsign_api_token') ? '✅ configurado' : '⏳ ainda não configurado' ?>
         </span>
     </p>
     <form method="post" autocomplete="off">
         <?= csrfField() ?>
-        <input type="hidden" name="acao" value="salvar_assinafy">
-        <?php foreach ($camposAssinafy as $chave => $label): ?>
+        <input type="hidden" name="acao" value="salvar_zapsign">
+        <?php foreach ($camposZapsign as $chave => $label): ?>
             <label for="<?= e($chave) ?>"><?= e($label) ?></label>
             <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
                    value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"

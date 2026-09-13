@@ -4,7 +4,7 @@
  * remapeado pros subsistemas de verdade do Fastcar (nada de AASP/DataJud/
  * Google Calendar/ferramentas jurídicas — ver "O que NÃO reaproveitar" no
  * CLAUDE.md). Cada grupo de checks aqui é um pedaço real do projeto:
- * banco, servidor, Z-API, IA, Drive, Assinafy, e-mail, backup, crons, fila.
+ * banco, servidor, Z-API, IA, Drive, ZapSign, e-mail, backup, crons, fila.
  *
  * Restrito ao super_admin — mesma trava de configuracoes.php/backup.php.
  */
@@ -150,20 +150,19 @@ try {
     check('Google Drive', 'Documentos no Drive', 'info', "{$nDocsDrive} arquivo(s)", "{$nClientesComPasta} cliente(s) com pasta criada");
 } catch (Throwable $e) {}
 
-// ── 6. ASSINAFY ───────────────────────────────────────────────────────────
-$assinafyKey = getConfig('assinafy_api_key') ?: '';
-$assinafyAcc = getConfig('assinafy_account_id') ?: '';
-if (!$assinafyKey || !$assinafyAcc) {
-    check('Assinafy', 'Configuração', 'warn', 'Não configurada', 'Configurações → Assinafy');
+// ── 6. ZAPSIGN ─────────────────────────────────────────────────────────────
+$zapsignToken = getConfig('zapsign_api_token') ?: '';
+if (!$zapsignToken) {
+    check('ZapSign', 'Configuração', 'warn', 'Não configurada', 'Configurações → ZapSign');
 } else {
-    check('Assinafy', 'Configuração', 'ok', 'Configurada', "Account: " . substr($assinafyAcc, 0, 8) . '...');
+    check('ZapSign', 'Configuração', 'ok', 'Configurada', '');
     try {
-        $r = assinafyRequest('GET', '/accounts/{account_id}/documents?limit=1');
-        if ($r['code'] === 200) check('Assinafy', 'Conectividade', 'ok', 'Conectado', '');
-        elseif (in_array($r['code'], [401, 403], true)) check('Assinafy', 'Conectividade', 'error', 'Chave inválida', '');
-        else check('Assinafy', 'Conectividade', 'warn', "HTTP {$r['code']}", '');
+        $r = zapsignRequest('GET', '/docs/?page=1');
+        if ($r['code'] === 200) check('ZapSign', 'Conectividade', 'ok', 'Conectado', '');
+        elseif (in_array($r['code'], [401, 403], true)) check('ZapSign', 'Conectividade', 'error', 'Token inválido', '');
+        else check('ZapSign', 'Conectividade', 'warn', "HTTP {$r['code']}", '');
     } catch (Throwable $e) {
-        check('Assinafy', 'Conectividade', 'error', 'Erro de conexão', $e->getMessage());
+        check('ZapSign', 'Conectividade', 'error', 'Erro de conexão', $e->getMessage());
     }
 }
 try {
@@ -171,9 +170,9 @@ try {
     if ($porStatus) {
         $partes = [];
         foreach ($porStatus as $st => $n) $partes[] = "{$st}: {$n}";
-        check('Assinafy', 'Contratos', 'info', array_sum($porStatus) . ' no total', implode(' · ', $partes));
+        check('ZapSign', 'Contratos', 'info', array_sum($porStatus) . ' no total', implode(' · ', $partes));
     } else {
-        check('Assinafy', 'Contratos', 'info', 'Nenhum gerado ainda', '');
+        check('ZapSign', 'Contratos', 'info', 'Nenhum gerado ainda', '');
     }
 } catch (Throwable $e) {}
 
@@ -217,8 +216,8 @@ if (!$drive->hasCredentials()) {
 
 // ── 9. CRONS (frescor do log) ─────────────────────────────────────────────
 $cronsEsperados = [
-    'Follow-up'         => ['storage/logs/followup.log', 40],
-    'Assinafy sync'      => ['storage/logs/assinafy_sync.log', 10],
+    'Follow-up'          => ['storage/logs/followup.log', 40],
+    'ZapSign sync'       => ['storage/logs/zapsign_sync.log', 10],
     'Backup do banco'    => ['storage/logs/backup_db.log', 8 * 60],
     'Backup completo'    => ['storage/logs/backup.log', 26 * 60],
     'Backup Drive'       => ['storage/logs/backup_drive.log', 26 * 60],

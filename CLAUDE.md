@@ -93,7 +93,7 @@ Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 `oportunidade_pendencias_pos_venda`, `usuarios`, `config`,
 `zapi_instancias_consultores` (instância Z-API própria de cada consultor,
 só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
-`contratos` (contrato gerado + rastreio de assinatura eletrônica via Assinafy).
+`contratos` (contrato gerado + rastreio de assinatura eletrônica via ZapSign).
 
 > ⚠️ Igual ao JurídicoSaaS: `config` é só `chave TEXT PRIMARY KEY, valor TEXT`,
 > sem `updated_at`. Cache com TTL usa o padrão `"timestamp|json"` no valor.
@@ -168,8 +168,9 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real
   `01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`) + assinatura
-  eletrônica via **Assinafy** (`includes/assinafy.php`, webhook
-  `api/assinafy_webhook.php` + fallback de polling `cron/assinafy_sync.php`).
+  eletrônica via **ZapSign** (`includes/zapsign.php`, webhook
+  `api/zapsign_webhook.php` + fallback de polling `cron/zapsign_sync.php` —
+  substituiu a Assinafy em 13/09/2026, pedido do José/Jean).
   Fluxo confirmado com o Jean: cliente preenche dados pelo link do
   formulário → consultor confere → **consultor preenche os campos
   financeiros/de negociação só na hora de fechar o negócio** (bloco 6, mesma
@@ -181,7 +182,7 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   como fallback — mesmo padrão de `includes/documentos.php`) já na geração,
   antes mesmo de assinado — `contratos.drive_file_id`/`arquivo_url` guardam
   sempre a versão mais atual (a assinada sobrescreve a rascunho quando
-  chega via `assinafySincronizarContrato()`). Isso é **separado** de
+  chega via `zapsignSincronizarContrato()`). Isso é **separado** de
   `oportunidade_documentos.contrato_compra` (o que conta pro checklist da
   regra #7) — esse só é gravado quando o status vira `assinado` de
   propósito, senão o checklist de fechamento passaria com um contrato só
@@ -189,8 +190,14 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   com defesa contra path traversal) compartilhada entre
   `admin/ver_documento.php` e `admin/ver_contrato.php` via
   `includes/documentos.php::servirArquivoDriveOuLocal()`.
+  `zapsignSincronizarContrato()` tenta de novo baixar/guardar a cópia
+  assinada em toda sincronização enquanto não conseguir (nunca desiste pra
+  sempre por causa de 1 falha de download/rede) — bug real achado testando
+  a troca de provedor: sem esse retry, um contrato já `assinado` sem cópia
+  salva (download falhou 1x) ficava pra sempre sem nenhuma versão
+  visualizável, porque o status já bater impedia qualquer tentativa nova.
 - **Configurações de super admin** — `admin/configuracoes.php`: Z-API
-  principal, IA (Gemini + OpenAI fallback), Google Drive, Assinafy, fila de
+  principal, IA (Gemini + OpenAI fallback), Google Drive, ZapSign, fila de
   leads/plantão, instâncias dos consultores
 - **PWA (instalável como app)** — `admin/manifest.json` + `admin/sw.js`
   (service worker mínimo, sem cache agressivo — dados do CRM são sempre
@@ -243,7 +250,7 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da
   instância), IA (conectividade + custo de tokens do dia/mês), Google
-  Drive (autenticação JWT real), Assinafy, Brevo, backup, crons (frescor
+  Drive (autenticação JWT real), ZapSign, Brevo, backup, crons (frescor
   de log), fila de leads (alerta se ninguém disponível), erros recentes.
   Restrito ao super_admin.
 
@@ -278,10 +285,13 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 - **Gemini + fallback OpenAI** (`includes/gemini.php`, `includes/openai.php`)
   — mesmo padrão de fallback duplo do JurídicoSaaS: tenta Gemini primeiro,
   só cai pro GPT se o Gemini falhar/não estiver configurado
-- **Assinafy** (`includes/assinafy.php`) e **Google Drive**
-  (`includes/google_drive.php`, JWT RS256 via service account) — portados
-  quase 1:1 do JurídicoSaaS, só adaptando pra `getConfig()`/`setConfig()`
-  em vez de SQL cru inline
+- **Google Drive** (`includes/google_drive.php`, JWT RS256 via service
+  account) — portado quase 1:1 do JurídicoSaaS, só adaptando pra
+  `getConfig()`/`setConfig()` em vez de SQL cru inline. Assinatura
+  eletrônica **diverge** do JurídicoSaaS desde 13/09/2026: era Assinafy
+  (mesmo provedor de lá), agora é **ZapSign** (`includes/zapsign.php`) —
+  troca de provedor específica da Fastcar, não reaproveitar Assinafy se
+  outro projeto for criado a partir daqui
 - **PWA** (`admin/manifest.json`, `admin/sw.js`) — mesmo `SameSite=Lax` (não
   `Strict`) em `startSecureSession()` continua valendo pelo mesmo motivo do
   JurídicoSaaS: `Strict` quebra a sessão no modo standalone instalado
@@ -303,7 +313,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | Cron | Horário sugerido | Função |
 |------|-------------------|--------|
 | `cron/followup.php` | a cada 30 min | Dois papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup de 24h por telefone via `config.reeng_sent_{telefone}` (não é permanente — um mesmo telefone pode esfriar de novo numa oportunidade futura, ex: 2º veículo meses depois — bug real corrigido); mensagem de reengajamento fica registrada em `whatsapp_mensagens` (`out`, `enviado_por_ia=1`) igual qualquer outra mensagem ao cliente, pro consultor que assumir depois ver a pergunta que gerou a resposta |
-| `cron/assinafy_sync.php` | a cada 1 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook do Assinafy não chegue) |
+| `cron/zapsign_sync.php` | a cada 30 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook da ZapSign não chegue) — frequência menor que o antigo `assinafy_sync.php` (que era a cada 1 min): assinatura eletrônica não é tão sensível a atraso de minutos quanto lead esfriando |
 | `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
 | `cron/backup.php` | 1x/dia (3h) | ZIP completo (`.db` + `storage/uploads/` + credencial do Drive), mantém os últimos 5 dias — código não entra, já está no git |
 | `cron/backup_drive.php` | 1x/dia (4h, depois do `backup.php`) | Sobe o ZIP mais recente pra pasta "Backups" dedicada no Drive, dedup por data, mantém os últimos 5 lá também |
@@ -397,8 +407,10 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    modelo real recebido do Jean (`01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`,
    30 cláusulas + Quadro-Resumo), transcrito pra geração via FPDF puro
    (`includes/contratos_pdf.php`, sem LibreOffice/Composer — shared hosting
-   não teria isso) e enviado pra assinatura eletrônica via Assinafy
-   (`includes/contratos.php`, `includes/assinafy.php`). Contrato de
+   não teria isso) e enviado pra assinatura eletrônica via ZapSign
+   (`includes/contratos.php`, `includes/zapsign.php` — trocou de Assinafy
+   pra ZapSign em 13/09/2026, ver "O que reaproveitar do JurídicoSaaS"
+   acima). Contrato de
    **VENDA** (`01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`, já
    recebido e lido, mas nada implementado) fica pro módulo de vendas —
    segunda etapa, ver seção própria acima.
@@ -436,12 +448,23 @@ testado com servidor fake local — nunca contra o serviço real:
   chamada real com chave de API de verdade. Validar também se o modelo
   configurado (`gemini-2.5-flash`/`gpt-4o-mini`) ainda existe/responde bem
   quando a instância for configurada de verdade.
-- **API Assinafy** (`includes/assinafy.php`, `includes/contratos.php`) —
-  upload de PDF, criação de signatário/assignment, webhook
-  (`api/assinafy_webhook.php`) e polling de status (`cron/assinafy_sync.php`)
-  só testados contra servidor fake local; nunca uma assinatura real de
-  ponta a ponta. Confirmar o formato exato do payload do webhook contra uma
-  conta Assinafy de verdade.
+- **API ZapSign** (`includes/zapsign.php`, `includes/contratos.php`) —
+  substituiu a Assinafy em 13/09/2026. Construído a partir da documentação
+  oficial (docs.zapsign.com.br, consultada via busca — o ambiente de dev
+  bloqueia fetch direto do domínio da doc), nunca contra a API real: criação
+  de documento+signatário (`POST /docs/`, 1 chamada só — diferente da
+  Assinafy, que precisava de 3), consulta de status
+  (`GET /docs/{token}/`), download do PDF assinado, webhook
+  (`api/zapsign_webhook.php`) e polling de status (`cron/zapsign_sync.php`)
+  só testados contra servidor fake local simulando os formatos documentados.
+  Confirmar contra uma conta ZapSign de verdade antes do primeiro contrato
+  real: formato exato da resposta de `POST /docs/` (campos `token`,
+  `signers[].token`/`sign_url`), do campo `signed_file` (URL temporária,
+  ~60min) e do payload do webhook (`token`, `event_type`, `status`). Cadastro
+  do webhook em si (URL desta app) precisa ser feito manualmente no painel
+  ZapSign ou via `POST /user/company/webhook/header/` — não implementado
+  automaticamente, mesmo padrão que a Assinafy já tinha (nunca teve
+  auto-registro de webhook via código aqui).
 - **API Google Drive** (`includes/google_drive.php`) — autenticação via JWT
   RS256 de service account testada com par de chaves RSA real gerado
   localmente (a assinatura em si é genuína), mas a troca por token OAuth e

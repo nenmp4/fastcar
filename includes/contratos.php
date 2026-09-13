@@ -2,9 +2,15 @@
 /**
  * includes/contratos.php — Orquestra o contrato-mestre de COMPRA: monta os
  * dados da oportunidade, gera o PDF (includes/contratos_pdf.php), manda
- * pra assinatura eletrônica (includes/assinafy.php) e, quando assinado,
+ * pra assinatura eletrônica (includes/zapsign.php) e, quando assinado,
  * sobe o PDF final pra pasta do cliente no Drive (includes/google_drive.php)
  * e marca como documento da pasta fechada (bloco 8, regra #7).
+ *
+ * ZapSign substituiu a Assinafy em 13/09/2026 — colunas `contratos.
+ * assinafy_doc_id`/`assinafy_signer_id` foram renomeadas via
+ * install/migrar.php pra `zapsign_doc_token`/`zapsign_signer_token`;
+ * `assinafy_assignment_id` ficou sem uso (a ZapSign não tem esse conceito
+ * separado, cria documento+signatário numa chamada só).
  *
  * Módulo de VENDA fica pra outra etapa (decisão do Jean) — não implementado.
  */
@@ -12,14 +18,14 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/contratos_pdf.php';
-require_once __DIR__ . '/assinafy.php';
+require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php'; // garantirPastaDriveCliente()
 
-const CONTRATOS_STATUS_ASSINAFY = [
-    'signed'    => 'assinado', 'completed' => 'assinado',
-    'declined'  => 'recusado', 'rejected'  => 'recusado',
-    'pending'   => 'enviado',  'viewed'    => 'visualizado',
+const CONTRATOS_STATUS_ZAPSIGN = [
+    'signed'  => 'assinado',
+    'refused' => 'recusado',
+    'pending' => 'enviado',
 ];
 
 function formatarDataExtensoPtBr(string $dataYmd): string {
@@ -124,7 +130,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
 
     // Guarda uma cópia própria (Drive preferido, storage/uploads/ como
     // fallback — mesmo padrão de includes/documentos.php) ANTES de mandar
-    // pra Assinafy, pra dar pra visualizar o contrato no sistema
+    // pra assinatura, pra dar pra visualizar o contrato no sistema
     // (admin/ver_contrato.php) mesmo enquanto ainda está esperando
     // assinatura — nunca dependeu disso pra decidir se segue com o envio.
     $nomeArquivoCopia = 'contrato_compra_' . $oportunidadeId . '_' . time() . '.pdf';
@@ -133,74 +139,69 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         'application/pdf', 'contratos/' . $oportunidadeId
     );
 
-    $uploadRes = assinafyUploadPdf($pdfPath, $nomeDoc);
+    // ZapSign cria documento + signatário numa chamada só (diferente da
+    // Assinafy, que precisava de 3 chamadas separadas) — telefone é o
+    // canal de verificação/notificação quando existe.
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone']);
     @unlink($pdfPath);
-    if (isset($uploadRes['error'])) {
-        return ['ok' => false, 'erro' => 'Falha no upload pra assinatura: ' . $uploadRes['error']];
-    }
-    $docId = $uploadRes['document_id'];
-
-    // E-mail não é coletado hoje no formulário do cliente — usa um
-    // sintético baseado no id (Assinafy exige o campo); WhatsApp é o canal
-    // de verificação real quando o telefone existe.
-    $email = "cliente{$campos['_cliente_id']}@fastcar.assinatura.invalido";
-    $signerRes = assinafyCriarSignatario($campos['vendedor_nome'], $email, $campos['_telefone']);
-    if (isset($signerRes['error'])) {
-        return ['ok' => false, 'erro' => 'Falha ao criar signatário: ' . $signerRes['error']];
-    }
-
-    $assignRes = assinafyCriarAssignment($docId, $signerRes['signer_id'], !empty($campos['_telefone']));
-    if (isset($assignRes['error'])) {
-        return ['ok' => false, 'erro' => 'Falha ao criar assinatura: ' . $assignRes['error']];
+    if (isset($docRes['error'])) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
     }
 
     $db = getDB();
     $db->prepare("
         INSERT INTO contratos
-            (oportunidade_id, tipo, nome, campos_json, assinafy_doc_id, assinafy_assignment_id, assinafy_signer_id, sign_url, status, drive_file_id, arquivo_url, created_by)
-        VALUES (?, 'compra', ?, ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
+            (oportunidade_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, 'compra', ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
     ")->execute([
-        $oportunidadeId, $nomeDoc, json_encode($campos), $docId,
-        $assignRes['assignment_id'], $signerRes['signer_id'], $assignRes['sign_url'] ?? '',
-        $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
+        $oportunidadeId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
+        $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
 
     return [
         'ok' => true,
         'contrato_id' => (int)$db->lastInsertId(),
-        'sign_url' => $assignRes['sign_url'] ?? '',
+        'sign_url' => $docRes['sign_url'],
         'aviso' => $aviso,
     ];
 }
 
 /**
- * Consulta o status do contrato na Assinafy e sincroniza — usado pelo
- * webhook (api/assinafy_webhook.php) e pelo polling de fallback
- * (cron/assinafy_sync.php). Quando assinado, baixa o PDF final e sobe pra
+ * Consulta o status do contrato na ZapSign e sincroniza — usado pelo
+ * webhook (api/zapsign_webhook.php) e pelo polling de fallback
+ * (cron/zapsign_sync.php). Quando assinado, baixa o PDF final e sobe pra
  * pasta do cliente no Drive, marcando como documento da pasta fechada
  * (bloco 8) — o checklist de fechamento (regra #7) passa a contar com ele.
  */
-function assinafySincronizarContrato(int $contratoId): void {
+function zapsignSincronizarContrato(int $contratoId): void {
     $db = getDB();
     $stmt = $db->prepare("SELECT * FROM contratos WHERE id = ?");
     $stmt->execute([$contratoId]);
     $c = $stmt->fetch();
-    if (!$c || !$c['assinafy_doc_id']) return;
+    if (!$c || !$c['zapsign_doc_token']) return;
 
-    $statusRes = assinafyStatusDocumento($c['assinafy_doc_id']);
+    $statusRes = zapsignStatusDocumento($c['zapsign_doc_token']);
     if (isset($statusRes['error'])) return;
 
-    $novoStatus = CONTRATOS_STATUS_ASSINAFY[$statusRes['status']] ?? $c['status'];
-    if ($novoStatus === $c['status']) return; // nada mudou, evita trabalho à toa
+    $novoStatus = CONTRATOS_STATUS_ZAPSIGN[$statusRes['status']] ?? $c['status'];
+
+    // Só sai cedo se REALMENTE não tem nada pra fazer: status igual E (se já
+    // assinado) já garantiu uma cópia de verdade. Sem o segundo checar, um
+    // download que falhasse uma vez (link temporário expirado, rede) nunca
+    // mais tentaria de novo — status já teria virado 'assinado' e o
+    // early-return bloquearia toda tentativa futura, ficando pra sempre sem
+    // cópia nenhuma do contrato assinado (bug real, achado testando).
+    $jaTemCopiaAssinada = $c['status'] === 'assinado' && ($c['drive_file_id'] || $c['arquivo_url']);
+    if ($novoStatus === $c['status'] && $jaTemCopiaAssinada) return;
 
     $driveFileId = $c['drive_file_id'];
     $arquivoUrl = $c['arquivo_url'];
 
-    // Transição pra 'assinado' só acontece 1x por contrato (o early-return
-    // de "nada mudou" acima garante isso) — baixa o PDF final e substitui a
-    // cópia salva na geração (ainda sem assinar) pela versão assinada.
-    if ($novoStatus === 'assinado') {
-        $conteudo = assinafyBaixarAssinado($c['assinafy_doc_id']);
+    // Tenta baixar/guardar a cópia assinada sempre que o status for
+    // 'assinado' e ainda não tiver copia — cobre tanto a transição normal
+    // quanto o retry de uma tentativa anterior que falhou.
+    if ($novoStatus === 'assinado' && !$jaTemCopiaAssinada) {
+        $conteudo = zapsignBaixarAssinado($c['zapsign_doc_token']);
         if ($conteudo) {
             $tmp = tempnam(sys_get_temp_dir(), 'contrato_assinado_') . '.pdf';
             file_put_contents($tmp, $conteudo);

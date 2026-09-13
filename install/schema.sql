@@ -290,9 +290,13 @@ CREATE TABLE IF NOT EXISTS contratos (
     tipo TEXT NOT NULL DEFAULT 'compra' CHECK (tipo IN ('compra', 'venda')),
     nome TEXT DEFAULT '',              -- nome do documento (ex: "Contrato de Compra - João Silva")
     campos_json TEXT DEFAULT '{}',     -- snapshot dos dados usados no merge, pra auditoria
-    assinafy_doc_id TEXT DEFAULT '',
+    -- ZapSign substituiu a Assinafy em 13/09/2026 (includes/zapsign.php).
+    -- assinafy_assignment_id não tem equivalente na ZapSign (cria
+    -- documento+signatário numa chamada só) — mantido só por histórico de
+    -- contrato antigo, nunca mais escrito.
+    zapsign_doc_token TEXT DEFAULT '',
+    zapsign_signer_token TEXT DEFAULT '',
     assinafy_assignment_id TEXT DEFAULT '',
-    assinafy_signer_id TEXT DEFAULT '',
     sign_url TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'gerado'
         CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro')),
@@ -310,4 +314,4 @@ CREATE TABLE IF NOT EXISTS contratos (
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_contratos_oportunidade ON contratos(oportunidade_id);
-CREATE INDEX IF NOT EXISTS idx_contratos_assinafy_doc ON contratos(assinafy_doc_id);
+CREATE INDEX IF NOT EXISTS idx_contratos_zapsign_doc ON contratos(zapsign_doc_token);

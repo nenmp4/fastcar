@@ -174,8 +174,8 @@ bash install/setup_crontab.sh
 crontab -l   # conferir que os 6 jobs entraram
 ```
 
-Isso já cadastra: `followup.php` (a cada 30 min), `assinafy_sync.php` (a
-cada minuto), `backup_db.php` (4x/dia), `backup.php` e `backup_drive.php`
+Isso já cadastra: `followup.php` (a cada 30 min), `zapsign_sync.php` (a
+cada 30 min), `backup_db.php` (4x/dia), `backup.php` e `backup_drive.php`
 (1x/dia) e o "puxador" do deploy automático (ver próximo passo). Detalhe de
 cada um: ver tabela "Cron Jobs" no `CLAUDE.md`.
 
@@ -228,7 +228,7 @@ php install/create_admin.php "Jean Susej" jean@fastcar.com.br "senha-forte-aqui"
 - [ ] Gemini/OpenAI configurados em Configurações
 - [ ] Google Drive: `google_drive_credentials.json` no lugar, status
       "configurado" em Configurações
-- [ ] Assinafy configurado em Configurações
+- [ ] ZapSign configurado em Configurações
 - [ ] E-mail (Brevo) configurado e teste enviado com sucesso
 - [ ] `crontab -l` mostra os 6 jobs do Fastcar
 - [ ] Backup manual disparado uma vez em `/admin/backup.php` só pra

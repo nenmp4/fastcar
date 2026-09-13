@@ -31,7 +31,7 @@ MARK="# fastcar-cron"
 
 CRON_LINES=$(cat <<EOF
 */30 * * * * $PHP_BIN $BASE_DIR/cron/followup.php >> $BASE_DIR/storage/logs/followup.log 2>&1 $MARK
-* * * * * $PHP_BIN $BASE_DIR/cron/assinafy_sync.php >> $BASE_DIR/storage/logs/assinafy_sync.log 2>&1 $MARK
+*/30 * * * * $PHP_BIN $BASE_DIR/cron/zapsign_sync.php >> $BASE_DIR/storage/logs/zapsign_sync.log 2>&1 $MARK
 0 2,8,13,18 * * * $PHP_BIN $BASE_DIR/cron/backup_db.php >> $BASE_DIR/storage/logs/backup_db.log 2>&1 $MARK
 0 3 * * * $PHP_BIN $BASE_DIR/cron/backup.php >> $BASE_DIR/storage/logs/backup.log 2>&1 $MARK
 0 4 * * * $PHP_BIN $BASE_DIR/cron/backup_drive.php >> $BASE_DIR/storage/logs/backup_drive.log 2>&1 $MARK
