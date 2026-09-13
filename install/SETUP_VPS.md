@@ -194,13 +194,17 @@ cada um: ver tabela "Cron Jobs" no `CLAUDE.md`.
    - Events: só `push`
 4. A partir daí, todo push na branch `main` dispara: o webhook valida a
    assinatura e agenda um marcador (`storage/.deploy`); o cron (já instalado
-   no passo 7) detecta o marcador no próximo minuto, roda `git pull` **e em
-   seguida `php install/migrar.php`** — sempre os dois juntos, pra uma
-   migração de banco nunca ficar pra trás do código sem ninguém perceber
-   (`migrar.php` é idempotente, rodar sem coluna nova nenhuma não faz nada).
+   no passo 7) detecta o marcador no próximo minuto e roda
+   `install/aplicar_deploy.sh`, que faz `git pull` → `php install/migrar.php`
+   (idempotente, roda sempre mesmo sem coluna nova) → `php tests/smoke.php`
+   — se o smoke falhar, manda alerta por WhatsApp pros números configurados
+   em Configurações → notificação de lead novo, em vez de deixar um deploy
+   quebrado passar batido. Log de cada rodada em
+   `storage/logs/deploy_AAAA-MM.log`.
 
-Até o domínio existir, deploy continua manual: `cd /var/www/fastcar && git
-pull origin main && php install/migrar.php`.
+Até o domínio existir, deploy continua manual: `cd /var/www/fastcar &&
+bash install/aplicar_deploy.sh` (roda os 3 passos e já mostra o resultado
+na hora, sem precisar ir no log).
 
 ## 9. E-mail (Brevo)
 

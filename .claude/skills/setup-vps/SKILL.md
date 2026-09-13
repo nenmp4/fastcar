@@ -230,6 +230,21 @@ sem nada novo pra migrar não faz nada), então incluir ele em TODA rodada
 de deploy automático — não só quando "sei que teve migração dessa vez" —
 é seguro e evita esse gap ficar esquecido.
 
+⚠️ Segundo gotcha, mesmo dia: um deploy automático que atualiza código
+sozinho, sem ninguém olhando, também precisa de uma rede de segurança —
+rodar o smoke test do projeto (ex: `php tests/smoke.php`) como ÚLTIMO
+passo, depois do `git pull` + migração, e ALERTAR de verdade (WhatsApp/
+e-mail/o que o projeto já tiver configurado) se ele falhar, em vez de só
+logar num arquivo que ninguém vai abrir sozinho. Concentrar essa lógica
+(pull → migrar → smoke → alerta se falhar → sempre limpar o marcador do
+deploy, falhando ou não) num script próprio (`install/aplicar_deploy.sh`
+no caso do Fastcar) em vez de um one-liner gigante no crontab — mais fácil
+de testar e reaproveitar. Cuidado ao redirecionar a saída de cada passo
+pro log: usar `2>&1 | tee -a "$LOG"` (mostra na tela quando rodado manual
+via SSH, e ainda grava) exige `set -o pipefail` logo no topo do script,
+senão o status de saída que o `if` vê é sempre o do `tee` (quase sempre
+sucesso), nunca o do comando real — mascarando toda falha do smoke.
+
 ### 9. Deploy automático via GitHub ⏳ webhook precisa de domínio/URL pública
 
 ```bash
