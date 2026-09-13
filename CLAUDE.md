@@ -399,6 +399,20 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   espaço suficiente pro sino nunca mais sobrepor conteúdo real. Conferido
   via screenshot (Playwright) no login, dashboard e Configurações — a
   mesma página onde o bug foi visto — antes de considerar pronto.
+  **Cache do navegador mascarava o próprio deploy** (achado logo em seguida:
+  José subiu a logo real pela tela nova, mas o topbar apareceu enorme e com
+  a cor roxa antiga) — o `<link rel="stylesheet">` nunca teve parâmetro de
+  versão, então o navegador segue servindo o CSS antigo já em cache mesmo
+  depois de um deploy que muda o arquivo. Corrigido com
+  `?v=<?= filemtime(...) ?>` em todo `<link>` de `admin/assets/style.css`
+  (todas as ~12 páginas) — muda sozinho a cada vez que o CSS for editado,
+  nunca mais precisa de Ctrl+Shift+R depois de um deploy. Cor da marca
+  ajustada pra `#151722` (tom pedido pelo José, ligeiramente diferente do
+  `#0a1229` inicial) em `--navy` (style.css), `MARCA_COR_FUNDO`
+  (`includes/marca.php`) e no cabeçalho do wizard (`public/documentos.php`).
+  Logo do topbar/login aumentada (`.topbar-logo` 28px→40px, `.login-logo`
+  36px→44px) e com sombra sutil, a pedido explícito ("aumenta mais logo" /
+  "deixa mais caprichado").
 - **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da

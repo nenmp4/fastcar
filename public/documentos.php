@@ -43,7 +43,7 @@ if (!$op) {
     <!doctype html><html lang="pt-br"><head><meta charset="utf-8"><title>Link inválido — Fastcar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/public/assets/favicon.png"></head>
-    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;padding:60px 20px;background:#0a1229;color:#fff;min-height:100vh;margin:0">
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;padding:60px 20px;background:#151722;color:#fff;min-height:100vh;margin:0">
         <img src="/public/assets/logo.png" alt="Fastcar" style="max-height:56px;margin-bottom:24px" onerror="this.style.display='none'">
         <h2>⚠️ Link inválido ou expirado</h2>
         <p style="color:#aab4d4">Fale com seu consultor da Fastcar pra receber um novo link.</p>
@@ -204,12 +204,12 @@ $numeroEtapa = array_search($tipoAtual, ORDEM_ETAPAS, true);
 <link rel="icon" type="image/png" href="/public/assets/favicon.png">
 <style>
 /* Paleta da marca Fast Car — azul-marinho escuro + azul de destaque + branco
-   (mesma logo enviada pelo Jean/José, 13/09/2026: fundo #0a1229, "Fast"
+   (mesma logo enviada pelo Jean/José, 13/09/2026: fundo #151722, "Fast"
    branco, "Car" azul). Cartões ficam claros por cima do fundo escuro —
    formulário precisa de contraste alto pra input ser legível, não dá pra
    deixar tudo escuro só por estética. */
 :root {
-    --navy: #0a1229;
+    --navy: #151722;
     --navy-2: #101d40;
     --blue: #2f6fed;
     --blue-dark: #1a4fc4;

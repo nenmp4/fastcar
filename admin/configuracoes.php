@@ -161,7 +161,7 @@ $fila = listarFilaConsultores();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Configurações — Fastcar CRM</title>
-<link rel="stylesheet" href="/admin/assets/style.css">
+<link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
@@ -185,7 +185,7 @@ $fila = listarFilaConsultores();
     <?php if (marcaLogoConfigurada()): ?>
         <p>
             <img src="/public/assets/logo.png?v=<?= (int)strtotime(getConfig('marca_logo_atualizada_em') ?: 'now') ?>"
-                 alt="Logo atual" style="max-height:64px;background:#0a1229;padding:10px;border-radius:8px">
+                 alt="Logo atual" style="max-height:64px;background:#151722;padding:10px;border-radius:8px">
         </p>
         <p><small>Enviada em <?= e(getConfig('marca_logo_atualizada_em') ?: '—') ?>.</small></p>
     <?php else: ?>

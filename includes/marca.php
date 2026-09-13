@@ -22,7 +22,7 @@ const MARCA_FAVICON_ADMIN    = __DIR__ . '/../admin/assets/img/favicon.png';
 // Mesma cor do cabeçalho do wizard (public/documentos.php) — ícone/favicon
 // com fundo transparente às vezes fica ilegível dependendo do tema do
 // sistema/navegador de quem instalar o PWA, por isso preenche com a marca.
-const MARCA_COR_FUNDO = '#0a1229';
+const MARCA_COR_FUNDO = '#151722';
 
 /**
  * Recebe o upload ($_FILES['logo']) e gera as variações. Retorna

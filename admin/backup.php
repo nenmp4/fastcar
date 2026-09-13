@@ -51,7 +51,7 @@ function formatarBytes(int $bytes): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Backup — Fastcar CRM</title>
-<link rel="stylesheet" href="/admin/assets/style.css">
+<link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>

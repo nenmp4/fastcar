@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Login — Fastcar CRM</title>
 <link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
-<link rel="stylesheet" href="/admin/assets/style.css">
+<link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
 </head>
 <body class="pagina-login">
 <div class="login-box">

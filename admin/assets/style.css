@@ -4,13 +4,13 @@
 
 :root {
     /* Paleta oficial da marca Fast Car (logo enviada 13/09/2026): fundo
-       azul-marinho #0a1229, wordmark branco+azul. Antes disso o admin usava
+       azul-marinho #151722, wordmark branco+azul. Antes disso o admin usava
        um roxo/indigo genérico sem nada a ver com a identidade real. */
     --azul: #2f6fed;
     --azul-escuro: #1a4fc4;
     --azul-vivo: #5b91ff;
     --azul-claro: #e8f0fe;
-    --navy: #0a1229;
+    --navy: #151722;
     --navy-2: #101d40;
     --fundo: #f4f5f9;
     --superficie: #ffffff;
@@ -53,14 +53,20 @@ a:hover { text-decoration: underline; }
        margin-left:auto do <span> anterior) ficava embaixo do sino — bug
        real achado em produção: o clique era capturado pelo sino, "Sair"
        não funcionava. */
-    padding: 14px 76px 14px 24px;
+    padding: 12px 76px 12px 24px;
     background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
     color: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.15);
     flex-wrap: wrap;
 }
-.topbar strong { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; letter-spacing: .01em; margin-right: 8px; font-weight: 700; }
-.topbar-logo { width: 28px; height: 28px; border-radius: 7px; object-fit: cover; }
+.topbar strong { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: .01em; margin-right: 10px; font-weight: 700; }
+.topbar-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 2px 6px rgba(0,0,0,.25);
+}
 .topbar strong b, .login-box h2 b { font-weight: 800; }
 .topbar strong b { color: var(--azul-vivo); }
 .login-box h2 b { color: var(--azul); }
@@ -238,8 +244,8 @@ body.pagina-login {
     box-shadow: 0 20px 45px rgba(10,18,41,.25);
     border: 1px solid var(--borda);
 }
-.login-box h2 { display: flex; align-items: center; gap: 10px; font-size: 22px; margin-bottom: 18px; }
-.login-logo { width: 36px; height: 36px; border-radius: 9px; object-fit: cover; }
+.login-box h2 { display: flex; align-items: center; gap: 12px; font-size: 23px; margin-bottom: 18px; }
+.login-logo { width: 44px; height: 44px; border-radius: 11px; object-fit: cover; box-shadow: 0 2px 8px rgba(10,18,41,.18); }
 
 /* ── Dashboard por perfil: cards de KPI + funil ─────────────────────── */
 .stat-grid {
