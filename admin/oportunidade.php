@@ -67,12 +67,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $sucesso = 'Dados do veículo atualizados.';
             } elseif ($acao === 'atualizar_contrato') {
+                // Testemunhas saíram daqui em 13/09/2026 — são sempre da
+                // própria Fastcar, fixas em Configurações
+                // (admin/configuracoes.php), não mais por oportunidade.
                 $db->prepare("
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
                         saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
-                        data_entrega_posse = ?, testemunha1_nome = ?, testemunha1_cpf = ?,
-                        testemunha2_nome = ?, testemunha2_cpf = ?, updated_at = datetime('now','localtime')
+                        data_entrega_posse = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
                     $_POST['valor_fipe_referencia'] !== '' ? (float)$_POST['valor_fipe_referencia'] : null,
@@ -83,10 +85,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
-                    clean((string)($_POST['testemunha1_nome'] ?? '')),
-                    clean((string)($_POST['testemunha1_cpf'] ?? '')),
-                    clean((string)($_POST['testemunha2_nome'] ?? '')),
-                    clean((string)($_POST['testemunha2_cpf'] ?? '')),
                     $id,
                 ]);
                 $sucesso = 'Dados do contrato atualizados.';
@@ -347,25 +345,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             </div>
         </div>
 
-        <h3 style="margin-top:20px">✍️ Testemunhas (assinatura do contrato)</h3>
-        <p><small>Não bloqueia a geração do contrato — se ficar em branco, o PDF sai com a linha vazia pra
-           preencher à mão no presencial, igual antes dessas colunas existirem.</small></p>
-        <div class="grid-2">
-            <div>
-                <label>Testemunha 1 — nome completo</label>
-                <input type="text" name="testemunha1_nome" value="<?= e($op['testemunha1_nome'] ?? '') ?>">
-                <label>Testemunha 1 — CPF</label>
-                <input type="text" name="testemunha1_cpf" value="<?= e($op['testemunha1_cpf'] ?? '') ?>" placeholder="000.000.000-00">
-            </div>
-            <div>
-                <label>Testemunha 2 — nome completo</label>
-                <input type="text" name="testemunha2_nome" value="<?= e($op['testemunha2_nome'] ?? '') ?>">
-                <label>Testemunha 2 — CPF</label>
-                <input type="text" name="testemunha2_cpf" value="<?= e($op['testemunha2_cpf'] ?? '') ?>" placeholder="000.000.000-00">
-            </div>
-        </div>
         <button type="submit">Salvar dados do contrato</button>
     </form>
+
+    <p><small>✍️ Testemunhas do contrato são fixas (sempre da própria Fastcar) — configura em
+       <a href="/admin/configuracoes.php">Configurações</a>, não muda por oportunidade.</small></p>
 
     <?php if ($op['valor_fipe_referencia'] && $op['valor_ofertado']): ?>
         <?php $percentualAtual = round((float)$op['valor_ofertado'] / (float)$op['valor_fipe_referencia'] * 100, 2); ?>

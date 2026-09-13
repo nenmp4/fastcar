@@ -30,6 +30,17 @@ $camposEmail = [
     'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
 ];
 
+// Testemunhas do contrato de compra são sempre da própria Fastcar (pedido
+// do José/Jean, 13/09/2026) — fixas aqui em vez de digitadas de novo em
+// cada oportunidade (admin/oportunidade.php). includes/contratos.php lê
+// direto daqui na hora de gerar o PDF.
+$camposTestemunhas = [
+    'testemunha1_nome' => 'Testemunha 1 — nome completo',
+    'testemunha1_cpf'  => 'Testemunha 1 — CPF',
+    'testemunha2_nome' => 'Testemunha 2 — nome completo',
+    'testemunha2_cpf'  => 'Testemunha 2 — CPF',
+];
+
 $erro = '';
 $sucesso = '';
 $testeResultado = null;
@@ -114,6 +125,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
             if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
             $sucesso = 'Configurações de deploy salvas.';
+        } elseif ($acao === 'salvar_testemunhas') {
+            foreach (array_keys($camposTestemunhas) as $chave) {
+                setConfig($chave, clean((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Testemunhas do contrato salvas.';
         } elseif ($acao === 'salvar_backup') {
             setConfig('backup_auto_ativo', isset($_POST['backup_auto_ativo']) ? '1' : '0');
             setConfig('drive_backup_ativo', isset($_POST['drive_backup_ativo']) ? '1' : '0');
@@ -288,6 +304,31 @@ $fila = listarFilaConsultores();
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
         <button type="submit">Salvar</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>✍️ Testemunhas do contrato de compra</h3>
+    <p><small>Sempre as mesmas 2 pessoas, do lado da Fastcar — não muda por oportunidade. Se ficar em branco, o PDF
+       sai com a linha vazia pra preencher à mão no presencial, igual antes.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_testemunhas">
+        <div class="grid-2">
+            <div>
+                <label>Testemunha 1 — nome completo</label>
+                <input type="text" name="testemunha1_nome" value="<?= e(getConfig('testemunha1_nome') ?? '') ?>">
+                <label>Testemunha 1 — CPF</label>
+                <input type="text" name="testemunha1_cpf" value="<?= e(getConfig('testemunha1_cpf') ?? '') ?>" placeholder="000.000.000-00">
+            </div>
+            <div>
+                <label>Testemunha 2 — nome completo</label>
+                <input type="text" name="testemunha2_nome" value="<?= e(getConfig('testemunha2_nome') ?? '') ?>">
+                <label>Testemunha 2 — CPF</label>
+                <input type="text" name="testemunha2_cpf" value="<?= e(getConfig('testemunha2_cpf') ?? '') ?>" placeholder="000.000.000-00">
+            </div>
+        </div>
+        <button type="submit">Salvar testemunhas</button>
     </form>
 </div>
 

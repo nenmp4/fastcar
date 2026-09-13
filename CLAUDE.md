@@ -230,8 +230,17 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   salva (download falhou 1x) ficava pra sempre sem nenhuma versão
   visualizável, porque o status já bater impedia qualquer tentativa nova.
 - **Configurações de super admin** — `admin/configuracoes.php`: Z-API
-  principal, IA (Gemini + OpenAI fallback), Google Drive, ZapSign, fila de
-  leads/plantão, instâncias dos consultores
+  principal, IA (Gemini + OpenAI fallback), Google Drive, ZapSign,
+  testemunhas do contrato (fixas — ver abaixo), fila de leads/plantão,
+  instâncias dos consultores. **Testemunhas do contrato de compra são
+  sempre as mesmas 2 pessoas do lado da Fastcar** (pedido do José/Jean,
+  13/09/2026) — cadastradas 1x aqui (`testemunha1_nome/cpf`,
+  `testemunha2_nome/cpf` em `config`) em vez de digitadas de novo em cada
+  oportunidade; `includes/contratos.php::montarCamposContratoCompra()` lê
+  direto da config na hora de gerar o PDF. As colunas
+  `oportunidades.testemunha1_*/testemunha2_*` ficaram sem uso (não
+  removidas do schema — sem ganho real em reconstruir a tabela no SQLite
+  só por isso, nenhum contrato real chegou a usar).
 - **PWA (instalável como app)** — `admin/manifest.json` + `admin/sw.js`
   (service worker mínimo, sem cache agressivo — dados do CRM são sempre
   dinâmicos), mesmo padrão do JurídicoSaaS. Como o admin da Fastcar (ao

@@ -78,10 +78,16 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'data_entrega_posse'            => $op['data_entrega_posse'] ? date('d/m/Y', strtotime($op['data_entrega_posse'])) : date('d/m/Y'),
         'seguro_texto'                  => $op['seguro_texto'] ?: '',
         'encargos_texto'                => $op['encargos_texto'] ?: '',
-        'testemunha1_nome'              => $op['testemunha1_nome'] ?: '',
-        'testemunha1_cpf'               => $op['testemunha1_cpf'] ?: '',
-        'testemunha2_nome'              => $op['testemunha2_nome'] ?: '',
-        'testemunha2_cpf'               => $op['testemunha2_cpf'] ?: '',
+        // Testemunhas são sempre da própria Fastcar (pedido do José/Jean,
+        // 13/09/2026) — fixas em Configurações (admin/configuracoes.php),
+        // não mais digitadas por oportunidade. oportunidades.testemunha1_*/
+        // testemunha2_* ficam sem uso a partir daqui (não removidas do
+        // schema — sem ganho real em reconstruir a tabela no SQLite só
+        // pra isso, e nenhum contrato real chegou a usar esses campos).
+        'testemunha1_nome'              => getConfig('testemunha1_nome') ?: '',
+        'testemunha1_cpf'               => getConfig('testemunha1_cpf') ?: '',
+        'testemunha2_nome'              => getConfig('testemunha2_nome') ?: '',
+        'testemunha2_cpf'               => getConfig('testemunha2_cpf') ?: '',
         'data_extenso'                  => formatarDataExtensoPtBr(date('Y-m-d')),
         '_telefone'                     => $op['telefone'],
         '_cliente_id'                   => (int)$op['cliente_id'],
