@@ -236,6 +236,21 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   configurado ou uma chamada falhar; `includes/documentos.php::lerConteudoArquivoDocumento()`
   lê os bytes de qualquer um dos dois destinos, compartilhado entre servir
   pro navegador (`servirArquivoDriveOuLocal()`) e mandar pro Gemini.
+  **Visual com a marca da Fastcar** (13/09/2026, primeira versão real do
+  wizard testada pelo José — "bem feio" no CSS genérico anterior): cabeçalho
+  fixo azul-marinho (`#0a1229`→`#101d40`) com o wordmark "Fast**Car**" +
+  "Soluções Financeiras", cartões brancos com sombra, botão em gradiente
+  azul — paleta tirada da logo real recebida (ainda falta o arquivo de
+  verdade, ver seção de módulos acima; `<img src="/public/assets/logo.png">`
+  já está no lugar certo pra aparecer sozinho assim que o arquivo for
+  colocado lá, com fallback pro texto estilizado enquanto não existir). A
+  faixa escura fica isolada só no cabeçalho (elemento próprio, full-bleed) —
+  nunca embaixo de texto de conteúdo: bug real corrigido no meio do teste
+  (um gradiente de corte fixo em pixel no `body` deixava o texto "Etapa X de
+  Y" ilegível — texto escuro sobre fundo escuro — dependendo de quanto
+  conteúdo caía dentro da faixa). Conferido visualmente via screenshot
+  (Playwright/Chromium) na etapa 1 e no resumo final antes de considerar
+  pronto, não só "compilou sem erro".
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real
@@ -289,8 +304,12 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   página cheia; guard `admin-pagina-sem-pwa` no `tests/smoke.php` garante
   que uma página nova nunca esqueça de incluir os dois (mesma classe de bug
   do head_scripts nas landing pages do JurídicoSaaS). Ícones em
-  `admin/assets/img/icon-192.png`/`icon-512.png` são **placeholder** (gerado
-  localmente, "FC" em fundo escuro) até a logo real da Fastcar ser enviada.
+  `admin/assets/img/icon-192.png`/`icon-512.png` ainda são **placeholder**
+  ("FC" em fundo escuro) — a logo real da Fastcar chegou em 13/09/2026
+  (fundo azul-marinho `#0a1229`, wordmark "Fast**Car**" branco+azul,
+  "Soluções Financeiras" como subtítulo) mas só como imagem colada na
+  conversa, sem arquivo — falta o José reenviar como anexo de verdade pra
+  gerar os ícones e o favicon a partir dela.
 - **Smoke test** — `tests/smoke.php` (rodar antes de todo commit: `php
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os

@@ -40,11 +40,12 @@ $op = buscarOportunidadePorToken($token);
 if (!$op) {
     http_response_code(404);
     ?>
-    <!doctype html><html lang="pt-br"><head><meta charset="utf-8"><title>Link inválido</title>
+    <!doctype html><html lang="pt-br"><head><meta charset="utf-8"><title>Link inválido — Fastcar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1"></head>
-    <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#333">
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;padding:60px 20px;background:#0a1229;color:#fff;min-height:100vh;margin:0">
+        <img src="/public/assets/logo.png" alt="Fastcar" style="max-height:56px;margin-bottom:24px" onerror="this.style.display='none'">
         <h2>⚠️ Link inválido ou expirado</h2>
-        <p>Fale com seu consultor da Fastcar pra receber um novo link.</p>
+        <p style="color:#aab4d4">Fale com seu consultor da Fastcar pra receber um novo link.</p>
     </body></html>
     <?php
     exit;
@@ -200,32 +201,64 @@ $numeroEtapa = array_search($tipoAtual, ORDEM_ETAPAS, true);
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Envio de documentos — Fastcar</title>
 <style>
+/* Paleta da marca Fast Car — azul-marinho escuro + azul de destaque + branco
+   (mesma logo enviada pelo Jean/José, 13/09/2026: fundo #0a1229, "Fast"
+   branco, "Car" azul). Cartões ficam claros por cima do fundo escuro —
+   formulário precisa de contraste alto pra input ser legível, não dá pra
+   deixar tudo escuro só por estética. */
+:root {
+    --navy: #0a1229;
+    --navy-2: #101d40;
+    --blue: #2f6fed;
+    --blue-dark: #1a4fc4;
+    --texto: #1c1e29;
+}
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f4f5f7; color: #1c1e21; margin: 0; }
-.wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 60px; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f4f5f9;
+    color: var(--texto);
+    margin: 0;
+}
+/* Faixa escura isolada só no cabeçalho da marca — nunca embaixo de texto de
+   conteúdo (etapa, alertas), senão contraste quebra dependendo de quanto
+   conteúdo tem acima na página (bug real: "Etapa 1 de 3" ficava ilegível,
+   texto escuro sobre fundo escuro, quando esse texto caía dentro da faixa). */
+.marca { text-align: center; padding: 32px 16px 26px; background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%); }
+.marca img { max-height: 64px; margin-bottom: 6px; }
+.marca .logotipo { font-size: 26px; font-weight: 700; color: #fff; letter-spacing: .2px; }
+.marca .logotipo b { color: var(--blue); }
+.marca .subtitulo { font-size: 12px; color: #aab4d4; letter-spacing: .5px; text-transform: uppercase; margin-top: 2px; }
+.wrap { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
 h1 { font-size: 20px; }
-.card { background: #fff; border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.card { background: #fff; border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(10,18,41,.14); }
 label { display: block; font-size: 13px; color: #555; margin: 14px 0 4px; }
-input[type=text] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 15px; }
+input[type=text] { width: 100%; padding: 11px 12px; border: 1px solid #d8dce4; border-radius: 8px; font-size: 15px; }
+input[type=text]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47,111,237,.15); }
 input[type=file] { width: 100%; margin-top: 4px; }
-button { width: 100%; margin-top: 20px; padding: 12px; border: none; border-radius: 8px; background: #1a5fb4; color: #fff; font-size: 16px; }
-button.secundario { background: #ccd0d5; color: #1c1e21; margin-top: 8px; }
+button { width: 100%; margin-top: 20px; padding: 13px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%); color: #fff;
+    font-size: 16px; font-weight: 600; cursor: pointer; }
+button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
 .status-ok { color: #2a7a3b; font-size: 13px; }
-.alerta-erro { background: #fbe4e1; color: #a33; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
-.alerta-info { background: #e8f0fc; color: #1a5fb4; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
-.alerta-sucesso { background: #e3f3e6; color: #2a7a3b; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
+.alerta-erro { background: #fbe4e1; color: #a33; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+.alerta-info { background: #e8f0fc; color: var(--blue-dark); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+.alerta-sucesso { background: #e3f3e6; color: #2a7a3b; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
 .passos { display: flex; gap: 6px; margin-bottom: 18px; }
-.passos span { flex: 1; height: 4px; border-radius: 2px; background: #dcdfe3; }
-.passos span.feito { background: #2a7a3b; }
-.passos span.atual { background: #1a5fb4; }
+.passos span { flex: 1; height: 4px; border-radius: 2px; background: #dde3f0; }
+.passos span.feito { background: #22a559; }
+.passos span.atual { background: var(--blue); }
 .resumo dt { font-size: 12px; color: #888; margin-top: 10px; }
 .resumo dd { margin: 2px 0 0; font-size: 15px; }
 </style>
 </head>
 <body>
+<div class="marca">
+    <img src="/public/assets/logo.png" alt="Fastcar" onerror="this.style.display='none'">
+    <div class="logotipo">Fast<b>Car</b></div>
+    <div class="subtitulo">Soluções Financeiras</div>
+</div>
 <div class="wrap">
-    <h1>🚗 Fastcar — Envio de documentos</h1>
-
     <?php if ($fase !== 'concluido'): ?>
     <div class="passos">
         <?php foreach (ORDEM_ETAPAS as $i => $t):
