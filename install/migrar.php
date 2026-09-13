@@ -49,6 +49,11 @@ $migracoes = [
     // 13/09/2026 — dá pra visualizar o PDF do contrato no próprio sistema
     // (admin/ver_contrato.php) desde a geração, não só depois de assinado
     'contratos.arquivo_url' => "ALTER TABLE contratos ADD COLUMN arquivo_url TEXT DEFAULT ''",
+
+    // 13/09/2026 — wizard de documentos com extração por IA
+    // (public/documentos.php, includes/extracao_documentos.php)
+    'oportunidade_documentos.dados_confirmados' => "ALTER TABLE oportunidade_documentos ADD COLUMN dados_confirmados INTEGER DEFAULT 0",
+    'oportunidades.documentos_confirmados_em'   => "ALTER TABLE oportunidades ADD COLUMN documentos_confirmados_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {

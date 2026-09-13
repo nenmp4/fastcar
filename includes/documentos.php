@@ -79,6 +79,8 @@ function buscarOportunidadePorToken(string $token): ?array {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT o.id AS oportunidade_id, o.etapa, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
+               o.veiculo_placa, o.veiculo_renavam, o.veiculo_chassi, o.banco_financiamento,
+               o.valor_parcela, o.parcelas_restantes, o.contrato_financiamento_numero,
                c.id AS cliente_id, c.nome, c.telefone, c.cpf, c.endereco,
                c.rg, c.cnh, c.nacionalidade, c.estado_civil, c.profissao
         FROM oportunidades o
@@ -225,17 +227,31 @@ function salvarUploadDocumento(int $oportunidadeId, string $tipo, array $arquivo
         $relativoLocal = $oportunidadeId . '/' . $nomeArquivo;
     }
 
+    // Reenvio substitui o arquivo — mas se já tinha sido confirmado no
+    // wizard antes (dados_confirmados=1), o arquivo novo pode ter dados
+    // diferentes do que foi confirmado, então volta pra 0 (força revisão
+    // de novo). Nunca reseta o que já tinha sido extraído/gravado nos
+    // campos de clientes/oportunidades — só o "confirmei que tá certo".
     $db->prepare("
-        INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, updated_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))
+        INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, dados_confirmados, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, datetime('now','localtime'))
         ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
             arquivo_url = excluded.arquivo_url,
             drive_file_id = excluded.drive_file_id,
             enviado_pelo_cliente = excluded.enviado_pelo_cliente,
+            dados_confirmados = 0,
             updated_at = datetime('now','localtime')
     ")->execute([$oportunidadeId, $tipo, $relativoLocal, $driveFileId, $enviadoPeloCliente ? 1 : 0]);
 
-    return ['ok' => true, 'erro' => null];
+    $stmtId = $db->prepare("SELECT id FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?");
+    $stmtId->execute([$oportunidadeId, $tipo]);
+    $docId = (int)$stmtId->fetchColumn();
+
+    // documento_id vai pro chamador poder disparar a extração por IA
+    // (includes/extracao_documentos.php) — que relê os bytes de volta via
+    // lerConteudoArquivoDocumento(), nunca reaproveita $arquivo['tmp_name']
+    // aqui (já foi movido/consumido acima, dependendo do destino).
+    return ['ok' => true, 'erro' => null, 'documento_id' => $docId];
 }
 
 /**
@@ -274,11 +290,36 @@ function salvarArquivoGeradoComoDocumento(int $clienteId, string $nomeCliente, s
 }
 
 /**
- * Serve (inline, nunca força download) um arquivo salvo via Drive
- * (drive_file_id) ou fallback local (arquivo_url, relativo a UPLOADS_DIR) —
- * compartilhado entre admin/ver_documento.php e admin/ver_contrato.php pra
- * não duplicar a lógica de download/defesa contra path traversal em dois
- * arquivos. Sempre termina a request (exit).
+ * Lê os bytes de um arquivo salvo via Drive (drive_file_id) ou fallback
+ * local (arquivo_url, relativo a UPLOADS_DIR) — mesma defesa contra path
+ * traversal e mesma prioridade Drive-primeiro de salvarUploadDocumento().
+ * Retorna null se não achar nenhum dos dois ou se a leitura falhar (nunca
+ * lança). Compartilhado entre servirArquivoDriveOuLocal() (serve pro
+ * navegador) e extrairDadosDocumentoComIA() (manda os bytes pro Gemini).
+ */
+function lerConteudoArquivoDocumento(?string $driveFileId, ?string $arquivoUrl): ?array {
+    if ($driveFileId) {
+        $drive = new GoogleDrive();
+        if (!$drive->hasCredentials() || !$drive->authenticate()) return null;
+        $arquivo = $drive->download($driveFileId);
+        if (!$arquivo) return null;
+        return ['content' => $arquivo['content'], 'mime' => $arquivo['mime'], 'name' => $arquivo['name']];
+    }
+
+    if (!$arquivoUrl) return null;
+    $caminho = realpath(UPLOADS_DIR . '/' . $arquivoUrl);
+    if (!$caminho || !str_starts_with($caminho, realpath(UPLOADS_DIR) . DIRECTORY_SEPARATOR)) return null;
+
+    $conteudo = @file_get_contents($caminho);
+    if ($conteudo === false) return null;
+    return ['content' => $conteudo, 'mime' => mime_content_type($caminho) ?: 'application/octet-stream', 'name' => basename($caminho)];
+}
+
+/**
+ * Serve (inline, nunca força download) um arquivo salvo via Drive ou
+ * fallback local — compartilhado entre admin/ver_documento.php e
+ * admin/ver_contrato.php pra não duplicar a lógica de download/defesa
+ * contra path traversal em dois arquivos. Sempre termina a request (exit).
  */
 function servirArquivoDriveOuLocal(?string $driveFileId, ?string $arquivoUrl): void {
     if (!$driveFileId && !$arquivoUrl) {
@@ -286,41 +327,17 @@ function servirArquivoDriveOuLocal(?string $driveFileId, ?string $arquivoUrl): v
         exit('Arquivo não encontrado.');
     }
 
-    if ($driveFileId) {
-        $drive = new GoogleDrive();
-        if (!$drive->hasCredentials() || !$drive->authenticate()) {
-            http_response_code(503);
-            exit('Google Drive indisponível no momento.');
-        }
-        $arquivo = $drive->download($driveFileId);
-        if (!$arquivo) {
-            http_response_code(502);
-            exit('Não foi possível baixar o documento agora. Tente novamente.');
-        }
-        header('Content-Type: ' . $arquivo['mime']);
-        header('Content-Disposition: inline; filename="' . rawurlencode($arquivo['name']) . '"');
-        header('Content-Length: ' . strlen($arquivo['content']));
-        header('X-Content-Type-Options: nosniff');
-        header('Cache-Control: private, no-store');
-        echo $arquivo['content'];
-        exit;
+    $arquivo = lerConteudoArquivoDocumento($driveFileId, $arquivoUrl);
+    if (!$arquivo) {
+        http_response_code($driveFileId ? 502 : 404);
+        exit($driveFileId ? 'Não foi possível baixar o documento agora. Tente novamente.' : 'Arquivo não encontrado.');
     }
 
-    // Fallback local — arquivo_url é sempre relativo a UPLOADS_DIR, mesmo
-    // assim nunca confia cegamente: normaliza e confere que o caminho final
-    // continua dentro de UPLOADS_DIR antes de abrir (defesa contra path
-    // traversal).
-    $caminho = realpath(UPLOADS_DIR . '/' . $arquivoUrl);
-    if (!$caminho || !str_starts_with($caminho, realpath(UPLOADS_DIR) . DIRECTORY_SEPARATOR)) {
-        http_response_code(404);
-        exit('Arquivo não encontrado.');
-    }
-
-    $mime = mime_content_type($caminho) ?: 'application/octet-stream';
-    header('Content-Type: ' . $mime);
-    header('Content-Disposition: inline; filename="' . basename($caminho) . '"');
-    header('Content-Length: ' . filesize($caminho));
+    header('Content-Type: ' . $arquivo['mime']);
+    header('Content-Disposition: inline; filename="' . rawurlencode($arquivo['name']) . '"');
+    header('Content-Length: ' . strlen($arquivo['content']));
+    header('X-Content-Type-Options: nosniff');
     header('Cache-Control: private, no-store');
-    readfile($caminho);
+    echo $arquivo['content'];
     exit;
 }

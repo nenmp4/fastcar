@@ -21,6 +21,7 @@ require_once __DIR__ . '/../includes/whatsapp_config.php';
 require_once __DIR__ . '/../includes/zapi_instancias.php';
 require_once __DIR__ . '/../includes/fila_leads.php';
 require_once __DIR__ . '/../includes/documentos.php';
+require_once __DIR__ . '/../includes/extracao_documentos.php';
 require_once __DIR__ . '/../includes/gemini.php';
 require_once __DIR__ . '/../includes/openai.php';
 require_once __DIR__ . '/../includes/contratos.php';

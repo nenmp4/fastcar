@@ -136,6 +136,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $resultado = salvarUploadDocumento($id, $tipoDoc, $_FILES['arquivo'], false);
                     if ($resultado['ok']) {
                         $sucesso = 'Documento anexado.';
+                        // Mesma extração por IA do wizard público (includes/extracao_documentos.php)
+                        // — anexado pelo consultor (ex: foto que o cliente mandou no
+                        // WhatsApp) já sai pré-preenchido, o cliente só confirma
+                        // depois pelo link. Só se aplica aos 3 tipos que o cliente
+                        // preenche — docs da pasta fechada não têm dado pra extrair.
+                        if (isset(TIPOS_DOCUMENTOS_CLIENTE[$tipoDoc])) {
+                            $docSalvo = listarDocumentos($id)[$tipoDoc] ?? null;
+                            $arquivoLido = $docSalvo ? lerConteudoArquivoDocumento($docSalvo['drive_file_id'] ?: null, $docSalvo['arquivo_url'] ?: null) : null;
+                            if ($arquivoLido) {
+                                $dadosExtraidos = extrairDadosDocumentoComIA($tipoDoc, $arquivoLido);
+                                if ($dadosExtraidos) {
+                                    aplicarDadosExtraidosDocumento((int)$op['cliente_id'], $id, $tipoDoc, $dadosExtraidos);
+                                }
+                            }
+                        }
                     } else {
                         $erro = $resultado['erro'] ?? 'Falha ao anexar documento.';
                     }
@@ -398,8 +413,20 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
 <div class="card">
     <h3>📎 Documentos</h3>
-    <p><small>O cliente sobe CNH, comprovante de endereço e contrato de financiamento sozinho, sem login, pelo link
-       abaixo. Documentos da pasta fechada (bloco 8) o consultor/Jean anexa manualmente aqui mesmo.</small></p>
+    <p><small>O cliente sobe CNH, comprovante de endereço e contrato de financiamento sozinho, sem login, num wizard
+       passo a passo pelo link abaixo — a cada envio a IA lê o documento e pré-preenche nome/CPF/endereço/dados do
+       veículo, e o cliente só confirma. Documentos da pasta fechada (bloco 8) o consultor/Jean anexa manualmente
+       aqui mesmo.</small></p>
+
+    <?php if ($op['documentos_confirmados_em']): ?>
+        <div class="alerta-sucesso" style="padding:8px 12px;border-radius:6px;background:#e3f3e6;color:#2a7a3b;margin-bottom:10px">
+            ✅ Cliente confirmou os dados e documentos em <?= date('d/m/Y H:i', strtotime($op['documentos_confirmados_em'])) ?>.
+        </div>
+    <?php elseif (array_filter($documentos, fn($d) => $d['arquivo_url'] || $d['drive_file_id'])): ?>
+        <div class="alerta-erro" style="padding:8px 12px;border-radius:6px;background:#fbe4e1;color:#a33;margin-bottom:10px">
+            ⏳ Cliente ainda está no meio do wizard de documentos (não confirmou o resumo final ainda).
+        </div>
+    <?php endif; ?>
 
     <p>
         <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentos) ?></code><br>
@@ -420,14 +447,17 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 // drive_file_id (Drive, preferido) — checar só um dos dois
                 // já causou "pendente" falso pra doc que tava no Drive.
                 $temArquivo = $doc && ($doc['arquivo_url'] || $doc['drive_file_id']);
+                $ehDocCliente = isset(TIPOS_DOCUMENTOS_CLIENTE[$tipo]);
             ?>
             <tr>
                 <td><?= e($label) ?></td>
                 <td>
-                    <?php if ($temArquivo): ?>
-                        <span class="badge badge-ok">✅ enviado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
-                    <?php else: ?>
+                    <?php if (!$temArquivo): ?>
                         <span class="badge badge-atraso">⏳ pendente</span>
+                    <?php elseif ($ehDocCliente && !$doc['dados_confirmados']): ?>
+                        <span class="badge badge-atraso">📝 enviado, aguardando cliente confirmar dados</span>
+                    <?php else: ?>
+                        <span class="badge badge-ok">✅ enviado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
                     <?php endif; ?>
                 </td>
                 <td><?= $doc ? ($doc['enviado_pelo_cliente'] ? 'cliente' : 'equipe') : '—' ?></td>

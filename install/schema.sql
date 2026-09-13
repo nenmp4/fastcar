@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- — gerado sob demanda (lazy) na 1ª vez que o consultor manda o link;
     -- é a "senha" do link, cliente nunca faz login de verdade.
     documentos_token TEXT,
+    -- Quando o cliente concluiu a revisão final do wizard de documentos
+    -- (confirmou os 3 documentos + dados extraídos) — NULL enquanto ainda
+    -- não terminou. Zerado de novo se ele voltar e editar algo depois de já
+    -- ter confirmado (força o consultor a olhar de novo antes do contrato).
+    documentos_confirmados_em DATETIME,
 
     -- Bloco 3 — Qualificação IA (dados do veículo/financiamento)
     -- Marca separada do modelo pra dar pra validar contra a lista oficial
@@ -226,6 +231,14 @@ CREATE TABLE IF NOT EXISTS oportunidade_documentos (
     drive_file_id TEXT DEFAULT '',      -- preenchido quando o arquivo foi pro Google Drive (includes/google_drive.php) — mesmo padrão do JurídicoSaaS
     obrigatorio INTEGER DEFAULT 1,
     enviado_pelo_cliente INTEGER DEFAULT 0, -- 1 = veio do formulário público, 0 = staff anexou
+    -- Wizard de documentos (public/documentos.php, 13/09/2026): pro cliente,
+    -- upload de cnh/comprovante_endereco/contrato_financiamento dispara
+    -- extração por IA (includes/extracao_documentos.php) que pré-preenche
+    -- clientes/oportunidades — dados_confirmados=1 só depois que o cliente
+    -- revisa/corrige e clica "avançar" pra essa etapa específica. Decide qual
+    -- etapa do wizard mostrar (arquivo ausente → upload; arquivo presente e
+    -- não confirmado → revisão; todos confirmados → resumo final).
+    dados_confirmados INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime')),
     UNIQUE(oportunidade_id, tipo)       -- upsert por tipo — reenvio substitui, nunca duplica linha

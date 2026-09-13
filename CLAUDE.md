@@ -158,12 +158,45 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   oportunidades daquele telefone) — badge "🏆 Cliente convertido" quando o
   cliente já teve pelo menos um veículo com `etapa='fechado'`
 - **Módulo de formulário/documentos** — `public/documentos.php` (link com
-  token, sem login, cliente sobe CNH/comprovante de endereço/contrato de
-  financiamento + completa dados pessoais); arquivos vão pro **Google Drive**
+  token, sem login): desde 13/09/2026 é um **wizard passo a passo** (CNH →
+  comprovante de endereço → contrato de financiamento → resumo final), não
+  mais 1 formulário só. Motivo: o formulário antigo deixava o cliente
+  digitar nome/CPF/endereço à mão sem ninguém checar, indo reto pro
+  contrato se o consultor não abrisse a CNH pra conferir. Agora, a cada
+  upload, `includes/extracao_documentos.php` manda o documento pro Gemini
+  multimodal (`geminiCallComMidia()`, mesma função do WhatsApp — `inlineData`
+  lê `image/*` **e `application/pdf` nativamente, sem OCR/biblioteca de
+  PDF**, mesmo mecanismo já validado em produção no JurídicoSaaS via
+  `api/financeiro-ler-comprovante.php`) e pré-preenche os campos; o cliente
+  só revisa/corrige e confirma **um documento por vez** antes de avançar
+  (`oportunidade_documentos.dados_confirmados`) — a etapa do wizard é
+  sempre derivada do banco (nunca sessão/cookie), então o cliente pode
+  fechar a aba e voltar pelo link dias depois, de outro aparelho, de onde
+  parou. Preenchimento é **fill-if-empty** (nunca sobrescreve dado que já
+  existia — nem o que o próprio cliente confirmou numa etapa anterior do
+  wizard, nem o que a qualificação por IA do bloco 3 já capturou via
+  WhatsApp, tratado como fonte confiável), mas quando o documento
+  **contradiz** o que já estava cadastrado (ex: contrato de financiamento
+  de um veículo diferente do que o WhatsApp já tinha capturado, comprovante
+  com nome de outra pessoa), `compararDivergenciasDocumento()` aponta a
+  diferença na hora pro cliente E grava em `oportunidade_historico` — nunca
+  bloqueia (decisão de negócio é sempre do consultor, regra #3), só garante
+  que não passa batido se o cliente só clicar "avançar" sem prestar
+  atenção. `?revisar=tipo` deixa voltar numa etapa já confirmada mesmo
+  depois do resumo final; corrigir algo depois de já ter confirmado tudo
+  zera `oportunidades.documentos_confirmados_em` de novo, forçando o
+  consultor a olhar uma 2ª vez antes de gerar o contrato. Anexo manual do
+  consultor (`admin/oportunidade.php`, ex: cliente mandou foto pelo
+  WhatsApp) roda a mesma extração. Sem chave Gemini configurada, a
+  extração simplesmente não roda (mesma limitação do áudio/imagem do
+  WhatsApp — só Gemini é multimodal aqui) e o cliente preenche manualmente,
+  nunca trava o wizard. Arquivos vão pro **Google Drive**
   (`includes/google_drive.php`, service account, mesmo padrão do
   JurídicoSaaS: pasta raiz "Fastcar" → subpasta por cliente → arquivos),
   com `storage/uploads/` local como fallback só se o Drive não estiver
-  configurado ou uma chamada falhar
+  configurado ou uma chamada falhar; `includes/documentos.php::lerConteudoArquivoDocumento()`
+  lê os bytes de qualquer um dos dois destinos, compartilhado entre servir
+  pro navegador (`servirArquivoDriveOuLocal()`) e mandar pro Gemini.
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real
@@ -461,6 +494,15 @@ testado com servidor fake local — nunca contra o serviço real:
   chamada real com chave de API de verdade. Validar também se o modelo
   configurado (`gemini-2.5-flash`/`gpt-4o-mini`) ainda existe/responde bem
   quando a instância for configurada de verdade.
+- **Extração de documentos por IA** (`includes/extracao_documentos.php`,
+  wizard `public/documentos.php`) — mesma limitação acima: leitura de
+  CNH/comprovante de endereço/contrato de financiamento (foto ou PDF) via
+  Gemini multimodal só testada contra servidor fake local simulando o JSON
+  de resposta esperado por tipo de documento; nunca contra uma foto real de
+  documento brasileiro. Validar assim que possível: qualidade da leitura
+  em foto tirada de celular (ângulo, reflexo, iluminação ruim), CNH modelo
+  antigo x novo, e se o Gemini realmente lê PDF de contrato de
+  financiamento escaneado (não só PDF nativo/texto).
 - **API ZapSign** (`includes/zapsign.php`, `includes/contratos.php`) —
   substituiu a Assinafy em 13/09/2026. Construído a partir da documentação
   oficial (docs.zapsign.com.br, consultada via busca — o ambiente de dev
