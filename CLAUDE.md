@@ -202,6 +202,25 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   verdade, em `zapsignSincronizarContrato()`) — badge "🏆 Cliente
   convertido" quando o cliente já teve pelo menos um veículo com
   `etapa='fechado'`.
+- **E-mail do cliente** (`clientes.email`, 14/09/2026, pedido direto do
+  José/Jean — "faltou esse dado"): campo que faltava na **1ª etapa** do
+  wizard de documentos (`public/documentos.php`, junto com CPF/RG/
+  nacionalidade/estado civil/profissão — `atualizarDadosPessoaisCliente()`),
+  editável também em `admin/cliente_detalhe.php` (pro consultor completar
+  em cadastro antigo) e exibido em `admin/oportunidade.php` (com aviso +
+  link pra completar quando falta). Motivo de negócio, mesmo dia: "vamos
+  enviar no email dele o contrato" — `includes/zapsign.php::zapsignCriarDocumentoEAssinatura()`
+  passou a aceitar e-mail opcional e inclui no `signer` (`email`) só quando
+  presente e válido (`filter_var(...,FILTER_VALIDATE_EMAIL)`); a ZapSign
+  manda o link de assinatura por e-mail além do telefone/WhatsApp quando
+  tem esse dado. Nunca bloqueia: cliente sem e-mail (cadastro antigo, ou
+  etapa 1 do wizard ainda não confirmada) segue mandando o contrato só por
+  telefone — `gerarEEnviarContratoCompra()` só avisa (mesmo mecanismo do
+  aviso de limite de 25% da FIPE), nunca impede a geração/envio. Bug real
+  achado no teste visual: o CSS do wizard só estilizava `input[type=text]`
+  — o novo campo (`type="email"`, validação nativa do navegador) ficava bem
+  mais estreito que os outros até o seletor ser corrigido pra cobrir os
+  dois tipos.
 - **Frota (veículos comprados)** — `admin/veiculos.php` (novo, 13/09/2026,
   pedido "no vendido ter dashboard todos carros" — nome de arquivo é
   `veiculos.php` porque hoje só existe o lado de COMPRA; "vendido" aqui

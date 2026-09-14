@@ -39,7 +39,7 @@ function formatarDataExtensoPtBr(string $dataYmd): string {
 function montarCamposContratoCompra(int $oportunidadeId): ?array {
     $db = getDB();
     $stmt = $db->prepare("
-        SELECT o.*, c.id AS cliente_id, c.nome AS cliente_nome, c.telefone, c.cpf, c.rg, c.cnh,
+        SELECT o.*, c.id AS cliente_id, c.nome AS cliente_nome, c.telefone, c.email, c.cpf, c.rg, c.cnh,
                c.nacionalidade, c.estado_civil, c.profissao, c.endereco
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
         WHERE o.id = ?
@@ -90,6 +90,7 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'testemunha2_cpf'               => getConfig('testemunha2_cpf') ?: '',
         'data_extenso'                  => formatarDataExtensoPtBr(date('Y-m-d')),
         '_telefone'                     => $op['telefone'],
+        '_email'                        => $op['email'] ?: '',
         '_cliente_id'                   => (int)$op['cliente_id'],
     ];
 }
@@ -127,9 +128,18 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
 
     // Limite contratual de 25% da FIPE (cláusula 1.2) — nunca decide sozinho
     // se segue ou não, só avisa; a decisão de negociação é sempre do consultor.
-    $aviso = ($campos['percentual_fipe'] > 25)
-        ? "Percentual pago ({$campos['percentual_fipe']}%) excede o limite contratual de 25% da FIPE — confira antes de enviar pra assinatura."
-        : null;
+    $avisos = [];
+    if ($campos['percentual_fipe'] > 25) {
+        $avisos[] = "Percentual pago ({$campos['percentual_fipe']}%) excede o limite contratual de 25% da FIPE — confira antes de enviar pra assinatura.";
+    }
+    // Cliente sem e-mail cadastrado (wizard antigo, ou cliente ainda não
+    // confirmou a 1ª etapa) — a ZapSign segue mandando só por
+    // telefone/WhatsApp, nunca trava o envio do contrato por causa disso,
+    // só avisa pro consultor completar em admin/cliente_detalhe.php.
+    if (!$campos['_email']) {
+        $avisos[] = 'Cliente sem e-mail cadastrado — o contrato vai só pelo WhatsApp/telefone pra assinatura. Complete o e-mail em Clientes pra também mandar por e-mail.';
+    }
+    $aviso = $avisos ? implode(' ', $avisos) : null;
 
     $pdfPath = gerarPdfContratoCompra($campos);
     $nomeDoc = 'Contrato de Compra - ' . ($campos['vendedor_nome'] ?: "Oportunidade #{$oportunidadeId}");
@@ -146,9 +156,10 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     );
 
     // ZapSign cria documento + signatário numa chamada só (diferente da
-    // Assinafy, que precisava de 3 chamadas separadas) — telefone é o
-    // canal de verificação/notificação quando existe.
-    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone']);
+    // Assinafy, que precisava de 3 chamadas separadas) — telefone e e-mail
+    // são os canais de verificação/notificação quando existem (pedido do
+    // José/Jean, 14/09/2026: "vamos enviar no email dele o contrato").
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone'], $campos['_email']);
     @unlink($pdfPath);
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];

@@ -12,7 +12,7 @@ $db = getDB();
 $id = (int)($_GET['id'] ?? 0);
 
 $stmtOp = $db->prepare("
-    SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+    SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
            c.cidade, c.estado, c.canal_origem, c.campanha_origem, c.anuncio_origem
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
@@ -268,6 +268,14 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <div class="grid-2">
         <div>
             <p><strong>Telefone:</strong> <?= e($op['cliente_telefone']) ?></p>
+            <p><strong>E-mail:</strong>
+               <?php if ($op['cliente_email']): ?>
+                   <?= e($op['cliente_email']) ?>
+               <?php else: ?>
+                   <span class="badge badge-aviso">não informado</span>
+                   — <a href="/admin/cliente_detalhe.php?id=<?= (int)$op['cliente_id'] ?>">completar</a>
+               <?php endif; ?>
+            </p>
             <p><strong>Cidade/UF:</strong> <?= e($op['cidade'] ?: '—') ?> / <?= e($op['estado'] ?: '—') ?></p>
             <p><strong>Origem:</strong> <?= e($op['canal_origem'] ?: '—') ?>
                <?= $op['campanha_origem'] ? ' · ' . e($op['campanha_origem']) : '' ?>

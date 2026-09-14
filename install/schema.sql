@@ -19,6 +19,12 @@ CREATE TABLE IF NOT EXISTS clientes (
     estado TEXT DEFAULT '',
     cpf TEXT DEFAULT '',
     endereco TEXT DEFAULT '',
+    -- E-mail do cliente — coletado na 1ª etapa do wizard público de
+    -- documentos (public/documentos.php, junto com CNH/qualificação civil),
+    -- pedido explícito do José/Jean 14/09/2026 ("faltou esse dado"). Usado
+    -- também como canal alternativo de notificação da ZapSign na hora de
+    -- assinar o contrato (includes/zapsign.php), além do telefone.
+    email TEXT DEFAULT '',
     -- Qualificação civil — exigida pelo contrato-mestre de compra
     -- (includes/contratos.php) pra identificar o VENDEDOR no instrumento.
     -- Coletado no mesmo formulário público de documentos (public/documentos.php).

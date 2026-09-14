@@ -29,12 +29,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $db->prepare("
-                UPDATE clientes SET nome = ?, cidade = ?, estado = ?, cpf = ?, endereco = ? WHERE id = ?
+                UPDATE clientes SET nome = ?, cidade = ?, estado = ?, cpf = ?, email = ?, endereco = ? WHERE id = ?
             ")->execute([
                 clean((string)($_POST['nome'] ?? '')),
                 clean((string)($_POST['cidade'] ?? '')),
                 clean((string)($_POST['estado'] ?? '')),
                 clean((string)($_POST['cpf'] ?? '')),
+                clean((string)($_POST['email'] ?? '')),
                 clean((string)($_POST['endereco'] ?? '')),
                 $id,
             ]);
@@ -109,6 +110,9 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
                 <small>Telefone é a chave de identificação — não editável por aqui.</small>
                 <label>CPF</label>
                 <input type="text" name="cpf" value="<?= e($cliente['cpf'] ?? '') ?>">
+                <label>E-mail</label>
+                <input type="email" name="email" value="<?= e($cliente['email'] ?? '') ?>">
+                <small>Usado também pra ZapSign avisar por e-mail quando mandar o contrato pra assinatura.</small>
             </div>
             <div>
                 <label>Cidade</label>

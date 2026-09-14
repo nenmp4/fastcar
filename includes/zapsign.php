@@ -74,7 +74,7 @@ function zapsignRequest(string $method, string $endpoint, array $data = []): arr
  * ['doc_token' => string, 'signer_token' => string, 'sign_url' => string]
  * ou ['error' => string].
  */
-function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, string $signerNome, string $telefone = ''): array {
+function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, string $signerNome, string $telefone = '', string $email = ''): array {
     if (!file_exists($pdfPath)) {
         return ['error' => 'Arquivo não encontrado: ' . $pdfPath];
     }
@@ -87,6 +87,15 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
             $signer['phone_country'] = '55';
             $signer['phone_number']  = $tel;
         }
+    }
+    // E-mail (14/09/2026, pedido do José/Jean — "vamos enviar no email dele
+    // o contrato"): a ZapSign manda o link de assinatura por e-mail quando
+    // o signatário tem um cadastrado, além/em vez do WhatsApp/SMS pelo
+    // telefone acima. Sem e-mail no cadastro do cliente (wizard antigo, ou
+    // etapa ainda não confirmada), segue só pelo telefone — nunca bloqueia
+    // o envio do contrato por falta desse dado.
+    if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $signer['email'] = $email;
     }
 
     $payload = [

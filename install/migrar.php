@@ -58,6 +58,10 @@ $migracoes = [
     // 13/09/2026 — data real de assinatura do contrato, pro detalhe do
     // cliente mostrar "que dia ele assina contrato"
     'contratos.assinado_em' => "ALTER TABLE contratos ADD COLUMN assinado_em DATETIME",
+
+    // 14/09/2026 — e-mail do cliente, faltava na 1ª etapa do wizard de
+    // documentos (pedido direto do José/Jean, "faltou esse dado")
+    'clientes.email' => "ALTER TABLE clientes ADD COLUMN email TEXT DEFAULT ''",
 ];
 
 foreach ($migracoes as $nome => $sql) {

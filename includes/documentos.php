@@ -81,7 +81,7 @@ function buscarOportunidadePorToken(string $token): ?array {
         SELECT o.id AS oportunidade_id, o.etapa, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
                o.veiculo_placa, o.veiculo_renavam, o.veiculo_chassi, o.banco_financiamento,
                o.valor_parcela, o.parcelas_restantes, o.contrato_financiamento_numero,
-               c.id AS cliente_id, c.nome, c.telefone, c.cpf, c.endereco,
+               c.id AS cliente_id, c.nome, c.telefone, c.cpf, c.email, c.endereco,
                c.rg, c.cnh, c.nacionalidade, c.estado_civil, c.profissao
         FROM oportunidades o
         JOIN clientes c ON c.id = o.cliente_id
@@ -95,19 +95,22 @@ function buscarOportunidadePorToken(string $token): ?array {
 /**
  * Atualiza os dados pessoais do cliente a partir do formulário público —
  * inclui a qualificação civil (RG, CNH, nacionalidade, estado civil,
- * profissão) exigida pelo contrato-mestre de compra (includes/contratos.php).
+ * profissão) exigida pelo contrato-mestre de compra (includes/contratos.php)
+ * e o e-mail (14/09/2026, pedido do José/Jean — faltava, usado também como
+ * canal alternativo de notificação da ZapSign na hora de assinar).
  */
 function atualizarDadosPessoaisCliente(
     int $clienteId, string $nome, string $cpf, string $endereco,
-    string $rg = '', string $cnh = '', string $nacionalidade = '', string $estadoCivil = '', string $profissao = ''
+    string $rg = '', string $cnh = '', string $nacionalidade = '', string $estadoCivil = '', string $profissao = '',
+    string $email = ''
 ): void {
     $db = getDB();
     $db->prepare("
-        UPDATE clientes SET nome = ?, cpf = ?, endereco = ?, rg = ?, cnh = ?, nacionalidade = ?, estado_civil = ?, profissao = ?
+        UPDATE clientes SET nome = ?, cpf = ?, endereco = ?, rg = ?, cnh = ?, nacionalidade = ?, estado_civil = ?, profissao = ?, email = ?
         WHERE id = ?
     ")->execute([
         clean($nome), clean($cpf), clean($endereco), clean($rg), clean($cnh),
-        clean($nacionalidade), clean($estadoCivil), clean($profissao), $clienteId,
+        clean($nacionalidade), clean($estadoCivil), clean($profissao), clean($email), $clienteId,
     ]);
 }
 

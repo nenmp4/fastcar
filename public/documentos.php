@@ -119,7 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (string)($_POST['cnh'] ?? ''),
                     (string)($_POST['nacionalidade'] ?? ''),
                     (string)($_POST['estado_civil'] ?? ''),
-                    (string)($_POST['profissao'] ?? '')
+                    (string)($_POST['profissao'] ?? ''),
+                    (string)($_POST['email'] ?? '')
                 );
             } elseif ($tipoForm === 'comprovante_endereco') {
                 atualizarDadosPessoaisCliente(
@@ -127,7 +128,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (string)($op['nome'] ?? ''), (string)($op['cpf'] ?? ''),
                     (string)($_POST['endereco'] ?? ''),
                     (string)($op['rg'] ?? ''), (string)($op['cnh'] ?? ''),
-                    (string)($op['nacionalidade'] ?? ''), (string)($op['estado_civil'] ?? ''), (string)($op['profissao'] ?? '')
+                    (string)($op['nacionalidade'] ?? ''), (string)($op['estado_civil'] ?? ''), (string)($op['profissao'] ?? ''),
+                    (string)($op['email'] ?? '')
                 );
             } elseif ($tipoForm === 'contrato_financiamento') {
                 $db = getDB();
@@ -238,8 +240,8 @@ body {
 h1 { font-size: 20px; }
 .card { background: #fff; border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(10,18,41,.14); }
 label { display: block; font-size: 13px; color: #555; margin: 14px 0 4px; }
-input[type=text] { width: 100%; padding: 11px 12px; border: 1px solid #d8dce4; border-radius: 8px; font-size: 15px; }
-input[type=text]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47,111,237,.15); }
+input[type=text], input[type=email] { width: 100%; padding: 11px 12px; border: 1px solid #d8dce4; border-radius: 8px; font-size: 15px; }
+input[type=text]:focus, input[type=email]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47,111,237,.15); }
 input[type=file] { width: 100%; margin-top: 4px; }
 button { width: 100%; margin-top: 20px; padding: 13px; border: none; border-radius: 10px;
     background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%); color: #fff;
@@ -322,6 +324,8 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
                     <input type="text" name="nome" value="<?= e($op['nome'] ?? '') ?>" required>
                     <label>CPF</label>
                     <input type="text" name="cpf" value="<?= e($op['cpf'] ?? '') ?>" placeholder="000.000.000-00">
+                    <label>E-mail</label>
+                    <input type="email" name="email" value="<?= e($op['email'] ?? '') ?>" placeholder="voce@email.com" required>
                     <label>RG</label>
                     <input type="text" name="rg" value="<?= e($op['rg'] ?? '') ?>">
                     <label>Nº da CNH (se tiver)</label>
@@ -368,6 +372,7 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
             <dl>
                 <dt>Nome</dt><dd><?= e($op['nome'] ?: '—') ?></dd>
                 <dt>CPF</dt><dd><?= e($op['cpf'] ?: '—') ?></dd>
+                <dt>E-mail</dt><dd><?= e($op['email'] ?: '—') ?></dd>
                 <dt>RG</dt><dd><?= e($op['rg'] ?: '—') ?></dd>
                 <dt>Endereço</dt><dd><?= e($op['endereco'] ?: '—') ?></dd>
                 <dt>Banco/financeira</dt><dd><?= e($op['banco_financiamento'] ?: '—') ?></dd>
