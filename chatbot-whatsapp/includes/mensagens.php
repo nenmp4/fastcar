@@ -303,6 +303,22 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     $tipoRegistro = 'text';
     if ($texto === null) {
         $tipoBruto = tipoMidia($payload);
+
+        // ⚠️ 15/09/2026 — achado real em produção: payload sem NENHUM campo
+        // reconhecido (nem text, nem image/audio/video/document/sticker/
+        // location/contact) não é mensagem de verdade — é outro tipo de
+        // evento da Z-API (presença, status de entrega, conexão) caindo no
+        // mesmo webhook "Ao receber" por engano (aconteceu quando os 6
+        // campos de webhook da Z-API foram configurados pra mesma URL).
+        // Sem essa checagem, cada evento desses virava "mídia não
+        // suportada" e disparava a resposta de reconhecimento — 129
+        // respostas repetidas pro mesmo telefone num intervalo de minutos,
+        // sem nenhuma mensagem real do cliente por trás. Nunca registra
+        // nem responde nesse caso — só ignora silenciosamente.
+        if ($tipoBruto === 'desconhecido') {
+            return ['ignored' => 'not_a_message', 'telefone' => $phone] + $vazio;
+        }
+
         $textoMidia = '';
         if (in_array($tipoBruto, ['audio', 'image'], true)) {
             $url = extrairUrlMidia($payload, $tipoBruto);
