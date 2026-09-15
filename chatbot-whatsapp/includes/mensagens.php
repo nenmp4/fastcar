@@ -11,6 +11,7 @@ require_once dirname(__DIR__, 2) . '/includes/oportunidades.php';
 require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
+require_once dirname(__DIR__, 2) . '/includes/documentos.php'; // salvarArquivoGeradoComoDocumento() — mídia recebida (áudio/imagem/vídeo)
 
 // Segundos de silêncio esperados antes da IA responder — evita o bot
 // respondendo picotado quando o cliente manda várias mensagens curtas em
@@ -115,31 +116,24 @@ function mimeMidia(array $payload, string $tipo, string $default): string {
 }
 
 /**
- * Baixa áudio/imagem/vídeo e pede pro Gemini transcrever (áudio) ou
- * descrever (imagem/vídeo) — retorna o texto resultante, ou '' se não deu
- * por qualquer motivo (sem URL, download falhou, arquivo grande demais,
- * sem chave Gemini configurada). Nunca lança: mídia é sempre melhor
- * esforço, mesmo espírito de enviarEmail()/geminiRegistrarTokens() — se
- * falhar, quem chama trata como mídia não processada (cai no
- * reconhecimento simples em vez de travar o webhook).
+ * Baixa áudio/imagem/vídeo do payload da Z-API — bytes crus, ou null se
+ * não deu por qualquer motivo (download falhou, arquivo grande demais).
+ * Usado tanto pra alimentar o Gemini (descreverMidiaComGemini()) quanto
+ * pra SALVAR a mídia de verdade (salvarMidiaWhatsappRecebida()) — reaproveita
+ * o mesmo download pros dois em vez de baixar 2x.
  *
  * Vídeo (15/09/2026, pedido do José/Jean — "receber mídias áudio, imagem
- * e vídeo, se cliente mandar, agente olhar"): mesmo mecanismo de
- * audio/imagem (Gemini multimodal, `inlineData` base64, mesma função
- * `geminiCallComMidia()` já usada pro wizard de documentos), só com um
- * limite de tamanho — vídeo de WhatsApp pode passar fácil dos ~20MB que a
- * API do Gemini aceita inline (acima disso precisaria da Files API, que
- * não estava implementada) e o download síncrono dentro do webhook não
- * pode ficar esperando um arquivo enorme. `WHATSAPP_MIDIA_MAX_BYTES` (20MB)
+ * e vídeo, se cliente mandar, agente olhar") pode passar fácil dos ~20MB
+ * que a API do Gemini aceita inline (acima disso precisaria da Files API,
+ * não implementada) e o download síncrono dentro do webhook não pode
+ * ficar esperando um arquivo enorme. `WHATSAPP_MIDIA_MAX_BYTES` (20MB)
  * corta o download cedo (CURLOPT_RANGE, evita baixar o arquivo inteiro só
- * pra descartar) — vídeo grande demais cai no mesmo caminho de "não deu
+ * pra descartar) — arquivo grande demais cai no mesmo caminho de "não deu
  * pra processar" (reconhecimento simples), nunca trava nem estoura memória.
  */
-function processarMidiaComGemini(string $url, string $mimeType, string $tipo): string {
+function baixarMidiaZapi(string $url, string $tipo): ?string {
+    if (!$url) return null;
     try {
-        $geminiKey = getConfig('gemini_api_key') ?: '';
-        if (!$geminiKey || !$url) return '';
-
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -151,18 +145,85 @@ function processarMidiaComGemini(string $url, string $mimeType, string $tipo): s
         curl_close($ch);
         // 200 = servidor ignorou o Range e mandou tudo (ainda aceitável se
         // coube no limite); 206 = respeitou o corte parcial.
-        if (!in_array($http, [200, 206], true) || !$conteudo) return '';
-        if (strlen($conteudo) >= WHATSAPP_MIDIA_MAX_BYTES) return '';
+        if (!in_array($http, [200, 206], true) || !$conteudo) return null;
+        if (strlen($conteudo) >= WHATSAPP_MIDIA_MAX_BYTES) return null;
+        return $conteudo;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
 
+/**
+ * Pede pro Gemini transcrever (áudio) ou descrever (imagem/vídeo) os bytes
+ * já baixados — retorna o texto resultante, ou '' se não deu (sem chave
+ * Gemini configurada, ou a chamada falhou). Nunca lança: mídia é sempre
+ * melhor esforço, mesmo espírito de enviarEmail()/geminiRegistrarTokens()
+ * — se falhar, quem chama trata como mídia não descrita (mas ainda pode
+ * ter sido SALVA por baixarMidiaZapi()+salvarMidiaWhatsappRecebida(), os
+ * dois são independentes).
+ */
+function descreverMidiaComGemini(string $bytes, string $mimeType, string $tipo): string {
+    try {
+        $geminiKey = getConfig('gemini_api_key') ?: '';
+        if (!$geminiKey || !$bytes) return '';
+
+        // Identifica o TIPO de veículo explicitamente (carro, moto,
+        // caminhonete, van, caminhão etc) em vez de só "o veículo" —
+        // achado real (15/09/2026, "ela identificar moto também"): a
+        // Fastcar compra carro E moto financiados, então o prompt não pode
+        // enviesar a descrição pra um carro por padrão.
         $prompts = [
             'audio' => 'Transcreva literalmente o que a pessoa fala neste áudio, em português do Brasil. Responda só com a transcrição, sem comentário nenhum antes ou depois.',
-            'image' => 'Descreva em 1-2 frases curtas o veículo nesta foto (marca/modelo se der pra identificar, cor, estado aparente de conservação). Se a imagem não for de um veículo, diga em poucas palavras o que é. Responda em português, direto, sem introdução tipo "a imagem mostra".',
-            'video' => 'Descreva em 2-3 frases curtas o que aparece neste vídeo, focando no veículo se houver um (marca/modelo se der pra identificar, cor, estado aparente de conservação, avarias visíveis) e transcrevendo rapidamente qualquer coisa relevante que a pessoa fale. Responda em português, direto, sem introdução tipo "o vídeo mostra".',
+            'image' => 'Identifique o tipo de veículo nesta foto (carro, moto, caminhonete, van, caminhão etc) e descreva em 1-2 frases curtas: marca/modelo se der pra identificar, cor, estado aparente de conservação. Se for uma moto, identifique como moto explicitamente (não trate como carro). Se a imagem não for de um veículo, diga em poucas palavras o que é. Responda em português, direto, sem introdução tipo "a imagem mostra".',
+            'video' => 'Identifique o tipo de veículo neste vídeo (carro, moto, caminhonete, van, caminhão etc) se houver um, e descreva em 2-3 frases curtas: marca/modelo se der pra identificar, cor, estado aparente de conservação, avarias visíveis. Se for uma moto, identifique como moto explicitamente (não trate como carro). Transcreva rapidamente qualquer coisa relevante que a pessoa fale. Responda em português, direto, sem introdução tipo "o vídeo mostra".',
         ];
 
-        return geminiCallComMidia($prompts[$tipo] ?? $prompts['image'], $mimeType, base64_encode($conteudo), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
+        return geminiCallComMidia($prompts[$tipo] ?? $prompts['image'], $mimeType, base64_encode($bytes), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
     } catch (Throwable $e) {
         return '';
+    }
+}
+
+/** Extensão de arquivo razoável a partir do mimeType — só pra nome legível, nunca crítico. */
+function extensaoPorMime(string $mime): string {
+    $mapa = [
+        'audio/ogg' => 'ogg', 'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a',
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
+        'video/mp4' => 'mp4', 'video/3gpp' => '3gp', 'video/quicktime' => 'mov',
+    ];
+    return $mapa[$mime] ?? 'bin';
+}
+
+/**
+ * Salva de verdade (Drive preferido, storage/uploads/ fallback — mesmo
+ * padrão de includes/documentos.php::salvarArquivoGeradoComoDocumento())
+ * a mídia recebida no WhatsApp, e atualiza a linha já gravada em
+ * whatsapp_mensagens com a referência (drive_file_id/arquivo_url).
+ *
+ * 15/09/2026, achado real: "mídia não estou visualizado" — antes disso só
+ * o TEXTO gerado pelo Gemini (transcrição/descrição) ficava salvo; a mídia
+ * em si era baixada só de passagem pra alimentar o Gemini e descartada em
+ * seguida, o consultor nunca via a foto/áudio/vídeo de verdade, só a
+ * descrição da IA. Nunca lança — falha aqui (Drive fora, disco cheio) não
+ * pode derrubar o webhook, a mensagem/texto já foram salvos de qualquer
+ * jeito; só fica sem a cópia visível dessa vez.
+ */
+function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mime, string $tipo, int $clienteId, string $nomeCliente): void {
+    if ($mensagemId <= 0 || !$bytes || $clienteId <= 0) return;
+    try {
+        $tmp = tempnam(sys_get_temp_dir(), 'wpp_midia_');
+        if (!$tmp) return;
+        file_put_contents($tmp, $bytes);
+        $nomeArquivo = $tipo . '_' . $mensagemId . '.' . extensaoPorMime($mime);
+        $copia = salvarArquivoGeradoComoDocumento($clienteId, $nomeCliente, $tmp, $nomeArquivo, $mime, 'whatsapp');
+        @unlink($tmp);
+        if ($copia['drive_file_id'] || $copia['arquivo_url']) {
+            $db = getDB();
+            $db->prepare("UPDATE whatsapp_mensagens SET drive_file_id = ?, arquivo_url = ? WHERE id = ?")
+                ->execute([$copia['drive_file_id'], $copia['arquivo_url'], $mensagemId]);
+        }
+    } catch (Throwable $e) {
+        // melhor esforço — mensagem/texto já estão salvos independente disso.
     }
 }
 
@@ -349,12 +410,17 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         }
 
         $textoMidia = '';
+        $bytesMidia = null;
+        $mime = '';
         if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
             $url = extrairUrlMidia($payload, $tipoBruto);
             if ($url) {
                 $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
                 $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
-                $textoMidia = processarMidiaComGemini($url, $mime, $tipoBruto);
+                $bytesMidia = baixarMidiaZapi($url, $tipoBruto);
+                if ($bytesMidia !== null) {
+                    $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
+                }
             }
         }
         if ($textoMidia !== '') {
@@ -387,6 +453,16 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         $oportunidade = criarOuAbrirOportunidade($phone, $nomeContato, $origemAnuncio);
     } catch (Throwable $e) {
         $erroOportunidade = $e->getMessage();
+    }
+
+    // Salva a mídia de verdade (não só a descrição do Gemini) assim que dá
+    // pra vincular a um cliente — achado real (15/09/2026, "mídia não estou
+    // visualizado"): antes disso o consultor só via o TEXTO da IA, nunca a
+    // foto/áudio/vídeo em si. Precisa do cliente_id (pasta no Drive), por
+    // isso só depois de criarOuAbrirOportunidade(); sem oportunidade (falha
+    // rara) fica só com a descrição em texto mesmo, nunca trava o webhook.
+    if ($bytesMidia !== null && $oportunidade) {
+        salvarMidiaWhatsappRecebida($idMensagemRecebida, $bytesMidia, $mime, $tipoBruto, $oportunidade['cliente_id'], $nomeContato);
     }
 
     $ia_pausada = iaPausada($phone);

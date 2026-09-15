@@ -171,6 +171,15 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
     mensagem TEXT NOT NULL,
     tipo TEXT DEFAULT 'text',
     arquivo_url TEXT DEFAULT '',
+    -- Cópia da mídia original (áudio/imagem/vídeo) salva no Drive
+    -- (preferido) ou em arquivo_url (fallback local) — mesmo par
+    -- drive_file_id/arquivo_url de oportunidade_documentos/contratos.
+    -- Antes disso (15/09/2026, achado real: "mídia não estou visualizado")
+    -- só o TEXTO gerado pelo Gemini (transcrição/descrição) ficava salvo —
+    -- a mídia em si nunca era persistida, só baixada de passagem pra
+    -- alimentar o Gemini e descartada; o consultor via a descrição mas
+    -- nunca a foto/áudio/vídeo de verdade.
+    drive_file_id TEXT DEFAULT '',
     enviado_por_ia INTEGER DEFAULT 0,   -- 1 = resposta automática da IA, 0 = humano
     zapi_message_id TEXT DEFAULT '',    -- messageId do Z-API — dedup de webhook reenviado
     -- Decisão de 15/09/2026 (José/Jean): 1 instância Z-API só, WhatsApp Box

@@ -140,6 +140,11 @@ $migracoes = [
     // (`contratos`), as tabelas `vendas`/`venda_historico` em si já foram
     // criadas acima.
     'contratos.venda_id' => "ALTER TABLE contratos ADD COLUMN venda_id INTEGER REFERENCES vendas(id)",
+
+    // 15/09/2026 — mídia recebida no WhatsApp (áudio/imagem/vídeo) agora é
+    // salva de verdade (Drive/local), não só descrita em texto pelo Gemini
+    // e descartada — achado real: "mídia não estou visualizado".
+    'whatsapp_mensagens.drive_file_id' => "ALTER TABLE whatsapp_mensagens ADD COLUMN drive_file_id TEXT DEFAULT ''",
 ];
 
 foreach ($migracoes as $nome => $sql) {

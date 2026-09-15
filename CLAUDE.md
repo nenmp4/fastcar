@@ -276,6 +276,58 @@ segue no schema sem uso novo, não removida sem ganho real),
   posição de rolagem preservada exatamente (Δscroll = Δaltura do
   conteúdo), e 2º clique corretamente mostra "Início da conversa" sem
   tentar buscar de novo.
+  **Mídia recebida não dava pra visualizar** (mesmo dia, achado direto:
+  "mídia não estou visualizado") — antes disso, áudio/imagem/vídeo do
+  cliente só viravam a DESCRIÇÃO em texto do Gemini
+  (`chatbot-whatsapp/includes/mensagens.php`); os bytes originais eram
+  baixados só de passagem pra alimentar o Gemini e descartados em seguida
+  — o consultor lia "🎥 Moto Honda CG 160..." mas nunca via a foto/vídeo
+  de verdade. `baixarMidiaZapi()` (novo) separa o download de
+  `descreverMidiaComGemini()` (renomeada de `processarMidiaComGemini()`)
+  pra reaproveitar os MESMOS bytes nos dois: descrever via Gemini E salvar
+  de verdade via `salvarMidiaWhatsappRecebida()`, que reaproveita
+  `includes/documentos.php::salvarArquivoGeradoComoDocumento()` sem
+  nenhuma mudança nela (Drive preferido, `storage/uploads/whatsapp/`
+  fallback — mesmo padrão já usado pro wizard de documentos e pros
+  contratos). Coluna nova `whatsapp_mensagens.drive_file_id` (par de
+  `arquivo_url`, que já existia sem uso nesta tabela) grava a referência
+  assim que a oportunidade é criada/reaberta (precisa do `cliente_id` pra
+  saber em qual pasta do Drive salvar — por isso o salvamento roda DEPOIS
+  de `criarOuAbrirOportunidade()`, não junto do download). Salva
+  **independente** de o Gemini conseguir descrever ou não (sem chave
+  configurada, por exemplo) — as duas coisas (descrição em texto, cópia
+  visível) são caminhos paralelos, uma não bloqueia a outra.
+  `admin/ver_midia_whatsapp.php` (novo, mesmo padrão de
+  `admin/ver_documento.php` via `servirArquivoDriveOuLocal()`) serve o
+  arquivo só pra quem pode ver aquela CONVERSA
+  (`usuarioPodeVerConversaWhatsapp()` — sem essa checagem em separado, um
+  consultor podia só trocar o `?id=` na URL e ver mídia de cliente de
+  outro consultor). Thread do WhatsApp Box (PHP no carregamento inicial E
+  JS no polling/paginação) renderiza `<img>`/`<audio controls>`/
+  `<video controls>` apontando pra essa rota — nunca a URL do Drive/local
+  direto. `tipo` sozinho não bastava pra saber que tipo de player mostrar:
+  mídia descrita com sucesso vira `tipo='text'` de propósito (entra no
+  histórico da IA como mensagem normal), só o prefixo emoji (🎤/📷/🎥)
+  denuncia a mídia nesse caso — `tipoMidiaMensagemWhatsapp()`
+  (`includes/whatsapp_inbox.php`, espelhada em JS) checa `tipo` OU o
+  prefixo, cobrindo os dois caminhos (descrita e não descrita). Testado
+  ponta a ponta em banco isolado: imagem processada com sucesso salva
+  local (Drive não configurado no teste) e some corretamente detectada
+  pelo helper; mesma imagem sem chave Gemini configurada ainda salva a
+  mídia (só sem descrição, `tipo='image'` puro); servido via HTTP real
+  com 3 usuários (super_admin + 2 consultores) — consultor responsável
+  pela oportunidade recebe 200 com os bytes certos, consultor SEM
+  responsabilidade recebe 403 com mensagem clara, super_admin recebe 200
+  sempre — confirma que a trava por conversa funciona igual já funcionava
+  pra pausar IA/enviar mensagem.
+  **Prompt de descrição ajustado pra identificar tipo de veículo
+  explicitamente** (mesmo dia, "ela identificar moto também") — antes
+  dizia só "o veículo" (genérico o bastante pra cobrir moto em teoria, mas
+  sem reforçar isso); agora pede pra identificar carro/moto/caminhonete/
+  van/caminhão etc explicitamente antes de descrever, e reforça "se for
+  moto, identifique como moto explicitamente (não trate como carro)" — a
+  Fastcar compra os dois. Testado com foto simulada: Gemini respondeu
+  "Moto Honda CG 160 Titan preta, em bom estado" corretamente.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção

@@ -266,6 +266,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 <?php foreach ($mensagens as $m): ?>
                     <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>" data-id="<?= (int)$m['id'] ?>">
                         <?= nl2br(e($m['mensagem'])) ?>
+                        <?= renderizarMidiaWhatsapp($m) ?>
                         <small>
                             <?= date('d/m H:i', strtotime($m['created_at'])) ?>
                             <?= $m['enviado_por_ia'] ? ' · 🤖 IA' : '' ?>
@@ -305,6 +306,28 @@ if ($telefoneAtivo && !$contatoAtivo) {
         return d.innerHTML;
     }
 
+    // Espelha includes/whatsapp_inbox.php::tipoMidiaMensagemWhatsapp() —
+    // `tipo` sozinho não basta (mídia descrita com sucesso pelo Gemini vira
+    // tipo='text' de propósito, só o prefixo emoji denuncia), por isso o
+    // mesmo fallback por prefixo do lado PHP.
+    function tipoMidiaMsg(m) {
+        if (!m.drive_file_id && !m.arquivo_url) return null;
+        if (m.tipo === 'audio' || m.tipo === 'image' || m.tipo === 'video') return m.tipo;
+        if (m.mensagem.indexOf('🎤') === 0) return 'audio';
+        if (m.mensagem.indexOf('🎥') === 0) return 'video';
+        if (m.mensagem.indexOf('📷') === 0) return 'image';
+        return null;
+    }
+
+    function renderizarMidiaMsg(m) {
+        var midia = tipoMidiaMsg(m);
+        if (!midia) return '';
+        var url = '/admin/ver_midia_whatsapp.php?id=' + m.id;
+        if (midia === 'audio') return '<audio controls preload="none" src="' + url + '" style="max-width:260px;display:block;margin-top:6px"></audio>';
+        if (midia === 'video') return '<video controls preload="none" src="' + url + '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>';
+        return '<a href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>';
+    }
+
     function renderMsg(m) {
         var div = document.createElement('div');
         div.className = 'msg ' + (m.direcao === 'in' ? 'msg-in' : 'msg-out');
@@ -312,7 +335,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         var rodape = new Date(m.created_at.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
         if (m.enviado_por_ia == 1) rodape += ' · 🤖 IA';
         if (m.usuario_nome) rodape += ' · 👤 ' + m.usuario_nome;
-        div.innerHTML = escapeHtml(m.mensagem).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodape) + '</small>';
+        div.innerHTML = escapeHtml(m.mensagem).replace(/\n/g, '<br>') + renderizarMidiaMsg(m) + '<small>' + escapeHtml(rodape) + '</small>';
         return div;
     }
 

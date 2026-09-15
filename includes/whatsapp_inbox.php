@@ -146,6 +146,46 @@ function usuarioPodeVerConversaWhatsapp(string $telefone, ?int $responsavelFiltr
     return (bool)$stmt->fetchColumn();
 }
 
+/**
+ * Que tipo de mídia (audio/image/video) essa mensagem carrega — ou null se
+ * não tem mídia salva. Usado pra decidir se/como renderizar um
+ * <audio>/<img>/<video> na thread (admin/whatsapp_inbox.php).
+ *
+ * `tipo` sozinho não basta: quando o Gemini descreve a mídia com sucesso
+ * (chatbot-whatsapp/includes/mensagens.php::processarMensagemZapi()),
+ * `tipo` fica 'text' de propósito (pra entrar no histórico da IA como
+ * mensagem normal) — só o prefixo emoji (🎤/📷/🎥) na frente do texto
+ * denuncia que veio de mídia nesse caso. Quando a descrição falha,
+ * `tipo` já é o tipo bruto direto (audio/image/video).
+ */
+function tipoMidiaMensagemWhatsapp(array $m): ?string {
+    if (!$m['drive_file_id'] && !$m['arquivo_url']) return null;
+    if (in_array($m['tipo'], ['audio', 'image', 'video'], true)) return $m['tipo'];
+    $texto = (string)$m['mensagem'];
+    if (str_starts_with($texto, '🎤')) return 'audio';
+    if (str_starts_with($texto, '🎥')) return 'video';
+    if (str_starts_with($texto, '📷')) return 'image';
+    return null;
+}
+
+/**
+ * HTML do player/preview inline (<audio>/<video>/<img>) pra mídia salva de
+ * uma mensagem — ou '' se não tem mídia. Sempre serve via
+ * admin/ver_midia_whatsapp.php (nunca a URL do Drive/local direto — mesma
+ * trava de quem pode ver a conversa, e o Drive não expõe link público).
+ */
+function renderizarMidiaWhatsapp(array $m): string {
+    $midia = tipoMidiaMensagemWhatsapp($m);
+    if (!$midia) return '';
+    $url = '/admin/ver_midia_whatsapp.php?id=' . (int)$m['id'];
+    return match ($midia) {
+        'audio' => '<audio controls preload="none" src="' . e($url) . '" style="max-width:260px;display:block;margin-top:6px"></audio>',
+        'video' => '<video controls preload="none" src="' . e($url) . '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>',
+        'image' => '<a href="' . e($url) . '" target="_blank" rel="noopener"><img src="' . e($url) . '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>',
+        default => '',
+    };
+}
+
 /** Marca toda mensagem recebida ('in') de um telefone como lida — chamado ao abrir a conversa. */
 function marcarConversaLida(string $telefone): void {
     $db = getDB();
