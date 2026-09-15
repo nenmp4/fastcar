@@ -103,7 +103,7 @@ try {
 // ── 4. IA (Gemini + fallback OpenAI) ─────────────────────────────────────
 $geminiKey = getConfig('gemini_api_key') ?: '';
 $openaiKey = getConfig('openai_api_key') ?: '';
-check('IA (Gemini/OpenAI)', 'Modelo Gemini', 'info', getConfig('gemini_model') ?: 'gemini-2.5-flash-lite', 'principal');
+check('IA (Gemini/OpenAI)', 'Modelo Gemini', 'info', getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 'principal');
 check('IA (Gemini/OpenAI)', 'Modelo OpenAI', 'info', getConfig('openai_model') ?: 'gpt-4o-mini', 'fallback');
 if (!$geminiKey) check('IA (Gemini/OpenAI)', 'Gemini API Key', 'warn', 'Não configurada', 'Configurações → IA');
 if (!$openaiKey) check('IA (Gemini/OpenAI)', 'OpenAI API Key', 'warn', 'Não configurada (fallback ficaria indisponível)', 'Configurações → IA');

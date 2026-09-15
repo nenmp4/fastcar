@@ -131,7 +131,7 @@ function processarMidiaComGemini(string $url, string $mimeType, string $tipo): s
             ? 'Transcreva literalmente o que a pessoa fala neste áudio, em português do Brasil. Responda só com a transcrição, sem comentário nenhum antes ou depois.'
             : 'Descreva em 1-2 frases curtas o veículo nesta foto (marca/modelo se der pra identificar, cor, estado aparente de conservação). Se a imagem não for de um veículo, diga em poucas palavras o que é. Responda em português, direto, sem introdução tipo "a imagem mostra".';
 
-        return geminiCallComMidia($prompt, $mimeType, base64_encode($conteudo), $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash-lite');
+        return geminiCallComMidia($prompt, $mimeType, base64_encode($conteudo), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
     } catch (Throwable $e) {
         return '';
     }

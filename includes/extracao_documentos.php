@@ -78,7 +78,7 @@ function extrairDadosDocumentoComIA(string $tipo, array $arquivo): array {
 
     $resposta = geminiCallComMidia(
         $prompt, $arquivo['mime'], base64_encode($arquivo['content']),
-        $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash-lite', 300, 0.1
+        $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 300, 0.1
     );
     if ($resposta === '') return [];
 

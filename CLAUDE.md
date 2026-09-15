@@ -807,26 +807,31 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    Webhook (`chatbot-whatsapp/webhook/whatsapp.php`) segue o mesmo padrão do
    JurídicoSaaS: dedup de `messageId`, checar `fromMe`/grupo antes de
    processar, salvar mensagem sempre (mesmo em pausa de IA)
-3. ~~**IA de qualificação**~~ — ✅ decidido: **Gemini** (`gemini-2.5-flash-lite`,
-   o mais barato da família 2.5) como provedor principal, com fallback
-   automático pro **OpenAI GPT** (`gpt-4o-mini`, também o nível mais barato)
-   quando o Gemini falha ou não está configurado. Modelo padrão trocado de
-   `gemini-2.5-flash` pra `gemini-2.5-flash-lite` depois que o volume real
-   de leads foi confirmado (12/09/2026): média de 16-30 leads/dia, pico de
-   ~50/dia — volume baixo o bastante que o custo por chamada praticamente
-   não muda de um modelo pro outro, mas o Jean pediu pra já sair configurado
-   no nível mais barato por padrão; `gemini-2.5-flash` (mais caro e mais
-   capaz) continua disponível como fallback automático interno se o lite
-   falhar de verdade (`includes/gemini.php`). Mesmo padrão de fallback duplo
+3. ~~**IA de qualificação**~~ — ✅ decidido: **Gemini** (`gemini-3.5-flash-lite`,
+   o mais barato disponível pra chave nova) como provedor principal, com
+   fallback automático pro **OpenAI GPT** (`gpt-4o-mini`, também o nível
+   mais barato) quando o Gemini falha ou não está configurado.
+   **15/09/2026 — modelos da família 2.5 aposentados pra chave nova:**
+   primeiro teste real contra a API (Configurações → IA → testar conexão,
+   já com domínio/instância reais no ar) voltou "models/gemini-2.5-flash is
+   no longer available to new users [...] use models/gemini-3.6-flash" — a
+   chave Gemini da Fastcar é nova, então a família 2.5 inteira (incluindo o
+   `gemini-2.5-flash-lite` até então configurado como padrão) simplesmente
+   não responde mais. Trocado pro padrão **`gemini-3.5-flash-lite`**
+   (mais barato da geração 3.x — não existe "gemini-3.6-flash-lite", só o
+   `gemini-3.6-flash` "cheio" nessa geração, que entra como fallback
+   automático se o lite falhar, mesmo espírito de antes). `gemini-1.5-*`,
+   `gemini-2.0-*` e agora também `gemini-2.5-flash`/`-lite` entraram na
+   lista de `geminiModeloValido()` (`includes/gemini.php`) — qualquer
+   `config.gemini_model` salvo com um modelo aposentado (dessa vez ou de
+   uma aposentadoria futura) é remapeado pro padrão atual sozinho, sem
+   precisar mexer no banco na mão. Mesmo padrão de fallback duplo
    Gemini→GPT do JurídicoSaaS (`includes/gemini.php`, `includes/openai.php`,
-   `includes/ia_qualificacao.php`). Código
-   implementado e testado contra servidor fake local (nunca contra as APIs
-   reais, ver seção de validação em produção abaixo). O **prompt** de
-   qualificação (`IA_QUALIFICACAO_PROMPT_SISTEMA`) e o de extração
-   estruturada (`IA_EXTRACAO_PROMPT`) existem mas seguem marcados como
-   rascunho — o que perguntar, em que ordem e quando desistir/marcar "sem
-   perfil de compra" ainda precisa de revisão do Jean antes de rodar com
-   lead de verdade.
+   `includes/ia_qualificacao.php`). O **prompt** de qualificação
+   (`IA_QUALIFICACAO_PROMPT_SISTEMA`) e o de extração estruturada
+   (`IA_EXTRACAO_PROMPT`) existem mas seguem marcados como rascunho — o que
+   perguntar, em que ordem e quando desistir/marcar "sem perfil de compra"
+   ainda precisa de revisão do Jean antes de rodar com lead de verdade.
 4. ~~**Login/perfis do admin**~~ — ✅ decidido: `super_admin` (Jean) +
    `consultor` (atende E negocia/fecha, blocos 5-6). Combinado em
    12/09/2026 como `super_admin`/`closer`/`consultor` separados, mas o
@@ -887,12 +892,14 @@ testado com servidor fake local — nunca contra o serviço real:
   formato de resposta real assim que rodar com internet livre.
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
-- **API Gemini e OpenAI** (`includes/gemini.php`, `includes/openai.php`) —
-  chamadas, formato de resposta e o fallback Gemini→GPT só testados contra
-  servidor fake local simulando os dois formatos de resposta; nunca uma
-  chamada real com chave de API de verdade. Validar também se o modelo
-  configurado (`gemini-2.5-flash`/`gpt-4o-mini`) ainda existe/responde bem
-  quando a instância for configurada de verdade.
+- **API Gemini** — ✅ 1ª chamada real feita em 15/09/2026 (teste de conexão
+  em Configurações → IA, já com chave de verdade): confirmou que
+  `gemini-2.5-flash`/`-lite` estavam aposentados pra chave nova (ver
+  pendência #3 acima, já corrigido pro padrão `gemini-3.5-flash-lite`) —
+  falta repetir o teste de conexão já com o modelo novo pra confirmar que
+  esse sim responde. Formato de resposta/fallback Gemini→GPT (o lado OpenAI
+  ainda não teve nenhuma chamada real) seguem só testados contra servidor
+  fake local simulando os dois formatos.
 - **Extração de documentos por IA** (`includes/extracao_documentos.php`,
   wizard `public/documentos.php`) — mesma limitação acima: leitura de
   CNH/comprovante de endereço/contrato de financiamento (foto ou PDF) via

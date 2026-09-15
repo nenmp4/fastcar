@@ -151,7 +151,7 @@ function iaGerarResposta(string $telefone): string {
 
     $geminiKey = getConfig('gemini_api_key') ?: '';
     if ($geminiKey) {
-        $resposta = geminiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash-lite');
+        $resposta = geminiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
         if ($resposta !== '') return $resposta;
     }
 
@@ -173,7 +173,7 @@ function iaGerarResposta(string $telefone): string {
 function iaChamarComFallback(string $prompt, int $maxTokens, float $temp): string {
     $geminiKey = getConfig('gemini_api_key') ?: '';
     if ($geminiKey) {
-        $resposta = geminiCall($prompt, $geminiKey, getConfig('gemini_model') ?: 'gemini-2.5-flash-lite', $maxTokens, $temp);
+        $resposta = geminiCall($prompt, $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', $maxTokens, $temp);
         if (!is_array($resposta) && $resposta !== '') return $resposta;
     }
 

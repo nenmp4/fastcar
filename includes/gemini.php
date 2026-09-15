@@ -2,16 +2,28 @@
 /**
  * includes/gemini.php — Helper centralizado pra API Google Gemini.
  * Mesmo padrão (e correções) do JurídicoSaaS (includes/gemini.php):
- *  - gemini-2.5-flash/-lite usa "thinking mode" por padrão — thinkingBudget=0
+ *  - modelos 2.5+/3.x usam "thinking mode" por padrão — thinkingBudget=0
  *    desativa isso, senão a resposta real vem vazia (parte "thought" antes).
  *  - Fallback de modelos: se um falhar, tenta o próximo antes de desistir.
  *  - Modelos aposentados pelo Google são remapeados pro atual.
  *
- * Modelo padrão: gemini-2.5-flash-lite (mais barato da família 2.5) — volume
- * real de leads é baixo (média 16-30/dia, pico ~50/dia, ver CLAUDE.md), então
- * o custo por chamada nem seria um problema em nenhum dos dois, mas o Jean
- * pediu pra já sair no modelo mais barato por padrão. gemini-2.5-flash
- * (mais caro, mais capaz) entra só como fallback automático se o lite falhar.
+ * Modelo padrão: gemini-3.5-flash-lite (mais barato disponível pra chave nova
+ * — ver 15/09/2026 abaixo) — volume real de leads é baixo (média 16-30/dia,
+ * pico ~50/dia, ver CLAUDE.md), então o custo por chamada nem seria um
+ * problema em nenhum dos dois, mas o Jean pediu pra já sair no modelo mais
+ * barato por padrão. gemini-3.6-flash (mais caro, mais capaz) entra só como
+ * fallback automático se o lite falhar.
+ *
+ * **15/09/2026 — gemini-2.5-flash/-lite aposentados pra chave nova:**
+ * primeiro teste real (Configurações → IA → testar conexão) voltou
+ * "models/gemini-2.5-flash is no longer available to new users. [...] use
+ * models/gemini-3.6-flash" — a família 2.5 inteira saiu de circulação pra
+ * projetos novos (a chave da Fastcar é nova). Trocado o padrão pra
+ * gemini-3.5-flash-lite (mais barato da geração 3.x — não existe
+ * "gemini-3.6-flash-lite", só o gemini-3.6-flash "cheio" nessa geração) e os
+ * 2.5 entraram na lista de `geminiModeloValido()` pra remapear sozinho
+ * qualquer `config.gemini_model` salvo antigo, sem precisar mexer no banco
+ * na mão.
  */
 
 require_once __DIR__ . '/db.php';
@@ -23,8 +35,12 @@ function geminiBaseUrl(): string {
 
 /** Remapeia modelos aposentados pelo Google pro substituto atual (o mais barato). */
 function geminiModeloValido(string $model): string {
-    $aposentados = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'auto', ''];
-    return in_array($model, $aposentados, true) ? 'gemini-2.5-flash-lite' : $model;
+    $aposentados = [
+        'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite',
+        'gemini-2.5-flash', 'gemini-2.5-flash-lite', // aposentados pra chave nova em 15/09/2026
+        'auto', '',
+    ];
+    return in_array($model, $aposentados, true) ? 'gemini-3.5-flash-lite' : $model;
 }
 
 /** Extrai o texto real da resposta Gemini, pulando partes de "thinking". */
@@ -44,7 +60,7 @@ function geminiExtrairTexto(array $data): string {
 function geminiCall(
     string $prompt,
     string $key,
-    string $model     = 'gemini-2.5-flash-lite',
+    string $model     = 'gemini-3.5-flash-lite',
     int    $maxTokens = 512,
     float  $temp      = 0.4,
     int    $timeout   = 25
@@ -52,8 +68,8 @@ function geminiCall(
     if (!$key) return ['erro' => 'Chave Gemini não configurada. Vá em Configurações → IA.'];
 
     // Ordem: modelo configurado (barato por padrão) primeiro; só escala pro
-    // gemini-2.5-flash (mais caro) se o lite falhar de verdade.
-    $modelos = array_unique([geminiModeloValido($model), 'gemini-2.5-flash-lite', 'gemini-2.5-flash']);
+    // gemini-3.6-flash (mais caro) se o lite falhar de verdade.
+    $modelos = array_unique([geminiModeloValido($model), 'gemini-3.5-flash-lite', 'gemini-3.6-flash']);
     $ultimoErro = '';
 
     foreach ($modelos as $m) {
@@ -88,14 +104,14 @@ function geminiCallChat(
     string $systemPrompt,
     array  $mensagens,
     string $key,
-    string $model     = 'gemini-2.5-flash-lite',
+    string $model     = 'gemini-3.5-flash-lite',
     int    $maxTokens = 500,
     float  $temp      = 0.7,
     int    $timeout   = 20
 ): string {
     if (!$key) return '';
 
-    $modelos = array_unique([geminiModeloValido($model), 'gemini-2.5-flash-lite', 'gemini-2.5-flash']);
+    $modelos = array_unique([geminiModeloValido($model), 'gemini-3.5-flash-lite', 'gemini-3.6-flash']);
 
     foreach ($modelos as $m) {
         $url = geminiBaseUrl() . '/models/' . $m . ':generateContent?key=' . $key;
@@ -133,12 +149,12 @@ function geminiCallChat(
  */
 function geminiCallComMidia(
     string $prompt, string $mimeType, string $dadosBase64,
-    string $key, string $model = 'gemini-2.5-flash-lite',
+    string $key, string $model = 'gemini-3.5-flash-lite',
     int $maxTokens = 300, float $temp = 0.2, int $timeout = 30
 ): string {
     if (!$key || !$dadosBase64) return '';
 
-    $modelos = array_unique([geminiModeloValido($model), 'gemini-2.5-flash-lite', 'gemini-2.5-flash']);
+    $modelos = array_unique([geminiModeloValido($model), 'gemini-3.5-flash-lite', 'gemini-3.6-flash']);
 
     foreach ($modelos as $m) {
         $url = geminiBaseUrl() . '/models/' . $m . ':generateContent?key=' . $key;
