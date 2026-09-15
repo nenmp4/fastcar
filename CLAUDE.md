@@ -1307,23 +1307,30 @@ testado com servidor fake local — nunca contra o serviço real:
   `admin/oportunidade.php`. Construída a partir de documentação real
   colada pelo José direto no chat (`doc.placafipe.com.br` bloqueado no
   meu sandbox), incluindo um exemplo de resposta JSON real de
-  `getplacafipe` — mas **nunca uma chamada de verdade contra
-  `api.placafipe.com.br`**, só servidor fake local modelado nesse
-  exemplo. Confirmar assim que possível: se o formato de resposta real
-  bate exatamente com o exemplo da doc (campos `codigo`, `msg`,
-  `informacoes_veiculo`, `fipe[]` com `marca`/`modelo`/`ano_modelo`/
-  `combustivel`/`codigo_fipe`/`mes_referencia`/`correspondencia`/`valor`/
-  `unidade_valor`), o comportamento em placa não encontrada (`codigo=0`,
-  mensagem exata), e se o plano contratado realmente cobra por requisição
-  do jeito que a doc descreve (confirma se o cache de 24h por placa é
-  suficiente ou se compensa aumentar). **Fluxo de cascata marca→modelo→
-  ano→valor (`ConsultarMarcas` etc) não foi implementado** — a doc tem
-  formato de REQUEST confirmado pros 5 endpoints mas nenhum exemplo de
-  RESPONSE pros 4 passos intermediários; se algum dia for pedido, pedir
-  pro José um exemplo de resposta real de cada endpoint antes de
-  implementar (mesmo erro já cometido 1x nesta sessão com o provedor
-  errado, Parallelum, que foi jogado fora depois de confirmado que o
-  provedor real contratado é outro).
+  `getplacafipe` — testado antes só contra servidor fake local modelado
+  nesse exemplo. **✅ 1ª chamada real confirmada em produção, 15/09/2026**
+  (Configurações → FIPE → "Testar conexão" com placa real): API respondeu
+  `codigo=1` com `msg="total de 2 modelo(s) encontrado(s)"` — confirma que
+  token no corpo do POST + endpoint `getplacafipe` batem exatamente com a
+  doc, e que essa conta tem cota/acesso funcionando de verdade. Ainda não
+  verificado na prática (o botão de teste só mostra o `msg`, não abre os
+  campos individuais): se os nomes de campo dentro de cada item de
+  `fipe[]` (`marca`/`modelo`/`ano_modelo`/`combustivel`/`codigo_fipe`/
+  `mes_referencia`/`correspondencia`/`valor`/`unidade_valor`) batem
+  exatamente com o que `admin/fipe_ajax.php` espera — só confirma isso de
+  verdade usando o widget em `admin/oportunidade.php` com uma placa real e
+  conferindo se os candidatos aparecem com marca/modelo/valor certos (não
+  em branco/undefined); também falta confirmar o comportamento em placa
+  não encontrada (`codigo=0`, mensagem exata) e se o plano contratado
+  realmente cobra por requisição do jeito que a doc descreve (confirma se
+  o cache de 24h por placa é suficiente ou se compensa aumentar).
+  **Fluxo de cascata marca→modelo→ano→valor (`ConsultarMarcas` etc) não
+  foi implementado** — a doc tem formato de REQUEST confirmado pros 5
+  endpoints mas nenhum exemplo de RESPONSE pros 4 passos intermediários;
+  se algum dia for pedido, pedir pro José um exemplo de resposta real de
+  cada endpoint antes de implementar (mesmo erro já cometido 1x nesta
+  sessão com o provedor errado, Parallelum, que foi jogado fora depois de
+  confirmado que o provedor real contratado é outro).
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
 - **API Gemini** — ✅ 1ª chamada real feita em 15/09/2026 (teste de conexão
