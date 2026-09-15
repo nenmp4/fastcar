@@ -80,6 +80,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sucesso = 'IA pausada — só a equipe responde por aqui até reativar.';
             }
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'excluir_conversa' && $telPost) {
+            // Restrito ao super_admin — ação destrutiva (apaga o histórico de
+            // mensagens pra sempre), sem tela de confirmação própria porque o
+            // JS já pede confirm() antes de submeter.
+            if ($_SESSION['admin_perfil'] !== 'super_admin') {
+                $erro = 'Só o super_admin pode excluir uma conversa.';
+                $telefoneAtivo = $telPost;
+            } else {
+                excluirConversaWhatsapp($telPost);
+                $sucesso = 'Conversa excluída.';
+                $telefoneAtivo = '';
+            }
         }
     }
 }
@@ -209,14 +221,26 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <strong><?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?></strong>
                     <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?></div>
                 </div>
-                <form method="post" class="inline">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="acao" value="toggle_ia">
-                    <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                    <button type="submit" style="margin-top:0;padding:6px 12px;font-size:12.5px">
-                        <?= $contatoAtivo['ia_pausada'] ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?>
-                    </button>
-                </form>
+                <div style="display:flex;gap:8px">
+                    <form method="post" class="inline">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="toggle_ia">
+                        <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                        <button type="submit" style="margin-top:0;padding:6px 12px;font-size:12.5px">
+                            <?= $contatoAtivo['ia_pausada'] ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?>
+                        </button>
+                    </form>
+                    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+                        <form method="post" class="inline" onsubmit="return confirm('Apagar essa conversa inteira? Não tem como desfazer.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="excluir_conversa">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <button type="submit" class="perigo" style="margin-top:0;padding:6px 12px;font-size:12.5px">
+                                🗑️ Excluir conversa
+                            </button>
+                        </form>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <div class="wpp-thread wpp-thread-scroll" id="wpp-thread">

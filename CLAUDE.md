@@ -182,6 +182,65 @@ segue no schema sem uso novo, não removida sem ganho real),
   cuidado direto do menu Segurança da Z-API — não é bug de código, mas
   fica registrado porque é o tipo de coisa que vai acontecer nulo com
   qualquer credencial colada manualmente.
+  **Incidente real de produção — flood de mensagens duplicadas** (15/09/2026,
+  José: "mandei mensagem bot não respondeu" → depois "tá mandando várias
+  mensagens"/"disparando sem parar"): dois bugs distintos, achados em
+  sequência.
+  (1) O client-token colado certinho ainda assim rejeitava 100% dos
+  webhooks reais com "client-token inválido no header" — a suposição
+  original (copiada do padrão do JurídicoSaaS, nunca confirmada contra uma
+  instância real) era que a Z-API devolveria o Client-Token no header de
+  todo webhook recebido, igual ela exige de volta nas chamadas que NÓS
+  fazemos pra API dela. Não é isso: Client-Token autentica as NOSSAS
+  chamadas pra Z-API, não algo que ela manda de volta quando ELA chama
+  nosso webhook — confirmado com `curl` direto na URL do webhook (200 OK,
+  infra ok) e comparando contra a instância Z-API já funcionando do
+  JurídicoSaaS. Corrigido removendo a checagem inteira de
+  `chatbot-whatsapp/webhook/whatsapp.php` — validação de origem do webhook
+  continua só por `instanceId` + dedup de `messageId`.
+  (2) Depois de preencher os 6 campos de webhook da Z-API (Ao enviar/
+  Presença do chat/Ao desconectar/Receber status da mensagem/Ao receber/Ao
+  conectar) todos com a mesma URL — tentativa de imitar a configuração do
+  JurídicoSaaS — eventos sem mensagem de verdade (presença, status,
+  conexão) passaram a cair na mesma rota de processamento de mensagem,
+  `tipoMidia()` classificava como `desconhecido` e o código tratava como
+  "mídia sem suporte", respondendo automaticamente
+  "Recebi por aqui! 😊 Consegue me contar em texto ou áudio?" a CADA evento
+  — sem nenhum dedup nesse caminho específico, gerou 129+ respostas
+  duplicadas pra 1 número real e várias conversas de "número" falso
+  (`164059295019141` etc — na verdade IDs de evento, não telefone).
+  Diagnosticado direto no banco (`whatsapp_mensagens` do número afetado:
+  12+ `zapi_message_id` genuinamente distintos, todos `tipo=desconhecido`,
+  chegando a cada 20-90s — descarta reentrega do mesmo evento, confirma
+  "muitos eventos distintos não-mensagem"). Mitigação imediata:
+  `pausarIA()` direto por PHP CLI no número afetado (VPS sem `sqlite3`
+  instalado). Correção definitiva, em 2 frentes: guard em
+  `chatbot-whatsapp/includes/mensagens.php::processarMensagemZapi()` que
+  ignora silenciosamente (`ignored=not_a_message`, nem grava mensagem)
+  qualquer payload onde `tipoMidia()==='desconhecido'` logo no início da
+  função — sem isso, evento de presença/status nunca deveria ter chegado
+  nem a esse ponto, mas se chegar de novo (config mudar sem querer) fica
+  protegido pelo código, não só pela configuração; e limpar os 5 campos
+  de webhook extras na Z-API, deixando só "Ao receber" preenchido — só
+  esse evento carrega mensagem de verdade. Cuidado que rendeu um susto à
+  parte: no meio da correção, o usuário chegou a abrir a tela de
+  configuração de webhook da instância ERRADA (a do JurídicoSaaS, outro
+  cliente) antes de ser redirecionado pra instância certa da Fastcar —
+  nenhuma alteração chegou a ser salva lá, mas reforça checar sempre qual
+  instância está aberta antes de mexer em config de webhook.
+  **Excluir conversa** (mesmo dia, consequência direta do incidente acima —
+  "Coloca uma função de excluir conversa", pra limpar a bagunça de
+  conversas de teste/lixo criadas pelo flood): botão "🗑️ Excluir conversa"
+  no cabeçalho da thread, restrito a `super_admin` (mesma trava de
+  `usuarioPodeVerConversaWhatsapp`), com confirmação em JS
+  (`confirm()`) antes de submeter — ação sem volta, sem soft-delete.
+  `excluirConversaWhatsapp()` (`includes/whatsapp_inbox.php`) apaga só
+  `whatsapp_mensagens` e `whatsapp_sessoes` daquele telefone — nunca mexe
+  em `clientes`/`oportunidades`: apagar a CONVERSA (thread de mensagens)
+  não é o mesmo que apagar o lead/negócio, se a conversa era de um cliente
+  real o cadastro e o histórico do funil continuam intactos, só a thread
+  some. Testado em banco isolado: mensagens e sessão zeradas, cadastro do
+  cliente preservado.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção

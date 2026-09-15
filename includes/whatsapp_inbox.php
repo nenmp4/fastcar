@@ -152,3 +152,21 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
 }
+
+/**
+ * Apaga o histórico de uma conversa (whatsapp_mensagens + estado da IA em
+ * whatsapp_sessoes) — 15/09/2026, pedido direto pra limpar as conversas de
+ * lixo criadas no incidente do mesmo dia (eventos de presença/status da
+ * Z-API caindo no webhook errado, ver includes/../chatbot-whatsapp/includes/mensagens.php).
+ * Restrito ao super_admin (admin/whatsapp_inbox.php) — ação destrutiva,
+ * sem confirmação em duas etapas não teria volta. Nunca mexe em
+ * `clientes`/`oportunidades`: apagar a CONVERSA não é o mesmo que apagar o
+ * lead/negócio — se a conversa era de um cliente real, o cadastro e o
+ * histórico do funil continuam intactos, só a thread de mensagens some.
+ */
+function excluirConversaWhatsapp(string $telefone): void {
+    $telNorm = normalizarTelefone($telefone);
+    $db = getDB();
+    $db->prepare("DELETE FROM whatsapp_mensagens WHERE telefone = ?")->execute([$telNorm]);
+    $db->prepare("DELETE FROM whatsapp_sessoes WHERE telefone = ?")->execute([$telNorm]);
+}
