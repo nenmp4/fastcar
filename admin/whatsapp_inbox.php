@@ -420,12 +420,19 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     thread.scrollTop = thread.scrollHeight;
                 })
                 .catch(function () {});
-        }, 4000);
-
-        // Refresca a barra lateral (não-lidas/ordem/última mensagem) sem
-        // interromper o que o admin está digitando — só troca a lista.
-        setInterval(atualizarListaConversas, 15000);
+        }, 2000);
     }
+
+    // Refresca a barra lateral (não-lidas/ordem/última mensagem) sem
+    // interromper o que o admin está digitando — só troca a lista. Bug
+    // real (15/09/2026, "verifica demora de atualizar as mensgens do
+    // ibox"): esse polling só rodava dentro do `if (telefone)` acima, ou
+    // seja, só atualizava sozinho com uma conversa JÁ aberta — sentado na
+    // caixa sem nenhuma conversa selecionada (o estado mais comum
+    // esperando lead novo chegar), a lista nunca atualizava sozinha, só
+    // recarregando a página na mão. Movido pra fora do `if`, roda sempre.
+    // Intervalo apertado (5s) a pedido — "deixa bem fluido inbox".
+    setInterval(atualizarListaConversas, 5000);
 
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);

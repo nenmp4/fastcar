@@ -23,6 +23,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — assinar mensagem com o nome do consultor
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem(), iaPausada(), pausarIA(), retomarIA()
 
 /**
@@ -206,7 +207,16 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
     if ($texto === '') {
         return ['ok' => false, 'erro' => 'Mensagem vazia.'];
     }
-    if (!zapiEnviarTexto($telNorm, $texto)) {
+    // Assina com o nome do consultor a mensagem que o CLIENTE recebe de
+    // verdade no WhatsApp — 15/09/2026, pedido José/Jean: "as mensagens do
+    // inbox tem que ser assinado pelo consultor se ele entrar na
+    // conversa". O texto SALVO/exibido no CRM (registrarMensagem() abaixo)
+    // fica sem essa assinatura duplicada — a bolha já mostra "👤 {nome}"
+    // à parte, ver admin/whatsapp_inbox.php.
+    $usuario = buscarUsuario($usuarioId);
+    $nomeConsultor = trim((string)($usuario['nome'] ?? ''));
+    $textoAssinado = $nomeConsultor !== '' ? "*{$nomeConsultor}:*\n{$texto}" : $texto;
+    if (!zapiEnviarTexto($telNorm, $textoAssinado)) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância em Configurações.'];
     }
     $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);

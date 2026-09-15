@@ -158,6 +158,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   (`zapiContarMensagensPorConsultor()`), só a fonte do dado ficou mais
   direta (textos escritos por humano de verdade, não mais decorrência de
   ter ou não uma instância própria configurada).
+  **Mensagem assinada com o nome do consultor** (15/09/2026, pedido
+  José/Jean: "as mensagens do inbox tem que ser assinado pelo consultor se
+  ele entrar na conversa") — `enviarMensagemManualWhatsapp()`
+  (`includes/whatsapp_inbox.php`) agora manda pro Z-API o texto prefixado
+  com `*{nome do consultor}:*\n` (negrito no padrão do próprio WhatsApp),
+  assim o cliente sabe que uma pessoa de verdade assumiu, não só a IA.
+  Assinatura só entra no que vai pro WHATSAPP de verdade — o texto salvo/
+  exibido na thread do CRM (`registrarMensagem()`) continua sem prefixo,
+  porque a bolha já mostra "👤 {nome}" separado (duplicaria a informação
+  dentro do próprio CRM). Testado com servidor Z-API fake capturando o
+  payload exato: mensagem que chega no cliente vem com
+  `"*Jose Consultor:*\nBoa tarde!..."`, o que fica salvo no banco/CRM
+  continua limpo (`"Boa tarde!..."`).
+  **Sidebar não atualizava sozinha sem conversa aberta** (mesmo dia, achado
+  real: "verifica demora de atualizar as mensagens do ibox") — o polling
+  que refresca a lista de conversas (não-lidas, ordem, última mensagem)
+  só rodava DENTRO do `if (telefone)`, ou seja, só se atualizava sozinho
+  com uma conversa já aberta; sentado na caixa sem nada selecionado — o
+  estado mais comum esperando lead novo chegar — a lista nunca mudava
+  sozinha, só recarregando a página na mão. Movido pra fora do `if`, roda
+  sempre. De quebra, intervalos apertados a pedido ("deixa bem fluido
+  inbox"): mensagens da conversa aberta 4s→2s, lista lateral 15s→5s.
+  Testado com Playwright: inseriu mensagem nova direto no banco (simulando
+  o webhook) com a página aberta e NENHUMA conversa selecionada, sem
+  recarregar — sidebar saiu de "Nenhuma conversa ainda" pra mostrar a
+  conversa nova sozinha, dentro da janela do polling.
   **"Nova conversa" pra número que ainda não escreveu** (mesmo dia, achado
   testando de verdade em produção — José: "não está igual do juridico
   sass campo de enviar mensagem"): a sidebar só listava telefone que já
