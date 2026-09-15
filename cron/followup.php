@@ -2,12 +2,16 @@
 /**
  * cron/followup.php
  * Follow-up de oportunidades — mesmo espírito do cron/followup_leads.php
- * do JurídicoSaaS: dois papéis num cron só.
+ * do JurídicoSaaS: três papéis num cron só.
  *
  * 1. Alerta de "próxima ação atrasada" — pro responsável (consultor),
  *    conforme a regra do Jean: "toda oportunidade aberta precisa de
  *    responsável e próxima ação, com alertas para atrasados".
- * 2. Reengajamento de lead esfriando — oportunidade parada na etapa
+ * 2. Lead "quente" parado sem ação rápida do consultor (15/09/2026,
+ *    "fazer followup de lead quente... se não agir rápido") — cobre o
+ *    caso mais urgente de todos, que o alerta #1 sozinho não pegava
+ *    (lead recém-qualificado ainda não tem proxima_acao_em marcada).
+ * 3. Reengajamento de lead esfriando — oportunidade parada na etapa
  *    'whatsapp' ou 'qualificacao_ia' sem nenhuma mensagem nova há muito
  *    tempo, antes de virar 'perdido' por abandono.
  *
@@ -76,7 +80,57 @@ foreach ($atrasadas as $op) {
     setConfig($guardKey, date('Y-m-d H:i:s'));
 }
 
-// ── 2. Reengajamento — lead esfriando sem responsável ainda ─────────────────
+// ── 2. Lead quente sem ação rápida do consultor ──────────────────────────────
+// Regra de negócio 15/09/2026 (José/Jean: "fazer followup de lead quente
+// cliente para consultor notificação... se não agir rápido") — lead
+// classificado "quente" pela IA (financiamento atrasado/sem outra opção,
+// ver includes/ia_qualificacao.php) acabou de cair pro consultor
+// (crm_preenchido) mas ele ainda não avançou a oportunidade. Diferente do
+// alerta de atraso (bloco 1 acima), que só dispara se JÁ existir uma
+// proxima_acao_em marcada e vencida: um lead recém-qualificado
+// normalmente ainda não tem isso definido (ninguém marcou "próxima ação"
+// pra ele ainda), então nunca cairia no bloco 1 mesmo sendo o caso mais
+// urgente de todos — esse bloco cobre esse buraco.
+$IA_QUENTE_MINUTOS_LIMITE = 20;
+$quentesParados = $db->query("
+    SELECT o.id, c.nome, c.telefone, u.nome as responsavel_nome, u.whatsapp as responsavel_wpp
+    FROM oportunidades o
+    JOIN clientes c ON c.id = o.cliente_id
+    LEFT JOIN usuarios u ON u.id = o.responsavel_id
+    WHERE o.temperatura_lead = 'quente'
+      AND o.etapa = 'crm_preenchido'
+      AND o.responsavel_id IS NOT NULL
+      AND o.updated_at < datetime('now','localtime','-{$IA_QUENTE_MINUTOS_LIMITE} minutes')
+")->fetchAll();
+
+log_followup(count($quentesParados) . ' lead(s) quente(s) sem ação rápida do consultor.');
+
+foreach ($quentesParados as $op) {
+    // Dedup de 1h — mais apertado que o alerta de atraso comum (4h): lead
+    // quente é urgência real (financiamento atrasado), justifica cobrar
+    // com mais frequência enquanto ninguém mexer na oportunidade.
+    $guardKey = 'alerta_quente_' . $op['id'];
+    $ultimoAlerta = getConfig($guardKey);
+    if ($ultimoAlerta && (time() - strtotime($ultimoAlerta)) < 3600) {
+        continue;
+    }
+
+    if (!empty($op['responsavel_wpp'])) {
+        $nomeCliente = $op['nome'] ?: 'Cliente sem nome';
+        $msg = "🔥 *Lead QUENTE parado — Oportunidade #{$op['id']}*\n\n"
+             . "👤 {$nomeCliente} ({$op['telefone']})\n\n"
+             . "Esse lead tem urgência real (financiamento atrasado, sem outra opção) e já está "
+             . "com você há mais de {$IA_QUENTE_MINUTOS_LIMITE} min sem avançar. Ligue o quanto antes!";
+        $ok = zapiEnviarTexto($op['responsavel_wpp'], $msg);
+        log_followup(($ok ? '✅' : '❌') . " Alerta quente parado → oportunidade #{$op['id']} → {$op['responsavel_nome']}");
+    } else {
+        log_followup("⏭️ Oportunidade #{$op['id']} quente parada mas responsável sem WhatsApp cadastrado.");
+    }
+
+    setConfig($guardKey, date('Y-m-d H:i:s'));
+}
+
+// ── 3. Reengajamento — lead esfriando sem responsável ainda ─────────────────
 // Oportunidade ainda na entrada do funil (bot/IA), sem mensagem nova do
 // cliente há 30-120min, sem responsável humano assumido ainda — mesma
 // janela usada no followup_leads.php do JurídicoSaaS.
