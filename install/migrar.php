@@ -263,4 +263,23 @@ try {
     echo "❌ usuarios.perfil (CHECK supervisor): {$e->getMessage()}\n";
 }
 
+// 15/09/2026 — a integração de FIPE completa trocou de provedor no meio
+// do processo (Parallelum FIPE v2, nunca chegou a ir pro ar → PlacaFIPE,
+// depois que o usuário mandou a doc real). Se alguém já tinha salvo um
+// token em `fipe_v2_token` (nome antigo) antes da troca, copia pro nome
+// novo `placafipe_token` — idempotente, só copia se o destino ainda
+// estiver vazio, nunca sobrescreve um token novo já configurado.
+try {
+    $tokenAntigo = getConfig('fipe_v2_token');
+    $tokenNovo = getConfig('placafipe_token');
+    if ($tokenAntigo && !$tokenNovo) {
+        setConfig('placafipe_token', $tokenAntigo);
+        echo "✅ config.placafipe_token: copiado de fipe_v2_token (troca de provedor FIPE)\n";
+    } else {
+        echo "⏭️  config.placafipe_token: nada a copiar\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ config.placafipe_token: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

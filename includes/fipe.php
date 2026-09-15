@@ -6,13 +6,14 @@
  *    (12/09/2026): usada só pra VALIDAR/NORMALIZAR a marca digitada pelo
  *    consultor (fipeValidarMarca()/fipeListarMarcas()); não tem busca de
  *    modelo/ano por marca.
- * 2. Parallelum FIPE v2 (com token) — busca completa
- *    marca→modelo→ano→valor, adicionada 15/09/2026 (José/Jean: "vamos
- *    colocar em produção"). Funções `fipeV2*` abaixo, usadas em
- *    `admin/oportunidade.php` (selects em cascata) via
- *    `admin/fipe_ajax.php`. Configurada em Configurações → FIPE
- *    (`config.fipe_v2_token`) — sem token, essas funções simplesmente não
- *    respondem nada, nunca travam a tela.
+ * 2. PlacaFIPE (api.placafipe.com.br, com token) — busca de valor FIPE
+ *    pela PLACA do veículo, adicionada 15/09/2026 (José/Jean: "vamos
+ *    colocar em produção" → "vamos integrar", depois de eu confirmar o
+ *    provedor certo com a doc real). Funções `placafipe*` abaixo, usadas
+ *    em `admin/oportunidade.php` (campo de placa + lista de
+ *    correspondências) via `admin/fipe_ajax.php`. Configurada em
+ *    Configurações → FIPE (`config.placafipe_token`) — sem token, essas
+ *    funções simplesmente não respondem nada, nunca travam a tela.
  *
  * Cache no padrão já documentado no CLAUDE.md: `config` chave/valor,
  * valor = "timestamp|json" — evita bater na API toda hora.
@@ -136,44 +137,74 @@ function fipeRequisitar(string $caminho): ?array {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FIPE v2 (Parallelum, com token) — busca completa
-// marca→modelo→ano→valor. Adicionado 15/09/2026 (José/Jean: "vamos
-// colocar em produção" — confirmado que era pra implementar a busca
-// completa oferecida). Construído a partir da documentação pública
-// (fipe.parallelum.com.br/doc — ambiente de dev bloqueia fetch direto do
-// domínio) e testado só contra servidor fake local; nunca confirmado
-// contra a API real (mesma ressalva de todo provedor externo deste
-// projeto, ver CLAUDE.md "a validar em produção"). Separado de
+// PlacaFIPE (api.placafipe.com.br, com token) — busca de valor FIPE por
+// PLACA do veículo. Adicionado 15/09/2026 (José/Jean: "vamos colocar em
+// produção", depois "vamos integrar" confirmando a PlacaFIPE especificamente
+// — troca de provedor no meio do processo: a implementação original desta
+// seção usava a Parallelum FIPE v2 (auth por header, endpoints
+// marca→modelo→ano), nunca chegou a ir pro ar e foi substituída inteira
+// por esta, depois do usuário mandar a documentação real da PlacaFIPE.
+//
+// A PlacaFIPE tem DOIS caminhos de busca:
+//   1. Por placa (`getplaca`/`getplacafipe`) — request/response 100%
+//      confirmados contra a doc oficial (exemplo real de resposta colado
+//      pelo usuário), é o que está implementado aqui.
+//   2. Cascata manual (`ConsultarTabelaDeReferencia` →
+//      `ConsultarMarcas` → `ConsultarModelos` → `ConsultarAnoModelo` →
+//      `ConsultarValorComTodosParametros`, com `codigoTipoVeiculo` pra
+//      escolher carro/moto/caminhão) — útil pra quando ainda não tem
+//      placa, ou a busca por placa não encontra o veículo. NÃO
+//      implementado ainda: a documentação disponível só mostra o formato
+//      do REQUEST desses 4 passos intermediários, nunca um exemplo de
+//      RESPOSTA — implementar às cegas repetiria o mesmo erro da tentativa
+//      anterior com a Parallelum (chutar nome de campo que a API real não
+//      usa). Fica pendente até ter um exemplo real de resposta.
+//
+// Auth: token vai no CORPO de toda requisição (POST), nunca em header —
+// diferente de toda outra integração deste projeto (Z-API, Gemini, etc),
+// que usam header ou querystring.
+//
+// Nunca confirmado contra a API real (token real nunca testado por este
+// ambiente — sandbox de dev bloqueia acesso externo), só a estrutura da
+// doc oficial + exemplo de resposta real colado pelo usuário. Separado de
 // fipeValidarMarca()/fipeListarMarcas() (BrasilAPI v1, sem token) de
-// propósito — v1 continua funcionando normalmente mesmo sem token v2
+// propósito — v1 continua funcionando normalmente sem token da PlacaFIPE
 // configurado, as duas integrações nunca se misturam.
 // ─────────────────────────────────────────────────────────────
 
-if (!defined('FIPE_V2_BASE_URL')) {
-    define('FIPE_V2_BASE_URL', 'https://fipe.parallelum.com.br/api/v2');
+if (!defined('PLACAFIPE_BASE_URL')) {
+    define('PLACAFIPE_BASE_URL', 'https://api.placafipe.com.br');
+}
+const PLACAFIPE_CACHE_TTL = 24 * 3600; // evita gastar cota de novo só por recarregar a página no mesmo dia (planos são limitados por requisição — ver doc "Custos")
+
+/** Token da API PlacaFIPE — obrigatório pra qualquer chamada funcionar. */
+function placafipeToken(): string {
+    return getConfig('placafipe_token') ?: '';
 }
 
-/** Token da API FIPE v2 (Parallelum) — obrigatório pra qualquer chamada v2 funcionar. */
-function fipeV2Token(): string {
-    return getConfig('fipe_v2_token') ?: '';
-}
-
-/** GET autenticado na FIPE v2 — retorna null sem token ou em qualquer falha (nunca lança). */
-function fipeV2Requisitar(string $caminho): ?array {
-    $token = fipeV2Token();
+/**
+ * POST autenticado na PlacaFIPE — token sempre no corpo (nunca header).
+ * Retorna null sem token configurado ou em qualquer falha de transporte
+ * (nunca lança) — quem chama decide o que fazer com `codigo`/`msg` do
+ * corpo da resposta.
+ */
+function placafipePost(string $endpoint, array $params = []): ?array {
+    $token = placafipeToken();
     if (!$token) return null;
     try {
-        $ch = curl_init(FIPE_V2_BASE_URL . $caminho);
+        $ch = curl_init(PLACAFIPE_BASE_URL . '/' . ltrim($endpoint, '/'));
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 10,
-            CURLOPT_HTTPHEADER => ['Accept: application/json', 'X-Subscription-Token: ' . $token],
+            CURLOPT_POST => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => json_encode(array_merge(['token' => $token], $params)),
         ]);
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $erro = curl_error($ch);
         curl_close($ch);
-        if ($body === false || $code !== 200 || $erro) return null;
+        if ($body === false || $code >= 400 || $erro) return null;
         $dados = json_decode($body, true);
         return is_array($dados) ? $dados : null;
     } catch (Throwable $e) {
@@ -181,73 +212,48 @@ function fipeV2Requisitar(string $caminho): ?array {
     }
 }
 
-/** Só dígitos/letras/hífen — mesmo formato de código que a FIPE v2 usa (ex: "59", "2024-1"). */
-function fipeV2LimparCodigo(string $codigo): string {
-    return preg_replace('/[^a-zA-Z0-9\-]/', '', $codigo) ?? '';
+/** Só letras/números, formato Mercosul ou antigo (ex: ABC1D23, ABC1234) — nunca manda placa mal formatada pra API, economiza cota. */
+function placafipeLimparPlaca(string $placa): string {
+    $limpa = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $placa) ?? '');
+    return preg_match('/^[A-Z]{3}\d[A-Z0-9]\d{2}$/', $limpa) ? $limpa : '';
 }
 
-/** Cache genérico de leitura pra endpoints v2 (marca/modelo/ano mudam raro) — mesmo padrão "timestamp|json" já documentado no CLAUDE.md. */
-function fipeV2Cache(string $cacheKey, string $caminho): array {
+/**
+ * Consulta o valor FIPE pela placa (`getplacafipe`) — retorna o corpo
+ * decodificado da resposta (`codigo`, `msg`, `fipe` com as correspondências
+ * possíveis, `informacoes_veiculo`) ou null se a placa for inválida, sem
+ * token, ou a chamada falhar de transporte. Quem chama SEMPRE precisa
+ * checar `$resp['codigo'] === 1` antes de usar `fipe`/`informacoes_veiculo`
+ * — código de retorno != 1 é erro (placa não encontrada, token inválido,
+ * cota estourada etc — a doc de "Códigos de retorno" com a lista completa
+ * não foi confirmada ainda, por isso trata qualquer coisa != 1 como falha
+ * genérica e mostra o `msg` que a própria API manda, em vez de tentar
+ * adivinhar o significado de cada código).
+ *
+ * Cache de 24h por placa — plano tem cota limitada de requisições (doc
+ * "Custos"), não faz sentido gastar cota de novo só porque o consultor
+ * recarregou a página da oportunidade no mesmo dia. Só cacheia resposta
+ * de SUCESSO (codigo=1); erro nunca fica em cache, pra não travar um
+ * "token inválido" temporário (ex: acabou de configurar) pelo resto do dia.
+ */
+function placafipeConsultarPorPlaca(string $placa): ?array {
+    $placaLimpa = placafipeLimparPlaca($placa);
+    if ($placaLimpa === '') return null;
+
+    $cacheKey = 'placafipe_cache_' . $placaLimpa;
     $cache = getConfig($cacheKey);
     if ($cache && str_contains($cache, '|')) {
         [$timestamp, $json] = explode('|', $cache, 2);
         $decodificado = json_decode($json, true);
-        if (is_array($decodificado) && (time() - (int)$timestamp) < FIPE_CACHE_TTL) {
+        if (is_array($decodificado) && (time() - (int)$timestamp) < PLACAFIPE_CACHE_TTL) {
             return $decodificado;
         }
     }
-    $dados = fipeV2Requisitar($caminho);
-    if ($dados === null) {
-        // Sem resposta nova (API fora do ar ou sem token) — cai pro cache
-        // vencido se existir, senão devolve vazio (nunca quebra a tela).
-        if ($cache && str_contains($cache, '|')) {
-            [, $jsonVelho] = explode('|', $cache, 2);
-            $decodificado = json_decode($jsonVelho, true);
-            return is_array($decodificado) ? $decodificado : [];
-        }
-        return [];
+
+    $dados = placafipePost('getplacafipe', ['placa' => $placaLimpa]);
+    if ($dados === null) return null;
+    if ((int)($dados['codigo'] ?? 0) === 1) {
+        setConfig($cacheKey, time() . '|' . json_encode($dados));
     }
-    setConfig($cacheKey, time() . '|' . json_encode($dados));
     return $dados;
-}
-
-/** Lista marcas de carro (FIPE v2) — [{code, name}, ...]. */
-function fipeV2ListarMarcas(): array {
-    return fipeV2Cache('fipe_v2_marcas_cache', '/cars/brands');
-}
-
-/** Lista modelos de uma marca — [{code, name}, ...]. */
-function fipeV2ListarModelos(string $marcaCode): array {
-    $marcaCode = fipeV2LimparCodigo($marcaCode);
-    if ($marcaCode === '') return [];
-    return fipeV2Cache("fipe_v2_modelos_cache_{$marcaCode}", "/cars/brands/{$marcaCode}/models");
-}
-
-/** Lista anos/combustível de um modelo — [{code, name}, ...] (ex: name="2024 Gasolina"). */
-function fipeV2ListarAnos(string $marcaCode, string $modeloCode): array {
-    $marcaCode = fipeV2LimparCodigo($marcaCode);
-    $modeloCode = fipeV2LimparCodigo($modeloCode);
-    if ($marcaCode === '' || $modeloCode === '') return [];
-    return fipeV2Cache("fipe_v2_anos_cache_{$marcaCode}_{$modeloCode}", "/cars/brands/{$marcaCode}/models/{$modeloCode}/years");
-}
-
-/**
- * Valor FIPE final pra marca+modelo+ano escolhidos — retorna null se
- * faltar código ou a chamada falhar. Sem cache de propósito: a FIPE
- * atualiza a tabela todo mês (`referenceMonth` na resposta), não faz
- * sentido guardar um valor velho por 7 dias como marca/modelo/ano fazem.
- */
-function fipeV2BuscarValor(string $marcaCode, string $modeloCode, string $anoCode): ?array {
-    $marcaCode = fipeV2LimparCodigo($marcaCode);
-    $modeloCode = fipeV2LimparCodigo($modeloCode);
-    $anoCode = fipeV2LimparCodigo($anoCode);
-    if ($marcaCode === '' || $modeloCode === '' || $anoCode === '') return null;
-    return fipeV2Requisitar("/cars/brands/{$marcaCode}/models/{$modeloCode}/years/{$anoCode}");
-}
-
-/** Converte o preço no formato da resposta FIPE ("R$ 45.000,00") pra float (45000.0). */
-function fipeV2ParsearPreco(string $preco): ?float {
-    $limpo = preg_replace('/[^0-9,]/', '', $preco) ?? '';
-    $limpo = str_replace(',', '.', $limpo);
-    return is_numeric($limpo) ? (float)$limpo : null;
 }

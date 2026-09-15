@@ -507,35 +507,65 @@ segue no schema sem uso novo, não removida sem ganho real),
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
-- **Busca completa de FIPE (marca→modelo→ano→valor)** — 15/09/2026, José/Jean
-  pediram "vamos colocar em produção" depois de eu explicar a limitação da
+- **Busca de FIPE pela placa (PlacaFIPE)** — 15/09/2026, José/Jean pediram
+  "vamos colocar em produção" depois de eu explicar a limitação da
   integração FIPE existente (BrasilAPI v1, só validava a marca digitada,
   sem busca de valor — `valor_fipe_referencia` era 100% digitado à mão).
-  `includes/fipe.php` ganhou um segundo conjunto de funções (`fipeV2*`,
-  Parallelum FIPE v2, com token) **separado** da v1 — `fipeValidarMarca()`
-  continua funcionando exatamente igual, sem token v2 configurado. Selects
-  em cascata (marca → modelo → ano) em `admin/oportunidade.php`, dentro do
-  card "Financiamento e contrato de compra", só aparecem quando
-  `config.fipe_v2_token` está preenchido (Configurações → 🚗 FIPE v2,
-  mesmo padrão de badge/teste-de-conexão dos outros provedores) —
-  `admin/fipe_ajax.php` serve cada nível em JSON conforme o consultor
-  escolhe. Ao achar o valor final, preenche o campo `valor_fipe_referencia`
-  sozinho, mas **nunca submete o formulário nem salva no banco** — o
-  consultor ainda revisa e clica "Salvar dados do contrato" (mesmo
-  espírito de "nada preenche sozinho sem confirmação humana" já usado no
-  resto do projeto). Cache de 7 dias pra marca/modelo/ano (mudam raro,
-  mesmo padrão `timestamp|json` da v1); busca de VALOR final nunca cacheada
-  de propósito — a FIPE atualiza a tabela todo mês (`referenceMonth` na
-  resposta), cachear geraria valor desatualizado. Testado ponta a ponta
-  com servidor FIPE v2 fake local + Playwright real: sem token nenhuma
-  chamada sai (nunca quebra a tela); token errado → API rejeita (401),
-  função devolve vazio sem cachear o erro; token certo → cascata completa
-  clicada no navegador de verdade preenche `valor_fipe_referencia` com o
-  valor certo (testado Toyota Corolla 2024 → "R$ 145.000,00" → campo
-  populado com `145000`). Ver pendência "a validar em produção": nome
-  exato dos campos da resposta real (principalmente o formato do `price`)
-  nunca confirmado contra a API de verdade, só contra a documentação
-  pública.
+  **Retrabalho no mesmo dia — provedor errado na 1ª tentativa**: a 1ª
+  implementação (`fipeV2*`, Parallelum FIPE v2, cascata marca→modelo→ano,
+  header `X-Subscription-Token`) foi construída a partir de conhecimento
+  geral de documentação, **nunca confirmada contra doc real** — assim que
+  o José mandou o link real do provedor contratado
+  (`https://doc.placafipe.com.br/api/`), ficou claro que é uma API
+  **completamente diferente**: **PlacaFIPE** (`api.placafipe.com.br`),
+  busca primária **por placa** (não por cascata marca/modelo/ano), POST
+  com token dentro do **corpo JSON** (`{"token": "..."}`), nunca em
+  header — diferente de toda outra integração do projeto (Z-API, Gemini
+  etc, que usam header/querystring). Meu sandbox bloqueia acesso direto a
+  `doc.placafipe.com.br` (`WebFetch` e `curl` retornaram erro de rede
+  ambos) — José colou o conteúdo da documentação direto no chat
+  (`getplaca`, `getplacafipe` com JSON de resposta real, e o fluxo
+  completo de cascata `ConsultarTabelaDeReferencia→ConsultarMarcas→
+  ConsultarModelos→ConsultarAnoModelo→ConsultarValorComTodosParametros`
+  com formato de REQUEST confirmado mas **sem nenhum exemplo de RESPONSE**
+  pros 4 passos intermediários). Reescrita completa jogando fora a
+  implementação Parallelum inteira; **escopo deliberadamente reduzido**
+  pra evitar repetir o mesmo erro: implementado **só** `getplacafipe`
+  (busca por placa, request E response confirmados de verdade pela doc) —
+  a cascata marca/modelo/ano (`ConsultarMarcas` etc) **não foi
+  implementada**, por falta de confirmação do formato de resposta; fica
+  pendente até a doc trazer exemplo de resposta real ou alguém confirmar
+  contra a API. `placafipeConsultarPorPlaca()` (`includes/fipe.php`) POSTa
+  placa+token, cacheia 24h por placa em `config` (mesmo padrão
+  `timestamp|json` de sempre — motivo é custo: o plano da PlacaFIPE cobra
+  por requisição, "a cada requisição diminui uma requisição restante" na
+  doc, então recarregar a tela da oportunidade repetidas vezes não pode
+  queimar cota de novo). Widget em `admin/oportunidade.php` (campo de
+  placa, pré-preenchido com `veiculo_placa` da oportunidade, só aparece
+  com `config.placafipe_token` preenchido) mostra **todos os candidatos**
+  retornados (`fipe[]`, cada um com `correspondencia`%, já que uma mesma
+  placa pode bater com mais de um FIPE — motor/versão diferente) e exige
+  clique explícito em "Usar este valor" num candidato específico pra
+  preencher `valor_fipe_referencia` — nunca aplica o 1º automaticamente
+  (mesma regra de "IA/sistema nunca decide informação incerta sozinho" já
+  usada no resto do projeto), e nunca submete o formulário sozinho.
+  `admin/fipe_ajax.php` (ação única `buscar_placa`) serve o JSON.
+  Configurações → 🚗 FIPE — busca por placa (PlacaFIPE): campo de token
+  (`config.placafipe_token`, substituiu `fipe_v2_token` — migração em
+  `install/migrar.php` copia o valor antigo se existir), badge de status,
+  e teste de conexão que **exige uma placa real digitada** (consome 1
+  requisição de verdade do plano, mesmo espírito do `testar_zapi`/
+  `testar_email` — nunca tentei adivinhar um endpoint `getquotas` de custo
+  zero sem confirmar o formato dele também). Testado: 4 cenários isolados
+  de `placafipeConsultarPorPlaca()` (sem token, placa mal formatada, placa
+  não encontrada `codigo=0`, sucesso `codigo=1`) + Playwright ponta a
+  ponta contra servidor PlacaFIPE fake local modelado no JSON real
+  confirmado — placa pré-preenchida da oportunidade, busca retorna 2
+  candidatos, clique no **2º** candidato (não o 1º) preenche
+  `valor_fipe_referencia` com o valor específico daquele candidato
+  (21798, não o do 1º), confirmando que a tela não aplica o resultado
+  "óbvio" sozinha. `fipeValidarMarca()`/BrasilAPI v1 continuam intocados,
+  funcionando igual sem nenhum token configurado.
 - **Módulo cliente** — `admin/clientes.php` (lista/busca) +
   `admin/cliente_detalhe.php` (dados cadastrais + histórico de todas as
   oportunidades daquele telefone, incluindo veículo/placa e **data real de
@@ -1272,22 +1302,28 @@ testado com servidor fake local — nunca contra o serviço real:
 - **API de marcas da FIPE (BrasilAPI, v1)** — `includes/fipe.php` só foi
   testado contra um servidor fake local simulando `/marcas/v1/carros`;
   validar o formato de resposta real assim que rodar com internet livre.
-- **API FIPE v2 (Parallelum, busca completa)** — `includes/fipe.php`
-  (funções `fipeV2*`), `admin/fipe_ajax.php`, selects em cascata em
-  `admin/oportunidade.php`. Construída a partir da documentação pública
-  (fipe.parallelum.com.br/doc — ambiente de dev bloqueia fetch direto do
-  domínio), nunca contra a API real: endpoints
-  `/cars/brands`, `/cars/brands/{id}/models`,
-  `/cars/brands/{id}/models/{id}/years`,
-  `/cars/brands/{id}/models/{id}/years/{id}` com header
-  `X-Subscription-Token`, e o formato exato da resposta final (campos
-  `price`, `model`, `brand`, `modelYear`, `fuel`, `codeFipe`,
-  `referenceMonth`) só testados contra servidor fake local simulando os
-  formatos documentados. Confirmar contra a API real assim que tiver um
-  token de verdade: nome exato dos campos (principalmente `price` como
-  string "R$ X.XXX,XX" — se vier em formato diferente,
-  `fipeV2ParsearPreco()` precisa ajustar), e se o rate limit do plano
-  gratuito dá conta do uso real.
+- **API PlacaFIPE (busca por placa)** — `includes/fipe.php`
+  (`placafipeConsultarPorPlaca()`), `admin/fipe_ajax.php`, widget em
+  `admin/oportunidade.php`. Construída a partir de documentação real
+  colada pelo José direto no chat (`doc.placafipe.com.br` bloqueado no
+  meu sandbox), incluindo um exemplo de resposta JSON real de
+  `getplacafipe` — mas **nunca uma chamada de verdade contra
+  `api.placafipe.com.br`**, só servidor fake local modelado nesse
+  exemplo. Confirmar assim que possível: se o formato de resposta real
+  bate exatamente com o exemplo da doc (campos `codigo`, `msg`,
+  `informacoes_veiculo`, `fipe[]` com `marca`/`modelo`/`ano_modelo`/
+  `combustivel`/`codigo_fipe`/`mes_referencia`/`correspondencia`/`valor`/
+  `unidade_valor`), o comportamento em placa não encontrada (`codigo=0`,
+  mensagem exata), e se o plano contratado realmente cobra por requisição
+  do jeito que a doc descreve (confirma se o cache de 24h por placa é
+  suficiente ou se compensa aumentar). **Fluxo de cascata marca→modelo→
+  ano→valor (`ConsultarMarcas` etc) não foi implementado** — a doc tem
+  formato de REQUEST confirmado pros 5 endpoints mas nenhum exemplo de
+  RESPONSE pros 4 passos intermediários; se algum dia for pedido, pedir
+  pro José um exemplo de resposta real de cada endpoint antes de
+  implementar (mesmo erro já cometido 1x nesta sessão com o provedor
+  errado, Parallelum, que foi jogado fora depois de confirmado que o
+  provedor real contratado é outro).
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
 - **API Gemini** — ✅ 1ª chamada real feita em 15/09/2026 (teste de conexão

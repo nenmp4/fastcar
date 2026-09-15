@@ -351,24 +351,19 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <h3>📝 Financiamento e contrato de compra</h3>
     <p><small>Esses dados alimentam o Quadro-Resumo do contrato-mestre de compra (includes/contratos_pdf.php) — o
        consultor confirma com o cliente antes de gerar, a IA/sistema nunca preenche isso sozinho.</small></p>
-    <?php if (getConfig('fipe_v2_token')): ?>
+    <?php if (getConfig('placafipe_token')): ?>
         <div id="fipe-busca" style="background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:12px;margin-bottom:14px">
-            <strong style="font-size:13px">🔍 Buscar valor FIPE (marca → modelo → ano)</strong>
-            <div class="grid-2" style="margin-top:8px">
-                <div>
-                    <label style="font-size:12px">Marca</label>
-                    <select id="fipe-marca" style="width:100%"><option value="">Carregando…</option></select>
+            <strong style="font-size:13px">🔍 Buscar valor FIPE pela placa</strong>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">
+                <div style="flex:1">
+                    <label style="font-size:12px">Placa do veículo</label>
+                    <input type="text" id="fipe-placa" style="width:100%;text-transform:uppercase" maxlength="8"
+                           value="<?= e($op['veiculo_placa'] ?? '') ?>" placeholder="ABC1D23">
                 </div>
-                <div>
-                    <label style="font-size:12px">Modelo</label>
-                    <select id="fipe-modelo" style="width:100%" disabled><option value="">Escolha a marca primeiro</option></select>
-                </div>
-            </div>
-            <div style="margin-top:8px">
-                <label style="font-size:12px">Ano/combustível</label>
-                <select id="fipe-ano" style="width:100%" disabled><option value="">Escolha o modelo primeiro</option></select>
+                <button type="button" id="fipe-buscar-btn" style="margin:0;padding:8px 14px;font-size:13px;white-space:nowrap">Buscar</button>
             </div>
             <p id="fipe-resultado" style="font-size:12.5px;color:var(--texto-fraco);margin-top:8px"></p>
+            <div id="fipe-candidatos"></div>
         </div>
     <?php endif; ?>
     <form method="post">
@@ -615,83 +610,78 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     </div>
 </div>
 
-<?php if (getConfig('fipe_v2_token')): ?>
+<?php if (getConfig('placafipe_token')): ?>
 <script>
 (function () {
-    // Selects em cascata pra busca completa FIPE v2 (marca→modelo→ano→valor)
-    // — 15/09/2026, "vamos colocar em produção" (Parallelum FIPE v2).
-    // Nunca sobrescreve o valor sozinho: só preenche o campo quando o
-    // consultor escolhe o ano/combustível final, ele ainda revisa e clica
-    // "Salvar dados do contrato" pra persistir — mesmo espírito de "IA/
-    // sistema nunca preenche sozinho" já documentado nesta tela.
-    var selMarca = document.getElementById('fipe-marca');
-    var selModelo = document.getElementById('fipe-modelo');
-    var selAno = document.getElementById('fipe-ano');
+    // Busca de valor FIPE pela placa (PlacaFIPE) — 15/09/2026, "vamos
+    // integrar" (troca de provedor: a Parallelum original nunca foi pro
+    // ar, substituída pela PlacaFIPE depois do usuário mandar a doc real).
+    // A resposta pode trazer MAIS DE UMA correspondência (campo
+    // `correspondencia`, % de match) — nunca aplica sozinho, sempre mostra
+    // a lista pro consultor escolher qual bate certo e clicar "Usar este
+    // valor"; mesmo espírito de "IA/sistema nunca preenche sozinho" já
+    // documentado nesta tela. Clicar só preenche o campo, nunca submete o
+    // formulário — o consultor ainda revisa e clica "Salvar dados do
+    // contrato" pra persistir.
+    var inputPlaca = document.getElementById('fipe-placa');
+    var btnBuscar = document.getElementById('fipe-buscar-btn');
     var resultado = document.getElementById('fipe-resultado');
+    var listaCandidatos = document.getElementById('fipe-candidatos');
     var campoValor = document.getElementById('valor_fipe_referencia');
-    if (!selMarca) return;
+    if (!inputPlaca) return;
 
-    function popular(select, itens, placeholder) {
-        select.innerHTML = '';
-        var optVazia = document.createElement('option');
-        optVazia.value = '';
-        optVazia.textContent = placeholder;
-        select.appendChild(optVazia);
-        itens.forEach(function (item) {
-            var opt = document.createElement('option');
-            opt.value = item.code;
-            opt.textContent = item.name;
-            select.appendChild(opt);
-        });
-        select.disabled = itens.length === 0;
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
     }
 
-    fetch('/admin/fipe_ajax.php?acao=marcas')
-        .then(function (r) { return r.json(); })
-        .then(function (data) { popular(selMarca, data.marcas || [], 'Escolha a marca'); })
-        .catch(function () { selMarca.innerHTML = '<option value="">Falha ao carregar — tente recarregar a página</option>'; });
-
-    selMarca.addEventListener('change', function () {
-        selModelo.disabled = true;
-        selAno.disabled = true;
-        resultado.textContent = '';
-        if (!selMarca.value) return;
-        selModelo.innerHTML = '<option value="">Carregando…</option>';
-        fetch('/admin/fipe_ajax.php?acao=modelos&marca=' + encodeURIComponent(selMarca.value))
-            .then(function (r) { return r.json(); })
-            .then(function (data) { popular(selModelo, data.modelos || [], 'Escolha o modelo'); })
-            .catch(function () {});
-    });
-
-    selModelo.addEventListener('change', function () {
-        selAno.disabled = true;
-        resultado.textContent = '';
-        if (!selModelo.value) return;
-        selAno.innerHTML = '<option value="">Carregando…</option>';
-        fetch('/admin/fipe_ajax.php?acao=anos&marca=' + encodeURIComponent(selMarca.value) + '&modelo=' + encodeURIComponent(selModelo.value))
-            .then(function (r) { return r.json(); })
-            .then(function (data) { popular(selAno, data.anos || [], 'Escolha o ano'); })
-            .catch(function () {});
-    });
-
-    selAno.addEventListener('change', function () {
-        resultado.textContent = '';
-        if (!selAno.value) return;
-        resultado.textContent = 'Buscando valor…';
-        fetch('/admin/fipe_ajax.php?acao=valor&marca=' + encodeURIComponent(selMarca.value)
-            + '&modelo=' + encodeURIComponent(selModelo.value) + '&ano=' + encodeURIComponent(selAno.value))
+    btnBuscar.addEventListener('click', function () {
+        var placa = inputPlaca.value.trim();
+        if (!placa) { resultado.textContent = '⚠️ Digite a placa primeiro.'; return; }
+        listaCandidatos.innerHTML = '';
+        btnBuscar.disabled = true;
+        resultado.textContent = 'Buscando…';
+        fetch('/admin/fipe_ajax.php?acao=buscar_placa&placa=' + encodeURIComponent(placa))
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                btnBuscar.disabled = false;
                 if (!data.ok) {
-                    resultado.textContent = '⚠️ Não consegui buscar o valor agora — confira o token da FIPE em Configurações.';
+                    resultado.textContent = '⚠️ ' + (data.msg || 'Não consegui buscar essa placa.');
                     return;
                 }
-                if (campoValor && data.preco_numero) campoValor.value = data.preco_numero;
-                resultado.textContent = '✅ ' + data.preco_texto + ' — ' + data.marca + ' ' + data.modelo
-                    + ' (' + data.ano_modelo + ', ' + data.combustivel + ') — referência ' + data.mes_referencia
-                    + '. Preenchido no campo abaixo, confira antes de salvar.';
+                var v = data.veiculo;
+                resultado.innerHTML = (v ? ('Veículo encontrado: ' + escapeHtml(v.marca || '') + ' ' + escapeHtml(v.modelo || '')
+                    + ' (' + escapeHtml(v.ano_modelo || '') + ', ' + escapeHtml(v.cor || '') + ', ' + escapeHtml(v.uf || '') + '). ') : '')
+                    + 'Escolha abaixo qual valor FIPE bate certo:';
+
+                if (!data.candidatos || !data.candidatos.length) {
+                    listaCandidatos.innerHTML = '<p style="font-size:12.5px;color:var(--texto-fraco)">Nenhuma correspondência de valor FIPE encontrada pra essa placa.</p>';
+                    return;
+                }
+                data.candidatos.forEach(function (c) {
+                    var div = document.createElement('div');
+                    div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;border:1px solid var(--borda);border-radius:6px;margin-top:6px;font-size:12.5px;background:var(--superficie)';
+                    div.innerHTML = '<span>' + escapeHtml(c.marca) + ' ' + escapeHtml(c.modelo)
+                        + ' (' + escapeHtml(String(c.ano_modelo)) + ', ' + escapeHtml(c.combustivel) + ')'
+                        + '<br><small style="color:var(--texto-fraco)">Correspondência ' + escapeHtml(c.correspondencia) + '% · referência ' + escapeHtml(c.mes_referencia) + '</small></span>'
+                        + '<span style="white-space:nowrap"><strong>' + escapeHtml(c.valor_texto) + '</strong></span>';
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.textContent = 'Usar este valor';
+                    btn.style.cssText = 'margin:0;padding:5px 10px;font-size:12px;white-space:nowrap';
+                    btn.addEventListener('click', function () {
+                        if (campoValor && c.valor_numero !== null) campoValor.value = c.valor_numero;
+                        resultado.textContent = '✅ ' + c.valor_texto + ' preenchido no campo abaixo — confira antes de salvar.';
+                    });
+                    div.appendChild(btn);
+                    listaCandidatos.appendChild(div);
+                });
             })
-            .catch(function () { resultado.textContent = '⚠️ Falha ao buscar o valor — tente de novo.'; });
+            .catch(function () {
+                btnBuscar.disabled = false;
+                resultado.textContent = '⚠️ Falha ao buscar — tente de novo.';
+            });
     });
 })();
 </script>

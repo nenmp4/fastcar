@@ -26,7 +26,7 @@ $camposZapsign = [
 ];
 
 $camposFipe = [
-    'fipe_v2_token' => 'Token da API FIPE v2 (Parallelum, fipe.parallelum.com.br)',
+    'placafipe_token' => 'Token da API PlacaFIPE (api.placafipe.com.br)',
 ];
 
 $camposEmail = [
@@ -92,14 +92,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $sucesso = 'Configurações da FIPE salvas.';
         } elseif ($acao === 'testar_fipe') {
-            if (!fipeV2Token()) {
-                $erro = 'Configure e salve o token da FIPE v2 antes de testar.';
+            // Diferente de testar_ia/testar_zapi, aqui pedimos uma placa de
+            // teste em vez de testar sozinho — a PlacaFIPE cobra por
+            // requisição (doc "Custos"), não faz sentido gastar cota numa
+            // placa aleatória; o admin escolhe uma placa real (ex: a do
+            // próprio carro) pra confirmar que token+conexão funcionam.
+            $placaTeste = (string)($_POST['placa_teste'] ?? '');
+            if (!placafipeToken()) {
+                $erro = 'Configure e salve o token da PlacaFIPE antes de testar.';
+            } elseif (!$placaTeste) {
+                $erro = 'Informe uma placa real pra testar (o teste consome 1 requisição do seu plano).';
             } else {
-                $marcas = fipeV2ListarMarcas();
-                if ($marcas) {
-                    $sucesso = 'FIPE v2 respondeu: ' . count($marcas) . ' marca(s) encontrada(s) — conexão funcionando.';
+                $resp = placafipeConsultarPorPlaca($placaTeste);
+                if ($resp === null) {
+                    $erro = 'Falha no teste: placa em formato inválido, ou a API não respondeu.';
+                } elseif ((int)($resp['codigo'] ?? 0) !== 1) {
+                    $erro = 'Falha no teste: ' . ($resp['msg'] ?? 'a PlacaFIPE recusou a consulta — confira o token.');
                 } else {
-                    $erro = 'Falha no teste: token inválido, ou a API não respondeu.';
+                    $sucesso = 'PlacaFIPE respondeu: "' . ($resp['msg'] ?? 'ok') . '" — conexão funcionando.';
                 }
             }
         } elseif ($acao === 'salvar_email') {
@@ -361,15 +371,15 @@ $fila = listarFilaConsultores();
 </div>
 
 <div class="card">
-    <h2>🚗 FIPE v2 (busca completa — marca/modelo/ano/valor)</h2>
-    <p><small>Adicionado 15/09/2026 — busca completa via Parallelum FIPE v2, usada em
-       <code>admin/oportunidade.php</code> pros selects em cascata (marca → modelo → ano) que preenchem o valor FIPE
-       automaticamente. Separada da validação de marca "sozinha" (BrasilAPI, sem token) que já funciona mesmo sem
-       nada configurado aqui. Token gerado em <code>fipe.parallelum.com.br</code>.</small></p>
+    <h2>🚗 FIPE — busca por placa (PlacaFIPE)</h2>
+    <p><small>Adicionado 15/09/2026 — busca de valor FIPE pela placa do veículo (api.placafipe.com.br), usada em
+       <code>admin/oportunidade.php</code> pra preencher o valor FIPE de referência automaticamente. Separada da
+       validação de marca "sozinha" (BrasilAPI, sem token) que já funciona mesmo sem nada configurado aqui. Token
+       gerado em <code>placafipe.com.br</code>.</small></p>
     <p>
         Status:
-        <span class="badge <?= getConfig('fipe_v2_token') ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= getConfig('fipe_v2_token') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        <span class="badge <?= getConfig('placafipe_token') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('placafipe_token') ? '✅ configurado' : '⏳ ainda não configurado' ?>
         </span>
     </p>
     <form method="post" autocomplete="off">
@@ -386,7 +396,9 @@ $fila = listarFilaConsultores();
     <form method="post" style="margin-top:12px">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="testar_fipe">
-        <button type="submit" <?= getConfig('fipe_v2_token') ? '' : 'disabled' ?>>Testar conexão</button>
+        <label>Placa real pra testar (consome 1 requisição do plano)</label>
+        <input type="text" name="placa_teste" placeholder="ABC1D23" style="text-transform:uppercase;max-width:180px">
+        <button type="submit" <?= getConfig('placafipe_token') ? '' : 'disabled' ?>>Testar conexão</button>
     </form>
 </div>
 
