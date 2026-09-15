@@ -207,6 +207,53 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
 }
 
 /**
+ * Manda o telefone do consultor responsável direto pro CLIENTE via
+ * WhatsApp — regra de negócio de 15/09/2026 (José/Jean: "cliente aceitou
+ * que consultor ligar, encaminhar notificação ao consultor E enviar
+ * telefone dele pro cliente"): o cliente não precisa ficar só esperando
+ * a ligação, já pode chamar direto se quiser. Só dispara quando
+ * `aceita_ligacao_consultor` é TRUE de verdade (nunca se recusou ou ainda
+ * não respondeu — checagem estrita `=== 1`, não "truthy") E o consultor
+ * responsável tem WhatsApp cadastrado; sem os dois, nunca manda mensagem
+ * quebrada/sem número nenhum pro cliente. Mensagem fica registrada em
+ * `whatsapp_mensagens` como qualquer outra mandada ao cliente, pro
+ * consultor que assumir depois ver o que já foi dito.
+ */
+function enviarTelefoneConsultorAoCliente(int $oportunidadeId): void {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT c.telefone AS cliente_telefone, o.aceita_ligacao_consultor,
+                   u.nome AS consultor_nome, u.whatsapp AS consultor_whatsapp
+            FROM oportunidades o
+            JOIN clientes c ON c.id = o.cliente_id
+            LEFT JOIN usuarios u ON u.id = o.responsavel_id
+            WHERE o.id = ?
+        ");
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op) return;
+        if ((int)$op['aceita_ligacao_consultor'] !== 1) return;
+        if (empty($op['consultor_whatsapp']) || empty($op['consultor_nome'])) return;
+
+        $msg = "Perfeito! O(a) {$op['consultor_nome']}, da nossa equipe, vai te ligar em breve. "
+             . "Se quiser chamar antes, o WhatsApp dele(a) é: {$op['consultor_whatsapp']}";
+        if (!zapiEnviarTexto($op['cliente_telefone'], $msg)) return;
+
+        $telNorm = normalizarTelefone($op['cliente_telefone']);
+        $stmtC = $db->prepare("SELECT id FROM clientes WHERE telefone = ?");
+        $stmtC->execute([$telNorm]);
+        $clienteId = $stmtC->fetchColumn();
+        $db->prepare("
+            INSERT INTO whatsapp_mensagens (telefone, cliente_id, direcao, mensagem, tipo, enviado_por_ia, created_at)
+            VALUES (?, ?, 'out', ?, 'text', 1, datetime('now','localtime'))
+        ")->execute([$telNorm, $clienteId !== false ? (int)$clienteId : null, $msg]);
+    } catch (Throwable $e) {
+        // melhor esforço — nunca pode travar a conclusão da qualificação.
+    }
+}
+
+/**
  * ÚNICO ponto do sistema que deve alterar oportunidades.etapa.
  * Grava o histórico (data + responsável) junto, sempre.
  */

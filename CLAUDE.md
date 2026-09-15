@@ -485,6 +485,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   (escolhido pelo rodízio da fila) recebe a notificação com o resumo assim
   que a IA conclui a qualificação, e o fallback dispara pra lista genérica
   quando não tem responsável.
+  **Telefone do consultor mandado pro cliente** (15/09/2026, pedido
+  José/Jean: "cliente aceitou que consultor ligar, encaminhar notificação
+  ao consultor e enviar telefone dele pro cliente") —
+  `enviarTelefoneConsultorAoCliente()` (`includes/oportunidades.php`)
+  dispara logo depois de `notificarConsultorLeadQualificado()`, só na
+  qualificação COMPLETA (nunca na escalação por estagnação — nesse caso
+  `aceita_ligacao_consultor` pode nem ter sido respondido ainda) e só
+  quando `aceita_ligacao_consultor` é `1` de verdade (checagem estrita —
+  recusou ou não respondeu não dispara nada). Manda uma mensagem pro
+  CLIENTE com o nome do consultor + `usuarios.whatsapp` dele, registrada
+  em `whatsapp_mensagens` como qualquer outra mensagem automática (mesmo
+  padrão do reengajamento do `cron/followup.php`) — assim o cliente não
+  fica só esperando a ligação, pode chamar direto se quiser. Sem
+  responsável definido ou sem WhatsApp cadastrado pra ele, não manda nada
+  (nunca manda mensagem quebrada/sem número nenhum). Testado ponta a ponta
+  com servidor Gemini+Z-API fake: aceitando a ligação, o cliente recebe as
+  2 mensagens (resposta da IA + telefone do consultor) na ordem certa,
+  registradas no histórico; recusando, só a resposta da IA e o aviso
+  interno pro consultor saem — telefone nunca é mandado.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)

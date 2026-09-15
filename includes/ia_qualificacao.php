@@ -420,6 +420,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
         }
         mudarEtapa($oportunidadeId, 'crm_preenchido', null, 'Qualificação IA concluída — encaminhado pro consultor');
         notificarConsultorLeadQualificado($oportunidadeId, 'Qualificação concluída');
+        enviarTelefoneConsultorAoCliente($oportunidadeId);
         $resultado['qualificacao_completa'] = true;
         return $resultado;
     }
