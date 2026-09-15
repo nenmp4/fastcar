@@ -345,9 +345,23 @@ segue no schema sem uso novo, não removida sem ganho real),
   perguntado — 0/recusou é resposta válida, não "vazio"). Além dos campos
   originais, coleta `urgencia` (texto livre — precisa vender rápido ou pode
   esperar) e `temperatura_lead` (`frio`/`morno`/`quente` — leitura da própria
-  IA sobre o engajamento da conversa até ali, reavaliada a cada turno; de
-  propósito NÃO conta como "avanço real" pro contador de estagnação, senão
-  o contador nunca dispararia). `whatsapp_sessoes.turnos_sem_avanco`
+  IA sobre a conversa até ali, reavaliada a cada turno; de propósito NÃO
+  conta como "avanço real" pro contador de estagnação, senão o contador
+  nunca dispararia). **Critério de temperatura ajustado em 15/09/2026**
+  (pedido do José/Jean, feedback direto vendo o relatório de
+  `admin/qualidade_ia.php`): antes o critério era só tom/engajamento da
+  conversa; agora o sinal PRINCIPAL é a situação financeira do
+  financiamento — muitas parcelas em atraso e sem outra opção pra resolver
+  = "quente" (dor financeira real, urgência de vender); parcelas em dia,
+  financiamento tranquilo = "frio" (Fastcar ainda compra, só que sem a
+  mesma pressa); "morno" no meio, incluindo o caso de quem já pagou boa
+  parte do financiamento (saldo baixo, poucas parcelas restantes) mesmo
+  sem atraso — já qualifica o lead, mas não com a urgência de quem está
+  atrasado. Tom/engajamento virou sinal secundário, só desempata dentro da
+  mesma faixa (não escala sozinho pra "quente" com parcela em dia).
+  **Badge de temperatura** (🔥/🌤️/❄️, mesmo dia — "coloca selo no lead")
+  visível na tabela do funil (`admin/index.php`) e no cabeçalho do detalhe
+  da oportunidade (`admin/oportunidade.php`). `whatsapp_sessoes.turnos_sem_avanco`
   incrementa a cada turno que não extraiu nenhum dado novo de verdade e
   reseta quando extrai; ao chegar em `IA_LIMITE_TURNOS_SEM_AVANCO` (5)
   turnos seguidos sem avanço, escala automaticamente pro consultor humano
@@ -1056,6 +1070,44 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    reconstruir a tabela toda, sem ganho real) mas a aplicação nunca mais
    escreve nem oferece esse valor — `admin/usuarios.php` não tem mais
    seletor de perfil, todo usuário novo criado por lá é `consultor`.
+   **Perfil `supervisor` adicionado em 15/09/2026** (pedido José/Jean:
+   "preciso ter perfil de supervisão que vai acompanhar tudo que
+   consultores está fazendo") — mesma VISÃO do `super_admin` (todas as
+   oportunidades no funil, WhatsApp Box inteiro sem filtro de
+   `responsavel_id`, Produtividade, Origem dos leads, Qualidade da IA),
+   mas só ACOMPANHA: nunca muda etapa, edita oportunidade/cliente, envia
+   mensagem, pausa IA ou exclui conversa — e não vê
+   Configurações/Frota/Usuários/Backup/Saúde (essas seguem exclusivas do
+   `super_admin`). Escopo confirmado direto com o usuário (2 perguntas:
+   "só acompanhar ou também agir?" → só acompanhar; "vê as telas restritas
+   hoje ao super_admin?" → não, só funil/WhatsApp). Implementado via
+   `includes/security.php::perfilVeTudo()` (`super_admin` OU `supervisor`
+   — controla o que a pessoa VÊ) separado de `requireSuperAdmin()`/checagem
+   direta de `admin_perfil==='super_admin'` (controla quem pode AGIR ou ver
+   telas administrativas) — `requireVisaoGeral()` novo trava
+   Produtividade/Qualidade da IA/Origem dos leads pros dois perfis, nunca
+   consultor. Toda rota que muda estado (`admin/oportunidade.php`,
+   `admin/cliente_detalhe.php`, `admin/whatsapp_inbox.php`) ganhou um guard
+   explícito bloqueando POST de `supervisor` no servidor — nunca confia só
+   em esconder o formulário na tela, porque isso não impede um POST
+   forjado. `admin/usuarios.php` voltou a ter seletor de perfil
+   (Consultor/Supervisor) na criação/edição — desde a mesclagem
+   consultor/closer só existia 1 opção; segue nunca oferecendo
+   `super_admin` por essa tela. `usuarios.perfil` precisou reconstruir a
+   tabela pra CHECK aceitar o valor novo (SQLite não tem ALTER TABLE pra
+   isso) — `install/migrar.php` faz isso de forma idempotente (só
+   reconstrói se a CHECK ainda não tiver `'supervisor'`, checando o SQL da
+   própria tabela em `sqlite_master` antes). Testado ponta a ponta via
+   HTTP com 3 contas reais (super_admin/consultor/supervisor): supervisor
+   vê dashboard geral + Produtividade + Qualidade da IA (200), bloqueado
+   de Configurações/Usuários/Veículos (403), vê o WhatsApp Box inteiro
+   mesmo sem ser responsável por nenhuma oportunidade, POST forjado de
+   enviar mensagem com CSRF válido roubado de outra página é rejeitado
+   pelo guard (não pelo CSRF), POST forjado de editar oportunidade também
+   bloqueado (403, banco confirmado sem alteração); migração testada
+   simulando um banco com o schema ANTIGO (rejeitava `supervisor` antes,
+   aceitava depois, dados de usuários existentes preservados, idempotente
+   numa 2ª rodada).
 5. **Anúncio/tráfego (bloco 1)** — combinado em 12/09/2026: anúncio "Clique
    para WhatsApp" do Meta — a WhatsApp Cloud API manda um `referral`
    (headline, source_id) na 1ª mensagem, capturado automaticamente em

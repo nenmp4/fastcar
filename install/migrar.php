@@ -219,4 +219,48 @@ if (!colunaExiste($db, 'whatsapp_mensagens', 'lida')) {
     echo "⏭️  whatsapp_mensagens.lida: já existia\n";
 }
 
+// 15/09/2026 — perfil 'supervisor' novo (pedido José/Jean: "preciso ter
+// perfil de supervisão que vai acompanhar tudo que consultores está
+// fazendo"). A CHECK de usuarios.perfil precisa aceitar esse valor —
+// SQLite não tem ALTER TABLE pra mudar CHECK constraint, só reconstruindo
+// a tabela (mesmo caso já documentado no CHECK original: "recriar a CHECK
+// sem ele exigiria reconstruir a tabela toda"). Idempotente: só reconstrói
+// se a CHECK atual ainda não aceitar 'supervisor' — checa o SQL da própria
+// tabela em sqlite_master antes de fazer qualquer coisa.
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='usuarios'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'supervisor'")) {
+        $db->exec('BEGIN');
+        $db->exec("
+            CREATE TABLE usuarios_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                email TEXT UNIQUE,
+                whatsapp TEXT DEFAULT '',
+                senha_hash TEXT NOT NULL,
+                perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor')),
+                bloqueado INTEGER DEFAULT 0,
+                disponivel INTEGER DEFAULT 0,
+                plantao_fim_expediente INTEGER DEFAULT 0,
+                ultimo_lead_recebido_em DATETIME,
+                posicao_fila INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $db->exec("
+            INSERT INTO usuarios_novo (id, nome, email, whatsapp, senha_hash, perfil, bloqueado, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at)
+            SELECT id, nome, email, whatsapp, senha_hash, perfil, bloqueado, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at FROM usuarios
+        ");
+        $db->exec('DROP TABLE usuarios');
+        $db->exec('ALTER TABLE usuarios_novo RENAME TO usuarios');
+        $db->exec('COMMIT');
+        echo "✅ usuarios.perfil: CHECK reconstruída pra aceitar 'supervisor'\n";
+    } else {
+        echo "⏭️  usuarios.perfil (CHECK supervisor): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { $db->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ usuarios.perfil (CHECK supervisor): {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -66,9 +66,11 @@ $contagemPorEtapa = array_column($stmtContagem->fetchAll(), 'total', 'etapa');
 $totalAtivas = array_sum($contagemPorEtapa);
 
 $stats = match ($perfil) {
-    'consultor'   => dashboardConsultor($meuId),
-    'super_admin' => dashboardSuperAdmin(),
-    default       => [],
+    'consultor' => dashboardConsultor($meuId),
+    // supervisor vê a mesma visão geral do super_admin (regra do
+    // perfilVeTudo() em includes/security.php), só não age.
+    'super_admin', 'supervisor' => dashboardSuperAdmin(),
+    default => [],
 };
 
 $agora = date('Y-m-d H:i:s');
@@ -101,11 +103,13 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <a href="/admin/clientes.php">👥 Clientes</a>
     <a href="/admin/vendas.php">💰 Vendas</a>
     <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
-    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+    <?php if (perfilVeTudo()): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
-        <a href="/admin/veiculos.php">🚗 Veículos</a>
         <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
         <a href="/admin/qualidade_ia.php">🤖 Qualidade da IA</a>
+    <?php endif; ?>
+    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+        <a href="/admin/veiculos.php">🚗 Veículos</a>
         <a href="/admin/usuarios.php">👤 Usuários</a>
         <a href="/admin/backup.php">💾 Backup</a>
         <a href="/admin/saude.php">🩺 Saúde do sistema</a>
@@ -164,7 +168,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
             <div class="rotulo">Taxa de conversão</div>
         </div>
     </div>
-<?php elseif ($perfil === 'super_admin'): ?>
+<?php elseif (perfilVeTudo()): ?>
     <div class="stat-grid">
         <div class="stat-card">
             <div class="valor"><?= (int)$stats['ativas'] ?></div>
@@ -226,6 +230,9 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
         <tr class="<?= $atrasada ? 'linha-atrasada' : '' ?>">
             <td>
                 <a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>"><?= e($op['cliente_nome'] ?: '(sem nome)') ?></a>
+                <?php if ($op['temperatura_lead']): ?>
+                    <?= ['quente' => '🔥', 'morno' => '🌤️', 'frio' => '❄️'][$op['temperatura_lead']] ?? '' ?>
+                <?php endif; ?>
                 <br><small><?= e($op['cliente_telefone']) ?></small>
             </td>
             <td><?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>

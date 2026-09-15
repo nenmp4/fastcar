@@ -19,7 +19,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-requireSuperAdmin();
+requireVisaoGeral();
 
 $dias = (int)($_GET['dias'] ?? 7);
 if (!in_array($dias, [1, 7, 30], true)) $dias = 7;

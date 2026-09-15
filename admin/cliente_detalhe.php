@@ -26,6 +26,9 @@ $sucesso = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
+        http_response_code(403);
+        $erro = 'Perfil de supervisão só acompanha, não edita cadastro de cliente.';
     } else {
         try {
             $db->prepare("

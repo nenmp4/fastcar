@@ -292,7 +292,14 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- install/migrar.php converte qualquer linha antiga pra 'consultor');
     -- recriar a CHECK sem ele exigiria reconstruir a tabela toda no SQLite,
     -- sem ganho real.
-    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor')),
+    -- 'supervisor' adicionado em 15/09/2026 (pedido José/Jean: "preciso ter
+    -- perfil de supervisão que vai acompanhar tudo que consultores está
+    -- fazendo") — mesma VISÃO do super_admin (todas as oportunidades,
+    -- WhatsApp Box inteiro, produtividade, qualidade da IA), mas só
+    -- ACOMPANHA: nunca muda etapa, envia mensagem ou edita cadastro, e não
+    -- vê Configurações/Frota/Vendas/Usuários/Saúde (ver
+    -- includes/security.php::perfilVeTudo()/requireVisaoGeral()).
+    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor')),
     bloqueado INTEGER DEFAULT 0,
 
     -- Fila de distribuição automática de leads (decisão do Jean,

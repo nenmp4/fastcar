@@ -62,6 +62,32 @@ function requireSuperAdmin(): void {
 }
 
 /**
+ * super_admin e supervisor têm a mesma VISÃO (empresa inteira: todas as
+ * oportunidades, conversas do WhatsApp, produtividade, qualidade da IA) —
+ * mas só super_admin pode AGIR fora da própria conta (mudar etapa, enviar
+ * mensagem, editar cadastro etc). 15/09/2026, pedido José/Jean: "preciso
+ * ter perfil de supervisão que vai acompanhar tudo que consultores está
+ * fazendo" — supervisor só acompanha, nunca substitui o consultor.
+ */
+function perfilVeTudo(): bool {
+    return in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'supervisor'], true);
+}
+
+/**
+ * Trava de permissão pras telas de acompanhamento geral (produtividade,
+ * qualidade da IA, origem de leads) — super_admin E supervisor, nunca
+ * consultor. Diferente de requireSuperAdmin(): essas telas são só
+ * LEITURA/relatório, não dão acesso a credencial nem ação destrutiva, por
+ * isso o supervisor entra aqui mas não em Configurações/Usuários/Backup.
+ */
+function requireVisaoGeral(): void {
+    if (!perfilVeTudo()) {
+        http_response_code(403);
+        exit('Acesso restrito.');
+    }
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra

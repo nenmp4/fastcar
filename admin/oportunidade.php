@@ -33,6 +33,12 @@ $marcaFeedback = null; // resultado de fipeValidarMarca() após salvar dados do 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
+        // Perfil de acompanhamento (15/09/2026, pedido José/Jean: "preciso
+        // ter perfil de supervisão que vai acompanhar tudo que consultores
+        // está fazendo") — vê tudo, mas não age em nome de ninguém.
+        http_response_code(403);
+        $erro = 'Perfil de supervisão só acompanha, não altera oportunidades.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         try {
@@ -266,6 +272,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <h2>#<?= (int)$op['id'] ?> — <?= e($op['cliente_nome'] ?: '(sem nome)') ?>
         <span class="badge"><?= e(etapaLabel($op['etapa'])) ?></span>
         <?php if ($atrasada): ?><span class="badge badge-atraso">⚠️ ação atrasada</span><?php endif; ?>
+        <?php if ($op['temperatura_lead']): ?>
+            <span class="badge" title="Leitura da IA sobre a urgência do lead">
+                <?= ['quente' => '🔥 Quente', 'morno' => '🌤️ Morno', 'frio' => '❄️ Frio'][$op['temperatura_lead']] ?? '' ?>
+            </span>
+        <?php endif; ?>
     </h2>
     <div class="grid-2">
         <div>

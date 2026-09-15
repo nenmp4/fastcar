@@ -9,7 +9,7 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/qualidade_ia.php';
-requireSuperAdmin();
+requireVisaoGeral();
 
 $funil = qualidadeIaFunilResultado();
 $porTemperatura = qualidadeIaTemperaturaVsResultado();

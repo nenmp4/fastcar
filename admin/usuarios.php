@@ -9,8 +9,13 @@
  *
  * Perfis 'consultor' e 'closer' foram mesclados em 13/09/2026 (pedido do
  * José) — na prática é a mesma pessoa que atende (bloco 5) e negocia/fecha
- * (bloco 6), então não existe mais escolha de perfil aqui: todo usuário
- * criado por essa tela é 'consultor'.
+ * (bloco 6), então não existe escolha de perfil "closer" aqui.
+ *
+ * 'supervisor' (15/09/2026, pedido José/Jean: "preciso ter perfil de
+ * supervisão que vai acompanhar tudo que consultores está fazendo") volta
+ * a dar 2 opções nessa tela — mesma visão do super_admin (todas as
+ * oportunidades, WhatsApp Box inteiro, produtividade, qualidade da IA),
+ * mas só acompanha, nunca age (ver includes/security.php::perfilVeTudo()).
  *
  * Instância Z-API própria por consultor foi RETIRADA daqui em 15/09/2026
  * (decisão do José/Jean: "manter só uma instância"). Atendimento agora é
@@ -41,9 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nome  = trim((string)($_POST['nome'] ?? ''));
             $email = trim((string)($_POST['email'] ?? ''));
             $senha = (string)($_POST['senha'] ?? '');
-            // Único perfil possível de criar por aqui desde a mesclagem
-            // consultor/closer (13/09/2026) — nunca lê de $_POST.
-            $perfil = 'consultor';
+            // Só 'consultor'/'supervisor' possíveis por aqui — nunca
+            // 'super_admin' (só o CLI create_admin.php cria isso), mesmo
+            // com POST forjado: qualquer outro valor cai pro padrão seguro.
+            $perfilPost = (string)($_POST['perfil'] ?? '');
+            $perfil = in_array($perfilPost, ['consultor', 'supervisor'], true) ? $perfilPost : 'consultor';
             $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
 
             if (!$nome || !$email || strlen($senha) < 8) {
@@ -68,9 +75,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $email = trim((string)($_POST['email'] ?? ''));
                 $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
                 // Nunca promove nem rebaixa super_admin por aqui; pra
-                // qualquer outro usuário só existe 'consultor' desde a
-                // mesclagem consultor/closer (13/09/2026) — não lê de $_POST.
-                $perfil = $alvo['perfil'] === 'super_admin' ? 'super_admin' : 'consultor';
+                // qualquer outro usuário, só 'consultor'/'supervisor' são
+                // valores aceitos vindos do POST (mesma trava de 'criar').
+                if ($alvo['perfil'] === 'super_admin') {
+                    $perfil = 'super_admin';
+                } else {
+                    $perfilPost = (string)($_POST['perfil'] ?? '');
+                    $perfil = in_array($perfilPost, ['consultor', 'supervisor'], true) ? $perfilPost : 'consultor';
+                }
                 $bloqueado = !empty($_POST['bloqueado']);
 
                 if ($id === (int)$_SESSION['admin_id'] && $bloqueado) {
@@ -102,7 +114,7 @@ $usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, dis
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
 
-$labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor'];
+$labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'supervisor' => 'Supervisor (acompanhamento)'];
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -150,8 +162,11 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor'];
                 <?php if ($editando && $editando['perfil'] === 'super_admin'): ?>
                     <input type="text" value="Super admin" disabled>
                 <?php else: ?>
-                    <input type="text" value="Consultor (atendimento e negociação)" disabled>
-                    <small>Único perfil possível por aqui — atende e negocia/fecha o mesmo negócio.</small>
+                    <?php $perfilAtual = $editando['perfil'] ?? 'consultor'; ?>
+                    <select name="perfil">
+                        <option value="consultor" <?= $perfilAtual === 'consultor' ? 'selected' : '' ?>>Consultor (atende e negocia/fecha)</option>
+                        <option value="supervisor" <?= $perfilAtual === 'supervisor' ? 'selected' : '' ?>>Supervisor (só acompanha, não age)</option>
+                    </select>
                 <?php endif; ?>
                 <label><?= $editando ? 'Nova senha (deixe em branco pra manter a atual)' : 'Senha (mínimo 8 caracteres)' ?></label>
                 <input type="password" name="<?= $editando ? 'nova_senha' : 'senha' ?>" autocomplete="new-password" <?= $editando ? '' : 'required minlength="8"' ?>>

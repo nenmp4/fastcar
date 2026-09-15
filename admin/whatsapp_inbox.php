@@ -17,10 +17,11 @@ require_once __DIR__ . '/_bootstrap.php';
 $telefoneGet = trim((string)($_GET['telefone'] ?? ''));
 $telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
 // "inbox vai mostrar todos ou leads do usuário que iniciou atendimento?"
-// (pergunta direta do José/Jean, 15/09/2026) — super_admin vê a caixa
-// inteira; consultor só vê conversa de cliente onde ele é responsavel_id
-// em alguma oportunidade, mesmo padrão "Minhas/Todas" de admin/index.php.
-$responsavelFiltro = $_SESSION['admin_perfil'] === 'super_admin' ? null : (int)$_SESSION['admin_id'];
+// (pergunta direta do José/Jean, 15/09/2026) — super_admin e supervisor
+// (perfilVeTudo(), 15/09/2026) veem a caixa inteira; consultor só vê
+// conversa de cliente onde ele é responsavel_id em alguma oportunidade,
+// mesmo padrão "Minhas/Todas" de admin/index.php.
+$responsavelFiltro = perfilVeTudo() ? null : (int)$_SESSION['admin_id'];
 
 // ── AJAX: mensagens novas (polling da conversa aberta) ─────────────────────
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
@@ -62,6 +63,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $viaAjax = ($_POST['ajax'] ?? '') === '1';
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
+        // Perfil de acompanhamento (15/09/2026) — vê a caixa inteira mas
+        // nunca manda mensagem, pausa IA ou exclui conversa por ninguém.
+        if ($viaAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'erro' => 'Perfil de supervisão só acompanha, não envia mensagem.']);
+            exit;
+        }
+        $erro = 'Perfil de supervisão só acompanha, não envia mensagem.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         $telPost = preg_replace('/\D/', '', (string)($_POST['telefone'] ?? ''));
@@ -235,14 +245,16 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?></div>
                 </div>
                 <div style="display:flex;gap:8px">
-                    <form method="post" class="inline">
-                        <?= csrfField() ?>
-                        <input type="hidden" name="acao" value="toggle_ia">
-                        <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                        <button type="submit" style="margin-top:0;padding:6px 12px;font-size:12.5px">
-                            <?= $contatoAtivo['ia_pausada'] ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?>
-                        </button>
-                    </form>
+                    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                        <form method="post" class="inline">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="toggle_ia">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <button type="submit" style="margin-top:0;padding:6px 12px;font-size:12.5px">
+                                <?= $contatoAtivo['ia_pausada'] ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?>
+                            </button>
+                        </form>
+                    <?php endif; ?>
                     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
                         <form method="post" class="inline" onsubmit="return confirm('Apagar essa conversa inteira? Não tem como desfazer.');">
                             <?= csrfField() ?>
@@ -276,14 +288,20 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 <?php endforeach; ?>
             </div>
 
-            <form method="post" class="wpp-form" id="wpp-form">
-                <?= csrfField() ?>
-                <input type="hidden" name="acao" value="enviar_mensagem">
-                <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                <input type="hidden" name="ajax" value="1">
-                <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
-                <button type="submit">Enviar</button>
-            </form>
+            <?php if ($_SESSION['admin_perfil'] === 'supervisor'): ?>
+                <div class="wpp-form" style="color:var(--texto-fraco);font-size:13px">
+                    👁️ Modo de acompanhamento — perfil de supervisão só visualiza, não envia mensagem.
+                </div>
+            <?php else: ?>
+                <form method="post" class="wpp-form" id="wpp-form">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="enviar_mensagem">
+                    <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                    <input type="hidden" name="ajax" value="1">
+                    <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                    <button type="submit">Enviar</button>
+                </form>
+            <?php endif; ?>
         <?php endif; ?>
     </section>
 </div>
