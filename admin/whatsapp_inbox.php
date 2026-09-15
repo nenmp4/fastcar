@@ -36,6 +36,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
     exit;
 }
 
+// ── AJAX: mensagens anteriores (botão "carregar mensagens anteriores") ─────
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
+    header('Content-Type: application/json');
+    $antesDe = (int)($_GET['before_id'] ?? 0);
+    if (!$telefoneAtivo || !$antesDe || !usuarioPodeVerConversaWhatsapp($telefoneAtivo, $responsavelFiltro)) {
+        echo json_encode(['mensagens' => []]);
+        exit;
+    }
+    echo json_encode(['mensagens' => buscarMensagensAntesId($telefoneAtivo, $antesDe)]);
+    exit;
+}
+
 // ── AJAX: lista de conversas (refresca a barra lateral sem recarregar tudo) ─
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
@@ -109,6 +121,7 @@ $busca = trim((string)($_GET['busca'] ?? ''));
 $conversas = listarConversasWhatsapp($busca, $responsavelFiltro);
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo) : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
+$primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
 $contatoAtivo = null;
 foreach ($conversas as $c) {
     if ($c['telefone'] === $telefoneAtivo) { $contatoAtivo = $c; break; }
@@ -247,8 +260,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 <?php if (!$mensagens): ?>
                     <p style="color:var(--texto-fraco);text-align:center;margin:auto">Nenhuma mensagem ainda.</p>
                 <?php endif; ?>
+                <?php if ($mensagens): ?>
+                    <button type="button" id="wpp-carregar-anteriores" style="align-self:center;margin-bottom:12px;padding:6px 14px;font-size:12.5px;background:var(--superficie);color:var(--texto-fraco);border:1px solid var(--borda);box-shadow:none">⬆️ Carregar mensagens anteriores</button>
+                <?php endif; ?>
                 <?php foreach ($mensagens as $m): ?>
-                    <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>">
+                    <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>" data-id="<?= (int)$m['id'] ?>">
                         <?= nl2br(e($m['mensagem'])) ?>
                         <small>
                             <?= date('d/m H:i', strtotime($m['created_at'])) ?>
@@ -275,9 +291,12 @@ if ($telefoneAtivo && !$contatoAtivo) {
 (function () {
     var telefone = <?= json_encode($telefoneAtivo) ?>;
     var ultimoId = <?= (int)$ultimoId ?>;
+    var primeiroId = <?= (int)$primeiroId ?>;
+    var semMaisAntigas = false;
     var meuNome = <?= json_encode($_SESSION['admin_nome'] ?? '') ?>;
     var thread = document.getElementById('wpp-thread');
     var form = document.getElementById('wpp-form');
+    var btnAnteriores = document.getElementById('wpp-carregar-anteriores');
     var csrf = document.querySelector('input[name="csrf_token"]');
 
     function escapeHtml(s) {
@@ -289,11 +308,60 @@ if ($telefoneAtivo && !$contatoAtivo) {
     function renderMsg(m) {
         var div = document.createElement('div');
         div.className = 'msg ' + (m.direcao === 'in' ? 'msg-in' : 'msg-out');
+        div.dataset.id = m.id;
         var rodape = new Date(m.created_at.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
         if (m.enviado_por_ia == 1) rodape += ' · 🤖 IA';
         if (m.usuario_nome) rodape += ' · 👤 ' + m.usuario_nome;
         div.innerHTML = escapeHtml(m.mensagem).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodape) + '</small>';
         return div;
+    }
+
+    // Já existe uma bolha renderizada pra esse id? (data-id) — usado pra
+    // não duplicar quando o polling periódico e a resposta otimista do
+    // próprio envio se cruzam (ver comentário na hora do submit abaixo).
+    function jaRenderizada(id) {
+        return !!thread.querySelector('[data-id="' + id + '"]');
+    }
+
+    // "⬆️ Carregar mensagens anteriores" (15/09/2026, achado real: "inbox
+    // não está mostrando conversa inteira" — a tela só carregava as
+    // últimas 50 mensagens ao abrir, sem jeito nenhum de ver o que veio
+    // antes numa conversa mais longa). Preserva a posição de rolagem ao
+    // inserir mensagens mais antigas no topo (sem isso a tela "pula" pro
+    // topo toda vez que clicar).
+    if (btnAnteriores) {
+        btnAnteriores.addEventListener('click', function () {
+            if (!primeiroId || semMaisAntigas) return;
+            btnAnteriores.disabled = true;
+            btnAnteriores.textContent = 'Carregando...';
+            fetch('?ajax=anteriores&telefone=' + encodeURIComponent(telefone) + '&before_id=' + primeiroId)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var msgs = data.mensagens || [];
+                    if (!msgs.length) {
+                        semMaisAntigas = true;
+                        btnAnteriores.textContent = 'Início da conversa';
+                        return;
+                    }
+                    var alturaAntes = thread.scrollHeight;
+                    var scrollAntes = thread.scrollTop;
+                    // msgs já vem em ordem cronológica (mais antiga primeiro) —
+                    // um fragmento só preserva essa ordem numa inserção única.
+                    var frag = document.createDocumentFragment();
+                    msgs.forEach(function (m) {
+                        if (!jaRenderizada(m.id)) frag.appendChild(renderMsg(m));
+                    });
+                    thread.insertBefore(frag, btnAnteriores.nextSibling);
+                    primeiroId = msgs[0].id;
+                    thread.scrollTop = scrollAntes + (thread.scrollHeight - alturaAntes);
+                    btnAnteriores.disabled = false;
+                    btnAnteriores.textContent = '⬆️ Carregar mensagens anteriores';
+                })
+                .catch(function () {
+                    btnAnteriores.disabled = false;
+                    btnAnteriores.textContent = '⬆️ Carregar mensagens anteriores';
+                });
+        });
     }
 
     if (thread) thread.scrollTop = thread.scrollHeight;
@@ -305,7 +373,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 .then(function (data) {
                     if (!data.mensagens || !data.mensagens.length) return;
                     data.mensagens.forEach(function (m) {
-                        thread.appendChild(renderMsg(m));
+                        if (!jaRenderizada(m.id)) thread.appendChild(renderMsg(m));
                         ultimoId = m.id;
                     });
                     thread.scrollTop = thread.scrollHeight;
@@ -371,13 +439,24 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     if (data.ok) {
                         textarea.value = '';
                         if (data.id) ultimoId = Math.max(ultimoId, data.id); // evita duplicar no próximo poll
-                        var div = document.createElement('div');
-                        div.className = 'msg msg-out';
-                        var agora = new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-                        var rodapeAgora = agora + (meuNome ? ' · 👤 ' + meuNome : '');
-                        div.innerHTML = escapeHtml(texto).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodapeAgora) + '</small>';
-                        thread.appendChild(div);
-                        thread.scrollTop = thread.scrollHeight;
+                        // Achado real (15/09/2026, "mando Olá, mostra que mandou duas
+                        // vezes"): o poll de 4s roda em paralelo e pode já estar em
+                        // trânsito com o after_id ANTIGO quando esse envio termina —
+                        // nesse caso ele chega DEPOIS e também renderiza essa mesma
+                        // mensagem (agora já salva no banco), gerando 2 bolhas pra 1
+                        // envio só. jaRenderizada() checa pelo data-id antes de
+                        // desenhar a bolha otimista — se o poll já desenhou primeiro,
+                        // não desenha de novo.
+                        if (!data.id || !jaRenderizada(data.id)) {
+                            var div = document.createElement('div');
+                            div.className = 'msg msg-out';
+                            if (data.id) div.dataset.id = data.id;
+                            var agora = new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+                            var rodapeAgora = agora + (meuNome ? ' · 👤 ' + meuNome : '');
+                            div.innerHTML = escapeHtml(texto).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodapeAgora) + '</small>';
+                            thread.appendChild(div);
+                            thread.scrollTop = thread.scrollHeight;
+                        }
                     } else {
                         alert(data.erro || 'Falha ao enviar.');
                     }

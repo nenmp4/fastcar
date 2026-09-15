@@ -89,6 +89,27 @@ function buscarMensagensConversa(string $telefone, int $limite = 50): array {
     return array_reverse($stmt->fetchAll());
 }
 
+/**
+ * Mensagens ANTERIORES a $antesDeId, em ordem cronológica — usado pelo
+ * "⬆️ Carregar mensagens anteriores" da tela (15/09/2026, achado real:
+ * "inbox não está mostrando conversa inteira" — buscarMensagensConversa()
+ * só carrega as últimas 50 mensagens ao abrir, sem nenhum jeito de ver o
+ * que veio antes disso; conversa mais longa que 50 mensagens simplesmente
+ * cortava o começo sem avisar ninguém).
+ */
+function buscarMensagensAntesId(string $telefone, int $antesDeId, int $limite = 50): array {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT m.*, u.nome AS usuario_nome
+        FROM whatsapp_mensagens m
+        LEFT JOIN usuarios u ON u.id = m.usuario_id
+        WHERE m.telefone = ? AND m.id < ?
+        ORDER BY m.id DESC LIMIT ?
+    ");
+    $stmt->execute([normalizarTelefone($telefone), $antesDeId, $limite]);
+    return array_reverse($stmt->fetchAll());
+}
+
 /** Mensagens novas desde $depoisDeId — usado pelo polling do front-end. */
 function buscarMensagensNovasConversa(string $telefone, int $depoisDeId): array {
     $db = getDB();

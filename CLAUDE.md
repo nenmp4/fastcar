@@ -241,6 +241,41 @@ segue no schema sem uso novo, não removida sem ganho real),
   real o cadastro e o histórico do funil continuam intactos, só a thread
   some. Testado em banco isolado: mensagens e sessão zeradas, cadastro do
   cliente preservado.
+  **Mensagem duplicada ao enviar** (15/09/2026, José: "mando olá ele mostra
+  que mandou duas vezes"): condição de corrida entre o polling de 4s e a
+  resposta do próprio envio. O JS desenhava a bolha otimista (texto que
+  acabou de mandar) assim que o `fetch` de envio respondia, e SEPARADAMENTE
+  o polling periódico desenhava toda mensagem nova que aparecesse — se o
+  polling já estava em trânsito com um `after_id` desatualizado (capturado
+  ANTES do envio terminar) e a resposta dele chegasse DEPOIS da mensagem já
+  ter sido salva no banco, ele desenhava a mesma mensagem, e a resposta
+  otimista do envio desenhava de novo em cima — 2 bolhas pra 1 envio só,
+  ambas com "👤 José", porque as duas vinham da mesma ação. Corrigido
+  marcando cada bolha desenhada com `data-id` (o id real da linha em
+  `whatsapp_mensagens`) e checando (`jaRenderizada()`) se já existe uma
+  bolha com aquele id antes de desenhar de novo — tanto no polling quanto
+  na resposta otimista do envio, dos dois lados da corrida. Testado com
+  Playwright simulando a corrida de propósito (interceptando a requisição
+  do polling pra atrasá-la até depois da resposta do envio chegar): antes
+  da correção geraria 2 bolhas, depois da correção sempre exatamente 1.
+  **Conversa não mostrava tudo** (mesmo dia, achado direto: "inbox não
+  está mostrando conversa inteira") — `buscarMensagensConversa()` sempre
+  carregava só as últimas 50 mensagens ao abrir a conversa, sem nenhum
+  jeito de ver o que veio antes numa conversa mais longa (silenciosamente,
+  sem nem avisar que tinha mais coisa) — mesma classe do bug do `LIMIT 100`
+  sem paginação já corrigido em `admin/clientes.php`. Botão
+  "⬆️ Carregar mensagens anteriores" no topo da thread busca a página
+  anterior via `buscarMensagensAntesId()` (`includes/whatsapp_inbox.php`,
+  `WHERE id < ? ORDER BY id DESC LIMIT 50`) e insere no topo preservando a
+  posição de rolagem (`scrollTop += crescimento do scrollHeight`, senão a
+  tela "pula" toda vez que clica); vira "Início da conversa" (desabilitado)
+  quando a resposta vem vazia — não tem mais nada antes daquilo. Testado
+  com Playwright ponta a ponta numa conversa de 70 mensagens: carga inicial
+  mostra as últimas 50 (msg 21-70), botão carrega as 20 restantes (msg
+  1-20) sem sobreposição/buraco (união das duas páginas = 70 únicas),
+  posição de rolagem preservada exatamente (Δscroll = Δaltura do
+  conteúdo), e 2º clique corretamente mostra "Início da conversa" sem
+  tentar buscar de novo.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
