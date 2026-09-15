@@ -507,6 +507,35 @@ segue no schema sem uso novo, não removida sem ganho real),
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
+- **Busca completa de FIPE (marca→modelo→ano→valor)** — 15/09/2026, José/Jean
+  pediram "vamos colocar em produção" depois de eu explicar a limitação da
+  integração FIPE existente (BrasilAPI v1, só validava a marca digitada,
+  sem busca de valor — `valor_fipe_referencia` era 100% digitado à mão).
+  `includes/fipe.php` ganhou um segundo conjunto de funções (`fipeV2*`,
+  Parallelum FIPE v2, com token) **separado** da v1 — `fipeValidarMarca()`
+  continua funcionando exatamente igual, sem token v2 configurado. Selects
+  em cascata (marca → modelo → ano) em `admin/oportunidade.php`, dentro do
+  card "Financiamento e contrato de compra", só aparecem quando
+  `config.fipe_v2_token` está preenchido (Configurações → 🚗 FIPE v2,
+  mesmo padrão de badge/teste-de-conexão dos outros provedores) —
+  `admin/fipe_ajax.php` serve cada nível em JSON conforme o consultor
+  escolhe. Ao achar o valor final, preenche o campo `valor_fipe_referencia`
+  sozinho, mas **nunca submete o formulário nem salva no banco** — o
+  consultor ainda revisa e clica "Salvar dados do contrato" (mesmo
+  espírito de "nada preenche sozinho sem confirmação humana" já usado no
+  resto do projeto). Cache de 7 dias pra marca/modelo/ano (mudam raro,
+  mesmo padrão `timestamp|json` da v1); busca de VALOR final nunca cacheada
+  de propósito — a FIPE atualiza a tabela todo mês (`referenceMonth` na
+  resposta), cachear geraria valor desatualizado. Testado ponta a ponta
+  com servidor FIPE v2 fake local + Playwright real: sem token nenhuma
+  chamada sai (nunca quebra a tela); token errado → API rejeita (401),
+  função devolve vazio sem cachear o erro; token certo → cascata completa
+  clicada no navegador de verdade preenche `valor_fipe_referencia` com o
+  valor certo (testado Toyota Corolla 2024 → "R$ 145.000,00" → campo
+  populado com `145000`). Ver pendência "a validar em produção": nome
+  exato dos campos da resposta real (principalmente o formato do `price`)
+  nunca confirmado contra a API de verdade, só contra a documentação
+  pública.
 - **Módulo cliente** — `admin/clientes.php` (lista/busca) +
   `admin/cliente_detalhe.php` (dados cadastrais + histórico de todas as
   oportunidades daquele telefone, incluindo veículo/placa e **data real de
@@ -1240,9 +1269,25 @@ testado com servidor fake local — nunca contra o serviço real:
   aceita tanto `referral` solto quanto `message.referral`, mas o nome/formato
   exato dos campos (`source_id`, `headline`, `ctwa_clid`) só dá pra confirmar
   com um clique de anúncio de teste passando pela Z-API real.
-- **API de marcas da FIPE (BrasilAPI)** — `includes/fipe.php` só foi testado
-  contra um servidor fake local simulando `/marcas/v1/carros`; validar o
-  formato de resposta real assim que rodar com internet livre.
+- **API de marcas da FIPE (BrasilAPI, v1)** — `includes/fipe.php` só foi
+  testado contra um servidor fake local simulando `/marcas/v1/carros`;
+  validar o formato de resposta real assim que rodar com internet livre.
+- **API FIPE v2 (Parallelum, busca completa)** — `includes/fipe.php`
+  (funções `fipeV2*`), `admin/fipe_ajax.php`, selects em cascata em
+  `admin/oportunidade.php`. Construída a partir da documentação pública
+  (fipe.parallelum.com.br/doc — ambiente de dev bloqueia fetch direto do
+  domínio), nunca contra a API real: endpoints
+  `/cars/brands`, `/cars/brands/{id}/models`,
+  `/cars/brands/{id}/models/{id}/years`,
+  `/cars/brands/{id}/models/{id}/years/{id}` com header
+  `X-Subscription-Token`, e o formato exato da resposta final (campos
+  `price`, `model`, `brand`, `modelYear`, `fuel`, `codeFipe`,
+  `referenceMonth`) só testados contra servidor fake local simulando os
+  formatos documentados. Confirmar contra a API real assim que tiver um
+  token de verdade: nome exato dos campos (principalmente `price` como
+  string "R$ X.XXX,XX" — se vier em formato diferente,
+  `fipeV2ParsearPreco()` precisa ajustar), e se o rate limit do plano
+  gratuito dá conta do uso real.
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
 - **API Gemini** — ✅ 1ª chamada real feita em 15/09/2026 (teste de conexão

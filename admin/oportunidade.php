@@ -351,13 +351,33 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <h3>📝 Financiamento e contrato de compra</h3>
     <p><small>Esses dados alimentam o Quadro-Resumo do contrato-mestre de compra (includes/contratos_pdf.php) — o
        consultor confirma com o cliente antes de gerar, a IA/sistema nunca preenche isso sozinho.</small></p>
+    <?php if (getConfig('fipe_v2_token')): ?>
+        <div id="fipe-busca" style="background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:12px;margin-bottom:14px">
+            <strong style="font-size:13px">🔍 Buscar valor FIPE (marca → modelo → ano)</strong>
+            <div class="grid-2" style="margin-top:8px">
+                <div>
+                    <label style="font-size:12px">Marca</label>
+                    <select id="fipe-marca" style="width:100%"><option value="">Carregando…</option></select>
+                </div>
+                <div>
+                    <label style="font-size:12px">Modelo</label>
+                    <select id="fipe-modelo" style="width:100%" disabled><option value="">Escolha a marca primeiro</option></select>
+                </div>
+            </div>
+            <div style="margin-top:8px">
+                <label style="font-size:12px">Ano/combustível</label>
+                <select id="fipe-ano" style="width:100%" disabled><option value="">Escolha o modelo primeiro</option></select>
+            </div>
+            <p id="fipe-resultado" style="font-size:12.5px;color:var(--texto-fraco);margin-top:8px"></p>
+        </div>
+    <?php endif; ?>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="atualizar_contrato">
         <div class="grid-2">
             <div>
                 <label>Valor FIPE de referência (R$)</label>
-                <input type="number" step="0.01" name="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
+                <input type="number" step="0.01" name="valor_fipe_referencia" id="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
                 <label>Valor ofertado ao vendedor (R$) — limitado a 25% da FIPE</label>
                 <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)($op['valor_ofertado'] ?? '')) ?>">
                 <label>Nº do contrato de financiamento</label>
@@ -594,6 +614,88 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <?php endforeach; ?>
     </div>
 </div>
+
+<?php if (getConfig('fipe_v2_token')): ?>
+<script>
+(function () {
+    // Selects em cascata pra busca completa FIPE v2 (marca→modelo→ano→valor)
+    // — 15/09/2026, "vamos colocar em produção" (Parallelum FIPE v2).
+    // Nunca sobrescreve o valor sozinho: só preenche o campo quando o
+    // consultor escolhe o ano/combustível final, ele ainda revisa e clica
+    // "Salvar dados do contrato" pra persistir — mesmo espírito de "IA/
+    // sistema nunca preenche sozinho" já documentado nesta tela.
+    var selMarca = document.getElementById('fipe-marca');
+    var selModelo = document.getElementById('fipe-modelo');
+    var selAno = document.getElementById('fipe-ano');
+    var resultado = document.getElementById('fipe-resultado');
+    var campoValor = document.getElementById('valor_fipe_referencia');
+    if (!selMarca) return;
+
+    function popular(select, itens, placeholder) {
+        select.innerHTML = '';
+        var optVazia = document.createElement('option');
+        optVazia.value = '';
+        optVazia.textContent = placeholder;
+        select.appendChild(optVazia);
+        itens.forEach(function (item) {
+            var opt = document.createElement('option');
+            opt.value = item.code;
+            opt.textContent = item.name;
+            select.appendChild(opt);
+        });
+        select.disabled = itens.length === 0;
+    }
+
+    fetch('/admin/fipe_ajax.php?acao=marcas')
+        .then(function (r) { return r.json(); })
+        .then(function (data) { popular(selMarca, data.marcas || [], 'Escolha a marca'); })
+        .catch(function () { selMarca.innerHTML = '<option value="">Falha ao carregar — tente recarregar a página</option>'; });
+
+    selMarca.addEventListener('change', function () {
+        selModelo.disabled = true;
+        selAno.disabled = true;
+        resultado.textContent = '';
+        if (!selMarca.value) return;
+        selModelo.innerHTML = '<option value="">Carregando…</option>';
+        fetch('/admin/fipe_ajax.php?acao=modelos&marca=' + encodeURIComponent(selMarca.value))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { popular(selModelo, data.modelos || [], 'Escolha o modelo'); })
+            .catch(function () {});
+    });
+
+    selModelo.addEventListener('change', function () {
+        selAno.disabled = true;
+        resultado.textContent = '';
+        if (!selModelo.value) return;
+        selAno.innerHTML = '<option value="">Carregando…</option>';
+        fetch('/admin/fipe_ajax.php?acao=anos&marca=' + encodeURIComponent(selMarca.value) + '&modelo=' + encodeURIComponent(selModelo.value))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { popular(selAno, data.anos || [], 'Escolha o ano'); })
+            .catch(function () {});
+    });
+
+    selAno.addEventListener('change', function () {
+        resultado.textContent = '';
+        if (!selAno.value) return;
+        resultado.textContent = 'Buscando valor…';
+        fetch('/admin/fipe_ajax.php?acao=valor&marca=' + encodeURIComponent(selMarca.value)
+            + '&modelo=' + encodeURIComponent(selModelo.value) + '&ano=' + encodeURIComponent(selAno.value))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.ok) {
+                    resultado.textContent = '⚠️ Não consegui buscar o valor agora — confira o token da FIPE em Configurações.';
+                    return;
+                }
+                if (campoValor && data.preco_numero) campoValor.value = data.preco_numero;
+                resultado.textContent = '✅ ' + data.preco_texto + ' — ' + data.marca + ' ' + data.modelo
+                    + ' (' + data.ano_modelo + ', ' + data.combustivel + ') — referência ' + data.mes_referencia
+                    + '. Preenchido no campo abaixo, confira antes de salvar.';
+            })
+            .catch(function () { resultado.textContent = '⚠️ Falha ao buscar o valor — tente de novo.'; });
+    });
+})();
+</script>
+<?php endif; ?>
 
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>

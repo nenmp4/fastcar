@@ -25,6 +25,10 @@ $camposZapsign = [
     'zapsign_api_token' => 'Token da API ZapSign',
 ];
 
+$camposFipe = [
+    'fipe_v2_token' => 'Token da API FIPE v2 (Parallelum, fipe.parallelum.com.br)',
+];
+
 $camposEmail = [
     'email_from'      => 'E-mail remetente — precisa ser uma caixa real do Google Workspace (ex: contato@fastcar.solutions)',
     'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
@@ -82,6 +86,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
             $sucesso = 'Configurações da ZapSign salvas.';
+        } elseif ($acao === 'salvar_fipe') {
+            foreach (array_keys($camposFipe) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da FIPE salvas.';
+        } elseif ($acao === 'testar_fipe') {
+            if (!fipeV2Token()) {
+                $erro = 'Configure e salve o token da FIPE v2 antes de testar.';
+            } else {
+                $marcas = fipeV2ListarMarcas();
+                if ($marcas) {
+                    $sucesso = 'FIPE v2 respondeu: ' . count($marcas) . ' marca(s) encontrada(s) — conexão funcionando.';
+                } else {
+                    $erro = 'Falha no teste: token inválido, ou a API não respondeu.';
+                }
+            }
         } elseif ($acao === 'salvar_email') {
             foreach (array_keys($camposEmail) as $chave) {
                 // brevo_api_key é opaco (só trim); os outros dois passam por clean()
@@ -337,6 +357,36 @@ $fila = listarFilaConsultores();
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
         <button type="submit">Salvar</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🚗 FIPE v2 (busca completa — marca/modelo/ano/valor)</h2>
+    <p><small>Adicionado 15/09/2026 — busca completa via Parallelum FIPE v2, usada em
+       <code>admin/oportunidade.php</code> pros selects em cascata (marca → modelo → ano) que preenchem o valor FIPE
+       automaticamente. Separada da validação de marca "sozinha" (BrasilAPI, sem token) que já funciona mesmo sem
+       nada configurado aqui. Token gerado em <code>fipe.parallelum.com.br</code>.</small></p>
+    <p>
+        Status:
+        <span class="badge <?= getConfig('fipe_v2_token') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('fipe_v2_token') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_fipe">
+        <?php foreach ($camposFipe as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
+                   placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar</button>
+    </form>
+    <form method="post" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_fipe">
+        <button type="submit" <?= getConfig('fipe_v2_token') ? '' : 'disabled' ?>>Testar conexão</button>
     </form>
 </div>
 
