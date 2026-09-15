@@ -391,6 +391,13 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
     $texto = extrairTexto($payload);
     $tipoRegistro = 'text';
+    // Declarados fora do bloco de mídia abaixo (não só dentro do if) porque
+    // salvarMidiaWhatsappRecebida() mais adiante checa $bytesMidia mesmo
+    // quando a mensagem é texto puro — sem isso, PHP dispara "undefined
+    // variable" em toda mensagem de texto normal (achado real testando o
+    // fluxo de qualificação de ponta a ponta).
+    $bytesMidia = null;
+    $mime = '';
     if ($texto === null) {
         $tipoBruto = tipoMidia($payload);
 
@@ -410,8 +417,6 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         }
 
         $textoMidia = '';
-        $bytesMidia = null;
-        $mime = '';
         if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
             $url = extrairUrlMidia($payload, $tipoBruto);
             if ($url) {

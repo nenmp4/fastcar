@@ -361,7 +361,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   mesma faixa (não escala sozinho pra "quente" com parcela em dia).
   **Badge de temperatura** (🔥/🌤️/❄️, mesmo dia — "coloca selo no lead")
   visível na tabela do funil (`admin/index.php`) e no cabeçalho do detalhe
-  da oportunidade (`admin/oportunidade.php`). `whatsapp_sessoes.turnos_sem_avanco`
+  da oportunidade (`admin/oportunidade.php`).
+  **Veículo já quitado agora desqualifica** (mesmo dia, achado real vendo a
+  oportunidade #13 no admin — "esse tipo desqualificado porém o setor de
+  vendas pode trabalhar sobre lead"): o foco da Fastcar é comprar veículo
+  AINDA financiado (assumir a dívida); antes disso, um cliente confirmando
+  "já está quitado" era tratado como lead válido normal (`qualificacao_completa`
+  aceitava "banco+parcela OU confirmação de quitado" como caminho pra
+  completar) e podia até sair "🔥 Quente" (achado literal: PCX 2024 quitada,
+  R$15.000 pretendido, marcada Quente). Confirmado com o usuário (2
+  perguntas diretas): agora `sem_perfil=true` assim que o cliente confirma
+  quitação, com `motivo_sem_perfil` explicando "fora do foco de compra
+  financiada, possível oportunidade pro setor de vendas" — a oportunidade
+  encerra em `sem_perfil` normalmente (regra existente, `marcarPerdida()`),
+  o motivo fica visível pro consultor no detalhe (`admin/oportunidade.php`,
+  "Oportunidade encerrada — Sem perfil de compra: [motivo]") — decisão
+  explícita de NÃO criar nenhum roteamento/fila nova pro "setor de vendas"
+  agora, só deixar registrado pra quem olhar decidir manualmente. IA
+  instruída a nunca dizer "não compramos" pro cliente, só agradecer e
+  encerrar a qualificação com educação (mesmo tom do caso "não quero
+  vender"). Testado ponta a ponta com servidor Gemini fake simulando a
+  extração: `etapa` vira `sem_perfil`, `motivo_perda` grava o texto certo,
+  `oportunidade_historico` registra a transição — sem regressão na
+  qualificação normal (veículo financiado continua completando normal).
+  **Bug real achado durante esse teste**: mensagem de texto puro (não
+  mídia) disparava `PHP Warning: Undefined variable $bytesMidia` — a
+  variável usada pra salvar mídia (bullet acima, mesmo dia) só era
+  declarada DENTRO do bloco `if ($texto === null)`, mas era lida mais
+  adiante incondicionalmente; corrigido declarando `$bytesMidia`/`$mime`
+  antes do branch, pra toda mensagem (texto ou mídia) passar por ali sem
+  warning. `whatsapp_sessoes.turnos_sem_avanco`
   incrementa a cada turno que não extraiu nenhum dado novo de verdade e
   reseta quando extrai; ao chegar em `IA_LIMITE_TURNOS_SEM_AVANCO` (5)
   turnos seguidos sem avanço, escala automaticamente pro consultor humano
