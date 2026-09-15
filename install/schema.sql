@@ -306,6 +306,11 @@ CREATE TABLE IF NOT EXISTS usuarios (
 CREATE TABLE IF NOT EXISTS contratos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    -- Preenchido só quando tipo='venda' — desambigua QUAL negociação de
+    -- revenda gerou esse contrato (um mesmo veículo/oportunidade pode ter
+    -- mais de uma linha em `vendas` ao longo do tempo, se uma negociação
+    -- cair e outro comprador aparecer depois). NULL pra contrato de compra.
+    venda_id INTEGER REFERENCES vendas(id),
     tipo TEXT NOT NULL DEFAULT 'compra' CHECK (tipo IN ('compra', 'venda')),
     nome TEXT DEFAULT '',              -- nome do documento (ex: "Contrato de Compra - João Silva")
     campos_json TEXT DEFAULT '{}',     -- snapshot dos dados usados no merge, pra auditoria
@@ -338,3 +343,87 @@ CREATE TABLE IF NOT EXISTS contratos (
 );
 CREATE INDEX IF NOT EXISTS idx_contratos_oportunidade ON contratos(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_contratos_zapsign_doc ON contratos(zapsign_doc_token);
+
+-- Módulo de VENDAS (14/09/2026) — Fastcar revende um veículo já comprado
+-- (frota = oportunidades com etapa='fechado'). Cada linha aqui é UMA
+-- negociação de revenda pra um veículo específico; pode ter mais de uma ao
+-- longo do tempo se uma cair (etapa='cancelada') e outro comprador
+-- aparecer depois — por isso 1:N com oportunidades, nunca 1:1. Dados do
+-- veículo em si (marca/modelo/placa/renavam/chassi/banco_financiamento/
+-- saldo_financiamento_atual) NÃO são duplicados aqui — vêm sempre de
+-- oportunidades (mesma fonte de verdade); só o que é específico da REVENDA
+-- (comprador, condições da venda) mora aqui. Segue o mesmo padrão de
+-- disciplina de etapa do funil de compra (mudarEtapaVenda(), nunca UPDATE
+-- direto — includes/vendas.php).
+CREATE TABLE IF NOT EXISTS vendas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+
+    etapa TEXT NOT NULL DEFAULT 'negociacao'
+        CHECK (etapa IN ('negociacao', 'contrato_enviado', 'vendido', 'cancelada')),
+    responsavel_id INTEGER REFERENCES usuarios(id),
+    proxima_acao TEXT DEFAULT '',
+    proxima_acao_em DATETIME,
+    motivo_cancelamento TEXT DEFAULT '',
+
+    -- Qualificação civil do COMPRADOR — colunas próprias aqui, não
+    -- `clientes`: comprador de revenda é um contato diferente do vendedor
+    -- original que trouxe o veículo pra Fastcar, e o mesmo telefone
+    -- poderia em tese aparecer nos dois papéis em momentos diferentes —
+    -- clientes.telefone é UNIQUE pro funil de COMPRA, não serviria aqui.
+    comprador_nome TEXT DEFAULT '',
+    comprador_nacionalidade TEXT DEFAULT 'brasileiro(a)',
+    comprador_estado_civil TEXT DEFAULT '',
+    comprador_profissao TEXT DEFAULT '',
+    comprador_rg TEXT DEFAULT '',
+    comprador_cpf TEXT DEFAULT '',
+    comprador_cnh TEXT DEFAULT '',
+    comprador_endereco TEXT DEFAULT '',
+    comprador_telefone TEXT DEFAULT '',
+    comprador_email TEXT DEFAULT '',
+
+    -- Condições da venda — Quadro-Resumo do contrato-mestre de venda
+    -- (includes/contratos_pdf.php::gerarPdfContratoVenda(), transcrito de
+    -- 01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx)
+    km_entrega INTEGER,
+    preco_venda REAL,                  -- "Preço ajustado entre FASTCAR e COMPRADOR"
+    valor_pago_contratacao REAL,       -- valor pago pelo comprador na contratação
+    forma_pagamento TEXT DEFAULT '',
+    saldo_preco_devido REAL,           -- NULL/0 = "inexistente" no Quadro-Resumo
+    prazo_quitacao_meses INTEGER DEFAULT 24,  -- nunca > 24 (mesmo limite da cláusula 3.1 do modelo)
+    data_limite_quitacao DATE,
+    prestacao_contas_texto TEXT DEFAULT '',
+    seguro_texto TEXT DEFAULT '',
+    ipva_responsavel_texto TEXT DEFAULT '',
+    multas_texto TEXT DEFAULT 'COMPRADOR, na extensão legal aplicável',
+    rastreador_texto TEXT DEFAULT '',
+    prazo_transferencia_dias INTEGER,
+    penalidade_atraso_texto TEXT DEFAULT '',
+
+    data_venda DATE,                   -- quando etapa vira 'vendido'
+
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_vendas_oportunidade ON vendas(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_vendas_etapa ON vendas(etapa);
+CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em);
+-- Só 1 negociação ATIVA por veículo por vez (negociacao/contrato_enviado)
+-- — trava também no banco (índice único parcial), não só na aplicação;
+-- uma negociação cancelada libera o veículo pra uma nova tentativa.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_ativa_por_veiculo
+    ON vendas(oportunidade_id) WHERE etapa IN ('negociacao', 'contrato_enviado');
+
+-- Mesma disciplina de histórico do funil de compra (regra #6) — nunca
+-- UPDATE direto em vendas.etapa, sempre por mudarEtapaVenda()
+-- (includes/vendas.php), que grava aqui junto.
+CREATE TABLE IF NOT EXISTS venda_historico (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    venda_id INTEGER NOT NULL REFERENCES vendas(id),
+    etapa_anterior TEXT DEFAULT '',
+    etapa_nova TEXT NOT NULL,
+    responsavel_id INTEGER REFERENCES usuarios(id),
+    observacao TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_venda_historico_venda ON venda_historico(venda_id);

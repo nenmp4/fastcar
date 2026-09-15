@@ -21,6 +21,7 @@ require_once __DIR__ . '/contratos_pdf.php';
 require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php'; // garantirPastaDriveCliente()
+require_once __DIR__ . '/vendas.php'; // mudarEtapaVenda() — auto-transição ao gerar/assinar contrato de venda
 
 const CONTRATOS_STATUS_ZAPSIGN = [
     'signed'  => 'assinado',
@@ -184,6 +185,163 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
 }
 
 /**
+ * Monta os campos do merge do contrato de VENDA a partir da venda +
+ * oportunidade (dados do veículo/financiamento — mesma fonte de verdade do
+ * contrato de compra, nunca duplicados em `vendas`). Ver includes/vendas.php
+ * pro resto da lógica de negócio do módulo de vendas.
+ */
+function montarCamposContratoVenda(int $vendaId): ?array {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT v.*, o.id AS oportunidade_id, o.cliente_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
+               o.veiculo_placa, o.veiculo_renavam, o.veiculo_chassi, o.banco_financiamento,
+               o.contrato_financiamento_numero, o.saldo_financiamento_atual, o.valor_fipe_referencia
+        FROM vendas v JOIN oportunidades o ON o.id = v.oportunidade_id
+        WHERE v.id = ?
+    ");
+    $stmt->execute([$vendaId]);
+    $v = $stmt->fetch();
+    if (!$v) return null;
+
+    return [
+        'comprador_nome'                => $v['comprador_nome'] ?: '',
+        'comprador_nacionalidade'       => $v['comprador_nacionalidade'] ?: 'brasileiro(a)',
+        'comprador_estado_civil'        => $v['comprador_estado_civil'] ?: '',
+        'comprador_profissao'           => $v['comprador_profissao'] ?: '',
+        'comprador_rg'                  => $v['comprador_rg'] ?: '',
+        'comprador_cpf'                 => $v['comprador_cpf'] ?: '',
+        'comprador_cnh'                 => $v['comprador_cnh'] ?: '',
+        'comprador_endereco'            => $v['comprador_endereco'] ?: '',
+        'comprador_telefone'            => $v['comprador_telefone'] ?: '',
+        'comprador_email'               => $v['comprador_email'] ?: '',
+        'veiculo_marca'                 => $v['veiculo_marca'] ?: '',
+        'veiculo_modelo'                => $v['veiculo_modelo'] ?: '',
+        'veiculo_ano'                   => $v['veiculo_ano'] ?: '',
+        'veiculo_placa'                 => $v['veiculo_placa'] ?: '',
+        'veiculo_renavam'               => $v['veiculo_renavam'] ?: '',
+        'veiculo_chassi'                => $v['veiculo_chassi'] ?: '',
+        'km_entrega'                    => $v['km_entrega'] !== null ? (int)$v['km_entrega'] : null,
+        'valor_fipe_referencia'         => $v['valor_fipe_referencia'] !== null ? (float)$v['valor_fipe_referencia'] : null,
+        'preco_venda'                   => $v['preco_venda'] !== null ? (float)$v['preco_venda'] : null,
+        'valor_pago_contratacao'        => $v['valor_pago_contratacao'] !== null ? (float)$v['valor_pago_contratacao'] : null,
+        'forma_pagamento'               => $v['forma_pagamento'] ?: '',
+        'saldo_preco_devido'            => $v['saldo_preco_devido'] !== null ? (float)$v['saldo_preco_devido'] : null,
+        'banco_financiamento'           => $v['banco_financiamento'] ?: '',
+        'contrato_financiamento_numero' => $v['contrato_financiamento_numero'] ?: '',
+        'saldo_financiamento_atual'     => $v['saldo_financiamento_atual'] !== null ? (float)$v['saldo_financiamento_atual'] : null,
+        'prazo_quitacao_meses'          => (int)($v['prazo_quitacao_meses'] ?: 24),
+        'data_limite_quitacao'          => $v['data_limite_quitacao'] ? date('d/m/Y', strtotime($v['data_limite_quitacao'])) : '',
+        'prestacao_contas_texto'        => $v['prestacao_contas_texto'] ?: '',
+        'seguro_texto'                  => $v['seguro_texto'] ?: '',
+        'ipva_responsavel_texto'        => $v['ipva_responsavel_texto'] ?: '',
+        'multas_texto'                  => $v['multas_texto'] ?: '',
+        'rastreador_texto'              => $v['rastreador_texto'] ?: '',
+        'prazo_transferencia_dias'      => $v['prazo_transferencia_dias'] !== null ? (int)$v['prazo_transferencia_dias'] : null,
+        'penalidade_atraso_texto'       => $v['penalidade_atraso_texto'] ?: '',
+        'testemunha1_nome'              => getConfig('testemunha1_nome') ?: '',
+        'testemunha1_cpf'               => getConfig('testemunha1_cpf') ?: '',
+        'testemunha2_nome'              => getConfig('testemunha2_nome') ?: '',
+        'testemunha2_cpf'               => getConfig('testemunha2_cpf') ?: '',
+        'data_extenso'                  => formatarDataExtensoPtBr(date('Y-m-d')),
+        '_venda_id'                     => (int)$v['id'],
+        '_oportunidade_id'              => (int)$v['oportunidade_id'],
+        '_cliente_id'                   => (int)$v['cliente_id'],
+        '_telefone'                     => $v['comprador_telefone'] ?: '',
+        '_email'                        => $v['comprador_email'] ?: '',
+    ];
+}
+
+/**
+ * Campos sem os quais o contrato de venda não deveria ser gerado — mesmo
+ * espírito de verificarCamposObrigatoriosContrato() (compra), adaptado pro
+ * lado do COMPRADOR.
+ */
+function verificarCamposObrigatoriosContratoVenda(array $campos): array {
+    $obrigatorios = [
+        'comprador_nome' => 'Nome do comprador', 'comprador_cpf' => 'CPF do comprador',
+        'comprador_rg' => 'RG do comprador', 'preco_venda' => 'Preço ajustado (bloco de negociação)',
+    ];
+    $faltando = [];
+    foreach ($obrigatorios as $campo => $label) {
+        if (empty($campos[$campo]) && $campos[$campo] !== 0.0) $faltando[] = $label;
+    }
+    return $faltando;
+}
+
+/**
+ * Gera o PDF do contrato de venda, manda pra assinatura eletrônica e
+ * registra em `contratos` (tipo='venda', venda_id preenchido — desambigua
+ * qual negociação de revenda gerou esse contrato específico). Mesmo padrão
+ * de gerarEEnviarContratoCompra(): nunca decide sozinho se segue, só avisa.
+ */
+function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
+    $campos = montarCamposContratoVenda($vendaId);
+    if (!$campos) return ['ok' => false, 'erro' => 'Venda não encontrada.'];
+
+    $faltando = verificarCamposObrigatoriosContratoVenda($campos);
+    if ($faltando) {
+        return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
+    }
+
+    $aviso = !$campos['_email']
+        ? 'Comprador sem e-mail cadastrado — o contrato vai só pelo WhatsApp/telefone pra assinatura.'
+        : null;
+
+    $pdfPath = gerarPdfContratoVenda($campos);
+    $nomeDoc = 'Contrato de Venda - ' . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+
+    // Mesmo padrão do contrato de compra: cópia própria salva ANTES de
+    // mandar pra assinatura, pra dar pra visualizar no sistema mesmo
+    // enquanto espera assinatura (admin/ver_contrato.php, já genérico —
+    // funciona pra compra e venda sem mudar nada). Âncora do Drive segue
+    // sendo o cliente original (VENDEDOR que trouxe o veículo pra Fastcar)
+    // — não existe cadastro em `clientes` pro COMPRADOR da revenda (ver
+    // includes/vendas.php), então a pasta do veículo/processo continua
+    // sendo a mesma dos documentos de compra desse mesmo carro.
+    $nomeArquivoCopia = 'contrato_venda_' . $vendaId . '_' . time() . '.pdf';
+    $copia = salvarArquivoGeradoComoDocumento(
+        $campos['_cliente_id'], $campos['comprador_nome'], $pdfPath, $nomeArquivoCopia,
+        'application/pdf', 'contratos/' . $campos['_oportunidade_id']
+    );
+
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email']);
+    @unlink($pdfPath);
+    if (isset($docRes['error'])) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
+    }
+
+    $db = getDB();
+    $db->prepare("
+        INSERT INTO contratos
+            (oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, ?, 'venda', ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
+    ")->execute([
+        $campos['_oportunidade_id'], $vendaId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
+        $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
+    ]);
+    $contratoId = (int)$db->lastInsertId();
+
+    // Diferente da compra, enviar o contrato pra assinatura já move a
+    // negociação pra 'contrato_enviado' (só na 1ª vez — reenvio/correção
+    // gerando o contrato de novo não regride nem duplica a transição) —
+    // não existe um checklist de documentos bloqueando isso (regra #7 é
+    // só do funil de compra); fica tudo registrado no histórico de
+    // `contratos` de qualquer forma, igual compra.
+    $etapaAtualVenda = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
+    $etapaAtualVenda->execute([$vendaId]);
+    if ($etapaAtualVenda->fetchColumn() === 'negociacao') {
+        mudarEtapaVenda($vendaId, 'contrato_enviado', $usuarioId, 'Contrato gerado e enviado pra assinatura');
+    }
+
+    return [
+        'ok' => true,
+        'contrato_id' => $contratoId,
+        'sign_url' => $docRes['sign_url'],
+        'aviso' => $aviso,
+    ];
+}
+
+/**
  * Consulta o status do contrato na ZapSign e sincroniza — usado pelo
  * webhook (api/zapsign_webhook.php) e pelo polling de fallback
  * (cron/zapsign_sync.php). Quando assinado, baixa o PDF final e sobe pra
@@ -223,14 +381,20 @@ function zapsignSincronizarContrato(int $contratoId): void {
             $tmp = tempnam(sys_get_temp_dir(), 'contrato_assinado_') . '.pdf';
             file_put_contents($tmp, $conteudo);
 
+            // Âncora do Drive é sempre o cliente original (VENDEDOR que
+            // trouxe o veículo) — compra E venda, mesmo veículo/processo,
+            // mesma pasta (ver gerarEEnviarContratoVenda() pro motivo: não
+            // existe cadastro em `clientes` pro COMPRADOR da revenda).
             $stmtCli = $db->prepare("
                 SELECT cl.id, cl.nome FROM oportunidades o JOIN clientes cl ON cl.id = o.cliente_id WHERE o.id = ?
             ");
             $stmtCli->execute([$c['oportunidade_id']]);
             $cli = $stmtCli->fetch();
 
+            $ehVenda = $c['tipo'] === 'venda';
+            $nomeArquivo = ($ehVenda ? 'contrato_venda_assinado_' . $c['venda_id'] : 'contrato_compra_assinado_' . $c['oportunidade_id']) . '.pdf';
+
             if ($cli) {
-                $nomeArquivo = 'contrato_compra_assinado_' . $c['oportunidade_id'] . '.pdf';
                 $copia = salvarArquivoGeradoComoDocumento(
                     (int)$cli['id'], $cli['nome'] ?: "Cliente #{$cli['id']}", $tmp, $nomeArquivo,
                     'application/pdf', 'contratos/' . $c['oportunidade_id']
@@ -242,11 +406,25 @@ function zapsignSincronizarContrato(int $contratoId): void {
             }
             @unlink($tmp);
 
-            // A pasta fechada (bloco 8, regra #7) só conta esse documento
-            // como presente aqui — na geração (ainda sem assinar) de
-            // propósito NÃO grava em oportunidade_documentos, senão o
-            // checklist de fechamento passaria mesmo sem assinatura.
-            if ($driveFileId || $arquivoUrl) {
+            if ($ehVenda) {
+                // Módulo de venda não tem checklist de fechamento (regra #7
+                // é só do funil de compra) — assinatura do comprador marca
+                // a negociação como concluída direto, só se ainda estava
+                // 'contrato_enviado' (nunca força de volta se alguém já
+                // cancelou a negociação manualmente nesse meio-tempo).
+                if ($driveFileId || $arquivoUrl) {
+                    $etapaVendaAtual = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
+                    $etapaVendaAtual->execute([$c['venda_id']]);
+                    if ($etapaVendaAtual->fetchColumn() === 'contrato_enviado') {
+                        mudarEtapaVenda((int)$c['venda_id'], 'vendido', null, 'Contrato assinado pelo comprador (ZapSign)');
+                    }
+                }
+            } elseif ($driveFileId || $arquivoUrl) {
+                // A pasta fechada (bloco 8, regra #7) só conta esse
+                // documento como presente aqui — na geração (ainda sem
+                // assinar) de propósito NÃO grava em oportunidade_documentos,
+                // senão o checklist de fechamento passaria mesmo sem
+                // assinatura.
                 $db->prepare("
                     INSERT INTO oportunidade_documentos (oportunidade_id, tipo, drive_file_id, arquivo_url, obrigatorio, enviado_pelo_cliente, updated_at)
                     VALUES (?, 'contrato_compra', ?, ?, 1, 0, datetime('now','localtime'))

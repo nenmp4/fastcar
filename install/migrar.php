@@ -31,6 +31,77 @@ function colunaExiste(PDO $db, string $tabela, string $coluna): bool {
     return false;
 }
 
+// 15/09/2026 — módulo de vendas ("você colocar galera para fazer o fluxo e
+// fechar pontas soltas"). Tabelas NOVAS (não coluna em tabela existente)
+// não entram no loop de ALTER TABLE abaixo — CREATE TABLE IF NOT EXISTS é
+// idempotente por si só, mas só roda de verdade num banco já existente se
+// chamado explicitamente aqui: criarSchema() (includes/db.php) só roda o
+// schema.sql inteiro na 1ª conexão de um banco que ainda não existe, então
+// um banco de produção já criado antes de hoje nunca veria `vendas`/
+// `venda_historico` sem isso. Texto idêntico ao de install/schema.sql —
+// se um dia divergir, o schema.sql é a fonte de verdade.
+$tabelasVendas = "
+    CREATE TABLE IF NOT EXISTS vendas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+        etapa TEXT NOT NULL DEFAULT 'negociacao'
+            CHECK (etapa IN ('negociacao', 'contrato_enviado', 'vendido', 'cancelada')),
+        responsavel_id INTEGER REFERENCES usuarios(id),
+        proxima_acao TEXT DEFAULT '',
+        proxima_acao_em DATETIME,
+        motivo_cancelamento TEXT DEFAULT '',
+        comprador_nome TEXT DEFAULT '',
+        comprador_nacionalidade TEXT DEFAULT 'brasileiro(a)',
+        comprador_estado_civil TEXT DEFAULT '',
+        comprador_profissao TEXT DEFAULT '',
+        comprador_rg TEXT DEFAULT '',
+        comprador_cpf TEXT DEFAULT '',
+        comprador_cnh TEXT DEFAULT '',
+        comprador_endereco TEXT DEFAULT '',
+        comprador_telefone TEXT DEFAULT '',
+        comprador_email TEXT DEFAULT '',
+        km_entrega INTEGER,
+        preco_venda REAL,
+        valor_pago_contratacao REAL,
+        forma_pagamento TEXT DEFAULT '',
+        saldo_preco_devido REAL,
+        prazo_quitacao_meses INTEGER DEFAULT 24,
+        data_limite_quitacao DATE,
+        prestacao_contas_texto TEXT DEFAULT '',
+        seguro_texto TEXT DEFAULT '',
+        ipva_responsavel_texto TEXT DEFAULT '',
+        multas_texto TEXT DEFAULT 'COMPRADOR, na extensão legal aplicável',
+        rastreador_texto TEXT DEFAULT '',
+        prazo_transferencia_dias INTEGER,
+        penalidade_atraso_texto TEXT DEFAULT '',
+        data_venda DATE,
+        created_at DATETIME DEFAULT (datetime('now','localtime')),
+        updated_at DATETIME DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_vendas_oportunidade ON vendas(oportunidade_id);
+    CREATE INDEX IF NOT EXISTS idx_vendas_etapa ON vendas(etapa);
+    CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_ativa_por_veiculo
+        ON vendas(oportunidade_id) WHERE etapa IN ('negociacao', 'contrato_enviado');
+
+    CREATE TABLE IF NOT EXISTS venda_historico (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        venda_id INTEGER NOT NULL REFERENCES vendas(id),
+        etapa_anterior TEXT DEFAULT '',
+        etapa_nova TEXT NOT NULL,
+        responsavel_id INTEGER REFERENCES usuarios(id),
+        observacao TEXT DEFAULT '',
+        created_at DATETIME DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_venda_historico_venda ON venda_historico(venda_id);
+";
+try {
+    $db->exec($tabelasVendas);
+    echo "✅ vendas/venda_historico: tabelas ok\n";
+} catch (Throwable $e) {
+    echo "❌ vendas/venda_historico: {$e->getMessage()}\n";
+}
+
 $migracoes = [
     // 09/2026 — testemunhas do contrato-mestre de compra
     'oportunidades.testemunha1_nome' => "ALTER TABLE oportunidades ADD COLUMN testemunha1_nome TEXT DEFAULT ''",
@@ -62,6 +133,13 @@ $migracoes = [
     // 14/09/2026 — e-mail do cliente, faltava na 1ª etapa do wizard de
     // documentos (pedido direto do José/Jean, "faltou esse dado")
     'clientes.email' => "ALTER TABLE clientes ADD COLUMN email TEXT DEFAULT ''",
+
+    // 15/09/2026 — módulo de vendas: contratos.venda_id desambigua qual
+    // negociação de revenda gerou o contrato quando tipo='venda' (NULL pra
+    // contrato de compra) — coluna nova numa tabela já existente
+    // (`contratos`), as tabelas `vendas`/`venda_historico` em si já foram
+    // criadas acima.
+    'contratos.venda_id' => "ALTER TABLE contratos ADD COLUMN venda_id INTEGER REFERENCES vendas(id)",
 ];
 
 foreach ($migracoes as $nome => $sql) {

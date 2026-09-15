@@ -5,12 +5,11 @@
  * comprado, quando, por quanto e há quantos meses está com a Fastcar.
  * Restrito ao super_admin, mesma trava das outras telas de relatório.
  *
- * Escopo de propósito: só o lado de COMPRA (o que já existe). "Vendido pra
- * quem"/"cliente pode reaver o carro" dependem do módulo de vendas
- * (segunda etapa do CLAUDE.md, ainda não iniciado) — por isso a busca já
- * usa placa/chassi como chave (não só o id da oportunidade): é o jeito
- * certo de deixar essa tela pronta pra, no futuro, relacionar o mesmo
- * veículo físico com uma revenda, sem precisar remodelar nada agora.
+ * "Vender este veículo" (15/09/2026, módulo de vendas) abre uma negociação
+ * nova (includes/vendas.php::criarVenda()) pro veículo clicado e manda
+ * direto pro detalhe (admin/venda.php) — busca por placa/chassi já existia
+ * de propósito desde antes, pensando exatamente nisso: dar pra relacionar
+ * o mesmo veículo físico com uma revenda sem remodelar nada.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -18,6 +17,21 @@ requireSuperAdmin();
 
 $db = getDB();
 $busca = trim((string)($_GET['busca'] ?? ''));
+$erro = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar_venda') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        try {
+            $vendaId = criarVenda((int)$_POST['oportunidade_id'], (int)$_SESSION['admin_id']);
+            header('Location: /admin/venda.php?id=' . $vendaId);
+            exit;
+        } catch (Throwable $e) {
+            $erro = $e->getMessage();
+        }
+    }
+}
 
 $where = "WHERE o.etapa = 'fechado'";
 $params = [];
@@ -32,9 +46,15 @@ $stmtTotal->execute($params);
 $totalVeiculos = (int)$stmtTotal->fetchColumn();
 
 $sql = "
-    SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone
+    SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+           vd.id AS venda_id, vd.etapa AS venda_etapa
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
+    LEFT JOIN vendas vd ON vd.id = (
+        SELECT id FROM vendas WHERE oportunidade_id = o.id AND etapa != 'cancelada'
+        ORDER BY CASE etapa WHEN 'vendido' THEN 0 WHEN 'contrato_enviado' THEN 1 ELSE 2 END
+        LIMIT 1
+    )
     {$where}
     ORDER BY o.data_compra DESC, o.updated_at DESC
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
@@ -74,11 +94,13 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b> <span class="crm-tag">CRM</span></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
+    <a href="/admin/vendas.php">💰 Vendas</a>
     <a href="/admin/configuracoes.php">⚙️ Configurações</a>
     <a href="/admin/logout.php">Sair</a>
 </header>
 
 <main>
+<?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <div class="card">
     <h2>🚗 Veículos comprados</h2>
     <p><small>Frota atual da Fastcar — todo veículo com negócio fechado (bloco 8). Busca por placa, chassi, marca/
@@ -107,12 +129,12 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
             <tr>
                 <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th>
                 <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
-                <th>Contrato</th><th></th>
+                <th>Contrato compra</th><th>Venda</th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="8"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="9"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <tr>
@@ -127,6 +149,20 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
                         <span class="badge badge-ok">✅ assinado</span>
                     <?php else: ?>
                         <span class="badge badge-aviso">pendente</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($v['venda_id'] === null): ?>
+                        <form method="post" class="inline">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="iniciar_venda">
+                            <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
+                            <button type="submit" style="margin-top:0;padding:5px 10px;font-size:12px">💰 Vender</button>
+                        </form>
+                    <?php elseif ($v['venda_etapa'] === 'vendido'): ?>
+                        <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge badge-ok">✅ vendido</span></a>
+                    <?php else: ?>
+                        <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'])) ?></span></a>
                     <?php endif; ?>
                 </td>
                 <td><a href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>

@@ -229,10 +229,89 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   marca/modelo ou nome do vendedor, mostra valor pago, data da compra e
   **meses com a Fastcar** (calculado a partir de `data_compra`). Restrito
   ao super_admin, mesma trava de `admin/produtividade.php`. Busca por
-  placa/chassi (não só id da oportunidade) é de propósito: é a chave que
-  vai deixar dar pra relacionar o mesmo veículo físico com uma futura
-  revenda sem precisar remodelar nada — mas isso já é módulo de vendas
-  (segunda etapa, ver seção própria), não implementado.
+  placa/chassi (não só id da oportunidade) é de propósito: era a chave que
+  ia deixar dar pra relacionar o mesmo veículo físico com uma futura
+  revenda sem precisar remodelar nada — e foi exatamente isso que aconteceu
+  quando o módulo de vendas saiu do papel (15/09/2026, ver bullet próprio
+  abaixo): coluna "Venda" nova aqui mostra disponível/em negociação/vendido
+  de cada veículo, com botão "Vender" direto na linha.
+- **Módulo de vendas (revenda de veículo da frota)** — `includes/vendas.php` +
+  `admin/vendas.php` (pipeline) + `admin/venda.php` (negociação individual),
+  15/09/2026, pedido direto do José/Jean ("você colocar galera para fazer o
+  fluxo e fechar pontas soltas") seguindo o combinado antes ("modulos de
+  vendas seguir mesmo padrão de compra ter a telas de negociação"). Mesmo
+  padrão do funil de compra — `mudarEtapaVenda()` central, nunca `UPDATE`
+  direto em `vendas.etapa`, histórico em `venda_historico` — mas **funil
+  mais simples** (`negociacao` → `contrato_enviado` → `vendido`, ou
+  `cancelada` a qualquer momento): sem qualificação por IA nem entrada pelo
+  WhatsApp do lado do comprador, a negociação é sempre **criada manualmente**
+  a partir de um veículo da frota (`admin/veiculos.php`, botão "Vender" —
+  restrito a super_admin, mesma trava da tela de frota), pois o comprador de
+  uma revenda normalmente aparece por outro canal (indicação, anúncio,
+  presencial), não por lead qualificado como no funil de compra.
+  ⚠️ **Escopo desta 1ª versão é uma decisão assumida, não confirmada
+  palavra por palavra com o Jean** — sinalizar se ele quiser outro desenho
+  (ex: WhatsApp bot também pro lado do comprador, ou fluxo de aprovação
+  antes de gerar contrato).
+  `vendas` (nova tabela) guarda só o que é específico da REVENDA — dados do
+  comprador (nome/CPF/RG/etc, colunas próprias, **não** `clientes`: o
+  comprador é um contato diferente do vendedor original, e
+  `clientes.telefone` é `UNIQUE` pro funil de compra, não serviria aqui —
+  o mesmo telefone poderia em tese aparecer nos dois papéis em momentos
+  diferentes) e condições da venda (preço, forma de pagamento, prazo de
+  quitação até 24 meses, etc, Quadro-Resumo do contrato). Dados do veículo
+  em si (marca/modelo/placa/renavam/chassi/financiamento em aberto) **nunca
+  duplicados** — sempre lidos de `oportunidades` (mesma fonte de verdade da
+  compra), via `oportunidade_id`. Só 1 negociação **ativa**
+  (`negociacao`/`contrato_enviado`) por veículo por vez — travado em dobro:
+  `criarVenda()` checa antes (mensagem legível pro admin) E um índice único
+  parcial no schema (`idx_vendas_ativa_por_veiculo`) barra a corrida de 2
+  requests simultâneas; cancelar uma negociação (motivo obrigatório, mesmo
+  espírito de "marcar perdida" no funil de compra) libera o veículo pra
+  uma nova tentativa com outro comprador.
+  **Contrato de venda** — `includes/contratos_pdf.php::gerarPdfContratoVenda()`
+  + `clausulasContratoVenda()` (20 cláusulas, transcritas do modelo real
+  `01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`, mesma correção de
+  endereço/foro pra Barueri/SP já aplicada no contrato de compra) — reaproveita
+  todo o encanamento visual do contrato de compra (`_pdfCabecalho()` ganhou
+  parâmetro de subtítulo, `_pdfLinhaResumo()`/`_pdfContarLinhas()` idênticos).
+  `includes/contratos.php::gerarEEnviarContratoVenda()` reaproveita
+  `zapsignCriarDocumentoEAssinatura()` (já genérica) e
+  `salvarArquivoGeradoComoDocumento()` sem mudar nada nelas — âncora do
+  Drive continua sendo o cliente ORIGINAL (vendedor que trouxe o veículo),
+  já que não existe cadastro em `clientes` pro comprador da revenda: pasta
+  do veículo/processo fica com os documentos de compra E venda juntos.
+  `contratos.venda_id` (coluna nova) desambigua qual negociação gerou o
+  contrato quando `tipo='venda'` (um mesmo veículo pode ter mais de uma
+  linha em `vendas` ao longo do tempo, se uma cair e outro comprador
+  aparecer depois) — `admin/ver_contrato.php` já era genérico o bastante
+  pra servir os dois tipos sem nenhuma mudança. `zapsignSincronizarContrato()`
+  (webhook + polling, compartilhado com compra) passou a ramificar por
+  `contratos.tipo`: pro lado de venda, salva a cópia assinada com nome de
+  arquivo próprio (`contrato_venda_assinado_{venda_id}.pdf`) e, assim que
+  detecta a assinatura, marca a negociação como `vendido` sozinho (só se
+  ainda estava `contrato_enviado` — nunca força de volta se alguém já
+  cancelou manualmente nesse meio-tempo) — venda não tem checklist de
+  fechamento (regra #7 é só do funil de compra), então a assinatura em si
+  já é o "fechamento" da negociação. Testado em banco isolado, ponta a
+  ponta via HTTP + servidor ZapSign fake: botão "Vender" cria a negociação
+  e redireciona pro detalhe; 2ª tentativa de vender o mesmo veículo barrada
+  com mensagem clara (e confirmado que o índice único do banco também
+  bloqueia numa inserção direta, sem passar pela aplicação); preenchimento
+  de comprador+condições salva certo; geração do contrato monta os campos
+  certos (conferido campo a campo), bate no formato exato de signer
+  esperado pela ZapSign (nome/telefone/e-mail) e move a etapa pra
+  `contrato_enviado` sozinho; PDF gerado conferido decodificando os content
+  streams (Quadro-Resumo com os 21 campos certos, as 20 cláusulas completas,
+  foro Barueri/SP, rodapé com endereço real); simulação de assinatura via
+  `zapsignSincronizarContrato()` baixa a cópia assinada, marca `vendido` +
+  `data_venda`, e confirmado que os campos do lado de COMPRA daquele mesmo
+  veículo (`oportunidades.contrato_assinado`,
+  `oportunidade_documentos.contrato_compra`) continuam intocados — as duas
+  bases de dados não se cruzam; cancelamento de negociação libera o veículo
+  pra uma 3ª tentativa (confirmado abrindo uma nova negociação depois de
+  cancelar a anterior); conferido visualmente via screenshot (Playwright)
+  em `admin/vendas.php`, `admin/venda.php` e `admin/veiculos.php`.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
@@ -379,8 +458,8 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   formulário → consultor confere → **consultor preenche os campos
   financeiros/de negociação só na hora de fechar o negócio** (bloco 6, mesma
   pessoa que atendeu desde a mesclagem consultor/closer, ver pendência #4) →
-  dispara o contrato. Contrato de **VENDA** (Fastcar revende o carro) fica
-  pro módulo de vendas, fora de escopo agora (ver "Segunda etapa" abaixo).
+  dispara o contrato. Contrato de **VENDA** (Fastcar revende o carro) —
+  implementado em 15/09/2026, ver bullet próprio "Módulo de vendas" acima.
   **Visualização do PDF no próprio sistema** (`admin/ver_contrato.php`):
   desde 13/09/2026, o PDF fica salvo (Drive preferido, `storage/uploads/`
   como fallback — mesmo padrão de `includes/documentos.php`) já na geração,
@@ -555,9 +634,6 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
 
 Itens explicitamente adiados durante a conversa, pra não se perderem:
 
-- **Módulo de vendas** (Fastcar revende o veículo pro próximo comprador) —
-  inclui o contrato-modelo de VENDA (`01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`,
-  já lido/estruturado, mas nada implementado)
 - **Módulo financeiro** — relatórios financeiros, reaproveitando o módulo
   financeiro do JurídicoSaaS
 - **2FA no login do admin** — reaproveitando o padrão do JurídicoSaaS
@@ -700,17 +776,16 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    `extrairOrigemAnuncio()`. Sem link/UTM manual. Fica em aberto até validar
    contra uma instância Z-API real e um clique de anúncio de teste (ver
    seção de validação em produção abaixo) — formato exato ainda não confirmado.
-6. ~~**Módulo de contrato**~~ — ✅ decidido e implementado (só **COMPRA**):
-   modelo real recebido do Jean (`01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`,
+6. ~~**Módulo de contrato**~~ — ✅ decidido e implementado, **COMPRA e VENDA**:
+   modelo real de compra recebido do Jean (`01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`,
    30 cláusulas + Quadro-Resumo), transcrito pra geração via FPDF puro
    (`includes/contratos_pdf.php`, sem LibreOffice/Composer — shared hosting
    não teria isso) e enviado pra assinatura eletrônica via ZapSign
    (`includes/contratos.php`, `includes/zapsign.php` — trocou de Assinafy
    pra ZapSign em 13/09/2026, ver "O que reaproveitar do JurídicoSaaS"
-   acima). Contrato de
-   **VENDA** (`01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`, já
-   recebido e lido, mas nada implementado) fica pro módulo de vendas —
-   segunda etapa, ver seção própria acima.
+   acima). Contrato de **VENDA** (`01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx`,
+   20 cláusulas) implementado em 15/09/2026 junto com o módulo de vendas —
+   ver bullet próprio "Módulo de vendas" na seção de módulos acima.
 7. **Leads do Supabase (Leandro Soragi)** — aguardando CSV ou acesso ao
    painel pra importar a base existente; sem isso, script de importação
    fica só desenhado, sem rodar de verdade.

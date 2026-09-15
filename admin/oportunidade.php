@@ -236,6 +236,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         </form>
     <?php endif; ?>
     <a href="/admin/clientes.php">👥 Clientes</a>
+    <a href="/admin/vendas.php">💰 Vendas</a>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/veiculos.php">🚗 Veículos</a>
