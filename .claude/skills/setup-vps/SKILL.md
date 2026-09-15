@@ -178,20 +178,75 @@ php tests/smoke.php    # roda ANTES de seguir — pega incompatibilidade de PHP 
 Quando o domínio existir (senão, pula pro passo 9 e volta aqui depois):
 
 1. Adiciona o domínio na Cloudflare, aponta nameservers.
-2. Registro **A** → IP da VPS, **proxy laranja ligado**.
+2. Registro **A** → IP da VPS, **proxy laranja ligado** (Proxied).
 3. **SSL/TLS → Overview**: modo **Full (strict)**.
-4. **SSL/TLS → Origin Server**: gera **Origin Certificate** (válido 15
-   anos) — cola em `/etc/nginx/ssl/NOME.pem` e `.key` na VPS. Não usar
-   certbot/Let's Encrypt aqui — com o proxy da Cloudflare ligado o
-   desafio HTTP-01 fica mais chato, e Origin Certificate é o caminho que
-   a própria Cloudflare recomenda pra esse cenário.
-5. Atualiza o server block pra ouvir 443 com esse certificado e
-   redirecionar 80→443 (dois blocos `server`, um só de redirect).
-6. **SSL/TLS → Edge Certificates**: liga "Always Use HTTPS".
-7. **Security → Bots**: liga "Bot Fight Mode" — reforça na borda o que
+
+**SSL na origem: certbot (nginx plugin), não Origin Certificate manual**
+(mudança de recomendação, Fastcar 15/09/2026 — ver "Lição aprendida"
+abaixo pro porquê). O desafio HTTP-01 do certbot passa normal pela
+Cloudflare mesmo com o proxy (nuvem laranja) ligado — ela repassa a
+requisição de validação pra origem via porta 80 igual qualquer outra
+requisição HTTP; nenhuma configuração especial de DNS-01/API precisa
+entrar em cena. Certificado da Let's Encrypt é publicamente confiável,
+então satisfaz o modo **Full (strict)** igual a qualquer certificado
+"de verdade" — não precisa ser especificamente da Cloudflare.
+
+```bash
+apt install -y certbot python3-certbot-nginx
+dig +short SEU_DOMINIO   # confirma que resolve (vai devolver IP da
+                          # Cloudflare, não o IP real da VPS — é o
+                          # esperado com o proxy ligado)
+certbot --nginx -d SEU_DOMINIO
+```
+
+O certbot pede e-mail (avisos de expiração — usar o e-mail
+transacional do próprio projeto se já tiver um configurado) e aceite dos
+termos, depois emite, edita o nginx sozinho (adiciona o bloco 443,
+redirect 80→443) e recarrega. Confirma:
+
+```bash
+nginx -t
+systemctl status certbot.timer   # já vem ativo, renova 2x/dia sozinho
+certbot renew --dry-run          # simula uma renovação, sem gastar
+                                  # tentativa real com a Let's Encrypt
+```
+
+4. **SSL/TLS → Edge Certificates**: liga "Always Use HTTPS".
+5. **Security → Bots**: liga "Bot Fight Mode" — reforça na borda o que
    `robots.txt`/`X-Robots-Tag` já fazem na aplicação, antes de gastar
    recurso da VPS. Essencial se o sistema guarda dado pessoal/financeiro.
-8. **Firewall da VPS — só aceita 80/443 vindo de IP da Cloudflare**:
+6. **Bloquear acesso direto pelo IP da VPS** — sem isso, qualquer um que
+   descobrir o IP real (ex: histórico de DNS antes do proxy, scanner de
+   IP) enxerga o site igual, contornando toda proteção da Cloudflare
+   (Bot Fight Mode, WAF, cache). Cria um vhost "pega-tudo" que fecha a
+   conexão sem resposta (`444`) pra qualquer request que não seja pro
+   domínio esperado:
+   ```bash
+   cat > /etc/nginx/sites-available/catchall <<'EOF'
+   server {
+       listen 80 default_server;
+       server_name _;
+       return 444;
+   }
+   server {
+       listen 443 ssl default_server;
+       server_name _;
+       ssl_certificate     /etc/letsencrypt/live/SEU_DOMINIO/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/SEU_DOMINIO/privkey.pem;
+       return 444;
+   }
+   EOF
+   ln -s /etc/nginx/sites-available/catchall /etc/nginx/sites-enabled/
+   nginx -t && systemctl reload nginx
+   ```
+   O bloco 443 reaproveita o mesmo certificado do certbot só pra aceitar
+   a negociação TLS antes de recusar — não precisa de certificado
+   próprio pra isso. Testa abrindo `https://IP_DA_VPS` direto no
+   navegador: tem que dar erro de conexão (`ERR_EMPTY_RESPONSE`), nunca
+   mostrar o site.
+7. **Firewall da VPS — só aceita 80/443 vindo de IP da Cloudflare**
+   (camada extra, rede — complementa o catch-all acima, que é por
+   nginx/Host header):
    ```bash
    apt install -y ufw
    ufw allow 22/tcp
@@ -203,6 +258,31 @@ Quando o domínio existir (senão, pula pro passo 9 e volta aqui depois):
    ⚠️ **Nunca rodar `ufw enable` sem confirmar que a porta 22 está liberada
    ANTES** — regra mal configurada tranca o próprio acesso SSH, e aí só
    resolve pelo console da hospedagem (fora do SSH).
+
+**⚠️ Lição aprendida (Fastcar, 15/09/2026) — nunca copiar/colar uma
+chave privada manualmente entre navegador e terminal.** A recomendação
+anterior deste skill (Cloudflare Origin Certificate, cert+chave colados
+à mão em `/etc/nginx/ssl/`) parece simples no papel, mas na prática
+travou uma sessão inteira (mais de 1h): o computador do usuário tinha
+algum software de segurança (DLP/antivírus com proteção de clipboard)
+que mascarava — trocava por espaços/bolinhas — qualquer texto que
+batesse o padrão `-----BEGIN PRIVATE KEY-----` no momento de colar,
+consistentemente, em toda tentativa (via chat, via botão de copiar da
+própria Cloudflare, via clique direito direto no terminal). Certbot
+evita o problema de raiz: ele mesmo gera a chave, o CSR e negocia com a
+Let's Encrypt inteiramente dentro da VPS, sem nenhum segredo saindo pra
+um clipboard em algum momento. **Se algum dia Origin Certificate for
+realmente necessário de novo** (ex: domínio que por algum motivo não
+pode expor porta 80 pro desafio HTTP-01), o jeito seguro é gerar a
+chave e o CSR **direto na VPS** e só transitar o CSR/certificado
+(públicos, sem risco) entre VPS e Cloudflare — nunca a chave:
+```bash
+openssl genrsa -out /etc/nginx/ssl/NOME.key 2048
+openssl req -new -key /etc/nginx/ssl/NOME.key -out /tmp/NOME.csr -subj "/CN=SEU_DOMINIO"
+cat /tmp/NOME.csr   # cola isso na Cloudflare, opção "Usar minha
+                     # própria chave privada e CSR" — a chave em si
+                     # nunca precisa sair da VPS
+```
 
 ### 8. Crontab — automação
 
@@ -285,9 +365,10 @@ outro super_admin sozinho).
 - [ ] `crontab -l` mostra os jobs esperados
 - [ ] Backup manual disparado uma vez (se o projeto tiver essa tela) pra
       confirmar que funciona contra o serviço real, não só localmente
-- [ ] ⏳ Cloudflare: proxy ligado, SSL Full (strict), Origin Certificate,
-      Bot Fight Mode
-- [ ] ⏳ `ufw` restringindo 80/443 só a IPs da Cloudflare
+- [ ] ⏳ Cloudflare: proxy ligado, SSL Full (strict), certificado via
+      certbot emitido e `certbot renew --dry-run` passando, Bot Fight Mode
+- [ ] ⏳ Acesso direto por IP bloqueado (vhost catch-all `return 444`) e
+      `ufw` restringindo 80/443 só a IPs da Cloudflare
 - [ ] ⏳ Webhook de deploy configurado no GitHub
 
 ## Depois de rodar este skill
