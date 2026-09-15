@@ -176,12 +176,26 @@ try {
     }
 } catch (Throwable $e) {}
 
-// ── 7. E-MAIL (BREVO) ─────────────────────────────────────────────────────
-$brevoKey = getConfig('brevo_api_key') ?: '';
-if (!$brevoKey) {
-    check('E-mail (Brevo)', 'API Key', 'warn', 'Não configurada', 'Configurações → E-mail (Brevo)');
+// ── 7. E-MAIL (GMAIL API) ─────────────────────────────────────────────────
+// 15/09/2026: trocado de Brevo pra Gmail API — reaproveita a MESMA
+// credencial do Google Drive (ver seção 5 acima), só muda o escopo/sub do
+// JWT. Sem chamada em paralelo com as outras (seção 11) de propósito: o
+// handshake de domain-wide delegation é 2 passos (JWT assinado + troca por
+// token), não dá pra encaixar no mesmo curl_multi de request única.
+$emailFrom = getConfig('email_from') ?: '';
+if (!$emailFrom) {
+    check('E-mail (Gmail)', 'Remetente', 'warn', 'Não configurado', 'Configurações → E-mail');
+} elseif (!$drive->hasCredentials()) {
+    check('E-mail (Gmail)', 'Credenciais', 'warn', 'Ausentes', 'Mesma credencial do Google Drive — ver seção acima');
 } else {
-    check('E-mail (Brevo)', 'API Key', 'ok', substr($brevoKey, 0, 10) . '...' . substr($brevoKey, -4), 'Configurada');
+    try {
+        $tokenGmail = mailAutenticar($emailFrom);
+        check('E-mail (Gmail)', 'Autenticação (delegação de domínio)', $tokenGmail ? 'ok' : 'error',
+            $tokenGmail ? "Token obtido pra {$emailFrom}" : 'Falhou',
+            $tokenGmail ? '' : 'Verifique a delegação em todo o domínio (Workspace Admin) com o escopo gmail.send pra essa service account');
+    } catch (Throwable $e) {
+        check('E-mail (Gmail)', 'Autenticação (delegação de domínio)', 'error', 'Erro', $e->getMessage());
+    }
 }
 
 // ── 8. BACKUP ─────────────────────────────────────────────────────────────
@@ -275,9 +289,6 @@ if ($geminiKey) {
 if ($openaiKey) {
     $addReq('openai', openaiBaseUrl() . '/models', [CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $openaiKey]]);
 }
-if ($brevoKey) {
-    $addReq('brevo', mailBaseUrl() . '/account', [CURLOPT_HTTPHEADER => ['api-key: ' . $brevoKey, 'Accept: application/json']]);
-}
 
 $running = null;
 do { curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 0.3); } while ($running > 0);
@@ -311,14 +322,6 @@ if (isset($resultados['openai'])) {
     elseif ($r['code'] === 200) check('IA (Gemini/OpenAI)', 'OpenAI — conectividade', 'ok', 'Conectado', '');
     elseif ($r['code'] === 401) check('IA (Gemini/OpenAI)', 'OpenAI — conectividade', 'error', 'Chave inválida', '');
     else check('IA (Gemini/OpenAI)', 'OpenAI — conectividade', 'warn', "HTTP {$r['code']}", '');
-}
-if (isset($resultados['brevo'])) {
-    $r = $resultados['brevo'];
-    $d = json_decode($r['resp'] ?: '{}', true);
-    if ($r['err']) check('E-mail (Brevo)', 'Conectividade', 'error', 'Erro de conexão', $r['err']);
-    elseif ($r['code'] === 200) check('E-mail (Brevo)', 'Conectividade', 'ok', $d['email'] ?? 'Conectado', isset($d['plan'][0]['credits']) ? "{$d['plan'][0]['credits']} créditos" : '');
-    elseif ($r['code'] === 401) check('E-mail (Brevo)', 'Conectividade', 'error', 'Chave inválida', '');
-    else check('E-mail (Brevo)', 'Conectividade', 'warn', "HTTP {$r['code']}", '');
 }
 
 // ── 12. ERROS RECENTES ────────────────────────────────────────────────────

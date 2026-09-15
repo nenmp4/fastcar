@@ -26,8 +26,7 @@ $camposZapsign = [
 ];
 
 $camposEmail = [
-    'brevo_api_key'   => 'Chave da API Brevo',
-    'email_from'      => 'E-mail remetente (ex: contato@fastcar.com.br)',
+    'email_from'      => 'E-mail remetente — precisa ser uma caixa real do Google Workspace (ex: contato@fastcar.solutions)',
     'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
 ];
 
@@ -367,14 +366,16 @@ $fila = listarFilaConsultores();
 </div>
 
 <div class="card">
-    <h2>✉️ E-mail (Brevo)</h2>
-    <p><small>Mesmo provedor do JurídicoSaaS — apesar do nome popular ser "SMTP", o envio é via API HTTP da Brevo, não
-       protocolo SMTP puro: VPS nova costuma vir com porta de SMTP bloqueada por padrão antispam, e mandar direto pelo
-       IP do servidor sem reputação/SPF/DKIM cai em spam quase sempre. A Brevo resolve isso por fora.</small></p>
+    <h2>✉️ E-mail (Gmail API — Google Workspace)</h2>
+    <p><small>Trocado da Brevo em 15/09/2026 (pedido do José/Jean) — reaproveita a MESMA credencial de service account
+       do Google Drive (<code>config/google_drive_credentials.json</code>, dropada manualmente no servidor, ver card
+       acima), só muda o escopo (<code>gmail.send</code>) e a service account passa a "impersonar" a caixa configurada
+       abaixo via delegação em todo o domínio (autorizada no Workspace Admin — não dá pra configurar por aqui, é um
+       passo manual no painel admin.google.com).</small></p>
     <p>
-        Status:
-        <span class="badge <?= getConfig('brevo_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= getConfig('brevo_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        Status da credencial:
+        <span class="badge <?= $drive->hasCredentials() ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $drive->hasCredentials() ? '✅ credencial encontrada (mesma do Drive)' : '⏳ arquivo não encontrado' ?>
         </span>
     </p>
     <form method="post" autocomplete="off">
@@ -382,13 +383,7 @@ $fila = listarFilaConsultores();
         <input type="hidden" name="acao" value="salvar_email">
         <?php foreach ($camposEmail as $chave => $label): ?>
             <label for="<?= e($chave) ?>"><?= e($label) ?></label>
-            <?php if ($chave === 'brevo_api_key'): ?>
-                <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
-                       value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
-                       placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
-            <?php else: ?>
-                <input type="text" id="<?= e($chave) ?>" name="<?= e($chave) ?>" value="<?= e(getConfig($chave) ?? '') ?>">
-            <?php endif; ?>
+            <input type="text" id="<?= e($chave) ?>" name="<?= e($chave) ?>" value="<?= e(getConfig($chave) ?? '') ?>">
         <?php endforeach; ?>
         <button type="submit">Salvar</button>
     </form>
@@ -397,7 +392,7 @@ $fila = listarFilaConsultores();
         <input type="hidden" name="acao" value="testar_email">
         <label>Enviar teste pra</label>
         <input type="email" name="email_teste" placeholder="seu@email.com">
-        <button type="submit" <?= getConfig('brevo_api_key') ? '' : 'disabled' ?>>Enviar e-mail de teste</button>
+        <button type="submit" <?= $drive->hasCredentials() ? '' : 'disabled' ?>>Enviar e-mail de teste</button>
     </form>
 </div>
 

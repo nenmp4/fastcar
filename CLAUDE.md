@@ -158,6 +158,30 @@ segue no schema sem uso novo, não removida sem ganho real),
   (`zapiContarMensagensPorConsultor()`), só a fonte do dado ficou mais
   direta (textos escritos por humano de verdade, não mais decorrência de
   ter ou não uma instância própria configurada).
+  **"Nova conversa" pra número que ainda não escreveu** (mesmo dia, achado
+  testando de verdade em produção — José: "não está igual do juridico
+  sass campo de enviar mensagem"): a sidebar só listava telefone que já
+  tinha pelo menos 1 mensagem salva, sem jeito de iniciar contato
+  proativo com um número novo. Campo "+ Iniciar conversa" (GET simples,
+  `?telefone=X`) resolve — a tela já sabia lidar com telefone "vazio"
+  (0 mensagens, formulário de envio funcionando normal), só faltava a
+  entrada. Corrigido de quebra, no mesmo commit: `$telefoneAtivo` passou
+  a rodar `normalizarTelefone()` (não só tirar os não-dígitos) — sem
+  isso, digitar um número sem o DDI 55 abria a conversa "certa" (as
+  mensagens aparecem, `buscarMensagensConversa()`/`buscarMensagensNovasConversa()`
+  já normalizavam por dentro) mas a linha ficava **duplicada** na
+  sidebar até recarregar a página, porque o telefone da URL não batia
+  crú com o telefone normalizado salvo em `whatsapp_mensagens`.
+  **Bug real de produção achado no mesmo teste**: primeira mensagem de
+  cliente de verdade não chegou no bot — log do webhook
+  (`storage/logs/whatsapp_webhook_*.log`) apontou
+  "client-token inválido no header, ignorando webhook" — o valor colado
+  em Configurações → Z-API não batia byte a byte com o que a Z-API manda
+  de verdade (a comparação usa `hash_equals()`, exata, qualquer espaço/
+  caractere a mais quebra). Resolvido recopiando o Client-Token com mais
+  cuidado direto do menu Segurança da Z-API — não é bug de código, mas
+  fica registrado porque é o tipo de coisa que vai acontecer nulo com
+  qualquer credencial colada manualmente.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -574,20 +598,34 @@ segue no schema sem uso novo, não removida sem ganho real),
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os
   bugs reais já corrigidos aqui (ver seção de bugs corrigidos abaixo)
-- **E-mail** — `includes/mail.php`, via API da Brevo (não SMTP puro — mesmo
-  motivo do JurídicoSaaS: porta bloqueada em VPS nova + reputação/SPF/DKIM),
-  configurável em Configurações → E-mail (Brevo), com teste de envio.
-  **Google Workspace cogitado no lugar da Brevo em 15/09/2026, decisão:
-  manter Brevo** — Workspace é feito pra e-mail humano, não pra envio
-  automático em volume (limite baixo por dia, risco de a própria Google
-  sinalizar como abuso); Brevo já manda a partir do domínio próprio da
-  Fastcar (`fastcar.solutions`, com SPF/DKIM configurado nele) sem precisar
-  de licença Workspace pra isso — Workspace segue sendo só a caixa de
-  e-mail humana da equipe, separado do envio automático do CRM.
-  `email_from` definido: **`contato@fastcar.solutions`** — falta cadastrar
-  esse domínio como verificado no painel da Brevo (Remetentes e IP →
-  Domínios) e adicionar os registros SPF/DKIM que ela gerar no Cloudflare
-  (mesmo DNS usado pro site/VPS).
+- **E-mail** — `includes/mail.php`, via **Gmail API** (Google Workspace).
+  **15/09/2026 — 2ª reviravolta no mesmo dia**: de manhã tinha ficado
+  decidido manter Brevo (Workspace não é feito pra envio automático em
+  volume); à tarde o José/Jean pediram pra trocar mesmo assim ("vamos
+  trocar brevo pelo api do google worpace") — decisão de negócio deles,
+  não uma questão técnica que eu tenha levantado de novo. Reaproveita a
+  MESMA credencial de service account já usada pro Google Drive
+  (`config/google_drive_credentials.json`, `includes/google_drive.php`) —
+  mesmo `client_email`/`private_key`, só troca o escopo do JWT pra
+  `gmail.send` e ganha um claim `sub` (a caixa do Workspace que a service
+  account passa a impersonar — `config.email_from`, **`contato@fastcar.solutions`**).
+  **Pré-requisito manual, fora do código**: delegação em todo o domínio
+  autorizada no Google Workspace Admin Console (admin.google.com →
+  Segurança → Controles de API → Delegação em todo o domínio) pro Client
+  ID dessa service account, com o escopo `https://www.googleapis.com/auth/gmail.send`
+  adicionado (junto do `drive` que o Drive já usa) — sem isso o Google
+  rejeita o JWT com `unauthorized_client`, mesmo com credencial válida (a
+  assinatura RS256 é genuína, só falta a autorização). Testado em banco
+  isolado contra servidor OAuth+Gmail fake local: JWT monta certo (`sub`/
+  `scope`/`aud`), MIME da mensagem (From/To/Subject codificado em Base64
+  UTF-8/Content-Type HTML) confere byte a byte, e os dois caminhos de
+  falha graciosa (sem credencial, sem `email_from` configurado) devolvem
+  mensagem de erro clara em vez de estourar exceção — mesmo contrato
+  `bool|array` que a Brevo já tinha, nenhum dos 4 call sites de
+  `enviarEmail()` precisou mudar. Tela de Configurações → E-mail perdeu o
+  campo de API key (não existe mais chave própria de e-mail — usa a
+  credencial do Drive) e ganhou o mesmo badge de status
+  "✅ credencial encontrada" que o card do Drive já usava.
 - **Backup** — `includes/backup.php` (compartilhado entre `cron/` e
   `admin/backup.php`, nunca duplicado): banco copiado várias vezes ao dia,
   ZIP completo (banco + uploads locais + credencial do Drive) 1x/dia, envio
@@ -679,8 +717,9 @@ segue no schema sem uso novo, não removida sem ganho real),
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da
   instância), IA (conectividade + custo de tokens do dia/mês), Google
-  Drive (autenticação JWT real), ZapSign, Brevo, backup, crons (frescor
-  de log), fila de leads (alerta se ninguém disponível), erros recentes.
+  Drive (autenticação JWT real), ZapSign, Gmail (delegação de domínio),
+  backup, crons (frescor de log), fila de leads (alerta se ninguém
+  disponível), erros recentes.
   Restrito ao super_admin.
 - **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
   (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
@@ -797,13 +836,14 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    completo de setup em `install/SETUP_VPS.md` (nginx+PHP-FPM, Cloudflare
    com SSL Full-strict + Origin Certificate + Bot Fight Mode, firewall
    restrito a IPs da Cloudflare, `install/setup_crontab.sh`, deploy via
-   webhook do GitHub + `api/webhook_deploy.php`, e-mail via Brevo, backup).
-   **Domínio definido em 15/09/2026: `fastcar.solutions`** — os passos que
-   dependiam dele (Cloudflare/SSL, webhook de deploy com URL pública,
-   webhook da Z-API, domínio verificado na Brevo) já podem sair do ⏳ no
-   guia. **Ainda falta:** confirmar se a VPS HostGator já foi provisionada
-   de verdade (compra) e o DNS do domínio já apontado pro Cloudflare —
-   perguntar antes de marcar o guia como concluído.
+   webhook do GitHub + `api/webhook_deploy.php`, e-mail via Gmail API,
+   backup). **Domínio definido e VPS provisionada em 15/09/2026:
+   `fastcar.solutions`** (SSL via certbot, não mais Origin Certificate
+   manual — ver a skill `setup-vps` pro racional completo da troca),
+   `sistema.fastcar.solutions` já respondendo com HTTPS válido e acesso
+   direto por IP bloqueado. Webhook de deploy automático via GitHub ainda
+   não cadastrado (deploy segue manual, `git pull` por SSH, até isso ser
+   feito).
 2. ~~**WhatsApp**~~ — ✅ decidido: **Z-API**, mesmo provedor do JurídicoSaaS.
    Instância própria da Fastcar já criada em 10/07/2026 (**"FastCar | JEAN"**,
    número 11 9 5834-7764, plano pago, `Conectado`/Multi Device) — falta só
@@ -943,11 +983,15 @@ testado com servidor fake local — nunca contra o serviço real:
   servidor fake local; nunca contra a API do Google de verdade. Precisa de
   `config/google_drive_credentials.json` (nunca commitar) com uma service
   account real da Fastcar antes de validar.
-- **API Brevo** (`includes/mail.php`) — só testada contra servidor fake
-  local simulando o formato de resposta; nunca um envio real. Validar
-  também se o plano grátis da Brevo dá conta do volume (baixo, mas nunca
-  testado de verdade) e se o domínio de e-mail precisa de SPF/DKIM
-  configurado no DNS pra não cair em spam.
+- **Gmail API** (`includes/mail.php`) — só testada contra servidor OAuth+
+  Gmail fake local simulando o handshake de domain-wide delegation e o
+  formato de resposta do `/messages/send`; nunca um envio real. Validar
+  assim que a delegação em todo o domínio for autorizada no Workspace
+  Admin: se a autenticação (`mailAutenticar()`) realmente obtém token
+  impersonando `contato@fastcar.solutions`, e se o e-mail chega de
+  verdade (não cai em spam) — diferente da Brevo, aqui a entrega É pelo
+  próprio Workspace, sem intermediário cuidando de reputação/SPF/DKIM por
+  fora.
 - **Webhook do GitHub** (`api/webhook_deploy.php`) — header
   `X-Hub-Signature-256` e formato do payload (`ref`, `pusher.name`,
   `commits`, `head_commit.message`) testados só com payload sintético

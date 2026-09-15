@@ -9,7 +9,13 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 
-$telefoneAtivo = preg_replace('/\D/', '', (string)($_GET['telefone'] ?? ''));
+// normalizarTelefone() (não só strip de dígitos) garante que um número
+// digitado sem o DDI 55 (ex: pela caixa "+ Iniciar conversa") já bate
+// certinho com o que fica salvo em whatsapp_mensagens/clientes — sem isso,
+// a mesma conversa podia aparecer 2x (uma com 55, outra sem) até a página
+// recarregar.
+$telefoneGet = trim((string)($_GET['telefone'] ?? ''));
+$telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
 // "inbox vai mostrar todos ou leads do usuário que iniciou atendimento?"
 // (pergunta direta do José/Jean, 15/09/2026) — super_admin vê a caixa
 // inteira; consultor só vê conversa de cliente onde ele é responsavel_id
@@ -119,6 +125,9 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-sidebar { width: 320px; flex-shrink: 0; border-right: 1px solid var(--borda); background: var(--superficie); display: flex; flex-direction: column; }
 .wpp-sidebar form { padding: 12px; border-bottom: 1px solid var(--borda); }
 .wpp-sidebar form input { margin: 0; }
+.wpp-nova-form { display: flex; gap: 8px; }
+.wpp-nova-form input { flex: 1; min-width: 0; }
+.wpp-nova-form button { margin: 0; white-space: nowrap; padding: 6px 12px; font-size: 12.5px; }
 .wpp-lista { flex: 1; overflow-y: auto; }
 .wpp-item { display: block; padding: 12px 16px; border-bottom: 1px solid var(--borda); text-decoration: none; color: inherit; position: relative; }
 .wpp-item:hover { background: var(--fundo); text-decoration: none; }
@@ -162,6 +171,10 @@ if ($telefoneAtivo && !$contatoAtivo) {
     <aside class="wpp-sidebar">
         <form method="get">
             <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
+        </form>
+        <form method="get" class="wpp-nova-form" id="wpp-nova-form">
+            <input type="text" name="telefone" placeholder="Nova conversa — telefone com DDD" inputmode="numeric">
+            <button type="submit">+ Iniciar conversa</button>
         </form>
         <div class="wpp-lista" id="wpp-lista">
             <?php if (!$conversas): ?>
