@@ -622,6 +622,16 @@ segue no schema sem uso novo, não removida sem ganho real),
   decisão de segurança de propósito) e um super_admin não consegue
   bloquear a própria conta por aqui. Sem seletor de perfil na tela — desde
   a mesclagem consultor/closer (pendência #4) só existe um perfil pra criar.
+  **Esqueceu a senha** (15/09/2026, achado real: não existia jeito de
+  redefinir senha de quem já existe fora do próprio painel — só
+  `create_admin.php`, que é create-only e recusa e-mail já cadastrado):
+  `install/resetar_senha.php email@fastcar.com novaSenha` (CLI, mesmo
+  espírito do `create_admin.php` — sem tela web, precisa de SSH na VPS)
+  reaproveita `redefinirSenhaUsuario()` (já existia, usada internamente
+  por `admin/usuarios.php` pro super_admin trocar senha de consultor) pra
+  resolver o caso "sou o único super_admin e esqueci a minha". Testado em
+  banco isolado: senha antiga para de bater depois do reset, nova bate,
+  e-mail inexistente é rejeitado com mensagem clara.
 - **Dashboard por perfil** — `admin/index.php` mostra cards diferentes pra
   cada perfil (`includes/dashboard.php`): consultor vê a própria carteira
   de atendimento (ativas/atrasadas/recebidas na semana/status da fila) E o
