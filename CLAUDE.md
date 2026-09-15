@@ -924,16 +924,19 @@ Este ambiente de dev bloqueia acesso externo (só libera alguns hosts tipo
 GitHub/npm), então o que segue foi construído seguindo documentação e
 testado com servidor fake local — nunca contra o serviço real:
 
-- **Formato do payload do webhook Z-API** — `messageId`, `phone`, `fromMe`,
-  `isGroup`, `text.message`, `instanceId` — construído pelo padrão do
-  JurídicoSaaS, nunca confirmado contra uma instância Z-API de verdade.
-  ⚠️ **Uma suposição já confirmada ERRADA em produção (15/09/2026)**: o
-  webhook validava um header `Client-Token` no recebimento, copiado do
-  padrão do JurídicoSaaS sem nunca ter sido testado contra a Z-API real —
-  na prática ela não manda esse header de volta (Client-Token é só pras
-  chamadas que NÓS fazemos pra API dela, não o contrário). Rejeitava 100%
-  das mensagens recebidas em produção ("client-token inválido no header")
-  até ser removido — ver `chatbot-whatsapp/webhook/whatsapp.php`.
+- ~~**Formato do payload do webhook Z-API**~~ — ✅ **confirmado em produção,
+  15/09/2026**: `messageId`, `phone`, `fromMe`, `isGroup`, `text.message`,
+  `instanceId` batem com o padrão herdado do JurídicoSaaS, mensagem real
+  do WhatsApp chegou, passou pela validação de instância + dedup, e o bot
+  respondeu de ponta a ponta. **Uma suposição estava ERRADA** e foi corrigida
+  no caminho: o webhook validava um header `Client-Token` no recebimento,
+  copiado do padrão do JurídicoSaaS sem nunca ter sido testado contra a
+  Z-API real — na prática ela não manda esse header de volta (Client-Token
+  é só pras chamadas que NÓS fazemos pra API dela, não o contrário).
+  Rejeitava 100% das mensagens recebidas ("client-token inválido no
+  header") até ser removido — ver `chatbot-whatsapp/webhook/whatsapp.php`.
+  Ainda não confirmado especificamente: payload de áudio/imagem (ver item
+  abaixo) e o campo `referral` de clique em anúncio (pendência #5).
 - **URL de download de áudio/imagem no payload Z-API** —
   `extrairUrlMidia()` (`chatbot-whatsapp/includes/mensagens.php`) tenta os
   nomes de campo mais prováveis (`audioUrl`/`imageUrl`, `url`, `mediaUrl`,
