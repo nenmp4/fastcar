@@ -229,3 +229,39 @@ class GoogleDrive {
         return $r ?: '';
     }
 }
+
+/**
+ * Upload da credencial de service account pela tela de Configurações
+ * (15/09/2026, pedido José/Jean — antes só dava pra dropar manualmente por
+ * FTP/SSH, decisão original de segurança; agora com upload autenticado
+ * também, restrito ao super_admin como o resto de admin/configuracoes.php).
+ * Reaproveitada tanto pro Google Drive quanto pro e-mail transacional
+ * (includes/mail.php), que leem o MESMO arquivo.
+ */
+function processarUploadCredencialGoogle(array $arquivo): array {
+    if (($arquivo['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return ['ok' => false, 'erro' => 'Selecione o arquivo JSON antes de enviar.'];
+    }
+    if ($arquivo['error'] !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'erro' => 'Falha no envio do arquivo (tente de novo).'];
+    }
+    if ($arquivo['size'] > 20 * 1024) {
+        return ['ok' => false, 'erro' => 'Arquivo grande demais pra ser uma credencial de service account (esperado poucos KB).'];
+    }
+
+    $conteudo = file_get_contents($arquivo['tmp_name']);
+    $dados = json_decode($conteudo ?: '', true);
+    if (!is_array($dados) || ($dados['type'] ?? '') !== 'service_account'
+        || empty($dados['client_email']) || empty($dados['private_key'])) {
+        return ['ok' => false, 'erro' => 'Não parece uma credencial de service account válida (esperado um JSON com "type":"service_account", client_email e private_key).'];
+    }
+
+    $destino = ROOT . '/config/google_drive_credentials.json';
+    @mkdir(dirname($destino), 0755, true);
+    if (!copy($arquivo['tmp_name'], $destino)) {
+        return ['ok' => false, 'erro' => 'Não deu pra salvar o arquivo no servidor.'];
+    }
+    @chmod($destino, 0600); // defesa extra além do config/.htaccess (Deny from all)
+
+    return ['ok' => true, 'email' => $dados['client_email']];
+}

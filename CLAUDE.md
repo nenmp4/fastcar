@@ -883,6 +883,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   `oportunidades.testemunha1_*/testemunha2_*` ficaram sem uso (não
   removidas do schema — sem ganho real em reconstruir a tabela no SQLite
   só por isso, nenhum contrato real chegou a usar).
+  **Upload da credencial do Google direto pela tela** (15/09/2026, pedido
+  José/Jean enquanto configurava a service account de verdade em
+  produção): até então a credencial (`config/google_drive_credentials.json`,
+  usada tanto pro Drive quanto pro e-mail transacional) só dava pra colocar
+  manualmente por FTP/SSH — decisão original de segurança, revertida por
+  pedido explícito, não por eu ter sugerido de volta.
+  `processarUploadCredencialGoogle()` (`includes/google_drive.php`) valida
+  antes de salvar (JSON decodificável, `type==='service_account'`,
+  `client_email`/`private_key` presentes — nunca aceita qualquer arquivo
+  só porque tem extensão `.json`), grava em `config/google_drive_credentials.json`
+  com `chmod 600` (defesa extra além do `config/.htaccess` que já bloqueia
+  acesso via navegador) e nunca ecoa o conteúdo de volta pra tela, só o
+  `client_email` como confirmação. Card no admin/configuracoes.php deixou
+  explícito que é a MESMA credencial usada pelo card de E-mail logo abaixo
+  (mesmo arquivo, dois usos). Segue restrito ao super_admin, mesma trava
+  de toda a tela. Testado em banco isolado: sem arquivo, JSON com
+  estrutura errada e conteúdo não-JSON são todos rejeitados com mensagem
+  clara sem escrever nada em disco; upload válido salva com permissão 600
+  e é reconhecido na hora por `GoogleDrive::hasCredentials()`/
+  `getCredentialEmail()`, sem precisar reiniciar nada.
 - **PWA (instalável como app)** — `admin/manifest.json` + `admin/sw.js`
   (service worker mínimo, sem cache agressivo — dados do CRM são sempre
   dinâmicos), mesmo padrão do JurídicoSaaS. Como o admin da Fastcar (ao

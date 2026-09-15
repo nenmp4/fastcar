@@ -167,6 +167,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $erro = $resultado['erro'];
             }
+        } elseif ($acao === 'salvar_credencial_google') {
+            $resultado = processarUploadCredencialGoogle($_FILES['credencial_google'] ?? []);
+            if ($resultado['ok']) {
+                $sucesso = 'Credencial do Google salva! Service account: ' . $resultado['email'];
+            } else {
+                $erro = $resultado['erro'];
+            }
         } elseif ($acao === 'salvar_backup') {
             setConfig('backup_auto_ativo', isset($_POST['backup_auto_ativo']) ? '1' : '0');
             setConfig('drive_backup_ativo', isset($_POST['drive_backup_ativo']) ? '1' : '0');
@@ -331,9 +338,10 @@ $fila = listarFilaConsultores();
     <h2>📁 Google Drive</h2>
     <p><small>Mesmo padrão do JurídicoSaaS — pasta "Fastcar" com uma subpasta por cliente, onde ficam os documentos
        enviados (CNH, comprovante de endereço, contrato de financiamento, contratos assinados). A credencial é um
-       JSON de service account do Google Cloud, dropado manualmente no servidor (não tem upload por aqui, de
-       propósito — é uma chave sensível) em <code>config/google_drive_credentials.json</code> (pasta protegida por
-       .htaccess).</small></p>
+       JSON de service account do Google Cloud, salva em <code>config/google_drive_credentials.json</code> (pasta
+       protegida por .htaccess, `chmod 600`) — a MESMA credencial usada pro e-mail transacional
+       (Configurações → E-mail). Upload direto por aqui desde 15/09/2026 (antes só dava pra dropar manualmente por
+       FTP/SSH); continua restrito ao super_admin, como toda essa tela.</small></p>
     <p>
         Status:
         <span class="badge <?= $drive->hasCredentials() ? 'badge-ok' : 'badge-atraso' ?>">
@@ -344,6 +352,13 @@ $fila = listarFilaConsultores();
         <p><small>E-mail da service account: <code><?= e($drive->getCredentialEmail()) ?></code></small></p>
         <p><small>Pasta raiz no Drive: <code><?= e(getConfig('drive_folder_id') ?: '(criada automaticamente no 1º upload)') ?></code></small></p>
     <?php endif; ?>
+    <form method="post" enctype="multipart/form-data" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_credencial_google">
+        <label>Arquivo JSON da service account (<?= $drive->hasCredentials() ? 'substituir' : 'enviar' ?>)</label>
+        <input type="file" name="credencial_google" accept="application/json,.json" required>
+        <button type="submit">Enviar credencial</button>
+    </form>
 </div>
 
 <div class="card">
@@ -430,8 +445,8 @@ $fila = listarFilaConsultores();
 <div class="card">
     <h2>✉️ E-mail (Gmail API — Google Workspace)</h2>
     <p><small>Trocado da Brevo em 15/09/2026 (pedido do José/Jean) — reaproveita a MESMA credencial de service account
-       do Google Drive (<code>config/google_drive_credentials.json</code>, dropada manualmente no servidor, ver card
-       acima), só muda o escopo (<code>gmail.send</code>) e a service account passa a "impersonar" a caixa configurada
+       do Google Drive (<code>config/google_drive_credentials.json</code>, ver card acima pra enviar/trocar), só muda
+       o escopo (<code>gmail.send</code>) e a service account passa a "impersonar" a caixa configurada
        abaixo via delegação em todo o domínio (autorizada no Workspace Admin — não dá pra configurar por aqui, é um
        passo manual no painel admin.google.com).</small></p>
     <p>
