@@ -238,6 +238,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 (function () {
     var telefone = <?= json_encode($telefoneAtivo) ?>;
     var ultimoId = <?= (int)$ultimoId ?>;
+    var meuNome = <?= json_encode($_SESSION['admin_nome'] ?? '') ?>;
     var thread = document.getElementById('wpp-thread');
     var form = document.getElementById('wpp-form');
     var csrf = document.querySelector('input[name="csrf_token"]');
@@ -336,7 +337,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         var div = document.createElement('div');
                         div.className = 'msg msg-out';
                         var agora = new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-                        div.innerHTML = escapeHtml(texto).replace(/\n/g, '<br>') + '<small>' + agora + '</small>';
+                        var rodapeAgora = agora + (meuNome ? ' · 👤 ' + meuNome : '');
+                        div.innerHTML = escapeHtml(texto).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodapeAgora) + '</small>';
                         thread.appendChild(div);
                         thread.scrollTop = thread.scrollHeight;
                     } else {
