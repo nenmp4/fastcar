@@ -237,6 +237,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
     <a href="/admin/clientes.php">👥 Clientes</a>
     <a href="/admin/vendas.php">💰 Vendas</a>
+    <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/veiculos.php">🚗 Veículos</a>
@@ -562,7 +563,10 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 <div class="card">
-    <h3>Conversa (últimas <?= count($mensagens) ?> mensagens)</h3>
+    <h3>Conversa (últimas <?= count($mensagens) ?> mensagens)
+        <a href="/admin/whatsapp_inbox.php?telefone=<?= e($op['cliente_telefone']) ?>" style="font-size:13px;font-weight:600">💬 Abrir no WhatsApp Box →</a>
+    </h3>
+    <p><small>Pra responder o cliente, usa o WhatsApp Box (link acima) — essa lista aqui é só pra contexto rápido.</small></p>
     <div class="msg-thread">
         <?php if (!$mensagens): ?>
             <p><small>Nenhuma mensagem registrada ainda.</small></p>

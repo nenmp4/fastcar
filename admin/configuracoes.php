@@ -201,10 +201,12 @@ $fila = listarFilaConsultores();
 </div>
 
 <div class="card">
-    <h2>⚙️ Instância principal (entrada, qualificação IA e follow-up)</h2>
+    <h2>⚙️ Instância Z-API (única)</h2>
     <p><small>Restrito ao super_admin. Essas credenciais dão acesso à instância de WhatsApp da Fastcar — não compartilhe.
-       Cuida só dos blocos 2-4 do funil (entrada, IA, follow-up do cron); a partir do bloco 5 o atendimento passa a ser
-       sempre pela instância própria do consultor, configurada abaixo.</small></p>
+       Decisão de 15/09/2026 (José/Jean): 1 instância só pra tudo — entrada/IA/follow-up automático (blocos 2-4) E
+       o atendimento humano a partir do bloco 5, que agora acontece pelo
+       <a href="/admin/whatsapp_inbox.php">WhatsApp Box</a> dentro do CRM, nunca mais por instância própria de
+       consultor.</small></p>
 
     <p>
         Status Z-API:
@@ -397,12 +399,6 @@ $fila = listarFilaConsultores();
         <input type="email" name="email_teste" placeholder="seu@email.com">
         <button type="submit" <?= getConfig('brevo_api_key') ? '' : 'disabled' ?>>Enviar e-mail de teste</button>
     </form>
-</div>
-
-<div class="card">
-    <h3>👤 Instâncias dos consultores</h3>
-    <p><small>Mudou de lugar — configura direto no perfil de cada pessoa, em
-       <a href="/admin/usuarios.php">Usuários</a> → editar → "Instância Z-API".</small></p>
 </div>
 
 <div class="card">

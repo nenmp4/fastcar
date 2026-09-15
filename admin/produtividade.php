@@ -1,8 +1,17 @@
 <?php
 /**
- * Produtividade dos consultores — volume de mensagens trocadas
- * com clientes pela instância própria de cada um (bloco 5+ do funil).
+ * Produtividade dos consultores — volume de mensagens enviadas por cada um.
  * Restrito ao super_admin, mesma trava de admin/configuracoes.php.
+ *
+ * Reaproveitada em 15/09/2026 depois da decisão de "1 instância Z-API só":
+ * antes contava mensagens da instância PRÓPRIA de cada consultor
+ * (zapi_instancias_consultores, arquitetura retirada); agora
+ * whatsapp_mensagens.usuario_id é preenchido pelo WhatsApp Box
+ * (admin/whatsapp_inbox.php::enviarMensagemManualWhatsapp()) sempre que
+ * alguém manda mensagem manual — a query (zapiContarMensagensPorConsultor(),
+ * includes/zapi_instancias.php) não mudou, só a fonte do dado. "Recebidas"
+ * sempre fica 0 por consultor agora (mensagem que entra não tem remetente
+ * interno — é só do cliente), campo mantido só por compatibilidade.
  *
  * Métrica pedida como primeiro corte: só volume (enviadas/recebidas).
  * Tempo de resposta fica pra uma próxima iteração, quando tiver mais
@@ -38,9 +47,9 @@ $linhas = zapiContarMensagensPorConsultor($dias);
 <main>
 <div class="card">
     <h2>📊 Produtividade — volume de mensagens</h2>
-    <p><small>Conta mensagens trocadas pela instância própria de cada consultor (bloco 5+) — a instância
-       principal (entrada/IA/follow-up) não entra nessa contagem de propósito, é volume do funil oficial, não de
-       atendimento individual.</small></p>
+    <p><small>Conta mensagens enviadas manualmente por cada consultor pelo
+       <a href="/admin/whatsapp_inbox.php">WhatsApp Box</a> — mensagem automática da IA ou do follow-up do cron não
+       entra nessa contagem de propósito, é volume de atendimento humano, não do funil automático.</small></p>
 
     <nav class="etapas-nav">
         <a href="?dias=1" class="<?= $dias === 1 ? 'ativo' : '' ?>">Hoje</a>
@@ -60,8 +69,8 @@ $linhas = zapiContarMensagensPorConsultor($dias);
         </thead>
         <tbody>
         <?php if (!$linhas): ?>
-            <tr><td colspan="5">Nenhuma mensagem registrada por instância de consultor no período — ou ninguém
-                tem instância configurada ainda em <a href="/admin/configuracoes.php">Configurações</a>.</td></tr>
+            <tr><td colspan="5">Ninguém mandou mensagem manual pelo
+                <a href="/admin/whatsapp_inbox.php">WhatsApp Box</a> nesse período ainda.</td></tr>
         <?php endif; ?>
         <?php foreach ($linhas as $l): ?>
             <tr>

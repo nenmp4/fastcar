@@ -91,9 +91,11 @@ na primeira conexão (banco não existe ainda → roda o schema inteiro).
 Tabelas: `clientes`, `oportunidades`, `oportunidade_historico`,
 `whatsapp_mensagens`, `whatsapp_sessoes`, `oportunidade_documentos`,
 `oportunidade_pendencias_pos_venda`, `usuarios`, `config`,
-`zapi_instancias_consultores` (instância Z-API própria de cada consultor,
-só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
-`contratos` (contrato gerado + rastreio de assinatura eletrônica via ZapSign).
+`zapi_instancias_consultores` (⚠️ arquitetura de instância própria por
+consultor RETIRADA em 15/09/2026 — ver bullet "WhatsApp Box" abaixo; tabela
+segue no schema sem uso novo, não removida sem ganho real),
+`contratos` (contrato gerado + rastreio de assinatura eletrônica via ZapSign),
+`vendas`, `venda_historico` (módulo de vendas, ver bullet próprio).
 
 > ⚠️ Igual ao JurídicoSaaS: `config` é só `chave TEXT PRIMARY KEY, valor TEXT`,
 > sem `updated_at`. Cache com TTL usa o padrão `"timestamp|json"` no valor.
@@ -106,13 +108,56 @@ só pra monitorar produtividade — ver seção de arquitetura Z-API abaixo),
   `chatbot-whatsapp/includes/mensagens.php` (lógica compartilhada com o
   simulador de CLI `chatbot-whatsapp/simulate.php`, útil pra testar o bot
   sem precisar de credencial Z-API real)
-- **Arquitetura multi-instância Z-API** — a instância **principal** cuida só
-  dos blocos 2-4 (entrada, qualificação IA, followup automático); a partir do
-  bloco 5 (atendimento), toda comunicação com aquele cliente passa a ser pela
-  instância própria do consultor responsável (`zapi_instancias_consultores`),
-  nunca mais pelo número principal naquele negócio. As instâncias dos
-  consultores servem só pra **monitorar produtividade** (`admin/produtividade.php`),
-  não pra rodar o bot
+- **1 instância Z-API só + WhatsApp Box** (`includes/whatsapp_inbox.php` +
+  `admin/whatsapp_inbox.php`, 15/09/2026, decisão do José/Jean: "decidimos
+  manter só uma instância — e os números dos usuários somente para
+  notificação de novo lead — adicionar um whatsapp box igual do
+  juridicoSaas"). Substitui a arquitetura anterior de 1 instância Z-API por
+  consultor (`zapi_instancias_consultores`, retirada — ver nota na tabela
+  acima): agora todo mundo atende pela **mesma** instância principal,
+  direto de uma caixa de entrada estilo WhatsApp Web dentro do CRM —
+  sidebar com as conversas (nome, última mensagem, badge de não lidas,
+  indicador de IA pausada, ordenadas pela mais recente) + thread da
+  conversa selecionada + caixa de texto pra responder, com polling (sem
+  WebSocket, mesma filosofia shared-hosting-friendly do sino de
+  notificação). **Quem vê o quê** (pergunta direta de acompanhamento do
+  José/Jean, mesmo dia: "inbox vai mostrar todos ou leads do usuário que
+  iniciou atendimento?"): super_admin vê a caixa inteira; consultor só vê
+  conversa de cliente onde ele é `responsavel_id` em pelo menos 1
+  oportunidade (`listarConversasWhatsapp()`) — mesmo padrão "Minhas/Todas"
+  já usado em `admin/index.php` pro funil de compra, aplicado aqui também.
+  A restrição não é só cosmética na sidebar: `usuarioPodeVerConversaWhatsapp()`
+  trava também acesso direto por `?telefone=` na URL e qualquer POST
+  (enviar mensagem, pausar/reativar IA) mesmo com CSRF válido — sem essa
+  checagem em separado, a sidebar filtrada sozinha não impedia um
+  consultor de simplesmente digitar o telefone de outro cliente na URL ou
+  forjar o campo `telefone` do formulário. Testado explicitamente: 2
+  consultores each vendo só o próprio cliente na lista, tentativa de
+  acesso direto e de POST forjado pro cliente do outro bloqueadas nos 2
+  casos (banco confirmado sem nenhuma alteração), super_admin vendo os
+  dois normalmente. Inspirado no
+  `admin/whatsapp-inbox.php` do JurídicoSaaS (repo irmão, lido no momento
+  de implementar), mas **enxuto** pro modelo de dados do Fastcar — de
+  propósito **sem** os recursos específicos de escritório de advocacia que
+  o original tem (templates jurídicos, stickers, encaminhar conversa,
+  spin_score, cache de foto de perfil, envio de documento/imagem pela
+  caixa): ficam como possível próxima iteração se a equipe sentir falta,
+  não implementados agora pra evitar over-engineering sem pedido real.
+  Mandar mensagem pela caixa **pausa a IA automaticamente**
+  (`pausarIA()`, regra #4) — diferente do `fromMe` que o webhook já
+  registrava sem pausar (podia ser eco do próprio bot enviando, não dava
+  pra saber); aqui a ação É de um humano assumindo a conversa, pausar é
+  sempre certo. `usuarios.whatsapp` deixou de ser canal de atendimento
+  (não existe mais instância própria pra configurar em
+  `admin/usuarios.php`, seção retirada) — serve só pro número **pessoal**
+  do consultor receber notificação de lead novo
+  (`notificarConsultorLeadQualificado()`, isso não mudou).
+  `whatsapp_mensagens.usuario_id`, que antes marcava "por qual instância
+  de consultor a mensagem passou", passou a marcar "quem mandou pela
+  caixa" — `admin/produtividade.php` não precisou mudar a query
+  (`zapiContarMensagensPorConsultor()`), só a fonte do dado ficou mais
+  direta (textos escritos por humano de verdade, não mais decorrência de
+  ter ou não uma instância própria configurada).
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -655,6 +700,17 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   instância própria da Fastcar) — padrão de webhook: dedup de `messageId`
   (evita processar 2x o mesmo webhook), salvar mensagem antes de processar,
   checar `fromMe`/grupo antes de rodar qualquer lógica de bot
+- **WhatsApp Box** (`admin/whatsapp_inbox.php`, 15/09/2026) — inspirado no
+  `admin/whatsapp-inbox.php` do JurídicoSaaS (repo irmão), só que **enxuto**
+  pro modelo de dados e escala do Fastcar: sidebar + thread + polling
+  reaproveitados do conceito, mas sem os recursos específicos de escritório
+  de advocacia (templates jurídicos, stickers, spin_score, encaminhar
+  conversa, cache de foto de perfil) — ver bullet completo na seção de
+  módulos. Se outro projeto for criado a partir daqui, portar o conceito
+  de novo (sidebar+thread+polling+pausar IA), não o arquivo do JurídicoSaaS
+  direto — os dois têm modelo de dado (leads/clientes separados lá,
+  oportunidades aqui) e regras de negócio (jurídico x compra de veículo)
+  diferentes demais pra copy-paste direto
 - **Gemini + fallback OpenAI** (`includes/gemini.php`, `includes/openai.php`)
   — mesmo padrão de fallback duplo do JurídicoSaaS: tenta Gemini primeiro,
   só cai pro GPT se o Gemini falhar/não estiver configurado

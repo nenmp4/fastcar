@@ -193,4 +193,25 @@ foreach ([['assinafy_doc_id', 'zapsign_doc_token'], ['assinafy_signer_id', 'zaps
     }
 }
 
+// 15/09/2026 — WhatsApp Box (admin/whatsapp_inbox.php): "não lida" por
+// mensagem, pro badge de conversa pendente. Checa ANTES de adicionar a
+// coluna pra só rodar o backfill na 1ª vez: sem isso, um SQLite ALTER TABLE
+// ADD COLUMN aplica o DEFAULT 0 em toda linha já existente (mensagem
+// antiga viraria "não lida" do nada); e se o backfill rodasse de novo em
+// deploys futuros, marcaria como lida uma mensagem de verdade ainda não
+// vista (teto de "created_at < agora" pegaria qualquer uma com mais de
+// alguns segundos). Rodar só 1x, condicionado à coluna não existir ainda,
+// resolve os dois problemas.
+if (!colunaExiste($db, 'whatsapp_mensagens', 'lida')) {
+    try {
+        $db->exec("ALTER TABLE whatsapp_mensagens ADD COLUMN lida INTEGER DEFAULT 0");
+        $afetadas = $db->exec("UPDATE whatsapp_mensagens SET lida = 1 WHERE direcao = 'in'");
+        echo "✅ whatsapp_mensagens.lida: adicionada, {$afetadas} mensagem(ns) antiga(s) marcada(s) como já lida(s)\n";
+    } catch (Throwable $e) {
+        echo "❌ whatsapp_mensagens.lida: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  whatsapp_mensagens.lida: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

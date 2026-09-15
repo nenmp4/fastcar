@@ -173,17 +173,23 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
     arquivo_url TEXT DEFAULT '',
     enviado_por_ia INTEGER DEFAULT 0,   -- 1 = resposta automática da IA, 0 = humano
     zapi_message_id TEXT DEFAULT '',    -- messageId do Z-API — dedup de webhook reenviado
-    -- NULL = veio pela instância principal (funil oficial). Preenchido = veio
-    -- pela instância Z-API própria de um consultor/closer (zapi_instancias_consultores)
-    -- — o telefone do cliente é o mesmo, então a conversa entra no mesmo
-    -- histórico automaticamente; isso só marca QUEM falou por qual canal,
-    -- pra dar pra ver o que cada consultor conversa com o cliente e medir
-    -- volume por pessoa.
+    -- Decisão de 15/09/2026 (José/Jean): 1 instância Z-API só, WhatsApp Box
+    -- (admin/whatsapp_inbox.php) é o jeito de todo mundo atender pelo mesmo
+    -- número — usuario_id aqui passou a marcar QUEM enviou pela caixa
+    -- (não mais "qual instância própria"; zapi_instancias_consultores ficou
+    -- sem uso novo, ver CLAUDE.md), alimentando admin/produtividade.php.
     usuario_id INTEGER REFERENCES usuarios(id),
+    -- "Não lida" pro WhatsApp Box (só é relevante pra direcao='in' — mensagem
+    -- do cliente ainda não vista por ninguém da equipe; marcada 1 quando
+    -- alguém abre a conversa, includes/whatsapp_inbox.php::marcarConversaLida()).
+    lida INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_wpp_telefone ON whatsapp_mensagens(telefone, id DESC);
 CREATE INDEX IF NOT EXISTS idx_wpp_usuario ON whatsapp_mensagens(usuario_id, created_at);
+-- Índice parcial: contagem de "não lidas" (WhatsApp Box) só olha direcao='in'
+-- AND lida=0 — índice pequeno, só cresce com mensagem de verdade não vista.
+CREATE INDEX IF NOT EXISTS idx_wpp_nao_lidas ON whatsapp_mensagens(telefone) WHERE direcao = 'in' AND lida = 0;
 -- Índice parcial: só exige unicidade quando zapi_message_id foi informado.
 -- Mensagens digitadas manualmente no CRM (sem messageId) não competem entre si.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wpp_zapi_message_id

@@ -17,6 +17,7 @@ require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';
 require_once __DIR__ . '/../includes/oportunidades.php';
 require_once __DIR__ . '/../includes/vendas.php';
+require_once __DIR__ . '/../includes/whatsapp_inbox.php';
 require_once __DIR__ . '/../includes/fipe.php';
 require_once __DIR__ . '/../includes/whatsapp_config.php';
 require_once __DIR__ . '/../includes/zapi_instancias.php';
