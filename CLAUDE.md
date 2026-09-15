@@ -576,7 +576,18 @@ segue no schema sem uso novo, não removida sem ganho real),
   bugs reais já corrigidos aqui (ver seção de bugs corrigidos abaixo)
 - **E-mail** — `includes/mail.php`, via API da Brevo (não SMTP puro — mesmo
   motivo do JurídicoSaaS: porta bloqueada em VPS nova + reputação/SPF/DKIM),
-  configurável em Configurações → E-mail (Brevo), com teste de envio
+  configurável em Configurações → E-mail (Brevo), com teste de envio.
+  **Google Workspace cogitado no lugar da Brevo em 15/09/2026, decisão:
+  manter Brevo** — Workspace é feito pra e-mail humano, não pra envio
+  automático em volume (limite baixo por dia, risco de a própria Google
+  sinalizar como abuso); Brevo já manda a partir do domínio próprio da
+  Fastcar (`fastcar.solutions`, com SPF/DKIM configurado nele) sem precisar
+  de licença Workspace pra isso — Workspace segue sendo só a caixa de
+  e-mail humana da equipe, separado do envio automático do CRM.
+  `email_from` definido: **`contato@fastcar.solutions`** — falta cadastrar
+  esse domínio como verificado no painel da Brevo (Remetentes e IP →
+  Domínios) e adicionar os registros SPF/DKIM que ela gerar no Cloudflare
+  (mesmo DNS usado pro site/VPS).
 - **Backup** — `includes/backup.php` (compartilhado entre `cron/` e
   `admin/backup.php`, nunca duplicado): banco copiado várias vezes ao dia,
   ZIP completo (banco + uploads locais + credencial do Drive) 1x/dia, envio
@@ -777,19 +788,25 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    com SSL Full-strict + Origin Certificate + Bot Fight Mode, firewall
    restrito a IPs da Cloudflare, `install/setup_crontab.sh`, deploy via
    webhook do GitHub + `api/webhook_deploy.php`, e-mail via Brevo, backup).
-   **Ainda falta:** finalizar a compra e provisionar a VPS de verdade, e o
-   **domínio da Fastcar ainda não existe** — os passos que dependem dele
-   (Cloudflare/SSL, webhook de deploy com URL pública) ficam marcados com
-   ⏳ no guia até lá; o resto (nginx, crontab, e-mail, backup) não depende
-   de domínio e já pode ser feito assim que a VPS existir.
+   **Domínio definido em 15/09/2026: `fastcar.solutions`** — os passos que
+   dependiam dele (Cloudflare/SSL, webhook de deploy com URL pública,
+   webhook da Z-API, domínio verificado na Brevo) já podem sair do ⏳ no
+   guia. **Ainda falta:** confirmar se a VPS HostGator já foi provisionada
+   de verdade (compra) e o DNS do domínio já apontado pro Cloudflare —
+   perguntar antes de marcar o guia como concluído.
 2. ~~**WhatsApp**~~ — ✅ decidido: **Z-API**, mesmo provedor do JurídicoSaaS.
-   Instância própria da Fastcar (não reaproveita a do escritório de
-   advocacia) — precisa criar instância nova no painel Z-API e configurar
-   `zapi_instance_id`/`zapi_token`/`zapi_client_token` no `config` deste
-   projeto quando a instância existir. Webhook vai seguir o mesmo padrão de
-   `chatbot-whatsapp/webhook/whatsapp.php` do JurídicoSaaS: dedup de
-   `messageId`, checar `fromMe`/grupo antes de processar, salvar mensagem
-   sempre (mesmo em pausa de IA)
+   Instância própria da Fastcar já criada em 10/07/2026 (**"FastCar | JEAN"**,
+   número 11 9 5834-7764, plano pago, `Conectado`/Multi Device) — falta só
+   configurar em Configurações → Z-API (`zapi_instance_id`/`zapi_token`,
+   colhidos da tela "Dados da instância web" da Z-API em 15/09/2026;
+   `zapi_client_token` é campo separado, fica em Segurança → não em Dados da
+   instância, ainda não coletado) e trocar o webhook "Ao receber" da
+   instância (estava apontando pra um n8n de outro projeto, achado
+   conferindo a tela — `https://.../webhook/yaqar-incoming-jonas`) pra
+   `https://fastcar.solutions/chatbot-whatsapp/webhook/whatsapp.php`.
+   Webhook (`chatbot-whatsapp/webhook/whatsapp.php`) segue o mesmo padrão do
+   JurídicoSaaS: dedup de `messageId`, checar `fromMe`/grupo antes de
+   processar, salvar mensagem sempre (mesmo em pausa de IA)
 3. ~~**IA de qualificação**~~ — ✅ decidido: **Gemini** (`gemini-2.5-flash-lite`,
    o mais barato da família 2.5) como provedor principal, com fallback
    automático pro **OpenAI GPT** (`gpt-4o-mini`, também o nível mais barato)
