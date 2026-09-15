@@ -77,19 +77,18 @@ if ($instancia['tipo'] === 'desconhecida') {
     responderOk(['ignored' => 'unknown_instance']);
 }
 
-// client-token: Z-API devolve no header o mesmo token configurado na
-// instância que originou o evento (principal ou de um consultor — cada
-// uma tem o seu). Só valida se essa instância já tiver client_token
-// configurado — em fase de setup (sem credencial real ainda), deixa
-// passar pra não travar teste.
-if ($instancia['client_token']) {
-    $recebido = $_SERVER['HTTP_CLIENT_TOKEN'] ?? '';
-    if (!hash_equals($instancia['client_token'], $recebido)) {
-        log_webhook('client-token inválido no header, ignorando webhook.');
-        http_response_code(401);
-        responderOk(['ignored' => 'invalid_token']);
-    }
-}
+// ⚠️ 15/09/2026 — checagem de client-token no header REMOVIDA: a suposição
+// original (copiada do padrão do JurídicoSaaS, nunca confirmada contra uma
+// instância real até hoje) era que a Z-API devolveria o Client-Token no
+// header de todo webhook recebido, igual ela exige de volta nas chamadas
+// que NÓS fazemos pra API dela. Não é isso — Client-Token é autenticação
+// das NOSSAS chamadas pra Z-API, não algo que ela manda de volta quando
+// ELA chama nosso webhook. Confirmado em produção: 4 tentativas reais
+// seguidas rejeitadas com "client-token inválido", incluindo depois de
+// regenerar um token novo e colar certinho — o header simplesmente não
+// vem preenchido do jeito que o código esperava. Validação de origem do
+// webhook continua por `instanceId` (só processa se bater com a instância
+// principal cadastrada) + dedup de `messageId`, mesma proteção de sempre.
 
 $resultado = processarMensagemZapi($payload, $instancia);
 

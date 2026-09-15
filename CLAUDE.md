@@ -927,6 +927,13 @@ testado com servidor fake local — nunca contra o serviço real:
 - **Formato do payload do webhook Z-API** — `messageId`, `phone`, `fromMe`,
   `isGroup`, `text.message`, `instanceId` — construído pelo padrão do
   JurídicoSaaS, nunca confirmado contra uma instância Z-API de verdade.
+  ⚠️ **Uma suposição já confirmada ERRADA em produção (15/09/2026)**: o
+  webhook validava um header `Client-Token` no recebimento, copiado do
+  padrão do JurídicoSaaS sem nunca ter sido testado contra a Z-API real —
+  na prática ela não manda esse header de volta (Client-Token é só pras
+  chamadas que NÓS fazemos pra API dela, não o contrário). Rejeitava 100%
+  das mensagens recebidas em produção ("client-token inválido no header")
+  até ser removido — ver `chatbot-whatsapp/webhook/whatsapp.php`.
 - **URL de download de áudio/imagem no payload Z-API** —
   `extrairUrlMidia()` (`chatbot-whatsapp/includes/mensagens.php`) tenta os
   nomes de campo mais prováveis (`audioUrl`/`imageUrl`, `url`, `mediaUrl`,
