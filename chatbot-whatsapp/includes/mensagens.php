@@ -21,6 +21,13 @@ require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
 // digitada linha a linha ao vivo).
 if (!defined('WHATSAPP_DEBOUNCE_SEGUNDOS')) define('WHATSAPP_DEBOUNCE_SEGUNDOS', 4);
 
+// Tamanho máximo de mídia (áudio/imagem/vídeo) baixada pra mandar pro
+// Gemini — a API só aceita `inlineData` base64 até por volta de 20MB;
+// acima disso precisaria da Files API (não implementada). Vídeo de
+// WhatsApp é o caso mais provável de estourar isso; corta o download
+// cedo em vez de baixar um arquivo grande só pra descartar depois.
+if (!defined('WHATSAPP_MIDIA_MAX_BYTES')) define('WHATSAPP_MIDIA_MAX_BYTES', 20 * 1024 * 1024);
+
 /**
  * Já processamos esse messageId antes? Checagem antecipada pra dedup de
  * webhook reenviado (Z-API pode reentregar o mesmo evento em timeout/retry)
@@ -108,12 +115,25 @@ function mimeMidia(array $payload, string $tipo, string $default): string {
 }
 
 /**
- * Baixa áudio/imagem e pede pro Gemini transcrever (áudio) ou descrever
- * (imagem) — retorna o texto resultante, ou '' se não deu por qualquer
- * motivo (sem URL, download falhou, sem chave Gemini configurada). Nunca
- * lança: mídia é sempre melhor esforço, mesmo espírito de enviarEmail()/
- * geminiRegistrarTokens() — se falhar, quem chama trata como mídia não
- * processada (cai no reconhecimento simples em vez de travar o webhook).
+ * Baixa áudio/imagem/vídeo e pede pro Gemini transcrever (áudio) ou
+ * descrever (imagem/vídeo) — retorna o texto resultante, ou '' se não deu
+ * por qualquer motivo (sem URL, download falhou, arquivo grande demais,
+ * sem chave Gemini configurada). Nunca lança: mídia é sempre melhor
+ * esforço, mesmo espírito de enviarEmail()/geminiRegistrarTokens() — se
+ * falhar, quem chama trata como mídia não processada (cai no
+ * reconhecimento simples em vez de travar o webhook).
+ *
+ * Vídeo (15/09/2026, pedido do José/Jean — "receber mídias áudio, imagem
+ * e vídeo, se cliente mandar, agente olhar"): mesmo mecanismo de
+ * audio/imagem (Gemini multimodal, `inlineData` base64, mesma função
+ * `geminiCallComMidia()` já usada pro wizard de documentos), só com um
+ * limite de tamanho — vídeo de WhatsApp pode passar fácil dos ~20MB que a
+ * API do Gemini aceita inline (acima disso precisaria da Files API, que
+ * não estava implementada) e o download síncrono dentro do webhook não
+ * pode ficar esperando um arquivo enorme. `WHATSAPP_MIDIA_MAX_BYTES` (20MB)
+ * corta o download cedo (CURLOPT_RANGE, evita baixar o arquivo inteiro só
+ * pra descartar) — vídeo grande demais cai no mesmo caminho de "não deu
+ * pra processar" (reconhecimento simples), nunca trava nem estoura memória.
  */
 function processarMidiaComGemini(string $url, string $mimeType, string $tipo): string {
     try {
@@ -121,17 +141,26 @@ function processarMidiaComGemini(string $url, string $mimeType, string $tipo): s
         if (!$geminiKey || !$url) return '';
 
         $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20]);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $tipo === 'video' ? 40 : 20,
+            CURLOPT_RANGE => '0-' . (WHATSAPP_MIDIA_MAX_BYTES - 1),
+        ]);
         $conteudo = curl_exec($ch);
         $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        if ($http !== 200 || !$conteudo) return '';
+        // 200 = servidor ignorou o Range e mandou tudo (ainda aceitável se
+        // coube no limite); 206 = respeitou o corte parcial.
+        if (!in_array($http, [200, 206], true) || !$conteudo) return '';
+        if (strlen($conteudo) >= WHATSAPP_MIDIA_MAX_BYTES) return '';
 
-        $prompt = $tipo === 'audio'
-            ? 'Transcreva literalmente o que a pessoa fala neste áudio, em português do Brasil. Responda só com a transcrição, sem comentário nenhum antes ou depois.'
-            : 'Descreva em 1-2 frases curtas o veículo nesta foto (marca/modelo se der pra identificar, cor, estado aparente de conservação). Se a imagem não for de um veículo, diga em poucas palavras o que é. Responda em português, direto, sem introdução tipo "a imagem mostra".';
+        $prompts = [
+            'audio' => 'Transcreva literalmente o que a pessoa fala neste áudio, em português do Brasil. Responda só com a transcrição, sem comentário nenhum antes ou depois.',
+            'image' => 'Descreva em 1-2 frases curtas o veículo nesta foto (marca/modelo se der pra identificar, cor, estado aparente de conservação). Se a imagem não for de um veículo, diga em poucas palavras o que é. Responda em português, direto, sem introdução tipo "a imagem mostra".',
+            'video' => 'Descreva em 2-3 frases curtas o que aparece neste vídeo, focando no veículo se houver um (marca/modelo se der pra identificar, cor, estado aparente de conservação, avarias visíveis) e transcrevendo rapidamente qualquer coisa relevante que a pessoa fale. Responda em português, direto, sem introdução tipo "o vídeo mostra".',
+        ];
 
-        return geminiCallComMidia($prompt, $mimeType, base64_encode($conteudo), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
+        return geminiCallComMidia($prompts[$tipo] ?? $prompts['image'], $mimeType, base64_encode($conteudo), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
     } catch (Throwable $e) {
         return '';
     }
@@ -320,10 +349,11 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         }
 
         $textoMidia = '';
-        if (in_array($tipoBruto, ['audio', 'image'], true)) {
+        if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
             $url = extrairUrlMidia($payload, $tipoBruto);
             if ($url) {
-                $mime = mimeMidia($payload, $tipoBruto, $tipoBruto === 'audio' ? 'audio/ogg' : 'image/jpeg');
+                $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
+                $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
                 $textoMidia = processarMidiaComGemini($url, $mime, $tipoBruto);
             }
         }
@@ -333,7 +363,8 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
             // veio de mídia. tipoRegistro='text' de propósito: assim
             // iaMontarHistoricoGemini() (que só lê tipo='text') e o gatilho de
             // qualificação abaixo tratam igual a uma mensagem digitada.
-            $texto = ($tipoBruto === 'audio' ? '🎤 ' : '📷 ') . $textoMidia;
+            $prefixo = ['audio' => '🎤 ', 'video' => '🎥 '][$tipoBruto] ?? '📷 ';
+            $texto = $prefixo . $textoMidia;
         } else {
             // Sem URL, download falhou, ou sem chave Gemini — marcador comum,
             // mantém a mensagem no histórico mesmo sem interpretar o conteúdo.

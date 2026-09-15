@@ -267,17 +267,29 @@ segue no schema sem uso novo, não removida sem ganho real),
   (`mudarEtapa()` pra `crm_preenchido`, resumo marcado com o motivo) em vez
   de deixar a IA girando à toa com quem só quer bater papo ou desconfiou
   que é bot. `resumo_ia` sai em formato checklist (✅ confirmado / ⚠️ falta
-  confirmar) pro consultor entender rápido o que já foi coberto. Áudio e
-  imagem recebidos no WhatsApp entram no fluxo normalmente: áudio é
-  transcrito e imagem é descrita via Gemini multimodal
+  confirmar) pro consultor entender rápido o que já foi coberto. Áudio,
+  imagem **e vídeo** recebidos no WhatsApp entram no fluxo normalmente:
+  áudio é transcrito, imagem é descrita e vídeo é descrito (cena + fala,
+  focando no veículo quando aparece) via Gemini multimodal
   (`geminiCallComMidia()`, `inlineData` base64) e o texto resultante alimenta
   a qualificação como se fosse mensagem digitada (salvo em
-  `whatsapp_mensagens` com `tipo='text'` e prefixo 🎤/📷, pra não precisar
-  tocar em mais nada que já filtra por `tipo='text'`); vídeo, figurinha,
-  documento, localização, contato — ou áudio/imagem que falhou o
-  processamento — recebem uma resposta de reconhecimento simples
-  (`chatbot-whatsapp/includes/mensagens.php`) em vez de deixar o lead sem
-  resposta nenhuma. **Debounce de mensagens picotadas** (13/09/2026,
+  `whatsapp_mensagens` com `tipo='text'` e prefixo 🎤/📷/🎥, pra não precisar
+  tocar em mais nada que já filtra por `tipo='text'`). Vídeo entrou em
+  15/09/2026 (pedido José/Jean: "receber mídias áudio, imagem e vídeo, se
+  cliente mandar, agente olhar") reaproveitando o mesmo mecanismo — só com
+  `WHATSAPP_MIDIA_MAX_BYTES` (20MB) cortando o download cedo via
+  `CURLOPT_RANGE`, já que a API do Gemini só aceita `inlineData` inline até
+  por volta desse tamanho (acima disso precisaria da Files API, não
+  implementada) e vídeo de WhatsApp passa fácil desse limite; arquivo
+  grande demais cai no mesmo caminho de "não deu pra processar" abaixo,
+  nunca trava nem estoura memória do processo do webhook. Testado com
+  servidor fake local: vídeo normal processado e registrado como
+  `tipo='text'` com prefixo 🎥, vídeo maior que o limite corretamente
+  rejeitado (volta vazio, sem chamar o Gemini com o arquivo inteiro).
+  Figurinha, documento, localização, contato — ou áudio/imagem/vídeo que
+  falhou o processamento — seguem recebendo uma resposta de reconhecimento
+  simples (`chatbot-whatsapp/includes/mensagens.php`) em vez de deixar o
+  lead sem resposta nenhuma. **Debounce de mensagens picotadas** (13/09/2026,
   auditoria de "como fica na prática" pedida pelo José/Jean): sem isso, um
   cliente que manda "Oi" / "quero vender meu carro" / "é um Onix 2019" como
   3 mensagens separadas em poucos segundos recebia 3 respostas picotadas da
@@ -1028,6 +1040,16 @@ testado com servidor fake local — nunca contra o serviço real:
   em foto tirada de celular (ângulo, reflexo, iluminação ruim), CNH modelo
   antigo x novo, e se o Gemini realmente lê PDF de contrato de
   financiamento escaneado (não só PDF nativo/texto).
+- **Vídeo recebido no WhatsApp** (`chatbot-whatsapp/includes/mensagens.php`,
+  15/09/2026) — mesma limitação de áudio/imagem: `extrairUrlMidia()`
+  pro bloco `video` do payload Z-API (campo `videoUrl` como aposta
+  principal) nunca foi confirmado contra uma instância real, só contra
+  servidor fake local. Validar assim que possível: nome exato do campo de
+  URL no payload real, se o Gemini processa bem vídeo curto de celular
+  (tremido, vertical, áudio ambiente ruim) descrevendo o veículo
+  corretamente, e se `WHATSAPP_MIDIA_MAX_BYTES` (20MB) não está cortando
+  vídeo legítimo de WhatsApp cedo demais (WhatsApp já comprime bastante,
+  mas nunca testado com um vídeo real pra confirmar o tamanho típico).
 - **API ZapSign** (`includes/zapsign.php`, `includes/contratos.php`) —
   substituiu a Assinafy em 13/09/2026. Construído a partir da documentação
   oficial (docs.zapsign.com.br, consultada via busca — o ambiente de dev
