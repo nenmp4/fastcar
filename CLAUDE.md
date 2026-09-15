@@ -1181,7 +1181,16 @@ testado com servidor fake local — nunca contra o serviço real:
   nomes de campo mais prováveis (`audioUrl`/`imageUrl`, `url`, `mediaUrl`,
   `link`) dentro do bloco `audio`/`image` do payload, mas o nome exato nunca
   foi confirmado contra uma instância real — só testado com servidor fake
-  local simulando essas variações.
+  local simulando essas variações. **Confirmado que isso é problema real em
+  produção, 15/09/2026** ("inbox ainda não está aparecendo as imagens" —
+  mídia recebida não estava sendo salva, quase certo que nenhum dos nomes
+  chutados bate com o campo de verdade). `logDiagnosticoMidiaZapi()` (novo)
+  grava em `storage/logs/whatsapp_midia_debug.log` o bloco cru da mídia
+  sempre que `extrairUrlMidia()` não acha o campo OU o download falha
+  (com http/erro do curl) — próxima vez que um cliente mandar foto/áudio
+  de verdade, esse log revela o nome real do campo pra travar
+  `extrairUrlMidia()` nele em vez de continuar tentando adivinhar. Remover
+  esse log depois que o formato for confirmado e corrigido de vez.
 - **Campo `referral` do clique em anúncio Meta Ads** — `extrairOrigemAnuncio()`
   aceita tanto `referral` solto quanto `message.referral`, mas o nome/formato
   exato dos campos (`source_id`, `headline`, `ctwa_clid`) só dá pra confirmar

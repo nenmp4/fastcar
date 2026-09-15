@@ -106,7 +106,32 @@ function extrairUrlMidia(array $payload, string $tipo): ?string {
     foreach (["{$tipo}Url", 'url', 'mediaUrl', 'link'] as $campo) {
         if (!empty($bloco[$campo])) return (string)$bloco[$campo];
     }
+    // Nenhum dos nomes prováveis bateu — achado real (15/09/2026, "inbox
+    // ainda não está aparecendo as imagens"): loga o bloco cru pra
+    // descobrir o nome de verdade na próxima mídia real, em vez de
+    // continuar chutando às cegas (ver CLAUDE.md "a validar em produção").
+    logDiagnosticoMidiaZapi($tipo, 'campo_url_nao_encontrado', $bloco);
     return null;
+}
+
+/**
+ * Log de diagnóstico temporário pra descobrir o formato real do payload de
+ * mídia da Z-API — nunca confirmado contra uma instância real (ver
+ * CLAUDE.md "a validar em produção"). Só grava quando algo no caminho de
+ * mídia falha (campo de URL não bate, download falha), pra não poluir o
+ * log em uso normal. Remover depois que o formato real for confirmado e
+ * extrairUrlMidia()/baixarMidiaZapi() forem travados no campo certo.
+ */
+function logDiagnosticoMidiaZapi(string $tipo, string $motivo, $detalhe): void {
+    try {
+        $dir = dirname(__DIR__, 2) . '/storage/logs';
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        $linha = '[' . date('Y-m-d H:i:s') . "] tipo={$tipo} motivo={$motivo} detalhe="
+            . json_encode($detalhe, JSON_UNESCAPED_UNICODE) . "\n";
+        file_put_contents($dir . '/whatsapp_midia_debug.log', $linha, FILE_APPEND);
+    } catch (Throwable $e) {
+        // diagnóstico nunca pode quebrar o fluxo principal
+    }
 }
 
 /** mimeType declarado no payload da mídia, com fallback razoável por tipo. */
@@ -142,11 +167,20 @@ function baixarMidiaZapi(string $url, string $tipo): ?string {
         ]);
         $conteudo = curl_exec($ch);
         $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErro = curl_error($ch);
         curl_close($ch);
         // 200 = servidor ignorou o Range e mandou tudo (ainda aceitável se
         // coube no limite); 206 = respeitou o corte parcial.
-        if (!in_array($http, [200, 206], true) || !$conteudo) return null;
-        if (strlen($conteudo) >= WHATSAPP_MIDIA_MAX_BYTES) return null;
+        if (!in_array($http, [200, 206], true) || !$conteudo) {
+            logDiagnosticoMidiaZapi($tipo, 'download_falhou', [
+                'url' => $url, 'http' => $http, 'curl_erro' => $curlErro,
+            ]);
+            return null;
+        }
+        if (strlen($conteudo) >= WHATSAPP_MIDIA_MAX_BYTES) {
+            logDiagnosticoMidiaZapi($tipo, 'arquivo_grande_demais', ['url' => $url]);
+            return null;
+        }
         return $conteudo;
     } catch (Throwable $e) {
         return null;
