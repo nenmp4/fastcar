@@ -566,7 +566,8 @@ unset($f);
     </form>
     <p><small>Move oportunidades ainda não tocadas pelo consultor (WhatsApp, Qualificação IA ou CRM preenchido —
        blocos 2 a 4, antes do consultor começar a atender de verdade) de quem está acima do teto pra quem está
-       disponível e abaixo do teto. Nunca mexe em oportunidade que já está em Atendimento ou depois.</small></p>
+       disponível e abaixo do teto, e também atribui as que estão sem responsável nenhum (ninguém estava disponível
+       quando entraram). Nunca mexe em oportunidade que já está em Atendimento ou depois.</small></p>
     <?php endif; ?>
 </div>
 

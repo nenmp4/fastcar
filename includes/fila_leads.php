@@ -130,15 +130,26 @@ const FILA_LEADS_ETAPAS_NAO_TOCADAS = ['whatsapp', 'qualificacao_ia', 'crm_preen
 
 /**
  * Corrige um desequilíbrio JÁ EXISTENTE na fila (o teto acima só evita que
- * aconteça de novo daqui pra frente). Move oportunidades ainda em etapa
- * "não tocada" (FILA_LEADS_ETAPAS_NAO_TOCADAS — entrada, qualificação IA ou
- * CRM preenchido, bloco 5 ainda não começou) de consultores acima do teto
- * pra quem está disponível e abaixo do teto, em rodízio. Nunca mexe em
- * oportunidade que o consultor já começou a trabalhar (etapa='atendimento'
- * em diante) — só redistribui o que ainda está "na fila" de verdade.
+ * aconteça de novo daqui pra frente), em 2 fases:
  *
- * Retorna um resumo (quantas movidas, de quem pra quem) pro admin ver o
- * que aconteceu.
+ * Fase 1 — rebalanceia: move oportunidades ainda em etapa "não tocada"
+ * (FILA_LEADS_ETAPAS_NAO_TOCADAS — entrada, qualificação IA ou CRM
+ * preenchido, bloco 5 ainda não começou) de consultores acima do teto pra
+ * quem está disponível e abaixo do teto, em rodízio.
+ *
+ * Fase 2 — adota órfãs: `atribuirResponsavelAutomatico()` só roda UMA VEZ,
+ * na entrada do lead (bloco 2) — se ninguém estava disponível NEM em
+ * plantão naquele instante, a oportunidade fica com `responsavel_id NULL`
+ * pra sempre, porque nada revisita depois (achado real em produção,
+ * 16/09/2026: funil cheio de leads reais, telefone válido, "Responsável: —",
+ * provavelmente do período antes de qualquer consultor logar disponível).
+ * Essa fase varre essas órfãs (mais antigas primeiro) e atribui pelo mesmo
+ * rodízio, mesmo teto.
+ *
+ * Nunca mexe em oportunidade que o consultor já começou a trabalhar
+ * (etapa='atendimento' em diante) — só adota/redistribui o que ainda está
+ * "na fila" de verdade. Retorna um resumo (quantas movidas/atribuídas, de
+ * quem pra quem) pro admin ver o que aconteceu.
  */
 function redistribuirFilaLeads(int $executadoPor): array {
     $db = getDB();
@@ -228,6 +239,62 @@ function redistribuirFilaLeads(int $executadoPor): array {
                 ];
             }
         }
+    }
+
+    // Fase 2 — adota órfãs (responsavel_id NULL): reaproveita o mesmo
+    // $receptores (já refletindo a carga atualizada depois da fase 1).
+    // Mais antigas primeiro — quem está esperando há mais tempo tem
+    // prioridade de finalmente ganhar um responsável.
+    $etapasPhOrfas = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
+    $stmtOrfas = $db->prepare("
+        SELECT o.id, o.etapa, c.nome AS cliente_nome
+        FROM oportunidades o
+        JOIN clientes c ON c.id = o.cliente_id
+        WHERE o.responsavel_id IS NULL AND o.etapa IN ({$etapasPhOrfas})
+        ORDER BY o.created_at ASC
+    ");
+    $stmtOrfas->execute(FILA_LEADS_ETAPAS_NAO_TOCADAS);
+    $orfas = $stmtOrfas->fetchAll();
+
+    foreach ($orfas as $oportunidade) {
+        usort($receptores, function ($a, $b) use ($cargas) {
+            return $cargas[(int)$a['id']] <=> $cargas[(int)$b['id']];
+        });
+        $receptores = array_values(array_filter($receptores, function ($r) use ($cargas) {
+            return $cargas[(int)$r['id']] < FILA_LEADS_MAX_ATIVAS;
+        }));
+        if (!$receptores) break;
+
+        $receptor = $receptores[0];
+        $receptorId = (int)$receptor['id'];
+
+        $db->beginTransaction();
+        try {
+            $db->prepare("UPDATE oportunidades SET responsavel_id = ? WHERE id = ?")
+               ->execute([$receptorId, $oportunidade['id']]);
+            $db->prepare("
+                INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                VALUES (?, ?, ?, ?, ?)
+            ")->execute([
+                $oportunidade['id'],
+                $oportunidade['etapa'],
+                $oportunidade['etapa'],
+                "Redistribuição automática da fila: atribuído a {$receptor['nome']} (estava sem responsável)",
+                $executadoPor,
+            ]);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        $cargas[$receptorId]++;
+        $movidas[] = [
+            'oportunidade_id' => $oportunidade['id'],
+            'cliente_nome' => $oportunidade['cliente_nome'],
+            'de' => '(sem responsável)',
+            'para' => $receptor['nome'],
+        ];
     }
 
     return $movidas;

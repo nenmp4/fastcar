@@ -16,11 +16,17 @@
  * números). Sinal forte e específico — nenhum contato de WhatsApp de
  * verdade gera telefone fora desse tamanho.
  *
- * Segurança: NUNCA apaga cliente/oportunidade que já chegou em
- * 'atendimento' ou além (contato humano de verdade) — mesmo que o
- * telefone bata no critério de "falso" (não deveria acontecer, mas por
+ * Segurança: NUNCA apaga cliente/oportunidade que tenha trabalho humano
+ * ativo em andamento ('atendimento'/'negociacao'/'presencial') ou negócio
+ * de verdade fechado ('fechado', dinheiro/contrato envolvido) — mesmo que
+ * o telefone bata no critério de "falso" (não deveria acontecer, mas por
  * segurança extra fica de fora do apagamento automático, listado à parte
- * pra revisão manual).
+ * pra revisão manual). 'perdido'/'sem_perfil' SÃO considerados seguros
+ * pra apagar — são estados terminais sem nada de valor associado; achado
+ * real em produção (16/09/2026): 5 leads com telefone falso já estavam
+ * marcados 'perdido' (provável tentativa manual de "tirar da tela" antes
+ * de existir um jeito de apagar de verdade) — não faz sentido bloquear a
+ * limpeza justamente desses.
  *
  * Uso:
  *   php install/limpar_leads_invalidos.php              — só lista (dry-run)
@@ -37,12 +43,13 @@ require_once __DIR__ . '/../includes/db.php';
 $confirmar = in_array('--confirmar', $argv, true);
 $db = getDB();
 
-$ETAPAS_TOCADAS = ['atendimento', 'negociacao', 'presencial', 'fechado', 'sem_perfil', 'perdido'];
+$ETAPAS_TOCADAS = ['atendimento', 'negociacao', 'presencial', 'fechado'];
 
 $candidatos = $db->query("
     SELECT c.id AS cliente_id, c.nome, c.telefone, c.created_at,
            COUNT(o.id) AS total_oportunidades,
-           GROUP_CONCAT(DISTINCT o.etapa) AS etapas
+           GROUP_CONCAT(DISTINCT o.etapa) AS etapas,
+           GROUP_CONCAT(DISTINCT NULLIF(o.motivo_perda, '')) AS motivos_perda
     FROM clientes c
     LEFT JOIN oportunidades o ON o.cliente_id = c.id
     WHERE LENGTH(c.telefone) NOT IN (12, 13) OR c.telefone GLOB '*[^0-9]*'
@@ -79,7 +86,8 @@ if ($paraRevisao) {
 
 echo ($confirmar ? "Apagando" : "Seriam apagados") . " " . count($seguros) . " cliente(s):\n";
 foreach ($seguros as $c) {
-    echo "  - cliente #{$c['cliente_id']} telefone={$c['telefone']} nome=\"{$c['nome']}\" oportunidades={$c['total_oportunidades']} criado_em={$c['created_at']}\n";
+    $motivo = $c['motivos_perda'] ? " motivo_perda=\"{$c['motivos_perda']}\"" : '';
+    echo "  - cliente #{$c['cliente_id']} telefone={$c['telefone']} nome=\"{$c['nome']}\" oportunidades={$c['total_oportunidades']} etapas=({$c['etapas']}){$motivo} criado_em={$c['created_at']}\n";
 }
 
 if (!$seguros) {

@@ -462,6 +462,49 @@ segue no schema sem uso novo, não removida sem ganho real),
   disponível, ou vale checar se boa parte desses 42 não é sobra do
   incidente de flood de mensagens duplicadas (15/09/2026, ver bullet do
   WhatsApp Box acima) que nunca foi limpa de verdade.
+  **`install/limpar_leads_invalidos.php` limpou 5 candidatos, mas todos em
+  `perdido`** — rodado em produção pra confirmar a suspeita do bullet
+  anterior: só 5 clientes bateram o critério de telefone inválido (não 42),
+  e os 5 já estavam marcados `perdido` (provável tentativa manual de tirar
+  da tela antes de existir um jeito de apagar de verdade) — ficaram fora
+  da limpeza automática porque a rede de segurança original tratava
+  QUALQUER etapa "além" (inclusive `perdido`/`sem_perfil`) como "já tocado,
+  não apagar". Ajustado pra separar estado **terminal sem valor** de
+  **trabalho ativo/negócio real**: `perdido`/`sem_perfil` passaram a ser
+  seguros pra apagar automaticamente (nenhum dinheiro/contrato associado),
+  só `atendimento`/`negociacao`/`presencial`/`fechado` continuam
+  protegidos. Relatório do script passou a mostrar `etapas` e
+  `motivo_perda` de cada candidato seguro, mais contexto antes de
+  confirmar. Testado em banco isolado: candidato em `perdido` agora entra
+  na lista de seguros, mesmo cenário em `fechado` continua protegido.
+  **Print do funil principal revelou o problema de verdade: dezenas de
+  leads reais, telefone válido, "Responsável: —"** (mesmo dia, usuário:
+  "esses leads tem ir para tela dos consultores") — não eram leads falsos
+  (o critério de telefone inválido não pegava esses), eram leads
+  GENUÍNOS que nunca ganharam responsável porque `atribuirResponsavelAutomatico()`
+  só roda 1 vez, na entrada do lead — se ninguém estava disponível NEM em
+  plantão naquele instante exato, a oportunidade fica com
+  `responsavel_id NULL` pra sempre, já que nada revisita depois. Esse é o
+  mecanismo real por trás do sintoma original relatado ("Anderson logou e
+  Rafael ficaram sem lead" — os leads que chegaram sem ninguém disponível
+  nunca foram redistribuídos quando alguém finalmente logou, só os novos
+  que chegaram DEPOIS do login iam pro rodízio). Corrigido com uma
+  **fase 2** em `redistribuirFilaLeads()`: depois de rebalancear quem está
+  acima do teto (fase 1), varre oportunidades com `responsavel_id IS NULL`
+  nas mesmas `FILA_LEADS_ETAPAS_NAO_TOCADAS`, mais antigas primeiro (quem
+  espera há mais tempo tem prioridade), e atribui pelo mesmo rodízio/teto
+  — reaproveita a mesma lista de receptores já atualizada pela fase 1,
+  então 1 clique resolve as duas coisas numa passada só. Nunca adota órfã
+  que por algum motivo já esteja em `atendimento` ou além (não deveria
+  existir, mesma rede de segurança de sempre). Testado em banco isolado:
+  Dayane com 7 (acima do teto) + 20 órfãs em `qualificacao_ia` (criadas em
+  horários diferentes) + Anderson disponível vazio + Rafael **offline** +
+  1 órfã-em-`atendimento` (edge case de segurança) — rebalanceou 2 de
+  Dayane pra Anderson (7→5), adotou 3 órfãs (as mais antigas, confirmado
+  "Cliente Orfa 1" entre elas) até Anderson bater o teto de 5, Rafael
+  offline corretamente nunca recebeu nada, 17 órfãs restantes corretamente
+  sem responsável (capacidade do sistema esgotada com só 1 disponível),
+  órfã em `atendimento` seguiu intocada.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
