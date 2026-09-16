@@ -384,6 +384,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   moto, identifique como moto explicitamente (não trate como carro)" — a
   Fastcar compra os dois. Testado com foto simulada: Gemini respondeu
   "Moto Honda CG 160 Titan preta, em bom estado" corretamente.
+  **403 pra ver mídia, mesmo a conversa aparecendo na caixa** (16/09/2026,
+  "no ibox não consigo visualizar as fotos") — investigado passo a passo
+  antes de mexer em código: confirmado que a mídia estava sendo salva
+  direitinho (arquivo_url apontando certo pro fallback local, já que
+  `drive_file_id` fica sempre vazio pra mídia de WhatsApp — nunca chegou a
+  configurar Drive pra esse fluxo especificamente), que o arquivo existe
+  de verdade no disco com dono/permissão certos (`www-data`, 644, mesmo
+  usuário que o PHP-FPM/nginx rodam), e que o endpoint responde 302 (não
+  403) sem sessão nenhuma — descarta Cloudflare/firewall bloqueando esse
+  padrão de URL. Só com o **texto exato** do erro em mãos ("Essa conversa
+  não é de um cliente sob sua responsabilidade") ficou claro: causa raiz é
+  que `admin/ver_midia_whatsapp.php` checava
+  `$_SESSION['admin_perfil'] === 'super_admin'` direto, em vez de
+  `perfilVeTudo()` (super_admin OU supervisor) como o resto de
+  `admin/whatsapp_inbox.php` já usa desde 15/09/2026 — a listagem de
+  conversas já liberava certo pro supervisor (por isso a conversa
+  aparecia normal na caixa), mas o endpoint que SERVE a mídia em si tinha
+  ficado pra trás com a checagem antiga, batendo 403 só nesse ponto
+  específico. Corrigido trocando pra `perfilVeTudo()`, mesmo padrão do
+  resto do arquivo.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -561,6 +581,24 @@ segue no schema sem uso novo, não removida sem ganho real),
   sem atraso — já qualifica o lead, mas não com a urgência de quem está
   atrasado. Tom/engajamento virou sinal secundário, só desempata dentro da
   mesma faixa (não escala sozinho pra "quente" com parcela em dia).
+  **"Poucas parcelas restantes" virou "frio", não mais "morno"**
+  (16/09/2026, achado real vendo a oportunidade #51 no admin — Chevrolet
+  Spin LT 2016, parcela R$1.600, só 4 parcelas restantes, tinha saído
+  "🔥 Quente"; José/Rafael: "esse tipo lead aqui é lead frio, poucas
+  parcelas para pagar"). O critério de 15/09/2026 (ver acima) tinha
+  colocado "já pagou boa parte do financiamento — poucas parcelas
+  restantes, saldo baixo — mesmo sem atraso" no bucket "morno"; corrigido
+  pra "frio" — racional de negócio: quem está perto de quitar sozinho tem
+  **menos** motivo pra vender agora pra Fastcar assumir uma dívida
+  pequena, não mais urgência. "morno" ficou só com "1-2 parcelas
+  atrasadas" ou "financiamento tranquilo mas já decidida a vender por
+  outro motivo real (ex: trocar de carro)". Mudança só de prompt
+  (`IA_EXTRACAO_PROMPT`, `includes/ia_qualificacao.php`) — não dá pra
+  testar contra servidor fake local (não simula julgamento de IA);
+  validação real só na próxima conversa nova. Não corrige retroativamente
+  oportunidades já classificadas (`temperatura_lead` só reavalia quando a
+  IA processa um turno novo) — a #51 específica precisaria de correção
+  manual direta no banco pra já sair corrigida na tela.
   **Badge de temperatura** (🔥/🌤️/❄️, mesmo dia — "coloca selo no lead")
   visível na tabela do funil (`admin/index.php`) e no cabeçalho do detalhe
   da oportunidade (`admin/oportunidade.php`).

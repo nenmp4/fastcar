@@ -5,9 +5,19 @@
  * (includes/documentos.php::servirArquivoDriveOuLocal()), mas com a
  * mesma trava de quem pode ver a CONVERSA (usuarioPodeVerConversaWhatsapp())
  * que o resto do admin/whatsapp_inbox.php já usa: consultor só vê mídia de
- * cliente onde ele é responsavel_id em alguma oportunidade, super_admin vê
- * tudo. Sem essa checagem em separado, um consultor podia simplesmente
- * trocar o ?id= na URL e ver mídia de conversa de outro cliente.
+ * cliente onde ele é responsavel_id em alguma oportunidade, quem tem
+ * perfilVeTudo() (super_admin/supervisor) vê tudo. Sem essa checagem em
+ * separado, um consultor podia simplesmente trocar o ?id= na URL e ver
+ * mídia de conversa de outro cliente.
+ *
+ * 16/09/2026, bug real achado em produção ("no ibox não consigo
+ * visualizar as fotos", investigado até aqui): esse arquivo tinha ficado
+ * pra trás usando `$_SESSION['admin_perfil'] === 'super_admin'` direto,
+ * em vez de perfilVeTudo() como o resto do admin/whatsapp_inbox.php já
+ * usa desde 15/09/2026 — supervisor via a conversa inteira na caixa (a
+ * listagem já libera certo) mas clicar numa foto/áudio caía nessa
+ * checagem desatualizada e dava 403, porque supervisor não é
+ * literalmente 'super_admin'.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -23,7 +33,7 @@ if (!$msg) {
     exit('Mídia não encontrada.');
 }
 
-$responsavelFiltro = $_SESSION['admin_perfil'] === 'super_admin' ? null : (int)$_SESSION['admin_id'];
+$responsavelFiltro = perfilVeTudo() ? null : (int)$_SESSION['admin_id'];
 if (!usuarioPodeVerConversaWhatsapp($msg['telefone'], $responsavelFiltro)) {
     http_response_code(403);
     exit('Essa conversa não é de um cliente sob sua responsabilidade.');
