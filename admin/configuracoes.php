@@ -564,9 +564,9 @@ unset($f);
         <input type="hidden" name="acao" value="redistribuir_fila">
         <button type="submit">🔄 Redistribuir fila agora</button>
     </form>
-    <p><small>Move oportunidades ainda em "CRM preenchido" (bloco 4 — IA terminou de qualificar, consultor ainda não
-       começou a atender) de quem está acima do teto pra quem está disponível e abaixo do teto. Nunca mexe em
-       oportunidade que o consultor já começou a trabalhar.</small></p>
+    <p><small>Move oportunidades ainda não tocadas pelo consultor (WhatsApp, Qualificação IA ou CRM preenchido —
+       blocos 2 a 4, antes do consultor começar a atender de verdade) de quem está acima do teto pra quem está
+       disponível e abaixo do teto. Nunca mexe em oportunidade que já está em Atendimento ou depois.</small></p>
     <?php endif; ?>
 </div>
 

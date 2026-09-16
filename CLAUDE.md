@@ -402,6 +402,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   empilha só no primeiro), com os 3 registros de histórico certos; rodar de
   novo já balanceado não move nada; consultor offline (`disponivel=0`)
   corretamente nunca recebe redistribuição mesmo abaixo do teto.
+  **Redistribuição só olhava `crm_preenchido`, deixando passar a maioria
+  batido** (mesmo dia, achado real usando de verdade: "apertei distribuir
+  dayane está com 42 leads temos da um jeito"). Causa: `atribuirResponsavelAutomatico()`
+  roda já na **entrada** do lead (bloco 2, `etapa='whatsapp'`, antes da IA
+  nem qualificar — `criarOuAbrirOportunidade()`), não só quando chega em
+  `crm_preenchido`; um consultor sobrecarregado podia estar empilhado em
+  **qualquer uma das 3 etapas** anteriores a `atendimento` (`whatsapp` —
+  IA ainda conversando —, `qualificacao_ia`, `crm_preenchido` — já
+  qualificado esperando o consultor começar), e a 1ª versão da
+  redistribuição só olhava a última, ignorando as outras duas. Corrigido:
+  `FILA_LEADS_ETAPAS_NAO_TOCADAS` (novo) = `['whatsapp', 'qualificacao_ia',
+  'crm_preenchido']` — `redistribuirFilaLeads()` busca candidatas nas 3
+  etapas (`IN`, não mais igualdade simples) e grava no histórico a etapa
+  real de cada oportunidade movida (antes vinha fixo `crm_preenchido`,
+  quebraria o registro pra uma movida de `whatsapp`/`qualificacao_ia`).
+  Continua nunca mexendo em `atendimento` em diante — ali já é contato
+  humano de verdade. Testado em banco isolado reproduzindo o volume exato
+  reportado (42 oportunidades da Dayane — 20 em `whatsapp` + 15 em
+  `qualificacao_ia` + 7 em `crm_preenchido` —, 2 consultores disponíveis
+  com 0 cada): as 3 etapas corretamente viram candidatas, 10 movidas no
+  total (Anderson e Rafael preenchidos até o teto de 5 cada — capacidade
+  máxima do sistema com só 3 consultores), soma final ainda bate 42 (nada
+  perdido/duplicado), oportunidade movida manualmente pra `atendimento`
+  confirmadamente nunca é tocada mesmo rodando a redistribuição de novo.
+  **Achado importante pro usuário**: com só 2-3 consultores disponíveis e
+  teto de 5, a capacidade TOTAL do sistema é 10-15 leads ativas — 42 leads
+  reais não cabem nesse teto só redistribuindo; ou aumenta quem está
+  disponível, ou vale checar se boa parte desses 42 não é sobra do
+  incidente de flood de mensagens duplicadas (15/09/2026, ver bullet do
+  WhatsApp Box acima) que nunca foi limpa de verdade.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,

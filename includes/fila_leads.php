@@ -116,13 +116,26 @@ function proximoDaFila(bool $disponivelOnly, bool $apenasPlantao = false): ?int 
 }
 
 /**
+ * Etapas "ainda não tocadas de verdade" pelo consultor — atribuirResponsavelAutomatico()
+ * roda já na ENTRADA do lead (bloco 2, etapa='whatsapp', antes da IA nem
+ * qualificar — includes/oportunidades.php::criarOuAbrirOportunidade()), não
+ * só quando chega em crm_preenchido. Então um consultor sobrecarregado pode
+ * estar empilhado em QUALQUER uma dessas 3 etapas (conversa com a IA ainda
+ * rolando, ou já qualificado esperando o consultor começar) — redistribuir
+ * só 'crm_preenchido' deixava passar a maioria batido (achado real,
+ * 16/09/2026: "apertei distribuir dayane está com 42 leads"). 'atendimento'
+ * em diante já é contato humano de verdade — nunca mexido aqui.
+ */
+const FILA_LEADS_ETAPAS_NAO_TOCADAS = ['whatsapp', 'qualificacao_ia', 'crm_preenchido'];
+
+/**
  * Corrige um desequilíbrio JÁ EXISTENTE na fila (o teto acima só evita que
- * aconteça de novo daqui pra frente). Move oportunidades ainda em
- * 'crm_preenchido' (IA terminou de qualificar, consultor ainda não começou
- * a atender — bloco 5) de consultores acima do teto pra quem está
- * disponível e abaixo do teto, em rodízio. Nunca mexe em oportunidade que
- * o consultor já começou a trabalhar (etapa além de crm_preenchido) — só
- * redistribui o que ainda está "na fila" de verdade.
+ * aconteça de novo daqui pra frente). Move oportunidades ainda em etapa
+ * "não tocada" (FILA_LEADS_ETAPAS_NAO_TOCADAS — entrada, qualificação IA ou
+ * CRM preenchido, bloco 5 ainda não começou) de consultores acima do teto
+ * pra quem está disponível e abaixo do teto, em rodízio. Nunca mexe em
+ * oportunidade que o consultor já começou a trabalhar (etapa='atendimento'
+ * em diante) — só redistribui o que ainda está "na fila" de verdade.
  *
  * Retorna um resumo (quantas movidas, de quem pra quem) pro admin ver o
  * que aconteceu.
@@ -154,16 +167,20 @@ function redistribuirFilaLeads(int $executadoPor): array {
             if ($cargas[$doadorId] <= FILA_LEADS_MAX_ATIVAS) continue;
 
             $excedente = $cargas[$doadorId] - FILA_LEADS_MAX_ATIVAS;
+            $etapasPh = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
             $stmt = $db->prepare("
-                SELECT o.id, c.nome AS cliente_nome
+                SELECT o.id, o.etapa, c.nome AS cliente_nome
                 FROM oportunidades o
                 JOIN clientes c ON c.id = o.cliente_id
-                WHERE o.responsavel_id = ? AND o.etapa = 'crm_preenchido'
+                WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
                 ORDER BY o.created_at DESC
                 LIMIT ?
             ");
-            $stmt->bindValue(1, $doadorId, PDO::PARAM_INT);
-            $stmt->bindValue(2, $excedente, PDO::PARAM_INT);
+            $params = array_merge([$doadorId], FILA_LEADS_ETAPAS_NAO_TOCADAS, [$excedente]);
+            foreach ($params as $i => $val) {
+                $tipo = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
+                $stmt->bindValue($i + 1, $val, $tipo);
+            }
             $stmt->execute();
             $candidatas = $stmt->fetchAll();
 
@@ -187,9 +204,11 @@ function redistribuirFilaLeads(int $executadoPor): array {
                        ->execute([$receptorId, $oportunidade['id']]);
                     $db->prepare("
                         INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
-                        VALUES (?, 'crm_preenchido', 'crm_preenchido', ?, ?)
+                        VALUES (?, ?, ?, ?, ?)
                     ")->execute([
                         $oportunidade['id'],
+                        $oportunidade['etapa'],
+                        $oportunidade['etapa'],
                         "Redistribuição automática da fila: de {$doador['nome']} para {$receptor['nome']} (equilíbrio de carga)",
                         $executadoPor,
                     ]);
