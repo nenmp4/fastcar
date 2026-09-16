@@ -37,6 +37,7 @@ const EXTRACAO_DOCUMENTO_CAMPOS = [
         'veiculo_placa', 'veiculo_renavam', 'veiculo_chassi',
         'valor_parcela', 'parcelas_restantes', 'contrato_financiamento_numero',
     ],
+    'crlv' => ['veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam', 'veiculo_chassi'],
 ];
 
 function extracaoDocumentoPrompt(string $tipo): string {
@@ -54,6 +55,11 @@ function extracaoDocumentoPrompt(string $tipo): string {
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
             . '{"banco_financiamento":"","veiculo_marca":"","veiculo_modelo":"","veiculo_ano":"","veiculo_placa":"","veiculo_renavam":"","veiculo_chassi":"","valor_parcela":"","parcelas_restantes":"","contrato_financiamento_numero":""}' . "\n"
             . '"valor_parcela" em número, ex: 850.50 (sem "R$", sem separador de milhar). "parcelas_restantes" só o número inteiro de parcelas que ainda faltam pagar, se estiver explícito no contrato.',
+
+        'crlv' => "Leia este CRLV (Certificado de Registro e Licenciamento de Veículo, documento oficial do veículo — pode ser o CRLV-e digital) e extraia os dados abaixo. NUNCA invente informação — campo não legível fica como string vazia \"\".\n\n"
+            . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
+            . '{"veiculo_marca":"","veiculo_modelo":"","veiculo_ano":"","veiculo_placa":"","veiculo_renavam":"","veiculo_chassi":""}' . "\n"
+            . '"veiculo_ano" é o ano-modelo do veículo (ou ano de fabricação/modelo, o que estiver mais visível).',
 
         default => '',
     };

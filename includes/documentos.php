@@ -16,6 +16,11 @@ const TIPOS_DOCUMENTOS_CLIENTE = [
     'cnh'                    => 'CNH (frente e verso, ou documento com foto)',
     'comprovante_endereco'   => 'Comprovante de endereço (últimos 3 meses)',
     'contrato_financiamento' => 'Contrato de financiamento do veículo (com o banco)',
+    // CRLV (16/09/2026, "falta o documento do carro crlv") — o próprio
+    // contrato-mestre de compra (cláusula 2.2, includes/contratos_pdf.php)
+    // já lista "CRLV-e" entre os documentos que o VENDEDOR precisa entregar,
+    // junto do contrato de financiamento — faltava só o passo de coleta.
+    'crlv'                   => 'CRLV (Certificado de Registro e Licenciamento do Veículo)',
 ];
 
 /** Tipos da pasta fechada (bloco 8) — quem sobe é o consultor/Jean, não o cliente. */

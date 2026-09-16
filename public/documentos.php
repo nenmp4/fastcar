@@ -27,11 +27,16 @@ require_once __DIR__ . '/../includes/extracao_documentos.php';
 
 startSecureSession();
 
-const ORDEM_ETAPAS = ['cnh', 'comprovante_endereco', 'contrato_financiamento'];
+// CRLV (16/09/2026, "falta o documento do carro crlv") — vem depois do
+// contrato de financiamento de propósito: os dois documentam o mesmo
+// veículo (placa/renavam/chassi), então já chega com esses campos
+// pré-preenchidos (fill-if-empty) da etapa anterior pro cliente só conferir.
+const ORDEM_ETAPAS = ['cnh', 'comprovante_endereco', 'contrato_financiamento', 'crlv'];
 $labelEtapa = [
     'cnh' => 'CNH (frente e verso, ou documento com foto)',
     'comprovante_endereco' => 'Comprovante de endereço (últimos 3 meses)',
     'contrato_financiamento' => 'Contrato de financiamento do veículo (com o banco)',
+    'crlv' => 'CRLV (Certificado de Registro e Licenciamento do Veículo)',
 ];
 
 $token = (string)($_GET['token'] ?? $_POST['token'] ?? '');
@@ -151,6 +156,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_POST['valor_parcela'] !== '' ? (float)str_replace(',', '.', (string)$_POST['valor_parcela']) : null,
                     $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
                     clean((string)($_POST['contrato_financiamento_numero'] ?? '')),
+                    (int)$op['oportunidade_id'],
+                ]);
+            } elseif ($tipoForm === 'crlv') {
+                $db = getDB();
+                $db->prepare("
+                    UPDATE oportunidades
+                    SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?,
+                        veiculo_placa = ?, veiculo_renavam = ?, veiculo_chassi = ?,
+                        updated_at = datetime('now','localtime')
+                    WHERE id = ?
+                ")->execute([
+                    clean((string)($_POST['veiculo_marca'] ?? '')),
+                    clean((string)($_POST['veiculo_modelo'] ?? '')),
+                    clean((string)($_POST['veiculo_ano'] ?? '')),
+                    clean((string)($_POST['veiculo_placa'] ?? '')),
+                    clean((string)($_POST['veiculo_renavam'] ?? '')),
+                    clean((string)($_POST['veiculo_chassi'] ?? '')),
                     (int)$op['oportunidade_id'],
                 ]);
             }
@@ -360,6 +382,19 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
                     <input type="text" name="parcelas_restantes" value="<?= e((string)($op['parcelas_restantes'] ?? '')) ?>">
                     <label>Nº do contrato de financiamento</label>
                     <input type="text" name="contrato_financiamento_numero" value="<?= e($op['contrato_financiamento_numero'] ?? '') ?>">
+                <?php elseif ($tipoAtual === 'crlv'): ?>
+                    <label>Marca do veículo</label>
+                    <input type="text" name="veiculo_marca" value="<?= e($op['veiculo_marca'] ?? '') ?>">
+                    <label>Modelo</label>
+                    <input type="text" name="veiculo_modelo" value="<?= e($op['veiculo_modelo'] ?? '') ?>">
+                    <label>Ano</label>
+                    <input type="text" name="veiculo_ano" value="<?= e($op['veiculo_ano'] ?? '') ?>">
+                    <label>Placa</label>
+                    <input type="text" name="veiculo_placa" value="<?= e($op['veiculo_placa'] ?? '') ?>">
+                    <label>Renavam</label>
+                    <input type="text" name="veiculo_renavam" value="<?= e($op['veiculo_renavam'] ?? '') ?>">
+                    <label>Chassi</label>
+                    <input type="text" name="veiculo_chassi" value="<?= e($op['veiculo_chassi'] ?? '') ?>">
                 <?php endif; ?>
 
                 <button type="submit">Confirmar e avançar</button>
@@ -380,8 +415,9 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
             </dl>
             <p><small>Alguma coisa errada? Volte na
                 <a href="?token=<?= e($token) ?>&revisar=cnh">CNH</a>,
-                <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a> ou
-                <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a>.</small></p>
+                <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a>,
+                <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a> ou
+                <a href="?token=<?= e($token) ?>&revisar=crlv">CRLV</a>.</small></p>
             <form method="post">
                 <?= csrfField() ?>
                 <input type="hidden" name="token" value="<?= e($token) ?>">
@@ -394,8 +430,9 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
         <div class="alerta-sucesso">✅ Tudo certo! Recebemos seus documentos e dados — seu consultor vai analisar e entrar em contato.</div>
         <p><small>Precisa corrigir algo? Volte na
             <a href="?token=<?= e($token) ?>&revisar=cnh">CNH</a>,
-            <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a> ou
-            <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a>.</small></p>
+            <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a>,
+            <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a> ou
+            <a href="?token=<?= e($token) ?>&revisar=crlv">CRLV</a>.</small></p>
     <?php endif; ?>
 
     <footer class="rodape-empresa">

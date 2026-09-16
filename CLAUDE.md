@@ -1232,6 +1232,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   conteúdo caía dentro da faixa). Conferido visualmente via screenshot
   (Playwright/Chromium) na etapa 1 e no resumo final antes de considerar
   pronto, não só "compilou sem erro".
+  **4ª etapa — CRLV** (16/09/2026, "falta o documento do carro crlv"):
+  o próprio contrato-mestre de compra (cláusula 2.2, transcrita do modelo
+  real em `includes/contratos_pdf.php`) já lista "CRLV-e" entre os
+  documentos que o vendedor precisa entregar, junto do contrato de
+  financiamento — faltava só o passo de coleta no wizard. `ORDEM_ETAPAS`
+  ganhou `'crlv'` como 4º passo, **depois** do contrato de financiamento de
+  propósito: os dois documentam o mesmo veículo (placa/renavam/chassi/
+  marca/modelo/ano), então a etapa de CRLV já chega com esses campos
+  pré-preenchidos (fill-if-empty, mesmo mecanismo de sempre) da etapa
+  anterior — o cliente só confere, não digita de novo. Extração por IA
+  (`includes/extracao_documentos.php`) reaproveita os mesmos 6 campos de
+  veículo já usados pelo contrato de financiamento (`EXTRACAO_DOCUMENTO_CAMPOS['crlv']`),
+  nenhuma mudança precisou em `aplicarDadosExtraidosDocumento()`/
+  `compararDivergenciasDocumento()` (já genéricas por campo, não por tipo
+  de documento). `TIPOS_DOCUMENTOS_CLIENTE` (`includes/documentos.php`)
+  ganhou a entrada — automaticamente aparece também no card de anexo
+  manual do consultor em `admin/oportunidade.php` (itera a constante, sem
+  precisar de mudança nenhuma lá) e entra no checklist de fechamento
+  (regra #7, `checklistFechamentoCompleto()`, já genérico por linha da
+  tabela). **Self-heal automático pra quem já tinha terminado o wizard
+  antes dessa mudança**: a etapa atual do wizard é sempre derivada do
+  banco a cada carregamento de página (nunca de sessão), então um cliente
+  que já tinha confirmado tudo e recebido a tela de "Tudo certo!" volta a
+  cair automaticamente na etapa de CRLV na próxima vez que abrir o mesmo
+  link — sem precisar de nenhuma migração/script pra "retroagir" pedido
+  de CRLV nas oportunidades já em andamento. Testado ponta a ponta: banco
+  isolado com uma oportunidade simulando exatamente esse caso (CNH/
+  comprovante/contrato já confirmados ANTES do CRLV existir, veículo já
+  com placa/marca/modelo cadastrados) — abrir o link corretamente mostra
+  "Etapa 4 de 4 — CRLV"; upload avança pra revisão já com marca/placa
+  pré-preenchidos do contrato de financiamento; confirmar chega no resumo
+  final com o link "CRLV" na lista de revisão; linha `oportunidade_documentos`
+  gravada com `obrigatorio=1`/`dados_confirmados=1`, entrando certo no
+  checklist de fechamento junto dos outros documentos obrigatórios.
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real
