@@ -505,6 +505,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   offline corretamente nunca recebeu nada, 17 órfãs restantes corretamente
   sem responsável (capacidade do sistema esgotada com só 1 disponível),
   órfã em `atendimento` seguiu intocada.
+  **Teto virou configurável, não fixo em 5** (mesmo dia, mesmo motivo da
+  fase 2 acima — usuário viu o funil real com 33 oportunidades ativas pra
+  só 3 consultores, teto de 5 = 15 vagas no máximo, redistribuir não
+  resolvia sozinho; "como podemos fazer teto [mudar de] 5" / "redistribuir
+  por igual sempre"). `filaLeadsMaxAtivas()` (substituiu a constante
+  `FILA_LEADS_MAX_ATIVAS`) lê de `config.fila_leads_max_ativas`, cai pro
+  padrão `5` se nunca configurado ou valor inválido — campo numérico +
+  botão "Salvar teto" no card da fila em Configurações, sem precisar de
+  deploy pra ajustar quando o volume acumulado exigir um teto maior
+  temporariamente. **Bug real achado testando essa mudança**: `getConfig()`
+  (`includes/db.php`) tem cache estático em memória, mas `setConfig()`
+  nunca invalidava esse cache — se `getConfig()` já tivesse rodado ANTES
+  de um `setConfig()` na MESMA request, leituras seguintes nessa mesma
+  request continuavam vendo o valor antigo (só corrigia sozinho na
+  próxima request, já que o `static` do PHP-FPM reseta entre requests).
+  Bug latente no projeto INTEIRO (qualquer `setConfig()` seguido de
+  `getConfig()` na mesma execução, não só a fila de leads) — nunca tinha
+  sido pego porque a maioria das telas salva e só lê de novo numa página
+  recarregada depois (request nova, cache novo); só apareceu de verdade
+  no teste isolado do teto, chamando `setConfig()` e `filaLeadsMaxAtivas()`
+  (que usa `getConfig()`) na mesma execução do PHP. Corrigido com
+  `configCache()` (novo, retorna array por referência) compartilhada entre
+  `getConfig()`/`setConfig()` — agora as duas mexem no mesmo cache, nunca
+  mais dessincroniza. Testado: leitura logo depois de um `setConfig()` na
+  mesma execução sempre bate com o valor recém-salvo; `tests/smoke.php`
+  inteiro (86 arquivos) continua limpo depois da mudança num arquivo tão
+  central. Distribuição igualitária confirmada com o volume real (33
+  oportunidades órfãs + 3 consultores + teto=11, 3×11=33 cabe exato):
+  `redistribuirFilaLeads()` atribuiu as 33 igualmente, 11 pra cada, 0
+  órfãs restantes.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,

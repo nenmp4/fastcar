@@ -151,6 +151,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'definir_plantao') {
             definirPlantaoFimExpediente((int)($_POST['usuario_id'] ?? 0), !empty($_POST['ativo']));
             $sucesso = 'Plantão de fim de expediente atualizado.';
+        } elseif ($acao === 'salvar_teto_fila') {
+            $novoTeto = (int)($_POST['fila_leads_max_ativas'] ?? 0);
+            if ($novoTeto < 1) {
+                $erro = 'O teto precisa ser pelo menos 1.';
+            } else {
+                setConfig('fila_leads_max_ativas', (string)$novoTeto);
+                $sucesso = "Teto de leads ativas por consultor atualizado pra {$novoTeto}.";
+            }
         } elseif ($acao === 'redistribuir_fila') {
             $movidas = redistribuirFilaLeads((int)($_SESSION['admin_id'] ?? 0));
             if ($movidas) {
@@ -161,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $sucesso .= implode('; ', $partes) . '.';
             } else {
-                $sucesso = 'Nada pra redistribuir — nenhum consultor está acima do teto de ' . FILA_LEADS_MAX_ATIVAS . ' leads ativas, ou não há consultor disponível abaixo do teto pra receber.';
+                $sucesso = 'Nada pra redistribuir — nenhum consultor está acima do teto de ' . filaLeadsMaxAtivas() . ' leads ativas, ou não há consultor disponível abaixo do teto pra receber.';
             }
         } elseif ($acao === 'salvar_deploy') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
@@ -506,10 +514,20 @@ unset($f);
 <div class="card">
     <h3>📥 Fila de distribuição automática de leads</h3>
     <p><small>Lead novo (bloco 2, na entrada) vai automaticamente pra quem estiver com "Disponível" ligado, em rodízio,
-       respeitando o teto de <?= FILA_LEADS_MAX_ATIVAS ?> leads ativas por consultor (quem já está no teto é pulado no
+       respeitando o teto de <?= filaLeadsMaxAtivas() ?> leads ativas por consultor (quem já está no teto é pulado no
        rodízio). Se ninguém estiver disponível, cai em quem estiver marcado como plantão de fim de expediente abaixo —
        vira responsável da oportunidade normalmente, nenhum lead fica sem dono fora do horário (plantão não respeita o
        teto — nunca fica sem responsável fora do horário).</small></p>
+
+    <form method="post" class="inline" style="margin-bottom:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_teto_fila">
+        <label>Teto de leads ativas por consultor</label>
+        <input type="number" name="fila_leads_max_ativas" value="<?= filaLeadsMaxAtivas() ?>" min="1" style="width:80px;display:inline-block">
+        <button type="submit" style="margin-top:0">Salvar teto</button>
+        <small style="display:block;color:#666">Ajuste temporário pra dar conta de volume acumulado (ex: mais leads ativos
+           que "consultores × teto" atual) é normal — não precisa de deploy, só salvar aqui.</small>
+    </form>
 
     <?php if (!$fila): ?>
         <p><small>Nenhum consultor cadastrado ainda.</small></p>
@@ -533,9 +551,9 @@ unset($f);
                     <?php endif; ?>
                 </td>
                 <td>
-                    <?php if ($f['leads_ativas'] > FILA_LEADS_MAX_ATIVAS): ?>
+                    <?php if ($f['leads_ativas'] > filaLeadsMaxAtivas()): ?>
                         <span class="badge badge-atraso"><?= (int)$f['leads_ativas'] ?> ⚠️ acima do teto</span>
-                    <?php elseif ($f['leads_ativas'] >= FILA_LEADS_MAX_ATIVAS): ?>
+                    <?php elseif ($f['leads_ativas'] >= filaLeadsMaxAtivas()): ?>
                         <span class="badge"><?= (int)$f['leads_ativas'] ?> (no teto)</span>
                     <?php else: ?>
                         <?= (int)$f['leads_ativas'] ?>

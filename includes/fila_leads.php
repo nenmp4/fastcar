@@ -25,9 +25,19 @@ require_once __DIR__ . '/db.php';
  * chegando naquele momento pra "compensar" o desequilíbrio já feito. O
  * teto não resolve o desequilíbrio já existente (ver
  * redistribuirFilaLeads() pra isso) — só evita que a MESMA pessoa
- * acumule mais de 5 daqui pra frente.
+ * acumule mais de N daqui pra frente.
+ *
+ * Configurável (`config.fila_leads_max_ativas`), não mais fixo em 5 —
+ * achado real no mesmo dia: com poucos consultores disponíveis e volume
+ * acumulado de leads (ex: 33 ativos pra 3 consultores), um teto de 5 trava
+ * a maioria sem responsável (3×5=15 < 33) até alguém aumentar. Editável
+ * direto em Configurações, sem precisar de deploy toda vez que o volume
+ * mudar. `5` continua sendo o padrão de fábrica se nunca foi configurado.
  */
-const FILA_LEADS_MAX_ATIVAS = 5;
+function filaLeadsMaxAtivas(): int {
+    $valor = (int)(getConfig('fila_leads_max_ativas') ?: 5);
+    return $valor > 0 ? $valor : 5;
+}
 
 /** Conta oportunidades "ativas" (ainda em qualquer etapa do funil de compra
  *  em andamento) de um consultor — mesmo critério usado pro teto e pro
@@ -106,7 +116,7 @@ function proximoDaFila(bool $disponivelOnly, bool $apenasPlantao = false): ?int 
         return $candidatos ? (int)$candidatos[0] : null;
     }
     foreach ($candidatos as $id) {
-        if (contarOportunidadesAtivas((int)$id) < FILA_LEADS_MAX_ATIVAS) {
+        if (contarOportunidadesAtivas((int)$id) < filaLeadsMaxAtivas()) {
             return (int)$id;
         }
     }
@@ -168,16 +178,16 @@ function redistribuirFilaLeads(int $executadoPor): array {
     // Receptores: disponíveis e abaixo do teto — fila de destino em rodízio,
     // sempre pro que está com menos carga primeiro.
     $receptores = array_values(array_filter($consultores, function ($c) use ($cargas) {
-        return (int)$c['disponivel'] === 1 && $cargas[(int)$c['id']] < FILA_LEADS_MAX_ATIVAS;
+        return (int)$c['disponivel'] === 1 && $cargas[(int)$c['id']] < filaLeadsMaxAtivas();
     }));
 
     $movidas = [];
     if ($receptores) {
         foreach ($consultores as $doador) {
             $doadorId = (int)$doador['id'];
-            if ($cargas[$doadorId] <= FILA_LEADS_MAX_ATIVAS) continue;
+            if ($cargas[$doadorId] <= filaLeadsMaxAtivas()) continue;
 
-            $excedente = $cargas[$doadorId] - FILA_LEADS_MAX_ATIVAS;
+            $excedente = $cargas[$doadorId] - filaLeadsMaxAtivas();
             $etapasPh = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
             $stmt = $db->prepare("
                 SELECT o.id, o.etapa, c.nome AS cliente_nome
@@ -202,7 +212,7 @@ function redistribuirFilaLeads(int $executadoPor): array {
                     return $cargas[(int)$a['id']] <=> $cargas[(int)$b['id']];
                 });
                 $receptores = array_values(array_filter($receptores, function ($r) use ($cargas) {
-                    return $cargas[(int)$r['id']] < FILA_LEADS_MAX_ATIVAS;
+                    return $cargas[(int)$r['id']] < filaLeadsMaxAtivas();
                 }));
                 if (!$receptores) break 2;
 
@@ -261,7 +271,7 @@ function redistribuirFilaLeads(int $executadoPor): array {
             return $cargas[(int)$a['id']] <=> $cargas[(int)$b['id']];
         });
         $receptores = array_values(array_filter($receptores, function ($r) use ($cargas) {
-            return $cargas[(int)$r['id']] < FILA_LEADS_MAX_ATIVAS;
+            return $cargas[(int)$r['id']] < filaLeadsMaxAtivas();
         }));
         if (!$receptores) break;
 

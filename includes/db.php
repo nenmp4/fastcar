@@ -30,7 +30,18 @@ function criarSchema(PDO $db): void {
     $db->exec($sql);
 }
 
-function getConfig(?string $chave = null) {
+// Referência compartilhada entre getConfig()/setConfig() — sem isso,
+// setConfig() não tinha como atualizar o cache estático de getConfig()
+// (cada função tem seu próprio `static`, não existe jeito de um mexer no
+// do outro diretamente). Achado real: 16/09/2026, teto configurável da
+// fila de leads (fila_leads_max_ativas) parecia "não salvar" — na
+// verdade salvava certo no banco, mas se getConfig() já tivesse rodado
+// ANTES do setConfig() na mesma request (ex: alguma leitura de config
+// cedo no bootstrap), as leituras seguintes na mesma request continuavam
+// vendo o valor velho até a próxima request (PHP-FPM reseta `static`
+// entre requests, então o bug só aparecia DENTRO da mesma request que
+// salvava e logo em seguida lia de novo).
+function &configCache(): array {
     static $cache = null;
     if ($cache === null) {
         $db = getDB();
@@ -39,6 +50,11 @@ function getConfig(?string $chave = null) {
             $cache[$row['chave']] = $row['valor'];
         }
     }
+    return $cache;
+}
+
+function getConfig(?string $chave = null) {
+    $cache = &configCache();
     if ($chave !== null) {
         return $cache[$chave] ?? null;
     }
@@ -50,4 +66,6 @@ function setConfig(string $chave, string $valor): void {
     $db->prepare("INSERT INTO config (chave, valor) VALUES (?, ?)
                   ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor")
        ->execute([$chave, $valor]);
+    $cache = &configCache();
+    $cache[$chave] = $valor;
 }
