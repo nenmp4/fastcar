@@ -123,10 +123,13 @@ try {
         $mesIn += $d['in'] ?? 0; $mesOut += $d['out'] ?? 0; $mesChamadas += $d['calls'] ?? 0;
     }
     $chamadasHoje = $hoje['calls'] ?? 0;
+    $custoHojeBrl = geminiCustoEstimadoBrl($hoje['in'] ?? 0, $hoje['out'] ?? 0);
+    $custoMesBrl  = geminiCustoEstimadoBrl($mesIn, $mesOut);
     check('IA (Gemini/OpenAI)', 'Tokens hoje', $chamadasHoje > 0 ? 'ok' : 'info',
         number_format(($hoje['in'] ?? 0) + ($hoje['out'] ?? 0), 0, ',', '.') . ' tokens',
-        "{$chamadasHoje} chamada(s)");
-    check('IA (Gemini/OpenAI)', 'Tokens no mês', 'info', number_format($mesIn + $mesOut, 0, ',', '.') . ' tokens', "{$mesChamadas} chamada(s)");
+        "{$chamadasHoje} chamada(s) · ≈ R$ " . number_format($custoHojeBrl, 2, ',', '.') . ' (estimado, modelo principal)');
+    check('IA (Gemini/OpenAI)', 'Tokens no mês', 'info', number_format($mesIn + $mesOut, 0, ',', '.') . ' tokens',
+        "{$mesChamadas} chamada(s) · ≈ R$ " . number_format($custoMesBrl, 2, ',', '.') . ' (estimado, modelo principal)');
 } catch (Throwable $e) {
     check('IA (Gemini/OpenAI)', 'Tokens', 'info', 'Sem dados ainda', '');
 }

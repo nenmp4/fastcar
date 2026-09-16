@@ -1589,6 +1589,30 @@ segue no schema sem uso novo, não removida sem ganho real),
   backup, crons (frescor de log), fila de leads (alerta se ninguém
   disponível), erros recentes.
   Restrito ao super_admin.
+  **Custo estimado em reais** (16/09/2026, "coloca valor estimado de gasto
+  em reais lá no saúde api") — "Tokens hoje"/"Tokens no mês" ganharam
+  `≈ R$ X,XX (estimado, modelo principal)` no detalhe. `geminiCustoEstimadoBrl()`
+  (`includes/gemini.php`, novo) usa a tabela de preço oficial do Google AI
+  pro modelo padrão (`gemini-3.5-flash-lite`: US$0,30/1M tokens de entrada,
+  US$2,50/1M de saída — confirmado via busca, não chutado) convertida em
+  reais por `cotacaoUsdBrl()` (nova, mesmo arquivo) — cotação USD→BRL
+  buscada AO VIVO (AwesomeAPI, gratuita, sem chave), cache de 6h em
+  `config.cotacao_usd_brl` (mesmo padrão `"timestamp|json"` de sempre, ex:
+  PlacaFIPE), cai num fallback fixo (R$5,30) se a busca falhar — nunca
+  trava a tela de Saúde por causa de uma cotação indisponível.
+  **Estimativa assumida, não exata**: `geminiRegistrarTokens()` acumula
+  tokens de entrada/saída num total só por dia, sem registrar qual modelo
+  serviu cada chamada — então o cálculo assume que praticamente tudo usa o
+  modelo principal (lite); nos dias raros em que o fallback interno pro
+  `gemini-3.6-flash` (mais caro) entra em ação por causa de falha do lite,
+  o custo real fica um pouco ACIMA do estimado aqui. Não cobre custo do
+  OpenAI (fallback secundário) — esse não tem contagem de tokens
+  implementada ainda, nenhum dado real pra estimar em cima. Testado em
+  banco isolado contra servidor de cotação fake local: busca ao vivo e
+  cacheia certo, cache expirado (>6h) busca de novo em vez de ficar preso
+  no valor velho, cálculo de custo bate a conta esperada (1M entrada + 1M
+  saída × cotação = valor exato), volume zero dá custo zero, e API de
+  cotação fora do ar cai no fallback fixo sem quebrar nada.
 - **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
   (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
   afiado"): cruza o que a IA decidiu na qualificação com o resultado real

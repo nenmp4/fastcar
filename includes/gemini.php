@@ -218,3 +218,56 @@ function geminiRegistrarTokens(array $usage): void {
         // monitoramento de custo nunca pode derrubar a resposta ao cliente
     }
 }
+
+/**
+ * Preço por 1M de tokens do modelo PADRÃO (gemini-3.5-flash-lite),
+ * confirmado 16/09/2026 (pedido "coloca valor estimado de gasto em reais
+ * lá no saúde api"): US$0,30/1M entrada, US$2,50/1M saída — tabela oficial
+ * do Google AI. `geminiRegistrarTokens()` acumula in/out num total só, sem
+ * dizer qual modelo serviu cada chamada — a estimativa assume que
+ * praticamente tudo usa o lite (fallback pro gemini-3.6-flash, mais caro,
+ * só quando o lite falha de verdade), então o custo real fica um pouco
+ * ACIMA do estimado nos dias em que o fallback entra em ação.
+ */
+const GEMINI_PRECO_USD_MILHAO_INPUT = 0.30;
+const GEMINI_PRECO_USD_MILHAO_OUTPUT = 2.50;
+
+/**
+ * Cotação USD→BRL pra converter o custo estimado da tela de Saúde —
+ * busca ao vivo (AwesomeAPI, gratuita, sem chave), cache de 6h em `config`
+ * (mesmo padrão "timestamp|json" já usado pra outras consultas com custo/
+ * limite de requisição neste projeto, ex: PlacaFIPE) — nunca trava a tela
+ * se a busca falhar, cai num valor padrão conservador.
+ */
+function cotacaoUsdBrl(): float {
+    $chave = 'cotacao_usd_brl';
+    $cache = getConfig($chave) ?: '';
+    if (strpos($cache, '|') !== false) {
+        [$ts, $valor] = explode('|', $cache, 2);
+        if ((time() - (int)$ts) < 6 * 3600 && (float)$valor > 0) {
+            return (float)$valor;
+        }
+    }
+    try {
+        $base = defined('COTACAO_BASE_URL') ? COTACAO_BASE_URL : 'https://economia.awesomeapi.com.br';
+        $ch = curl_init($base . '/json/last/USD-BRL');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+        $bid = (float)(json_decode($resp ?: '', true)['USDBRL']['bid'] ?? 0);
+        if ($bid > 0) {
+            setConfig($chave, time() . '|' . $bid);
+            return $bid;
+        }
+    } catch (Throwable $e) {
+        // busca de cotação é sempre melhor esforço
+    }
+    return 5.30; // fallback se a API falhar (ou 1ª vez, sem cache ainda)
+}
+
+/** Custo estimado em reais pra um volume de tokens de entrada/saída. */
+function geminiCustoEstimadoBrl(int $tokensIn, int $tokensOut): float {
+    $usd = ($tokensIn / 1_000_000 * GEMINI_PRECO_USD_MILHAO_INPUT)
+         + ($tokensOut / 1_000_000 * GEMINI_PRECO_USD_MILHAO_OUTPUT);
+    return $usd * cotacaoUsdBrl();
+}
