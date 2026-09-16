@@ -368,6 +368,15 @@ if ($telefoneAtivo && !$contatoAtivo) {
     var form = document.getElementById('wpp-form');
     var btnAnteriores = document.getElementById('wpp-carregar-anteriores');
     var csrf = document.querySelector('input[name="csrf_token"]');
+    // Cache em memória (só desta página aberta, nunca persistido — achado
+    // real 16/09/2026: "as fotos aparece e some carrega desaparece") —
+    // atualizarListaConversas() reconstrói a sidebar inteira do zero a cada
+    // 5s de polling, sempre voltando pro placeholder de iniciais; sem esse
+    // cache, carregarFotos() reaplicava a busca AJAX + troca do zero em
+    // TODO refresh, piscando a foto (placeholder→foto→placeholder→foto...)
+    // pra sempre. Com o telefone já em cache, o refresh usa a foto direto
+    // (o navegador já tem essa URL no cache HTTP também, carrega instantâneo).
+    var fotoCache = {};
 
     function escapeHtml(s) {
         var d = document.createElement('div');
@@ -386,6 +395,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
     // iniciais até a foto de verdade estar pronta).
     function _aplicarFoto(el, fotoUrl) {
         if (!fotoUrl) return;
+        var phone = el.getAttribute('data-av-phone');
+        if (phone) fotoCache[phone] = fotoUrl;
         var img = document.createElement('img');
         img.className = 'wpp-avatar wpp-avatar-clicavel';
         img.alt = '';
@@ -409,7 +420,10 @@ if ($telefoneAtivo && !$contatoAtivo) {
     }
 
     function carregarFotos() {
-        var avs = Array.from(document.querySelectorAll('[data-av-phone]'));
+        // Placeholder ainda (IMG já é o elemento cacheado renderizado direto
+        // por atualizarListaConversas() — reprocessar de novo só trocaria o
+        // <img> por outro <img> idêntico à toa).
+        var avs = Array.from(document.querySelectorAll('div.wpp-avatar-placeholder[data-av-phone]'));
         var header = document.querySelector('.wpp-chat-header [data-av-phone]');
         // Sidebar pode ter até 100 conversas — capa em 30 pra não floodar a
         // Z-API com 1 chamada por avatar visível (mesmo cuidado do JurídicoSaaS).
@@ -418,6 +432,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         function carregarEl(el, delay) {
             var phone = el.getAttribute('data-av-phone');
             if (!phone) return;
+            if (fotoCache[phone]) { _aplicarFoto(el, fotoCache[phone]); return; }
             setTimeout(function () {
                 fetch('?ajax=foto&telefone=' + encodeURIComponent(phone))
                     .then(function (r) { return r.json(); })
@@ -426,7 +441,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             }, delay);
         }
 
-        if (header) carregarEl(header, 0);
+        if (header && header.tagName === 'DIV') carregarEl(header, 0);
         var delay = 200;
         sidebar.forEach(function (el, i) { carregarEl(el, delay + Math.floor(i / 5) * 600 + (i % 5) * 80); });
     }
@@ -565,10 +580,19 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
                     var nomeAttr = escapeHtml(c.cliente_nome || c.telefone);
-                    // Placeholder sempre primeiro — carregarFotos() troca pela
-                    // foto de verdade (buscada ao vivo) só depois de confirmar
-                    // que carregou, nunca antes (ver comentário de _aplicarFoto).
-                    var avatar = '<div class="wpp-avatar-placeholder" data-av-phone="' + escapeHtml(c.telefone) + '" data-nome="' + nomeAttr + '">' + inicial + '</div>';
+                    // Foto já em cache (carregada numa passada anterior de
+                    // carregarFotos() nesta mesma página) renderiza o <img>
+                    // direto, sem passar pelo placeholder de novo — sem isso,
+                    // o refresh de 5s reconstruía a lista inteira sempre do
+                    // zero, voltando pro placeholder e piscando a foto que já
+                    // tinha carregado (achado real, "as fotos aparece e some").
+                    // Sem cache ainda, placeholder normal — carregarFotos()
+                    // troca pela foto de verdade só depois de confirmar que
+                    // carregou (ver comentário de _aplicarFoto).
+                    var fotoCacheada = fotoCache[c.telefone];
+                    var avatar = fotoCacheada
+                        ? '<img class="wpp-avatar wpp-avatar-clicavel" src="' + escapeHtml(fotoCacheada) + '" alt="" data-av-phone="' + escapeHtml(c.telefone) + '" data-nome="' + nomeAttr + '" onclick="event.preventDefault(); event.stopPropagation(); abrirFotoLightbox(this.src, this.getAttribute(\'data-nome\'))">'
+                        : '<div class="wpp-avatar-placeholder" data-av-phone="' + escapeHtml(c.telefone) + '" data-nome="' + nomeAttr + '">' + inicial + '</div>';
                     a.innerHTML = avatar +
                         '<div class="wpp-corpo">' +
                         '<div class="nome"><span>' + escapeHtml(c.cliente_nome || c.telefone) + '</span>' +

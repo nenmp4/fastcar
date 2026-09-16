@@ -538,6 +538,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   abre o lightbox e Esc fecha, sem nenhum erro de JS no console — os 2
   bugs (loading=lazy e ordem do lightbox) só apareceram DEPOIS de testar
   com Playwright de verdade, não no lint/smoke.
+  **Foto pisca (aparece e some) em produção** (mesmo dia, achado real logo
+  depois do deploy da correção acima — "as fotos aparece e some carrega
+  desaparece"): 3º bug real, esse sim só visível com o polling de verdade
+  rodando por mais de alguns segundos (o teste Playwright anterior não
+  tinha esperado um ciclo inteiro de 5s pra flagar). Causa: `carregarFotos()`
+  buscava a foto ao vivo certinho (foto correção acima), mas
+  `atualizarListaConversas()` (polling de 5s que já existia, refresca a
+  sidebar) reconstrói a lista **inteira do zero** a cada rodada — sempre
+  volta pro placeholder de iniciais, mesmo pro telefone cuja foto já tinha
+  carregado segundos antes — e aí `carregarFotos()` rodava de novo, buscava
+  de novo, trocava de novo: o ciclo completo (placeholder→foto→placeholder→
+  foto...) se repetia a cada 5s pra sempre, visível como a foto "piscando".
+  Corrigido com `fotoCache` (novo, `{}` em memória só desta página aberta,
+  nunca persistido — mesmo espírito do cache HTTP do navegador, não do
+  banco) que guarda `telefone→URL` assim que uma foto carrega com sucesso;
+  `atualizarListaConversas()` passou a checar esse cache ANTES de decidir o
+  que renderizar — telefone já em cache renderiza o `<img>` **direto**, sem
+  passar pelo placeholder de novo (a URL já está no cache HTTP do navegador
+  também, carrega na hora); `carregarFotos()` só processa placeholder ainda
+  sem foto (`div.wpp-avatar-placeholder[data-av-phone]`, não mais qualquer
+  `[data-av-phone]`), pra não reprocessar um `<img>` que já está certo.
+  Testado com Playwright observando 12s de polling (2+ ciclos completos)
+  via `MutationObserver` na sidebar: 0 reaparições do placeholder depois da
+  1ª carga da foto, avatar continua `<img>` do início ao fim, sem erro de
+  JS — antes da correção esse mesmo teste flagaria o placeholder voltando
+  a cada rodada do polling.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
