@@ -866,6 +866,46 @@ segue no schema sem uso novo, não removida sem ganho real),
   verdade, em `zapsignSincronizarContrato()`) — badge "🏆 Cliente
   convertido" quando o cliente já teve pelo menos um veículo com
   `etapa='fechado'`.
+  **Nome editável direto em `admin/oportunidade.php`** (16/09/2026) — antes
+  só dava pra editar em `admin/cliente_detalhe.php`, precisando navegar pra
+  outra tela; achado real vendo nomes capturados errado do WhatsApp (`.`,
+  `$`, etc — ver bullet "puxa foto do zap e nome"). Campo + botão "Salvar
+  nome" logo abaixo do cabeçalho `#ID — Nome`, mesmo guard de supervisor
+  (só acompanha, não edita) das outras ações da página.
+- **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
+  `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
+  existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
+  tudo... pendência futura continua vinculada à mesma pasta") mas nunca
+  teve tela/fluxo nenhum. Achado real em produção: cliente (Bárbara)
+  reclamando que o financiamento de um Duster **já vendido** pra Fastcar
+  não foi quitado nem transferido, recebendo notificação extrajudicial em
+  nome dela — o sistema tratava isso como **lead novo** (oportunidade
+  rodando qualificação por IA do zero, pedindo dados de veículo pra quem
+  já é cliente reclamando de venda antiga) em vez de vincular à pasta
+  ORIGINAL já fechada. `criarPendenciaPosVenda()`/
+  `concluirPendenciaPosVenda()`/`reabrirPendenciaPosVenda()`/
+  `listarPendenciasDaOportunidade()`/`listarPendenciasPosVendaAbertas()`
+  (painel geral, filtro por responsável mesmo padrão "Minhas/Todas" do
+  funil de compra). `oportunidade_pendencias_pos_venda.responsavel_id`
+  (coluna nova) — mesmo espírito da regra #5 (toda oportunidade aberta
+  precisa de responsável), aplicado aqui pra pendência não ficar largada
+  sem dono depois da pasta já fechada. Card "📋 Pendências pós-venda" em
+  `admin/oportunidade.php`, só visível/editável quando `etapa='fechado'`
+  (não faz sentido essa pendência numa negociação ainda em aberto no
+  funil normal) — lista existentes com status/prazo estimado/responsável,
+  formulário pra registrar nova, botões marcar concluída/reabrir.
+  `admin/pendencias_pos_venda.php` (novo, nav "📋 Pendências") — painel
+  geral com todas as pendências abertas, atrasadas destacadas (prazo
+  estimado já passado), link direto pro cliente/oportunidade. Testado em
+  banco isolado: pendência criada numa oportunidade fechada aparece certa;
+  painel geral mostra e marca atrasada quando o prazo passou; filtro por
+  responsável funciona (Rafael não vê pendência do Anderson, Anderson vê a
+  própria); concluir marca `status`/`concluido_em` certos e some do painel
+  de abertas; reabrir volta a aparecer. **Ainda em aberto**: ensinar a IA
+  de qualificação a reconhecer quando o cliente está reclamando de um
+  veículo JÁ vendido (não oferecendo um novo) e escalar direto pro
+  consultor em vez de rodar a qualificação normal do zero — pedido junto
+  ("ensinar ia pegar casos"), ainda não implementado.
 - **E-mail do cliente** (`clientes.email`, 14/09/2026, pedido direto do
   José/Jean — "faltou esse dado"): campo que faltava na **1ª etapa** do
   wizard de documentos (`public/documentos.php`, junto com CPF/RG/

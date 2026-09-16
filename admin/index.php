@@ -102,6 +102,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php endif; ?>
     <a href="/admin/clientes.php">👥 Clientes</a>
     <a href="/admin/vendas.php">💰 Vendas</a>
+    <a href="/admin/pendencias_pos_venda.php">📋 Pendências</a>
     <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
     <?php if (perfilVeTudo()): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>

@@ -182,6 +182,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $erro = $resultado['erro'] ?? 'Falha ao anexar documento.';
                     }
                 }
+            } elseif ($acao === 'atualizar_nome_cliente') {
+                $novoNome = trim((string)($_POST['nome_cliente'] ?? ''));
+                if ($novoNome === '') {
+                    $erro = 'Nome não pode ficar vazio.';
+                } else {
+                    $db->prepare("UPDATE clientes SET nome = ? WHERE id = ?")->execute([clean($novoNome), $op['cliente_id']]);
+                    $sucesso = 'Nome do cliente atualizado.';
+                }
+            } elseif ($acao === 'criar_pendencia_pos_venda') {
+                $descricaoPendencia = trim((string)($_POST['descricao'] ?? ''));
+                if ($op['etapa'] !== 'fechado') {
+                    $erro = 'Pendência pós-venda só pode ser criada numa pasta já fechada.';
+                } elseif ($descricaoPendencia === '') {
+                    $erro = 'Descreva a pendência.';
+                } else {
+                    $respPendencia = (int)($_POST['responsavel_id'] ?? 0) ?: null;
+                    criarPendenciaPosVenda($id, clean($descricaoPendencia), (string)($_POST['prazo_estimado'] ?? '') ?: null, $respPendencia);
+                    $sucesso = 'Pendência pós-venda registrada.';
+                }
+            } elseif ($acao === 'concluir_pendencia_pos_venda') {
+                concluirPendenciaPosVenda((int)($_POST['pendencia_id'] ?? 0));
+                $sucesso = 'Pendência marcada como concluída.';
+            } elseif ($acao === 'reabrir_pendencia_pos_venda') {
+                reabrirPendenciaPosVenda((int)($_POST['pendencia_id'] ?? 0));
+                $sucesso = 'Pendência reaberta.';
             }
         } catch (Throwable $e) {
             $erro = $e->getMessage();
@@ -216,6 +241,7 @@ $mensagens = array_reverse($stmtMsg->fetchAll());
 
 $usuarios = listarUsuarios();
 $etapasFechaveis = array_merge(ETAPAS_ATIVAS, ['fechado']);
+$pendenciasPosVenda = $op['etapa'] === 'fechado' ? listarPendenciasDaOportunidade($id) : [];
 $checklistOk = checklistFechamentoCompleto($id);
 $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < date('Y-m-d H:i:s');
 // Garante que os 6 tipos obrigatórios existem como linha assim que a tela
@@ -256,6 +282,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
     <a href="/admin/clientes.php">👥 Clientes</a>
     <a href="/admin/vendas.php">💰 Vendas</a>
+    <a href="/admin/pendencias_pos_venda.php">📋 Pendências</a>
     <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
@@ -291,6 +318,14 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             </span>
         <?php endif; ?>
     </h2>
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" class="inline" style="margin-bottom:10px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="atualizar_nome_cliente">
+            <input type="text" name="nome_cliente" value="<?= e($op['cliente_nome']) ?>" placeholder="Nome do cliente" style="width:240px;display:inline-block">
+            <button type="submit" style="margin-top:0;padding:5px 12px;font-size:13px">Salvar nome</button>
+        </form>
+    <?php endif; ?>
     <div class="grid-2">
         <div>
             <p><strong>Telefone:</strong> <?= e($op['cliente_telefone']) ?></p>
@@ -586,6 +621,66 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <?php endif; ?>
     </div>
 </div>
+
+<?php if ($op['etapa'] === 'fechado'): ?>
+<div class="card">
+    <h3>📋 Pendências pós-venda</h3>
+    <p><small>Pasta fechada, mas pode sobrar pendência operacional (ex: quitação de financiamento junto ao banco,
+       transferência do veículo) — fica registrada aqui, separada do funil comercial que já encerrou.</small></p>
+
+    <?php if (!$pendenciasPosVenda): ?>
+        <p><small>Nenhuma pendência registrada.</small></p>
+    <?php endif; ?>
+    <?php foreach ($pendenciasPosVenda as $p): ?>
+        <div class="historico-item" style="<?= $p['status'] === 'concluido' ? 'opacity:.6' : '' ?>">
+            <div class="quando">
+                <?= $p['status'] === 'concluido' ? '✅ Concluído em ' . date('d/m/Y', strtotime($p['concluido_em'])) : '⏳ Pendente' ?>
+                <?= $p['prazo_estimado'] ? ' · prazo estimado ' . date('d/m/Y', strtotime($p['prazo_estimado'])) : '' ?>
+                <?= $p['responsavel_nome'] ? ' · responsável: ' . e($p['responsavel_nome']) : '' ?>
+            </div>
+            <?= e($p['descricao']) ?>
+            <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                <form method="post" class="inline" style="margin-top:6px">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="pendencia_id" value="<?= (int)$p['id'] ?>">
+                    <?php if ($p['status'] === 'pendente'): ?>
+                        <input type="hidden" name="acao" value="concluir_pendencia_pos_venda">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">Marcar concluída</button>
+                    <?php else: ?>
+                        <input type="hidden" name="acao" value="reabrir_pendencia_pos_venda">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">Reabrir</button>
+                    <?php endif; ?>
+                </form>
+            <?php endif; ?>
+        </div>
+    <?php endforeach; ?>
+
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" style="margin-top:14px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="criar_pendencia_pos_venda">
+            <label>Nova pendência</label>
+            <input type="text" name="descricao" placeholder="Ex: quitação do financiamento junto ao banco X" required>
+            <div class="grid-2">
+                <div>
+                    <label>Prazo estimado (opcional)</label>
+                    <input type="date" name="prazo_estimado">
+                </div>
+                <div>
+                    <label>Responsável</label>
+                    <select name="responsavel_id">
+                        <option value="">— sem responsável definido —</option>
+                        <?php foreach ($usuarios as $u): ?>
+                            <option value="<?= (int)$u['id'] ?>"<?= (int)$u['id'] === (int)$_SESSION['admin_id'] ? ' selected' : '' ?>><?= e($u['nome']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <button type="submit">Registrar pendência</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <div class="card">
     <h3>Histórico de etapas</h3>

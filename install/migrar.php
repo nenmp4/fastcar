@@ -149,6 +149,11 @@ $migracoes = [
     // 16/09/2026 — nome/foto de perfil do WhatsApp cacheados no cliente
     // ("puxa foto do zap e nome"), via zapiBuscarContato()
     'clientes.foto_perfil_url' => "ALTER TABLE clientes ADD COLUMN foto_perfil_url TEXT DEFAULT NULL",
+
+    // 16/09/2026 — tela de pendências pós-venda (regra #8 do CLAUDE.md),
+    // achado real: cliente reclamando de financiamento não quitado de um
+    // carro JÁ vendido pra Fastcar, tratado por engano como lead novo
+    'oportunidade_pendencias_pos_venda.responsavel_id' => "ALTER TABLE oportunidade_pendencias_pos_venda ADD COLUMN responsavel_id INTEGER REFERENCES usuarios(id)",
 ];
 
 foreach ($migracoes as $nome => $sql) {
@@ -162,6 +167,13 @@ foreach ($migracoes as $nome => $sql) {
             echo "❌ {$nome}: {$e->getMessage()}\n";
         }
     }
+}
+
+try {
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_pendencias_oportunidade ON oportunidade_pendencias_pos_venda(oportunidade_id)");
+    echo "✅ idx_pendencias_oportunidade: ok\n";
+} catch (Throwable $e) {
+    echo "❌ idx_pendencias_oportunidade: {$e->getMessage()}\n";
 }
 
 // 13/09/2026 — perfis 'consultor' e 'closer' mesclados (pedido do José): a

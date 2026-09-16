@@ -281,9 +281,14 @@ CREATE TABLE IF NOT EXISTS oportunidade_pendencias_pos_venda (
     descricao TEXT NOT NULL,            -- ex: "Quitação do financiamento junto ao banco X"
     prazo_estimado DATE,
     status TEXT DEFAULT 'pendente' CHECK (status IN ('pendente','concluido')),
+    -- Responsável por resolver (regra #5 do CLAUDE.md — mesmo espírito de
+    -- "toda oportunidade aberta precisa de responsável", aplicado aqui pra
+    -- pendência não ficar largada sem dono depois da pasta já fechada).
+    responsavel_id INTEGER REFERENCES usuarios(id),
     concluido_em DATETIME,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
+CREATE INDEX IF NOT EXISTS idx_pendencias_oportunidade ON oportunidade_pendencias_pos_venda(oportunidade_id);
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
