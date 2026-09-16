@@ -484,7 +484,13 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // a qualificação terminar pra existir registro. Idempotente: se já
     // existe oportunidade ativa (ex: cliente já em atendimento com um
     // consultor), só reaproveita — vale pra mensagem vinda de qualquer instância.
-    $nomeContato = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
+    // 16/09/2026, achado real: senderName/chatName do payload às vezes traz
+    // texto de status/presença do WhatsApp ("online", "disponível") em vez
+    // do nome de verdade — nomeWhatsappPareceValido() filtra isso, deixando
+    // como se não tivesse vindo nome nenhum (zapiBuscarContato() tenta de
+    // novo depois, com o campo `notify` mais confiável).
+    $nomeContatoBruto = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
+    $nomeContato = nomeWhatsappPareceValido($nomeContatoBruto) ? $nomeContatoBruto : '';
     $origemAnuncio = extrairOrigemAnuncio($payload);
     $oportunidade = null;
     $erroOportunidade = null;

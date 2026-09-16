@@ -36,12 +36,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // cliente pra tentar de novo; botão manual cobre esse backfill.
         $contato = zapiBuscarContato($cliente['telefone']);
         if ($contato && ($contato['nome'] || $contato['foto_url'])) {
+            // fill-if-empty pro nome — mas um nome já salvo que na verdade é
+            // texto de status/presença do WhatsApp (achado real, 16/09/2026:
+            // "online"/"disponível" salvos como nome) conta como "vazio" pra
+            // esse fim, autocorrigindo com 1 clique nesse botão manual.
+            $nomeAtualValido = $cliente['nome'] !== '' && nomeWhatsappPareceValido((string)$cliente['nome']);
+            $podeAtualizarNome = !$nomeAtualValido && $contato['nome'] !== '';
+            $novoNome = $podeAtualizarNome ? clean($contato['nome']) : null;
             $db->prepare("
                 UPDATE clientes
                 SET foto_perfil_url = COALESCE(NULLIF(?, ''), foto_perfil_url),
-                    nome = CASE WHEN (nome IS NULL OR nome = '') AND ? <> '' THEN ? ELSE nome END
+                    nome = COALESCE(?, nome)
                 WHERE id = ?
-            ")->execute([$contato['foto_url'], clean($contato['nome']), clean($contato['nome']), $id]);
+            ")->execute([$contato['foto_url'], $novoNome, $id]);
             $sucesso = 'Nome/foto do WhatsApp atualizados.';
         } else {
             $erro = 'Não foi possível buscar nome/foto agora — confira se a Z-API está configurada e conectada.';

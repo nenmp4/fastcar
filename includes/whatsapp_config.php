@@ -156,20 +156,29 @@ function zapiBuscarContato(string $phone): ?array {
             $j = json_decode($respFoto, true);
             $brutoParaDiagnostico['profile-picture'] = $j;
             if (is_array($j)) {
-                $foto = $j[0]['link'] ?? $j['link'] ?? $j['value'] ?? $j['url'] ?? '';
+                $candidatoFoto = $j[0]['link'] ?? $j['link'] ?? $j['value'] ?? $j['url'] ?? '';
+                if (_zapiUrlFotoValida($candidatoFoto)) $foto = $candidatoFoto;
             }
         }
         if ($codeContato === 200 && $respContato) {
             $j2 = json_decode($respContato, true);
             $brutoParaDiagnostico['contacts'] = $j2;
             if (is_array($j2)) {
+                // 16/09/2026, achado real em produção: 2 clientes apareceram
+                // na caixa com "nome" = "online"/"disponível" — texto de
+                // status/presença do WhatsApp, não nome de verdade. Pula
+                // campo com esse tipo de valor e tenta o próximo da lista,
+                // em vez de aceitar o 1º que vier não-vazio.
                 foreach (['notify', 'pushName', 'name', 'short'] as $campo) {
-                    if (!empty($j2[$campo]) && is_string($j2[$campo])) {
+                    if (!empty($j2[$campo]) && is_string($j2[$campo]) && nomeWhatsappPareceValido($j2[$campo])) {
                         $nome = trim($j2[$campo]);
                         break;
                     }
                 }
-                if (!$foto) $foto = $j2['imgUrl'] ?? $j2['profilePictureUrl'] ?? '';
+                if (!$foto) {
+                    $candidatoFoto = $j2['imgUrl'] ?? $j2['profilePictureUrl'] ?? '';
+                    if (_zapiUrlFotoValida($candidatoFoto)) $foto = $candidatoFoto;
+                }
             }
         }
 
@@ -182,6 +191,36 @@ function zapiBuscarContato(string $phone): ?array {
     } catch (Throwable $e) {
         return null;
     }
+}
+
+/**
+ * Nomes de contato do WhatsApp que na verdade são texto de status/presença/
+ * About padrão, não o nome real da pessoa — achado real em produção,
+ * 16/09/2026 ("puxa foto do zap e nome" tinha ficado com 2 clientes reais
+ * mostrando "online"/"disponível" na caixa). Comparação EXATA (não
+ * substring), pra nunca recusar um nome de verdade que só CONTENHA uma
+ * dessas palavras (ex: "Ana Online" continua válido).
+ */
+function nomeWhatsappPareceValido(string $nome): bool {
+    $normalizado = mb_strtolower(trim($nome));
+    if ($normalizado === '') return false;
+    static $invalidos = [
+        'online', 'offline', 'disponivel', 'disponível', 'indisponivel', 'indisponível',
+        'ocupado', 'ocupada', 'ausente', 'away', 'busy', 'at work', 'no trabalho',
+        'em uma ligacao', 'em uma ligação', 'em uma chamada', 'bateria fraca',
+        'battery about to die', 'disponible',
+        'hey there i am using whatsapp', 'hey there! i am using whatsapp.',
+        'ola estou usando o whatsapp', 'olá estou usando o whatsapp',
+        'ola, estou usando o whatsapp', 'olá, estou usando o whatsapp.',
+    ];
+    return !in_array($normalizado, $invalidos, true);
+}
+
+/** Só aceita foto de perfil com URL http(s) plausível — nunca deixa passar
+ *  string vazia/garbage direto pro `<img src>` do WhatsApp Box. */
+function _zapiUrlFotoValida($url): bool {
+    if (!is_string($url) || $url === '') return false;
+    return str_starts_with($url, 'http://') || str_starts_with($url, 'https://');
 }
 
 /** Mesmo padrão de logDiagnosticoMidiaZapi() — grava o corpo cru quando

@@ -150,12 +150,22 @@ function atualizarNomeFotoWhatsapp(int $clienteId, string $telefone): void {
                ->execute([$clienteId]);
             return;
         }
+        // fill-if-empty pro nome — mas um nome já salvo que na verdade é
+        // texto de status/presença do WhatsApp (achado real, 16/09/2026:
+        // "online"/"disponível" salvos como nome) conta como "vazio" pra
+        // esse fim, autocorrigindo sozinho assim que uma mensagem nova desse
+        // cliente passar por aqui de novo.
+        $stmtAtual = $db->prepare("SELECT nome FROM clientes WHERE id = ?");
+        $stmtAtual->execute([$clienteId]);
+        $nomeAtual = (string)$stmtAtual->fetchColumn();
+        $podeAtualizarNome = $contato['nome'] !== '' && ($nomeAtual === '' || !nomeWhatsappPareceValido($nomeAtual));
+        $novoNome = $podeAtualizarNome ? clean($contato['nome']) : null;
         $db->prepare("
             UPDATE clientes
             SET foto_perfil_url = ?,
-                nome = CASE WHEN (nome IS NULL OR nome = '') AND ? <> '' THEN ? ELSE nome END
+                nome = COALESCE(?, nome)
             WHERE id = ?
-        ")->execute([$contato['foto_url'], clean($contato['nome']), clean($contato['nome']), $clienteId]);
+        ")->execute([$contato['foto_url'], $novoNome, $clienteId]);
     } catch (Throwable $e) {
         // melhor esforço — nunca pode travar a criação/atualização do lead.
     }

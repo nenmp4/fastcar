@@ -465,6 +465,79 @@ segue no schema sem uso novo, não removida sem ganho real),
   `preventDefault`+`stopPropagation` no clique da foto especificamente,
   pra não disparar a navegação do link `<a>` que abre a conversa — só a
   foto abre o lightbox, o resto do card continua navegando normal.
+  **Nome errado ("online"/"disponível") e foto sempre quebrada** (16/09/2026,
+  achados reais: screenshot mostrando 2 clientes de verdade com "nome"
+  igual a "online" e "disponível" na caixa — texto de status/presença do
+  WhatsApp, não nome de pessoa — e "as fotos vem bugada"/"ícone quebrado/
+  não carrega"). Dois bugs distintos, achados em sequência.
+  (1) **Nome**: `senderName`/`chatName` do payload do webhook e os campos
+  de `zapiBuscarContato()` (`notify`/`pushName`/`name`/`short`) eram usados
+  direto sem checagem — pra pelo menos 2 contatos reais, esse campo trouxe
+  texto de status ("online", "Disponível" — literalmente o About padrão em
+  português do WhatsApp), não o nome de exibição de verdade. Nova
+  `nomeWhatsappPareceValido()` (`includes/whatsapp_config.php`, blocklist
+  pragmática — comparação EXATA, nunca por substring, pra nunca recusar um
+  nome real que só CONTENHA uma dessas palavras) filtra isso em 3 pontos:
+  na captura do webhook (`chatbot-whatsapp/includes/mensagens.php`, trata
+  como "sem nome vindo" em vez de salvar o lixo), na escolha de campo
+  dentro de `zapiBuscarContato()` (pula pro próximo campo da lista em vez
+  de aceitar o 1º não-vazio) e no `foreach` de nomes candidatos. Nome já
+  salvo como lixo (bug antigo, 2 clientes reais em produção) se
+  autocorrige sozinho na próxima chamada de `atualizarNomeFotoWhatsapp()`
+  — automática (mensagem nova desse cliente) ou manual (botão "🔄 Atualizar
+  nome/foto do WhatsApp" em `admin/cliente_detalhe.php`) — porque as duas
+  passaram a tratar nome-que-é-lixo-de-status como "vazio" pra fim de
+  fill-if-empty, não só nome genuinamente vazio.
+  (2) **Foto sempre quebrada**: causa raiz bem diferente do que parecia —
+  `clientes.foto_perfil_url` guardava a URL da CDN do WhatsApp/Z-API
+  PERMANENTEMENTE (buscada 1x, reaproveitada pra sempre no `<img src>`),
+  mas essa URL é temporária/assinada e expira — por isso quebrava depois
+  de um tempo, não na hora que foi salva. Corrigido seguindo o pedido
+  direto do usuário ("só olhar padrão iab que está funcionando"): lido o
+  código real do WhatsApp Box do JurídicoSaaS (`admin/whatsapp-inbox.php`,
+  função `_aplicarFoto()`/`carregarFotos()`) — lá a foto NUNCA é cacheada
+  em banco pro lado do lead/cliente, é buscada AO VIVO via AJAX a cada
+  carregamento de tela, em lotes (5 por vez, delay progressivo) pra não
+  floodar a Z-API, e só troca o placeholder pelo `<img>` DEPOIS de
+  confirmar que carregou (`onload`), nunca antes — nunca mostra ícone de
+  imagem quebrada, só continua no círculo de iniciais até a foto de
+  verdade estar pronta. Portado o mesmo padrão: nova rota
+  `?ajax=foto&telefone=X` em `admin/whatsapp_inbox.php` chama
+  `zapiBuscarContato()` fresco a cada request (mesma checagem de permissão
+  `usuarioPodeVerConversaWhatsapp()` das outras rotas AJAX do arquivo —
+  sem isso um POST/GET forjado podia sondar foto de telefone fora da
+  responsabilidade do consultor); todo avatar (sidebar inicial, sidebar via
+  polling, cabeçalho da conversa) renderiza só o placeholder de iniciais
+  primeiro (`data-av-phone` no lugar de `<img src>` direto), e
+  `carregarFotos()` no JS busca e troca em segundo plano — cap de 30
+  avatares na sidebar (pode ter até 100 conversas) pro mesmo cuidado do
+  JurídicoSaaS de não floodar 1 chamada de Z-API por avatar visível.
+  **Bug real introduzido e pego no próprio teste**: 1ª versão do
+  `_aplicarFoto()` setava `img.loading = 'lazy'` num `<img>` criado via JS
+  mas ainda FORA do DOM (só entra na árvore dentro do próprio `onload`) —
+  lazy-loading nativo nunca dispara carregamento pra um elemento que não
+  está na árvore (não tem como o navegador saber que está "perto da
+  viewport"), travando a foto pra sempre em círculo vicioso; a referência
+  do JurídicoSaaS não usa esse atributo (o lazy/batching de verdade já é
+  manual, via `setTimeout`) — removido daqui também. **2º bug real achado
+  no mesmo teste, sem relação com a mudança de foto**: o bloco
+  `<div id="foto-lightbox">` (usado pelo recurso de foto clicável acima)
+  estava posicionado no HTML DEPOIS do `<script>` que já tentava
+  `document.getElementById('foto-lightbox').addEventListener(...)` — como
+  o script roda assim que o parser chega nele, o elemento ainda não
+  existia na hora, lançando `TypeError` e derrubando silenciosamente o
+  resto do IIFE que vinha depois (o atalho de tecla Esc pra fechar o
+  lightbox nunca chegava a ser registrado). Corrigido movendo a div pra
+  ANTES do `<script>`. Testado ponta a ponta com Playwright contra banco +
+  servidor Z-API fake isolados (imagem real servida localmente, não a CDN
+  de verdade): nome corrigido sozinho de "online" pra "João Pereira" após
+  simular uma mensagem nova; foto troca do placeholder pro `<img>` real
+  sem nunca passar por ícone quebrado (`naturalWidth` sempre > 0 quando
+  vira `<img>`); cliente sem foto configurada continua mostrando só o
+  círculo de iniciais, nunca um `<img>` quebrado; clique na foto carregada
+  abre o lightbox e Esc fecha, sem nenhum erro de JS no console — os 2
+  bugs (loading=lazy e ordem do lightbox) só apareceram DEPOIS de testar
+  com Playwright de verdade, não no lint/smoke.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -1776,16 +1849,21 @@ testado com servidor fake local — nunca contra o serviço real:
   confirmado que o provedor real contratado é outro).
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
-- **API de contato Z-API (`zapiBuscarContato()`)** —
-  `GET /instances/{id}/token/{token}/contacts/{phone}`, usada pra buscar
-  nome/foto de perfil do WhatsApp (ver bullet no WhatsApp Box). Endpoint e
-  nomes de campo (`name`/`short`/`vname`/`notify` pro nome,
-  `imgUrl`/`profileImage`/`photo`/`profilePicture` pra foto) nunca
-  confirmados contra uma instância real, só testado com servidor fake
-  local. `storage/logs/whatsapp_contato_debug.log` grava o corpo cru
-  sempre que nenhum campo esperado bate — checar esse log assim que a
-  função rodar contra um contato de verdade, mesmo padrão já usado pro
-  `whatsapp_midia_debug.log`.
+- **API de contato Z-API (`zapiBuscarContato()`)** — `GET .../profile-picture?phone=`
+  + `GET .../contacts/{phone}` (2 chamadas em paralelo), formato confirmado
+  copiando o código já validado em produção no JurídicoSaaS, não mais os
+  nomes de campo chutados da 1ª versão (ver bullet completo no WhatsApp
+  Box, seção de módulos). **2 achados reais em produção, 16/09/2026,
+  depois desse endpoint já estar rodando**: campo de nome às vezes traz
+  texto de status/presença do WhatsApp ("online", "Disponível") em vez do
+  nome de verdade — filtrado agora por `nomeWhatsappPareceValido()`; e a
+  foto NUNCA deveria ter sido cacheada permanentemente em
+  `clientes.foto_perfil_url` (a URL da CDN expira) — corrigido buscando a
+  foto ao vivo via AJAX a cada carregamento de tela (mesmo padrão do
+  JurídicoSaaS), `clientes.foto_perfil_url` ficou sem uso pra renderização
+  (só histórico/fallback). `storage/logs/whatsapp_contato_debug.log`
+  continua gravando o corpo cru sempre que NENHUM campo bate (nome e foto
+  vazios) — útil se a Z-API mudar o formato de resposta de novo no futuro.
 - **API Gemini** — ✅ 1ª chamada real feita em 15/09/2026 (teste de conexão
   em Configurações → IA, já com chave de verdade): confirmou que
   `gemini-2.5-flash`/`-lite` estavam aposentados pra chave nova (ver

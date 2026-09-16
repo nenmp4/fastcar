@@ -56,6 +56,24 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     exit;
 }
 
+// ── AJAX: foto de perfil do WhatsApp, buscada AO VIVO (16/09/2026, "as
+// fotos vem bugada" — guardar a URL da CDN do WhatsApp em
+// clientes.foto_perfil_url e servir ela direto depois de um tempo dava
+// ícone quebrado, porque essa URL expira; mesmo padrão já validado em
+// produção no JurídicoSaaS — nunca cacheia, busca sob demanda a cada
+// carregamento de tela, lazy e em lotes pra não floodar a Z-API).
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'foto') {
+    header('Content-Type: application/json');
+    $telefoneFoto = normalizarTelefone((string)($_GET['telefone'] ?? ''));
+    if (!$telefoneFoto || !usuarioPodeVerConversaWhatsapp($telefoneFoto, $responsavelFiltro)) {
+        echo json_encode(['foto_url' => '']);
+        exit;
+    }
+    $contatoFoto = zapiBuscarContato($telefoneFoto);
+    echo json_encode(['foto_url' => $contatoFoto['foto_url'] ?? '']);
+    exit;
+}
+
 $erro = '';
 $sucesso = '';
 
@@ -234,11 +252,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
                 <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
-                    <?php if (!empty($c['foto_perfil_url'])): ?>
-                        <img class="wpp-avatar wpp-avatar-clicavel" src="<?= e($c['foto_perfil_url']) ?>" alt="" loading="lazy" data-inicial="<?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?>" data-nome="<?= e($c['cliente_nome'] ?: $c['telefone']) ?>" onerror="avatarErro(this)" onclick="event.preventDefault(); event.stopPropagation(); abrirFotoLightbox(this.src, this.getAttribute('data-nome'))">
-                    <?php else: ?>
-                        <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
-                    <?php endif; ?>
+                    <div class="wpp-avatar-placeholder" data-av-phone="<?= e($c['telefone']) ?>" data-nome="<?= e($c['cliente_nome'] ?: $c['telefone']) ?>"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <div class="wpp-corpo">
                         <div class="nome">
                             <span><?= e($c['cliente_nome'] ?: $c['telefone']) ?></span>
@@ -262,11 +276,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         <?php else: ?>
             <div class="wpp-chat-header">
                 <div>
-                    <?php if (!empty($contatoAtivo['foto_perfil_url'])): ?>
-                        <img class="wpp-avatar wpp-avatar-clicavel" src="<?= e($contatoAtivo['foto_perfil_url']) ?>" alt="" onerror="avatarErro(this)" data-inicial="<?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?>" data-nome="<?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?>" onclick="abrirFotoLightbox(this.src, this.getAttribute('data-nome'))">
-                    <?php else: ?>
-                        <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
-                    <?php endif; ?>
+                    <div class="wpp-avatar-placeholder" data-av-phone="<?= e($telefoneAtivo) ?>" data-nome="<?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?>"><?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
                     <div>
                         <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
                         <strong><?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?></strong>
@@ -335,6 +345,18 @@ if ($telefoneAtivo && !$contatoAtivo) {
     </section>
 </div>
 
+<!-- Precisa vir ANTES do <script> abaixo: achado real testando o
+     lazy-load de fotos (16/09/2026) — o script conecta o clique/Esc do
+     lightbox em document.getElementById('foto-lightbox') assim que roda;
+     com a div depois do <script>, esse elemento ainda não existia no DOM
+     nesse ponto, e a chamada quebrava com TypeError (null.addEventListener),
+     derrubando silenciosamente o resto do IIFE que vinha depois dela
+     (o handler de tecla Esc nunca chegava a ser registrado). -->
+<div id="foto-lightbox">
+    <img id="foto-lightbox-img" src="" alt="">
+    <div id="foto-lightbox-nome" class="nome"></div>
+</div>
+
 <script>
 (function () {
     var telefone = <?= json_encode($telefoneAtivo) ?>;
@@ -353,15 +375,62 @@ if ($telefoneAtivo && !$contatoAtivo) {
         return d.innerHTML;
     }
 
-    // Foto de perfil do WhatsApp pode expirar/mudar (URL da CDN do WhatsApp,
-    // não um arquivo nosso) — se a imagem falhar ao carregar, troca pelo
-    // mesmo placeholder de iniciais usado quando nunca teve foto nenhuma.
-    function avatarErro(img) {
-        var div = document.createElement('div');
-        div.className = 'wpp-avatar-placeholder';
-        div.textContent = img.getAttribute('data-inicial') || '?';
-        img.replaceWith(div);
+    // Foto de perfil do WhatsApp (16/09/2026, "as fotos vem bugada" —
+    // achado real: guardar a URL da CDN em clientes.foto_perfil_url e servir
+    // ela direto no <img src> dava ícone quebrado depois de um tempo,
+    // porque essa URL expira; padrão corrigido pra igual ao JurídicoSaaS,
+    // "só olhar padrão iab que está funcionando" — busca AO VIVO via AJAX,
+    // nunca reaproveita URL velha, e só troca o placeholder pelo <img> DEPOIS
+    // de confirmar que carregou (onload), nunca antes — assim o usuário
+    // nunca vê ícone de imagem quebrada, só continua vendo o círculo de
+    // iniciais até a foto de verdade estar pronta).
+    function _aplicarFoto(el, fotoUrl) {
+        if (!fotoUrl) return;
+        var img = document.createElement('img');
+        img.className = 'wpp-avatar wpp-avatar-clicavel';
+        img.alt = '';
+        // NUNCA loading="lazy" aqui — achado real testando: num <img> ainda
+        // fora do DOM (só entra depois, no onload abaixo), lazy-loading
+        // nativo nunca dispara o carregamento (não tem como o navegador
+        // saber que "está perto da viewport" pra algo que não existe na
+        // árvore ainda) — trava pra sempre nesse círculo. O lazy/batching de
+        // verdade já é feito manualmente pelo setTimeout de carregarEl().
+        img.setAttribute('data-nome', el.getAttribute('data-nome') || '');
+        img.onerror = function () {}; // falhou — mantém o placeholder como está
+        img.onload = function () {
+            img.onclick = function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                abrirFotoLightbox(img.src, img.getAttribute('data-nome'));
+            };
+            el.replaceWith(img);
+        };
+        img.src = fotoUrl;
     }
+
+    function carregarFotos() {
+        var avs = Array.from(document.querySelectorAll('[data-av-phone]'));
+        var header = document.querySelector('.wpp-chat-header [data-av-phone]');
+        // Sidebar pode ter até 100 conversas — capa em 30 pra não floodar a
+        // Z-API com 1 chamada por avatar visível (mesmo cuidado do JurídicoSaaS).
+        var sidebar = avs.filter(function (el) { return el !== header; }).slice(0, 30);
+
+        function carregarEl(el, delay) {
+            var phone = el.getAttribute('data-av-phone');
+            if (!phone) return;
+            setTimeout(function () {
+                fetch('?ajax=foto&telefone=' + encodeURIComponent(phone))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) { _aplicarFoto(el, d.foto_url); })
+                    .catch(function () {});
+            }, delay);
+        }
+
+        if (header) carregarEl(header, 0);
+        var delay = 200;
+        sidebar.forEach(function (el, i) { carregarEl(el, delay + Math.floor(i / 5) * 600 + (i % 5) * 80); });
+    }
+    carregarFotos();
 
     // Espelha includes/whatsapp_inbox.php::tipoMidiaMensagemWhatsapp() —
     // `tipo` sozinho não basta (mídia descrita com sucesso pelo Gemini vira
@@ -496,9 +565,10 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
                     var nomeAttr = escapeHtml(c.cliente_nome || c.telefone);
-                    var avatar = c.foto_perfil_url
-                        ? '<img class="wpp-avatar wpp-avatar-clicavel" src="' + escapeHtml(c.foto_perfil_url) + '" alt="" loading="lazy" data-inicial="' + inicial + '" data-nome="' + nomeAttr + '" onerror="avatarErro(this)" onclick="event.preventDefault(); event.stopPropagation(); abrirFotoLightbox(this.src, this.getAttribute(\'data-nome\'))">'
-                        : '<div class="wpp-avatar-placeholder">' + inicial + '</div>';
+                    // Placeholder sempre primeiro — carregarFotos() troca pela
+                    // foto de verdade (buscada ao vivo) só depois de confirmar
+                    // que carregou, nunca antes (ver comentário de _aplicarFoto).
+                    var avatar = '<div class="wpp-avatar-placeholder" data-av-phone="' + escapeHtml(c.telefone) + '" data-nome="' + nomeAttr + '">' + inicial + '</div>';
                     a.innerHTML = avatar +
                         '<div class="wpp-corpo">' +
                         '<div class="nome"><span>' + escapeHtml(c.cliente_nome || c.telefone) + '</span>' +
@@ -508,6 +578,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         '</div>';
                     lista.appendChild(a);
                 });
+                carregarFotos();
             })
             .catch(function () {});
     }
@@ -584,11 +655,6 @@ if ($telefoneAtivo && !$contatoAtivo) {
     });
 })();
 </script>
-
-<div id="foto-lightbox">
-    <img id="foto-lightbox-img" src="" alt="">
-    <div id="foto-lightbox-nome" class="nome"></div>
-</div>
 
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
