@@ -1613,6 +1613,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   no valor velho, cálculo de custo bate a conta esperada (1M entrada + 1M
   saída × cotação = valor exato), volume zero dá custo zero, e API de
   cotação fora do ar cai no fallback fixo sem quebrar nada.
+  **"Modelo Gemini" mostrando modelo já aposentado** (mesmo dia, achado
+  real vendo a própria tela em produção logo depois do deploy do custo em
+  reais — print mostrando "gemini-2.5-flash-lite", um dos modelos
+  aposentados pra chave nova, ver pendência #3): as chamadas de verdade já
+  usam o modelo certo (`geminiModeloValido()` remapeia NA HORA de cada
+  chamada em `geminiCall()`/`geminiCallChat()`/`geminiCallComMidia()`),
+  mas isso nunca reescreve o valor salvo em `config.gemini_model` — só
+  remapeia em memória, a cada chamada — então tanto `admin/saude.php`
+  quanto o campo de texto em `admin/configuracoes.php` mostravam o valor
+  CRU salvo (o nome antigo, aposentado, que nem responde mais), mesmo o
+  sistema funcionando certo por baixo. Corrigido nos 2 lugares que liam o
+  valor cru pra exibir: `geminiModeloValido(getConfig('gemini_model') ?: '')`
+  em vez de `getConfig('gemini_model') ?: 'gemini-3.5-flash-lite'` — mostra
+  o modelo EFETIVO, nunca o nome aposentado; salvar a tela de Configurações
+  sem mexer nesse campo já corrige o valor salvo sozinho (o form manda de
+  volta o valor já remapeado). Testado: `geminiModeloValido()` remapeia
+  corretamente os 2 modelos aposentados (`gemini-2.5-flash-lite`,
+  `gemini-2.5-flash`), string vazia e o próprio modelo padrão já válido,
+  batendo exatamente o cenário real visto em produção.
 - **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
   (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
   afiado"): cruza o que a IA decidiu na qualificação com o resultado real

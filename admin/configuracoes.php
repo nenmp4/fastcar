@@ -351,7 +351,13 @@ unset($f);
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
         <label>Modelo Gemini</label>
-        <input type="text" name="gemini_model" value="<?= e(getConfig('gemini_model') ?: 'gemini-3.5-flash-lite') ?>">
+        <?php // 16/09/2026, achado real vendo admin/saude.php mostrando um
+        // modelo já aposentado ("gemini-2.5-flash-lite") mesmo as chamadas
+        // reais usando o certo por baixo (geminiModeloValido() remapeia na
+        // hora da chamada, mas nunca reescreve o valor salvo) — mostra aqui
+        // o valor JÁ remapeado, pra não exibir um modelo que nem responde
+        // mais; salvar sem mexer nesse campo já corrige o valor salvo. ?>
+        <input type="text" name="gemini_model" value="<?= e(geminiModeloValido(getConfig('gemini_model') ?: '')) ?>">
         <small>Padrão é o mais barato da família (flash-lite) — volume de leads é baixo, não precisa de um modelo mais caro. Se um dia trocar, o gemini-3.6-flash (mais caro e mais capaz) entra como fallback automático se o configurado falhar.</small>
         <label>Modelo OpenAI (fallback)</label>
         <input type="text" name="openai_model" value="<?= e(getConfig('openai_model') ?: 'gpt-4o-mini') ?>">

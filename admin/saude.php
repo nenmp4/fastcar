@@ -103,7 +103,14 @@ try {
 // ── 4. IA (Gemini + fallback OpenAI) ─────────────────────────────────────
 $geminiKey = getConfig('gemini_api_key') ?: '';
 $openaiKey = getConfig('openai_api_key') ?: '';
-check('IA (Gemini/OpenAI)', 'Modelo Gemini', 'info', getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 'principal');
+// 16/09/2026, achado real vendo a própria tela em produção: config.gemini_model
+// pode ficar salvo com um valor antigo aposentado (ex: "gemini-2.5-flash-lite")
+// pra sempre — geminiModeloValido() remapeia certo NA HORA de cada chamada,
+// mas nunca reescreve o valor salvo em `config`, então mostrar o valor cru
+// aqui exibia um modelo que já nem responde mais, mesmo as chamadas reais
+// estando corretas. Mostra o modelo EFETIVO (já remapeado).
+$modeloGeminiEfetivo = geminiModeloValido(getConfig('gemini_model') ?: '');
+check('IA (Gemini/OpenAI)', 'Modelo Gemini', 'info', $modeloGeminiEfetivo, 'principal');
 check('IA (Gemini/OpenAI)', 'Modelo OpenAI', 'info', getConfig('openai_model') ?: 'gpt-4o-mini', 'fallback');
 if (!$geminiKey) check('IA (Gemini/OpenAI)', 'Gemini API Key', 'warn', 'Não configurada', 'Configurações → IA');
 if (!$openaiKey) check('IA (Gemini/OpenAI)', 'OpenAI API Key', 'warn', 'Não configurada (fallback ficaria indisponível)', 'Configurações → IA');
