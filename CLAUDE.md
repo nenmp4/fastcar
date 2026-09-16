@@ -410,6 +410,27 @@ segue no schema sem uso novo, não removida sem ganho real),
   extração: `etapa` vira `sem_perfil`, `motivo_perda` grava o texto certo,
   `oportunidade_historico` registra a transição — sem regressão na
   qualificação normal (veículo financiado continua completando normal).
+  **IA recusando lead de moto em produção** (16/09/2026, achado real pelo
+  Jean vendo uma conversa de verdade — cliente "Igor" disse "meu veículo é
+  uma moto" e a IA respondeu "a gente trabalha especificamente com a
+  compra de **carros** financiados mesmo", encerrando a qualificação sem
+  nem perguntar o nome dele direito; Jean: "precisa falar pra ia que
+  compramos moto tbm não apenas carros. Compramos moto carro caminhão
+  jetski"). Causa: o prompt inteiro (`IA_QUALIFICACAO_PROMPT_SISTEMA`)
+  usa "carro" como exemplo recorrente em quase toda instrução/frase de
+  exemplo, mas nunca dizia explicitamente que a Fastcar compra outros
+  tipos de veículo — a IA concluiu sozinha (errado, alucinação induzida
+  pelo próprio prompt) uma restrição que não deveria existir. Corrigido
+  com 2 reforços explícitos: no parágrafo de abertura (deixa claro que
+  "carro" é só o exemplo mais comum, nunca uma restrição) e uma regra
+  nova em "REGRAS QUE NÃO PODEM SER QUEBRADAS" nomeando os tipos
+  (carro/moto/caminhão/caminhonete/van/jet ski) e proibindo
+  explicitamente qualquer frase tipo "trabalha especificamente com
+  carros". Mudança só de prompt (texto pra LLM), não dá pra testar contra
+  servidor fake local como o resto do projeto (fake server não simula
+  julgamento de IA) — validação real só acontece com a próxima conversa
+  de verdade no WhatsApp; pedir confirmação pro Jean/José assim que
+  surgir outro lead de moto/caminhão/jet ski.
   **Bug real achado durante esse teste**: mensagem de texto puro (não
   mídia) disparava `PHP Warning: Undefined variable $bytesMidia` — a
   variável usada pra salvar mídia (bullet acima, mesmo dia) só era
