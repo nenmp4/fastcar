@@ -174,6 +174,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $erro = $resultado['erro'];
             }
+        } elseif ($acao === 'testar_drive') {
+            $driveTeste = new GoogleDrive();
+            if (!$driveTeste->hasCredentials()) {
+                $erro = 'Nenhuma credencial encontrada — envie o JSON da service account antes de testar.';
+            } elseif ($driveTeste->testarConexao()) {
+                $sucesso = 'Conexão com o Google Drive funcionando! Credencial e API respondendo normalmente.';
+            } else {
+                $erro = 'Falha no teste: ' . ($driveTeste->lastError ?: 'a API do Drive não respondeu como esperado.');
+            }
         } elseif ($acao === 'salvar_backup') {
             setConfig('backup_auto_ativo', isset($_POST['backup_auto_ativo']) ? '1' : '0');
             setConfig('drive_backup_ativo', isset($_POST['drive_backup_ativo']) ? '1' : '0');
@@ -358,6 +367,11 @@ $fila = listarFilaConsultores();
         <label>Arquivo JSON da service account (<?= $drive->hasCredentials() ? 'substituir' : 'enviar' ?>)</label>
         <input type="file" name="credencial_google" accept="application/json,.json" required>
         <button type="submit">Enviar credencial</button>
+    </form>
+    <form method="post" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_drive">
+        <button type="submit" <?= $drive->hasCredentials() ? '' : 'disabled' ?>>Testar conexão</button>
     </form>
 </div>
 

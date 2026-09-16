@@ -1398,22 +1398,51 @@ testado com servidor fake local — nunca contra o serviço real:
   ZapSign ou via `POST /user/company/webhook/header/` — não implementado
   automaticamente, mesmo padrão que a Assinafy já tinha (nunca teve
   auto-registro de webhook via código aqui).
-- **API Google Drive** (`includes/google_drive.php`) — autenticação via JWT
-  RS256 de service account testada com par de chaves RSA real gerado
-  localmente (a assinatura em si é genuína), mas a troca por token OAuth e
-  as chamadas de criar pasta/subir arquivo só foram validadas contra
-  servidor fake local; nunca contra a API do Google de verdade. Precisa de
-  `config/google_drive_credentials.json` (nunca commitar) com uma service
-  account real da Fastcar antes de validar.
-- **Gmail API** (`includes/mail.php`) — só testada contra servidor OAuth+
-  Gmail fake local simulando o handshake de domain-wide delegation e o
-  formato de resposta do `/messages/send`; nunca um envio real. Validar
-  assim que a delegação em todo o domínio for autorizada no Workspace
-  Admin: se a autenticação (`mailAutenticar()`) realmente obtém token
-  impersonando `contato@fastcar.solutions`, e se o e-mail chega de
-  verdade (não cai em spam) — diferente da Brevo, aqui a entrega É pelo
-  próprio Workspace, sem intermediário cuidando de reputação/SPF/DKIM por
-  fora.
+- **API Google Drive** (`includes/google_drive.php`) — ✅ **credencial real
+  provisionada e autenticação confirmada em produção, 15-16/09/2026**.
+  Service account criada pelo José direto no Google Cloud Console
+  (`fastcar-crm@gen-lang-client-0936186149...`, no MESMO projeto onde a
+  chave Gemini já existia — não precisou de projeto novo, a criação de
+  projeto novo esbarrou numa restrição de Organização do Cloud puxada do
+  domínio Workspace, sem permissão `resourcemanager.projects.create`, e o
+  jeito mais rápido foi reaproveitar o projeto que o AI Studio já tinha
+  criado sozinho pra chave Gemini). `GoogleDrive::testarConexao()` (novo,
+  `includes/google_drive.php`) autentica de verdade E confirma que a Drive
+  API responde (`GET /about?fields=user`, leitura simples que não depende
+  de nenhuma pasta já existir) — botão "Testar conexão" no card do Drive
+  em `admin/configuracoes.php`, mesmo padrão dos outros provedores.
+  `authenticate()` passou a preencher `lastError` com o erro real do
+  Google na falha (`error_description`/`error`), antes só devolvia
+  `false` sem dizer o motivo. Testado com servidor OAuth+Drive fake local
+  (token válido → 200, sem credencial → false) antes de ir pra produção.
+- **Upload da credencial pela própria tela** (15/09/2026, pedido direto —
+  reverte a decisão original de "só por FTP/SSH, é chave sensível demais
+  pra ter upload"): `processarUploadCredencialGoogle()`
+  (`includes/google_drive.php`) valida estrutura (`type==='service_account'`,
+  `client_email`/`private_key` presentes — nunca aceita qualquer `.json`
+  só pela extensão) antes de salvar em
+  `config/google_drive_credentials.json` com `chmod 600`, nunca ecoa o
+  conteúdo de volta pra tela. Mesma credencial serve pro Drive E pro
+  e-mail transacional (ver abaixo). Testado em banco isolado: sem
+  arquivo/estrutura errada/não-JSON todos rejeitados sem escrever nada em
+  disco; upload válido salva com permissão 600 e é reconhecido na hora.
+- **Gmail API** (`includes/mail.php`) — ✅ **1º envio real confirmado em
+  produção, 16/09/2026**, depois de resolver 2 pendências reais no
+  caminho: (1) delegação em todo o domínio nunca tinha sido cadastrada de
+  verdade no Workspace Admin (`admin.google.com → Segurança → Delegação em
+  todo o domínio` — lista vinha vazia), cadastrada com o Client ID da
+  service account (mesmo número que o "ID exclusivo" da tela de detalhes
+  da conta em `console.cloud.google.com`) + os 2 escopos
+  (`.../auth/drive,.../auth/gmail.send`, sem espaço depois da vírgula —
+  erro comum); (2) a Gmail API em si não estava ativada no projeto do
+  Google Cloud (erro claro do próprio Google apontando o link exato pra
+  ativar) — ativada em **APIs e serviços → Biblioteca**, junto com a
+  confirmação de que a Drive API também já estava ativa. Depois dos 2
+  ajustes, `mailAutenticar()` conseguiu token impersonando
+  `contato@fastcar.solutions` e o teste de conexão em Configurações →
+  E-mail passou. **Ainda não confirmado**: se o e-mail realmente chega na
+  caixa de entrada do destinatário sem cair em spam (só o envio via API
+  foi validado, não a entrega final).
 - **Webhook do GitHub** (`api/webhook_deploy.php`) — header
   `X-Hub-Signature-256` e formato do payload (`ref`, `pusher.name`,
   `commits`, `head_commit.message`) testados só com payload sintético

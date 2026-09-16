@@ -66,8 +66,35 @@ class GoogleDrive {
             ['Content-Type: application/x-www-form-urlencoded']
         );
         $data = json_decode($resp, true);
-        if (empty($data['access_token'])) return false;
+        if (empty($data['access_token'])) {
+            $this->lastError = ($data['error_description'] ?? $data['error'] ?? '') ?: 'Resposta inesperada do Google (sem access_token).';
+            return false;
+        }
         $this->token = $data['access_token'];
+        return true;
+    }
+
+    /**
+     * Testa a credencial de ponta a ponta: autentica E confirma que a Drive
+     * API responde de verdade pro token (endpoint `about`, leitura simples,
+     * sem criar nem depender de nenhuma pasta já existir).
+     */
+    public function testarConexao(): bool {
+        if (!$this->authenticate()) return false;
+        $ch = curl_init($this->apiUrl() . '/about?fields=user');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $this->token],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp   = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($status !== 200) {
+            $erro = json_decode($resp ?: '', true);
+            $this->lastError = ($erro['error']['message'] ?? '') ?: "HTTP {$status} — confira se a Google Drive API está ativada no projeto.";
+            return false;
+        }
         return true;
     }
 
