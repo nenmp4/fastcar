@@ -331,11 +331,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <div class="grid-2">
             <div>
                 <label>Marca</label>
-                <input type="text" name="veiculo_marca" value="<?= e($op['veiculo_marca'] ?? '') ?>" placeholder="Ex: Toyota">
+                <input type="text" id="veiculo_marca" name="veiculo_marca" value="<?= e($op['veiculo_marca'] ?? '') ?>" placeholder="Ex: Toyota">
                 <label>Modelo</label>
-                <input type="text" name="veiculo_modelo" value="<?= e($op['veiculo_modelo'] ?? '') ?>" placeholder="Ex: Corolla">
+                <input type="text" id="veiculo_modelo" name="veiculo_modelo" value="<?= e($op['veiculo_modelo'] ?? '') ?>" placeholder="Ex: Corolla">
                 <label>Ano</label>
-                <input type="text" name="veiculo_ano" value="<?= e($op['veiculo_ano'] ?? '') ?>" placeholder="Ex: 2019">
+                <input type="text" id="veiculo_ano" name="veiculo_ano" value="<?= e($op['veiculo_ano'] ?? '') ?>" placeholder="Ex: 2019">
                 <label>Placa</label>
                 <input type="text" name="veiculo_placa" value="<?= e($op['veiculo_placa'] ?? '') ?>">
                 <label>RENAVAM</label>
@@ -641,6 +641,9 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     var resultado = document.getElementById('fipe-resultado');
     var listaCandidatos = document.getElementById('fipe-candidatos');
     var campoValor = document.getElementById('valor_fipe_referencia');
+    var campoMarca = document.getElementById('veiculo_marca');
+    var campoModelo = document.getElementById('veiculo_modelo');
+    var campoAno = document.getElementById('veiculo_ano');
     if (!inputPlaca) return;
 
     function escapeHtml(s) {
@@ -664,8 +667,21 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     return;
                 }
                 var v = data.veiculo;
+                var preenchidoAgora = false;
+                // Fill-if-empty nos campos de "Dados do veículo" — nunca
+                // sobrescreve o que o consultor já tinha digitado ali,
+                // mesma regra de "sistema nunca decide sozinho por cima de
+                // dado já confirmado" usada no resto do projeto. Diferente
+                // do valor FIPE (múltiplos candidatos, precisa escolha
+                // humana), marca/modelo/ano vêm da placa como 1 resposta só.
+                if (v) {
+                    if (campoMarca && !campoMarca.value && v.marca) { campoMarca.value = v.marca; preenchidoAgora = true; }
+                    if (campoModelo && !campoModelo.value && v.modelo) { campoModelo.value = v.modelo; preenchidoAgora = true; }
+                    if (campoAno && !campoAno.value && v.ano_modelo) { campoAno.value = v.ano_modelo; preenchidoAgora = true; }
+                }
                 resultado.innerHTML = (v ? ('Veículo encontrado: ' + escapeHtml(v.marca || '') + ' ' + escapeHtml(v.modelo || '')
                     + ' (' + escapeHtml(v.ano_modelo || '') + ', ' + escapeHtml(v.cor || '') + ', ' + escapeHtml(v.uf || '') + '). ') : '')
+                    + (preenchidoAgora ? 'Marca/modelo/ano preenchidos no card "Dados do veículo" (confira antes de salvar). ' : '')
                     + 'Escolha abaixo qual valor FIPE bate certo:';
 
                 if (!data.candidatos || !data.candidatos.length) {

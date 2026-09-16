@@ -587,6 +587,23 @@ segue no schema sem uso novo, não removida sem ganho real),
   (21798, não o do 1º), confirmando que a tela não aplica o resultado
   "óbvio" sozinha. `fipeValidarMarca()`/BrasilAPI v1 continuam intocados,
   funcionando igual sem nenhum token configurado.
+  **Marca/modelo/ano preenchidos automaticamente pela busca** (16/09/2026,
+  José vendo o card "Dados do veículo" — "nesse campo da placa poderia
+  puxar todos dados pela api né preencher"): a busca por placa já trazia
+  `informacoes_veiculo` (marca/modelo/ano/cor/uf) — só não estava
+  aproveitado pra nada além do texto "Veículo encontrado: ...". Agora, ao
+  buscar, os campos `veiculo_marca`/`veiculo_modelo`/`veiculo_ano` do card
+  "Dados do veículo" (formulário diferente do widget de busca — inputs com
+  `id` novo pra JS conseguir achar) são preenchidos **fill-if-empty**
+  (nunca sobrescreve o que o consultor já tinha digitado ali) — diferente
+  do valor FIPE (`fipe[]`, múltiplos candidatos, sempre exige escolha
+  humana explícita), `informacoes_veiculo` vem como 1 resposta só da
+  placa, então preenche direto sem precisar de clique extra; o consultor
+  ainda vê o campo populado e pode corrigir antes de "Salvar dados do
+  veículo". Testado com Playwright contra servidor PlacaFIPE fake local:
+  oportunidade com marca/modelo/ano vazios recebe os 3 campos preenchidos
+  certos após a busca; oportunidade com esses campos JÁ preenchidos
+  mantém os valores originais intocados mesmo depois da mesma busca.
 - **Módulo cliente** — `admin/clientes.php` (lista/busca) +
   `admin/cliente_detalhe.php` (dados cadastrais + histórico de todas as
   oportunidades daquele telefone, incluindo veículo/placa e **data real de
