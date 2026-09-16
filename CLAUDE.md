@@ -442,6 +442,29 @@ segue no schema sem uso novo, não removida sem ganho real),
   corretamente NÃO tenta de novo numa mensagem nova (confirmado que o
   valor não muda mesmo o fake server sempre retornando sucesso pra esse
   telefone — provaria um bug no guard se mudasse).
+  **Endpoint corrigido pro formato REAL, copiado do JurídicoSaaS** (mesmo
+  dia, "vai no inbox do iab tem jeito certo lá") — a 1ª versão de
+  `zapiBuscarContato()` usava só `GET /contacts/{phone}` com nomes de
+  campo adivinhados, nunca confirmados. Lido direto do código de produção
+  do repo irmão (`nenmp4/iabadvocaciaboutique`, `api/clientes.php` ação
+  `foto_wpp` — já validado com Z-API real há tempo lá): formato certo é
+  **2 chamadas em paralelo** (`curl_multi`) — `GET /profile-picture?phone={phone}`
+  pra foto (resposta array `[{"link":...}]` ou objeto `{"link":...}`,
+  fallback `value`/`url`) e `GET /contacts/{phone}` pro nome
+  (`{"notify":"Nome","short":"N","imgUrl":"..."}` — `notify` é o campo
+  certo do nome de exibição; `imgUrl` serve de FALLBACK pra foto só
+  quando `/profile-picture` não trouxe nada). Testado contra servidor
+  fake local modelado exatamente nesse formato: sucesso retorna a foto de
+  `/profile-picture` (não o fallback, quando as duas existem); telefone
+  sem foto no 1º endpoint cai certo pro fallback `imgUrl` do 2º; nenhum
+  campo reconhecido nos dois retorna `null` e grava diagnóstico.
+  **Foto clicável** (mesmo dia, "pode deixar foto clicavel iggual ai") —
+  lightbox copiado do mesmo padrão do JurídicoSaaS: clique em qualquer
+  avatar com foto (sidebar ou cabeçalho da conversa) abre ela ampliada
+  com o nome, fecha clicando fora ou com Esc. Sidebar usa
+  `preventDefault`+`stopPropagation` no clique da foto especificamente,
+  pra não disparar a navegação do link `<a>` que abre a conversa — só a
+  foto abre o lightbox, o resto do card continua navegando normal.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -777,6 +800,29 @@ segue no schema sem uso novo, não removida sem ganho real),
   2 mensagens (resposta da IA + telefone do consultor) na ordem certa,
   registradas no histórico; recusando, só a resposta da IA e o aviso
   interno pro consultor saem — telefone nunca é mandado.
+  **Reconhece reclamação pós-venda e escala direto, sem qualificar como
+  venda nova** (16/09/2026, "ensinar ia pegar casos") — achado real:
+  cliente reclamando de financiamento não quitado de um carro JÁ vendido
+  pra Fastcar (recebendo notificação extrajudicial) tinha a mensagem
+  processada como qualificação de venda NOVA do zero, a IA perguntando
+  marca/modelo/banco como se fosse lead comum. Novo campo
+  `reclamacao_pos_venda` (+`motivo_reclamacao_pos_venda`) no
+  `IA_EXTRACAO_PROMPT`, checado **antes** de `sem_perfil` de propósito —
+  categoria bem diferente: cliente JÁ CONVERTIDO com pendência real
+  (às vezes urgência jurídica), não lead desqualificado; nunca marca
+  como perdido/`sem_perfil`, que esconderia um problema real em vez de
+  resolver. Quando detectado, `iaProcessarTurno()` escala direto pro
+  consultor (`mudarEtapa` pra `crm_preenchido`, `resumo_ia` com o relato,
+  `notificarConsultorLeadQualificado()` com aviso de urgência) sem
+  tentar qualificar como venda nova. "REGRAS QUE NÃO PODEM SER
+  QUEBRADAS" ganhou instrução explícita: nunca perguntar marca/modelo/
+  banco/parcela nesse cenário, só reconhecer o problema e tranquilizar
+  que a equipe vai olhar. Vincular a pendência à pasta ORIGINAL fechada
+  (`admin/pendencias_pos_venda.php`) continua sendo passo manual do
+  consultor — a IA só identifica e escala rápido, não sabe sozinha qual
+  é a pasta antiga certa. Mudança de prompt (julgamento de IA) não
+  testável contra servidor fake — validação real só na próxima conversa
+  desse tipo.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
@@ -901,11 +947,12 @@ segue no schema sem uso novo, não removida sem ganho real),
   painel geral mostra e marca atrasada quando o prazo passou; filtro por
   responsável funciona (Rafael não vê pendência do Anderson, Anderson vê a
   própria); concluir marca `status`/`concluido_em` certos e some do painel
-  de abertas; reabrir volta a aparecer. **Ainda em aberto**: ensinar a IA
-  de qualificação a reconhecer quando o cliente está reclamando de um
-  veículo JÁ vendido (não oferecendo um novo) e escalar direto pro
-  consultor em vez de rodar a qualificação normal do zero — pedido junto
-  ("ensinar ia pegar casos"), ainda não implementado.
+  de abertas; reabrir volta a aparecer. **IA ensinada a reconhecer o caso
+  e escalar direto** (mesmo dia, "ensinar ia pegar casos") — ver bullet
+  `reclamacao_pos_venda` na seção "Qualificação por IA" abaixo. Vincular a
+  pendência à pasta ORIGINAL fechada continua sendo passo manual do
+  consultor — a IA só identifica e escala rápido, não sabe sozinha qual é
+  a pasta antiga certa.
 - **E-mail do cliente** (`clientes.email`, 14/09/2026, pedido direto do
   José/Jean — "faltou esse dado"): campo que faltava na **1ª etapa** do
   wizard de documentos (`public/documentos.php`, junto com CPF/RG/

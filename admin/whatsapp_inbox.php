@@ -177,6 +177,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-avatar-placeholder { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; background: var(--azul); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
 .wpp-chat-header .wpp-avatar, .wpp-chat-header .wpp-avatar-placeholder { width: 40px; height: 40px; margin-right: 10px; }
 .wpp-chat-header > div:first-child { display: flex; align-items: center; }
+.wpp-avatar-clicavel { cursor: zoom-in; }
+#foto-lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 9999; align-items: center; justify-content: center; cursor: zoom-out; flex-direction: column; gap: .75rem; }
+#foto-lightbox.aberto { display: flex; }
+#foto-lightbox img { max-width: 320px; max-height: 320px; border-radius: 50%; box-shadow: 0 8px 40px rgba(0,0,0,.6); object-fit: cover; }
+#foto-lightbox .nome { color: #fff; font-weight: 700; font-size: 15px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
 .wpp-item .nome { font-weight: 600; font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; }
 .wpp-item .preview { font-size: 12.5px; color: var(--texto-fraco); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wpp-item .quando { font-size: 11px; color: var(--texto-fraco); white-space: nowrap; }
@@ -230,7 +235,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <?php foreach ($conversas as $c): ?>
                 <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
                     <?php if (!empty($c['foto_perfil_url'])): ?>
-                        <img class="wpp-avatar" src="<?= e($c['foto_perfil_url']) ?>" alt="" loading="lazy" data-inicial="<?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?>" onerror="avatarErro(this)">
+                        <img class="wpp-avatar wpp-avatar-clicavel" src="<?= e($c['foto_perfil_url']) ?>" alt="" loading="lazy" data-inicial="<?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?>" data-nome="<?= e($c['cliente_nome'] ?: $c['telefone']) ?>" onerror="avatarErro(this)" onclick="event.preventDefault(); event.stopPropagation(); abrirFotoLightbox(this.src, this.getAttribute('data-nome'))">
                     <?php else: ?>
                         <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <?php endif; ?>
@@ -258,7 +263,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <div class="wpp-chat-header">
                 <div>
                     <?php if (!empty($contatoAtivo['foto_perfil_url'])): ?>
-                        <img class="wpp-avatar" src="<?= e($contatoAtivo['foto_perfil_url']) ?>" alt="" onerror="avatarErro(this)" data-inicial="<?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?>">
+                        <img class="wpp-avatar wpp-avatar-clicavel" src="<?= e($contatoAtivo['foto_perfil_url']) ?>" alt="" onerror="avatarErro(this)" data-inicial="<?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?>" data-nome="<?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?>" onclick="abrirFotoLightbox(this.src, this.getAttribute('data-nome'))">
                     <?php else: ?>
                         <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
                     <?php endif; ?>
@@ -490,8 +495,9 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     var preview = c.ultima_mensagem.length > 60 ? c.ultima_mensagem.slice(0, 60) + '…' : c.ultima_mensagem;
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
+                    var nomeAttr = escapeHtml(c.cliente_nome || c.telefone);
                     var avatar = c.foto_perfil_url
-                        ? '<img class="wpp-avatar" src="' + escapeHtml(c.foto_perfil_url) + '" alt="" loading="lazy" data-inicial="' + inicial + '" onerror="avatarErro(this)">'
+                        ? '<img class="wpp-avatar wpp-avatar-clicavel" src="' + escapeHtml(c.foto_perfil_url) + '" alt="" loading="lazy" data-inicial="' + inicial + '" data-nome="' + nomeAttr + '" onerror="avatarErro(this)" onclick="event.preventDefault(); event.stopPropagation(); abrirFotoLightbox(this.src, this.getAttribute(\'data-nome\'))">'
                         : '<div class="wpp-avatar-placeholder">' + inicial + '</div>';
                     a.innerHTML = avatar +
                         '<div class="wpp-corpo">' +
@@ -558,8 +564,31 @@ if ($telefoneAtivo && !$contatoAtivo) {
             }
         });
     }
+
+    // Foto de perfil clicável — mesmo padrão do WhatsApp Inbox do
+    // JurídicoSaaS (repo irmão), lido direto de lá pra copiar o
+    // comportamento certo em vez de reinventar (16/09/2026, "vai no
+    // inbox do iab tem jeito certo lá" / "pode deixar foto clicavel
+    // iggual ai"): clique em qualquer avatar com foto abre ela grande.
+    window.abrirFotoLightbox = function (src, nome) {
+        if (!src) return;
+        document.getElementById('foto-lightbox-img').src = src;
+        document.getElementById('foto-lightbox-nome').textContent = nome || '';
+        document.getElementById('foto-lightbox').classList.add('aberto');
+    };
+    document.getElementById('foto-lightbox').addEventListener('click', function () {
+        this.classList.remove('aberto');
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') document.getElementById('foto-lightbox').classList.remove('aberto');
+    });
 })();
 </script>
+
+<div id="foto-lightbox">
+    <img id="foto-lightbox-img" src="" alt="">
+    <div id="foto-lightbox-nome" class="nome"></div>
+</div>
 
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

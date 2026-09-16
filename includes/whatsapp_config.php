@@ -88,23 +88,30 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda): bo
 }
 
 /**
- * Busca nome/foto de perfil do WhatsApp pra um telefone (GET
- * /instances/{id}/token/{token}/contacts/{phone} — endpoint documentado da
- * Z-API pra metadados de contato). 16/09/2026, pedido direto ("puxa foto
- * do zap e nome"): antes disso o CRM só tinha o `senderName` que vem
- * solto no payload do webhook da 1ª mensagem (às vezes vazio, às vezes só
- * um apelido esquisito tipo "." ou "$"), nunca a foto de perfil.
+ * Busca nome/foto de perfil do WhatsApp pra um telefone — 2 chamadas em
+ * paralelo (curl_multi), confirmadas contra produção no repo irmão
+ * JurídicoSaaS (`nenmp4/iabadvocaciaboutique`, `api/clientes.php` ação
+ * `foto_wpp` — lido direto de lá em 16/09/2026, "vai no inbox do iab tem
+ * jeito certo lá", depois de uma 1ª tentativa aqui com endpoint/campos
+ * nunca confirmados):
+ *   1. GET /profile-picture?phone={phone} — foto em si. Resposta variando
+ *      entre array `[{"link":"..."}]` e objeto `{"link":...}`, por isso
+ *      checa os dois formatos (`value`/`url` como fallback adicional).
+ *   2. GET /contacts/{phone} — metadados do contato, `{"notify":"Nome",
+ *      "short":"N","imgUrl":"..."}` — `notify` é o nome de exibição do
+ *      WhatsApp; `imgUrl` serve de FALLBACK pra foto só se o endpoint 1
+ *      não trouxe nada (mesma prioridade do código de referência).
+ * 16/09/2026, pedido direto ("puxa foto do zap e nome"): antes disso o
+ * CRM só tinha o `senderName` que vem solto no payload do webhook da 1ª
+ * mensagem (às vezes vazio, às vezes só um apelido esquisito tipo "." ou
+ * "$"), nunca a foto de perfil de verdade.
  *
- * ⚠️ Formato de resposta NUNCA confirmado contra uma instância real (mesma
- * ressalva de todo endpoint Z-API deste projeto que não seja envio de
- * mensagem — ver CLAUDE.md "a validar em produção"). Tenta os nomes de
- * campo mais prováveis pro nome (`name`, `short`, `vname`, `notify`) e pra
- * foto (`imgUrl`, `profileImage`, `photo`); se nenhum bater, loga o corpo
- * cru em storage/logs/whatsapp_contato_debug.log (mesmo padrão de
- * chatbot-whatsapp/includes/mensagens.php::logDiagnosticoMidiaZapi()) pra
- * corrigir o campo certo assim que rodar contra um contato real, em vez
- * de ficar adivinhando às cegas. Nunca lança — busca de nome/foto é
- * sempre melhor esforço, nunca pode travar a criação do lead.
+ * Ainda não confirmado contra uma instância REAL da Fastcar (só copiado
+ * do formato já validado em produção no projeto irmão) — se algum campo
+ * vier diferente, loga o corpo cru em storage/logs/whatsapp_contato_debug.log
+ * (mesmo padrão de logDiagnosticoMidiaZapi()) em vez de falhar em
+ * silêncio. Nunca lança — busca de nome/foto é sempre melhor esforço,
+ * nunca pode travar a criação do lead.
  */
 function zapiBuscarContato(string $phone): ?array {
     $inst = _chatbot_getConfig('zapi_instance_id');
@@ -118,42 +125,60 @@ function zapiBuscarContato(string $phone): ?array {
     try {
         $headers = ['Content-Type: application/json'];
         if ($ctok) $headers[] = 'client-token: ' . $ctok;
+        $base = zapiBaseUrl() . "/instances/{$inst}/token/{$tok}";
 
-        $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/contacts/{$phoneNorm}");
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_TIMEOUT => 10,
-        ]);
-        $resp = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $chFoto = curl_init("{$base}/profile-picture?phone={$phoneNorm}");
+        curl_setopt_array($chFoto, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $headers, CURLOPT_TIMEOUT => 10]);
+        $chContato = curl_init("{$base}/contacts/{$phoneNorm}");
+        curl_setopt_array($chContato, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $headers, CURLOPT_TIMEOUT => 10]);
 
-        if ($code !== 200 || !$resp) return null;
-        $dados = json_decode($resp, true);
-        if (!is_array($dados)) return null;
+        $mh = curl_multi_init();
+        curl_multi_add_handle($mh, $chFoto);
+        curl_multi_add_handle($mh, $chContato);
+        do {
+            $status = curl_multi_exec($mh, $ativo);
+            if ($ativo) curl_multi_select($mh);
+        } while ($ativo && $status === CURLM_OK);
 
+        $respFoto = curl_multi_getcontent($chFoto);
+        $codeFoto = curl_getinfo($chFoto, CURLINFO_HTTP_CODE);
+        $respContato = curl_multi_getcontent($chContato);
+        $codeContato = curl_getinfo($chContato, CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($mh, $chFoto);
+        curl_multi_remove_handle($mh, $chContato);
+        curl_multi_close($mh);
+
+        $foto = '';
         $nome = '';
-        foreach (['name', 'short', 'vname', 'notify'] as $campo) {
-            if (!empty($dados[$campo]) && is_string($dados[$campo])) {
-                $nome = trim($dados[$campo]);
-                break;
+        $brutoParaDiagnostico = [];
+
+        if ($codeFoto === 200 && $respFoto) {
+            $j = json_decode($respFoto, true);
+            $brutoParaDiagnostico['profile-picture'] = $j;
+            if (is_array($j)) {
+                $foto = $j[0]['link'] ?? $j['link'] ?? $j['value'] ?? $j['url'] ?? '';
             }
         }
-        $foto = '';
-        foreach (['imgUrl', 'profileImage', 'photo', 'profilePicture'] as $campo) {
-            if (!empty($dados[$campo]) && is_string($dados[$campo])) {
-                $foto = $dados[$campo];
-                break;
+        if ($codeContato === 200 && $respContato) {
+            $j2 = json_decode($respContato, true);
+            $brutoParaDiagnostico['contacts'] = $j2;
+            if (is_array($j2)) {
+                foreach (['notify', 'pushName', 'name', 'short'] as $campo) {
+                    if (!empty($j2[$campo]) && is_string($j2[$campo])) {
+                        $nome = trim($j2[$campo]);
+                        break;
+                    }
+                }
+                if (!$foto) $foto = $j2['imgUrl'] ?? $j2['profilePictureUrl'] ?? '';
             }
         }
 
         if (!$nome && !$foto) {
-            _zapiLogDiagnosticoContato($phoneNorm, $dados);
+            _zapiLogDiagnosticoContato($phoneNorm, $brutoParaDiagnostico);
             return null;
         }
 
-        return ['nome' => $nome, 'foto_url' => $foto];
+        return ['nome' => $nome, 'foto_url' => (string)$foto];
     } catch (Throwable $e) {
         return null;
     }

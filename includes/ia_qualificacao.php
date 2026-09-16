@@ -110,6 +110,17 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
 - Se o cliente disser claramente que não quer vender, mudou de ideia, ou
   não tem perfil (ex: não é o dono do veículo), agradeça e encerre com
   educação — não insista.
+- Se o cliente estiver falando de um veículo que JÁ VENDEU pra Fastcar
+  antes (não está oferecendo um veículo novo pra vender) — reclamando de
+  financiamento que não foi quitado, transferência que não foi feita,
+  notificação/multa/cobrança chegando em nome dele por causa de um carro
+  que já não é mais dele, ou perguntando sobre um negócio já fechado —
+  isso NÃO é uma qualificação de venda nova. Nunca pergunte marca/modelo/
+  banco/parcela como se fosse um lead novo — reconheça o problema, tranquilize
+  a pessoa dizendo que alguém da equipe vai olhar isso com atenção e entrar
+  em contato, e pare por aqui. Não tente resolver nem prometer prazo — isso
+  é pra um humano avaliar (pendência pós-venda), não pra qualificação
+  automática.
 - Seja breve. Mensagens curtas, como alguém digitando no celular.
 PROMPT;
 
@@ -120,7 +131,7 @@ explicitamente — nunca invente, deduza ou arredonde um valor não
 mencionado. Campo não informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false}
+{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null}
 
 - nome_cliente: o nome que a própria pessoa deu na conversa (nunca o que já estava salvo antes). null se ela não disse o nome ainda.
 - valor_parcela e valor_pretendido: número (sem "R$", sem separador de milhar; use ponto decimal). null se não informado.
@@ -128,8 +139,9 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - urgencia: texto curto livre resumindo o que a pessoa disse sobre pressa/prazo (ex: "precisa vender essa semana, atrasando parcela", "sem pressa, só pesquisando"). null se não deu pra saber ainda.
 - temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRECISANDO vender AGORA (não pergunte isso ao cliente, é uma leitura sua da conversa). O sinal MAIS FORTE é a situação financeira do financiamento, não só o tom: muitas parcelas em atraso e a pessoa parecendo sem outra opção pra resolver isso = "quente" (urgência real, dor financeira); parcelas em dia / financiamento tranquilo, sem sinal de aperto = "frio" (pode estar só pesquisando, sem pressa de fechar), mesmo que responda rápido e educadamente — isso INCLUI quem já pagou boa parte do financiamento e está com poucas parcelas restantes/saldo baixo, mesmo sem nenhum atraso (ajustado 16/09/2026, achado real: lead com só 4 parcelas restantes tinha saído "quente" errado — quem está perto de quitar sozinho tem MENOS motivo pra vender agora, não mais: pouca dívida restante pra Fastcar assumir, e o cliente não tem pressa nenhuma, já está quase lá). "morno" fica no meio (ex: 1-2 parcelas atrasadas; ou situação financeira ok — parcelas em dia, sem estar perto de quitar — mas já decidida a vender por outro motivo real como trocar de carro). Tom/engajamento na conversa (responde rápido, decidido, insiste em prosseguir) é sinal SECUNDÁRIO — desempata dentro da mesma faixa, nunca sozinho vira "quente" se as parcelas estão em dia. Preencha sempre que já houver conversa suficiente pra avaliar (mesmo sem saber ainda todos os dados do veículo), e reavalie se a situação de atraso mudar de figura.
 - aceita_ligacao_consultor: true se a pessoa confirmou que um consultor pode ligar, false se ela recusou/preferiu só texto, null se ainda não foi perguntado ou ela não respondeu isso.
-- sem_perfil: true se o cliente disse claramente que não quer vender, não tem interesse, ou não se enquadra (não é o dono, veículo já vendido, etc) — OU se confirmou que o veículo JÁ ESTÁ QUITADO (sem financiamento em aberto). O foco da Fastcar é comprar veículo AINDA financiado (assumir a dívida do financiamento); veículo quitado foge desse foco, então nesse caso preencha motivo_sem_perfil com algo como "Veículo já quitado — fora do foco de compra financiada, possível oportunidade pro setor de vendas" (não é rejeição do cliente, é só fora do perfil dessa qualificação — mantenha o tom educado com ele, sem dizer "não compramos", só encerre a qualificação nesse ponto).
-- qualificacao_completa: true SOMENTE quando já se sabe modelo+ano, a situação do financiamento (banco+parcela, confirmando que AINDA tem parcelas em aberto), o valor pretendido pelo cliente, E a pessoa já respondeu se aceita a ligação do consultor (aceita_ligacao_consultor não é mais null). Veículo quitado nunca chega em qualificacao_completa=true — vira sem_perfil (ver acima) assim que a quitação for confirmada.
+- sem_perfil: true se o cliente disse claramente que não quer vender um veículo NOVO, não tem interesse, ou não se enquadra pra uma compra nova (não é o dono, etc) — OU se confirmou que o veículo (que está oferecendo AGORA) JÁ ESTÁ QUITADO (sem financiamento em aberto). O foco da Fastcar é comprar veículo AINDA financiado (assumir a dívida do financiamento); veículo quitado foge desse foco, então nesse caso preencha motivo_sem_perfil com algo como "Veículo já quitado — fora do foco de compra financiada, possível oportunidade pro setor de vendas" (não é rejeição do cliente, é só fora do perfil dessa qualificação — mantenha o tom educado com ele, sem dizer "não compramos", só encerre a qualificação nesse ponto). NUNCA use sem_perfil pro caso de "veículo já vendido pra Fastcar antes" — isso é reclamacao_pos_venda (ver abaixo), categoria bem diferente.
+- reclamacao_pos_venda: true se o cliente está falando de um veículo que ELE JÁ VENDEU pra Fastcar antes (não está oferecendo um veículo novo agora) — reclamando de financiamento não quitado, transferência não feita, notificação/multa/cobrança chegando em nome dele por causa desse carro que já não é mais dele, ou perguntando sobre um negócio já fechado. Isso é uma categoria BEM DIFERENTE de sem_perfil — não é alguém desqualificado pra vender, é um CLIENTE JÁ CONVERTIDO com uma pendência real que precisa de atenção humana rápida (pode envolver problema jurídico). Quando true, preencha motivo_reclamacao_pos_venda com um resumo curto do que a pessoa relatou (ex: "Cliente recebeu notificação extrajudicial sobre financiamento não quitado do Duster placa DVN3E82 vendido à Fastcar"), e pare de fazer perguntas de qualificação de venda nova (marca/modelo/banco/parcela) — o objetivo aqui é só captar o relato, não vender/qualificar nada.
+- qualificacao_completa: true SOMENTE quando já se sabe modelo+ano, a situação do financiamento (banco+parcela, confirmando que AINDA tem parcelas em aberto), o valor pretendido pelo cliente, E a pessoa já respondeu se aceita a ligação do consultor (aceita_ligacao_consultor não é mais null). Veículo quitado nunca chega em qualificacao_completa=true — vira sem_perfil (ver acima) assim que a quitação for confirmada. reclamacao_pos_venda também nunca chega em qualificacao_completa=true.
 
 Conversa:
 PROMPT;
@@ -387,6 +399,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
     $resultado = [
         'resposta' => '', 'enviada' => false, 'sem_perfil' => false,
         'qualificacao_completa' => false, 'escalado_sem_avanco' => false,
+        'reclamacao_pos_venda' => false,
     ];
 
     $resposta = iaGerarResposta($telefone);
@@ -406,6 +419,36 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
     }
 
     $avancou = iaAplicarDadosExtraidos($oportunidadeId, $dados);
+
+    // Checado ANTES de sem_perfil de propósito: cliente reclamando de um
+    // veículo que já vendeu pra Fastcar (financiamento não quitado,
+    // transferência pendente, notificação/multa chegando em nome dele) é
+    // categoria bem diferente — não é lead desqualificado, é cliente já
+    // convertido com pendência real, às vezes urgência jurídica. Achado
+    // real (16/09/2026): a IA rodava a qualificação normal do zero
+    // (perguntando marca/modelo/banco) pra quem estava relatando problema
+    // de uma venda antiga. Escala direto pro consultor, nunca marca como
+    // perdido/sem_perfil — isso esconderia um problema real, não resolve
+    // nada. Fica registrado em oportunidades.resumo_ia; vincular a
+    // pendência à pasta ORIGINAL fechada (admin/pendencias_pos_venda.php)
+    // é passo manual do consultor — a IA só identifica e escala rápido.
+    if (!empty($dados['reclamacao_pos_venda'])) {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
+        $stmt->execute([$oportunidadeId]);
+        $etapaAtual = $stmt->fetchColumn();
+        if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
+            $motivo = (string)($dados['motivo_reclamacao_pos_venda'] ?: 'Cliente relatou pendência sobre veículo já vendido à Fastcar.');
+            $resumoReclamacao = "⚠️ RECLAMAÇÃO PÓS-VENDA — atenção rápida\n\n{$motivo}\n\n"
+                . "Verificar se esse telefone já tem oportunidade fechada anterior e registrar/acompanhar em "
+                . "Pendências pós-venda, em vez de tratar como lead novo.";
+            $db->prepare("UPDATE oportunidades SET resumo_ia = ? WHERE id = ?")->execute([$resumoReclamacao, $oportunidadeId]);
+            mudarEtapa($oportunidadeId, 'crm_preenchido', null, 'IA identificou reclamação pós-venda — encaminhado pro consultor sem rodar qualificação de venda nova');
+            notificarConsultorLeadQualificado($oportunidadeId, '⚠️ Reclamação pós-venda — atenção rápida');
+        }
+        $resultado['reclamacao_pos_venda'] = true;
+        return $resultado;
+    }
 
     if (!empty($dados['sem_perfil'])) {
         marcarPerdida($oportunidadeId, (string)($dados['motivo_sem_perfil'] ?: 'IA identificou sem perfil de compra na qualificação'), null, true);
