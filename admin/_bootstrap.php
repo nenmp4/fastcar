@@ -30,5 +30,6 @@ require_once __DIR__ . '/../includes/gemini.php';
 require_once __DIR__ . '/../includes/openai.php';
 require_once __DIR__ . '/../includes/contratos.php';
 require_once __DIR__ . '/../includes/mail.php';
+require_once __DIR__ . '/../includes/email_templates.php';
 
 requireAdmin();

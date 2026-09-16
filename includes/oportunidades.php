@@ -9,6 +9,8 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/fila_leads.php';
 require_once __DIR__ . '/whatsapp_config.php';
+require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/email_templates.php';
 
 const ETAPAS_VALIDAS = [
     'whatsapp', 'qualificacao_ia', 'crm_preenchido', 'atendimento',
@@ -289,10 +291,52 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
         ")->execute([$oportunidadeId, $atual, $etapaNova, $responsavelId, clean($observacao)]);
 
         $db->commit();
-        return true;
     } catch (Throwable $e) {
         $db->rollBack();
         throw $e;
+    }
+
+    // Fora da transação de propósito: nunca queremos um rollBack() numa
+    // transação já commitada só porque o envio de e-mail deu problema.
+    if ($etapaNova === 'fechado') {
+        enviarEmailCompraConcluida($oportunidadeId);
+    }
+
+    return true;
+}
+
+/**
+ * E-mail de confirmação pro cliente quando a compra é concluída (bloco 8)
+ * — 16/09/2026, pedido José/Jean ("cria todos os templates" dos e-mails
+ * transacionais propostos). Best-effort, igual todo outro aviso automático
+ * daqui: nunca pode travar o fechamento da oportunidade por causa disso.
+ * Sem e-mail cadastrado, não manda nada (nunca quebra por falta de dado).
+ */
+function enviarEmailCompraConcluida(int $oportunidadeId): void {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT o.veiculo_marca, o.veiculo_modelo, o.valor_final, c.nome AS cliente_nome, c.email AS cliente_email
+            FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+            WHERE o.id = ?
+        ");
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op || empty($op['cliente_email'])) return;
+
+        $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) ?: 'seu veículo';
+        $valor = $op['valor_final'] ? 'R$ ' . number_format((float)$op['valor_final'], 2, ',', '.') : null;
+
+        $corpo = "<p>Olá, " . htmlspecialchars($op['cliente_nome'] ?: '', ENT_QUOTES) . "!</p>"
+            . "<p>A compra do seu <strong>{$veiculo}</strong> foi concluída com sucesso pela Fastcar. 🎉</p>"
+            . ($valor ? "<p>Valor final: <strong>{$valor}</strong></p>" : '')
+            . "<p>Toda a documentação e o contrato assinado ficam guardados com a gente. Qualquer dúvida sobre o processo, "
+            . "é só chamar por aqui ou pelo WhatsApp.</p>"
+            . "<p>Obrigado pela confiança!</p>";
+
+        enviarEmail($op['cliente_email'], 'Compra concluída — Fastcar', emailLayout($corpo), $op['cliente_nome'] ?: '');
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar o fechamento da oportunidade.
     }
 }
 

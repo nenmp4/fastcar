@@ -139,6 +139,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $erro = "Não deu pra enviar por WhatsApp (confira as credenciais em Configurações). Link: {$link}";
                 }
+
+                // Cópia por e-mail (16/09/2026, "cria todos os templates")
+                // — só se o cliente já tiver e-mail cadastrado; nunca troca
+                // nem depende do resultado do envio por WhatsApp acima,
+                // são canais independentes.
+                if (!empty($op['cliente_email'])) {
+                    $corpoEmail = "<p>Olá, " . e($op['cliente_nome'] ?: '') . "!</p>"
+                        . "<p>Pra continuar a avaliação do seu veículo, preencha seus dados e envie os documentos pelo link abaixo:</p>"
+                        . emailBotao('Enviar documentos', $link)
+                        . "<p style=\"font-size:12.5px;color:#6b7280\">Se o botão não funcionar, copie e cole este link no navegador:<br>"
+                        . "<a href=\"" . e($link) . "\" style=\"color:#2f6fed\">" . e($link) . "</a></p>";
+                    enviarEmail($op['cliente_email'], 'Fastcar — envio de documentos', emailLayout($corpoEmail), $op['cliente_nome'] ?: '');
+                }
             } elseif ($acao === 'upload_documento_staff') {
                 $tipoDoc = (string)($_POST['tipo_documento'] ?? '');
                 $tiposValidos = array_keys(TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO);

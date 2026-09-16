@@ -22,6 +22,8 @@ require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php'; // garantirPastaDriveCliente()
 require_once __DIR__ . '/vendas.php'; // mudarEtapaVenda() — auto-transição ao gerar/assinar contrato de venda
+require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/email_templates.php';
 
 const CONTRATOS_STATUS_ZAPSIGN = [
     'signed'  => 'assinado',
@@ -175,6 +177,22 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         $oportunidadeId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
         $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
+
+    // Aviso complementar por e-mail (16/09/2026, "cria todos os templates")
+    // — a ZapSign já manda o link de assinatura de verdade por conta
+    // própria (telefone/e-mail, includes/zapsign.php); este é só um
+    // "está a caminho" com a cara da Fastcar, nunca compete com o link
+    // oficial de assinatura. Best-effort, nunca pode travar a geração do
+    // contrato (já foi criado/salvo acima, independente disso).
+    if ($campos['_email']) {
+        $corpoEmail = "<p>Olá, " . htmlspecialchars($campos['vendedor_nome'] ?: '', ENT_QUOTES) . "!</p>"
+            . "<p>O contrato de compra do seu veículo (<strong>" . htmlspecialchars(trim($campos['veiculo_marca'] . ' ' . $campos['veiculo_modelo']), ENT_QUOTES) . "</strong>) "
+            . "acaba de ser enviado pra assinatura eletrônica.</p>"
+            . "<p>Você vai receber um link de assinatura da ZapSign, nossa plataforma parceira, por WhatsApp"
+            . ($campos['_email'] ? ' e/ou e-mail' : '') . ". Basta seguir as instruções por lá pra assinar.</p>"
+            . "<p>Qualquer dúvida, é só chamar a gente.</p>";
+        enviarEmail($campos['_email'], 'Contrato enviado pra assinatura — Fastcar', emailLayout($corpoEmail), $campos['vendedor_nome'] ?: '');
+    }
 
     return [
         'ok' => true,

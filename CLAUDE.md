@@ -903,6 +903,39 @@ segue no schema sem uso novo, não removida sem ganho real),
   clara sem escrever nada em disco; upload válido salva com permissão 600
   e é reconhecido na hora por `GoogleDrive::hasCredentials()`/
   `getCredentialEmail()`, sem precisar reiniciar nada.
+- **E-mails transacionais** (`includes/email_templates.php`, 16/09/2026,
+  "cria todos os templates" depois do 1º envio real de e-mail funcionar em
+  produção) — moldura visual compartilhada (`emailLayout()`/`emailBotao()`)
+  com a mesma identidade do wizard/PDF do contrato: faixa navy `#151722`
+  com a logo (texto "FastCar" estilizado como fallback se ainda não tiver
+  logo enviada), botão em azul sólido `#2f6fed` (gradiente evitado de
+  propósito — Outlook desktop não renderiza `linear-gradient`, cor sólida é
+  o padrão seguro pra e-mail HTML), rodapé com o endereço real da sede
+  (mesma preocupação de "isso não é golpe?" já coberta no wizard). Todo
+  estilo inline, nunca `<style>` em bloco — clientes de e-mail removem CSS
+  não-inline. `appBaseUrl()` (novo, mesmo arquivo) resolve o link absoluto
+  com fallback pro domínio de produção quando chamado fora de um request
+  HTTP (`mudarEtapa()` pode em tese rodar fora de admin). 3 e-mails
+  plugados, todos best-effort (nunca podem travar o fluxo principal) e só
+  disparam se o cliente já tiver e-mail cadastrado:
+  1. **Link do wizard de documentos** — `admin/oportunidade.php`, ação
+     `enviar_link_documentos`: cópia por e-mail além do WhatsApp de
+     sempre, canais independentes (um falhar não afeta o outro).
+  2. **Contrato enviado pra assinatura** —
+     `includes/contratos.php::gerarEEnviarContratoCompra()`: aviso
+     complementar com a cara da Fastcar, nunca compete com o link de
+     assinatura de verdade que a própria ZapSign manda por conta própria.
+  3. **Compra concluída** — plugado direto em `mudarEtapa()`
+     (`includes/oportunidades.php`), fora da transação de banco de
+     propósito (nunca queremos um `rollBack()` numa transação já
+     commitada só porque o e-mail deu problema) — dispara pra QUALQUER
+     rota que feche uma oportunidade, não só uma tela específica.
+  Testado ponta a ponta com servidor Gmail fake local: e-mail de compra
+  concluída capturado e decodificado (headers From/To/Subject em Base64/
+  Content-Type corretos, dados do cliente/veículo/valor batendo), cliente
+  sem e-mail cadastrado corretamente não gera nenhuma chamada; renderização
+  visual conferida via screenshot (Playwright) dos 2 templates (com e sem
+  botão) — layout, cores e botão saindo exatamente como esperado.
 - **PWA (instalável como app)** — `admin/manifest.json` + `admin/sw.js`
   (service worker mínimo, sem cache agressivo — dados do CRM são sempre
   dinâmicos), mesmo padrão do JurídicoSaaS. Como o admin da Fastcar (ao
