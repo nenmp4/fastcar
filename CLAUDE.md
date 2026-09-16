@@ -1577,9 +1577,21 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    `fastcar.solutions`** (SSL via certbot, não mais Origin Certificate
    manual — ver a skill `setup-vps` pro racional completo da troca),
    `sistema.fastcar.solutions` já respondendo com HTTPS válido e acesso
-   direto por IP bloqueado. Webhook de deploy automático via GitHub ainda
-   não cadastrado (deploy segue manual, `git pull` por SSH, até isso ser
-   feito).
+   direto por IP bloqueado. **Webhook de deploy automático via GitHub
+   confirmado funcionando em produção, 16/09/2026** — cadastrado, `git
+   push` na `main` dispara `api/webhook_deploy.php`, agenda
+   `storage/.deploy`, e o crontab aplica sozinho em até 1 minuto (GitHub
+   "Recent Deliveries" mostrando 100% de entregas verdes ao longo do dia
+   inteiro). Achado real no mesmo dia: a linha AO VIVO do crontab tinha
+   ficado presa numa versão antiga — só `git pull` puro, sem chamar
+   `install/aplicar_deploy.sh` — então o marcador era criado e removido
+   certinho, mas **nenhuma migração nem smoke test rodava sozinho**
+   nenhuma vez, sem nenhum sinal de erro pra desconfiar (só não tinha
+   quebrado ainda porque nenhuma migração de schema tinha sido empurrada
+   nesse intervalo). Corrigido pra `[ -f storage/.deploy ] && bash
+   install/aplicar_deploy.sh` — mesma lição registrada na skill
+   `setup-vps` (gotcha #3) pra nunca assumir que a crontab ao vivo bate
+   com o que o script pretende, só porque o script existe no repo.
 2. ~~**WhatsApp**~~ — ✅ decidido: **Z-API**, mesmo provedor do JurídicoSaaS.
    Instância própria da Fastcar já criada em 10/07/2026 (**"FastCar | JEAN"**,
    número 11 9 5834-7764, plano pago, `Conectado`/Multi Device) — falta só

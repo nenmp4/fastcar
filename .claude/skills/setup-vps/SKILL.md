@@ -325,6 +325,27 @@ via SSH, e ainda grava) exige `set -o pipefail` logo no topo do script,
 senão o status de saída que o `if` vê é sempre o do `tee` (quase sempre
 sucesso), nunca o do comando real — mascarando toda falha do smoke.
 
+⚠️ Terceiro gotcha (Fastcar, 16/09/2026): mesmo depois de montar
+`aplicar_deploy.sh` certinho (gotchas 1 e 2 acima), **confirma que a linha
+de verdade na crontab AO VIVO da VPS chama esse script** — não assume só
+porque o script existe no repo ou porque `setup_crontab.sh` foi rodado
+uma vez no passado. No Fastcar a linha ficou presa numa versão antiga
+(`git pull origin main >> log && rm .deploy`, sem `migrar.php` nem
+`smoke.php` nenhum) por dias sem ninguém perceber — o webhook disparava
+certinho (GitHub "Recent Deliveries" 100% verde), o marcador era criado e
+removido dentro de 1 minuto, os arquivos chegavam atualizados na VPS...
+só que **nenhuma migração nem smoke test rodava sozinho**, e como
+`git pull` "sucede" silenciosamente mesmo sem migrar nada, não existia
+NENHUM sinal de erro pra desconfiar — só demorou a aparecer porque
+nenhuma migração de schema tinha sido empurrada nesse intervalo (se
+tivesse, teria quebrado em produção sem alerta nenhum). Rodar
+`crontab -l | grep deploy` e ler a linha inteira é o jeito de confirmar
+de verdade — não só assumir que `bash install/setup_crontab.sh` (se
+rodado uma vez, no passado) deixou a linha certa pra sempre; qualquer
+edição manual de crontab depois (inclusive uma edição malfeita tentando
+consertar outra coisa) pode reverter silenciosamente pra uma versão mais
+simples e incompleta.
+
 ### 9. Deploy automático via GitHub ⏳ webhook precisa de domínio/URL pública
 
 ```bash
