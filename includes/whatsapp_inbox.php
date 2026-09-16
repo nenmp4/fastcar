@@ -60,6 +60,7 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
     $sql = "
         SELECT m.telefone, m.mensagem AS ultima_mensagem, m.direcao AS ultima_direcao,
                m.tipo AS ultima_tipo, m.created_at AS ultima_em, m.cliente_id, c.nome AS cliente_nome,
+               c.foto_perfil_url,
                (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM whatsapp_mensagens m

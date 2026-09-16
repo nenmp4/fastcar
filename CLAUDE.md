@@ -404,6 +404,44 @@ segue no schema sem uso novo, não removida sem ganho real),
   ficado pra trás com a checagem antiga, batendo 403 só nesse ponto
   específico. Corrigido trocando pra `perfilVeTudo()`, mesmo padrão do
   resto do arquivo.
+  **Nome e foto de perfil do WhatsApp** (16/09/2026, "puxa foto do zap e
+  nome") — recurso que a 1ª versão do WhatsApp Box tinha deixado de
+  propósito de fora (ver nota no topo desta seção: "cache de foto de
+  perfil... fica como possível próxima iteração se a equipe sentir
+  falta"), agora pedido de verdade. `zapiBuscarContato()`
+  (`includes/whatsapp_config.php`, novo) — `GET /instances/{id}/token/
+  {token}/contacts/{phone}`, endpoint Z-API **nunca confirmado contra
+  instância real** (mesma ressalva de todo endpoint Z-API que não seja
+  envio de mensagem — ver "a validar em produção"): tenta os nomes de
+  campo mais prováveis pro nome (`name`/`short`/`vname`/`notify`) e pra
+  foto (`imgUrl`/`profileImage`/`photo`/`profilePicture`), loga o corpo
+  cru em `storage/logs/whatsapp_contato_debug.log` se nenhum bater (mesmo
+  padrão de `logDiagnosticoMidiaZapi()`) em vez de ficar adivinhando às
+  cegas depois. `clientes.foto_perfil_url` (coluna nova) — `NULL` =
+  "nunca tentou buscar", `''` = "já tentou, não achou nada" (nunca tenta
+  de novo a cada mensagem nova do mesmo cliente), URL real quando achou.
+  `atualizarNomeFotoWhatsapp()` chamada de dentro de
+  `criarOuAbrirOportunidade()` (`includes/oportunidades.php`): cliente
+  NOVO sempre tenta buscar; cliente já existente só tenta de novo se
+  `foto_perfil_url` ainda for `NULL`. Nome é fill-if-empty (nunca
+  sobrescreve o que já tinha, mesma regra do resto do projeto), foto
+  sempre atualiza quando achada. Best-effort, nunca lança — nunca pode
+  travar/atrasar o webhook. Avatar circular (com fallback de iniciais se
+  a imagem falhar ao carregar — é a URL da CDN do WhatsApp da pessoa, não
+  um arquivo nosso, pode expirar/mudar) na sidebar do WhatsApp Box (PHP
+  no carregamento inicial + JS espelhado no polling) e no cabeçalho da
+  conversa aberta. Botão "🔄 Atualizar nome/foto do WhatsApp" em
+  `admin/cliente_detalhe.php` cobre backfill manual de clientes
+  cadastrados antes dessa função existir (a busca automática só roda na
+  criação/1ª tentativa). Testado em banco isolado contra servidor Z-API
+  fake local: busca com sucesso retorna nome+foto certos; busca sem
+  nenhum campo reconhecido retorna `null` e grava o diagnóstico; cliente
+  novo criado já sai com nome+foto preenchidos; cliente existente com
+  nome digitado à mão preserva o nome mas ainda assim busca a foto
+  (estava `NULL`); cliente com `foto_perfil_url=''` (já tentou antes)
+  corretamente NÃO tenta de novo numa mensagem nova (confirmado que o
+  valor não muda mesmo o fake server sempre retornando sucesso pra esse
+  telefone — provaria um bug no guard se mudasse).
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -1639,6 +1677,16 @@ testado com servidor fake local — nunca contra o serviço real:
   confirmado que o provedor real contratado é outro).
 - **Envio real de mensagem (`zapiEnviarTexto`)** — só testado o caminho de
   falha graciosa (sem credencial/rede); nunca um envio de verdade.
+- **API de contato Z-API (`zapiBuscarContato()`)** —
+  `GET /instances/{id}/token/{token}/contacts/{phone}`, usada pra buscar
+  nome/foto de perfil do WhatsApp (ver bullet no WhatsApp Box). Endpoint e
+  nomes de campo (`name`/`short`/`vname`/`notify` pro nome,
+  `imgUrl`/`profileImage`/`photo`/`profilePicture` pra foto) nunca
+  confirmados contra uma instância real, só testado com servidor fake
+  local. `storage/logs/whatsapp_contato_debug.log` grava o corpo cru
+  sempre que nenhum campo esperado bate — checar esse log assim que a
+  função rodar contra um contato de verdade, mesmo padrão já usado pro
+  `whatsapp_midia_debug.log`.
 - **API Gemini** — ✅ 1ª chamada real feita em 15/09/2026 (teste de conexão
   em Configurações → IA, já com chave de verdade): confirmou que
   `gemini-2.5-flash`/`-lite` estavam aposentados pra chave nova (ver

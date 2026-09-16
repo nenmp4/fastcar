@@ -141,10 +141,15 @@ foreach ($conversas as $c) {
 // no limite) — busca à parte só pra não perder nome/status da IA na tela.
 if ($telefoneAtivo && !$contatoAtivo) {
     $db = getDB();
-    $stmtCli = $db->prepare("SELECT nome FROM clientes WHERE telefone = ?");
+    $stmtCli = $db->prepare("SELECT nome, foto_perfil_url FROM clientes WHERE telefone = ?");
     $stmtCli->execute([$telefoneAtivo]);
-    $nomeCliente = $stmtCli->fetchColumn();
-    $contatoAtivo = ['telefone' => $telefoneAtivo, 'cliente_nome' => $nomeCliente ?: null, 'ia_pausada' => iaPausada($telefoneAtivo) ? 1 : 0];
+    $cliRow = $stmtCli->fetch() ?: [];
+    $contatoAtivo = [
+        'telefone' => $telefoneAtivo,
+        'cliente_nome' => $cliRow['nome'] ?? null,
+        'foto_perfil_url' => $cliRow['foto_perfil_url'] ?? null,
+        'ia_pausada' => iaPausada($telefoneAtivo) ? 1 : 0,
+    ];
 }
 ?>
 <!doctype html>
@@ -164,9 +169,14 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-nova-form input { flex: 1; min-width: 0; }
 .wpp-nova-form button { margin: 0; white-space: nowrap; padding: 6px 12px; font-size: 12.5px; }
 .wpp-lista { flex: 1; overflow-y: auto; }
-.wpp-item { display: block; padding: 12px 16px; border-bottom: 1px solid var(--borda); text-decoration: none; color: inherit; position: relative; }
+.wpp-item { display: flex; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borda); text-decoration: none; color: inherit; position: relative; }
 .wpp-item:hover { background: var(--fundo); text-decoration: none; }
 .wpp-item.ativo { background: var(--azul-claro); }
+.wpp-item .wpp-corpo { min-width: 0; flex: 1; }
+.wpp-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--azul-claro); }
+.wpp-avatar-placeholder { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; background: var(--azul); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+.wpp-chat-header .wpp-avatar, .wpp-chat-header .wpp-avatar-placeholder { width: 40px; height: 40px; margin-right: 10px; }
+.wpp-chat-header > div:first-child { display: flex; align-items: center; }
 .wpp-item .nome { font-weight: 600; font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; }
 .wpp-item .preview { font-size: 12.5px; color: var(--texto-fraco); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wpp-item .quando { font-size: 11px; color: var(--texto-fraco); white-space: nowrap; }
@@ -219,16 +229,23 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
                 <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
-                    <div class="nome">
-                        <span><?= e($c['cliente_nome'] ?: $c['telefone']) ?></span>
-                        <?php if ((int)$c['nao_lidas'] > 0): ?><span class="wpp-badge"><?= (int)$c['nao_lidas'] ?></span><?php endif; ?>
+                    <?php if (!empty($c['foto_perfil_url'])): ?>
+                        <img class="wpp-avatar" src="<?= e($c['foto_perfil_url']) ?>" alt="" loading="lazy" data-inicial="<?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?>" onerror="avatarErro(this)">
+                    <?php else: ?>
+                        <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
+                    <?php endif; ?>
+                    <div class="wpp-corpo">
+                        <div class="nome">
+                            <span><?= e($c['cliente_nome'] ?: $c['telefone']) ?></span>
+                            <?php if ((int)$c['nao_lidas'] > 0): ?><span class="wpp-badge"><?= (int)$c['nao_lidas'] ?></span><?php endif; ?>
+                        </div>
+                        <div class="preview">
+                            <?= $c['ultima_direcao'] === 'out' ? '✓ ' : '' ?>
+                            <?= $c['ultima_tipo'] !== 'text' ? '📎 ' : '' ?>
+                            <?= e(mb_strimwidth($c['ultima_mensagem'], 0, 60, '…')) ?>
+                        </div>
+                        <div class="quando"><?= date('d/m H:i', strtotime($c['ultima_em'])) ?><?= $c['ia_pausada'] ? ' · ⏸️ IA pausada' : '' ?></div>
                     </div>
-                    <div class="preview">
-                        <?= $c['ultima_direcao'] === 'out' ? '✓ ' : '' ?>
-                        <?= $c['ultima_tipo'] !== 'text' ? '📎 ' : '' ?>
-                        <?= e(mb_strimwidth($c['ultima_mensagem'], 0, 60, '…')) ?>
-                    </div>
-                    <div class="quando"><?= date('d/m H:i', strtotime($c['ultima_em'])) ?><?= $c['ia_pausada'] ? ' · ⏸️ IA pausada' : '' ?></div>
                 </a>
             <?php endforeach; ?>
         </div>
@@ -240,9 +257,16 @@ if ($telefoneAtivo && !$contatoAtivo) {
         <?php else: ?>
             <div class="wpp-chat-header">
                 <div>
-                    <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
-                    <strong><?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?></strong>
-                    <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?></div>
+                    <?php if (!empty($contatoAtivo['foto_perfil_url'])): ?>
+                        <img class="wpp-avatar" src="<?= e($contatoAtivo['foto_perfil_url']) ?>" alt="" onerror="avatarErro(this)" data-inicial="<?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?>">
+                    <?php else: ?>
+                        <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
+                    <?php endif; ?>
+                    <div>
+                        <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
+                        <strong><?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?></strong>
+                        <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?></div>
+                    </div>
                 </div>
                 <div style="display:flex;gap:8px">
                     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
@@ -322,6 +346,16 @@ if ($telefoneAtivo && !$contatoAtivo) {
         var d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    }
+
+    // Foto de perfil do WhatsApp pode expirar/mudar (URL da CDN do WhatsApp,
+    // não um arquivo nosso) — se a imagem falhar ao carregar, troca pelo
+    // mesmo placeholder de iniciais usado quando nunca teve foto nenhuma.
+    function avatarErro(img) {
+        var div = document.createElement('div');
+        div.className = 'wpp-avatar-placeholder';
+        div.textContent = img.getAttribute('data-inicial') || '?';
+        img.replaceWith(div);
     }
 
     // Espelha includes/whatsapp_inbox.php::tipoMidiaMensagemWhatsapp() —
@@ -455,11 +489,17 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     a.href = '?telefone=' + encodeURIComponent(c.telefone);
                     var preview = c.ultima_mensagem.length > 60 ? c.ultima_mensagem.slice(0, 60) + '…' : c.ultima_mensagem;
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-                    a.innerHTML =
+                    var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
+                    var avatar = c.foto_perfil_url
+                        ? '<img class="wpp-avatar" src="' + escapeHtml(c.foto_perfil_url) + '" alt="" loading="lazy" data-inicial="' + inicial + '" onerror="avatarErro(this)">'
+                        : '<div class="wpp-avatar-placeholder">' + inicial + '</div>';
+                    a.innerHTML = avatar +
+                        '<div class="wpp-corpo">' +
                         '<div class="nome"><span>' + escapeHtml(c.cliente_nome || c.telefone) + '</span>' +
                         (c.nao_lidas > 0 ? '<span class="wpp-badge">' + c.nao_lidas + '</span>' : '') + '</div>' +
                         '<div class="preview">' + (c.ultima_direcao === 'out' ? '✓ ' : '') + (c.ultima_tipo !== 'text' ? '📎 ' : '') + escapeHtml(preview) + '</div>' +
-                        '<div class="quando">' + quando + (c.ia_pausada == 1 ? ' · ⏸️ IA pausada' : '') + '</div>';
+                        '<div class="quando">' + quando + (c.ia_pausada == 1 ? ' · ⏸️ IA pausada' : '') + '</div>' +
+                        '</div>';
                     lista.appendChild(a);
                 });
             })

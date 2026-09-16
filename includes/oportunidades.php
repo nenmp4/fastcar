@@ -74,12 +74,21 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
             clean((string)($origem['anuncio_origem'] ?? '')),
         ]);
         $clienteId = (int)$db->lastInsertId();
+        atualizarNomeFotoWhatsapp($clienteId, $telNorm);
     } else {
         $clienteId = (int)$cliente['id'];
         // Preenche nome se ainda estava vazio (ex: cliente criado só com
         // telefone via webhook, nome veio depois via qualificação)
         if (empty($cliente['nome']) && $nome) {
             $db->prepare("UPDATE clientes SET nome = ? WHERE id = ?")->execute([clean($nome), $clienteId]);
+        }
+        // foto_perfil_url NULL = nunca tentou buscar ainda; '' = já tentou e
+        // não achou nada (não fica tentando de novo a cada mensagem nova
+        // desse mesmo cliente, só 1x por cliente).
+        $stmtFoto = $db->prepare("SELECT foto_perfil_url FROM clientes WHERE id = ?");
+        $stmtFoto->execute([$clienteId]);
+        if ($stmtFoto->fetchColumn() === null) {
+            atualizarNomeFotoWhatsapp($clienteId, $telNorm);
         }
     }
 
@@ -121,6 +130,35 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
     notificarNovoLeadWhatsapp($opId, $nome ?: '(sem nome)', $telNorm);
 
     return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId, 'nova' => true, 'responsavel_id' => $responsavelId];
+}
+
+/**
+ * Busca nome/foto de perfil do WhatsApp (zapiBuscarContato()) e preenche
+ * no cliente — fill-if-empty pro nome (nunca sobrescreve o que já tinha,
+ * mesma regra do resto do projeto), sempre grava foto_perfil_url mesmo
+ * que vazio ('' = "já tentei, não achou nada", NULL = "nunca tentei" —
+ * evita tentar de novo em toda mensagem nova desse cliente). Best-effort,
+ * nunca lança — chamado de dentro do webhook, não pode atrasar/quebrar o
+ * fluxo de mensagem por causa disso.
+ */
+function atualizarNomeFotoWhatsapp(int $clienteId, string $telefone): void {
+    try {
+        $contato = zapiBuscarContato($telefone);
+        $db = getDB();
+        if (!$contato) {
+            $db->prepare("UPDATE clientes SET foto_perfil_url = '' WHERE id = ? AND foto_perfil_url IS NULL")
+               ->execute([$clienteId]);
+            return;
+        }
+        $db->prepare("
+            UPDATE clientes
+            SET foto_perfil_url = ?,
+                nome = CASE WHEN (nome IS NULL OR nome = '') AND ? <> '' THEN ? ELSE nome END
+            WHERE id = ?
+        ")->execute([$contato['foto_url'], clean($contato['nome']), clean($contato['nome']), $clienteId]);
+    } catch (Throwable $e) {
+        // melhor esforço — nunca pode travar a criação/atualização do lead.
+    }
 }
 
 /**

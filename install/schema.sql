@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS clientes (
     -- Pasta do cliente no Google Drive (includes/google_drive.php), criada sob
     -- demanda dentro da pasta raiz "Fastcar" — mesmo padrão do JurídicoSaaS.
     drive_folder_id TEXT DEFAULT NULL,
+    -- Foto de perfil do WhatsApp (16/09/2026, "puxa foto do zap e nome") —
+    -- cacheada via zapiBuscarContato() (includes/whatsapp_config.php) na
+    -- criação do cliente, pra não bater na Z-API toda hora. URL pode
+    -- expirar/mudar com o tempo (é a foto atual do WhatsApp da pessoa, não
+    -- um arquivo nosso) — sem garantia de validade eterna, só um cache.
+    foto_perfil_url TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_clientes_telefone ON clientes(telefone);

@@ -145,6 +145,10 @@ $migracoes = [
     // salva de verdade (Drive/local), não só descrita em texto pelo Gemini
     // e descartada — achado real: "mídia não estou visualizado".
     'whatsapp_mensagens.drive_file_id' => "ALTER TABLE whatsapp_mensagens ADD COLUMN drive_file_id TEXT DEFAULT ''",
+
+    // 16/09/2026 — nome/foto de perfil do WhatsApp cacheados no cliente
+    // ("puxa foto do zap e nome"), via zapiBuscarContato()
+    'clientes.foto_perfil_url' => "ALTER TABLE clientes ADD COLUMN foto_perfil_url TEXT DEFAULT NULL",
 ];
 
 foreach ($migracoes as $nome => $sql) {

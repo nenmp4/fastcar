@@ -29,6 +29,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
         http_response_code(403);
         $erro = 'Perfil de supervisão só acompanha, não edita cadastro de cliente.';
+    } elseif (($_POST['acao'] ?? 'salvar') === 'atualizar_foto_whatsapp') {
+        // 16/09/2026, "puxa foto do zap e nome" — cliente já cadastrado
+        // antes dessa função existir (ou cuja busca automática não achou
+        // nada na hora) não tem como reaproveitar a criação automática do
+        // cliente pra tentar de novo; botão manual cobre esse backfill.
+        $contato = zapiBuscarContato($cliente['telefone']);
+        if ($contato && ($contato['nome'] || $contato['foto_url'])) {
+            $db->prepare("
+                UPDATE clientes
+                SET foto_perfil_url = COALESCE(NULLIF(?, ''), foto_perfil_url),
+                    nome = CASE WHEN (nome IS NULL OR nome = '') AND ? <> '' THEN ? ELSE nome END
+                WHERE id = ?
+            ")->execute([$contato['foto_url'], clean($contato['nome']), clean($contato['nome']), $id]);
+            $sucesso = 'Nome/foto do WhatsApp atualizados.';
+        } else {
+            $erro = 'Não foi possível buscar nome/foto agora — confira se a Z-API está configurada e conectada.';
+        }
+        $stmt->execute([$id]);
+        $cliente = $stmt->fetch();
     } else {
         try {
             $db->prepare("
@@ -96,12 +115,20 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
 <div class="card">
-    <h2>
+    <h2 style="display:flex;align-items:center;gap:10px">
+        <?php if (!empty($cliente['foto_perfil_url'])): ?>
+            <img src="<?= e($cliente['foto_perfil_url']) ?>" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover" onerror="this.remove()">
+        <?php endif; ?>
         <?= e($cliente['nome'] ?: '(sem nome)') ?>
         <?php if ($convertido): ?>
             <span class="badge badge-ok" title="Já teve pelo menos um veículo com negócio fechado">🏆 Cliente convertido</span>
         <?php endif; ?>
     </h2>
+    <form method="post" class="inline" style="margin-bottom:10px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="atualizar_foto_whatsapp">
+        <button type="submit" style="margin-top:0;padding:5px 12px;font-size:13px">🔄 Atualizar nome/foto do WhatsApp</button>
+    </form>
     <form method="post">
         <?= csrfField() ?>
         <div class="grid-2">
