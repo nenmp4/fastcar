@@ -151,6 +151,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'definir_plantao') {
             definirPlantaoFimExpediente((int)($_POST['usuario_id'] ?? 0), !empty($_POST['ativo']));
             $sucesso = 'Plantão de fim de expediente atualizado.';
+        } elseif ($acao === 'redistribuir_fila') {
+            $movidas = redistribuirFilaLeads((int)($_SESSION['admin_id'] ?? 0));
+            if ($movidas) {
+                $sucesso = count($movidas) . ' oportunidade(s) redistribuída(s): ';
+                $partes = [];
+                foreach ($movidas as $m) {
+                    $partes[] = "#{$m['oportunidade_id']} ({$m['cliente_nome']}) de {$m['de']} para {$m['para']}";
+                }
+                $sucesso .= implode('; ', $partes) . '.';
+            } else {
+                $sucesso = 'Nada pra redistribuir — nenhum consultor está acima do teto de ' . FILA_LEADS_MAX_ATIVAS . ' leads ativas, ou não há consultor disponível abaixo do teto pra receber.';
+            }
         } elseif ($acao === 'salvar_deploy') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
             if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
@@ -199,6 +211,10 @@ foreach (array_keys($campos) as $chave) {
 }
 $configuradoZapi = $valores['zapi_instance_id'] && $valores['zapi_token'];
 $fila = listarFilaConsultores();
+foreach ($fila as &$f) {
+    $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
+}
+unset($f);
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -489,9 +505,11 @@ $fila = listarFilaConsultores();
 
 <div class="card">
     <h3>📥 Fila de distribuição automática de leads</h3>
-    <p><small>Lead novo (bloco 2, na entrada) vai automaticamente pra quem estiver com "Disponível" ligado, em rodízio.
-       Se ninguém estiver disponível, cai em quem estiver marcado como plantão de fim de expediente abaixo — vira
-       responsável da oportunidade normalmente, nenhum lead fica sem dono fora do horário.</small></p>
+    <p><small>Lead novo (bloco 2, na entrada) vai automaticamente pra quem estiver com "Disponível" ligado, em rodízio,
+       respeitando o teto de <?= FILA_LEADS_MAX_ATIVAS ?> leads ativas por consultor (quem já está no teto é pulado no
+       rodízio). Se ninguém estiver disponível, cai em quem estiver marcado como plantão de fim de expediente abaixo —
+       vira responsável da oportunidade normalmente, nenhum lead fica sem dono fora do horário (plantão não respeita o
+       teto — nunca fica sem responsável fora do horário).</small></p>
 
     <?php if (!$fila): ?>
         <p><small>Nenhum consultor cadastrado ainda.</small></p>
@@ -499,7 +517,7 @@ $fila = listarFilaConsultores();
 
     <table class="tabela-oportunidades">
         <thead>
-            <tr><th>Nome</th><th>Status</th><th>Último lead recebido</th><th>Plantão fim de expediente</th></tr>
+            <tr><th>Nome</th><th>Status</th><th>Leads ativas</th><th>Último lead recebido</th><th>Plantão fim de expediente</th></tr>
         </thead>
         <tbody>
         <?php foreach ($fila as $f): ?>
@@ -512,6 +530,15 @@ $fila = listarFilaConsultores();
                         <span class="badge badge-ok">🟢 disponível</span>
                     <?php else: ?>
                         <span class="badge badge-atraso">⚪ offline</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($f['leads_ativas'] > FILA_LEADS_MAX_ATIVAS): ?>
+                        <span class="badge badge-atraso"><?= (int)$f['leads_ativas'] ?> ⚠️ acima do teto</span>
+                    <?php elseif ($f['leads_ativas'] >= FILA_LEADS_MAX_ATIVAS): ?>
+                        <span class="badge"><?= (int)$f['leads_ativas'] ?> (no teto)</span>
+                    <?php else: ?>
+                        <?= (int)$f['leads_ativas'] ?>
                     <?php endif; ?>
                 </td>
                 <td><?= $f['ultimo_lead_recebido_em'] ? date('d/m H:i', strtotime($f['ultimo_lead_recebido_em'])) : '— nunca —' ?></td>
@@ -530,6 +557,17 @@ $fila = listarFilaConsultores();
         <?php endforeach; ?>
         </tbody>
     </table>
+
+    <?php if ($fila): ?>
+    <form method="post" class="inline" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="redistribuir_fila">
+        <button type="submit">🔄 Redistribuir fila agora</button>
+    </form>
+    <p><small>Move oportunidades ainda em "CRM preenchido" (bloco 4 — IA terminou de qualificar, consultor ainda não
+       começou a atender) de quem está acima do teto pra quem está disponível e abaixo do teto. Nunca mexe em
+       oportunidade que o consultor já começou a trabalhar.</small></p>
+    <?php endif; ?>
 </div>
 
 <div class="card">

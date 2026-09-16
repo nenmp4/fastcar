@@ -15,6 +15,34 @@
 require_once __DIR__ . '/db.php';
 
 /**
+ * Teto de oportunidades ATIVAS por consultor no rodízio automático
+ * (16/09/2026, achado real — José/Jean: "tinha vários lead na fila,
+ * usuário Dayane logou veio tudo para ela, usuário Anderson logou e
+ * Rafael ficaram sem lead"). Causa raiz: o rodízio só olha quem está
+ * disponível NO MOMENTO que cada lead chega — se só a Dayane estava
+ * online quando vários leads entraram em sequência, todos iam pra ela;
+ * quando Anderson/Rafael ficaram disponíveis depois, não tinha lead novo
+ * chegando naquele momento pra "compensar" o desequilíbrio já feito. O
+ * teto não resolve o desequilíbrio já existente (ver
+ * redistribuirFilaLeads() pra isso) — só evita que a MESMA pessoa
+ * acumule mais de 5 daqui pra frente.
+ */
+const FILA_LEADS_MAX_ATIVAS = 5;
+
+/** Conta oportunidades "ativas" (ainda em qualquer etapa do funil de compra
+ *  em andamento) de um consultor — mesmo critério usado pro teto e pro
+ *  card de fila em Configurações. */
+function contarOportunidadesAtivas(int $usuarioId): int {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT COUNT(*) FROM oportunidades
+        WHERE responsavel_id = ? AND etapa NOT IN ('fechado','sem_perfil','perdido')
+    ");
+    $stmt->execute([$usuarioId]);
+    return (int)$stmt->fetchColumn();
+}
+
+/**
  * Escolhe o próximo usuário da fila e marca no rodízio (atualiza
  * ultimo_lead_recebido_em). Retorna null se não tiver ninguém disponível
  * nem plantão configurado — quem chama decide o que fazer (deixar sem
@@ -68,10 +96,122 @@ function proximoDaFila(bool $disponivelOnly, bool $apenasPlantao = false): ?int 
         SELECT id FROM usuarios
         WHERE {$where}
         ORDER BY posicao_fila ASC, id ASC
-        LIMIT 1
     ");
-    $id = $stmt->fetchColumn();
-    return $id !== false ? (int)$id : null;
+    $candidatos = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    // Teto só se aplica ao rodízio normal (disponivelOnly) — plantão de
+    // fim de expediente sempre recebe, senão o lead ficaria largado fora
+    // do horário só porque o plantonista já está com 5+ ativas.
+    if (!$disponivelOnly || $apenasPlantao) {
+        return $candidatos ? (int)$candidatos[0] : null;
+    }
+    foreach ($candidatos as $id) {
+        if (contarOportunidadesAtivas((int)$id) < FILA_LEADS_MAX_ATIVAS) {
+            return (int)$id;
+        }
+    }
+    // Todo mundo disponível já está no teto — fica sem responsável (fila),
+    // igual ao comportamento de "ninguém disponível" de hoje.
+    return null;
+}
+
+/**
+ * Corrige um desequilíbrio JÁ EXISTENTE na fila (o teto acima só evita que
+ * aconteça de novo daqui pra frente). Move oportunidades ainda em
+ * 'crm_preenchido' (IA terminou de qualificar, consultor ainda não começou
+ * a atender — bloco 5) de consultores acima do teto pra quem está
+ * disponível e abaixo do teto, em rodízio. Nunca mexe em oportunidade que
+ * o consultor já começou a trabalhar (etapa além de crm_preenchido) — só
+ * redistribui o que ainda está "na fila" de verdade.
+ *
+ * Retorna um resumo (quantas movidas, de quem pra quem) pro admin ver o
+ * que aconteceu.
+ */
+function redistribuirFilaLeads(int $executadoPor): array {
+    $db = getDB();
+
+    $consultores = $db->query("
+        SELECT id, nome, disponivel FROM usuarios
+        WHERE perfil = 'consultor' AND bloqueado = 0
+        ORDER BY posicao_fila ASC, id ASC
+    ")->fetchAll();
+
+    $cargas = [];
+    foreach ($consultores as $c) {
+        $cargas[(int)$c['id']] = contarOportunidadesAtivas((int)$c['id']);
+    }
+
+    // Receptores: disponíveis e abaixo do teto — fila de destino em rodízio,
+    // sempre pro que está com menos carga primeiro.
+    $receptores = array_values(array_filter($consultores, function ($c) use ($cargas) {
+        return (int)$c['disponivel'] === 1 && $cargas[(int)$c['id']] < FILA_LEADS_MAX_ATIVAS;
+    }));
+
+    $movidas = [];
+    if ($receptores) {
+        foreach ($consultores as $doador) {
+            $doadorId = (int)$doador['id'];
+            if ($cargas[$doadorId] <= FILA_LEADS_MAX_ATIVAS) continue;
+
+            $excedente = $cargas[$doadorId] - FILA_LEADS_MAX_ATIVAS;
+            $stmt = $db->prepare("
+                SELECT o.id, c.nome AS cliente_nome
+                FROM oportunidades o
+                JOIN clientes c ON c.id = o.cliente_id
+                WHERE o.responsavel_id = ? AND o.etapa = 'crm_preenchido'
+                ORDER BY o.created_at DESC
+                LIMIT ?
+            ");
+            $stmt->bindValue(1, $doadorId, PDO::PARAM_INT);
+            $stmt->bindValue(2, $excedente, PDO::PARAM_INT);
+            $stmt->execute();
+            $candidatas = $stmt->fetchAll();
+
+            foreach ($candidatas as $oportunidade) {
+                // Reordena receptores pelo mais vazio a cada movimentação,
+                // pra espalhar em vez de encher só o primeiro da lista.
+                usort($receptores, function ($a, $b) use ($cargas) {
+                    return $cargas[(int)$a['id']] <=> $cargas[(int)$b['id']];
+                });
+                $receptores = array_values(array_filter($receptores, function ($r) use ($cargas) {
+                    return $cargas[(int)$r['id']] < FILA_LEADS_MAX_ATIVAS;
+                }));
+                if (!$receptores) break 2;
+
+                $receptor = $receptores[0];
+                $receptorId = (int)$receptor['id'];
+
+                $db->beginTransaction();
+                try {
+                    $db->prepare("UPDATE oportunidades SET responsavel_id = ? WHERE id = ?")
+                       ->execute([$receptorId, $oportunidade['id']]);
+                    $db->prepare("
+                        INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                        VALUES (?, 'crm_preenchido', 'crm_preenchido', ?, ?)
+                    ")->execute([
+                        $oportunidade['id'],
+                        "Redistribuição automática da fila: de {$doador['nome']} para {$receptor['nome']} (equilíbrio de carga)",
+                        $executadoPor,
+                    ]);
+                    $db->commit();
+                } catch (Throwable $e) {
+                    $db->rollBack();
+                    throw $e;
+                }
+
+                $cargas[$doadorId]--;
+                $cargas[$receptorId]++;
+                $movidas[] = [
+                    'oportunidade_id' => $oportunidade['id'],
+                    'cliente_nome' => $oportunidade['cliente_nome'],
+                    'de' => $doador['nome'],
+                    'para' => $receptor['nome'],
+                ];
+            }
+        }
+    }
+
+    return $movidas;
 }
 
 /** Toggle de disponibilidade — o próprio usuário liga/desliga no admin. */

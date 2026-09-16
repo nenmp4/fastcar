@@ -358,7 +358,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
   de bugs corrigidos); se ninguém estiver disponível, cai no plantão
-  (`usuarios.plantao_fim_expediente`)
+  (`usuarios.plantao_fim_expediente`).
+  **Teto de 5 leads ativas por consultor + redistribuição manual**
+  (16/09/2026, achado real em produção — José/Jean: "tinha vários lead na
+  fila, usuário Dayane logou veio tudo para ela, usuário Anderson logou e
+  Rafael ficaram sem lead, temos que redistribuir, melhora isso máximo 5
+  lead por usuario"). Causa raiz: o rodízio só olha quem está disponível NO
+  MOMENTO que cada lead chega — se só um consultor estava online quando
+  vários leads entraram em sequência, todos iam pra ele; quando os outros
+  ficaram disponíveis depois, não existia mecanismo pra "compensar" o
+  desequilíbrio já feito, já que não tinha lead novo chegando naquele
+  momento. Confirmado com o usuário via 2 perguntas diretas antes de
+  implementar: redistribuição manual mexe só nos leads que o consultor
+  sobrecarregado AINDA NÃO tocou (não tira nada que ele já está
+  trabalhando); lead acima do teto no rodízio automático fica sem
+  responsável, na fila — nunca força atribuição em alguém já no limite.
+  Correção em 2 frentes: (1) `FILA_LEADS_MAX_ATIVAS` (5) +
+  `contarOportunidadesAtivas()` — `proximoDaFila()` no caminho do rodízio
+  normal (`disponivelOnly`) passou a buscar todos os candidatos ordenados
+  por `posicao_fila` (não mais só o primeiro via `LIMIT 1`) e pular quem já
+  está no teto, retornando `null` (mesmo comportamento de "ninguém
+  disponível") se todo mundo disponível estiver no teto — o caminho de
+  plantão de fim de expediente **nunca** respeita o teto, sempre recebe,
+  senão um lead ficaria largado fora do horário só porque o plantonista já
+  está sobrecarregado. (2) `redistribuirFilaLeads()` (novo) corrige o
+  desequilíbrio **já existente** — o teto sozinho só evita que aconteça de
+  novo daqui pra frente: move só oportunidades ainda em
+  `etapa='crm_preenchido'` (IA terminou de qualificar, bloco 5 — consultor
+  ainda não começou a atender) de quem está acima do teto pra quem está
+  disponível e abaixo, em rodízio que reordena pelo mais vazio a cada
+  movimentação (espalha em vez de empilhar só no primeiro receptor); cada
+  movimentação grava em `oportunidade_historico` (mesmo
+  `etapa_anterior`/`etapa_nova='crm_preenchido'`, só o `responsavel_id`
+  muda) com observação explicando o motivo — nunca silencioso. UI em
+  `admin/configuracoes.php`: card da fila ganhou coluna "Leads ativas" por
+  consultor (aviso visual quando acima do teto) e botão "🔄 Redistribuir
+  fila agora" (super_admin), mostrando resumo de quantas oportunidades
+  foram movidas e de quem pra quem. Testado em banco isolado reproduzindo
+  o cenário exato reportado (1 consultor com 8 oportunidades ativas em
+  `crm_preenchido`, 2 disponíveis com 0): `proximoDaFila()` corretamente
+  pula o consultor no teto pra um lead novo; `redistribuirFilaLeads()` move
+  exatamente as 3 excedentes (8→5), espalhando entre os 2 receptores (não
+  empilha só no primeiro), com os 3 registros de histórico certos; rodar de
+  novo já balanceado não move nada; consultor offline (`disponivel=0`)
+  corretamente nunca recebe redistribuição mesmo abaixo do teto.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
