@@ -267,6 +267,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   real o cadastro e o histórico do funil continuam intactos, só a thread
   some. Testado em banco isolado: mensagens e sessão zeradas, cadastro do
   cliente preservado.
+  **`install/limpar_leads_invalidos.php` (novo, 16/09/2026)** — "Excluir
+  conversa" apaga só a THREAD (`whatsapp_mensagens`/`whatsapp_sessoes`),
+  de propósito nunca mexe em `clientes`/`oportunidades`; mas o flood
+  também criou `clientes`/`oportunidades` **falsas** de verdade (telefone
+  = ID de evento da Z-API, nunca um número real) que nunca foram limpas —
+  achado real quando o teto de leads por consultor (ver bullet "Fila de
+  leads" abaixo) expôs uma consultora com 42 leads acumulados, a maioria
+  sobra desse incidente antigo. Confirmado com o usuário ("isso
+  oportunidade falsas temos limpar") antes de apagar qualquer coisa. CLI
+  (`php install/limpar_leads_invalidos.php`, dry-run por padrão — precisa
+  de `--confirmar` explícito pra apagar de verdade): identifica pelo
+  formato do telefone (`normalizarTelefone()` sempre produz 12 ou 13
+  dígitos pra número real — qualquer coisa fora disso, tipo
+  `164059295019141` com 15 dígitos, é garantidamente o ID do evento, nunca
+  um contato de WhatsApp de verdade), e **nunca** apaga automaticamente
+  cliente/oportunidade que já chegou em `atendimento` ou além (contato
+  humano de verdade) mesmo que o telefone bata no critério — fica de fora,
+  listado à parte pra revisão manual, rede de segurança extra pro caso
+  (não deveria acontecer) de um telefone inválido ter avançado no funil.
+  Apaga em cascata (histórico, documentos, pendências pós-venda,
+  contratos, vendas, oportunidades, mensagens, sessão, cliente) dentro de
+  transação por cliente, log em
+  `storage/logs/limpeza_leads_AAAA-MM-DD_HHMMSS.log`. Testado em banco
+  isolado reproduzindo o incidente (5 clientes reais + 1 já em
+  `atendimento` + 37 falsos com telefone de 15 dígitos + 1 caso extremo
+  falso-mas-em-`negociacao` simulando a rede de segurança): dry-run lista
+  certo os 37 falsos e separa o extremo pra revisão manual;
+  `--confirmar` apaga exatamente os 37, preserva os 5 reais + o já-
+  atendido + o extremo intactos (conferido linha a linha depois), log
+  gravado com cada cliente apagado.
   **Mensagem duplicada ao enviar** (15/09/2026, José: "mando olá ele mostra
   que mandou duas vezes"): condição de corrida entre o polling de 4s e a
   resposta do próprio envio. O JS desenhava a bolha otimista (texto que
