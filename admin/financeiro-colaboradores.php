@@ -4,6 +4,16 @@
 require_once __DIR__ . '/_bootstrap.php';
 requireAcessoFinanceiro();
 
+// Cargo padrão sugerido ao puxar um usuário do sistema (usuarios.perfil) —
+// só um ponto de partida, campo fica editável como qualquer outro colaborador.
+const FINANCEIRO_PERFIL_LABEL = [
+    'super_admin' => 'Administrador',
+    'consultor' => 'Consultor de compra',
+    'supervisor' => 'Supervisor',
+    'vendedor' => 'Vendedor',
+    'financeiro' => 'Financeiro',
+];
+
 $db = getDB();
 $erro = '';
 $sucesso = '';
@@ -35,11 +45,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'reativar') {
             $db->prepare("UPDATE fin_colaboradores SET status='ativo' WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
             $sucesso = 'Colaborador reativado.';
+        } elseif ($acao === 'adicionar_do_sistema') {
+            // 17/09/2026, "nos colaboradores permita puxar do sistema" — em
+            // vez de digitar de novo o nome de quem já tem login no CRM
+            // (usuarios.perfil), puxa direto de lá. usuario_id já existia no
+            // schema desde a 1ª versão do módulo (portado do JurídicoSaaS),
+            // só nunca tinha ganhado UI pra usar — cadastro manual (form
+            // acima) continua existindo do mesmo jeito, pra fornecedor/
+            // colaborador que não tem login nenhum no sistema.
+            $usuarioId = (int)($_POST['usuario_id'] ?? 0);
+            $stmtU = $db->prepare('SELECT id, nome, perfil FROM usuarios WHERE id = ?');
+            $stmtU->execute([$usuarioId]);
+            $usuario = $stmtU->fetch(PDO::FETCH_ASSOC);
+            if (!$usuario) {
+                $erro = 'Selecione um usuário do sistema.';
+            } else {
+                $stmtJa = $db->prepare('SELECT id FROM fin_colaboradores WHERE usuario_id = ?');
+                $stmtJa->execute([$usuarioId]);
+                if ($stmtJa->fetch()) {
+                    $erro = 'Esse usuário já está cadastrado como colaborador (confira a lista abaixo, pode estar inativo).';
+                } else {
+                    $cargoPadrao = FINANCEIRO_PERFIL_LABEL[$usuario['perfil']] ?? ucfirst($usuario['perfil']);
+                    $db->prepare('INSERT INTO fin_colaboradores (nome, cargo, tipo_vinculo, usuario_id) VALUES (?,?,?,?)')
+                       ->execute([$usuario['nome'], $cargoPadrao, 'clt', $usuarioId]);
+                    $sucesso = 'Colaborador "' . $usuario['nome'] . '" adicionado a partir do usuário do sistema — confira/edite cargo, vínculo e salário na lista abaixo.';
+                }
+            }
         }
     }
 }
 
 $colaboradores = $db->query("SELECT * FROM fin_colaboradores ORDER BY (status='ativo') DESC, nome")->fetchAll(PDO::FETCH_ASSOC);
+$usuariosDisponiveis = array_values(array_filter(
+    listarUsuarios(true),
+    fn($u) => !in_array((int)$u['id'], array_column($colaboradores, 'usuario_id'), true)
+));
 $editando = null;
 if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
     $stmt = $db->prepare('SELECT * FROM fin_colaboradores WHERE id=?');
@@ -67,8 +107,32 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
+<?php if (!$editando): ?>
 <div class="card" style="margin-bottom:1.5rem">
-  <h2><?= $editando ? '✏️ Editar colaborador' : '➕ Novo colaborador' ?></h2>
+  <h3>🔗 Adicionar a partir de um usuário do sistema</h3>
+  <p><small>Pra quem já tem login no CRM (consultor, vendedor, supervisor, financeiro, admin) — puxa o nome direto
+     daqui, sem digitar de novo; cargo/vínculo/salário ficam editáveis normalmente depois. Quem não tem login
+     nenhum no sistema continua indo pelo cadastro manual, no card abaixo.</small></p>
+  <?php if (!$usuariosDisponiveis): ?>
+    <p style="color:var(--muted)">Todos os usuários do sistema já estão cadastrados como colaborador.</p>
+  <?php else: ?>
+    <form method="POST" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="adicionar_do_sistema">
+        <select name="usuario_id" required style="flex:1;min-width:220px">
+            <option value="">Selecione um usuário...</option>
+            <?php foreach ($usuariosDisponiveis as $u): ?>
+                <option value="<?= (int)$u['id'] ?>"><?= e($u['nome']) ?> — <?= e(FINANCEIRO_PERFIL_LABEL[$u['perfil']] ?? ucfirst($u['perfil'])) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <button type="submit">🔗 Adicionar colaborador</button>
+    </form>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<div class="card" style="margin-bottom:1.5rem">
+  <h2><?= $editando ? '✏️ Editar colaborador' : '➕ Novo colaborador (manual)' ?></h2>
   <form method="POST">
     <?= csrfField() ?>
     <input type="hidden" name="acao" value="salvar">
@@ -101,13 +165,14 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
 <div class="card">
   <h3>👥 Colaboradores (<?= count($colaboradores) ?>)</h3>
   <table class="tabela-oportunidades">
-    <thead><tr><th>Nome</th><th>Cargo</th><th>Vínculo</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>Cargo</th><th>Vínculo</th><th>Origem</th><th>Status</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($colaboradores as $c): ?>
       <tr>
         <td><?= e($c['nome']) ?></td>
         <td><?= e($c['cargo']) ?></td>
         <td><?= e(strtoupper($c['tipo_vinculo'])) ?></td>
+        <td><?= $c['usuario_id'] ? '🔗 usuário do sistema' : '✍️ manual' ?></td>
         <td><?= $c['status'] === 'ativo' ? '<span class="badge badge-ok">✅ ativo</span>' : '<span class="badge">⛔ inativo</span>' ?></td>
         <td style="white-space:nowrap">
           <a href="?action=edit&id=<?= (int)$c['id'] ?>">Editar</a>

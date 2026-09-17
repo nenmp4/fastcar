@@ -2663,6 +2663,77 @@ segue no schema sem uso novo, não removida sem ganho real),
   aparece certo na listagem; parcelamento local gerado numa venda com
   veículo vinculado mostra entrada+parcelas na tabela e não permite gerar
   de novo).
+  **Fornecedores — busca de CNPJ na Receita** (mesmo dia, "no modulo
+  financeiro em foncedores coloca api do cnpj para puxa da receita") —
+  `includes/cnpj.php` (novo) consulta a BrasilAPI
+  (`https://brasilapi.com.br/api/cnpj/v1/{cnpj}`, mesmo provedor já usado
+  pro FIPE, sem token/chave, dados oficiais espelhados da Receita), cache
+  24h por CNPJ em `config` (mesmo padrão `timestamp|json` de sempre).
+  `admin/fornecedor_cnpj_ajax.php` (novo, GET, mesmo padrão de
+  `admin/fipe_ajax.php`) serve o JSON — precisou entrar no allowlist
+  central do perfil `financeiro` em `admin/_bootstrap.php` (a mesma
+  trava que manda esse perfil direto pra `financeiro.php` em qualquer
+  página fora da lista branca também pegava esse endpoint novo por
+  engano, achado no próprio teste Playwright antes do commit). Botão
+  "🔎 Buscar na Receita" ao lado do campo CNPJ/CPF em
+  `admin/financeiro-fornecedores.php` preenche nome (nome fantasia, ou
+  razão social se não tiver)/contato (telefone+email)/observações
+  (razão social+situação cadastral+endereço) **fill-if-empty** —
+  diferente do widget de FIPE por placa (vários candidatos, exige
+  escolha humana), 1 CNPJ é chave única, só 1 resultado possível, então
+  preenche direto, mesmo espírito da busca de marca/modelo/ano por
+  placa. CNPJ não encontrado ou API fora do ar mostra aviso, nunca
+  quebra o formulário. **Bug real achado no próprio teste Playwright,
+  antes de qualquer commit**: a implementação inicial deixou pra trás o
+  campo "Nome" ORIGINAL do formulário (sem `id`, ainda `required`) ao
+  adicionar o campo novo com `id` — 2 inputs `name="nome"` na mesma
+  tela, o antigo sempre vazio bloqueava a submissão silenciosamente via
+  validação nativa do HTML5 (nenhum erro visível, só o formulário nunca
+  submetia) — corrigido removendo o campo duplicado antigo. Testado:
+  função isolada (CNPJ pontuado normaliza certo, todos os campos batendo
+  contra servidor BrasilAPI fake local, CNPJ não encontrado retorna
+  `null`, cache gravado em `config`) + Playwright ponta a ponta (busca
+  preenche os 3 campos certos, fill-if-empty confirmado não sobrescrevendo
+  nome editado à mão, fornecedor salvo aparece na listagem, CNPJ inválido
+  mostra aviso sem travar).
+  **Colaboradores — puxar direto de um usuário do sistema** (mesmo dia,
+  "nos colaboradores permita puxar do sistema adicionar manuall") — card
+  novo "🔗 Adicionar a partir de um usuário do sistema" em
+  `admin/financeiro-colaboradores.php`, com um `<select>` (via
+  `listarUsuarios()`) de quem já tem login no CRM (consultor/vendedor/
+  supervisor/financeiro/admin) e ainda não foi vinculado como colaborador
+  — reaproveita `fin_colaboradores.usuario_id`, que já existia no schema
+  desde a 1ª versão do módulo (portada do JurídicoSaaS) mas nunca tinha
+  ganhado UI pra usar. Selecionar e confirmar cria o colaborador com nome
+  puxado do usuário e um cargo padrão sugerido a partir do perfil (ex:
+  consultor → "Consultor de compra") — cargo/vínculo/salário continuam
+  100% editáveis depois, é só um ponto de partida, nunca decide sozinho o
+  resto. Nunca deixa vincular o mesmo usuário 2x. O card de cadastro
+  manual (título ajustado pra "Novo colaborador (manual)") continua
+  exatamente como antes, pra quem não tem login nenhum no sistema
+  (motorista terceirizado, prestador externo, etc). Tabela ganhou coluna
+  "Origem" (🔗 usuário do sistema / ✍️ manual). Testado: função isolada
+  (puxar do sistema cria com nome/cargo/vínculo certos e `usuario_id`
+  vinculado; bloqueia duplicar o mesmo usuário; lista de disponíveis
+  exclui quem já foi vinculado e mantém quem não foi; cadastro manual
+  continua sem `usuario_id`) + Playwright ponta a ponta (select mostra
+  usuário real com cargo sugerido certo, vincular funciona e aparece na
+  tabela com a origem certa, usuário some do select depois de vinculado,
+  cadastro manual continua funcionando do lado do card antigo).
+  ⚠️ **Pendente de definição — remuneração de consultor (quinzenal +
+  comissão)**: mesmo dia, achado explicado direto pelo usuário ("Os
+  consultores eles ganha o fixo cada 15 dias mais comição") — hoje
+  `fin_colaboradores` só tem `salario_base` (1 valor fixo, sem
+  periodicidade) e nenhum campo de comissão/regra de cálculo; gerar
+  lançamento de pagamento continua 100% manual (`admin/financeiro-lancamentos.php`),
+  sem nenhuma geração automática quinzenal nem cálculo de comissão em
+  cima de venda/compra fechada. Não implementado ainda — decisão real de
+  negócio em aberto (sobre o que a comissão incide: valor de
+  compra/venda fechada? só vendas do módulo de revenda? só do consultor
+  responsável? fixo quinzenal = metade do salário_base mensal, ou um
+  campo próprio?) antes de desenhar schema/UI, pra não repetir o erro já
+  documentado neste arquivo de implementar em cima de suposição não
+  confirmada.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

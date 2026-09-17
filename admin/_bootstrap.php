@@ -34,6 +34,7 @@ require_once __DIR__ . '/../includes/mail.php';
 require_once __DIR__ . '/../includes/email_templates.php';
 require_once __DIR__ . '/../includes/financeiro.php';
 require_once __DIR__ . '/../includes/asaas.php';
+require_once __DIR__ . '/../includes/cnpj.php';
 
 requireAdmin();
 
@@ -58,7 +59,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
     $permitidasFin = [
         'financeiro.php', 'financeiro-lancamentos.php', 'financeiro-categorias.php',
         'financeiro-fornecedores.php', 'financeiro-colaboradores.php', 'financeiro-asaas.php',
-        'ver_anexo_financeiro.php', 'logout.php',
+        'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'logout.php',
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
