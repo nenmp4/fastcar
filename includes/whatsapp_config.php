@@ -88,6 +88,48 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda): bo
 }
 
 /**
+ * Envia áudio via Z-API (POST /send-audio, campo `audio` — URL pública ou
+ * data URI base64 `data:{mime};base64,{...}`, confirmado via busca na
+ * documentação oficial Z-API, docs.z-api.io/message/send-message-audio,
+ * mesma ressalva de todo endpoint Z-API que não seja envio de texto — "a
+ * validar em produção", ver CLAUDE.md). Usado pelo WhatsApp Box
+ * (`enviarAudioManualWhatsapp()`, `includes/whatsapp_inbox.php`, 17/09/2026,
+ * "permita enviar audio no inbox para o cliente") pra mandar áudio que o
+ * consultor anexa direto pela caixa — manda como data URI, não precisa de
+ * URL pública própria hospedada (o arquivo já fica salvo à parte via
+ * `salvarMidiaWhatsappRecebida()` pra reproduzir depois na thread do CRM,
+ * mas o envio pro Z-API em si não depende dessa cópia estar pronta).
+ * Áudio não tem legenda no WhatsApp (diferente de imagem/vídeo) — por isso,
+ * ao contrário de `zapiEnviarTexto()`, não dá pra "assinar" com o nome do
+ * consultor dentro da própria mensagem que o cliente recebe.
+ */
+function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl): bool {
+    $inst = _chatbot_getConfig('zapi_instance_id');
+    $tok  = _chatbot_getConfig('zapi_token');
+    $ctok = _chatbot_getConfig('zapi_client_token');
+    if (!$inst || !$tok || !$phone || !$audioDataUriOuUrl) return false;
+
+    $phone = normalizarTelefone($phone);
+    if (strlen($phone) < 12) return false;
+
+    $headers = ['Content-Type: application/json'];
+    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-audio");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'audio' => $audioDataUriOuUrl]),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $code === 200;
+}
+
+/**
  * Busca nome/foto de perfil do WhatsApp pra um telefone — 2 chamadas em
  * paralelo (curl_multi), confirmadas contra produção no repo irmão
  * JurídicoSaaS (`nenmp4/iabadvocaciaboutique`, `api/clientes.php` ação

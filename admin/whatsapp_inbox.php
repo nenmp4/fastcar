@@ -111,6 +111,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!$resultado['ok']) $erro = $resultado['erro'];
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'enviar_audio' && $telPost) {
+            // 17/09/2026, "permita enviar audio no inbox para o cliente" —
+            // sempre via AJAX (fetch do input de arquivo), nunca form
+            // tradicional (base64 de um áudio de verdade é grande demais
+            // pra ida e volta de página inteira).
+            $resultado = enviarAudioManualWhatsapp(
+                $telPost, (string)($_POST['audio_base64'] ?? ''), (string)($_POST['mime'] ?? ''), (int)$_SESSION['admin_id']
+            );
+            header('Content-Type: application/json');
+            echo json_encode($resultado);
+            exit;
         } elseif ($acao === 'toggle_ia' && $telPost) {
             if (iaPausada($telPost)) {
                 retomarIA($telPost);
@@ -338,8 +349,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                     <input type="hidden" name="ajax" value="1">
                     <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                    <button type="button" id="wpp-btn-audio" title="Enviar áudio" style="padding:0 12px">🎤</button>
+                    <input type="file" id="wpp-input-audio" accept="audio/*" style="display:none">
                     <button type="submit">Enviar</button>
                 </form>
+                <p id="wpp-audio-status" style="display:none;font-size:12.5px;color:var(--texto-fraco);margin:4px 0 0"></p>
             <?php endif; ?>
         <?php endif; ?>
     </section>
@@ -657,6 +671,70 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 ev.preventDefault();
                 form.requestSubmit();
             }
+        });
+    }
+
+    // Enviar áudio (17/09/2026, "permita enviar audio no inbox para o
+    // cliente") — botão 🎤 abre o seletor de arquivo (accept="audio/*",
+    // já filtra no picker do sistema); lido como base64 no navegador e
+    // mandado via fetch, mesmo padrão AJAX do envio de texto. Nunca
+    // desenha uma bolha otimista pro áudio (diferente do texto) — sem
+    // saber ainda a URL de reprodução da cópia salva no servidor, seria
+    // preciso duplicar a lógica de player só pra essa 1ª renderização;
+    // mais simples deixar o polling de 2s (já rodando) pegar a mensagem
+    // nova como qualquer outra, evita reproduzir o mesmo bug de
+    // duplicação já corrigido uma vez no envio de texto.
+    var btnAudio = document.getElementById('wpp-btn-audio');
+    var inputAudio = document.getElementById('wpp-input-audio');
+    var statusAudio = document.getElementById('wpp-audio-status');
+    if (btnAudio && inputAudio) {
+        btnAudio.addEventListener('click', function () { inputAudio.click(); });
+        inputAudio.addEventListener('change', function () {
+            var arquivo = inputAudio.files && inputAudio.files[0];
+            inputAudio.value = ''; // deixa escolher o MESMO arquivo de novo depois, se precisar reenviar
+            if (!arquivo) return;
+            if (!arquivo.type || arquivo.type.indexOf('audio/') !== 0) {
+                alert('Escolha um arquivo de áudio.');
+                return;
+            }
+            btnAudio.disabled = true;
+            statusAudio.style.display = 'block';
+            statusAudio.textContent = '🎤 Enviando áudio...';
+            var leitor = new FileReader();
+            leitor.onload = function () {
+                // resultado vem como "data:audio/mpeg;base64,AAAA..." — só o
+                // trecho depois da vírgula interessa, o mime já vai separado.
+                var base64 = String(leitor.result).split(',')[1] || '';
+                var body = new URLSearchParams();
+                body.set('csrf_token', csrf.value);
+                body.set('acao', 'enviar_audio');
+                body.set('telefone', telefone);
+                body.set('ajax', '1');
+                body.set('mime', arquivo.type);
+                body.set('audio_base64', base64);
+                fetch('', { method: 'POST', body: body })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        btnAudio.disabled = false;
+                        statusAudio.style.display = 'none';
+                        // Nunca mexe em ultimoId aqui de propósito — o próximo
+                        // poll de 2s (setInterval já rodando) descobre a
+                        // mensagem nova sozinho e desenha a bolha certa,
+                        // com a URL de reprodução já pronta.
+                        if (!data.ok) alert(data.erro || 'Falha ao enviar áudio.');
+                    })
+                    .catch(function () {
+                        btnAudio.disabled = false;
+                        statusAudio.style.display = 'none';
+                        alert('Falha ao enviar áudio — confira sua conexão.');
+                    });
+            };
+            leitor.onerror = function () {
+                btnAudio.disabled = false;
+                statusAudio.style.display = 'none';
+                alert('Não consegui ler esse arquivo.');
+            };
+            leitor.readAsDataURL(arquivo);
         });
     }
 

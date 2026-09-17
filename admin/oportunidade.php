@@ -554,11 +554,19 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 // já causou "pendente" falso pra doc que tava no Drive.
                 $temArquivo = $doc && ($doc['arquivo_url'] || $doc['drive_file_id']);
                 $ehDocCliente = isset(TIPOS_DOCUMENTOS_CLIENTE[$tipo]);
+                // 17/09/2026, "vamos deixar opcional o laudo e comprovante
+                // de pagamento opcional para fechar pasta" — nunca bloqueia
+                // o checklist (regra #7), badge neutro em vez do alarme
+                // vermelho de "pendente" pros outros documentos de verdade
+                // obrigatórios.
+                $ehOpcional = in_array($tipo, TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS, true);
             ?>
             <tr>
-                <td><?= e($label) ?></td>
+                <td><?= e($label) ?><?= $ehOpcional ? ' <small style="color:var(--texto-fraco)">(opcional)</small>' : '' ?></td>
                 <td>
-                    <?php if (!$temArquivo): ?>
+                    <?php if (!$temArquivo && $ehOpcional): ?>
+                        <span class="badge">— opcional, não enviado</span>
+                    <?php elseif (!$temArquivo): ?>
                         <span class="badge badge-atraso">⏳ pendente</span>
                     <?php elseif ($ehDocCliente && !$doc['dados_confirmados']): ?>
                         <span class="badge badge-atraso">📝 enviado, aguardando cliente confirmar dados</span>

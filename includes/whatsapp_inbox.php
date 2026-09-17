@@ -226,6 +226,56 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
 }
 
 /**
+ * Envia um áudio manual pelo WhatsApp Box (17/09/2026, "permita enviar
+ * audio no inbox para o cliente") — mesmo espírito de
+ * `enviarMensagemManualWhatsapp()`: grava no histórico e PAUSA a IA (regra
+ * #4), mas manda via `zapiEnviarAudio()` em vez de `zapiEnviarTexto()`.
+ * $audioBase64: conteúdo bruto em base64 (sem o prefixo `data:...;base64,`
+ * — montado aqui na hora de chamar o Z-API), já validado no JS como
+ * `audio/*` antes de subir. Envia PRIMEIRO pro Z-API (mesma ordem do envio
+ * de texto — nunca grava histórico de algo que não chegou a sair de
+ * verdade) e só registra + salva a cópia reproduzível na thread
+ * (`salvarMidiaWhatsappRecebida()`, reaproveitada aqui mesmo sendo função
+ * nomeada pro lado de RECEBER — ela só salva bytes numa linha de
+ * `whatsapp_mensagens` já existente, não importa a direção) se o envio deu
+ * certo. Tamanho travado no mesmo `WHATSAPP_MIDIA_MAX_BYTES` (20MB) já
+ * usado pro download de mídia recebida, por consistência.
+ */
+function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string $mime, int $usuarioId): array {
+    $telNorm = normalizarTelefone($telefone);
+    if ($audioBase64 === '') {
+        return ['ok' => false, 'erro' => 'Nenhum áudio selecionado.'];
+    }
+    if (!str_starts_with($mime, 'audio/')) {
+        return ['ok' => false, 'erro' => 'Arquivo não reconhecido como áudio.'];
+    }
+    $bytes = base64_decode($audioBase64, true);
+    if ($bytes === false || $bytes === '') {
+        return ['ok' => false, 'erro' => 'Arquivo de áudio inválido.'];
+    }
+    if (strlen($bytes) > WHATSAPP_MIDIA_MAX_BYTES) {
+        return ['ok' => false, 'erro' => 'Áudio maior que o limite de ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
+    }
+
+    if (!zapiEnviarAudio($telNorm, 'data:' . $mime . ';base64,' . $audioBase64)) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância em Configurações.'];
+    }
+
+    $id = registrarMensagem($telNorm, 'out', '🎤 Áudio', null, false, 'audio', $usuarioId);
+    if ($id > 0) {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
+        $stmt->execute([$telNorm]);
+        $cliente = $stmt->fetch();
+        if ($cliente) {
+            salvarMidiaWhatsappRecebida($id, $bytes, $mime, 'audio', (int)$cliente['id'], $cliente['nome'] ?: $telNorm);
+        }
+    }
+    pausarIA($telNorm);
+    return ['ok' => true, 'id' => $id];
+}
+
+/**
  * Apaga o histórico de uma conversa (whatsapp_mensagens + estado da IA em
  * whatsapp_sessoes) — 15/09/2026, pedido direto pra limpar as conversas de
  * lixo criadas no incidente do mesmo dia (eventos de presença/status da

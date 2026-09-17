@@ -30,6 +30,22 @@ const TIPOS_DOCUMENTOS_FECHAMENTO = [
     'laudo_avaliacao'        => 'Laudo de avaliação do veículo',
 ];
 
+/**
+ * 2 dos 6 tipos de documento nunca bloqueiam o checklist de fechamento
+ * (regra #7 do CLAUDE.md) — pedido direto (17/09/2026, "vamos deixar
+ * opcional o laudo e comprovante de pagamento opcional para fechar
+ * pasta"), motivo de negócio explicado no mesmo dia: "como ficou
+ * obrigatório pagamento as vezes pix outro pix nem todo veiculo laudo" —
+ * a forma de pagamento varia (PIX de contas diferentes, sem padrão fixo
+ * pra anexar comprovante) e nem todo veículo passa por avaliação formal
+ * com laudo, então travar o fechamento por esses 2 documentos específicos
+ * não reflete como a operação funciona de verdade. `contrato_compra`
+ * continua obrigatório — é o único documento realmente essencial da pasta
+ * fechada em si (os outros 3 obrigatórios são os que o cliente sobe no
+ * wizard: CNH/comprovante de endereço/contrato de financiamento/CRLV).
+ */
+const TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS = ['comprovante_pagamento', 'laudo_avaliacao'];
+
 define('UPLOADS_DIR', dirname(__DIR__) . '/storage/uploads');
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10MB
 const UPLOAD_MIME_PERMITIDOS = [
@@ -71,10 +87,11 @@ function getOuCriarTokenDocumentos(int $oportunidadeId): string {
 function garantirLinhasDocumentosObrigatorios(int $oportunidadeId): void {
     $db = getDB();
     $stmt = $db->prepare("
-        INSERT OR IGNORE INTO oportunidade_documentos (oportunidade_id, tipo, obrigatorio) VALUES (?, ?, 1)
+        INSERT OR IGNORE INTO oportunidade_documentos (oportunidade_id, tipo, obrigatorio) VALUES (?, ?, ?)
     ");
     foreach (array_keys(TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO) as $tipo) {
-        $stmt->execute([$oportunidadeId, $tipo]);
+        $obrigatorio = in_array($tipo, TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS, true) ? 0 : 1;
+        $stmt->execute([$oportunidadeId, $tipo, $obrigatorio]);
     }
 }
 

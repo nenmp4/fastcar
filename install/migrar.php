@@ -181,6 +181,24 @@ try {
     echo "❌ idx_pendencias_oportunidade: {$e->getMessage()}\n";
 }
 
+// 17/09/2026 — "vamos deixar opcional o laudo e comprovante de pagamento
+// opcional para fechar pasta": comprovante_pagamento/laudo_avaliacao
+// deixaram de ser obrigatórios pro checklist de fechamento (regra #7),
+// mas linhas de oportunidade_documentos JÁ CRIADAS antes dessa mudança
+// (garantirLinhasDocumentosObrigatorios() só roda INSERT OR IGNORE, nunca
+// atualiza linha existente) continuariam travando o fechamento com
+// obrigatorio=1 do jeito antigo se não forem corrigidas aqui — idempotente,
+// só afeta linhas que ainda estejam com o valor antigo.
+try {
+    $afetadas = $db->exec("
+        UPDATE oportunidade_documentos SET obrigatorio = 0
+        WHERE tipo IN ('comprovante_pagamento', 'laudo_avaliacao') AND obrigatorio = 1
+    ");
+    echo ($afetadas > 0 ? "✅" : "⏭️ ") . " oportunidade_documentos (comprovante_pagamento/laudo_avaliacao → opcional): {$afetadas} linha(s)\n";
+} catch (Throwable $e) {
+    echo "❌ oportunidade_documentos (comprovante_pagamento/laudo_avaliacao → opcional): {$e->getMessage()}\n";
+}
+
 // 13/09/2026 — perfis 'consultor' e 'closer' mesclados (pedido do José): a
 // mesma pessoa atende (bloco 5) e negocia/fecha (bloco 6). Não dá pra tirar
 // 'closer' da CHECK sem reconstruir a tabela no SQLite, mas dá pra garantir

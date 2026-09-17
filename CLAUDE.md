@@ -564,6 +564,39 @@ segue no schema sem uso novo, não removida sem ganho real),
   1ª carga da foto, avatar continua `<img>` do início ao fim, sem erro de
   JS — antes da correção esse mesmo teste flagaria o placeholder voltando
   a cada rodada do polling.
+  **Envio de áudio** (17/09/2026, "permita enviar audio no inbox para o
+  cliente") — botão 🎤 novo ao lado do campo de texto abre o seletor de
+  arquivo (`accept="audio/*"`), lê como base64 no navegador e manda via
+  AJAX, mesmo padrão do envio de texto. Nova
+  `enviarAudioManualWhatsapp()` (`includes/whatsapp_inbox.php`) +
+  `zapiEnviarAudio()` (`includes/whatsapp_config.php`, `POST /send-audio`
+  — formato confirmado via busca na documentação oficial Z-API,
+  docs.z-api.io/message/send-message-audio, campo `audio` aceita URL
+  pública OU data URI base64: manda como data URI, sem precisar hospedar
+  arquivo público antes — mesma ressalva de "a validar em produção" de
+  todo endpoint Z-API que não seja envio de texto puro). Envia PRIMEIRO
+  pro Z-API, só grava no histórico + salva a cópia reproduzível
+  (reaproveitando `salvarMidiaWhatsappRecebida()` — mesma função do lado
+  de RECEBER mídia, ela só grava bytes numa linha já existente, não
+  importa a direção) se o envio deu certo de verdade — mesma ordem/
+  disciplina do envio de texto. Tamanho travado em `WHATSAPP_MIDIA_MAX_BYTES`
+  (20MB), mesmo limite já usado pro download de mídia recebida. PAUSA A
+  IA automaticamente (regra #4), igual ao envio de texto. Nunca desenha
+  bolha otimista pro áudio (diferente do texto) — deixa o polling de 2s
+  já existente trazer a mensagem nova como qualquer outra, evitando
+  duplicar a lógica de player só pra 1 renderização e reproduzir o mesmo
+  bug de duplicação já corrigido uma vez no envio de texto. Áudio não tem
+  legenda no WhatsApp (diferente de imagem), então não dá pra "assinar"
+  com o nome do consultor dentro do próprio áudio que o cliente recebe —
+  a bolha no CRM continua mostrando "👤 {nome}" normalmente. Testado em
+  banco isolado, ponta a ponta via Playwright + servidor Z-API fake:
+  botão aparece no formulário; selecionar um arquivo de áudio dispara o
+  envio e a bolha com player `<audio>` aparece na thread depois do
+  polling, apontando pra `/admin/ver_midia_whatsapp.php`; mensagem
+  gravada com `tipo='audio'`/`direcao='out'`/`usuario_id` certo;
+  `drive_file_id` ou `arquivo_url` preenchido (cópia salva); IA pausada
+  depois do envio; payload capturado pelo Z-API fake confere `phone`
+  normalizado + `audio` como data URI base64 no formato certo.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -1266,6 +1299,33 @@ segue no schema sem uso novo, não removida sem ganho real),
   final com o link "CRLV" na lista de revisão; linha `oportunidade_documentos`
   gravada com `obrigatorio=1`/`dados_confirmados=1`, entrando certo no
   checklist de fechamento junto dos outros documentos obrigatórios.
+  **Comprovante de pagamento e laudo de avaliação viraram opcionais**
+  (17/09/2026, "vamos deixar opcional o laudo e comprovante de pagamento
+  opcional para fechar pasta"), motivo de negócio explicado no mesmo dia
+  ("como ficou obrigatório pagamento as vezes pix outro pix nen todo
+  veiculo laudo") — forma de pagamento varia (PIX de contas diferentes,
+  sem padrão fixo pra anexar comprovante) e nem todo veículo passa por
+  avaliação formal com laudo, então travar o fechamento (regra #7) por
+  esses 2 documentos específicos não reflete como a operação funciona de
+  verdade. Nova `TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS`
+  (`includes/documentos.php`) — `garantirLinhasDocumentosObrigatorios()`
+  passou a gravar `comprovante_pagamento`/`laudo_avaliacao` com
+  `obrigatorio=0`; os outros 4 tipos (CNH/comprovante de endereço/
+  contrato de financiamento/CRLV do cliente + contrato de compra da
+  própria pasta) continuam obrigatórios como sempre. `admin/oportunidade.php`
+  mostra "(opcional)" no rótulo e um badge neutro "— opcional, não
+  enviado" em vez do alarme vermelho "⏳ pendente" pra esses 2. Migração
+  em `install/migrar.php` corrige linhas de `oportunidade_documentos` JÁ
+  CRIADAS antes dessa mudança — `garantirLinhasDocumentosObrigatorios()`
+  só faz `INSERT OR IGNORE`, nunca atualiza linha existente, então sem a
+  migração uma oportunidade em andamento continuaria travada com o
+  `obrigatorio=1` antigo pra sempre. Testado em banco isolado: oportunidade
+  nova já nasce com os 2 tipos em `obrigatorio=0` (resto continua 1);
+  checklist fecha completo preenchendo só os 4 obrigatórios de verdade,
+  sem laudo/comprovante; cenário simulando oportunidade "antiga" (linhas
+  já existentes com `obrigatorio=1`, como estava antes dessa mudança) fica
+  bloqueada ANTES da migração e libera certo DEPOIS, rodando a migração
+  2x sem efeito colateral (idempotente).
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real
