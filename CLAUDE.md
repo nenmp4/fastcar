@@ -1497,6 +1497,17 @@ segue no schema sem uso novo, não removida sem ganho real),
   cláusulas, nenhuma sobrando com "24" fixo; teste HTTP direto
   confirmando que enviar 99 no campo salva 24 no banco (trava do servidor
   funcionando, não só o `max` do HTML).
+  **Texto exato da frase ajustado** (mesmo dia, pedido direto: "a frase
+  tem aparecer no contrato... Fica ajustado, entretanto, que o prazo
+  supracitado será de até 18 (dezoito) meses, podendo ser
+  excepcionalmente prorrogado por até 24 (vinte e quatro) meses") — a
+  linha do Quadro-Resumo "Prazo pra quitação do financiamento" e a
+  Cláusula 5ª (5.1) passaram a usar exatamente essa frase, com o valor de
+  `prazo_quitacao_meses` por extenso. Nova `_extensoMeses()`
+  (`includes/contratos_pdf.php`, tabela fechada 1-24 — o prazo nunca passa
+  de 24, regra já travada) gera "18 (dezoito)" etc a partir do número
+  salvo. Testado gerando o PDF com prazo=18 e decodificando o conteúdo:
+  texto batendo exatamente nos 2 lugares (Quadro-Resumo e cláusula 5.1).
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

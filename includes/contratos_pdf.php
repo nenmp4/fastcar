@@ -151,6 +151,22 @@ function _fmtMoeda(?float $v): string {
 }
 
 /**
+ * Número por extenso (1-24) pro padrão jurídico "18 (dezoito) meses" —
+ * faixa fechada, só cobre o intervalo de prazo_quitacao_meses (nunca > 24,
+ * regra travada em includes/contratos.php/admin/oportunidade.php).
+ */
+function _extensoMeses(int $n): string {
+    $numeros = [
+        1 => 'um', 2 => 'dois', 3 => 'três', 4 => 'quatro', 5 => 'cinco', 6 => 'seis',
+        7 => 'sete', 8 => 'oito', 9 => 'nove', 10 => 'dez', 11 => 'onze', 12 => 'doze',
+        13 => 'treze', 14 => 'quatorze', 15 => 'quinze', 16 => 'dezesseis', 17 => 'dezessete',
+        18 => 'dezoito', 19 => 'dezenove', 20 => 'vinte', 21 => 'vinte e um', 22 => 'vinte e dois',
+        23 => 'vinte e três', 24 => 'vinte e quatro',
+    ];
+    return $numeros[$n] ?? (string)$n;
+}
+
+/**
  * Gera o PDF do contrato de compra e retorna o caminho do arquivo temporário.
  * $campos: ver montarCamposContratoCompra() em includes/contratos.php.
  */
@@ -196,7 +212,9 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfLinhaResumo($pdf, 'Contrato de financiamento nº', $c['contrato_financiamento_numero']);
     _pdfLinhaResumo($pdf, 'Saldo estimado do financiamento na data', _fmtMoeda($c['saldo_financiamento_atual']));
     _pdfLinhaResumo($pdf, 'Responsável registral perante o credor', $c['responsavel_registral']);
-    _pdfLinhaResumo($pdf, 'Prazo pra quitação do financiamento', "Até {$c['prazo_quitacao_meses']} meses, contado de {$c['data_entrega_posse']} — nunca superior a 24 meses");
+    _pdfLinhaResumo($pdf, 'Prazo pra quitação do financiamento', "Fica ajustado, entretanto, que o prazo supracitado será de até " .
+        "{$c['prazo_quitacao_meses']} (" . _extensoMeses((int)$c['prazo_quitacao_meses']) . ") meses, contado de {$c['data_entrega_posse']}, " .
+        "podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses.");
     _pdfLinhaResumo($pdf, 'Terceiro indicado pela FASTCAR para a quitação', $c['terceiro_quitacao'] ?: 'a indicar');
     _pdfLinhaResumo($pdf, 'Posse física entregue à FASTCAR em', $c['data_entrega_posse']);
     _pdfLinhaResumo($pdf, 'Exploração econômica pela FASTCAR', 'Autorizada, inclusive locação a terceiros, nos limites contratuais');
@@ -289,7 +307,8 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "4.4. Pagamentos ao credor serão comprovados por documentos idôneos. A FASTCAR manterá trilha de acompanhamento e fornecerá ao VENDEDOR informações razoáveis sobre marcos relevantes.\n\n" .
             "4.5. Se a instituição exigir anuência, comparecimento, assinatura ou documento do VENDEDOR, este deverá cooperar em prazo razoável, sem assumir obrigações novas não previstas."],
         ["CLÁUSULA 5ª – PRAZO DE ATÉ {$prazoMeses} MESES",
-            "5.1. O prazo máximo começa na data indicada no Quadro-Resumo e termina automaticamente {$prazoMeses} meses depois, salvo quitação anterior, respeitado o limite contratual absoluto de 24 meses.\n\n" .
+            "5.1. O prazo máximo começa na data indicada no Quadro-Resumo. Fica ajustado, entretanto, que o prazo supracitado será de até " .
+            (int)$prazoMeses . " (" . _extensoMeses((int)$prazoMeses) . ") meses, contados a partir dessa data, salvo quitação anterior, podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses.\n\n" .
             "5.2. O prazo é limite máximo para obtenção da quitação e baixa do gravame, não simples prazo para início de negociação.\n\n" .
             "5.3. Nos 90, 60 e 30 dias anteriores ao termo final, a FASTCAR deverá promover revisão documentada do status da dívida e do plano de quitação."],
         ['CLÁUSULA 6ª – POSSE, GUARDA E ENTREGA',
