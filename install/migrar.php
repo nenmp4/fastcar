@@ -199,6 +199,40 @@ try {
     echo "❌ oportunidade_documentos (comprovante_pagamento/laudo_avaliacao → opcional): {$e->getMessage()}\n";
 }
 
+// 17/09/2026, achado real: "fechamos cliente mais não mostra tipo negocio
+// fechado esse mes" — valor_final/data_compra/fechado_por (colunas do
+// bloco 8) existiam desde o schema original mas mudarEtapa()
+// (includes/oportunidades.php) nunca as preenchia ao fechar uma
+// oportunidade; corrigido no código, mas oportunidade que JÁ tinha
+// fechado antes desse fix (ex: cliente Bianca) continua com essas 3
+// colunas NULL pra sempre sem esse backfill — nunca apareceria em
+// "fechadas/valor fechado este mês" nem na frota (admin/veiculos.php)
+// só por causa disso, mesmo sendo um negócio genuinamente fechado.
+// Idempotente — só toca oportunidade já 'fechado' com alguma das 3
+// colunas ainda vazia; data_compra/fechado_por vêm do histórico (data e
+// responsável de quando a etapa virou 'fechado' de verdade), fallback pro
+// responsavel_id atual da oportunidade se não achar linha de histórico.
+try {
+    $afetadas = $db->exec("
+        UPDATE oportunidades SET
+            valor_final = COALESCE(valor_final, valor_ofertado),
+            data_compra = COALESCE(data_compra, (
+                SELECT date(h.created_at) FROM oportunidade_historico h
+                WHERE h.oportunidade_id = oportunidades.id AND h.etapa_nova = 'fechado'
+                ORDER BY h.id DESC LIMIT 1
+            )),
+            fechado_por = COALESCE(fechado_por, (
+                SELECT h.responsavel_id FROM oportunidade_historico h
+                WHERE h.oportunidade_id = oportunidades.id AND h.etapa_nova = 'fechado'
+                ORDER BY h.id DESC LIMIT 1
+            ), responsavel_id)
+        WHERE etapa = 'fechado' AND (data_compra IS NULL OR fechado_por IS NULL OR valor_final IS NULL)
+    ");
+    echo ($afetadas > 0 ? "✅" : "⏭️ ") . " oportunidades (backfill valor_final/data_compra/fechado_por de fechamentos antigos): {$afetadas} linha(s)\n";
+} catch (Throwable $e) {
+    echo "❌ oportunidades (backfill valor_final/data_compra/fechado_por): {$e->getMessage()}\n";
+}
+
 // 13/09/2026 — perfis 'consultor' e 'closer' mesclados (pedido do José): a
 // mesma pessoa atende (bloco 5) e negocia/fecha (bloco 6). Não dá pra tirar
 // 'closer' da CHECK sem reconstruir a tabela no SQLite, mas dá pra garantir

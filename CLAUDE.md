@@ -1791,6 +1791,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   preserva `?q=`; combinar busca + etapa filtra os dois juntos
   corretamente; botão "Limpar" remove só o `q` da URL; super_admin também
   usa o mesmo filtro normalmente.
+  **"Fechadas este mês"/"Valor fechado este mês" sempre em 0** (17/09/2026,
+  achado real: "no dasbord consultor fechamos cliente mais não mostra
+  tipo negocio fechado esse mes" / "bianaca já fechou") — causa raiz:
+  `oportunidades.valor_final`/`data_compra`/`fechado_por` (colunas do
+  bloco 8 "Pasta fechada") existiam no schema desde o início, mas
+  `mudarEtapa()` (`includes/oportunidades.php`) **nunca as preenchia** ao
+  fechar uma oportunidade — só atualizava `etapa`/`updated_at`.
+  `includes/dashboard.php` (`dashboardConsultor()`/`dashboardSuperAdmin()`)
+  sempre filtram esses cards por essas 3 colunas (`data_compra >= início
+  do mês`), então mesmo com `etapa='fechado'` de verdade o card sempre
+  dava 0 — mesma classe de bug em `admin/veiculos.php` (frota), que lê
+  `valor_final` pra "valor pago" e sempre mostrava "—"/R$0,00 mesmo com
+  veículo genuinamente comprado. Corrigido: `mudarEtapa()` agora preenche
+  as 3 colunas numa UPDATE só ao transicionar pra `fechado` —
+  `valor_final` assume `valor_ofertado` (bloco 6, única "proposta final"
+  que o sistema já rastreia, sem campo próprio de valor final na tela),
+  `data_compra` vira a data de hoje, `fechado_por` vira quem executou o
+  fechamento. Migração em `install/migrar.php` faz o **backfill** de
+  oportunidades que JÁ estavam fechadas antes desse fix (ex: a cliente
+  Bianca) — sem isso, o código corrigido só valeria pra fechamentos
+  novos, deixando fechamentos reais já feitos escondidos dos cards/frota
+  pra sempre; `data_compra`/`fechado_por` vêm do histórico
+  (`oportunidade_historico`, data+responsável de quando a etapa virou
+  `fechado` de verdade), com fallback pro `responsavel_id` atual se não
+  achar linha de histórico — idempotente. Testado em banco isolado:
+  fechamento novo via `mudarEtapa()` grava as 3 colunas certas e já
+  aparece nos dois dashboards na hora; oportunidade simulando o cenário
+  "antiga" (fechada antes do fix, colunas NULL) fica de fora dos cards
+  ANTES da migração e some corretamente DEPOIS; oportunidade fechada há
+  45 dias (fora do mês atual) corretamente NUNCA conta em "este mês",
+  mesmo depois da migração; migração idempotente rodando 2x.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,

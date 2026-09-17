@@ -313,12 +313,13 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
     }
 
     $db = getDB();
-    $stmt = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
+    $stmt = $db->prepare("SELECT etapa, valor_ofertado FROM oportunidades WHERE id = ?");
     $stmt->execute([$oportunidadeId]);
-    $atual = $stmt->fetchColumn();
-    if ($atual === false) {
+    $op = $stmt->fetch();
+    if (!$op) {
         throw new RuntimeException("Oportunidade #{$oportunidadeId} não existe.");
     }
+    $atual = $op['etapa'];
 
     // "Compra concluída exige checklist" (regra #7) — trava aqui, não só
     // na tela, pra nenhuma rota conseguir pular o checklist.
@@ -330,8 +331,32 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
 
     $db->beginTransaction();
     try {
-        $db->prepare("UPDATE oportunidades SET etapa = ?, updated_at = datetime('now','localtime') WHERE id = ?")
-           ->execute([$etapaNova, $oportunidadeId]);
+        // 17/09/2026, achado real: "fechamos cliente mais não mostra tipo
+        // negocio fechado esse mes" — valor_final/data_compra/fechado_por
+        // (colunas do bloco 8, "Pasta fechada") existiam no schema desde o
+        // início mas NUNCA eram preenchidas em lugar nenhum do código —
+        // dashboardConsultor()/dashboardSuperAdmin() (includes/dashboard.php)
+        // sempre filtram por essas 3 colunas pra "fechadas/valor fechado
+        // este mês" e pra taxa de conversão do consultor (fechado_por),
+        // então mesmo com a oportunidade genuinamente em etapa='fechado'
+        // esses cards sempre davam 0 — a mesma classe de bug em
+        // admin/veiculos.php, que lê valor_final pra mostrar "valor pago"
+        // da frota (sempre "—"/R$0,00 antes desse fix, mesmo com veículos
+        // de verdade comprados). valor_final assume o valor_ofertado (bloco
+        // 6, a única "proposta final" que o sistema já rastreia) no
+        // momento exato do fechamento — sem campo próprio de "valor final"
+        // separado na tela, é o valor real que foi pago.
+        if ($etapaNova === 'fechado') {
+            $db->prepare("
+                UPDATE oportunidades
+                SET etapa = ?, valor_final = ?, data_compra = date('now','localtime'),
+                    fechado_por = ?, updated_at = datetime('now','localtime')
+                WHERE id = ?
+            ")->execute([$etapaNova, $op['valor_ofertado'], $responsavelId, $oportunidadeId]);
+        } else {
+            $db->prepare("UPDATE oportunidades SET etapa = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+               ->execute([$etapaNova, $oportunidadeId]);
+        }
 
         $db->prepare("
             INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
