@@ -1602,6 +1602,27 @@ segue no schema sem uso novo, não removida sem ganho real),
   mesclagem; super_admin vê visão geral da empresa + funil em barra por
   etapa. Tabela principal e nav de etapas também filtram por
   `responsavel_id` pra consultor.
+  **Filtro de busca** (17/09/2026, "adicionar filtro de busca no dashboard
+  dos consultores"): até então o dashboard não tinha campo de busca
+  nenhum, só a nav por etapa — sem jeito de achar uma oportunidade
+  específica sem navegar etapa por etapa. Campo `?q=` novo, mesmo padrão
+  já usado em `admin/clientes.php`/`admin/veiculos.php`: busca por
+  nome/telefone do cliente OU marca/modelo/placa do veículo. Aplicado nas
+  3 queries que já existiam (listagem paginada, contagem total, contagem
+  por etapa pra nav) — os contadores da nav também refletem a busca, então
+  clicar numa etapa com busca ativa continua mostrando só o que bate com
+  os dois filtros juntos, nunca reseta a busca sozinho. Formulário
+  preserva a etapa atual (campo hidden) pra buscar dentro da aba
+  selecionada; link "Limpar" só aparece com busca ativa. Como o dashboard
+  é o mesmo arquivo compartilhado entre os 3 perfis (consultor vê só a
+  própria carteira via `responsavel_id`, super_admin/supervisor vêem
+  tudo), o filtro funciona igual pros dois — testado nos dois. Testado em
+  banco isolado com Playwright: busca por modelo de veículo retorna só a
+  oportunidade certa; busca por telefone funciona; busca sem match mostra
+  a mensagem certa (diferente da de "etapa vazia"); link de etapa na nav
+  preserva `?q=`; combinar busca + etapa filtra os dois juntos
+  corretamente; botão "Limpar" remove só o `q` da URL; super_admin também
+  usa o mesmo filtro normalmente.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,

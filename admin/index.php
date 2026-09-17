@@ -18,12 +18,13 @@ $meuId = (int)$_SESSION['admin_id'];
 $souDono = $perfil === 'consultor';
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
+$busca = trim((string)($_GET['q'] ?? ''));
 $placeholders = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
 
 // WHERE construído uma vez só e reaproveitado pra contar o total ANTES de
 // paginar (precisa ser o total que bate com ESSE filtro específico —
-// etapa + dono — não $totalAtivas mais abaixo, que é sempre a soma de
-// TODAS as etapas ativas, serve só pro contador "Todas (N)" da nav).
+// etapa + dono + busca — não $totalAtivas mais abaixo, que é sempre a soma
+// de TODAS as etapas ativas, serve só pro contador "Todas (N)" da nav).
 $where = "WHERE o.etapa IN ({$placeholders})";
 $params = ETAPAS_ATIVAS;
 if ($souDono) {
@@ -34,8 +35,18 @@ if ($etapaFiltro && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
     $where .= " AND o.etapa = ?";
     $params[] = $etapaFiltro;
 }
+if ($busca !== '') {
+    // Filtro de busca no dashboard (pedido direto) — nome/telefone do
+    // cliente ou marca/modelo/placa do veículo, mesmo padrão de
+    // admin/clientes.php e admin/veiculos.php. Precisa do JOIN de
+    // clientes, que já existe no $sql abaixo (c.nome/c.telefone) — a
+    // query de contagem por etapa também usa esse JOIN, ver mais abaixo.
+    $where .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
+    $like = '%' . $busca . '%';
+    array_push($params, $like, $like, $like, $like, $like);
+}
 
-$stmtTotalFiltrado = $db->prepare("SELECT COUNT(*) FROM oportunidades o {$where}");
+$stmtTotalFiltrado = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
 $stmtTotalFiltrado->execute($params);
 $totalFiltrado = (int)$stmtTotalFiltrado->fetchColumn();
 
@@ -53,13 +64,23 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $oportunidades = $stmt->fetchAll();
 
-$sqlContagem = "SELECT etapa, COUNT(*) AS total FROM oportunidades WHERE etapa IN ({$placeholders})";
+$sqlContagem = "SELECT o.etapa, COUNT(*) AS total FROM oportunidades o
+                JOIN clientes c ON c.id = o.cliente_id
+                WHERE o.etapa IN ({$placeholders})";
 $paramsContagem = ETAPAS_ATIVAS;
 if ($souDono) {
-    $sqlContagem .= " AND responsavel_id = ?";
+    $sqlContagem .= " AND o.responsavel_id = ?";
     $paramsContagem[] = $meuId;
 }
-$sqlContagem .= " GROUP BY etapa";
+if ($busca !== '') {
+    // Contadores da nav (Todas/etapa) também refletem a busca — senão o
+    // clique numa etapa some com o filtro de busca (renderPaginacao já
+    // preserva ?q= nos links de página, mas os links da nav de etapa são
+    // montados à parte, ver mais abaixo).
+    $sqlContagem .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
+    array_push($paramsContagem, $like, $like, $like, $like, $like);
+}
+$sqlContagem .= " GROUP BY o.etapa";
 $stmtContagem = $db->prepare($sqlContagem);
 $stmtContagem->execute($paramsContagem);
 $contagemPorEtapa = array_column($stmtContagem->fetchAll(), 'total', 'etapa');
@@ -119,10 +140,11 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <a href="/admin/logout.php">Sair</a>
 </header>
 
+<?php $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : ''; ?>
 <nav class="etapas-nav">
-    <a href="/admin/index.php" class="<?= $etapaFiltro === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
+    <a href="/admin/index.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
     <?php foreach (ETAPAS_ATIVAS as $et): ?>
-        <a href="/admin/index.php?etapa=<?= urlencode($et) ?>" class="<?= $etapaFiltro === $et ? 'ativo' : '' ?>">
+        <a href="/admin/index.php?etapa=<?= urlencode($et) . $qsBusca ?>" class="<?= $etapaFiltro === $et ? 'ativo' : '' ?>">
             <?= e(etapaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
         </a>
     <?php endforeach; ?>
@@ -216,6 +238,15 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     </div>
 <?php endif; ?>
 
+<div class="card">
+    <form method="get">
+        <?php if ($etapaFiltro !== ''): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
+        <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por nome, telefone, marca, modelo ou placa...">
+        <button type="submit">Buscar</button>
+        <?php if ($busca !== ''): ?><a href="/admin/index.php<?= $etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '' ?>">Limpar</a><?php endif; ?>
+    </form>
+</div>
+
 <table class="tabela-oportunidades">
     <thead>
         <tr>
@@ -224,7 +255,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     </thead>
     <tbody>
     <?php if (!$oportunidades): ?>
-        <tr><td colspan="6">Nenhuma oportunidade nessa etapa.</td></tr>
+        <tr><td colspan="6"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
