@@ -2748,6 +2748,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   ler de novo preserva o editado mas continua preenchendo os outros;
   cadastro final com os dados da IA funciona e o veículo aparece certo na
   Frota).
+  **Seletor de consultor responsável pela compra, em vez de digitar/sempre
+  creditar quem tá logado** (17/09/2026, "em local do fomulario de
+  cadastro do veiculo mais facil selecionar contultor qur comprou do que
+  digitar") — antes, `criarVeiculoManualFrota()` sempre gravava
+  `fechado_por` (e nunca preenchia `responsavel_id`) com o usuário da
+  sessão que estava fazendo o cadastro, mesmo quando na prática é comum
+  um admin lançar no sistema um negócio que outro consultor negociou de
+  verdade. `criarVeiculoManualFrota()` ganhou parâmetro opcional
+  `$responsavelId` — quando informado, `fechado_por` E `responsavel_id`
+  da oportunidade (e o `responsavel_id` do registro em
+  `oportunidade_historico`) passam a ser o consultor selecionado; sem
+  seleção, cai no comportamento de antes (fallback pro próprio usuário
+  logado), preservando compatibilidade com qualquer outro caller.
+  `admin/veiculos.php` ganhou `<select name="responsavel_id">` no card,
+  populado via `listarUsuarios()` filtrado a `consultor`/`super_admin`
+  (nunca `supervisor`/`vendedor`/`financeiro` — esses não fecham negócio
+  de compra), com "— Eu mesmo (Nome logado) —" como opção padrão em vez
+  de forçar escolha. Importa de verdade porque `fechado_por` é o campo
+  que `includes/dashboard.php` usa pra contar "fechadas este mês"/taxa de
+  conversão de cada consultor (ver bug corrigido no mesmo bullet do
+  dashboard, seção "Dashboard por perfil") — sem essa mudança, um veículo
+  lançado por um admin em nome de outro consultor nunca aparecia no
+  dashboard/produtividade de quem realmente fechou. Testado: função
+  isolada (sem seleção, `fechado_por`/`responsavel_id` caem no criador;
+  com um consultor selecionado, os dois campos E o histórico gravam o
+  consultor escolhido, não quem submeteu o formulário; `dashboardConsultor()`
+  do consultor selecionado conta o fechamento certo) + Playwright ponta a
+  ponta (dropdown lista os consultores reais cadastrados; selecionar um
+  consultor diferente do usuário logado, cadastrar, e confirmar no banco
+  que `fechado_por`/`responsavel_id` gravaram o consultor selecionado, não
+  quem estava logado).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

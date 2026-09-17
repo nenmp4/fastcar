@@ -169,7 +169,8 @@ function criarVeiculoManualFrota(
     string $chassi,
     string $renavam,
     ?float $valorPago,
-    int $criadoPor
+    int $criadoPor,
+    ?int $responsavelId = null
 ): array {
     $db = getDB();
     $telNorm = normalizarTelefone($vendedorTelefone);
@@ -179,6 +180,7 @@ function criarVeiculoManualFrota(
     if (!$marca && !$modelo) {
         throw new InvalidArgumentException('Informe ao menos marca ou modelo do veículo.');
     }
+    $responsavelId = $responsavelId ?: $criadoPor;
 
     $stmt = $db->prepare('SELECT id, nome FROM clientes WHERE telefone = ?');
     $stmt->execute([$telNorm]);
@@ -197,15 +199,15 @@ function criarVeiculoManualFrota(
 
     $db->prepare('
         INSERT INTO oportunidades
-            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, data_compra, fechado_por)
-        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?)
-    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, $criadoPor]);
+            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, data_compra, fechado_por, responsavel_id)
+        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?)
+    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, $responsavelId, $responsavelId]);
     $opId = (int)$db->lastInsertId();
 
     $db->prepare("
         INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
         VALUES (?, '', 'fechado', ?, 'Veículo cadastrado manualmente direto na frota — sem passar pelo funil de compra')
-    ")->execute([$opId, $criadoPor]);
+    ")->execute([$opId, $responsavelId]);
 
     return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId];
 }

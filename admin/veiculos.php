@@ -49,7 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
                 (string)($_POST['veiculo_chassi'] ?? ''),
                 (string)($_POST['veiculo_renavam'] ?? ''),
                 $valorPagoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorPagoPost)) : null,
-                (int)$_SESSION['admin_id']
+                (int)$_SESSION['admin_id'],
+                !empty($_POST['responsavel_id']) ? (int)$_POST['responsavel_id'] : null
             );
             header('Location: /admin/veiculo_midias.php?id=' . $r['oportunidade_id'] . '&recem_cadastrado=1');
             exit;
@@ -58,6 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
         }
     }
 }
+
+$consultoresParaCompra = array_values(array_filter(
+    listarUsuarios(true),
+    fn($u) => in_array($u['perfil'], ['consultor', 'super_admin'], true)
+));
 
 $where = "WHERE o.etapa = 'fechado'";
 $params = [];
@@ -163,6 +169,13 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
                 <input type="text" name="vendedor_telefone" required placeholder="Ex: 31999998888">
                 <label>Valor pago (R$)</label>
                 <input type="text" name="valor_final" placeholder="0,00">
+                <label>Consultor responsável pela compra</label>
+                <select name="responsavel_id">
+                    <option value="">— Eu mesmo (<?= e($_SESSION['admin_nome'] ?? '') ?>) —</option>
+                    <?php foreach ($consultoresParaCompra as $u): ?>
+                        <option value="<?= (int)$u['id'] ?>"><?= e($u['nome']) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div>
                 <label>Marca</label>
