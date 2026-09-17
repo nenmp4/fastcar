@@ -122,6 +122,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $id,
                 ]);
                 $sucesso = 'Condições da venda atualizadas.';
+            } elseif ($acao === 'gerar_parcelamento') {
+                // Fastcar vende veículo da frota financiado pro comprador —
+                // entrada + parcelas (pedido José/Jean, 17/09/2026). Cobra
+                // de verdade via Asaas quando o comprador já tem cliente
+                // Asaas vinculado (ver admin/financeiro-asaas.php) e a
+                // integração está configurada; senão gera só o registro
+                // LOCAL no financeiro (finGerarPlanoParcelamentoVenda) —
+                // nunca bloqueia a operação por falta de Asaas.
+                $valorEntrada = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor_entrada'] ?? '0')));
+                $numParcelas = (int)($_POST['num_parcelas'] ?? 0);
+                $valorParcela = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor_parcela'] ?? '0')));
+                $primeiraParcela = (string)($_POST['primeira_parcela_data'] ?? '');
+                $usarAsaas = !empty($_POST['usar_asaas']) && asaasConfigured();
+
+                if (!$primeiraParcela) {
+                    $erro = 'Informe a data de vencimento da 1ª parcela.';
+                } elseif ($usarAsaas) {
+                    $asaasCustomerId = asaasCriarClienteSeNecessario((string)$v['comprador_nome'], (string)$v['comprador_cpf'], (string)$v['comprador_telefone'], (string)$v['comprador_email']);
+                    if (!$asaasCustomerId) {
+                        $erro = 'Não foi possível criar/localizar o cliente no Asaas — confira os dados do comprador (nome/CPF) e a chave da API.';
+                    } else {
+                        $r = asaasGerarCobrancaParceladaVenda($id, $asaasCustomerId, $valorParcela, $numParcelas, $primeiraParcela, "Venda #{$id} — " . trim((string)$v['veiculo_marca'] . ' ' . $v['veiculo_modelo']));
+                        if ($r['ok']) {
+                            $sucesso = "Cobrança parcelada criada no Asaas — {$r['criadas']} parcela(s).";
+                        } else {
+                            $erro = 'Falha ao gerar cobrança no Asaas: ' . $r['erro'];
+                        }
+                    }
+                } else {
+                    $r = finGerarPlanoParcelamentoVenda($id, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela, null, (string)$v['comprador_nome'], (int)$_SESSION['admin_id']);
+                    if ($r['ok']) {
+                        $sucesso = "Plano de parcelamento gerado no financeiro — {$r['criadas']} lançamento(s).";
+                    } else {
+                        $erro = $r['erro'];
+                    }
+                }
             } elseif ($acao === 'gerar_contrato') {
                 if (!$v['oportunidade_id']) {
                     $erro = 'Vincule um veículo da frota a esta negociação antes de gerar o contrato.';
@@ -437,6 +473,55 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
             <?php endforeach; ?>
             </tbody>
         </table>
+    <?php endif; ?>
+</div>
+
+<div class="card">
+    <h3>💳 Financeiro — plano de parcelamento</h3>
+    <p><small>Fastcar vende o veículo financiado pro comprador — entrada + parcelas. Gera 1x só; depois disso os
+       lançamentos são acompanhados em <a href="/admin/financeiro.php">Financeiro</a>.</small></p>
+    <?php $lancamentosVenda = finListarLancamentosVenda($id); ?>
+    <?php if ($lancamentosVenda): ?>
+        <table class="tabela-oportunidades">
+            <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead>
+            <tbody>
+            <?php foreach ($lancamentosVenda as $l): ?>
+                <tr>
+                    <td><?= $l['parcela_numero'] == 0 ? 'Entrada' : "{$l['parcela_numero']}/{$l['parcela_total']}" ?></td>
+                    <td><?= $l['data_vencimento'] ? date('d/m/Y', strtotime($l['data_vencimento'])) : '—' ?></td>
+                    <td>R$ <?= number_format((float)$l['valor'], 2, ',', '.') ?></td>
+                    <td><span class="badge"><?= e($l['status']) ?></span></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php elseif (!$v['oportunidade_id']): ?>
+        <p><small>⏳ Vincule um veículo da frota antes de gerar o parcelamento.</small></p>
+    <?php else: ?>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="gerar_parcelamento">
+            <div class="grid-2">
+                <div>
+                    <label>Valor de entrada (R$) — deixe 0 se não houver</label>
+                    <input type="text" name="valor_entrada" placeholder="0,00">
+                    <label>Número de parcelas</label>
+                    <input type="number" name="num_parcelas" min="1" required>
+                </div>
+                <div>
+                    <label>Valor de cada parcela (R$)</label>
+                    <input type="text" name="valor_parcela" required placeholder="0,00">
+                    <label>Vencimento da 1ª parcela</label>
+                    <input type="date" name="primeira_parcela_data" required>
+                </div>
+            </div>
+            <?php if (asaasConfigured()): ?>
+                <label><input type="checkbox" name="usar_asaas" value="1" checked style="width:auto;display:inline-block"> Cobrar de verdade pelo Asaas (cria cliente + cobrança parcelada lá)</label>
+            <?php else: ?>
+                <p><small>ℹ️ Asaas não configurado — o plano fica só registrado no financeiro do CRM, sem cobrar de verdade.</small></p>
+            <?php endif; ?>
+            <button type="submit">Gerar plano de parcelamento</button>
+        </form>
     <?php endif; ?>
 </div>
 

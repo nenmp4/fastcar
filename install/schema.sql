@@ -317,7 +317,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- só vê/atua no módulo de vendas (admin/vendas.php, admin/venda.php,
     -- admin/vendas_inbox.php), nunca no funil de compra — ver
     -- includes/security.php::podeAcessarVendas().
-    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor')),
+    -- 'financeiro' adicionado em 17/09/2026 (pedido José/Jean: "criar
+    -- perfil gestão financeira") — módulo financeiro próprio
+    -- (admin/financeiro*.php), lançamentos/categorias/fornecedores/
+    -- colaboradores + integração Asaas — ver includes/security.php::
+    -- podeAcessarFinanceiro().
+    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor','financeiro')),
     bloqueado INTEGER DEFAULT 0,
 
     -- Fila de distribuição automática de leads (decisão do Jean,
@@ -524,3 +529,135 @@ CREATE TABLE IF NOT EXISTS venda_historico (
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_venda_historico_venda ON venda_historico(venda_id);
+
+-- ── Módulo financeiro (17/09/2026, pedido José/Jean: "tem modulo
+-- financeiro no iab boutique - precisamos copia de la para colocar aqui") —
+-- portado do repo irmão JurídicoSaaS (includes/financeiro_dre.php,
+-- admin/financeiro-*.php), mas adaptado: nunca copy-paste direto (modelo de
+-- dado diferente demais — lá é honorário de processo jurídico, aqui é
+-- compra/revenda de veículo financiado), mesmo espírito já documentado no
+-- CLAUDE.md pra WhatsApp Box/etc. Diferenças da versão original:
+-- (1) fin_lancamentos ganha oportunidade_id/venda_id — liga um lançamento
+--     ao negócio de COMPRA ou de VENDA (revenda) que o originou, sem
+--     duplicar dado nenhum dos dois módulos;
+-- (2) cliente_nome_manual (TEXT livre) cobre "relacionamento de clientes
+--     pode ser manual" (pedido explícito) — nem todo lançamento tem um
+--     cliente_id de verdade pra linkar (ex: comprador de revenda não vira
+--     linha em `clientes`, só existe em vendas.comprador_*; e cobrança
+--     importada do Asaas pode não ter NENHUM match ainda) — o nome fica
+--     sempre visível mesmo sem link nenhum, e o vínculo com cliente_id/
+--     venda_id/oportunidade_id é sempre uma ação humana explícita (nunca a
+--     IA/sistema decide/chuta o match sozinho, mesma regra #3 do projeto);
+-- (3) anexo vira drive_file_id/arquivo_url (não uma URL pública do Drive
+--     tornada pública com makePublic()) — mesmo padrão Drive-preferido/
+--     local-fallback + servido por proxy (admin/ver_anexo_financeiro.php)
+--     já usado em toda parte do Fastcar, nunca link público direto;
+-- (4) parcela_numero/parcela_total + origem ('manual'/'asaas'/
+--     'parcelamento_venda') — Fastcar vende veículo da frota financiado
+--     (entrada + parcelas) pro comprador, o JurídicoSaaS original não tinha
+--     esse conceito (lançamento de lá é sempre avulso, 1 vencimento só);
+-- (5) asaas_payment_id/asaas_customer_id — pedido junto no mesmo dia
+--     ("vamos integrar api do assas pra puxar tudo de lá"): cobrança já
+--     em uso no Asaas pra cobrar cliente de venda parcelada, importada e
+--     sincronizada (includes/asaas.php) — dedup por asaas_payment_id.
+CREATE TABLE IF NOT EXISTS fin_categorias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    tipo TEXT NOT NULL DEFAULT 'despesa' CHECK (tipo IN ('receita','despesa')),
+    natureza_sugerida TEXT DEFAULT '',
+    icone TEXT DEFAULT '💰',
+    grupo_dre TEXT DEFAULT '',
+    ativo INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS fin_fornecedores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    cnpj_cpf TEXT DEFAULT '',
+    contato TEXT DEFAULT '',
+    observacoes TEXT DEFAULT '',
+    status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS fin_colaboradores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    cargo TEXT DEFAULT '',
+    tipo_vinculo TEXT DEFAULT 'clt',
+    salario_base REAL DEFAULT NULL,
+    usuario_id INTEGER DEFAULT NULL REFERENCES usuarios(id),
+    status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
+    data_admissao TEXT DEFAULT NULL,
+    observacoes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS fin_lancamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT NOT NULL DEFAULT 'despesa' CHECK (tipo IN ('receita','despesa')),
+    categoria_id INTEGER DEFAULT NULL REFERENCES fin_categorias(id),
+    descricao TEXT NOT NULL,
+    valor REAL NOT NULL DEFAULT 0,
+    natureza TEXT DEFAULT '', -- 'fixa'/'variavel', só despesa
+    data_vencimento TEXT DEFAULT NULL,
+    data_pagamento TEXT DEFAULT NULL,
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','pago','atrasado','cancelado')),
+    -- Vínculo com cliente: sempre um dos 2, nunca obrigatório — ver nota
+    -- (2) acima ("relacionamento de clientes pode ser manual").
+    cliente_id INTEGER DEFAULT NULL REFERENCES clientes(id),
+    cliente_nome_manual TEXT DEFAULT '',
+    -- Vínculo com o negócio que originou o lançamento — nunca os dois ao
+    -- mesmo tempo na prática (um lançamento é de COMPRA ou de VENDA), mas
+    -- nada no schema força isso, decisão de quem lança.
+    oportunidade_id INTEGER DEFAULT NULL REFERENCES oportunidades(id),
+    venda_id INTEGER DEFAULT NULL REFERENCES vendas(id),
+    -- Preenchidos só quando faz parte de um plano de parcelamento (entrada
+    -- conta como parcela_numero=0) — ver nota (4) acima.
+    parcela_numero INTEGER DEFAULT NULL,
+    parcela_total INTEGER DEFAULT NULL,
+    funcionario_id INTEGER DEFAULT NULL REFERENCES fin_colaboradores(id),
+    fornecedor_id INTEGER DEFAULT NULL REFERENCES fin_fornecedores(id),
+    forma_pagamento TEXT DEFAULT '',
+    recorrente INTEGER DEFAULT 0,
+    recorrencia_intervalo TEXT DEFAULT '', -- 'mensal'/'anual'
+    recorrencia_origem_id INTEGER DEFAULT NULL,
+    drive_file_id TEXT DEFAULT '',
+    arquivo_url TEXT DEFAULT '',
+    observacoes TEXT DEFAULT '',
+    -- 'manual' (digitado na tela) / 'parcelamento_venda' (gerado ao fechar
+    -- uma venda parcelada, sem Asaas) / 'asaas' (importado/criado via API
+    -- Asaas) — ver nota (5) acima.
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas')),
+    asaas_payment_id TEXT DEFAULT NULL,
+    asaas_customer_id TEXT DEFAULT NULL,
+    created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_venda ON fin_lancamentos(venda_id);
+CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_oportunidade ON fin_lancamentos(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL;
+
+-- Cache/mapeamento dos clientes já cadastrados no Asaas (17/09/2026,
+-- "puxar tudo de lá") — existe independente de fin_lancamentos porque um
+-- cliente pode estar cadastrado no Asaas sem nenhuma cobrança ainda (ou já
+-- ter sido importado, mas a cobrança em si falhar de importar). cliente_id/
+-- venda_id ficam NULL até alguém da equipe linkar manualmente (nunca
+-- automático — nome/CPF batendo por acaso não é garantia suficiente).
+CREATE TABLE IF NOT EXISTS fin_asaas_clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asaas_id TEXT NOT NULL UNIQUE,
+    nome TEXT DEFAULT '',
+    cpf_cnpj TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    telefone TEXT DEFAULT '',
+    cliente_id INTEGER DEFAULT NULL REFERENCES clientes(id),
+    venda_id INTEGER DEFAULT NULL REFERENCES vendas(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);

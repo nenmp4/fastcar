@@ -38,6 +38,15 @@ $camposFipe = [
     'placafipe_token' => 'Token da API PlacaFIPE (api.placafipe.com.br)',
 ];
 
+// Asaas (17/09/2026, pedido José/Jean: "vamos integrar api do assas pra
+// puxar tudo de lá") — cobrança de cliente de venda parcelada (entrada +
+// parcelas), já em uso de verdade lá; importa/sincroniza pro financeiro do
+// Fastcar. asaas_ambiente decide sandbox x produção (includes/asaas.php::asaasBaseUrl()).
+$camposAsaas = [
+    'asaas_api_key'       => 'API Key do Asaas (Configurações → Integrações no painel Asaas)',
+    'asaas_webhook_token' => 'Token do webhook (opcional — mesmo valor cadastrado no painel Asaas em Configurações → Webhooks, se você optar por autenticar)',
+];
+
 $camposEmail = [
     'email_from'      => 'E-mail remetente — precisa ser uma caixa real do Google Workspace (ex: contato@fastcar.solutions)',
     'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
@@ -137,6 +146,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $sucesso = 'PlacaFIPE respondeu: "' . ($resp['msg'] ?? 'ok') . '" — conexão funcionando.';
                 }
+            }
+        } elseif ($acao === 'salvar_asaas') {
+            foreach (array_keys($camposAsaas) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $ambiente = ($_POST['asaas_ambiente'] ?? '') === 'producao' ? 'producao' : 'sandbox';
+            setConfig('asaas_ambiente', $ambiente);
+            $sucesso = 'Configurações do Asaas salvas.';
+        } elseif ($acao === 'testar_asaas') {
+            $r = asaasTestarConexao();
+            if ($r['ok']) {
+                $sucesso = $r['msg'];
+            } else {
+                $erro = 'Falha no teste: ' . $r['erro'];
             }
         } elseif ($acao === 'salvar_email') {
             foreach (array_keys($camposEmail) as $chave) {
@@ -529,6 +552,43 @@ unset($f);
         <label>Placa real pra testar (consome 1 requisição do plano)</label>
         <input type="text" name="placa_teste" placeholder="ABC1D23" style="text-transform:uppercase;max-width:180px">
         <button type="submit" <?= getConfig('placafipe_token') ? '' : 'disabled' ?>>Testar conexão</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🔄 Asaas</h2>
+    <p><small>Adicionado 17/09/2026 — cobrança de cliente de venda parcelada (entrada + parcelas), já em uso de
+       verdade no Asaas; importa/sincroniza clientes e cobranças pro financeiro do Fastcar
+       (<code>admin/financeiro-asaas.php</code>). Nunca confirmado ainda contra uma conta/credencial real — ver
+       CLAUDE.md.</small></p>
+    <p>
+        Status:
+        <span class="badge <?= getConfig('asaas_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('asaas_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_asaas">
+        <label for="asaas_ambiente">Ambiente</label>
+        <select id="asaas_ambiente" name="asaas_ambiente">
+            <option value="sandbox" <?= getConfig('asaas_ambiente') !== 'producao' ? 'selected' : '' ?>>Sandbox (teste)</option>
+            <option value="producao" <?= getConfig('asaas_ambiente') === 'producao' ? 'selected' : '' ?>>Produção</option>
+        </select>
+        <?php foreach ($camposAsaas as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
+                   placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <label>URL do webhook (cadastre no painel Asaas → Integrações → Webhooks)</label>
+        <input type="text" value="https://fastcar.solutions/api/asaas_webhook.php" readonly onclick="this.select()">
+        <button type="submit">Salvar</button>
+    </form>
+    <form method="post" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_asaas">
+        <button type="submit" <?= getConfig('asaas_api_key') ? '' : 'disabled' ?>>Testar conexão</button>
     </form>
 </div>
 

@@ -525,4 +525,183 @@ if (!colunaExiste($db, 'vendas', 'midia_sugerida_enviada_para')) {
     echo "⏭️  vendas.midia_sugerida_enviada_para: já existia\n";
 }
 
+// 17/09/2026 — perfil 'financeiro' novo (pedido José/Jean: "criar perfil
+// gestão financeira") — mesma técnica de reconstrução de tabela das
+// migrações 'supervisor'/'vendedor' acima (SQLite não tem ALTER TABLE pra
+// CHECK constraint). Idempotente — só reconstrói se a CHECK atual ainda
+// não aceitar 'financeiro'.
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='usuarios'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'financeiro'")) {
+        $db->exec('BEGIN');
+        $db->exec("
+            CREATE TABLE usuarios_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                email TEXT UNIQUE,
+                whatsapp TEXT DEFAULT '',
+                senha_hash TEXT NOT NULL,
+                perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor','financeiro')),
+                bloqueado INTEGER DEFAULT 0,
+                disponivel INTEGER DEFAULT 0,
+                plantao_fim_expediente INTEGER DEFAULT 0,
+                ultimo_lead_recebido_em DATETIME,
+                posicao_fila INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $db->exec("
+            INSERT INTO usuarios_novo (id, nome, email, whatsapp, senha_hash, perfil, bloqueado, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at)
+            SELECT id, nome, email, whatsapp, senha_hash, perfil, bloqueado, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at FROM usuarios
+        ");
+        $db->exec('DROP TABLE usuarios');
+        $db->exec('ALTER TABLE usuarios_novo RENAME TO usuarios');
+        $db->exec('COMMIT');
+        echo "✅ usuarios.perfil: CHECK reconstruída pra aceitar 'financeiro'\n";
+    } else {
+        echo "⏭️  usuarios.perfil (CHECK financeiro): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { $db->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ usuarios.perfil (CHECK financeiro): {$e->getMessage()}\n";
+}
+
+// 17/09/2026 — módulo financeiro (portado do JurídicoSaaS, adaptado — ver
+// nota grande em install/schema.sql). CREATE TABLE IF NOT EXISTS é
+// idempotente por natureza, sem precisar checar antes.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS fin_categorias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'despesa' CHECK (tipo IN ('receita','despesa')),
+            natureza_sugerida TEXT DEFAULT '',
+            icone TEXT DEFAULT '💰',
+            grupo_dre TEXT DEFAULT '',
+            ativo INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS fin_fornecedores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            cnpj_cpf TEXT DEFAULT '',
+            contato TEXT DEFAULT '',
+            observacoes TEXT DEFAULT '',
+            status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS fin_colaboradores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            cargo TEXT DEFAULT '',
+            tipo_vinculo TEXT DEFAULT 'clt',
+            salario_base REAL DEFAULT NULL,
+            usuario_id INTEGER DEFAULT NULL REFERENCES usuarios(id),
+            status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
+            data_admissao TEXT DEFAULT NULL,
+            observacoes TEXT DEFAULT '',
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS fin_lancamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL DEFAULT 'despesa' CHECK (tipo IN ('receita','despesa')),
+            categoria_id INTEGER DEFAULT NULL REFERENCES fin_categorias(id),
+            descricao TEXT NOT NULL,
+            valor REAL NOT NULL DEFAULT 0,
+            natureza TEXT DEFAULT '',
+            data_vencimento TEXT DEFAULT NULL,
+            data_pagamento TEXT DEFAULT NULL,
+            status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','pago','atrasado','cancelado')),
+            cliente_id INTEGER DEFAULT NULL REFERENCES clientes(id),
+            cliente_nome_manual TEXT DEFAULT '',
+            oportunidade_id INTEGER DEFAULT NULL REFERENCES oportunidades(id),
+            venda_id INTEGER DEFAULT NULL REFERENCES vendas(id),
+            parcela_numero INTEGER DEFAULT NULL,
+            parcela_total INTEGER DEFAULT NULL,
+            funcionario_id INTEGER DEFAULT NULL REFERENCES fin_colaboradores(id),
+            fornecedor_id INTEGER DEFAULT NULL REFERENCES fin_fornecedores(id),
+            forma_pagamento TEXT DEFAULT '',
+            recorrente INTEGER DEFAULT 0,
+            recorrencia_intervalo TEXT DEFAULT '',
+            recorrencia_origem_id INTEGER DEFAULT NULL,
+            drive_file_id TEXT DEFAULT '',
+            arquivo_url TEXT DEFAULT '',
+            observacoes TEXT DEFAULT '',
+            origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas')),
+            asaas_payment_id TEXT DEFAULT NULL,
+            asaas_customer_id TEXT DEFAULT NULL,
+            created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_venda ON fin_lancamentos(venda_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_oportunidade ON fin_lancamentos(oportunidade_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status)");
+    $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS fin_asaas_clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asaas_id TEXT NOT NULL UNIQUE,
+            nome TEXT DEFAULT '',
+            cpf_cnpj TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            telefone TEXT DEFAULT '',
+            cliente_id INTEGER DEFAULT NULL REFERENCES clientes(id),
+            venda_id INTEGER DEFAULT NULL REFERENCES vendas(id),
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    echo "✅ módulo financeiro: fin_categorias/fin_fornecedores/fin_colaboradores/fin_lancamentos/fin_asaas_clientes prontas\n";
+} catch (Throwable $e) {
+    echo "❌ módulo financeiro (tabelas): {$e->getMessage()}\n";
+}
+
+// Categorias padrão do financeiro Fastcar — só insere as que ainda não
+// existem (por nome), mesmo padrão idempotente do JurídicoSaaS original.
+try {
+    $existentes = $db->query("SELECT nome FROM fin_categorias")->fetchAll(PDO::FETCH_COLUMN);
+    $padroesFin = [
+        ['Venda de veículo — entrada',        'receita', 'variavel', '🚗', 'receita'],
+        ['Venda de veículo — parcela',        'receita', 'variavel', '💳', 'receita'],
+        ['Venda de veículo — à vista',        'receita', 'variavel', '💵', 'receita'],
+        ['Outras receitas',                   'receita', 'variavel', '💰', 'receita'],
+        ['Compra de veículo (pagamento ao vendedor)', 'despesa', 'variavel', '🚙', 'operacional'],
+        ['Comissão de consultor/vendedor',    'despesa', 'variavel', '🤝', 'operacional'],
+        ['Manutenção/revisão de veículo',     'despesa', 'variavel', '🔧', 'operacional'],
+        ['Despachante/documentação',          'despesa', 'variavel', '📄', 'operacional'],
+        ['Combustível',                       'despesa', 'variavel', '⛽', 'operacional'],
+        ['Salários',                          'despesa', 'fixa',     '👥', 'pessoal'],
+        ['Pró-labore',                        'despesa', 'fixa',     '👔', 'pessoal'],
+        ['FGTS',                              'despesa', 'fixa',     '📄', 'pessoal'],
+        ['INSS',                              'despesa', 'fixa',     '📄', 'pessoal'],
+        ['Aluguel',                           'despesa', 'fixa',     '🏢', 'administrativas'],
+        ['Assinaturas de Software',           'despesa', 'fixa',     '💻', 'administrativas'],
+        ['Material de Escritório',            'despesa', 'variavel', '🖇️', 'administrativas'],
+        ['Impostos e Tributos',               'despesa', 'fixa',     '🧾', 'impostos_contabilidade'],
+        ['Contabilidade',                     'despesa', 'fixa',     '📊', 'impostos_contabilidade'],
+        ['Marketing',                         'despesa', 'variavel', '📣', 'marketing'],
+        ['Outras Despesas',                   'despesa', 'variavel', '📦', 'outras'],
+    ];
+    $ins = $db->prepare("INSERT INTO fin_categorias (nome, tipo, natureza_sugerida, icone, grupo_dre) VALUES (?,?,?,?,?)");
+    $novasInseridas = 0;
+    foreach ($padroesFin as $p) {
+        if (in_array($p[0], $existentes, true)) continue;
+        $ins->execute($p);
+        $novasInseridas++;
+    }
+    echo $novasInseridas > 0 ? "✅ {$novasInseridas} categoria(s) financeira(s) padrão nova(s) inserida(s)\n" : "⏭️  categorias financeiras padrão (já cadastradas)\n";
+} catch (Throwable $e) {
+    echo "❌ categorias financeiras padrão: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

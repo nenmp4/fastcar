@@ -13,11 +13,17 @@ require_once __DIR__ . '/../includes/usuarios.php';
 
 startSecureSession();
 
+/** vendedor→vendas, financeiro→financeiro — os dois perfis siloados (ver admin/_bootstrap.php) nunca caem no dashboard do funil de compra. */
+function paginaInicialPorPerfil(string $perfil): string {
+    return match ($perfil) {
+        'vendedor' => '/admin/vendas.php',
+        'financeiro' => '/admin/financeiro.php',
+        default => '/admin/index.php',
+    };
+}
+
 if (!empty($_SESSION['admin_id'])) {
-    // vendedor (17/09/2026) não tem acesso ao funil de compra — manda
-    // direto pro módulo de vendas (mesmo padrão de bounce evitado que o
-    // resto do login já fazia pra quem já está logado).
-    header('Location: ' . (($_SESSION['admin_perfil'] ?? '') === 'vendedor' ? '/admin/vendas.php' : '/admin/index.php'));
+    header('Location: ' . paginaInicialPorPerfil((string)($_SESSION['admin_perfil'] ?? '')));
     exit;
 }
 
@@ -34,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['admin_id']     = (int)$user['id'];
             $_SESSION['admin_nome']   = $user['nome'];
             $_SESSION['admin_perfil'] = $user['perfil'];
-            header('Location: ' . ($user['perfil'] === 'vendedor' ? '/admin/vendas.php' : '/admin/index.php'));
+            header('Location: ' . paginaInicialPorPerfil($user['perfil']));
             exit;
         }
         $erro = 'E-mail ou senha inválidos.';

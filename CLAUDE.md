@@ -2519,13 +2519,123 @@ segue no schema sem uso novo, não removida sem ganho real),
   `IA_QUALIFICACAO_PROMPT_SISTEMA`/`IA_EXTRACAO_PROMPT`
   (`includes/ia_qualificacao.php`) com padrão real em vez de achismo — fica
   "afiado" guiado por humano, não sozinho. Restrito ao super_admin.
+- **Módulo financeiro** — `includes/financeiro.php` + `admin/financeiro*.php`
+  (17/09/2026, "Lá no iab boutique tem modulo financeiro - precisamos copia
+  de la para colocar aqui criar perfil gestão financeira subir os
+  lançamentos", desbloqueando o item que estava explicitamente adiado na
+  "Segunda etapa" abaixo). Portado do repo irmão JurídicoSaaS
+  (`admin/financeiro-*.php` de lá), mas **nunca copy-paste direto** — mesmo
+  espírito já documentado pro WhatsApp Box ("portar o conceito, não o
+  arquivo... modelo de dado e regra de negócio diferentes demais"):
+  `fin_categorias`/`fin_fornecedores`/`fin_colaboradores`/`fin_lancamentos`
+  mantêm a estrutura base do original, mas `fin_lancamentos` ganhou
+  `oportunidade_id`/`venda_id` (liga o lançamento ao negócio de COMPRA ou de
+  VENDA/revenda que originou, sem duplicar dado dos dois módulos) e
+  `cliente_nome_manual` (texto livre, respondendo ao pedido de
+  acompanhamento "relacionamento de clientes pode ser manual" — comprador
+  de revenda não vira linha em `clientes`, e cobrança importada do Asaas
+  pode chegar sem nenhum match ainda; vínculo com `cliente_id`/`venda_id`/
+  `oportunidade_id` é **sempre** ação humana explícita, nunca a IA/sistema
+  decide sozinho — regra #3, mesmo espírito do widget de FIPE por placa que
+  nunca aplica o candidato "óbvio" sozinho). CRUD simples inline nas
+  próprias telas admin (mesmo padrão do original), lógica não-trivial
+  (cálculo de status, anexo, geração de plano de parcelamento) centralizada
+  em `includes/financeiro.php`. Anexo de comprovante vira `drive_file_id`/
+  `arquivo_url` (não uma URL pública do Drive tornada pública com
+  `makePublic()` como o original) — mesmo padrão Drive-preferido/
+  local-fallback + servido via proxy (`admin/ver_anexo_financeiro.php`) já
+  usado em todo o resto do Fastcar. **Escopo cortado de propósito**: sem
+  "ler comprovante com IA" (existia no original via Gemini multimodal, não
+  foi pedido aqui — evitar over-engineering sem pedido real, mesmo espírito
+  já documentado pro inbox de vendas).
+  **Perfil `financeiro`** novo (`usuarios.perfil`, mesma técnica de
+  reconstrução de CHECK das migrações `supervisor`/`vendedor`) —
+  `includes/security.php::podeAcessarFinanceiro()` restringe a
+  super_admin+financeiro (dado financeiro é mais sensível que vendas; o
+  pedido não incluiu supervisor acompanhando esse módulo dessa vez, decisão
+  assumida — sinalizar se a equipe quiser supervisor vendo depois). Siloed
+  em `admin/_bootstrap.php` (mesma técnica allowlist central do perfil
+  `vendedor`) — nunca acessa funil de compra/vendas/WhatsApp Box, redireciona
+  pra `admin/financeiro.php`; login também manda perfil `financeiro` direto
+  pra lá (`paginaInicialPorPerfil()`, `admin/login.php`, generalizada pra
+  cobrir os 2 perfis siloed — vendedor e financeiro — numa função só).
+  **Plano de parcelamento de venda** ("fastcar vende veicualo parcelado
+  entrada mais parcelamentos", pedido de acompanhamento no mesmo dia) —
+  card novo "💳 Financeiro — plano de parcelamento" em `admin/venda.php`,
+  só aparece com veículo já vinculado à negociação.
+  `finGerarPlanoParcelamentoVenda()` (`includes/financeiro.php`) gera a
+  entrada (`parcela_numero=0`, só se > 0) + N parcelas mensais
+  (vencimentos calculados sempre a partir da 1ª parcela, nunca composto
+  sobre a anterior, pra não desalinhar o dia do mês) — **local**, só
+  registrado no financeiro do CRM, sem cobrar de verdade. Nunca gera 2x pra
+  mesma venda (`finContarLancamentosVenda()` checado antes, recusa
+  explícita se já existir).
+  **Integração Asaas** (`includes/asaas.php`, pedido no mesmo dia: "vamos
+  integrar api do assas pra puxar tudo de lá" — já em uso de verdade pra
+  cobrar cliente de venda parcelada) — construída a partir da documentação
+  pública da API v3 (docs.asaas.com), **nunca confirmada contra uma
+  conta/credencial real** (mesma ressalva de todo provedor novo do
+  projeto — ver seção "A validar assim que subir em produção" abaixo).
+  `asaasImportarClientes()`/`asaasImportarCobrancas()` importam (dedup por
+  `asaas_payment_id`) o que já existe no Asaas pra `fin_asaas_clientes`/
+  `fin_lancamentos` (`origem='asaas'`); `api/asaas_webhook.php` (evento
+  `payment.*`, header `asaas-access-token` opcional contra
+  `config.asaas_webhook_token`) + `cron/asaas_sync.php` (polling de
+  fallback, mesmo padrão do `cron/zapsign_sync.php`) mantêm sincronizado
+  depois — webhook só ATUALIZA cobrança já importada antes, nunca cria uma
+  nova a partir do payload sozinho (evita confiar cegamente no que o
+  webhook manda, mesma disciplina do `zapsign_webhook.php`).
+  `asaasGerarCobrancaParceladaVenda()` cria a cobrança de verdade (POST
+  `/payments` com `installmentCount`, busca as demais parcelas do grupo via
+  `GET /payments?installment={id}`) quando o comprador já tem cliente Asaas
+  vinculado — o card de parcelamento em `admin/venda.php` escolhe
+  automaticamente entre Asaas (cobrança real, checkbox marcado por padrão
+  quando configurado) e local (só registro) conforme o Asaas estiver
+  configurado ou não, nunca bloqueia a operação por falta de credencial.
+  `admin/financeiro-asaas.php` (novo) — botões de importar clientes/
+  cobranças + tabela de clientes Asaas com vínculo manual a
+  `cliente_id`/`venda_id` do CRM (nunca automático, mesmo com nome batendo
+  óbvio) — vincular propaga o `cliente_id`/`venda_id` pra todos os
+  lançamentos já importados daquele cliente Asaas, sem precisar linkar
+  cobrança por cobrança. Card novo em `admin/configuracoes.php` (API key,
+  ambiente sandbox/produção, URL do webhook pra colar no painel Asaas,
+  teste de conexão).
+  Testado: migração rodada contra um banco simulando produção **antes**
+  dessa mudança (schema antigo restaurado via `git show HEAD`, confirmando
+  que a CHECK/tabelas realmente não existiam ainda), aplica tudo de uma vez,
+  idempotente numa 2ª rodada, usuário/dados existentes preservados; função
+  isolada (`finGerarPlanoParcelamentoVenda` com entrada+3 parcelas mensais
+  corretas e nunca duplicando; `asaasImportarClientes`/`Cobrancas` com dedup
+  e mapeamento de status contra servidor Asaas fake local simulando o
+  formato documentado, `asaasCriarClienteSeNecessario` +
+  `asaasGerarCobrancaParceladaVenda` criando as 3 parcelas reais, webhook
+  atualizando só cobrança já importada e ignorando uma desconhecida sem
+  criar nada); Playwright ponta a ponta (perfil `financeiro` cai direto em
+  `financeiro.php` no login e é bloqueado de qualquer tela de compra/vendas
+  mesmo digitando a URL direto; lançamento manual com `cliente_nome_manual`
+  aparece certo na listagem; parcelamento local gerado numa venda com
+  veículo vinculado mostra entrada+parcelas na tabela e não permite gerar
+  de novo).
+- **`admin/usuarios.php` permite criar/promover outro `super_admin`**
+  (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
+  **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
+  aqui, só o CLI `install/create_admin.php`, decisão de segurança de
+  propósito"), por pedido explícito, não por eu ter sugerido de volta. Só
+  quem já é super_admin acessa esta tela (`requireSuperAdmin()`), então
+  criar/promover outro continua restrito a quem já tem esse nível de
+  acesso — nunca um consultor/supervisor se auto-promovendo. Editar um
+  usuário que **já** é super_admin continua com o perfil travado nesta
+  tela (só criar/promover foi liberado, nunca rebaixar um existente por
+  aqui) — `install/create_admin.php` via CLI segue sendo o único jeito de
+  recuperar acesso se todos os super_admin ficarem bloqueados por engano.
+  Aviso visual (⚠️) quando "Super admin" está selecionado no formulário.
+  Testado via Playwright: opção aparece no seletor, criar um 2º super_admin
+  funciona e aparece na lista com o label certo.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
 Itens explicitamente adiados durante a conversa, pra não se perderem:
 
-- **Módulo financeiro** — relatórios financeiros, reaproveitando o módulo
-  financeiro do JurídicoSaaS
 - **2FA no login do admin** — reaproveitando o padrão do JurídicoSaaS
 - **Verificação de documentos por IA** (OCR/conferência automática do que o
   cliente subiu contra o que foi digitado) — depende de decidir o provedor
@@ -2824,6 +2934,26 @@ Este ambiente de dev bloqueia acesso externo (só libera alguns hosts tipo
 GitHub/npm), então o que segue foi construído seguindo documentação e
 testado com servidor fake local — nunca contra o serviço real:
 
+- **API Asaas** (`includes/asaas.php`, `api/asaas_webhook.php`,
+  `cron/asaas_sync.php`, 17/09/2026) — construída a partir da documentação
+  pública da API v3 (docs.asaas.com), nunca confirmada contra uma
+  conta/credencial real. Pontos específicos a confirmar quando a chave
+  chegar: (1) nome exato do header de autenticação (`access_token` —
+  documentado, mas nunca testado contra o serviço real); (2) nomes de campo
+  no payload de `/payments` — `installmentNumber`/`installmentCount`
+  (número/total da parcela) e `billingType`/`status` nunca confirmados
+  contra uma resposta real, só contra servidor fake local modelado na doc;
+  (3) header `asaas-access-token` do webhook (nome documentado como padrão
+  de autenticação de webhook do Asaas, nunca visto num envio real); (4)
+  fluxo de `POST /payments` com `installmentCount>1` — a doc descreve que a
+  resposta traz a 1ª parcela com um id de grupo no campo `installment`, e
+  que `GET /payments?installment={id}` lista as demais; nunca confirmado
+  contra a API de verdade, só simulado no fake server local
+  (`asaasGerarCobrancaParceladaVenda()`, `includes/asaas.php`). Cadastro do
+  webhook em si precisa ser feito manualmente no painel Asaas → Integrações
+  → Webhooks, apontando pra `https://fastcar.solutions/api/asaas_webhook.php`
+  (mesmo padrão de toda outra integração do projeto — nunca auto-registra
+  webhook via código).
 - **Instância Z-API dedicada de vendas** (17/09/2026,
   `includes/zapi_instancias.php`/`whatsapp_config.php`/`mensagens_vendas.php`)
   — reaproveita o MESMO mecanismo de webhook/envio já confirmado em

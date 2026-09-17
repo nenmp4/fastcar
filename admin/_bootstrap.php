@@ -32,6 +32,8 @@ require_once __DIR__ . '/../includes/contratos.php';
 require_once __DIR__ . '/../includes/pendencias_pos_venda.php';
 require_once __DIR__ . '/../includes/mail.php';
 require_once __DIR__ . '/../includes/email_templates.php';
+require_once __DIR__ . '/../includes/financeiro.php';
+require_once __DIR__ . '/../includes/asaas.php';
 
 requireAdmin();
 
@@ -44,6 +46,22 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php', 'logout.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
+        exit;
+    }
+}
+
+// 17/09/2026 — perfil `financeiro` (módulo financeiro, "criar perfil
+// gestão financeira") nunca acessa funil de compra/vendas/WhatsApp — mesma
+// técnica de allowlist central do guard do `vendedor` acima.
+if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
+    $paginaAtualFin = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $permitidasFin = [
+        'financeiro.php', 'financeiro-lancamentos.php', 'financeiro-categorias.php',
+        'financeiro-fornecedores.php', 'financeiro-colaboradores.php', 'financeiro-asaas.php',
+        'ver_anexo_financeiro.php', 'logout.php',
+    ];
+    if (!in_array($paginaAtualFin, $permitidasFin, true)) {
+        header('Location: /admin/financeiro.php');
         exit;
     }
 }

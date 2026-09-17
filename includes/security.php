@@ -107,6 +107,24 @@ function requireAcessoVendas(): void {
 }
 
 /**
+ * Quem pode acessar o módulo FINANCEIRO (17/09/2026, perfil `financeiro`
+ * novo — "criar perfil gestão financeira"). Diferente de podeAcessarVendas():
+ * dado financeiro é mais sensível (valores pagos a vendedor de veículo,
+ * cobrança de cliente) e o pedido não incluiu supervisor acompanhando esse
+ * módulo — só super_admin (sempre vê tudo) e o próprio perfil `financeiro`.
+ */
+function podeAcessarFinanceiro(): bool {
+    return in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'financeiro'], true);
+}
+
+function requireAcessoFinanceiro(): void {
+    if (!podeAcessarFinanceiro()) {
+        http_response_code(403);
+        exit('Acesso restrito ao módulo financeiro.');
+    }
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra
