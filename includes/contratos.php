@@ -117,6 +117,62 @@ function verificarCamposObrigatoriosContrato(array $campos): array {
 }
 
 /**
+ * Gera o PDF do contrato de compra SÓ PRA VISUALIZAR — pedido direto
+ * (17/09/2026, "gerar contrato manual só para visualizar antes de enviar
+ * para cliente... conferir antes os dados"): antes disso o único botão
+ * ("Gerar contrato e enviar pra assinatura") já disparava a ZapSign na
+ * hora, sem nenhum jeito de conferir os dados mesclados (nome, veículo,
+ * valores, cláusulas) antes do cliente já ter recebido o link de
+ * assinatura de verdade. Nunca chama a ZapSign, nunca manda e-mail —
+ * só gera o PDF, salva uma cópia (mesmo destino Drive/local de sempre)
+ * e registra em `contratos` com `status='gerado'` (o schema/UI já
+ * previam esse status — badge "📄 gerado" já existia em
+ * admin/oportunidade.php, só faltava um jeito de chegar nele). Gerar de
+ * novo depois de corrigir algo na oportunidade cria uma NOVA linha (não
+ * sobrescreve a anterior) — mesmo espírito de nunca perder histórico do
+ * resto do projeto; o botão de enviar pra assinatura continua
+ * independente, gera a própria cópia final na hora de enviar de verdade.
+ * Mesma validação de campos obrigatórios de `gerarEEnviarContratoCompra()`
+ * (regra: nunca gerar contrato faltando dado essencial da cláusula 27.2).
+ */
+function gerarContratoCompraPreview(int $oportunidadeId, ?int $usuarioId): array {
+    $campos = montarCamposContratoCompra($oportunidadeId);
+    if (!$campos) return ['ok' => false, 'erro' => 'Oportunidade não encontrada.'];
+
+    $faltando = verificarCamposObrigatoriosContrato($campos);
+    if ($faltando) {
+        return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
+    }
+
+    $avisos = [];
+    if ($campos['percentual_fipe'] > 25) {
+        $avisos[] = "Percentual pago ({$campos['percentual_fipe']}%) excede o limite contratual de 25% da FIPE.";
+    }
+    $aviso = $avisos ? implode(' ', $avisos) : null;
+
+    $pdfPath = gerarPdfContratoCompra($campos);
+    $nomeDoc = 'Contrato de Compra (rascunho) - ' . ($campos['vendedor_nome'] ?: "Oportunidade #{$oportunidadeId}");
+
+    $nomeArquivoCopia = 'contrato_compra_preview_' . $oportunidadeId . '_' . time() . '.pdf';
+    $copia = salvarArquivoGeradoComoDocumento(
+        $campos['_cliente_id'], $campos['vendedor_nome'], $pdfPath, $nomeArquivoCopia,
+        'application/pdf', 'contratos/' . $oportunidadeId
+    );
+    @unlink($pdfPath);
+
+    $db = getDB();
+    $db->prepare("
+        INSERT INTO contratos
+            (oportunidade_id, tipo, nome, campos_json, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, 'compra', ?, ?, 'gerado', ?, ?, ?)
+    ")->execute([
+        $oportunidadeId, $nomeDoc, json_encode($campos), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
+    ]);
+
+    return ['ok' => true, 'contrato_id' => (int)$db->lastInsertId(), 'aviso' => $aviso];
+}
+
+/**
  * Gera o PDF, sobe pra assinatura eletrônica e registra em `contratos`.
  * Retorna ['ok'=>bool, 'erro'=>?string, 'contrato_id'=>?int, 'sign_url'=>?string, 'aviso'=>?string].
  */

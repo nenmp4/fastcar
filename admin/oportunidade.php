@@ -101,6 +101,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $erro = $resultadoContrato['erro'];
                 }
+            } elseif ($acao === 'gerar_contrato_preview') {
+                $resultadoContrato = gerarContratoCompraPreview($id, (int)$_SESSION['admin_id']);
+                if ($resultadoContrato['ok']) {
+                    $sucesso = 'Rascunho do contrato gerado — confira os dados antes de enviar pra assinatura.'
+                        . ($resultadoContrato['aviso'] ? ' ⚠️ ' . $resultadoContrato['aviso'] : '');
+                } else {
+                    $erro = $resultadoContrato['erro'];
+                }
             } elseif ($acao === 'atualizar_proxima_acao') {
                 $db->prepare("
                     UPDATE oportunidades
@@ -454,11 +462,19 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
 
     <hr>
-    <form method="post" onsubmit="return confirm('Gerar o contrato e enviar pra assinatura eletrônica?');">
+    <form method="post" style="display:inline-block;margin-right:8px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="gerar_contrato_preview">
+        <button type="submit" class="secundario">👁️ Gerar contrato (só visualizar)</button>
+    </form>
+    <form method="post" style="display:inline-block" onsubmit="return confirm('Gerar o contrato e enviar pra assinatura eletrônica?');">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="gerar_contrato">
         <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>
     </form>
+    <p><small>Confere os dados mesclados no PDF (nome, veículo, valores, cláusulas) antes de mandar pro
+       cliente — "👁️ Gerar contrato" salva um rascunho só pra você ver, sem disparar assinatura nem
+       avisar o cliente. Quando estiver tudo certo, use "📄 ... e enviar pra assinatura".</small></p>
 
     <?php if ($contratos): ?>
         <table class="tabela-oportunidades" style="margin-top:12px">

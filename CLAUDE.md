@@ -1363,6 +1363,31 @@ segue no schema sem uso novo, não removida sem ganho real),
   a troca de provedor: sem esse retry, um contrato já `assinado` sem cópia
   salva (download falhou 1x) ficava pra sempre sem nenhuma versão
   visualizável, porque o status já bater impedia qualquer tentativa nova.
+  **Gerar só pra visualizar, sem enviar pra assinatura** (17/09/2026,
+  "gerar contrato manual só para visualizar antes de enviar para
+  cliente... conferir antes os dados"): até então o único botão ("Gerar
+  contrato e enviar pra assinatura") já disparava a ZapSign na hora —
+  sem nenhum jeito de conferir os dados mesclados (nome, veículo,
+  valores, cláusulas) antes do cliente já ter recebido o link de
+  assinatura de verdade. `gerarContratoCompraPreview()` (novo,
+  `includes/contratos.php`) gera o PDF e salva a cópia (mesmo destino
+  Drive/local de sempre) igual à função de envio, mas **nunca chama a
+  ZapSign nem manda e-mail** — grava em `contratos` com `status='gerado'`
+  (o schema já previa esse status desde o início, `CHECK (status IN
+  ('gerado', 'enviado', ...))`, e a UI já sabia desenhar o badge "📄
+  gerado" — só faltava um jeito de chegar nele). Botão novo "👁️ Gerar
+  contrato (só visualizar)" ao lado do botão de envio em
+  `admin/oportunidade.php`, mesma validação de campos obrigatórios da
+  cláusula 27.2. Gerar de novo (ex: depois de corrigir um dado) cria uma
+  **nova linha**, nunca sobrescreve a anterior — mesmo espírito de nunca
+  perder histórico do resto do projeto; o botão de envio continua
+  totalmente independente, gera sua própria cópia final na hora de
+  mandar de verdade. Testado em banco isolado: preview funciona mesmo
+  sem nenhuma credencial ZapSign configurada (prova que o caminho não
+  depende dela pra nada), `zapsign_doc_token`/`zapsign_signer_token`/
+  `sign_url` ficam vazios (nunca chamou a ZapSign), `status='gerado'`
+  (nunca `'enviado'`), gerar 2x cria 2 linhas distintas, e campo
+  obrigatório faltando bloqueia igual ao fluxo de envio.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em
