@@ -9,6 +9,22 @@
 
 define('DB_PATH', dirname(__DIR__) . '/database/fastcar.db');
 
+// Garante um error_log que o próprio app controla e consegue ler de volta
+// (admin/saude.php, seção "Erros recentes") — sem isso, o check depende de
+// php.ini/pool do PHP-FPM da VPS já vir com error_log configurado, o que
+// não é garantido (achado real: "Info — error_log do PHP não
+// configurado/legível" em produção mesmo com o sistema funcionando normal).
+// ini_set() só tem efeito quando error_log não está travado por
+// php_admin_value no pool do PHP-FPM (hosting gerenciado costuma travar) —
+// se estiver travado, essa chamada não faz nada e o check em saude.php
+// continua refletindo o error_log real da VPS, nunca conflita com ele.
+// Mesmo padrão de storage/logs/*.log usado no resto do projeto (webhook,
+// deploy, mídia do WhatsApp etc).
+$errorLogDir = dirname(__DIR__) . '/storage/logs';
+if (!is_dir($errorLogDir)) @mkdir($errorLogDir, 0755, true);
+ini_set('log_errors', '1');
+ini_set('error_log', $errorLogDir . '/php_errors.log');
+
 function getDB(): PDO {
     static $db = null;
     if ($db === null) {

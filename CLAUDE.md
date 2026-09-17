@@ -1908,6 +1908,31 @@ segue no schema sem uso novo, não removida sem ganho real),
   corretamente os 2 modelos aposentados (`gemini-2.5-flash-lite`,
   `gemini-2.5-flash`), string vazia e o próprio modelo padrão já válido,
   batendo exatamente o cenário real visto em produção.
+  **"Erros recentes" sempre em "ℹ️ Info — error_log do PHP não configurado/
+  legível"** (17/09/2026, achado direto por screenshot do card de Saúde) —
+  o check (`admin/saude.php`) lê `ini_get('error_log')` e só consegue ler o
+  arquivo se a VPS/pool do PHP-FPM já vier com essa diretiva configurada de
+  fora — nunca foi, então o check sempre caía no caminho "info" (nem chega
+  a ler nada, não é bug de lógica do check em si). Corrigido na raiz, não
+  no check: `includes/db.php` (carregado por praticamente toda entrada do
+  sistema — admin, webhook do WhatsApp, crons, wizard público) passou a
+  chamar `ini_set('log_errors', '1')` +
+  `ini_set('error_log', storage/logs/php_errors.log)` logo no topo, mesmo
+  padrão `storage/logs/*.log` já usado em todo canto do projeto (debug de
+  mídia/contato do WhatsApp, deploy, limpeza de leads). Como `error_log` só
+  pode ser travado via `php_admin_value` no pool do PHP-FPM (escopo
+  `PHP_INI_SYSTEM`), esse `ini_set()` nunca conflita com uma config real da
+  VPS: se o hosting já trava o valor, a chamada simplesmente não tem efeito
+  e o check continua mostrando o error_log de verdade da VPS; sem trava
+  nenhuma (o caso daqui, confirmado pelo "não configurado" do screenshot),
+  garante um log que o próprio app sempre controla e consegue reler.
+  Testado em banco isolado: logo após `require db.php`,
+  `ini_get('error_log')` aponta pro arquivo em `storage/logs/`,
+  `trigger_error()` de teste grava nele de verdade; escrita manual de uma
+  linha `Fatal error`/`Uncaught Error` simulando um erro real é
+  corretamente filtrada pela mesma lógica de `admin/saude.php` (contração
+  por `str_contains`), confirmando que o check passaria a mostrar
+  "⚠️ N encontrado(s)" em vez de ficar preso no "ℹ️ Info" pra sempre.
 - **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
   (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
   afiado"): cruza o que a IA decidiu na qualificação com o resultado real
