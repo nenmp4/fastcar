@@ -1388,6 +1388,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   `sign_url` ficam vazios (nunca chamou a ZapSign), `status='gerado'`
   (nunca `'enviado'`), gerar 2x cria 2 linhas distintas, e campo
   obrigatório faltando bloqueia igual ao fluxo de envio.
+  **Saldo do financiamento calculado automático** (17/09/2026, "pode
+  calcular saldo do financiamento automático ao preencher o valor da
+  parcela"): ao digitar `valor_parcela`/`parcelas_restantes` no card
+  "Dados do veículo", `saldo_financiamento_atual` (card "Financiamento e
+  contrato de compra", campo que alimenta o Quadro-Resumo) se preenche
+  sozinho com o produto dos dois — estimativa simples, nunca exata (não
+  desconta juros/amortização), por isso sempre editável: digitar algo
+  diferente direto no campo de saldo faz o cálculo automático parar de
+  mexer nele dali em diante (mesma regra de "sistema nunca sobrescreve o
+  que já foi confirmado por humano" do resto da tela), mostrando/escondendo
+  uma dica "🧮 calculado automaticamente... edite se for diferente"
+  conforme o caso. Detecção de edição manual usa o evento nativo `input`
+  do navegador — só dispara em digitação de verdade, nunca em reassignment
+  via JS `.value=` — sem precisar de nenhuma flag extra além disso; uma
+  oportunidade que já chega com saldo salvo nunca é sobrescrita, nem no
+  carregamento nem editando a parcela depois. **Bug real achado no próprio
+  teste Playwright, antes de qualquer commit**: a calculadora nova tinha
+  sido inserida no fim do `<script>` existente sem perceber que ele inteiro
+  está dentro de `<?php if (getConfig('placafipe_token')): ?>` (o mesmo
+  bloco que só desenha o widget de busca de FIPE por placa) — sem token do
+  PlacaFIPE configurado, o `<script>` inteiro simplesmente não era incluído
+  na página e o cálculo de saldo não rodava, apesar de não ter nada a ver
+  com FIPE (exatamente o ambiente de teste isolado, sem token nenhum
+  configurado, que expôs o problema). Corrigido movendo a calculadora pra
+  um `<script>` próprio, sempre renderizado, fora do `if`. Testado em banco
+  isolado com Playwright: oportunidade sem saldo prévio (parcela=800,
+  parcelas=10) calcula e mostra 8000.00 com a dica visível; editar o campo
+  de saldo manualmente (12345.67) esconde a dica e uma nova mudança na
+  parcela (999) não recalcula mais, mantendo o valor digitado; oportunidade
+  já com saldo salvo (9999.99) carrega esse valor certo e permanece
+  intocado mesmo editando a parcela depois.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

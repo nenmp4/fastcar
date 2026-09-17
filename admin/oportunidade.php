@@ -390,9 +390,9 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <label>Banco do financiamento</label>
                 <input type="text" name="banco_financiamento" value="<?= e($op['banco_financiamento'] ?? '') ?>">
                 <label>Valor da parcela (R$)</label>
-                <input type="number" step="0.01" name="valor_parcela" value="<?= e((string)($op['valor_parcela'] ?? '')) ?>">
+                <input type="number" step="0.01" name="valor_parcela" id="valor_parcela" value="<?= e((string)($op['valor_parcela'] ?? '')) ?>">
                 <label>Parcelas restantes</label>
-                <input type="number" name="parcelas_restantes" value="<?= e((string)($op['parcelas_restantes'] ?? '')) ?>">
+                <input type="number" name="parcelas_restantes" id="parcelas_restantes" value="<?= e((string)($op['parcelas_restantes'] ?? '')) ?>">
                 <label>Parcelas em atraso</label>
                 <input type="number" name="parcelas_atraso" value="<?= e((string)($op['parcelas_atraso'] ?? 0)) ?>">
                 <label>Valor pretendido pelo cliente (R$)</label>
@@ -434,7 +434,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <label>Nº do contrato de financiamento</label>
                 <input type="text" name="contrato_financiamento_numero" value="<?= e($op['contrato_financiamento_numero'] ?? '') ?>">
                 <label>Saldo do financiamento atual (R$)</label>
-                <input type="number" step="0.01" name="saldo_financiamento_atual" value="<?= e((string)($op['saldo_financiamento_atual'] ?? '')) ?>">
+                <input type="number" step="0.01" name="saldo_financiamento_atual" id="saldo_financiamento_atual" value="<?= e((string)($op['saldo_financiamento_atual'] ?? '')) ?>">
+                <small id="saldo-auto-hint" style="display:none;color:var(--texto-fraco)">🧮 calculado automaticamente (parcela × parcelas restantes) — edite se for diferente</small>
             </div>
             <div>
                 <label>Terceiro indicado pra quitação</label>
@@ -826,6 +827,50 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 })();
 </script>
 <?php endif; ?>
+
+<script>
+(function () {
+    // Saldo do financiamento calculado automático (17/09/2026, "pode
+    // calcular saldo do financiamento automático ao preencher o valor da
+    // parcela") — estimativa simples (parcela × parcelas restantes), nunca
+    // exata (não desconta juros/amortização), por isso sempre editável:
+    // se o consultor digitar algo diferente direto no campo de saldo, o
+    // cálculo automático para de mexer nele a partir daí (mesmo espírito
+    // de "sistema nunca sobrescreve o que já foi confirmado por humano" do
+    // resto da tela) — reassignment via JS (.value=) nunca dispara o
+    // evento "input" do navegador, só digitação de verdade, então dá pra
+    // distinguir os dois casos sem precisar de flag extra além dessa.
+    // Fora do bloco condicional do PlacaFIPE de propósito (bug real achado
+    // testando: essa calculadora não depende de FIPE nenhum, mas tinha
+    // ficado presa dentro do mesmo <?php if (getConfig('placafipe_token')) ?>
+    // do widget de busca por placa — sem o token configurado, o script
+    // inteiro nunca era incluído na página e o cálculo simplesmente não
+    // rodava, nada a ver com falta de configuração de FIPE).
+    var campoParcela = document.getElementById('valor_parcela');
+    var campoParcelasRestantes = document.getElementById('parcelas_restantes');
+    var campoSaldo = document.getElementById('saldo_financiamento_atual');
+    var dicaSaldo = document.getElementById('saldo-auto-hint');
+    if (!campoParcela || !campoParcelasRestantes || !campoSaldo) return;
+
+    var editadoManualmente = campoSaldo.value !== '';
+
+    function recalcular() {
+        if (editadoManualmente) return;
+        var parcela = parseFloat(campoParcela.value);
+        var parcelas = parseInt(campoParcelasRestantes.value, 10);
+        if (!(parcela > 0) || !(parcelas > 0)) return;
+        campoSaldo.value = (parcela * parcelas).toFixed(2);
+        if (dicaSaldo) dicaSaldo.style.display = 'block';
+    }
+
+    campoParcela.addEventListener('input', recalcular);
+    campoParcelasRestantes.addEventListener('input', recalcular);
+    campoSaldo.addEventListener('input', function () {
+        editadoManualmente = true;
+        if (dicaSaldo) dicaSaldo.style.display = 'none';
+    });
+})();
+</script>
 
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
