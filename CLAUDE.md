@@ -2726,6 +2726,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   gravado, falha de conexão real com erro do curl capturado) + Playwright
   ponta a ponta confirmando mensagem específica na tela por tipo de erro
   e que o caminho de sucesso continua funcionando com o header novo.
+  **Cadastro explícito de fornecedor sem CNPJ (estrangeiro)** (mesmo dia,
+  "cadastrar fornecedores que naó tem cnpj no brasil tipo antropic e
+  utros") — CNPJ/CPF já era opcional no servidor (só `nome` é obrigatório
+  pra salvar em `fin_fornecedores`), mas nada na tela deixava isso óbvio:
+  o campo vinha logo no topo, com placeholder em formato brasileiro e o
+  botão "Buscar na Receita" do lado, dando a impressão de obrigatório.
+  Checkbox novo "🌎 Fornecedor estrangeiro / sem CNPJ no Brasil (ex:
+  Anthropic e outros)" — marcar esconde o bloco inteiro do CNPJ (campo +
+  botão de busca) e limpa qualquer valor digitado antes, pra nunca
+  submeter resto de digitação por engano; editar um fornecedor já salvo
+  sem CNPJ (`cnpj_cpf` vazio) já abre com o checkbox marcado e o campo
+  escondido sozinho; desmarcar reabre o campo pra quem quiser voltar e
+  preencher um CNPJ depois. Nenhuma mudança de schema — só clareza de UI
+  em cima de uma regra que já existia. Listagem ganhou o rótulo "🌎
+  estrangeiro/sem CNPJ" (em vez de célula em branco) na coluna CNPJ/CPF.
+  Testado com Playwright ponta a ponta: campo visível por padrão num
+  cadastro novo; marcar o checkbox esconde e limpa o campo; cadastrar a
+  Anthropic sem CNPJ funciona e aparece certa na listagem com o rótulo
+  novo; reabrir pra editar já vem com o checkbox marcado e o campo
+  escondido; desmarcar reabre o campo.
   **Colaboradores — puxar direto de um usuário do sistema** (mesmo dia,
   "nos colaboradores permita puxar do sistema adicionar manuall") — card
   novo "🔗 Adicionar a partir de um usuário do sistema" em

@@ -72,12 +72,15 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
     <?= csrfField() ?>
     <input type="hidden" name="acao" value="salvar">
     <input type="hidden" name="id" value="<?= (int)($editando['id'] ?? 0) ?>">
-    <label>CNPJ/CPF</label>
-    <div style="display:flex;gap:.5rem;align-items:center">
-        <input type="text" name="cnpj_cpf" id="forn-cnpj" value="<?= e($editando['cnpj_cpf'] ?? '') ?>" placeholder="00.000.000/0000-00" style="flex:1">
-        <button type="button" id="forn-cnpj-btn" onclick="buscarCnpjFornecedor()">🔎 Buscar na Receita</button>
+    <label><input type="checkbox" id="forn-sem-cnpj" style="width:auto;display:inline-block" onchange="alternarCnpjFornecedor()"> 🌎 Fornecedor estrangeiro / sem CNPJ no Brasil (ex: Anthropic e outros)</label>
+    <div id="forn-cnpj-bloco">
+        <label>CNPJ/CPF (opcional)</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+            <input type="text" name="cnpj_cpf" id="forn-cnpj" value="<?= e($editando['cnpj_cpf'] ?? '') ?>" placeholder="00.000.000/0000-00 — deixe em branco se não tiver" style="flex:1">
+            <button type="button" id="forn-cnpj-btn" onclick="buscarCnpjFornecedor()">🔎 Buscar na Receita</button>
+        </div>
+        <p id="forn-cnpj-status" style="font-size:.8rem;color:var(--muted);margin:.3rem 0 0"></p>
     </div>
-    <p id="forn-cnpj-status" style="font-size:.8rem;color:var(--muted);margin:.3rem 0 0"></p>
     <label>Nome</label>
     <input type="text" name="nome" id="forn-nome" required value="<?= e($editando['nome'] ?? '') ?>">
     <label>Contato</label>
@@ -90,6 +93,32 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
 </div>
 
 <script>
+// Toggle "fornecedor estrangeiro / sem CNPJ" (18/09/2026, pedido
+// José/Jean: "cadastrar fornecedores que naó tem cnpj no brasil tipo
+// antropic e utros") — CNPJ/CPF já era opcional no servidor (só "nome" é
+// obrigatório pra salvar), mas nada na tela deixava isso óbvio: o campo
+// vinha logo no topo, com placeholder em formato brasileiro e um botão de
+// busca do lado, dando a impressão de que era obrigatório. Marcar esse
+// checkbox esconde o campo de CNPJ (e limpa o valor, pra nunca submeter
+// um resto de digitação antiga por engano) — nada novo no banco, só
+// deixa claro na UI que dá pra cadastrar sem CNPJ nenhum.
+function alternarCnpjFornecedor() {
+    var marcado = document.getElementById('forn-sem-cnpj').checked;
+    var bloco = document.getElementById('forn-cnpj-bloco');
+    var input = document.getElementById('forn-cnpj');
+    bloco.style.display = marcado ? 'none' : '';
+    if (marcado) input.value = '';
+}
+document.addEventListener('DOMContentLoaded', function () {
+    // Editando um fornecedor que já não tem CNPJ salvo — parte com o
+    // checkbox já marcado e o campo já escondido, sem precisar clicar.
+    var input = document.getElementById('forn-cnpj');
+    var checkbox = document.getElementById('forn-sem-cnpj');
+    <?php if ($editando): ?>
+    if (!input.value) { checkbox.checked = true; alternarCnpjFornecedor(); }
+    <?php endif; ?>
+});
+
 // Busca CNPJ na Receita (via BrasilAPI, includes/cnpj.php) e preenche
 // nome/contato/observações fill-if-empty — pedido José/Jean: "no modulo
 // financeiro em foncedores coloca api do cnpj para puxa da receita".
@@ -144,7 +173,7 @@ function buscarCnpjFornecedor() {
     <?php foreach ($fornecedores as $f): ?>
       <tr>
         <td><?= e($f['nome']) ?></td>
-        <td><?= e($f['cnpj_cpf']) ?></td>
+        <td><?= $f['cnpj_cpf'] ? e($f['cnpj_cpf']) : '<span style="color:var(--muted)">🌎 estrangeiro/sem CNPJ</span>' ?></td>
         <td><?= e($f['contato']) ?></td>
         <td><?= $f['status'] === 'ativo' ? '<span class="badge badge-ok">✅ ativo</span>' : '<span class="badge">⛔ inativo</span>' ?></td>
         <td style="white-space:nowrap">
