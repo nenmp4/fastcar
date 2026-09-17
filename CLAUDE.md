@@ -1793,6 +1793,43 @@ segue no schema sem uso novo, não removida sem ganho real),
   já existentes com `obrigatorio=1`, como estava antes dessa mudança) fica
   bloqueada ANTES da migração e libera certo DEPOIS, rodando a migração
   2x sem efeito colateral (idempotente).
+  **"Confirmar em nome do cliente" (17/09/2026, achado real de operação —
+  José: "tem cliente tem dificuldade de preencher o wirzad - proprio
+  consultor sobe os documentos ja da aceite... maioria das vezes consultor
+  sobe a documentação")**: na prática, boa parte dos clientes não consegue/
+  não usa o wizard — o consultor recebe a foto do documento no WhatsApp
+  pessoal dele e anexa direto pela tela (`admin/oportunidade.php`, ação
+  `upload_documento_staff`, já existia). Só que `dados_confirmados` (o
+  campo que tira o alarme "📝 enviado, aguardando cliente confirmar dados")
+  só era gravado pelo PRÓPRIO wizard (`public/documentos.php::confirmar_etapa`),
+  então um documento anexado pelo consultor ficava preso NESSE alarme
+  pra sempre — mesmo já revisado de verdade — porque o cliente nunca ia
+  abrir o link. Confirmado ANTES de implementar que isso não bloqueava o
+  fechamento de verdade (`checklistFechamentoCompleto()`,
+  `includes/oportunidades.php`, só olha se o arquivo existe, nunca
+  `dados_confirmados`), só deixava a tela com um aviso permanente e
+  enganoso. Nova ação `confirmar_documento_staff` (mesmo arquivo) — botão
+  "✅ Confirmar em nome do cliente" ao lado do alarme, só quando o
+  documento já tem arquivo e ainda não foi confirmado; grava
+  `dados_confirmados=1` pro tipo escolhido, e se essa era a ÚLTIMA
+  pendência entre os 4 tipos do cliente, também grava
+  `oportunidades.documentos_confirmados_em` (mesmo sinal "tudo revisado"
+  que o wizard grava ao finalizar) — mesma disciplina de "não marcar
+  concluído cedo demais" do resto do checklist. Nunca reescreve
+  marca/modelo/banco/etc sozinho — esses campos já são editáveis direto
+  pelos cards "Dados do veículo"/"Financiamento" desta mesma tela (o
+  consultor corrige lá, essa ação só marca "já revisei, tá certo").
+  Banner "✅ Cliente confirmou os dados..." reescrito pra "✅ Dados e
+  documentos confirmados... (pelo cliente via wizard, ou pela equipe em
+  nome dele quando ele não conseguiu usar o link)" — honestidade sobre
+  quem confirmou de fato, já que agora pode ser qualquer um dos dois.
+  Mesma trava de supervisor (só acompanha) do resto da tela. Testado em
+  banco isolado + Playwright: documento anexado pelo consultor (`enviado_pelo_cliente=0`)
+  mostra o botão novo; clicar confirma e o alarme some; banner de "tudo
+  confirmado" só aparece depois que os 4 tipos do cliente estão
+  confirmados (testado a query isoladamente com os outros 3 já
+  confirmados — 0 pendentes, dispararia a gravação de
+  `documentos_confirmados_em`).
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real

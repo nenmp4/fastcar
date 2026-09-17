@@ -195,6 +195,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $erro = $resultado['erro'] ?? 'Falha ao anexar documento.';
                     }
                 }
+            } elseif ($acao === 'confirmar_documento_staff') {
+                // "Aceite em nome do cliente" (17/09/2026, achado real —
+                // José: "tem cliente tem dificuldade de preencher o
+                // wirzad - proprio consultor sobe os documentos ja da
+                // aceite... maioria das vezes consultor sobe a
+                // documentação"): quando o cliente não consegue/não usa o
+                // wizard, o documento fica preso pra sempre em "📝 enviado,
+                // aguardando cliente confirmar dados" — só o wizard
+                // (public/documentos.php::confirmar_etapa) escrevia
+                // dados_confirmados=1, e só o CLIENTE tinha acesso a essa
+                // ação. Isso nunca bloqueava o fechamento de verdade
+                // (checklistFechamentoCompleto() só olha se o arquivo
+                // existe, não dados_confirmados — conferido antes de
+                // implementar), mas deixava a tela mostrando um alarme
+                // permanente e enganoso pra um documento que o consultor já
+                // conferiu de verdade lendo a foto que o cliente mandou no
+                // WhatsApp. Os DADOS extraídos (marca/modelo/banco/etc) já
+                // são editáveis direto pelos cards "Dados do veículo"/
+                // "Financiamento" desta mesma tela — esta ação só marca
+                // "revisei, tá certo", nunca reescreve nenhum campo sozinha.
+                $tipoDocConfirmar = (string)($_POST['tipo_documento'] ?? '');
+                if (!isset(TIPOS_DOCUMENTOS_CLIENTE[$tipoDocConfirmar])) {
+                    $erro = 'Tipo de documento inválido.';
+                } else {
+                    $db->prepare("
+                        UPDATE oportunidade_documentos SET dados_confirmados = 1, updated_at = datetime('now','localtime')
+                        WHERE oportunidade_id = ? AND tipo = ?
+                    ")->execute([$id, $tipoDocConfirmar]);
+
+                    // Mesmo sinal "tudo revisado" que o wizard grava ao
+                    // finalizar (confirmar_final) — só quando TODOS os tipos
+                    // de documento do cliente já estão com dados_confirmados=1,
+                    // pra não marcar concluído cedo demais.
+                    $tiposCliente = array_keys(TIPOS_DOCUMENTOS_CLIENTE);
+                    $ph = implode(',', array_fill(0, count($tiposCliente), '?'));
+                    $stmtPendentes = $db->prepare("
+                        SELECT COUNT(*) FROM oportunidade_documentos
+                        WHERE oportunidade_id = ? AND tipo IN ({$ph}) AND dados_confirmados = 0
+                    ");
+                    $stmtPendentes->execute([$id, ...$tiposCliente]);
+                    if ((int)$stmtPendentes->fetchColumn() === 0) {
+                        $db->prepare("UPDATE oportunidades SET documentos_confirmados_em = datetime('now','localtime') WHERE id = ?")->execute([$id]);
+                    }
+
+                    $sucesso = 'Documento confirmado em nome do cliente.';
+                }
             } elseif ($acao === 'atualizar_nome_cliente') {
                 $novoNome = trim((string)($_POST['nome_cliente'] ?? ''));
                 if ($novoNome === '') {
@@ -526,7 +572,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
     <?php if ($op['documentos_confirmados_em']): ?>
         <div class="alerta-sucesso" style="padding:8px 12px;border-radius:6px;background:#e3f3e6;color:#2a7a3b;margin-bottom:10px">
-            ✅ Cliente confirmou os dados e documentos em <?= date('d/m/Y H:i', strtotime($op['documentos_confirmados_em'])) ?>.
+            ✅ Dados e documentos confirmados em <?= date('d/m/Y H:i', strtotime($op['documentos_confirmados_em'])) ?>
+            (pelo cliente via wizard, ou pela equipe em nome dele quando ele não conseguiu usar o link).
         </div>
     <?php elseif (array_filter($documentos, fn($d) => $d['arquivo_url'] || $d['drive_file_id'])): ?>
         <div class="alerta-erro" style="padding:8px 12px;border-radius:6px;background:#fbe4e1;color:#a33;margin-bottom:10px">
@@ -570,6 +617,14 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                         <span class="badge badge-atraso">⏳ pendente</span>
                     <?php elseif ($ehDocCliente && !$doc['dados_confirmados']): ?>
                         <span class="badge badge-atraso">📝 enviado, aguardando cliente confirmar dados</span>
+                        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                            <form method="post" class="inline" style="margin-top:4px" onsubmit="return confirm('Confirmar que já revisou os dados desse documento (marca/modelo/banco etc já editados nos cards acima) em nome do cliente?');">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="confirmar_documento_staff">
+                                <input type="hidden" name="tipo_documento" value="<?= e($tipo) ?>">
+                                <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11.5px">✅ Confirmar em nome do cliente</button>
+                            </form>
+                        <?php endif; ?>
                     <?php else: ?>
                         <span class="badge badge-ok">✅ enviado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
                     <?php endif; ?>
