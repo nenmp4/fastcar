@@ -2324,6 +2324,40 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 > incidente de flood documentado no bullet "1 instância Z-API só +
 > WhatsApp Box" acima (mesma classe de problema — mensagem repetida em
 > rajada —, causa diferente).
+>
+> **Varredura nos outros pontos que mandam WhatsApp automático** (mesmo
+> dia, "verifica" → "sim", depois do fix acima): usuário pediu pra
+> confirmar se a mesma falha estrutural existia em outro lugar antes do
+> número voltar. Levantados TODOS os call sites de `zapiEnviarTexto()`/
+> `zapiEnviarImagem()`/`zapiEnviarAudio()` do projeto (`grep -rn` em
+> `*.php`) e classificados em 2 grupos: (1) **automáticos, sem ação
+> humana** — cron/followup.php (já corrigido acima) e
+> `cron/resumo_produtividade.php` (mesmo padrão exato: dedup por dia via
+> `getConfig`/`setConfig` em passos separados, comentário original já
+> cogitava "retry manual, crontab duplicado" como cenário real) — mesmo
+> `flock()` em `storage/resumo_produtividade.lock` aplicado ali também,
+> por consistência/defesa em profundidade, mesmo o risco sendo bem menor
+> (roda 1x/dia, não a cada 30min); testado com 2 processos reais
+> concorrentes disputando o lock — confirmado que só 1 manda o resumo e o
+> outro aborta antes de qualquer chamada à Z-API. `cron/zapsign_sync.php`
+> não manda WhatsApp nenhum (só sincroniza status de contrato), fora do
+> escopo. (2) **Disparados de dentro do fluxo do webhook** (resposta da
+> IA em `includes/ia_qualificacao.php`, notificações em
+> `includes/oportunidades.php` — `notificarConsultorLeadQualificado()`,
+> `enviarTelefoneConsultorAoCliente()`) — já protegidos estruturalmente
+> pelo debounce (`aguardarSilencioOuAbortar()`,
+> `chatbot-whatsapp/includes/mensagens.php`) que já existe antes de
+> qualquer um desses disparar: só o worker da mensagem mais recente de um
+> telefone segue adiante, os outros abortam cedo — validado com
+> concorrência real (2 processos com `sleep()`) na auditoria de
+> 13/09/2026 (ver bullet "Qualificação por IA"), nenhuma mudança
+> necessária. (3) **Ações de humano clicando um botão** (`admin/oportunidade.php`
+> enviando o link do wizard, `admin/whatsapp_inbox.php` enviando mensagem/
+> áudio manual, teste de conexão em `admin/configuracoes.php`) —
+> categoria de risco diferente (double-click acidental, não rodada de
+> cron sobreposta automática) e fora do escopo dessa varredura específica
+> — nenhum indício de que essa classe de duplicação tenha causado o
+> bloqueio visto.
 
 ## Pendências (aguardando definição antes de codar mais)
 

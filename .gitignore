@@ -10,9 +10,10 @@ storage/uploads/*
 !storage/backups/.gitkeep
 !storage/uploads/.gitkeep
 
-# Lock de execução do cron/followup.php (flock) — nunca tem conteúdo
-# relevante, só existe pra travar rodadas sobrepostas.
+# Lock de execução dos crons que mandam WhatsApp (flock) — nunca tem
+# conteúdo relevante, só existe pra travar rodadas sobrepostas.
 storage/followup.lock
+storage/resumo_produtividade.lock
 
 # Credencial da service account do Google Drive (JSON) — NUNCA versionar.
 # Cai em config/, protegido por .htaccess (Deny from all) igual ao JurídicoSaaS.

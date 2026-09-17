@@ -24,6 +24,22 @@ function log_resumo_produtividade(string $msg): void {
     echo $line;
 }
 
+// Trava contra rodadas sobrepostas — mesma classe de bug achada e corrigida
+// em cron/followup.php (17/09/2026, investigando bloqueio de número no
+// WhatsApp): o comentário original abaixo já cogitava "retry manual,
+// crontab duplicado" como cenário real, mas o dedup por dia (getConfig/
+// setConfig) faz checagem e gravação em passos separados, nunca atômico —
+// se as duas rodadas caírem nesse intervalo, as duas passam pela checagem
+// antes de qualquer uma gravar o guard, e cada supervisor recebe o resumo
+// 2x. Risco bem menor que o do followup.php (roda 1x/dia, não a cada
+// 30min), mas é a mesma falha estrutural, então mesma correção.
+$lockPath = ROOT . '/storage/resumo_produtividade.lock';
+$lockHandle = fopen($lockPath, 'c');
+if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    log_resumo_produtividade('Já existe uma execução em andamento — abortando esta pra evitar resumo duplicado.');
+    exit;
+}
+
 $db = getDB();
 log_resumo_produtividade('Iniciando em ' . date('d/m/Y H:i'));
 
@@ -32,6 +48,8 @@ log_resumo_produtividade('Iniciando em ' . date('d/m/Y H:i'));
 $guardKey = 'resumo_prod_enviado_' . date('Y-m-d');
 if (getConfig($guardKey)) {
     log_resumo_produtividade('Já enviado hoje, encerrando.');
+    flock($lockHandle, LOCK_UN);
+    fclose($lockHandle);
     exit;
 }
 
@@ -74,3 +92,6 @@ if ($enviados > 0) {
 
 log_resumo_produtividade("{$enviados}/" . count($supervisores) . ' supervisor(es) notificado(s).');
 log_resumo_produtividade('Concluído.');
+
+flock($lockHandle, LOCK_UN);
+fclose($lockHandle);
