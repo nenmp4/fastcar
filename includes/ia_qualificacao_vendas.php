@@ -48,10 +48,19 @@ palavras, não repita sempre a mesma frase).
 Precisa descobrir, em ordem de prioridade, SEM fazer todas as perguntas de
 uma vez (uma ou duas por mensagem, num tom leve de conversa):
 1. Nome da pessoa
-2. Que tipo de veículo procura (marca/modelo/categoria, faixa de preço se
-   ela quiser dizer)
-3. Forma de pagamento pretendida (à vista, financiado, entrada + parcelas)
-4. Se precisa decidir rápido ou pode aguardar (urgência)
+2. Que tipo de veículo procura — marca/modelo/categoria, e pra que uso: só
+   passeio (uso pessoal/família), pra rodar de aplicativo (Uber/99/entrega),
+   ou utilitário (carga/trabalho) — isso ajuda a indicar o veículo certo da
+   frota
+3. Forma de pagamento pretendida: à vista, financiado (banco), entrada +
+   parcelas diretamente com a Fastcar, ou na promissória — a Fastcar vende
+   nas 4 modalidades
+4. Se pretende entrada + parcelas ou promissória: quanto ela TEM de entrada
+   e quanto CABE no orçamento dela de parcela mensal — pergunte com
+   naturalidade ("pra eu já ver o que encaixa: quanto você teria de entrada
+   e quanto ficaria tranquilo pagando de parcela por mês?"), nunca insista
+   se ela não quiser dizer um valor exato ainda
+5. Se precisa decidir rápido ou pode aguardar (urgência)
 
 TÉCNICA DE NEGOCIAÇÃO (uma vez que já identificou QUAL veículo da lista
 bate com o que a pessoa procura):
@@ -98,6 +107,14 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
 - Se o cliente disser claramente que não quer mais comprar, mudou de ideia,
   ou não é essa a intenção dele (ex: número errado, queria vender e não
   comprar) — agradeça e encerre com educação, sem insistir.
+- NUNCA revele nem comente dado de FINANCIAMENTO do veículo (banco, valor
+  de parcela, saldo devedor, se estava financiado quando a Fastcar comprou,
+  ou qualquer outro dado da compra original) — isso é informação interna
+  de outro negócio (o vendedor ORIGINAL, não o comprador de agora), nunca
+  do comprador. Se perguntarem algo do tipo ("esse carro tinha
+  financiamento?", "de onde veio esse carro?"), desvie com naturalidade
+  pro que importa pro comprador (documentação regularizada, procedência
+  verificada da Fastcar) sem confirmar nem negar detalhe nenhum da origem.
 - Seja breve. Mensagens curtas, como alguém digitando no celular.
 
 VEÍCULOS DISPONÍVEIS AGORA NA FASTCAR (use SOMENTE esta lista pra falar
@@ -112,11 +129,14 @@ disse explicitamente — nunca invente, deduza ou arredonde. Campo não
 informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_comprador":null,"veiculo_interesse_texto":null,"forma_pagamento_pretendida":null,"urgencia":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false}
+{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false}
 
 - nome_comprador: o nome que a própria pessoa deu na conversa. null se ela não disse ainda.
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
-- forma_pagamento_pretendida: texto curto (ex: "à vista", "financiado", "entrada + parcelas"). null se não informado.
+- tipo_uso_veiculo: exatamente "passeio", "aplicativo" ou "utilitario" quando a pessoa disse claramente pra que vai usar o veículo. null se não deu pra saber ou não bate exatamente com nenhuma dessas 3 opções.
+- forma_pagamento_pretendida: texto curto (ex: "à vista", "financiado", "entrada + parcelas", "promissória"). null se não informado.
+- valor_entrada_disponivel: número (sem "R$", só o valor) do quanto a pessoa disse ter disponível de entrada. null se não informado.
+- valor_parcela_orcamento: número (sem "R$", só o valor) do quanto a pessoa disse caber no orçamento dela de parcela mensal. null se não informado.
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - sem_perfil: true se a pessoa disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
@@ -235,7 +255,9 @@ function iaGerarResumoVenda(string $telefone): string {
         . "texto antes ou depois da lista):\n"
         . "✅ [dado que a pessoa já confirmou — ex: \"Procura um SUV até R\$ 60 mil, à vista\"]\n"
         . "⚠️ [dado que AINDA falta confirmar/perguntar]\n\n"
-        . "Cubra: nome do comprador, o que procura, forma de pagamento pretendida, urgência. "
+        . "Cubra: nome do comprador, o que procura e pra que uso (passeio/aplicativo/utilitário), "
+        . "forma de pagamento pretendida (inclusive se mencionou promissória), valor de entrada "
+        . "disponível e de parcela no orçamento (se informados), urgência. "
         . "Se algum veículo específico da frota bateu com o que a pessoa procura, mencione qual "
         . "(mas deixe claro que é uma sugestão, o vendedor confirma o vínculo), e diga se já viu "
         . "foto/vídeo dele. Termine com uma linha própria: '🔥 PRONTO PRA FECHAR' se a pessoa já "
@@ -258,7 +280,7 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     if (!$v) return false;
 
     $avancouDadoReal = false;
-    $campos = ['veiculo_interesse_texto', 'forma_pagamento_pretendida', 'urgencia'];
+    $campos = ['veiculo_interesse_texto', 'tipo_uso_veiculo', 'forma_pagamento_pretendida', 'urgencia'];
     $sets = [];
     $params = [];
     foreach ($campos as $c) {
@@ -273,6 +295,13 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         $sets[] = 'comprador_nome = ?';
         $params[] = clean((string)$dados['nome_comprador']);
         $avancouDadoReal = true;
+    }
+    foreach (['valor_entrada_disponivel', 'valor_parcela_orcamento'] as $c) {
+        if ($v[$c] === null && isset($dados[$c]) && $dados[$c] !== null && $dados[$c] !== '') {
+            $sets[] = "{$c} = ?";
+            $params[] = (float)str_replace(',', '.', (string)$dados[$c]);
+            $avancouDadoReal = true;
+        }
     }
 
     if ($sets) {

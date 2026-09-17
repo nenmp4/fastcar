@@ -704,4 +704,25 @@ try {
     echo "❌ categorias financeiras padrão: {$e->getMessage()}\n";
 }
 
+// 17/09/2026 — qualificação por IA do comprador (vendas) ganhou parâmetros
+// novos de orçamento e uso pretendido, pedido José/Jean: "qual a entrada
+// valor da entrada que você tem, valor da parcela em seu orçamento, tipo
+// de carro para passeio o aplicativo utilitário".
+foreach ([
+    ['tipo_uso_veiculo', "ALTER TABLE vendas ADD COLUMN tipo_uso_veiculo TEXT DEFAULT ''"],
+    ['valor_entrada_disponivel', 'ALTER TABLE vendas ADD COLUMN valor_entrada_disponivel REAL'],
+    ['valor_parcela_orcamento', 'ALTER TABLE vendas ADD COLUMN valor_parcela_orcamento REAL'],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'vendas', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ vendas.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ vendas.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  vendas.{$coluna}: já existia\n";
+    }
+}
+
 echo "\n🎉 Migração concluída.\n";

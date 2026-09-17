@@ -436,7 +436,19 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- confirmar/vincular um veículo específico da frota (oportunidade_id) —
     -- nunca inventado, só o que a IA extraiu da conversa.
     veiculo_interesse_texto TEXT DEFAULT '',
+    -- Uso pretendido do veículo — "passeio"/"aplicativo"/"utilitario" (sem
+    -- CHECK de propósito: extraído por IA, texto livre em vez de enum
+    -- travado, pra nunca bloquear um valor que não bata 100% com as 3
+    -- opções sugeridas) — 17/09/2026, pedido José/Jean: "tipo de carro
+    -- para passeio o aplicativo utilitário".
+    tipo_uso_veiculo TEXT DEFAULT '',
     forma_pagamento_pretendida TEXT DEFAULT '',
+    -- Orçamento do comprador (17/09/2026, "qual a entrada valor da entrada
+    -- que você tem, valor da parcela em seu orçamento") — nunca inventado,
+    -- só o que a pessoa disse; nullable de propósito (regra #3, não é
+    -- "0" quando não informado, é "não sabemos ainda").
+    valor_entrada_disponivel REAL,
+    valor_parcela_orcamento REAL,
     urgencia TEXT DEFAULT '',
     -- Último oportunidade_id (frota) pra quem a IA já mandou foto/vídeo
     -- do catálogo NESTA conversa (17/09/2026, "ela precisa enviar fotos

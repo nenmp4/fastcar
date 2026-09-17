@@ -268,7 +268,15 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <p><small>Entrou sozinho pela instância de WhatsApp de vendas.
        <a href="/admin/vendas_inbox.php?telefone=<?= e($v['comprador_telefone']) ?>">Ver conversa no WhatsApp Vendas →</a></small></p>
     <?php if ($v['veiculo_interesse_texto']): ?><p><strong>O que procura:</strong> <?= e($v['veiculo_interesse_texto']) ?></p><?php endif; ?>
+    <?php $labelUso = ['passeio' => 'Passeio', 'aplicativo' => 'Aplicativo (Uber/99/entrega)', 'utilitario' => 'Utilitário'][$v['tipo_uso_veiculo']] ?? null; ?>
+    <?php if ($labelUso): ?><p><strong>Uso pretendido:</strong> <?= e($labelUso) ?></p><?php endif; ?>
     <?php if ($v['forma_pagamento_pretendida']): ?><p><strong>Forma de pagamento pretendida:</strong> <?= e($v['forma_pagamento_pretendida']) ?></p><?php endif; ?>
+    <?php if ($v['valor_entrada_disponivel'] !== null || $v['valor_parcela_orcamento'] !== null): ?>
+        <p><strong>Orçamento:</strong>
+           <?= $v['valor_entrada_disponivel'] !== null ? 'entrada R$ ' . number_format((float)$v['valor_entrada_disponivel'], 2, ',', '.') : 'entrada não informada' ?>
+           · <?= $v['valor_parcela_orcamento'] !== null ? 'parcela até R$ ' . number_format((float)$v['valor_parcela_orcamento'], 2, ',', '.') : 'parcela não informada' ?>
+        </p>
+    <?php endif; ?>
     <?php if ($v['urgencia']): ?><p><strong>Urgência:</strong> <?= e($v['urgencia']) ?></p><?php endif; ?>
     <?php if ($v['resumo_ia']): ?><p><strong>Resumo da IA:</strong><br><?= nl2br(e($v['resumo_ia'])) ?></p><?php endif; ?>
     <?php if ($v['etapa'] === 'sem_perfil'): ?>

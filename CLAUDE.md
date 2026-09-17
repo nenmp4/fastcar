@@ -1643,6 +1643,53 @@ segue no schema sem uso novo, não removida sem ganho real),
   mídia funciona e volta pro estado "vazio". `tests/smoke.php` e migração
   (idempotente, rodada contra banco já migrado da etapa anterior)
   continuam limpos.
+  **4ª etapa — parâmetros de orçamento e uso pretendido na qualificação do
+  comprador** (17/09/2026, "qual a entrada valor da entrada que você tem,
+  valor da parcela em seu orçamentos, tipo de carro para passeio o
+  aplicativo utilitário, vendemos carro na promissória, nunca revelar
+  dados como financiamento do veiculo") — `includes/ia_qualificacao_vendas.php`:
+  (1) o prompt de conversa passou a perguntar, com naturalidade e sem
+  insistir se a pessoa não quiser dizer, quanto ela TEM de entrada e
+  quanto CABE no orçamento dela de parcela mensal, além de classificar o
+  uso pretendido do veículo em exatamente 3 categorias — passeio (uso
+  pessoal), aplicativo (Uber/99/entrega) ou utilitário (carga/trabalho);
+  (2) **promissória** entrou como 4ª forma de pagamento que a Fastcar
+  oferece, mencionada ao lado de à vista/financiado/entrada+parcelas —
+  tanto no prompt de conversa quanto na descrição do campo
+  `forma_pagamento_pretendida` no prompt de extração; (3) regra nova e
+  explícita em "REGRAS QUE NÃO PODEM SER QUEBRADAS": a IA **nunca**
+  revela nem comenta dado de FINANCIAMENTO do veículo (banco, valor de
+  parcela, saldo devedor, se estava financiado quando a Fastcar comprou)
+  — isso é informação interna do negócio com o vendedor ORIGINAL, nunca
+  do comprador de agora; se perguntarem ("esse carro tinha
+  financiamento?", "de onde veio?"), a IA desvia pra procedência/
+  documentação regularizada sem confirmar nem negar detalhe nenhum da
+  origem (defesa em profundidade — `listarFrotaDisponivelParaVenda()`,
+  `includes/vendas.php`, já nunca expôs esses campos pro prompt, mas a
+  regra cobre o caso de a pessoa perguntar diretamente). 3 colunas novas
+  em `vendas` (`tipo_uso_veiculo`, `valor_entrada_disponivel`,
+  `valor_parcela_orcamento`, todas nullable/sem valor chutado — regra #3)
+  extraídas e aplicadas em `iaAplicarDadosExtraidosVenda()` com a mesma
+  disciplina **fill-if-empty** do resto do projeto — rodar a extração de
+  novo nunca sobrescreve um valor de entrada/parcela/uso já capturado
+  antes, mesmo que a IA "leia" algo diferente num turno seguinte.
+  `iaGerarResumoVenda()` (resumo pro vendedor que assume) passou a cobrir
+  os campos novos no checklist. `admin/venda.php` — card "🤖 Lead
+  qualificado por IA" ganhou "Uso pretendido" (label bonito por categoria)
+  e "Orçamento" (entrada + parcela formatados em R$, ou "não informada"
+  quando falta). Mudança de prompt (julgamento de IA) não é testável
+  contra servidor fake pro TEXTO da conversa em si — validação real só na
+  próxima conversa de verdade — mas a extração/aplicação/resumo/UI SÃO
+  testáveis e foram: função isolada (extração dos 3 campos novos certa
+  contra Gemini fake — `tipo_uso_veiculo`/`valor_entrada_disponivel`/
+  `valor_parcela_orcamento`; fill-if-empty confirmado não sobrescrevendo
+  valor já extraído mesmo com dado novo diferente chegando; resumo
+  menciona entrada/parcela; prompt de sistema contém a regra de nunca
+  revelar financiamento e menciona promissória) + Playwright (card do
+  vendedor mostra "Uso pretendido: Aplicativo (Uber/99/entrega)",
+  "entrada R$ 8.000,00", "parcela até R$ 950,50" formatados certos) +
+  migração testada idempotente preservando uma venda já existente sem as
+  colunas novas (rodada 2x sem efeito colateral).
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
