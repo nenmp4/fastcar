@@ -133,6 +133,84 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
 }
 
 /**
+ * Cadastra um veículo direto na frota (etapa='fechado'), SEM passar pelo
+ * funil de compra pelo WhatsApp — 17/09/2026, pedido José/Jean: "vamos
+ * implementar subir manual o veiculos fotos videos para ia vender
+ * qualificar". Cobre veículo que a Fastcar já tem fisicamente (deal feito
+ * fora do CRM, veículo antigo, etc) e precisa entrar na frota pra poder
+ * ser revendido (módulo de vendas lê a frota via `etapa='fechado'`,
+ * `includes/vendas.php::listarFrotaDisponivelParaVenda()`) e ter fotos/
+ * vídeos pra IA de vendas usar (`veiculo_midias_revenda`).
+ *
+ * Cria (ou reaproveita por telefone) um cliente pro vendedor/origem —
+ * decisão confirmada: mesmo cadastro manual precisa de um vendedor de
+ * verdade por trás, mantém a pasta do veículo consistente com o resto do
+ * sistema (regra #1: 1 cadastro por telefone). NUNCA chama
+ * `atualizarNomeFotoWhatsapp()` (isso é pra contato real de WhatsApp, não
+ * faz sentido bater na Z-API atrás de nome/foto de alguém que nem mandou
+ * mensagem nenhuma).
+ *
+ * Insere a oportunidade JÁ em `etapa='fechado'` diretamente (não usa
+ * `mudarEtapa()` pra essa transição de propósito — `mudarEtapa()` trava
+ * fechamento sem `checklistFechamentoCompleto()`, regra #7, que é sobre o
+ * checklist de documentos do funil normal de compra; um veículo que entra
+ * assim nunca passou por esse funil, não tem porquê exigir os mesmos
+ * documentos). Ainda assim grava `oportunidade_historico` manualmente,
+ * pra manter a mesma disciplina de auditoria (regra #6) mesmo pulando
+ * `mudarEtapa()`.
+ */
+function criarVeiculoManualFrota(
+    string $vendedorNome,
+    string $vendedorTelefone,
+    string $marca,
+    string $modelo,
+    string $ano,
+    string $placa,
+    string $chassi,
+    string $renavam,
+    ?float $valorPago,
+    int $criadoPor
+): array {
+    $db = getDB();
+    $telNorm = normalizarTelefone($vendedorTelefone);
+    if (!$telNorm || strlen($telNorm) < 12) {
+        throw new InvalidArgumentException("Telefone do vendedor inválido: {$vendedorTelefone}");
+    }
+    if (!$marca && !$modelo) {
+        throw new InvalidArgumentException('Informe ao menos marca ou modelo do veículo.');
+    }
+
+    $stmt = $db->prepare('SELECT id, nome FROM clientes WHERE telefone = ?');
+    $stmt->execute([$telNorm]);
+    $cliente = $stmt->fetch();
+
+    if (!$cliente) {
+        $db->prepare('INSERT INTO clientes (nome, telefone) VALUES (?, ?)')
+           ->execute([clean($vendedorNome), $telNorm]);
+        $clienteId = (int)$db->lastInsertId();
+    } else {
+        $clienteId = (int)$cliente['id'];
+        if (empty($cliente['nome']) && $vendedorNome) {
+            $db->prepare('UPDATE clientes SET nome = ? WHERE id = ?')->execute([clean($vendedorNome), $clienteId]);
+        }
+    }
+
+    $db->prepare('
+        INSERT INTO oportunidades
+            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, data_compra, fechado_por)
+        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?)
+    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, $criadoPor]);
+    $opId = (int)$db->lastInsertId();
+
+    $db->prepare("
+        INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
+        VALUES (?, '', 'fechado', ?, 'Veículo cadastrado manualmente direto na frota — sem passar pelo funil de compra')
+    ")->execute([$opId, $criadoPor]);
+
+    return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId];
+}
+
+/**
  * Busca nome/foto de perfil do WhatsApp (zapiBuscarContato()) e preenche
  * no cliente — fill-if-empty pro nome (nunca sobrescreve o que já tinha,
  * mesma regra do resto do projeto), sempre grava foto_perfil_url mesmo

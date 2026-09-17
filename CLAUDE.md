@@ -2631,6 +2631,54 @@ segue no schema sem uso novo, não removida sem ganho real),
   Aviso visual (⚠️) quando "Super admin" está selecionado no formulário.
   Testado via Playwright: opção aparece no seletor, criar um 2º super_admin
   funciona e aparece na lista com o label certo.
+- **Cadastro manual de veículo na frota + upload direto de fotos/vídeos**
+  (17/09/2026, "vamos implementar subir manual o veiculos fotos videos
+  para ia vender qualificar") — cobre veículo que a Fastcar já tem
+  fisicamente mas nunca passou pelo funil de compra pelo WhatsApp (deal
+  fechado fora do CRM, frota legada). Card "➕ Adicionar veículo
+  manualmente" em `admin/veiculos.php` — confirmado com o usuário (2
+  perguntas diretas): continua pedindo nome+telefone do vendedor/origem
+  (nunca um veículo "solto" sem cliente por trás, mesma disciplina de 1
+  cadastro por telefone do resto do sistema), e o cadastro fica na própria
+  tela de Frota já existente (não uma tela nova separada).
+  `criarVeiculoManualFrota()` (`includes/oportunidades.php`) cria/
+  reaproveita o cliente por telefone (nunca chama
+  `atualizarNomeFotoWhatsapp()` — não faz sentido bater na Z-API atrás de
+  nome/foto de alguém que nem mandou mensagem) e insere a oportunidade
+  **direto** em `etapa='fechado'` — de propósito **não** passa por
+  `mudarEtapa()` pra essa transição: `mudarEtapa()` trava fechamento sem
+  `checklistFechamentoCompleto()` (regra #7), que é sobre o checklist de
+  documentos do funil normal de compra; um veículo que entra assim nunca
+  passou por esse funil, não tem porquê exigir os mesmos documentos. Ainda
+  assim grava `oportunidade_historico` manualmente na hora, pra manter a
+  mesma disciplina de auditoria (regra #6) mesmo pulando `mudarEtapa()`.
+  Redireciona direto pra `admin/veiculo_midias.php` (novo) — tela dedicada
+  de fotos/vídeos que **não depende de nenhuma negociação de venda
+  existir**: antes disso, o único jeito de chegar no catálogo
+  `veiculo_midias_revenda` (já existia pro módulo de vendas) era abrir
+  `admin/venda.php` de uma negociação já iniciada, só pra poder subir 1
+  foto de um carro que ainda nem tinha comprador. A tela nova reaproveita
+  exatamente as mesmas funções (`salvarMidiaRevenda()`/
+  `listarMidiasRevenda()`/`excluirMidiaRevenda()`, `includes/vendas.php`)
+  e o mesmo destino Drive/local já usados pelo módulo de vendas — é o
+  MESMO catálogo que a IA de vendas usa pra mandar mídia sozinha pro
+  comprador (`enviarMidiaCatalogoParaComprador()`,
+  `includes/ia_qualificacao_vendas.php`), então uma foto subida por aqui
+  já fica disponível pra IA usar, sem nenhuma mudança extra. Coluna nova
+  "Fotos/vídeos" na tabela de Frota mostra o contador + link direto pra
+  cada veículo, comprado pelo funil normal ou cadastrado manualmente —
+  mesma trava de `admin/veiculos.php` (super_admin). Testado: função
+  isolada (telefone inválido rejeitado; cadastro básico grava
+  `etapa='fechado'`/`valor_final`/`data_compra`/`fechado_por` certos e o
+  histórico registrado; 2º veículo do mesmo telefone reaproveita o
+  cliente mas cria uma oportunidade NOVA, regra do Jean de "1 cliente pode
+  ter mais de 1 veículo"; sem marca/modelo é rejeitado; veículo manual
+  aparece em `listarFrotaDisponivelParaVenda()` — a mesma função que a IA
+  de vendas usa pra saber o que está disponível pra oferecer; upload de
+  foto funciona no veículo recém-criado) + Playwright ponta a ponta
+  (cadastro pela tela redireciona pra fotos/vídeos com o veículo certo;
+  upload direto funciona sem nenhuma negociação de venda existir; volta
+  pra Frota e o contador de fotos aparece certo na listagem).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

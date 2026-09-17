@@ -19,6 +19,8 @@ $db = getDB();
 $busca = trim((string)($_GET['busca'] ?? ''));
 $erro = '';
 
+$sucesso = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar_venda') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
@@ -26,6 +28,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
         try {
             $vendaId = criarVenda((int)$_POST['oportunidade_id'], (int)$_SESSION['admin_id']);
             header('Location: /admin/venda.php?id=' . $vendaId);
+            exit;
+        } catch (Throwable $e) {
+            $erro = $e->getMessage();
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastrar_manual') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        try {
+            $valorPagoPost = trim((string)($_POST['valor_final'] ?? ''));
+            $r = criarVeiculoManualFrota(
+                (string)($_POST['vendedor_nome'] ?? ''),
+                (string)($_POST['vendedor_telefone'] ?? ''),
+                (string)($_POST['veiculo_marca'] ?? ''),
+                (string)($_POST['veiculo_modelo'] ?? ''),
+                (string)($_POST['veiculo_ano'] ?? ''),
+                (string)($_POST['veiculo_placa'] ?? ''),
+                (string)($_POST['veiculo_chassi'] ?? ''),
+                (string)($_POST['veiculo_renavam'] ?? ''),
+                $valorPagoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorPagoPost)) : null,
+                (int)$_SESSION['admin_id']
+            );
+            header('Location: /admin/veiculo_midias.php?id=' . $r['oportunidade_id'] . '&recem_cadastrado=1');
             exit;
         } catch (Throwable $e) {
             $erro = $e->getMessage();
@@ -47,7 +73,8 @@ $totalVeiculos = (int)$stmtTotal->fetchColumn();
 
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
-           vd.id AS venda_id, vd.etapa AS venda_etapa
+           vd.id AS venda_id, vd.etapa AS venda_etapa,
+           (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
     LEFT JOIN vendas vd ON vd.id = (
@@ -101,6 +128,7 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
 
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
+<?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <div class="card">
     <h2>🚗 Veículos comprados</h2>
     <p><small>Frota atual da Fastcar — todo veículo com negócio fechado (bloco 8). Busca por placa, chassi, marca/
@@ -109,6 +137,43 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
     <form method="get">
         <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Placa, chassi, marca/modelo ou vendedor...">
         <button type="submit">Buscar</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>➕ Adicionar veículo manualmente</h3>
+    <p><small>Pra veículo que a Fastcar já tem, mas não passou pelo funil de compra pelo WhatsApp (negócio fechado
+       fora do CRM, frota legada, etc) — entra direto na frota, pronto pra ganhar fotos/vídeos e ir pro módulo de
+       vendas. Continua pedindo o vendedor/origem (nome + telefone), mesma disciplina de cadastro do resto do
+       sistema.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="cadastrar_manual">
+        <div class="grid-2">
+            <div>
+                <label>Nome do vendedor/origem *</label>
+                <input type="text" name="vendedor_nome" required>
+                <label>Telefone do vendedor/origem *</label>
+                <input type="text" name="vendedor_telefone" required placeholder="Ex: 31999998888">
+                <label>Valor pago (R$)</label>
+                <input type="text" name="valor_final" placeholder="0,00">
+            </div>
+            <div>
+                <label>Marca</label>
+                <input type="text" name="veiculo_marca">
+                <label>Modelo</label>
+                <input type="text" name="veiculo_modelo">
+                <label>Ano</label>
+                <input type="text" name="veiculo_ano" style="max-width:120px">
+                <label>Placa</label>
+                <input type="text" name="veiculo_placa" style="max-width:160px">
+                <label>Chassi</label>
+                <input type="text" name="veiculo_chassi">
+                <label>RENAVAM</label>
+                <input type="text" name="veiculo_renavam">
+            </div>
+        </div>
+        <button type="submit">Cadastrar e adicionar fotos/vídeos →</button>
     </form>
 </div>
 
@@ -129,12 +194,12 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
             <tr>
                 <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th>
                 <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
-                <th>Contrato compra</th><th>Venda</th><th></th>
+                <th>Contrato compra</th><th>Fotos/vídeos</th><th>Venda</th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="9"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="10"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <tr>
@@ -151,6 +216,7 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
                         <span class="badge badge-aviso">pendente</span>
                     <?php endif; ?>
                 </td>
+                <td><a href="/admin/veiculo_midias.php?id=<?= (int)$v['id'] ?>">📸 <?= (int)$v['total_midias'] ?></a></td>
                 <td>
                     <?php if ($v['venda_id'] === null): ?>
                         <form method="post" class="inline">
