@@ -146,6 +146,12 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
        fora do CRM, frota legada, etc) — entra direto na frota, pronto pra ganhar fotos/vídeos e ir pro módulo de
        vendas. Continua pedindo o vendedor/origem (nome + telefone), mesma disciplina de cadastro do resto do
        sistema.</small></p>
+    <div class="form-group" style="max-width:420px;margin-bottom:14px">
+        <label>📄 Subir pelo CRLV (opcional) — a IA lê o documento e preenche os campos do veículo abaixo</label>
+        <input type="file" id="mv-crlv-arquivo" accept="image/jpeg,image/png,image/webp,application/pdf">
+        <button type="button" onclick="lerCrlvManual()" style="margin-top:.4rem" id="mv-crlv-btn">📄 Ler CRLV com IA</button>
+        <span id="mv-crlv-status" style="font-size:.8rem;color:var(--muted);margin-left:.5rem"></span>
+    </div>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="cadastrar_manual">
@@ -160,22 +166,53 @@ function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
             </div>
             <div>
                 <label>Marca</label>
-                <input type="text" name="veiculo_marca">
+                <input type="text" name="veiculo_marca" id="mv-marca">
                 <label>Modelo</label>
-                <input type="text" name="veiculo_modelo">
+                <input type="text" name="veiculo_modelo" id="mv-modelo">
                 <label>Ano</label>
-                <input type="text" name="veiculo_ano" style="max-width:120px">
+                <input type="text" name="veiculo_ano" id="mv-ano" style="max-width:120px">
                 <label>Placa</label>
-                <input type="text" name="veiculo_placa" style="max-width:160px">
+                <input type="text" name="veiculo_placa" id="mv-placa" style="max-width:160px">
                 <label>Chassi</label>
-                <input type="text" name="veiculo_chassi">
+                <input type="text" name="veiculo_chassi" id="mv-chassi">
                 <label>RENAVAM</label>
-                <input type="text" name="veiculo_renavam">
+                <input type="text" name="veiculo_renavam" id="mv-renavam">
             </div>
         </div>
         <button type="submit">Cadastrar e adicionar fotos/vídeos →</button>
     </form>
 </div>
+
+<script>
+var csrfTokenVeiculos = <?= json_encode(generateCSRF()) ?>;
+
+function lerCrlvManual() {
+    var input = document.getElementById('mv-crlv-arquivo');
+    if (!input.files.length) { alert('Escolha o arquivo do CRLV primeiro.'); return; }
+    var status = document.getElementById('mv-crlv-status');
+    var btn = document.getElementById('mv-crlv-btn');
+    status.textContent = '🔄 Lendo CRLV...';
+    btn.disabled = true;
+
+    var fd = new FormData();
+    fd.append('crlv', input.files[0]);
+    fd.append('csrf_token', csrfTokenVeiculos);
+    fetch('/admin/veiculo_crlv_ajax.php', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false;
+            if (!d.ok) { status.textContent = '⚠️ ' + d.erro; return; }
+            // fill-if-empty — nunca sobrescreve o que já foi digitado/corrigido na mão.
+            var campos = { marca: d.veiculo_marca, modelo: d.veiculo_modelo, ano: d.veiculo_ano, placa: d.veiculo_placa, chassi: d.veiculo_chassi, renavam: d.veiculo_renavam };
+            Object.keys(campos).forEach(function (k) {
+                var el = document.getElementById('mv-' + k);
+                if (el && !el.value && campos[k]) el.value = campos[k];
+            });
+            status.textContent = '✅ Preenchido! Confira antes de cadastrar.';
+        })
+        .catch(function (err) { btn.disabled = false; status.textContent = '⚠️ Erro ao ler o CRLV.'; console.error(err); });
+}
+</script>
 
 <div class="stat-grid">
     <div class="stat-card">

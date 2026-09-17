@@ -2679,6 +2679,28 @@ segue no schema sem uso novo, não removida sem ganho real),
   (cadastro pela tela redireciona pra fotos/vídeos com o veículo certo;
   upload direto funciona sem nenhuma negociação de venda existir; volta
   pra Frota e o contador de fotos aparece certo na listagem).
+  **Preencher lendo o CRLV com IA** (mesmo dia, pedido de acompanhamento:
+  "vamos subir carro pelo documento veiculo para ir mais rapido") — botão
+  "📄 Ler CRLV com IA" no mesmo card, ao lado do upload de arquivo.
+  `admin/veiculo_crlv_ajax.php` (novo, mesma trava super_admin) **nunca**
+  duplica o prompt de extração — reaproveita exatamente
+  `extrairDadosDocumentoComIA('crlv', ...)` (`includes/extracao_documentos.php`,
+  já usada no wizard de documentos do cliente), então ganha de graça a
+  mesma autochecagem de tipo (nunca aplica dado de um documento que não
+  parece ser CRLV — ex: CNH enviada por engano no lugar). O endpoint só
+  LÊ e devolve os 6 campos do veículo — nunca salva o arquivo como
+  documento oficial nem grava nada no banco, quem decide se os dados
+  batem é o super_admin cadastrando. JS preenche
+  marca/modelo/ano/placa/chassi/renavam em **fill-if-empty** — editar um
+  campo manualmente e clicar "Ler CRLV" de novo nunca sobrescreve o que
+  já foi corrigido à mão, mesma regra já usada na calculadora de saldo e
+  no widget de FIPE por placa. Testado: função isolada (sem chave Gemini
+  configurada, extração retorna vazio, endpoint cai no aviso de
+  configurar a chave) + Playwright ponta a ponta contra servidor Gemini
+  fake local (upload preenche os 6 campos certos; editar 1 campo na mão e
+  ler de novo preserva o editado mas continua preenchendo os outros;
+  cadastro final com os dados da IA funciona e o veículo aparece certo na
+  Frota).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
