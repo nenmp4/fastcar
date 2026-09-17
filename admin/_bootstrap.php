@@ -41,7 +41,7 @@ requireAdmin();
 // arquivo por arquivo em cada tela de compra já existente.
 if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     $paginaAtualVendedor = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'logout.php'];
+    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php', 'logout.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;

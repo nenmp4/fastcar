@@ -49,7 +49,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         try {
-            if ($acao === 'vincular_veiculo') {
+            if ($acao === 'upload_midia_revenda') {
+                if (!$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota antes de adicionar fotos/vídeos.';
+                } else {
+                    $resultadoMidia = salvarMidiaRevenda((int)$v['oportunidade_id'], $_FILES['midia'] ?? [], (string)($_POST['legenda'] ?? ''));
+                    if ($resultadoMidia['ok']) {
+                        $sucesso = 'Mídia adicionada ao catálogo do veículo.';
+                    } else {
+                        $erro = $resultadoMidia['erro'];
+                    }
+                }
+            } elseif ($acao === 'excluir_midia_revenda') {
+                excluirMidiaRevenda((int)($_POST['midia_id'] ?? 0));
+                $sucesso = 'Mídia removida do catálogo.';
+            } elseif ($acao === 'vincular_veiculo') {
                 // Confirma o match entre um lead qualificado pela IA (sem
                 // veículo ainda) e um veículo real da frota — sempre ação
                 // humana, nunca a IA decide sozinha (ver includes/vendas.php).
@@ -250,6 +264,53 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <?php endforeach; ?>
             </select>
             <button type="submit">Vincular</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($v['oportunidade_id']): ?>
+<div class="card">
+    <h3>📸 Fotos e vídeos pra revenda</h3>
+    <p><small>Fica ligado ao VEÍCULO (não a esta negociação específica) — some depois de qualquer nova tentativa de
+       venda do mesmo carro. A IA de vendas manda essas mídias sozinha pro comprador quando identifica interesse
+       forte nesse veículo, antes mesmo do vínculo ser confirmado aqui.</small></p>
+    <?php $midiasRevenda = listarMidiasRevenda((int)$v['oportunidade_id']); ?>
+    <?php if ($midiasRevenda): ?>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+            <?php foreach ($midiasRevenda as $m): ?>
+                <div style="width:160px">
+                    <?php if ($m['tipo'] === 'foto'): ?>
+                        <a href="/admin/ver_midia_revenda.php?id=<?= (int)$m['id'] ?>" target="_blank">
+                            <img src="/admin/ver_midia_revenda.php?id=<?= (int)$m['id'] ?>" loading="lazy" style="width:100%;height:120px;object-fit:cover;border-radius:8px">
+                        </a>
+                    <?php else: ?>
+                        <video src="/admin/ver_midia_revenda.php?id=<?= (int)$m['id'] ?>" controls preload="metadata" style="width:100%;border-radius:8px"></video>
+                    <?php endif; ?>
+                    <?php if ($m['legenda']): ?><small><?= e($m['legenda']) ?></small><?php endif; ?>
+                    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                        <form method="post" onsubmit="return confirm('Remover essa mídia do catálogo?');" style="margin-top:4px">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="excluir_midia_revenda">
+                            <input type="hidden" name="midia_id" value="<?= (int)$m['id'] ?>">
+                            <button type="submit" class="perigo" style="margin-top:0;padding:3px 8px;font-size:11.5px">🗑️ Remover</button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php else: ?>
+        <p><small>Nenhuma foto/vídeo cadastrado ainda pra esse veículo.</small></p>
+    <?php endif; ?>
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" enctype="multipart/form-data">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="upload_midia_revenda">
+            <label>Arquivo (foto JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
+            <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" required>
+            <label>Legenda (opcional)</label>
+            <input type="text" name="legenda" placeholder="Ex: Lateral direita, km atual 42.000">
+            <button type="submit">Adicionar ao catálogo</button>
         </form>
     <?php endif; ?>
 </div>

@@ -86,12 +86,16 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
  * com a logo da Fastcar como capa em vez de texto puro (pedido do
  * José/Jean, 13/09/2026: passa mais confiança/profissionalismo — mesma
  * preocupação de "isso não é golpe?" já coberta no prompt da IA de
- * qualificação e no rodapé com endereço real do wizard).
+ * qualificação e no rodapé com endereço real do wizard) e, desde
+ * 17/09/2026, pra IA de vendas mandar foto do catálogo de um veículo da
+ * frota (`$instanciaOverride`, mesmo padrão de `zapiEnviarTexto()`).
  */
-function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda): bool {
-    $inst = _chatbot_getConfig('zapi_instance_id');
-    $tok  = _chatbot_getConfig('zapi_token');
-    $ctok = _chatbot_getConfig('zapi_client_token');
+function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?array $instanciaOverride = null): bool {
+    [$inst, $tok, $ctok] = $instanciaOverride ?? [
+        _chatbot_getConfig('zapi_instance_id'),
+        _chatbot_getConfig('zapi_token'),
+        _chatbot_getConfig('zapi_client_token'),
+    ];
     if (!$inst || !$tok || !$phone || !$imagemUrl) return false;
 
     $phone = normalizarTelefone($phone);
@@ -107,6 +111,42 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda): bo
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'image' => $imagemUrl, 'caption' => $legenda]),
         CURLOPT_TIMEOUT => 15,
+    ]);
+    curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $code === 200;
+}
+
+/**
+ * Envia vídeo com legenda via Z-API (POST /send-video, campos `video`
+ * [URL pública ou base64] + `caption` — mesmo formato de `send-image`,
+ * nunca confirmado contra instância real ainda, mesma ressalva de "a
+ * validar em produção" — ver CLAUDE.md). Novo em 17/09/2026, pra IA de
+ * vendas mandar vídeo do catálogo de um veículo da frota
+ * (`includes/ia_qualificacao_vendas.php`), junto das fotos.
+ */
+function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?array $instanciaOverride = null): bool {
+    [$inst, $tok, $ctok] = $instanciaOverride ?? [
+        _chatbot_getConfig('zapi_instance_id'),
+        _chatbot_getConfig('zapi_token'),
+        _chatbot_getConfig('zapi_client_token'),
+    ];
+    if (!$inst || !$tok || !$phone || !$videoUrl) return false;
+
+    $phone = normalizarTelefone($phone);
+    if (strlen($phone) < 12) return false;
+
+    $headers = ['Content-Type: application/json'];
+    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-video");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'video' => $videoUrl, 'caption' => $legenda]),
+        CURLOPT_TIMEOUT => 30,
     ]);
     curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

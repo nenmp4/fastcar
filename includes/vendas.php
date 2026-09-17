@@ -40,6 +40,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/fila_vendas.php';
 require_once __DIR__ . '/whatsapp_config.php';
+require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()/lerConteudoArquivoDocumento() — catálogo de mídia de revenda
 
 // 'whatsapp'/'qualificacao_ia'/'sem_perfil' são exclusivas de leads que
 // entraram por origem='whatsapp' — negociação manual nunca passa por elas.
@@ -275,6 +276,137 @@ function vincularVeiculoVenda(int $vendaId, int $oportunidadeId): bool {
     $db->prepare("UPDATE vendas SET oportunidade_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
        ->execute([$oportunidadeId, $vendaId]);
     return true;
+}
+
+// Fotos/vídeos são upload deliberado do vendedor (nunca reaproveita foto
+// antiga da conversa de COMPRA — pode estar desatualizada, carro pode ter
+// sido reformado/lavado/rodado km desde então; regra #3 do CLAUDE.md
+// aplicada aqui também: nunca supor que dado velho ainda reflete a
+// realidade). Vídeo pode ser bem maior que foto — teto próprio, mais
+// generoso que UPLOAD_MAX_BYTES (10MB, pensado pra documento/PDF).
+const VEICULO_MIDIA_MAX_BYTES_FOTO  = 10 * 1024 * 1024;  // 10MB
+const VEICULO_MIDIA_MAX_BYTES_VIDEO = 50 * 1024 * 1024;  // 50MB
+const VEICULO_MIDIA_MIME_PERMITIDOS = [
+    'image/jpeg' => ['foto', 'jpg'],
+    'image/png'  => ['foto', 'png'],
+    'image/webp' => ['foto', 'webp'],
+    'video/mp4'       => ['video', 'mp4'],
+    'video/quicktime' => ['video', 'mov'],
+    'video/webm'      => ['video', 'webm'],
+];
+
+/**
+ * Lista o catálogo de fotos/vídeos de um veículo da frota (17/09/2026,
+ * "ela precisa enviar fotos do veículos - vídeo") — fica ligado à
+ * OPORTUNIDADE (o veículo), não a uma negociação específica, então
+ * persiste entre tentativas de venda diferentes do mesmo carro.
+ */
+function listarMidiasRevenda(int $oportunidadeId): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT * FROM veiculo_midias_revenda WHERE oportunidade_id = ? ORDER BY tipo, id");
+    $stmt->execute([$oportunidadeId]);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Sobe uma foto/vídeo pro catálogo de revenda de um veículo — mesma
+ * disciplina de segurança de salvarUploadDocumento() (nunca confia no
+ * Content-Type do navegador, detecta de verdade pelo conteúdo do
+ * arquivo), mas guarda em `veiculo_midias_revenda` (não
+ * `oportunidade_documentos`, que é semântica de documento de COMPRA) e no
+ * MESMO destino Drive/local já usado pros documentos daquele veículo
+ * (pasta do cliente original — subpasta "revenda" no fallback local).
+ */
+function salvarMidiaRevenda(int $oportunidadeId, array $arquivo, string $legenda): array {
+    if (($arquivo['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return ['ok' => false, 'erro' => 'Escolha um arquivo.'];
+    }
+    if ($arquivo['error'] !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'erro' => 'Falha no envio do arquivo (tente novamente).'];
+    }
+
+    $mime = mime_content_type($arquivo['tmp_name']);
+    if (!isset(VEICULO_MIDIA_MIME_PERMITIDOS[$mime])) {
+        return ['ok' => false, 'erro' => 'Formato não aceito — envie foto (JPG/PNG/WEBP) ou vídeo (MP4/MOV/WEBM).'];
+    }
+    [$tipo, $ext] = VEICULO_MIDIA_MIME_PERMITIDOS[$mime];
+    $tetoBytes = $tipo === 'video' ? VEICULO_MIDIA_MAX_BYTES_VIDEO : VEICULO_MIDIA_MAX_BYTES_FOTO;
+    if ($arquivo['size'] > $tetoBytes) {
+        return ['ok' => false, 'erro' => 'Arquivo maior que ' . (int)($tetoBytes / 1024 / 1024) . 'MB.'];
+    }
+
+    $db = getDB();
+    $stmtCli = $db->prepare("SELECT c.id AS cliente_id, c.nome FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?");
+    $stmtCli->execute([$oportunidadeId]);
+    $cli = $stmtCli->fetch();
+    if (!$cli) {
+        return ['ok' => false, 'erro' => 'Veículo não encontrado.'];
+    }
+
+    $nomeArquivo = $tipo . '_' . $oportunidadeId . '_' . time() . '.' . $ext;
+    $copia = salvarArquivoGeradoComoDocumento((int)$cli['cliente_id'], $cli['nome'] ?: "Cliente #{$cli['cliente_id']}", $arquivo['tmp_name'], $nomeArquivo, $mime, 'revenda');
+    if (!$copia['drive_file_id'] && !$copia['arquivo_url']) {
+        return ['ok' => false, 'erro' => 'Não foi possível salvar o arquivo agora — tente novamente.'];
+    }
+
+    $db->prepare("
+        INSERT INTO veiculo_midias_revenda (oportunidade_id, tipo, mime, drive_file_id, arquivo_url, legenda)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ")->execute([$oportunidadeId, $tipo, $mime, $copia['drive_file_id'], $copia['arquivo_url'], clean($legenda)]);
+
+    return ['ok' => true, 'erro' => null];
+}
+
+/** Apaga 1 mídia do catálogo (mesmo padrão de excluirConversaWhatsapp() — só a linha do banco, nunca tenta limpar o Drive). */
+function excluirMidiaRevenda(int $midiaId): void {
+    $db = getDB();
+    $db->prepare("DELETE FROM veiculo_midias_revenda WHERE id = ?")->execute([$midiaId]);
+}
+
+/** Quantas fotos manda de uma vez (nunca o catálogo inteiro — evita floodar o comprador). */
+const VEICULO_MIDIA_MAX_FOTOS_POR_ENVIO = 3;
+
+/**
+ * Manda o catálogo de fotos/vídeo de um veículo pro COMPRADOR via WhatsApp
+ * (17/09/2026, "ela precisa enviar fotos do veículos - vídeo") — chamado
+ * pela IA de vendas (includes/ia_qualificacao_vendas.php) quando identifica
+ * interesse forte num veículo específico. Manda pela instância DEDICADA de
+ * vendas (nunca a de compra). Lê os bytes reais (Drive ou local,
+ * lerConteudoArquivoDocumento()) e envia como data URI base64 — evita
+ * precisar de uma URL pública pra pasta do Drive/uploads, que não é
+ * pública. Até `VEICULO_MIDIA_MAX_FOTOS_POR_ENVIO` fotos + o 1º vídeo do
+ * catálogo (se tiver); nunca lança — mídia é sempre melhor esforço, mesmo
+ * espírito do resto do projeto. Retorna quantas fotos/vídeos saíram de
+ * verdade, pra quem chama decidir se registra "mídia enviada" ou tenta de
+ * novo no próximo turno.
+ */
+function enviarMidiaCatalogoParaComprador(int $oportunidadeId, string $telefone, string $descricaoVeiculo): array {
+    $enviouFoto = 0;
+    $enviouVideo = 0;
+    try {
+        $credenciais = zapiCredenciaisVendas();
+        $midias = listarMidiasRevenda($oportunidadeId);
+        $fotos = array_slice(array_filter($midias, fn($m) => $m['tipo'] === 'foto'), 0, VEICULO_MIDIA_MAX_FOTOS_POR_ENVIO);
+        $videos = array_slice(array_filter($midias, fn($m) => $m['tipo'] === 'video'), 0, 1);
+
+        foreach ($fotos as $m) {
+            $arquivo = lerConteudoArquivoDocumento($m['drive_file_id'] ?: null, $m['arquivo_url'] ?: null);
+            if (!$arquivo) continue;
+            $legenda = $m['legenda'] ?: $descricaoVeiculo;
+            $dataUri = 'data:' . $arquivo['mime'] . ';base64,' . base64_encode($arquivo['content']);
+            if (zapiEnviarImagem($telefone, $dataUri, $legenda, $credenciais)) $enviouFoto++;
+        }
+        foreach ($videos as $m) {
+            $arquivo = lerConteudoArquivoDocumento($m['drive_file_id'] ?: null, $m['arquivo_url'] ?: null);
+            if (!$arquivo) continue;
+            $legenda = $m['legenda'] ?: $descricaoVeiculo;
+            $dataUri = 'data:' . $arquivo['mime'] . ';base64,' . base64_encode($arquivo['content']);
+            if (zapiEnviarVideo($telefone, $dataUri, $legenda, $credenciais)) $enviouVideo++;
+        }
+    } catch (Throwable $e) {
+        // melhor esforço — nunca pode travar o turno de qualificação.
+    }
+    return ['fotos' => $enviouFoto, 'video' => $enviouVideo];
 }
 
 /**

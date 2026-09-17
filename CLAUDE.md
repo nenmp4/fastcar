@@ -1555,6 +1555,94 @@ segue no schema sem uso novo, não removida sem ganho real),
   a página inteira com 500 assim que um lead sem veículo vinculado era
   aberto; corrigido com `(string)($v['veiculo_ano'] ?? '')` nos 3 pontos
   afetados (`admin/venda.php` × 2, `admin/vendas.php` × 1).
+  **3ª etapa do módulo — catálogo de foto/vídeo + IA manda mídia sozinha +
+  prompt de negociação** (mesmo dia, pergunta de acompanhamento José/Jean:
+  "como vamos treinar ela para negociação - ela precisa enviar fotos do
+  veículos - vídeo fazer que abraço pro vendedor so ligar fechar") — 3
+  pedaços:
+  (1) **Catálogo de mídia por veículo** (`veiculo_midias_revenda`, nova
+  tabela — `oportunidade_id`, `tipo` foto/vídeo, `mime`, `drive_file_id`/
+  `arquivo_url`, `legenda`) — fica ligado ao VEÍCULO (`oportunidades.id`),
+  não a uma negociação específica: cadastra 1 vez, disponível pra qualquer
+  tentativa de venda futura do mesmo carro (negociação cancelada + reaberta
+  com outro comprador reaproveita sem reupload). ⚠️ **Decisão assumida, não
+  confirmada com o Jean**: fotos são upload NOVO/deliberado do vendedor
+  (card "📸 Fotos e vídeos pra revenda" em `admin/venda.php`, só aparece
+  quando `oportunidade_id` já está vinculado), nunca reaproveitadas
+  automaticamente da foto que o vendedor ORIGINAL mandou durante a
+  qualificação de COMPRA (`whatsapp_mensagens`) — regra #3 aplicada aqui
+  também: carro pode ter sido lavado/reformado/rodado km desde a compra, a
+  foto antiga podia não refletir mais a realidade; sinalizar se o Jean
+  preferir também aproveitar as fotos antigas como ponto de partida.
+  `salvarMidiaRevenda()`/`listarMidiasRevenda()`/`excluirMidiaRevenda()`
+  (`includes/vendas.php`) reaproveitam o MESMO destino Drive/local já
+  usado pros documentos de compra daquele veículo
+  (`salvarArquivoGeradoComoDocumento()`, subpasta "revenda" no fallback) —
+  sem pasta nova no Drive. Teto de tamanho próprio, maior que o de
+  documento comum: 10MB foto / 50MB vídeo (`VEICULO_MIDIA_MAX_BYTES_FOTO`/
+  `_VIDEO`). `admin/ver_midia_revenda.php` (novo) serve o arquivo, travado
+  por `requireAcessoVendas()` (não por responsável — a mídia é do veículo,
+  compartilhada entre qualquer vendedor).
+  (2) **IA manda a mídia sozinha pro comprador** — `zapiEnviarVideo()`
+  (novo, `includes/whatsapp_config.php`, mesmo formato de
+  `zapiEnviarImagem()` — `POST /send-video`, campo `video`, nunca
+  confirmado contra instância real ainda) + `zapiEnviarImagem()` ganhou o
+  mesmo parâmetro `$instanciaOverride` que `zapiEnviarTexto()` já tinha.
+  Extração da IA (`includes/ia_qualificacao_vendas.php`) ganhou
+  `oportunidade_id_sugerida` — só preenchido quando a IA tem certeza real
+  de QUAL veículo específico da frota bate com o interesse do comprador
+  (nunca "chuta" entre vários candidatos); pra isso funcionar sem a IA
+  "inventar" um id, o prompt de EXTRAÇÃO (só esse, nunca o de conversa)
+  recebe a frota com `[ID x]` na frente de cada item
+  (`iaVendasMontarResumoFrotaComId()`) — a IA nunca fala esse número pro
+  comprador, é só referência interna. Quando `oportunidade_id_sugerida`
+  aparece e ainda não foi mandado nada pra esse veículo NESTA conversa
+  (`vendas.midia_sugerida_enviada_para`, nova coluna — evita floodar a
+  cada turno), `enviarMidiaCatalogoParaComprador()` manda até 3 fotos +
+  o 1º vídeo do catálogo (se tiver), como data URI base64 (lê os bytes de
+  verdade via `lerConteudoArquivoDocumento()`, nunca precisa de URL
+  pública pra pasta do Drive/uploads) pela instância DEDICADA de vendas.
+  Envio SEM mídia cadastrada pro veículo simplesmente não manda nada
+  (nunca inventa/promete foto que não existe) — sem quebrar o turno. Mandar
+  a foto **nunca** vincula `vendas.oportunidade_id` sozinho — isso continua
+  100% humano (`vincularVeiculoVenda()`), mandar a foto é só ilustrar a
+  conversa. Mensagem curta (ex: "[📷 3 foto(s) 🎥 vídeo do Chevrolet Onix
+  2019 enviado(s)]") fica registrada no histórico pro vendedor ver que já
+  saiu, mesmo sem preview inline no WhatsApp Box de vendas ainda (escopo
+  cortado por tempo, mesmo espírito de "evitar over-engineering" — o
+  vendedor vê as fotos de verdade no card do catálogo em `admin/venda.php`).
+  (3) **Prompt reforçado com técnica de negociação** — pedido explícito
+  ("treinar ela para negociação"): depois de identificar o veículo certo,
+  a IA agora OFERECE ativamente mandar foto/vídeo em vez de esperar ser
+  pedida; responde objeção de preço citando o valor de referência + os
+  diferenciais reais (procedência, documentação regularizada) em vez de só
+  desviar pro vendedor; e puxa o fechamento assim que sente interesse real
+  (confirma que o vendedor vai ligar pra fechar detalhes/agendar
+  visita/test drive). Regra nova explícita: NUNCA inventar urgência/
+  escassez falsa ("só temos até amanhã", "outra pessoa também quer") —
+  pressão inventada quebra confiança e contraria a regra #3 (nunca
+  inventar), mesmo sendo uma "técnica de venda" comum — só pode mencionar
+  isso se for informação real. `iaGerarResumoVenda()` (geração do resumo
+  pro vendedor) ganhou uma linha de fechamento: "🔥 PRONTO PRA FECHAR"
+  quando o comprador já confirmou interesse num veículo específico, viu
+  foto/vídeo e tem forma de pagamento definida, vs "🌱 PRECISA DE MAIS
+  CONVERSA" — dá pro vendedor saber de cara, sem ler tudo, se é só ligar e
+  fechar ou se ainda precisa nutrir o lead.
+  Testado ponta a ponta: **função** — driver isolado fazendo upload real
+  de uma foto (JPEG gerado via GD) pro catálogo via `salvarMidiaRevenda()`,
+  depois simulando 5 turnos de conversa onde a IA identifica o veículo
+  certo (`[ID x]` extraído do prompt real, batendo com o id verdadeiro no
+  banco) e manda a foto — confirmado no log do fake Z-API que
+  `send-image` foi chamado exatamente 1 vez (nunca reenviou nos turnos
+  seguintes) pela instância de vendas (nunca vazando credencial de
+  compra), `midia_sugerida_enviada_para` gravado certo, mensagem
+  descritiva no histórico. **UI** via Playwright: card de catálogo só
+  aparece depois do veículo vinculado; upload de PNG real funciona,
+  aparece na galeria com legenda; thumbnail serve via
+  `admin/ver_midia_revenda.php` com `Content-Type` certo (200); remover
+  mídia funciona e volta pro estado "vazio". `tests/smoke.php` e migração
+  (idempotente, rodada contra banco já migrado da etapa anterior)
+  continuam limpos.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
@@ -2663,6 +2751,15 @@ testado com servidor fake local — nunca contra o serviço real:
   de compra (`.../chatbot-whatsapp/webhook/whatsapp.php` — o roteamento
   por `instanceId` já sabe diferenciar as duas). Validar contra uma
   mensagem real assim que a instância existir.
+- **`zapiEnviarVideo()` (envio de vídeo)** — 17/09/2026,
+  `includes/whatsapp_config.php`, usado pela IA de vendas pra mandar vídeo
+  do catálogo de um veículo. Construído copiando o mesmo formato já usado
+  em `zapiEnviarImagem()` (`POST /send-video`, campo `video` + `caption`),
+  nunca confirmado contra instância real — mesma ressalva de todo endpoint
+  Z-API que não seja envio de texto. Validar assim que a instância de
+  vendas existir de verdade: se o campo/formato bate, e se o Z-API aceita
+  vídeo como data URI base64 (usado pra evitar precisar de URL pública pra
+  pasta do Drive) do mesmo jeito que já confirmamos funcionar pra áudio.
 - ~~**Formato do payload do webhook Z-API**~~ — ✅ **confirmado em produção,
   15/09/2026**: `messageId`, `phone`, `fromMe`, `isGroup`, `text.message`,
   `instanceId` batem com o padrão herdado do JurídicoSaaS, mensagem real

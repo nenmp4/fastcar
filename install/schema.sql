@@ -433,6 +433,13 @@ CREATE TABLE IF NOT EXISTS vendas (
     veiculo_interesse_texto TEXT DEFAULT '',
     forma_pagamento_pretendida TEXT DEFAULT '',
     urgencia TEXT DEFAULT '',
+    -- Último oportunidade_id (frota) pra quem a IA já mandou foto/vídeo
+    -- do catálogo NESTA conversa (17/09/2026, "ela precisa enviar fotos
+    -- do veículos - vídeo") — evita mandar a mesma mídia de novo a cada
+    -- turno enquanto o comprador ainda não confirmou o vínculo de verdade
+    -- (vincularVeiculoVenda(), sempre humano). NULL = nunca mandou nada
+    -- ainda nesta conversa.
+    midia_sugerida_enviada_para INTEGER REFERENCES oportunidades(id),
 
     -- Qualificação civil do COMPRADOR — colunas próprias aqui, não
     -- `clientes`: comprador de revenda é um contato diferente do vendedor
@@ -481,6 +488,28 @@ CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em);
 -- uma negociação cancelada libera o veículo pra uma nova tentativa.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_ativa_por_veiculo
     ON vendas(oportunidade_id) WHERE etapa IN ('negociacao', 'contrato_enviado');
+
+-- Catálogo de fotos/vídeos de um veículo da frota, pra revenda (17/09/2026,
+-- pedido José/Jean: "ela precisa enviar fotos do veículos - vídeo") — vive
+-- ligado à OPORTUNIDADE (o veículo em si), não a uma negociação de venda
+-- específica: uma vez cadastrado, fica disponível pra qualquer tentativa de
+-- venda futura desse mesmo veículo (negociação cancelada + reaberta com
+-- outro comprador reaproveita o mesmo catálogo, sem reupload). Mesmo padrão
+-- Drive-preferido/local-fallback de oportunidade_documentos/whatsapp_mensagens
+-- (includes/vendas.php::salvarMidiaRevenda()) — arquivo entra na MESMA pasta
+-- do Drive do cliente original (que já tem os documentos de compra desse
+-- veículo), sem precisar de pasta nova.
+CREATE TABLE IF NOT EXISTS veiculo_midias_revenda (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('foto', 'video')),
+    mime TEXT NOT NULL DEFAULT '',
+    drive_file_id TEXT DEFAULT '',
+    arquivo_url TEXT DEFAULT '',
+    legenda TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_veiculo_midias_oportunidade ON veiculo_midias_revenda(oportunidade_id);
 
 -- Mesma disciplina de histórico do funil de compra (regra #6) — nunca
 -- UPDATE direto em vendas.etapa, sempre por mudarEtapaVenda()

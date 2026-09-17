@@ -493,4 +493,36 @@ try {
     echo "❌ vendas (funil de entrada por WhatsApp): {$e->getMessage()}\n";
 }
 
+// 17/09/2026 — catálogo de fotos/vídeos de veículo da frota pra revenda
+// ("ela precisa enviar fotos do veículos - vídeo") + coluna de controle
+// pra não reenviar a mesma mídia a cada turno da conversa.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS veiculo_midias_revenda (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+            tipo TEXT NOT NULL CHECK (tipo IN ('foto', 'video')),
+            mime TEXT NOT NULL DEFAULT '',
+            drive_file_id TEXT DEFAULT '',
+            arquivo_url TEXT DEFAULT '',
+            legenda TEXT DEFAULT '',
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_veiculo_midias_oportunidade ON veiculo_midias_revenda(oportunidade_id)");
+    echo "✅ veiculo_midias_revenda: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ veiculo_midias_revenda: {$e->getMessage()}\n";
+}
+if (!colunaExiste($db, 'vendas', 'midia_sugerida_enviada_para')) {
+    try {
+        $db->exec("ALTER TABLE vendas ADD COLUMN midia_sugerida_enviada_para INTEGER REFERENCES oportunidades(id)");
+        echo "✅ vendas.midia_sugerida_enviada_para: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ vendas.midia_sugerida_enviada_para: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  vendas.midia_sugerida_enviada_para: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";
