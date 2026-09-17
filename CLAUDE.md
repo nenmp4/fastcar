@@ -1299,6 +1299,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   final com o link "CRLV" na lista de revisão; linha `oportunidade_documentos`
   gravada com `obrigatorio=1`/`dados_confirmados=1`, entrando certo no
   checklist de fechamento junto dos outros documentos obrigatórios.
+  **Rótulo do passo "CNH" deixa explícito que RG também serve**
+  (17/09/2026, "wirzad pede cnh/Rg pois tem gente não tem cnh") — o
+  rótulo dizia só "CNH (frente e verso, ou documento com foto)", CNH em
+  destaque primeiro e o RG só implícito num detalhe pequeno, dando a
+  impressão de que CNH era obrigatória pra quem não tem. Os dados já
+  eram coletados certos por baixo (RG é campo separado na tela de
+  revisão, e a CNH já era opcional lá — "Nº da CNH (se tiver)") — só o
+  rótulo do PASSO DE UPLOAD não deixava isso óbvio de cara. Trocado pra
+  "CNH ou RG (documento de identidade com foto, frente e verso)" nos 2
+  lugares onde o rótulo é definido (`public/documentos.php` e
+  `includes/documentos.php::TIPOS_DOCUMENTOS_CLIENTE` — duplicado de
+  propósito desde a implementação original, atualizados juntos pra não
+  dessincronizar entre o wizard do cliente e a tela do consultor), e os
+  links "Voltar na CNH" da tela de resumo/conclusão viraram "CNH/RG". A
+  IA de extração (`includes/extracao_documentos.php`) já lia "CNH ou
+  documento de identidade com foto" desde sempre — nenhuma mudança
+  precisou lá. Testado servindo a página real em banco isolado: "Etapa 1
+  de 4 — envie: CNH ou RG (documento de identidade com foto, frente e
+  verso)" aparece certo no HTML renderizado.
   **Comprovante de pagamento e laudo de avaliação viraram opcionais**
   (17/09/2026, "vamos deixar opcional o laudo e comprovante de pagamento
   opcional para fechar pasta"), motivo de negócio explicado no mesmo dia

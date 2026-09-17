@@ -13,7 +13,12 @@ require_once __DIR__ . '/google_drive.php';
 
 /** Tipos que o CLIENTE sobe sozinho no formulário público. */
 const TIPOS_DOCUMENTOS_CLIENTE = [
-    'cnh'                    => 'CNH (frente e verso, ou documento com foto)',
+    // 17/09/2026, "wirzad pede cnh/Rg pois tem gente não tem cnh" — mesmo
+    // rótulo do wizard público (public/documentos.php), deixando explícito
+    // que RG também serve, não só CNH (o RG já era coletado como campo
+    // separado na revisão, e a CNH já era opcional — só o rótulo do passo
+    // de upload não deixava isso óbvio pra quem não tem CNH).
+    'cnh'                    => 'CNH ou RG (documento de identidade com foto, frente e verso)',
     'comprovante_endereco'   => 'Comprovante de endereço (últimos 3 meses)',
     'contrato_financiamento' => 'Contrato de financiamento do veículo (com o banco)',
     // CRLV (16/09/2026, "falta o documento do carro crlv") — o próprio

@@ -33,7 +33,13 @@ startSecureSession();
 // pré-preenchidos (fill-if-empty) da etapa anterior pro cliente só conferir.
 const ORDEM_ETAPAS = ['cnh', 'comprovante_endereco', 'contrato_financiamento', 'crlv'];
 $labelEtapa = [
-    'cnh' => 'CNH (frente e verso, ou documento com foto)',
+    // 17/09/2026, "wirzad pede cnh/Rg pois tem gente não tem cnh" — o rótulo
+    // dizia só "CNH" primeiro (com "ou documento com foto" como detalhe
+    // pequeno depois), deixando parecer que CNH era obrigatória pra quem não
+    // tem; o RG já era coletado como campo separado na revisão (e a CNH já
+    // era opcional lá, "Nº da CNH (se tiver)") — o problema era só o rótulo
+    // do passo de upload não deixar isso óbvio de cara.
+    'cnh' => 'CNH ou RG (documento de identidade com foto, frente e verso)',
     'comprovante_endereco' => 'Comprovante de endereço (últimos 3 meses)',
     'contrato_financiamento' => 'Contrato de financiamento do veículo (com o banco)',
     'crlv' => 'CRLV (Certificado de Registro e Licenciamento do Veículo)',
@@ -414,7 +420,7 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
                 <dt>Veículo</dt><dd><?= e(trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '') . ' ' . ($op['veiculo_ano'] ?? '')) ?: '—') ?></dd>
             </dl>
             <p><small>Alguma coisa errada? Volte na
-                <a href="?token=<?= e($token) ?>&revisar=cnh">CNH</a>,
+                <a href="?token=<?= e($token) ?>&revisar=cnh">CNH/RG</a>,
                 <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a>,
                 <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a> ou
                 <a href="?token=<?= e($token) ?>&revisar=crlv">CRLV</a>.</small></p>
@@ -429,7 +435,7 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
     <?php else: ?>
         <div class="alerta-sucesso">✅ Tudo certo! Recebemos seus documentos e dados — seu consultor vai analisar e entrar em contato.</div>
         <p><small>Precisa corrigir algo? Volte na
-            <a href="?token=<?= e($token) ?>&revisar=cnh">CNH</a>,
+            <a href="?token=<?= e($token) ?>&revisar=cnh">CNH/RG</a>,
             <a href="?token=<?= e($token) ?>&revisar=comprovante_endereco">comprovante de endereço</a>,
             <a href="?token=<?= e($token) ?>&revisar=contrato_financiamento">contrato de financiamento</a> ou
             <a href="?token=<?= e($token) ?>&revisar=crlv">CRLV</a>.</small></p>
