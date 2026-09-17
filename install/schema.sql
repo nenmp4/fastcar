@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     terceiro_quitacao TEXT DEFAULT '', -- quem a FASTCAR indica pra quitar o financiamento (Quadro-Resumo do contrato)
     seguro_texto TEXT DEFAULT '',      -- condição de seguro/proteção durante a posse da FASTCAR (Quadro-Resumo do contrato)
     encargos_texto TEXT DEFAULT '',    -- responsável por IPVA/licenciamento/multas após a entrega (Quadro-Resumo do contrato)
+    prazo_quitacao_meses INTEGER,      -- prazo negociado pra quitar o financiamento (normal: 12-18, nunca > 24 meses — cláusulas 1.3/4.1/5ª/18.3 do contrato-mestre de compra); sem DEFAULT de propósito, sempre confirmado com o cliente por oportunidade, nunca fixo em 24
 
     -- Bloco 7 — Presencial/fechamento
     reuniao_agendada_em DATETIME,

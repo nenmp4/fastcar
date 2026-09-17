@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
                         saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
-                        data_entrega_posse = ?, updated_at = datetime('now','localtime')
+                        data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
                     $_POST['valor_fipe_referencia'] !== '' ? (float)$_POST['valor_fipe_referencia'] : null,
@@ -91,6 +91,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
+                    // Nunca mais que 24 meses (limite contratual, cláusula
+                    // 5ª/1.3) — travado no servidor, não só no max="24" do
+                    // input, mesmo padrão já usado pro prazo do contrato de
+                    // venda (admin/venda.php).
+                    $_POST['prazo_quitacao_meses'] !== '' ? min(24, max(1, (int)$_POST['prazo_quitacao_meses'])) : null,
                     $id,
                 ]);
                 $sucesso = 'Dados do contrato atualizados.';
@@ -444,6 +449,9 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="text" name="terceiro_quitacao" value="<?= e($op['terceiro_quitacao'] ?? '') ?>" placeholder="a indicar, se ainda não tiver">
                 <label>Data de entrega da posse</label>
                 <input type="date" name="data_entrega_posse" value="<?= e($op['data_entrega_posse'] ?? '') ?>">
+                <label>Prazo pra quitar o financiamento (meses)</label>
+                <input type="number" min="1" max="24" name="prazo_quitacao_meses" value="<?= e((string)($op['prazo_quitacao_meses'] ?? '')) ?>" placeholder="normal: 12 a 18">
+                <small style="color:var(--texto-fraco)">Normal fica entre 12 e 18 meses — o limite contratual é 24 (cláusula 5ª), nunca digitar mais que isso.</small>
                 <label>Seguro/proteção durante a posse da FASTCAR</label>
                 <input type="text" name="seguro_texto" value="<?= e($op['seguro_texto'] ?? '') ?>">
                 <label>IPVA/licenciamento/multas após a entrega</label>

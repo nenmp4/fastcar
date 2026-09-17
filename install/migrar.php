@@ -154,6 +154,11 @@ $migracoes = [
     // achado real: cliente reclamando de financiamento não quitado de um
     // carro JÁ vendido pra Fastcar, tratado por engano como lead novo
     'oportunidade_pendencias_pos_venda.responsavel_id' => "ALTER TABLE oportunidade_pendencias_pos_venda ADD COLUMN responsavel_id INTEGER REFERENCES usuarios(id)",
+
+    // 17/09/2026 — prazo pra quitar o financiamento vira negociável por
+    // oportunidade (normal 12-18 meses, nunca mais que 24) em vez de fixo
+    // em 24 meses direto nas cláusulas do contrato-mestre de compra
+    'oportunidades.prazo_quitacao_meses' => "ALTER TABLE oportunidades ADD COLUMN prazo_quitacao_meses INTEGER",
 ];
 
 foreach ($migracoes as $nome => $sql) {

@@ -79,6 +79,15 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'responsavel_registral'         => $op['cliente_nome'] ?: '',
         'terceiro_quitacao'             => $op['terceiro_quitacao'] ?: '',
         'data_entrega_posse'            => $op['data_entrega_posse'] ? date('d/m/Y', strtotime($op['data_entrega_posse'])) : date('d/m/Y'),
+        // Prazo pra quitar o financiamento — 17/09/2026, "prazo máximo para
+        // quitação do financiamento é de 12 a 18 meses podendo prolongar
+        // para 24 meses": antes vinha FIXO em "24 meses" direto no texto das
+        // cláusulas (1.3/4.1/5ª/18.3) e no Quadro-Resumo, sem nenhum campo
+        // pra negociar por oportunidade. `null` (nunca um número chutado
+        // aqui, regra #3) quando a oportunidade ainda não tem o valor —
+        // verificarCamposObrigatoriosContrato() bloqueia a geração do
+        // contrato sem esse campo preenchido explicitamente.
+        'prazo_quitacao_meses'          => $op['prazo_quitacao_meses'] !== null ? (int)$op['prazo_quitacao_meses'] : null,
         'seguro_texto'                  => $op['seguro_texto'] ?: '',
         'encargos_texto'                => $op['encargos_texto'] ?: '',
         // Testemunhas são sempre da própria Fastcar (pedido do José/Jean,
@@ -108,6 +117,10 @@ function verificarCamposObrigatoriosContrato(array $campos): array {
         'vendedor_nome' => 'Nome do vendedor', 'vendedor_cpf' => 'CPF do vendedor',
         'vendedor_rg' => 'RG do vendedor', 'veiculo_marca' => 'Marca do veículo',
         'veiculo_modelo' => 'Modelo do veículo', 'valor_pago_vendedor' => 'Valor ofertado ao vendedor (bloco 6)',
+        // 17/09/2026 — deixou de ser fixo em 24 meses nas cláusulas, então
+        // agora precisa vir preenchido explicitamente antes de gerar
+        // (nunca cair num "24" chutado só porque o campo ficou vazio).
+        'prazo_quitacao_meses' => 'Prazo pra quitar o financiamento (card "Financiamento e contrato de compra")',
     ];
     $faltando = [];
     foreach ($obrigatorios as $campo => $label) {

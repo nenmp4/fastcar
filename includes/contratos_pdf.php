@@ -196,7 +196,7 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfLinhaResumo($pdf, 'Contrato de financiamento nº', $c['contrato_financiamento_numero']);
     _pdfLinhaResumo($pdf, 'Saldo estimado do financiamento na data', _fmtMoeda($c['saldo_financiamento_atual']));
     _pdfLinhaResumo($pdf, 'Responsável registral perante o credor', $c['responsavel_registral']);
-    _pdfLinhaResumo($pdf, 'Prazo máximo para quitação do financiamento', "Até 24 meses, contado de {$c['data_entrega_posse']}");
+    _pdfLinhaResumo($pdf, 'Prazo pra quitação do financiamento', "Até {$c['prazo_quitacao_meses']} meses, contado de {$c['data_entrega_posse']} — nunca superior a 24 meses");
     _pdfLinhaResumo($pdf, 'Terceiro indicado pela FASTCAR para a quitação', $c['terceiro_quitacao'] ?: 'a indicar');
     _pdfLinhaResumo($pdf, 'Posse física entregue à FASTCAR em', $c['data_entrega_posse']);
     _pdfLinhaResumo($pdf, 'Exploração econômica pela FASTCAR', 'Autorizada, inclusive locação a terceiros, nos limites contratuais');
@@ -204,7 +204,7 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfLinhaResumo($pdf, 'Seguro/proteção durante posse FASTCAR', $c['seguro_texto']);
     _pdfLinhaResumo($pdf, 'IPVA/licenciamento/multas após entrega', $c['encargos_texto']);
 
-    foreach (clausulasContratoCompra() as [$titulo, $corpo]) {
+    foreach (clausulasContratoCompra((int)$c['prazo_quitacao_meses']) as [$titulo, $corpo]) {
         _pdfTituloClausula($pdf, $titulo);
         _pdfCorpo($pdf, $corpo);
     }
@@ -258,13 +258,20 @@ function gerarPdfContratoCompra(array $c): string {
     return $caminho;
 }
 
-/** Cláusulas do contrato-mestre de compra — [título, corpo]. */
-function clausulasContratoCompra(): array {
+/**
+ * Cláusulas do contrato-mestre de compra — [título, corpo].
+ * $prazoMeses: prazo negociado pra quitar o financiamento (normal 12-18,
+ * nunca > 24 — travado em admin/oportunidade.php/includes/contratos.php
+ * antes de chegar aqui). 17/09/2026: até então vinha fixo em "24 meses"
+ * hardcoded em todo lugar — ver bullet "Saldo do financiamento..." não,
+ * ver CLAUDE.md seção "Módulo de contrato (só COMPRA)" pro histórico.
+ */
+function clausulasContratoCompra(int $prazoMeses = 24): array {
     return [
         ['CLÁUSULA 1ª – OBJETO E ESTRUTURA DA OPERAÇÃO',
             "1.1. O VENDEDOR negocia com a FASTCAR os direitos econômicos e a futura aquisição do veículo identificado no Quadro-Resumo, entregando-lhe desde já a posse direta e autorizando sua administração e exploração econômica, permanecendo a transferência registral definitiva condicionada à quitação e baixa de eventual gravame.\n\n" .
             "1.2. Como contraprestação inicial, a FASTCAR pagará ao VENDEDOR o valor indicado no Quadro-Resumo, correspondente ao percentual livremente ajustado, que não poderá exceder 25% do valor FIPE de referência utilizado na contratação.\n\n" .
-            "1.3. O restante da estrutura econômica da operação consiste na quitação futura do financiamento/gravame, por terceiro indicado pela FASTCAR, dentro do prazo máximo de 24 meses.\n\n" .
+            "1.3. O restante da estrutura econômica da operação consiste na quitação futura do financiamento/gravame, por terceiro indicado pela FASTCAR, dentro do prazo máximo de {$prazoMeses} meses, indicado no Quadro-Resumo, nunca superior a 24 meses.\n\n" .
             "1.4. O pagamento da dívida ao credor por terceiro não equivale, por si só, à assunção formal da dívida perante a instituição financeira, nem substitui eventual consentimento do credor exigido para mudança de devedor, novação ou alteração contratual.\n\n" .
             "1.5. Enquanto vigente alienação fiduciária, a titularidade resolúvel e os direitos do credor fiduciário permanecem preservados, não podendo este instrumento ser interpretado como autorização para frustrar, ocultar ou impedir o exercício legítimo desses direitos."],
         ['CLÁUSULA 2ª – DECLARAÇÕES DO VENDEDOR E SITUAÇÃO DO VEÍCULO',
@@ -276,13 +283,13 @@ function clausulasContratoCompra(): array {
             "3.2. O VENDEDOR dará recibo do valor efetivamente recebido, sem que isso importe declaração de quitação do financiamento perante a instituição financeira.\n\n" .
             "3.3. Nenhum valor adicional será devido ao VENDEDOR além do expressamente previsto neste contrato, ressalvado aditivo escrito."],
         ['CLÁUSULA 4ª – QUITAÇÃO FUTURA DO FINANCIAMENTO POR TERCEIRO INDICADO',
-            "4.1. A FASTCAR deverá organizar a indicação de terceiro responsável por realizar a quitação do financiamento ou gravame no prazo máximo de 24 meses.\n\n" .
+            "4.1. A FASTCAR deverá organizar a indicação de terceiro responsável por realizar a quitação do financiamento ou gravame no prazo máximo de {$prazoMeses} meses.\n\n" .
             "4.2. O terceiro pagador poderá quitar integralmente a dívida, negociar liquidação antecipada ou aderir a solução aceita pela instituição financeira que resulte na efetiva baixa do gravame dentro do prazo máximo contratual.\n\n" .
             "4.3. A indicação de terceiro não exonera a FASTCAR de sua obrigação contratual de gestão e resultado perante o VENDEDOR quanto à obtenção da quitação/baixa no prazo, salvo se o impedimento decorrer exclusivamente de ato do VENDEDOR ou de fato documental por ele omitido.\n\n" .
             "4.4. Pagamentos ao credor serão comprovados por documentos idôneos. A FASTCAR manterá trilha de acompanhamento e fornecerá ao VENDEDOR informações razoáveis sobre marcos relevantes.\n\n" .
             "4.5. Se a instituição exigir anuência, comparecimento, assinatura ou documento do VENDEDOR, este deverá cooperar em prazo razoável, sem assumir obrigações novas não previstas."],
-        ['CLÁUSULA 5ª – PRAZO DE ATÉ 24 MESES',
-            "5.1. O prazo máximo começa na data indicada no Quadro-Resumo e termina automaticamente 24 meses depois, salvo quitação anterior.\n\n" .
+        ["CLÁUSULA 5ª – PRAZO DE ATÉ {$prazoMeses} MESES",
+            "5.1. O prazo máximo começa na data indicada no Quadro-Resumo e termina automaticamente {$prazoMeses} meses depois, salvo quitação anterior, respeitado o limite contratual absoluto de 24 meses.\n\n" .
             "5.2. O prazo é limite máximo para obtenção da quitação e baixa do gravame, não simples prazo para início de negociação.\n\n" .
             "5.3. Nos 90, 60 e 30 dias anteriores ao termo final, a FASTCAR deverá promover revisão documentada do status da dívida e do plano de quitação."],
         ['CLÁUSULA 6ª – POSSE, GUARDA E ENTREGA',
@@ -304,7 +311,7 @@ function clausulasContratoCompra(): array {
             "9.2. A FASTCAR deverá acompanhar o status financeiro e evitar que a exploração do veículo seja realizada ignorando situação de mora relevante ou medida de apreensão conhecida.\n\n" .
             "9.3. Nenhuma cláusula deste contrato limita direitos do credor que não seja parte deste instrumento."],
         ['CLÁUSULA 10ª – PARCELAS DO FINANCIAMENTO ATÉ A QUITAÇÃO',
-            "10.1. A forma de manutenção das parcelas do financiamento durante o período de até 24 meses será descrita no Anexo Financeiro: quem paga mensalmente, como se dará a negociação, como será evitada mora.\n\n" .
+            "10.1. A forma de manutenção das parcelas do financiamento durante o período de até {$prazoMeses} meses será descrita no Anexo Financeiro: quem paga mensalmente, como se dará a negociação, como será evitada mora.\n\n" .
             "10.2. Este campo é condição essencial. O veículo não deverá ser recebido pela FASTCAR sem definição documental sobre quem realizará os pagamentos correntes ou sobre a existência de acordo formal com o credor.\n\n" .
             "10.3. Havendo alteração do plano, deverá ser produzida evidência escrita e atualizada."],
         ['CLÁUSULA 11ª – TRIBUTOS, LICENCIAMENTO E MULTAS',
@@ -336,7 +343,7 @@ function clausulasContratoCompra(): array {
         ['CLÁUSULA 18ª – INADIMPLEMENTO DA FASTCAR',
             "18.1. Constituem inadimplemento relevante da FASTCAR: ausência injustificada de gestão da quitação; omissão perante mora grave conhecida; exploração contrária a restrição legal conhecida; não obtenção da quitação/baixa até o termo final por fato imputável à FASTCAR; ou recusa injustificada de prestar informações essenciais.\n\n" .
             "18.2. Verificado risco concreto ao patrimônio ou à posição do VENDEDOR perante o credor, as partes deverão adotar plano de saneamento imediato, sem prejuízo das medidas jurídicas cabíveis.\n\n" .
-            "18.3. Se o prazo de 24 meses expirar sem quitação por fato imputável à FASTCAR ou a terceiro por ela indicado, a FASTCAR permanecerá responsável perante o VENDEDOR pelo cumprimento da obrigação contratual de resultado e pelos efeitos comprovadamente decorrentes do descumprimento, sem prejuízo de regressar contra o terceiro indicado."],
+            "18.3. Se o prazo de {$prazoMeses} meses expirar sem quitação por fato imputável à FASTCAR ou a terceiro por ela indicado, a FASTCAR permanecerá responsável perante o VENDEDOR pelo cumprimento da obrigação contratual de resultado e pelos efeitos comprovadamente decorrentes do descumprimento, sem prejuízo de regressar contra o terceiro indicado."],
         ['CLÁUSULA 19ª – INADIMPLEMENTO DO VENDEDOR',
             "19.1. Constituem inadimplemento grave do VENDEDOR: informação falsa sobre financiamento ou propriedade; ocultação de restrição; revogação injustificada dos poderes necessários à execução contratual após recebimento do preço; dupla venda; criação de novo ônus; não cooperação injustificada; ou apropriação de valores destinados à quitação.\n\n" .
             "19.2. Nesses casos, a FASTCAR poderá exigir cumprimento específico, perdas e danos, restituição de valores e demais medidas cabíveis."],

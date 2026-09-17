@@ -1463,6 +1463,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   acesso a `storage/logs/`/log do PHP-FPM da VPS pra confirmar de verdade.
   Se acontecer de novo, pegar o texto exato do erro (ou os logs na VPS)
   antes de assumir causa — a reprodução isolada não encontrou nada.
+  **Prazo pra quitação do financiamento deixou de ser fixo em 24 meses**
+  (17/09/2026, pedido urgente: "prazo máximo para quitação do
+  financiamento é de 12 a 18 meses podendo prolongar para 24 meses temos
+  alterar urgente no contrato"). Achado revisando `contratos_pdf.php`: o
+  Quadro-Resumo e as cláusulas 1.3/4.1/5ª (título e 5.1)/10.1/18.3 tinham
+  "24 meses" **hardcoded** direto no texto — sem nenhum campo pra negociar
+  por oportunidade, o normal da operação (12-18 meses) nunca tinha como
+  ser refletido no contrato de verdade, só o teto absoluto sempre
+  aparecia como se fosse o prazo real. Nova coluna
+  `oportunidades.prazo_quitacao_meses` (nullable, sem `DEFAULT` de
+  propósito — regra #3, nunca um número chutado) + campo "Prazo pra
+  quitar o financiamento (meses)" no card "Financiamento e contrato de
+  compra" (`admin/oportunidade.php`), hint "normal: 12 a 18", `max="24"`
+  no input; salvar trava no servidor com `min(24, max(1, ...))` — nunca
+  só confia no `max` do HTML, mesmo padrão já usado no prazo do contrato
+  de venda (`admin/venda.php`). `clausulasContratoCompra()`
+  (`includes/contratos_pdf.php`) ganhou parâmetro `$prazoMeses`,
+  interpolado nas 5 cláusulas + Quadro-Resumo em vez do `24` fixo,
+  sempre mantendo "nunca superior a 24 meses" como teto absoluto no texto
+  (mesmo padrão do contrato de venda, que já era parametrizado desde a
+  1ª versão — conferido que a cláusula 3.1 de lá já referenciava "o prazo
+  indicado no Quadro-Resumo" corretamente, sem o mesmo bug, não precisou
+  de mudança). Campo virou **obrigatório** pra gerar o contrato
+  (`verificarCamposObrigatoriosContrato()`) — nunca deixa cair num 24
+  chutado só porque ficou vazio; `montarCamposContratoCompra()` retorna
+  `null` explicitamente quando não preenchido, pra essa validação
+  funcionar de verdade. Testado em banco isolado: coluna nova existe no
+  schema; oportunidade sem prazo preenchido bloqueia a geração do
+  contrato com a mensagem certa; oportunidade com prazo=15 gera o PDF
+  normalmente; PDF gerado decodificado (`gzuncompress` dos content
+  streams do FPDF) confirmando "15 meses" no Quadro-Resumo E nas 5
+  cláusulas, nenhuma sobrando com "24" fixo; teste HTTP direto
+  confirmando que enviar 99 no campo salva 24 no banco (trava do servidor
+  funcionando, não só o `max` do HTML).
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em
