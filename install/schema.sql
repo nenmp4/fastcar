@@ -600,6 +600,16 @@ CREATE TABLE IF NOT EXISTS fin_colaboradores (
     cargo TEXT DEFAULT '',
     tipo_vinculo TEXT DEFAULT 'clt',
     salario_base REAL DEFAULT NULL,
+    -- 'mensal'/'quinzenal' — 17/09/2026, "Os consultores eles ganha o fixo
+    -- cada 15 dias mais comissão". Comissão em si NUNCA é gerada daqui —
+    -- é sempre lançamento manual avulso (confirmado com o usuário:
+    -- "comissão é lançado manual"), este campo é só o fixo/salário_base.
+    -- Ainda não existe cron gerando o lançamento quinzenal sozinho — o
+    -- usuário confirmou que isso fica pra configurar depois
+    -- ("pagamento vai rodar no cron cada 15 dias podemos configurar
+    -- depois isso"); por enquanto é só um dado do colaborador, usado pra
+    -- saber a periodicidade na hora de lançar manualmente.
+    periodicidade_pagamento TEXT DEFAULT 'mensal',
     usuario_id INTEGER DEFAULT NULL REFERENCES usuarios(id),
     status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
     data_admissao TEXT DEFAULT NULL,
@@ -635,7 +645,7 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
     fornecedor_id INTEGER DEFAULT NULL REFERENCES fin_fornecedores(id),
     forma_pagamento TEXT DEFAULT '',
     recorrente INTEGER DEFAULT 0,
-    recorrencia_intervalo TEXT DEFAULT '', -- 'mensal'/'anual'
+    recorrencia_intervalo TEXT DEFAULT '', -- 'mensal'/'quinzenal'/'anual'
     recorrencia_origem_id INTEGER DEFAULT NULL,
     drive_file_id TEXT DEFAULT '',
     arquivo_url TEXT DEFAULT '',

@@ -29,14 +29,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cargo = clean((string)($_POST['cargo'] ?? ''));
             $tipoVinculo = clean((string)($_POST['tipo_vinculo'] ?? 'clt'));
             $salario = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['salario_base'] ?? ''))) ?: null;
+            $periodicidade = in_array($_POST['periodicidade_pagamento'] ?? '', ['mensal', 'quinzenal'], true) ? $_POST['periodicidade_pagamento'] : 'mensal';
             $obs = clean((string)($_POST['observacoes'] ?? ''));
             if (!$nome) {
                 $erro = 'Nome é obrigatório.';
             } elseif ($id) {
-                $db->prepare("UPDATE fin_colaboradores SET nome=?, cargo=?, tipo_vinculo=?, salario_base=?, observacoes=?, updated_at=datetime('now','localtime') WHERE id=?")->execute([$nome, $cargo, $tipoVinculo, $salario, $obs, $id]);
+                $db->prepare("UPDATE fin_colaboradores SET nome=?, cargo=?, tipo_vinculo=?, salario_base=?, periodicidade_pagamento=?, observacoes=?, updated_at=datetime('now','localtime') WHERE id=?")->execute([$nome, $cargo, $tipoVinculo, $salario, $periodicidade, $obs, $id]);
                 $sucesso = 'Colaborador atualizado.';
             } else {
-                $db->prepare('INSERT INTO fin_colaboradores (nome, cargo, tipo_vinculo, salario_base, observacoes) VALUES (?,?,?,?,?)')->execute([$nome, $cargo, $tipoVinculo, $salario, $obs]);
+                $db->prepare('INSERT INTO fin_colaboradores (nome, cargo, tipo_vinculo, salario_base, periodicidade_pagamento, observacoes) VALUES (?,?,?,?,?,?)')->execute([$nome, $cargo, $tipoVinculo, $salario, $periodicidade, $obs]);
                 $sucesso = 'Colaborador criado.';
             }
         } elseif ($acao === 'inativar') {
@@ -66,9 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Esse usuário já está cadastrado como colaborador (confira a lista abaixo, pode estar inativo).';
                 } else {
                     $cargoPadrao = FINANCEIRO_PERFIL_LABEL[$usuario['perfil']] ?? ucfirst($usuario['perfil']);
-                    $db->prepare('INSERT INTO fin_colaboradores (nome, cargo, tipo_vinculo, usuario_id) VALUES (?,?,?,?)')
-                       ->execute([$usuario['nome'], $cargoPadrao, 'clt', $usuarioId]);
-                    $sucesso = 'Colaborador "' . $usuario['nome'] . '" adicionado a partir do usuário do sistema — confira/edite cargo, vínculo e salário na lista abaixo.';
+                    // Consultor ganha o fixo quinzenal (17/09/2026, "Os
+                    // consultores eles ganha o fixo cada 15 dias mais
+                    // comição") — só a sugestão inicial pro perfil que a
+                    // regra de negócio já confirmou, os outros continuam
+                    // mensal; sempre editável depois, nunca travado.
+                    $periodicidadePadrao = $usuario['perfil'] === 'consultor' ? 'quinzenal' : 'mensal';
+                    $db->prepare('INSERT INTO fin_colaboradores (nome, cargo, tipo_vinculo, periodicidade_pagamento, usuario_id) VALUES (?,?,?,?,?)')
+                       ->execute([$usuario['nome'], $cargoPadrao, 'clt', $periodicidadePadrao, $usuarioId]);
+                    $sucesso = 'Colaborador "' . $usuario['nome'] . '" adicionado a partir do usuário do sistema — confira/edite cargo, vínculo, periodicidade e salário na lista abaixo.';
                 }
             }
         }
@@ -153,8 +160,16 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
         </select>
         <label>Salário/pró-labore base (R$)</label>
         <input type="text" name="salario_base" value="<?= e((string)($editando['salario_base'] ?? '')) ?>" placeholder="0,00">
+        <label>Periodicidade do fixo</label>
+        <select name="periodicidade_pagamento">
+          <?php foreach (['mensal' => 'Mensal', 'quinzenal' => 'Quinzenal (a cada 15 dias)'] as $k => $lbl): ?>
+            <option value="<?= $k ?>" <?= ($editando['periodicidade_pagamento'] ?? 'mensal') === $k ? 'selected' : '' ?>><?= $lbl ?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
     </div>
+    <p><small>Comissão (quando tiver) entra sempre como um lançamento manual à parte, em
+       <a href="/admin/financeiro-lancamentos.php">Lançamentos</a> — este campo é só o fixo/salário.</small></p>
     <label>Observações</label>
     <textarea name="observacoes" rows="2"><?= e($editando['observacoes'] ?? '') ?></textarea>
     <button type="submit"><?= $editando ? 'Salvar' : 'Criar' ?></button>
@@ -165,13 +180,14 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
 <div class="card">
   <h3>👥 Colaboradores (<?= count($colaboradores) ?>)</h3>
   <table class="tabela-oportunidades">
-    <thead><tr><th>Nome</th><th>Cargo</th><th>Vínculo</th><th>Origem</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>Cargo</th><th>Vínculo</th><th>Fixo</th><th>Origem</th><th>Status</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($colaboradores as $c): ?>
       <tr>
         <td><?= e($c['nome']) ?></td>
         <td><?= e($c['cargo']) ?></td>
         <td><?= e(strtoupper($c['tipo_vinculo'])) ?></td>
+        <td><?= ($c['periodicidade_pagamento'] ?? 'mensal') === 'quinzenal' ? 'Quinzenal' : 'Mensal' ?></td>
         <td><?= $c['usuario_id'] ? '🔗 usuário do sistema' : '✍️ manual' ?></td>
         <td><?= $c['status'] === 'ativo' ? '<span class="badge badge-ok">✅ ativo</span>' : '<span class="badge">⛔ inativo</span>' ?></td>
         <td style="white-space:nowrap">

@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formaPgtoSel = (string)($_POST['forma_pagamento'] ?? '');
                 $formaPgto = $formaPgtoSel === 'outro' ? clean((string)($_POST['forma_pagamento_outro'] ?? '')) : clean($formaPgtoSel);
                 $recorrente = isset($_POST['recorrente']) ? 1 : 0;
-                $recIntervalo = $recorrente ? (in_array($_POST['recorrencia_intervalo'] ?? '', ['mensal', 'anual'], true) ? $_POST['recorrencia_intervalo'] : 'mensal') : '';
+                $recIntervalo = $recorrente ? (in_array($_POST['recorrencia_intervalo'] ?? '', ['mensal', 'quinzenal', 'anual'], true) ? $_POST['recorrencia_intervalo'] : 'mensal') : '';
                 $obs = clean((string)($_POST['observacoes'] ?? ''));
                 $userId = (int)($_SESSION['admin_id'] ?? 0);
                 $status = finCalcularStatus($pagamento, $vencimento);
@@ -250,7 +250,12 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
             <option value="<?= (int)$fo['id'] ?>" <?= (int)($editando['fornecedor_id'] ?? 0) === (int)$fo['id'] ? 'selected' : '' ?>><?= e($fo['nome']) ?></option>
           <?php endforeach; ?>
         </select>
-        <label><input type="checkbox" name="recorrente" value="1" <?= !empty($editando['recorrente']) ? 'checked' : '' ?> style="width:auto;display:inline-block"> 🔁 Recorrente (mensal/anual)</label>
+        <label><input type="checkbox" name="recorrente" value="1" <?= !empty($editando['recorrente']) ? 'checked' : '' ?> style="width:auto;display:inline-block"> 🔁 Recorrente</label>
+        <select name="recorrencia_intervalo">
+          <?php foreach (['mensal' => 'Mensal', 'quinzenal' => 'Quinzenal (a cada 15 dias)', 'anual' => 'Anual'] as $k => $lbl): ?>
+            <option value="<?= $k ?>" <?= ($editando['recorrencia_intervalo'] ?? 'mensal') === $k ? 'selected' : '' ?>><?= $lbl ?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
     </div>
 

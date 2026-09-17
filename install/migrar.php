@@ -725,4 +725,21 @@ foreach ([
     }
 }
 
+// 17/09/2026 — "Os consultores eles ganha o fixo cada 15 dias mais
+// comição": periodicidade do salário/fixo do colaborador (mensal/
+// quinzenal) — comissão em si é sempre lançamento manual avulso
+// (confirmado com o usuário), nunca gerada daqui; geração automática do
+// lançamento quinzenal via cron fica pra configurar depois (confirmado:
+// "podemos configurar depois isso"), este campo só guarda o dado.
+if (!colunaExiste($db, 'fin_colaboradores', 'periodicidade_pagamento')) {
+    try {
+        $db->exec("ALTER TABLE fin_colaboradores ADD COLUMN periodicidade_pagamento TEXT DEFAULT 'mensal'");
+        echo "✅ fin_colaboradores.periodicidade_pagamento: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ fin_colaboradores.periodicidade_pagamento: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  fin_colaboradores.periodicidade_pagamento: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

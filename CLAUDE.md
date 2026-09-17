@@ -2720,20 +2720,49 @@ segue no schema sem uso novo, não removida sem ganho real),
   usuário real com cargo sugerido certo, vincular funciona e aparece na
   tabela com a origem certa, usuário some do select depois de vinculado,
   cadastro manual continua funcionando do lado do card antigo).
-  ⚠️ **Pendente de definição — remuneração de consultor (quinzenal +
-  comissão)**: mesmo dia, achado explicado direto pelo usuário ("Os
-  consultores eles ganha o fixo cada 15 dias mais comição") — hoje
-  `fin_colaboradores` só tem `salario_base` (1 valor fixo, sem
-  periodicidade) e nenhum campo de comissão/regra de cálculo; gerar
-  lançamento de pagamento continua 100% manual (`admin/financeiro-lancamentos.php`),
-  sem nenhuma geração automática quinzenal nem cálculo de comissão em
-  cima de venda/compra fechada. Não implementado ainda — decisão real de
-  negócio em aberto (sobre o que a comissão incide: valor de
-  compra/venda fechada? só vendas do módulo de revenda? só do consultor
-  responsável? fixo quinzenal = metade do salário_base mensal, ou um
-  campo próprio?) antes de desenhar schema/UI, pra não repetir o erro já
-  documentado neste arquivo de implementar em cima de suposição não
-  confirmada.
+  **Periodicidade de pagamento — mensal/quinzenal** (mesmo dia, "Os
+  consultores eles ganha o fixo cada 15 dias mais comição", seguido de 2
+  respostas diretas de acompanhamento que fecharam o escopo: "comissão é
+  lançado manual" e "pagamento vai rodar no cron cada 15 dias podemos
+  configurar depois isso") — coluna nova
+  `fin_colaboradores.periodicidade_pagamento` (`mensal`/`quinzenal`,
+  default `mensal`). Puxar um usuário do sistema com `perfil='consultor'`
+  (ação `adicionar_do_sistema`, bullet acima) já nasce com `quinzenal`
+  sugerido — regra de negócio confirmada só pra esse perfil, qualquer
+  outro perfil ou o cadastro manual continuam `mensal` por padrão, sempre
+  editável no formulário ("Periodicidade do fixo", ao lado de
+  salário/vínculo); tabela ganhou coluna "Fixo". `fin_lancamentos.recorrencia_intervalo`
+  ganhou o valor `'quinzenal'` (antes só aceitava `mensal`/`anual`, e nem
+  tinha `<select>` nenhum no formulário — a recorrência era só um
+  checkbox que sempre gravava `'mensal'` por trás, achado ao mexer nesse
+  ponto) — `admin/financeiro-lancamentos.php` ganhou o select que
+  faltava, com as 3 opções. **Escopo deliberadamente cortado, confirmado
+  pelas 2 respostas do usuário**: comissão nunca é calculada/gerada
+  automaticamente — continua sendo sempre um lançamento manual avulso em
+  Lançamentos, como qualquer outro (texto de apoio adicionado no form de
+  colaborador linkando pra lá); e a geração automática do lançamento do
+  fixo a cada 15 dias via cron **não foi implementada** — confirmado
+  explicitamente que fica pra configurar depois, então por enquanto
+  `periodicidade_pagamento` é só um dado informativo do colaborador, sem
+  nenhum cron novo rodando em cima dele. ⚠️ **Fica como pendência real**
+  (ver seção "Pendências" mais abaixo): criar o cron que gera o
+  lançamento do fixo quinzenal sozinho — precisa de mais uma rodada de
+  confirmação antes de codar (ex: gerar automaticamente já como
+  `status='pago'` ou como pendente pro financeiro confirmar o pagamento
+  de verdade?). Testado: migração rodada contra um banco simulando
+  produção ANTES dessa mudança (schema restaurado via `git show HEAD~1`,
+  confirmando que a coluna realmente não existia), aplica a coluna nova
+  preservando um colaborador já cadastrado (fica `mensal` por default,
+  nunca perdido), idempotente numa 2ª rodada; função isolada (consultor
+  puxado do sistema nasce `quinzenal`, outro perfil nasce `mensal`,
+  cadastro manual grava `quinzenal` quando escolhido, lançamento
+  recorrente aceita `recorrencia_intervalo='quinzenal'`, e um lançamento
+  de comissão simulado confirmadamente não é recorrente — sempre avulso);
+  Playwright ponta a ponta (puxar consultor do sistema mostra "Fixo:
+  Quinzenal" na tabela, formulário de edição já abre com quinzenal
+  selecionado, trocar pra mensal e salvar reflete na tabela, cadastro
+  manual com quinzenal escolhido funciona, select de recorrência em
+  Lançamentos oferece as 3 opções).
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
@@ -3146,6 +3175,21 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 7. **Leads do Supabase (Leandro Soragi)** — aguardando CSV ou acesso ao
    painel pra importar a base existente; sem isso, script de importação
    fica só desenhado, sem rodar de verdade.
+8. **Cron do pagamento fixo quinzenal do consultor** — 17/09/2026,
+   confirmado com o usuário que fica pra depois ("pagamento vai rodar no
+   cron cada 15 dias podemos configurar depois isso"). O dado já existe
+   (`fin_colaboradores.periodicidade_pagamento`, ver bullet "Módulo
+   financeiro" → "Periodicidade de pagamento"), mas nenhum cron gera o
+   lançamento sozinho ainda — hoje é 100% manual em
+   `admin/financeiro-lancamentos.php`, igual comissão (que o usuário já
+   confirmou que **sempre** continua manual, nunca entra nesse cron).
+   Antes de codar, falta confirmar: o cron cria o lançamento já como
+   `status='pago'` (assume que o pagamento sempre acontece automático) ou
+   como pendente pro financeiro confirmar/anexar comprovante depois? O
+   ciclo de 15 dias começa em que data de referência por colaborador (dia
+   de admissão? dia fixo do mês, tipo 1 e 15?)? Gera só pra quem está
+   `periodicidade_pagamento='quinzenal'` E `status='ativo'`, óbvio, mas
+   vale confirmar se PJ/autônomo entra nesse fluxo ou só CLT.
 
 ### A validar assim que subir em produção (internet livre + credenciais reais)
 
