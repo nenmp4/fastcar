@@ -311,7 +311,13 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- ACOMPANHA: nunca muda etapa, envia mensagem ou edita cadastro, e não
     -- vê Configurações/Frota/Vendas/Usuários/Saúde (ver
     -- includes/security.php::perfilVeTudo()/requireVisaoGeral()).
-    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor')),
+    -- 'vendedor' adicionado em 17/09/2026 (pedido José/Jean: módulo de
+    -- vendas ganhando funil de entrada de lead pelo WhatsApp próprio,
+    -- "igual de compra") — equipe dedicada à revenda de veículos da frota,
+    -- só vê/atua no módulo de vendas (admin/vendas.php, admin/venda.php,
+    -- admin/vendas_inbox.php), nunca no funil de compra — ver
+    -- includes/security.php::podeAcessarVendas().
+    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor')),
     bloqueado INTEGER DEFAULT 0,
 
     -- Fila de distribuição automática de leads (decisão do Jean,
@@ -391,14 +397,42 @@ CREATE INDEX IF NOT EXISTS idx_contratos_zapsign_doc ON contratos(zapsign_doc_to
 -- direto — includes/vendas.php).
 CREATE TABLE IF NOT EXISTS vendas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    -- Nullable desde 17/09/2026 (lead por WhatsApp, ver includes/vendas.php
+    -- ::criarOuAbrirVendaLead()) — um comprador pode entrar em contato ANTES
+    -- de saber qual veículo específico da frota quer; só vira NOT NULL de
+    -- fato quando o vendedor confirma o match. Negociação criada manualmente
+    -- (botão "Vender" em admin/veiculos.php, fluxo original) continua
+    -- nascendo com oportunidade_id já preenchido, etapa='negociacao' direto.
+    oportunidade_id INTEGER REFERENCES oportunidades(id),
 
+    -- 'whatsapp'/'qualificacao_ia'/'sem_perfil' (17/09/2026) — espelham as
+    -- etapas de entrada do funil de COMPRA (includes/oportunidades.php),
+    -- só usadas quando origem='whatsapp': lead ainda conversando com a IA,
+    -- antes de virar negociação de verdade com veículo confirmado.
+    -- Negociação criada manualmente nunca passa por elas, vai direto pra
+    -- 'negociacao'.
     etapa TEXT NOT NULL DEFAULT 'negociacao'
-        CHECK (etapa IN ('negociacao', 'contrato_enviado', 'vendido', 'cancelada')),
+        CHECK (etapa IN ('whatsapp', 'qualificacao_ia', 'negociacao', 'contrato_enviado', 'vendido', 'cancelada', 'sem_perfil')),
+    -- 'manual' (padrão, fluxo original — vendedor/admin abre a partir de um
+    -- veículo já na frota) ou 'whatsapp' (lead entrou sozinho pela instância
+    -- Z-API dedicada de vendas, qualificado por IA antes de virar negociação).
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual', 'whatsapp')),
     responsavel_id INTEGER REFERENCES usuarios(id),
     proxima_acao TEXT DEFAULT '',
     proxima_acao_em DATETIME,
     motivo_cancelamento TEXT DEFAULT '',
+    -- Motivo de 'sem_perfil' (mesmo espírito de oportunidades.motivo_perda).
+    motivo_perda TEXT DEFAULT '',
+    -- Resumo gerado pela IA ao concluir a qualificação (bloco equivalente ao
+    -- resumo_ia de oportunidades) — o vendedor que assumir vê isso, não só
+    -- o card vazio (mesma regra #4 do CLAUDE.md aplicada aqui).
+    resumo_ia TEXT DEFAULT '',
+    -- O que o comprador disse que procura, em texto livre, ANTES de
+    -- confirmar/vincular um veículo específico da frota (oportunidade_id) —
+    -- nunca inventado, só o que a IA extraiu da conversa.
+    veiculo_interesse_texto TEXT DEFAULT '',
+    forma_pagamento_pretendida TEXT DEFAULT '',
+    urgencia TEXT DEFAULT '',
 
     -- Qualificação civil do COMPRADOR — colunas próprias aqui, não
     -- `clientes`: comprador de revenda é um contato diferente do vendedor

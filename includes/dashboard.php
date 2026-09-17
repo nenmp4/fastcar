@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/oportunidades.php';
+require_once __DIR__ . '/vendas.php';
 
 /**
  * Dashboard do consultor — carteira dele (bloco 5: ativas/atrasadas/
@@ -82,6 +83,98 @@ function dashboardConsultor(int $usuarioId): array {
         'fechadas_mes'        => (int)$fechadasMes,
         'valor_fechado_mes'   => (float)$valorFechadoMes,
         'taxa_conversao'      => $taxaConversao, // null = sem dado suficiente ainda
+    ];
+}
+
+/**
+ * Dashboard do vendedor (módulo de vendas, 17/09/2026) — carteira dele:
+ * ativas/atrasadas/recebidas na semana + resultado do mês. Mesma estrutura
+ * de dashboardConsultor(), espelhada pra `vendas`/perfil `vendedor`.
+ */
+function dashboardVendedor(int $usuarioId): array {
+    $db = getDB();
+    $ph = implode(',', array_fill(0, count(ETAPAS_VENDA_ATIVAS), '?'));
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND etapa IN ({$ph})");
+    $stmt->execute([$usuarioId, ...ETAPAS_VENDA_ATIVAS]);
+    $ativas = (int)$stmt->fetchColumn();
+
+    $stmt = $db->prepare("
+        SELECT COUNT(*) FROM vendas
+        WHERE responsavel_id = ? AND etapa IN ({$ph})
+          AND proxima_acao_em IS NOT NULL AND proxima_acao_em < datetime('now','localtime')
+    ");
+    $stmt->execute([$usuarioId, ...ETAPAS_VENDA_ATIVAS]);
+    $atrasadas = (int)$stmt->fetchColumn();
+
+    $stmt = $db->prepare("
+        SELECT COUNT(DISTINCT venda_id) FROM venda_historico
+        WHERE responsavel_id = ? AND etapa_nova = 'negociacao'
+          AND created_at >= datetime('now','-7 days','localtime')
+    ");
+    $stmt->execute([$usuarioId]);
+    $recebidasSemana = (int)$stmt->fetchColumn();
+
+    $stmt = $db->prepare("SELECT disponivel, plantao_fim_expediente FROM usuarios WHERE id = ?");
+    $stmt->execute([$usuarioId]);
+    $eu = $stmt->fetch() ?: ['disponivel' => 0, 'plantao_fim_expediente' => 0];
+
+    $stmt = $db->prepare("
+        SELECT COUNT(*), COALESCE(SUM(preco_venda), 0)
+        FROM vendas WHERE responsavel_id = ? AND etapa = 'vendido' AND data_venda >= date('now','localtime','start of month')
+    ");
+    $stmt->execute([$usuarioId]);
+    [$vendidasMes, $valorVendidoMes] = $stmt->fetch(PDO::FETCH_NUM);
+
+    $stmt = $db->prepare("
+        SELECT
+            SUM(CASE WHEN etapa = 'vendido' THEN 1 ELSE 0 END) AS vendidas,
+            SUM(CASE WHEN etapa = 'cancelada' THEN 1 ELSE 0 END) AS canceladas
+        FROM vendas WHERE responsavel_id = ?
+    ");
+    $stmt->execute([$usuarioId]);
+    $r = $stmt->fetch();
+    $totalDecididas = (int)($r['vendidas'] ?? 0) + (int)($r['canceladas'] ?? 0);
+    $taxaConversao = $totalDecididas > 0 ? round(((int)$r['vendidas'] / $totalDecididas) * 100) : null;
+
+    return [
+        'ativas'            => $ativas,
+        'atrasadas'         => $atrasadas,
+        'recebidas_semana'  => $recebidasSemana,
+        'disponivel'        => (bool)$eu['disponivel'],
+        'plantao'           => (bool)$eu['plantao_fim_expediente'],
+        'vendidas_mes'      => (int)$vendidasMes,
+        'valor_vendido_mes' => (float)$valorVendidoMes,
+        'taxa_conversao'    => $taxaConversao,
+    ];
+}
+
+/** Dashboard geral de vendas (super_admin/supervisor) — visão da empresa inteira. */
+function dashboardVendasGeral(): array {
+    $db = getDB();
+    $ph = implode(',', array_fill(0, count(ETAPAS_VENDA_ATIVAS), '?'));
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph})");
+    $stmt->execute(ETAPAS_VENDA_ATIVAS);
+    $ativas = (int)$stmt->fetchColumn();
+
+    $stmt = $db->prepare("
+        SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph})
+          AND proxima_acao_em IS NOT NULL AND proxima_acao_em < datetime('now','localtime')
+    ");
+    $stmt->execute(ETAPAS_VENDA_ATIVAS);
+    $atrasadas = (int)$stmt->fetchColumn();
+
+    $r = $db->query("
+        SELECT COUNT(*) AS qtd, COALESCE(SUM(preco_venda), 0) AS total
+        FROM vendas WHERE etapa = 'vendido' AND data_venda >= date('now','localtime','start of month')
+    ")->fetch();
+
+    return [
+        'ativas'            => $ativas,
+        'atrasadas'         => $atrasadas,
+        'vendidas_mes'      => (int)$r['qtd'],
+        'valor_vendido_mes' => (float)$r['total'],
     ];
 }
 

@@ -34,3 +34,16 @@ require_once __DIR__ . '/../includes/mail.php';
 require_once __DIR__ . '/../includes/email_templates.php';
 
 requireAdmin();
+
+// 17/09/2026 — perfil `vendedor` (módulo de vendas) nunca acessa o funil
+// de COMPRA (dados de outro negócio/cliente) — checagem central aqui, que
+// toda página admin passa por _bootstrap.php, evita repetir essa trava
+// arquivo por arquivo em cada tela de compra já existente.
+if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
+    $paginaAtualVendedor = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'logout.php'];
+    if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
+        header('Location: /admin/vendas.php');
+        exit;
+    }
+}

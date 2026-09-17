@@ -10,17 +10,21 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+requireAcessoVendas();
 
 $db = getDB();
 $id = (int)($_GET['id'] ?? 0);
 
+// LEFT JOIN (17/09/2026) — negociação pode não ter veículo vinculado ainda
+// (lead recém-entrado pelo WhatsApp, oportunidade_id NULL até o vendedor
+// confirmar o match com vincularVeiculoVenda()).
 $stmtVenda = $db->prepare("
     SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, o.veiculo_renavam,
            o.veiculo_chassi, o.banco_financiamento, o.contrato_financiamento_numero, o.saldo_financiamento_atual,
            o.valor_fipe_referencia, c.nome AS vendedor_original_nome
     FROM vendas v
-    JOIN oportunidades o ON o.id = v.oportunidade_id
-    JOIN clientes c ON c.id = o.cliente_id
+    LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+    LEFT JOIN clientes c ON c.id = o.cliente_id
     WHERE v.id = ?
 ");
 $stmtVenda->execute([$id]);
@@ -37,10 +41,26 @@ $sucesso = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
+        // Perfil de acompanhamento (mesmo padrão de admin/oportunidade.php)
+        // — vê tudo, nunca age.
+        http_response_code(403);
+        $erro = 'Perfil de supervisão só acompanha, não altera negociações.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         try {
-            if ($acao === 'atualizar_comprador') {
+            if ($acao === 'vincular_veiculo') {
+                // Confirma o match entre um lead qualificado pela IA (sem
+                // veículo ainda) e um veículo real da frota — sempre ação
+                // humana, nunca a IA decide sozinha (ver includes/vendas.php).
+                $oportunidadeEscolhida = (int)($_POST['oportunidade_id'] ?? 0);
+                if (!$oportunidadeEscolhida) {
+                    $erro = 'Escolha um veículo da lista.';
+                } else {
+                    vincularVeiculoVenda($id, $oportunidadeEscolhida);
+                    $sucesso = 'Veículo vinculado a esta negociação.';
+                }
+            } elseif ($acao === 'atualizar_comprador') {
                 $db->prepare("
                     UPDATE vendas
                     SET comprador_nome = ?, comprador_nacionalidade = ?, comprador_estado_civil = ?, comprador_profissao = ?,
@@ -89,11 +109,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $sucesso = 'Condições da venda atualizadas.';
             } elseif ($acao === 'gerar_contrato') {
-                $resultadoContrato = gerarEEnviarContratoVenda($id, (int)$_SESSION['admin_id']);
-                if ($resultadoContrato['ok']) {
-                    $sucesso = 'Contrato gerado e enviado pra assinatura.' . ($resultadoContrato['aviso'] ? ' ⚠️ ' . $resultadoContrato['aviso'] : '');
+                if (!$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota a esta negociação antes de gerar o contrato.';
                 } else {
-                    $erro = $resultadoContrato['erro'];
+                    $resultadoContrato = gerarEEnviarContratoVenda($id, (int)$_SESSION['admin_id']);
+                    if ($resultadoContrato['ok']) {
+                        $sucesso = 'Contrato gerado e enviado pra assinatura.' . ($resultadoContrato['aviso'] ? ' ⚠️ ' . $resultadoContrato['aviso'] : '');
+                    } else {
+                        $erro = $resultadoContrato['erro'];
+                    }
                 }
             } elseif ($acao === 'atualizar_proxima_acao') {
                 $db->prepare("
@@ -108,8 +132,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $sucesso = 'Próxima ação atualizada.';
             } elseif ($acao === 'mudar_etapa') {
-                mudarEtapaVenda($id, (string)$_POST['etapa_nova'], (int)$_SESSION['admin_id'], clean((string)($_POST['observacao'] ?? '')));
-                $sucesso = 'Etapa atualizada.';
+                $etapaNovaPost = (string)($_POST['etapa_nova'] ?? '');
+                if (in_array($etapaNovaPost, ['contrato_enviado', 'vendido'], true) && !$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota a esta negociação antes de avançar pra essa etapa.';
+                } else {
+                    mudarEtapaVenda($id, $etapaNovaPost, (int)$_SESSION['admin_id'], clean((string)($_POST['observacao'] ?? '')));
+                    $sucesso = 'Etapa atualizada.';
+                }
             } elseif ($acao === 'cancelar_venda') {
                 mudarEtapaVenda($id, 'cancelada', (int)$_SESSION['admin_id'], clean((string)($_POST['motivo'] ?? '')));
                 $sucesso = 'Negociação cancelada — veículo liberado pra uma nova tentativa de venda.';
@@ -163,7 +192,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
 <div class="card">
-    <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?>
+    <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
         <span class="badge"><?= e(etapaVendaLabel($v['etapa'])) ?></span>
         <?php if ($atrasada): ?><span class="badge badge-atraso">⚠️ ação atrasada</span><?php endif; ?>
     </h2>
@@ -182,6 +211,49 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         </div>
     </div>
 </div>
+
+<?php if ($v['origem'] === 'whatsapp'): ?>
+<div class="card">
+    <h3>🤖 Lead qualificado por IA</h3>
+    <p><small>Entrou sozinho pela instância de WhatsApp de vendas.
+       <a href="/admin/vendas_inbox.php?telefone=<?= e($v['comprador_telefone']) ?>">Ver conversa no WhatsApp Vendas →</a></small></p>
+    <?php if ($v['veiculo_interesse_texto']): ?><p><strong>O que procura:</strong> <?= e($v['veiculo_interesse_texto']) ?></p><?php endif; ?>
+    <?php if ($v['forma_pagamento_pretendida']): ?><p><strong>Forma de pagamento pretendida:</strong> <?= e($v['forma_pagamento_pretendida']) ?></p><?php endif; ?>
+    <?php if ($v['urgencia']): ?><p><strong>Urgência:</strong> <?= e($v['urgencia']) ?></p><?php endif; ?>
+    <?php if ($v['resumo_ia']): ?><p><strong>Resumo da IA:</strong><br><?= nl2br(e($v['resumo_ia'])) ?></p><?php endif; ?>
+    <?php if ($v['etapa'] === 'sem_perfil'): ?>
+        <p><span class="badge badge-atraso">⚪ Sem perfil de compra<?= $v['motivo_perda'] ? ': ' . e($v['motivo_perda']) : '' ?></span></p>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if (!$v['oportunidade_id'] && !in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
+<div class="card">
+    <h3>🔗 Vincular veículo da frota</h3>
+    <p><small>Essa negociação ainda não tem um veículo confirmado — o sistema NUNCA vincula sozinho
+       (mesma regra de "decisão crítica sempre humana" do resto do projeto), escolha manualmente entre os
+       disponíveis agora.</small></p>
+    <?php $frotaDisponivel = listarFrotaDisponivelParaVenda(); ?>
+    <?php if (!$frotaDisponivel): ?>
+        <p>Nenhum veículo disponível na frota no momento.</p>
+    <?php else: ?>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="vincular_veiculo">
+            <select name="oportunidade_id" required>
+                <option value="">— escolha um veículo —</option>
+                <?php foreach ($frotaDisponivel as $fv): ?>
+                    <option value="<?= (int)$fv['oportunidade_id'] ?>">
+                        <?= e(trim($fv['veiculo_marca'] . ' ' . $fv['veiculo_modelo'])) ?> <?= e((string)($fv['veiculo_ano'] ?? '')) ?>
+                        <?= $fv['valor_referencia'] !== null ? ' — R$ ' . number_format((float)$fv['valor_referencia'], 2, ',', '.') : '' ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit">Vincular</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <div class="card">
     <h3>👤 Dados do comprador</h3>
@@ -266,13 +338,15 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <p><small>✍️ Testemunhas do contrato são fixas (sempre da própria Fastcar) — configura em
        <a href="/admin/configuracoes.php">Configurações</a>, não muda por venda.</small></p>
 
-    <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true)): ?>
+    <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
         <hr>
         <form method="post" onsubmit="return confirm('Gerar o contrato de venda e enviar pra assinatura eletrônica?');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_contrato">
             <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>
         </form>
+    <?php elseif (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true)): ?>
+        <p><small>⏳ Vincule um veículo da frota (card acima) antes de gerar o contrato.</small></p>
     <?php endif; ?>
 
     <?php if ($contratos): ?>
@@ -354,8 +428,11 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <input type="text" name="motivo" required placeholder="Ex: comprador desistiu, não fechou preço...">
                 <button type="submit" class="perigo">Cancelar negociação</button>
             </form>
+        <?php elseif (in_array($v['etapa'], ['whatsapp', 'qualificacao_ia'], true)): ?>
+            <p>🤖 Ainda em qualificação pela IA (<?= e(etapaVendaLabel($v['etapa'])) ?>) — assim que terminar, vira negociação
+               automaticamente e aparece aqui pra mudar de etapa.</p>
         <?php else: ?>
-            <p>Negociação encerrada — <?= e(etapaVendaLabel($v['etapa'])) ?><?= $v['motivo_cancelamento'] ? ': ' . e($v['motivo_cancelamento']) : '' ?>.</p>
+            <p>Negociação encerrada — <?= e(etapaVendaLabel($v['etapa'])) ?><?= $v['motivo_cancelamento'] ? ': ' . e($v['motivo_cancelamento']) : ($v['motivo_perda'] ? ': ' . e($v['motivo_perda']) : '') ?>.</p>
         <?php endif; ?>
     </div>
 </div>

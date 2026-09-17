@@ -46,11 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nome  = trim((string)($_POST['nome'] ?? ''));
             $email = trim((string)($_POST['email'] ?? ''));
             $senha = (string)($_POST['senha'] ?? '');
-            // Só 'consultor'/'supervisor' possíveis por aqui — nunca
-            // 'super_admin' (só o CLI create_admin.php cria isso), mesmo
-            // com POST forjado: qualquer outro valor cai pro padrão seguro.
+            // Só 'consultor'/'supervisor'/'vendedor' possíveis por aqui —
+            // nunca 'super_admin' (só o CLI create_admin.php cria isso),
+            // mesmo com POST forjado: qualquer outro valor cai pro padrão seguro.
             $perfilPost = (string)($_POST['perfil'] ?? '');
-            $perfil = in_array($perfilPost, ['consultor', 'supervisor'], true) ? $perfilPost : 'consultor';
+            $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor'], true) ? $perfilPost : 'consultor';
             $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
 
             if (!$nome || !$email || strlen($senha) < 8) {
@@ -75,13 +75,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $email = trim((string)($_POST['email'] ?? ''));
                 $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
                 // Nunca promove nem rebaixa super_admin por aqui; pra
-                // qualquer outro usuário, só 'consultor'/'supervisor' são
-                // valores aceitos vindos do POST (mesma trava de 'criar').
+                // qualquer outro usuário, só 'consultor'/'supervisor'/
+                // 'vendedor' são valores aceitos vindos do POST (mesma
+                // trava de 'criar').
                 if ($alvo['perfil'] === 'super_admin') {
                     $perfil = 'super_admin';
                 } else {
                     $perfilPost = (string)($_POST['perfil'] ?? '');
-                    $perfil = in_array($perfilPost, ['consultor', 'supervisor'], true) ? $perfilPost : 'consultor';
+                    $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor'], true) ? $perfilPost : 'consultor';
                 }
                 $bloqueado = !empty($_POST['bloqueado']);
 
@@ -114,7 +115,7 @@ $usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, dis
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
 
-$labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'supervisor' => 'Supervisor (acompanhamento)'];
+$labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'supervisor' => 'Supervisor (acompanhamento)', 'vendedor' => 'Vendedor (módulo de vendas)'];
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -164,8 +165,9 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                 <?php else: ?>
                     <?php $perfilAtual = $editando['perfil'] ?? 'consultor'; ?>
                     <select name="perfil">
-                        <option value="consultor" <?= $perfilAtual === 'consultor' ? 'selected' : '' ?>>Consultor (atende e negocia/fecha)</option>
+                        <option value="consultor" <?= $perfilAtual === 'consultor' ? 'selected' : '' ?>>Consultor (atende e negocia/fecha — funil de compra)</option>
                         <option value="supervisor" <?= $perfilAtual === 'supervisor' ? 'selected' : '' ?>>Supervisor (só acompanha, não age)</option>
+                        <option value="vendedor" <?= $perfilAtual === 'vendedor' ? 'selected' : '' ?>>Vendedor (módulo de vendas/revenda)</option>
                     </select>
                 <?php endif; ?>
                 <label><?= $editando ? 'Nova senha (deixe em branco pra manter a atual)' : 'Senha (mínimo 8 caracteres)' ?></label>

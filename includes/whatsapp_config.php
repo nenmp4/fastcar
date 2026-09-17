@@ -22,14 +22,41 @@ function zapiBaseUrl(): string {
 }
 
 /**
+ * Credenciais da instância Z-API DEDICADA de vendas (17/09/2026, módulo de
+ * vendas ganhando funil de entrada pelo WhatsApp próprio — pedido
+ * José/Jean: "vamos adcionar instancia só para vendas"). Config separada
+ * da instância principal (zapi_instance_id/token/client_token, sempre a de
+ * COMPRA) — as duas convivem, cada uma com seu próprio número/webhook.
+ * Retorna [instance_id, token, client_token], todos '' se não configurada
+ * ainda (quem chama decide o que fazer — zapiEnviarTexto() etc já tratam
+ * "sem instância" como falha graciosa).
+ */
+function zapiCredenciaisVendas(): array {
+    return [
+        _chatbot_getConfig('zapi_instancia_vendas_id'),
+        _chatbot_getConfig('zapi_instancia_vendas_token'),
+        _chatbot_getConfig('zapi_instancia_vendas_client_token'),
+    ];
+}
+
+/**
  * Envia mensagem de texto via Z-API. Mesma assinatura/lógica do
  * aaspNotificarWpp() do JurídicoSaaS (includes/aasp.php), renomeada pro
  * contexto deste projeto.
+ *
+ * $instanciaOverride (17/09/2026): [instance_id, token, client_token]
+ * opcional — usado pra mandar pela instância DEDICADA de vendas em vez da
+ * principal (zapiCredenciaisVendas()), sem duplicar a função inteira só
+ * pra trocar de onde lê a credencial. Omitido (padrão) = instância
+ * principal, igual sempre foi — nenhum dos ~40 call sites existentes
+ * precisou mudar.
  */
-function zapiEnviarTexto(string $phone, string $msg): bool {
-    $inst = _chatbot_getConfig('zapi_instance_id');
-    $tok  = _chatbot_getConfig('zapi_token');
-    $ctok = _chatbot_getConfig('zapi_client_token');
+function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
+    [$inst, $tok, $ctok] = $instanciaOverride ?? [
+        _chatbot_getConfig('zapi_instance_id'),
+        _chatbot_getConfig('zapi_token'),
+        _chatbot_getConfig('zapi_client_token'),
+    ];
     if (!$inst || !$tok || !$phone) return false;
 
     $phone = normalizarTelefone($phone);

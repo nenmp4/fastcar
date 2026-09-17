@@ -16,6 +16,15 @@ $campos = [
     'zapi_client_token' => 'Client-Token (segurança da conta Z-API)',
 ];
 
+// Instância DEDICADA de vendas (17/09/2026, pedido José/Jean: "vamos
+// adcionar instancia só para vendas") — número/webhook PRÓPRIO, separado da
+// instância principal acima (sempre a de compra). Convivem lado a lado.
+$camposZapiVendas = [
+    'zapi_instancia_vendas_id'           => 'ID da instância Z-API (vendas)',
+    'zapi_instancia_vendas_token'        => 'Token da instância Z-API (vendas)',
+    'zapi_instancia_vendas_client_token' => 'Client-Token (vendas)',
+];
+
 $camposIA = [
     'gemini_api_key' => 'Chave da API Gemini (principal)',
     'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
@@ -62,6 +71,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
             $sucesso = 'Configurações salvas.';
+        } elseif ($acao === 'salvar_zapi_vendas') {
+            foreach (array_keys($camposZapiVendas) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da instância de vendas salvas.';
+        } elseif ($acao === 'testar_zapi_vendas') {
+            $telefoneTeste = (string)($_POST['telefone_teste_vendas'] ?? '');
+            if (!$telefoneTeste) {
+                $erro = 'Informe um telefone pra receber a mensagem de teste.';
+            } else {
+                $ok = zapiEnviarTexto($telefoneTeste, '✅ Teste de conexão Z-API (vendas) — Fastcar CRM.', zapiCredenciaisVendas());
+                if ($ok) {
+                    $sucesso = 'Mensagem de teste (vendas) enviada com sucesso.';
+                } else {
+                    $erro = 'Falha ao enviar — confira as credenciais da instância de vendas e se ela está conectada.';
+                }
+            }
         } elseif ($acao === 'salvar_ia') {
             foreach (array_keys($camposIA) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -218,6 +244,11 @@ foreach (array_keys($campos) as $chave) {
     $valores[$chave] = getConfig($chave) ?? '';
 }
 $configuradoZapi = $valores['zapi_instance_id'] && $valores['zapi_token'];
+$valoresVendas = [];
+foreach (array_keys($camposZapiVendas) as $chave) {
+    $valoresVendas[$chave] = getConfig($chave) ?? '';
+}
+$configuradoZapiVendas = $valoresVendas['zapi_instancia_vendas_id'] && $valoresVendas['zapi_instancia_vendas_token'];
 $fila = listarFilaConsultores();
 foreach ($fila as &$f) {
     $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
@@ -307,6 +338,46 @@ unset($f);
         <input type="text" name="telefone_teste" placeholder="Ex: 31999998888">
         <button type="submit" <?= $configuradoZapi ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
         <?php if (!$configuradoZapi): ?>
+            <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🛒 Instância Z-API — Vendas</h2>
+    <p><small>Instância DEDICADA do módulo de vendas (17/09/2026) — número/webhook PRÓPRIO, separado da instância
+       principal acima (sempre a de compra): comprador entrando pelo WhatsApp cai direto na qualificação por IA de
+       vendas (<a href="/admin/vendas_inbox.php">WhatsApp Vendas</a>), sem se misturar com o funil de compra. Mesmo
+       webhook (<code>chatbot-whatsapp/webhook/whatsapp.php</code>) — o Z-API manda <code>instanceId</code> no
+       payload, e o sistema descobre sozinho qual instância é qual.</small></p>
+
+    <p>
+        Status Z-API (vendas):
+        <span class="badge <?= $configuradoZapiVendas ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoZapiVendas ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_zapi_vendas">
+        <?php foreach ($camposZapiVendas as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresVendas[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresVendas[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Manda uma mensagem de teste pro número informado, usando as credenciais salvas acima.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_zapi_vendas">
+        <label>Telefone (com DDD)</label>
+        <input type="text" name="telefone_teste_vendas" placeholder="Ex: 31999998888">
+        <button type="submit" <?= $configuradoZapiVendas ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
+        <?php if (!$configuradoZapiVendas): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
         <?php endif; ?>
     </form>

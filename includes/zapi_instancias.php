@@ -61,7 +61,12 @@ function zapiRemoverInstanciaConsultor(int $usuarioId): void {
  * segurança; sem instanceId nenhum — payload antigo/manual — assume
  * principal, pra não quebrar quem já estava configurado antes disso existir).
  *
- * Retorno: ['tipo' => 'principal'|'consultor'|'desconhecida',
+ * 'vendas' (17/09/2026) — instância dedicada do módulo de vendas (comprador
+ * entrando pelo WhatsApp, ver includes/vendas.php), checada ANTES de cair
+ * pro banco de instâncias de consultor: mesmo nível da principal, não um
+ * canal paralelo de visibilidade.
+ *
+ * Retorno: ['tipo' => 'principal'|'vendas'|'consultor'|'desconhecida',
  *           'usuario_id' => ?int, 'client_token' => ?string]
  */
 function zapiIdentificarInstancia(string $instanceId): array {
@@ -71,6 +76,11 @@ function zapiIdentificarInstancia(string $instanceId): array {
 
     if ($instanceId === (getConfig('zapi_instance_id') ?? '')) {
         return ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => getConfig('zapi_client_token')];
+    }
+
+    $instanciaVendas = getConfig('zapi_instancia_vendas_id') ?? '';
+    if ($instanciaVendas !== '' && $instanceId === $instanciaVendas) {
+        return ['tipo' => 'vendas', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_vendas_client_token')];
     }
 
     $db = getDB();

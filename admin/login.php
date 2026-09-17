@@ -14,7 +14,10 @@ require_once __DIR__ . '/../includes/usuarios.php';
 startSecureSession();
 
 if (!empty($_SESSION['admin_id'])) {
-    header('Location: /admin/index.php');
+    // vendedor (17/09/2026) não tem acesso ao funil de compra — manda
+    // direto pro módulo de vendas (mesmo padrão de bounce evitado que o
+    // resto do login já fazia pra quem já está logado).
+    header('Location: ' . (($_SESSION['admin_perfil'] ?? '') === 'vendedor' ? '/admin/vendas.php' : '/admin/index.php'));
     exit;
 }
 
@@ -31,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['admin_id']     = (int)$user['id'];
             $_SESSION['admin_nome']   = $user['nome'];
             $_SESSION['admin_perfil'] = $user['perfil'];
-            header('Location: /admin/index.php');
+            header('Location: ' . ($user['perfil'] === 'vendedor' ? '/admin/vendas.php' : '/admin/index.php'));
             exit;
         }
         $erro = 'E-mail ou senha inválidos.';

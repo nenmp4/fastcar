@@ -27,10 +27,12 @@
  * ⚠️ Multi-instância: esta MESMA URL recebe webhook tanto da instância
  * principal (funil oficial: entrada, qualificação IA, followup) quanto da
  * instância própria de cada consultor (atendimento a partir do
- * bloco 5 sempre pelo número dele — decisão do Jean) — configuradas em
- * admin/configuracoes.php. O Z-API manda `instanceId` no payload; usamos
- * isso pra descobrir de qual instância veio (zapiIdentificarInstancia())
- * e validar o client-token correto ANTES de processar qualquer coisa.
+ * bloco 5 sempre pelo número dele — decisão do Jean) quanto da instância
+ * DEDICADA de vendas (17/09/2026, comprador entrando pelo WhatsApp — ver
+ * includes/vendas.php) — configuradas em admin/configuracoes.php. O
+ * Z-API manda `instanceId` no payload; usamos isso pra descobrir de qual
+ * instância veio (zapiIdentificarInstancia()) e rotear pro processador
+ * certo ANTES de processar qualquer coisa.
  */
 
 define('ROOT', dirname(__DIR__, 2));
@@ -38,8 +40,10 @@ require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
 require_once ROOT . '/includes/oportunidades.php';
+require_once ROOT . '/includes/vendas.php';
 require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens_vendas.php';
 
 header('Content-Type: application/json');
 
@@ -90,7 +94,11 @@ if ($instancia['tipo'] === 'desconhecida') {
 // webhook continua por `instanceId` (só processa se bater com a instância
 // principal cadastrada) + dedup de `messageId`, mesma proteção de sempre.
 
-$resultado = processarMensagemZapi($payload, $instancia);
+// Instância de vendas (17/09/2026) tem processador PRÓPRIO — nunca passa
+// pela lógica de compra (criar oportunidade/cliente), nem o contrário.
+$resultado = $instancia['tipo'] === 'vendas'
+    ? processarMensagemVendasZapi($payload, $instancia)
+    : processarMensagemZapi($payload, $instancia);
 
 if ($resultado['ignored'] === 'no_phone') {
     log_webhook('Webhook sem phone, ignorando. Payload: ' . substr($raw, 0, 300));
@@ -105,8 +113,11 @@ if ($resultado['ignored']) {
     responderOk(['ignored' => $resultado['ignored']]);
 }
 
-if ($resultado['erro_oportunidade']) {
+if (!empty($resultado['erro_oportunidade'])) {
     log_webhook("Erro ao criar/abrir oportunidade ({$resultado['telefone']}): {$resultado['erro_oportunidade']}");
+}
+if (!empty($resultado['erro_venda'])) {
+    log_webhook("Erro ao criar/abrir lead de venda ({$resultado['telefone']}): {$resultado['erro_venda']}");
 }
 
 // Passagem pro consultor pausa a IA (regra #4) — se já está pausada, só

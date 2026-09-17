@@ -88,6 +88,25 @@ function requireVisaoGeral(): void {
 }
 
 /**
+ * Quem pode acessar o módulo de VENDAS (17/09/2026, perfil `vendedor`
+ * novo) — super_admin e supervisor continuam vendo tudo (mesmo espírito de
+ * perfilVeTudo(), só que essa aqui trava a ÁREA, não decide filtro por
+ * responsavel_id dentro dela — isso cada tela de vendas decide sozinha,
+ * mesmo padrão "Minhas/Todas" do funil de compra), e o `vendedor` propriamente
+ * dito. `consultor` nunca entra aqui — os dois módulos são times separados.
+ */
+function podeAcessarVendas(): bool {
+    return in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'supervisor', 'vendedor'], true);
+}
+
+function requireAcessoVendas(): void {
+    if (!podeAcessarVendas()) {
+        http_response_code(403);
+        exit('Acesso restrito ao módulo de vendas.');
+    }
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra

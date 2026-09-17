@@ -1416,6 +1416,145 @@ segue no schema sem uso novo, não removida sem ganho real),
   pra uma 3ª tentativa (confirmado abrindo uma nova negociação depois de
   cancelar a anterior); conferido visualmente via screenshot (Playwright)
   em `admin/vendas.php`, `admin/venda.php` e `admin/veiculos.php`.
+  **2ª etapa do módulo — funil de entrada pelo WhatsApp, "igual de compra"**
+  (17/09/2026, pedido José/Jean: "perfil vendedor, ibox do vendedor igual
+  compras, dasbord de vendas, vamos usar qualificação do lead para vendas,
+  vamos adcionar instancia só para vendas") — a decisão assumida acima
+  ("sem qualificação por IA nem entrada pelo WhatsApp do lado do
+  comprador") foi revertida por pedido explícito; a negociação MANUAL a
+  partir da frota (`admin/veiculos.php`, botão "Vender") continua existindo
+  como caminho alternativo, as duas origens (`vendas.origem`,
+  `'manual'`/`'whatsapp'`) convivem no mesmo pipeline.
+  **Perfil `vendedor`** (novo, `usuarios.perfil`, migração de CHECK igual à
+  já feita pro `'supervisor'`) — só acessa o módulo de vendas, nunca o
+  funil de compra (times/dados separados, mesma lógica de "consultor nunca
+  mexe em vendas" no sentido inverso). Trava CENTRAL em
+  `admin/_bootstrap.php` (não em cada arquivo de compra um por um): se
+  `admin_perfil==='vendedor'` e a página atual não está na lista branca
+  (`vendas.php`/`venda.php`/`vendas_inbox.php`/`logout.php`), redireciona
+  pra `admin/vendas.php` — `admin/login.php` também manda vendedor direto
+  pra lá em vez de `admin/index.php`. `includes/security.php::podeAcessarVendas()`
+  (super_admin/supervisor/vendedor — nunca consultor) trava o acesso às 3
+  telas de vendas; o link "💰 Vendas" que já existia sem guard nenhum no
+  topbar de `admin/index.php` (falha pré-existente — qualquer consultor já
+  conseguia acessar `admin/vendas.php`/`venda.php` livremente antes disso)
+  ficou condicionado a `podeAcessarVendas()`.
+  **Instância Z-API DEDICADA de vendas** (`config.zapi_instancia_vendas_id`/
+  `_token`/`_client_token`, card novo "🛒 Instância Z-API — Vendas" em
+  Configurações, com teste de conexão próprio) — `zapiEnviarTexto()`
+  (`includes/whatsapp_config.php`) ganhou parâmetro opcional
+  `$instanciaOverride` (`[instance_id, token, client_token]`); omitido
+  (padrão) continua usando a instância principal de compra, sem quebrar
+  nenhum dos ~40 call sites existentes — `zapiCredenciaisVendas()` (novo)
+  monta o array pros call sites do lado de vendas.
+  `zapiIdentificarInstancia()` (`includes/zapi_instancias.php`) ganhou o
+  tipo `'vendas'`, checado antes de cair pro banco de instâncias de
+  consultor. Webhook único (`chatbot-whatsapp/webhook/whatsapp.php`,
+  mesma URL de sempre) roteia pelo `instanceId` do payload: `tipo==='vendas'`
+  chama `processarMensagemVendasZapi()` (novo
+  `chatbot-whatsapp/includes/mensagens_vendas.php`) em vez de
+  `processarMensagemZapi()` — arquivo PRÓPRIO de propósito (mesmo
+  raciocínio já documentado no CLAUDE.md pro WhatsApp Box: "portar o
+  conceito, não o arquivo direto... modelo de dado e regras de negócio
+  diferentes demais pra copy-paste direto"), mexer na função de compra já
+  validada em produção pra ramificar em cima de uma tabela diferente seria
+  risco desnecessário. Reaproveita de `mensagens.php` tudo que já era
+  genérico o bastante (dedup de `messageId`, extração de texto/mídia,
+  debounce, pausar/retomar IA) — nenhuma dessas depende de
+  `oportunidades`/`clientes`, só de telefone/`whatsapp_mensagens`/
+  `whatsapp_sessoes` (tabelas já compartilhadas pelos dois funis).
+  **Schema:** `vendas.oportunidade_id` virou NULLABLE (migração reconstrói
+  a tabela, SQLite não tem `ALTER COLUMN`) — um lead pode chegar pelo
+  WhatsApp antes de saber qual veículo específico da frota quer; `etapa`
+  ganhou `'whatsapp'`/`'qualificacao_ia'`/`'sem_perfil'`, espelhando as
+  etapas de entrada do funil de compra (negociação manual nunca passa por
+  elas, nasce direto em `'negociacao'`); colunas novas `origem`,
+  `resumo_ia`, `veiculo_interesse_texto`, `forma_pagamento_pretendida`,
+  `urgencia`, `motivo_perda`. Identidade do comprador continua só nas
+  colunas `vendas.comprador_*` (decisão original do módulo, nunca virou
+  tabela `clientes`-like separada — evita a grande reforma de schema que
+  isso exigiria, dado que o CLAUDE.md já documentava explicitamente por
+  que comprador de revenda não usa `clientes`).
+  **Qualificação por IA do comprador** (`includes/ia_qualificacao_vendas.php`,
+  novo) — mesmo padrão Gemini+fallback OpenAI de `ia_qualificacao.php`
+  (compra), prompt/extração PRÓPRIOS (conversa é sobre COMPRAR, não
+  vender). Diferença central, respondendo ao pedido explícito ("essa
+  qualificação pode usar informações do veículo já está na compra"):
+  `listarFrotaDisponivelParaVenda()` (`includes/vendas.php`, oportunidades
+  `etapa='fechado'` sem negociação de venda ativa) monta um resumo da
+  frota REAL disponível, embutido dinamicamente tanto no prompt de
+  conversa quanto no de extração — a IA só pode falar de veículo que
+  EXISTE de verdade agora (regra #3, "IA nunca inventa"), nunca promete
+  nem descreve um veículo fora dessa lista; sem nada disponível, diz isso
+  explicitamente em vez de inventar. O vínculo final entre o lead e uma
+  `oportunidade_id` específica é SEMPRE confirmado por um humano
+  (`vincularVeiculoVenda()`, card "🔗 Vincular veículo da frota" em
+  `admin/venda.php`, só aparece enquanto `oportunidade_id` é `NULL`) — a
+  IA nunca decide isso sozinha, mesmo espírito de "sistema nunca aplica o
+  candidato óbvio sozinho" já usado no widget de FIPE por placa. Gerar
+  contrato / avançar pra `contrato_enviado`/`vendido` fica bloqueado (na
+  tela E no servidor, nunca só confiando em esconder o botão) até o
+  veículo estar vinculado. `criarOuAbrirVendaLead()` (`includes/vendas.php`)
+  espelha `criarOuAbrirOportunidade()` — cria/reaproveita o lead por
+  telefone, abre em `'whatsapp'`, atribui vendedor já na entrada (regra #2
+  aplicada aqui também: salva desde o 1º contato).
+  **Round-robin próprio** (`includes/fila_vendas.php`, novo — mesmo
+  raciocínio de arquivo separado do WhatsApp Box: nunca parametrizar o
+  `fila_leads.php` de compra, já bem testado, pra acomodar um 2º
+  perfil/tabela) — `perfil='vendedor'`, conta `vendas` ativas (nunca
+  `vendido`/`cancelada`/`sem_perfil`), teto configurável
+  (`config.fila_vendas_max_ativas`, padrão 5, mesmo padrão da fila de
+  compra). Atribui na ENTRADA do lead, não só quando a IA termina de
+  qualificar — mesma decisão já validada no funil de compra.
+  **WhatsApp Box do vendedor** (`admin/vendas_inbox.php` +
+  `includes/vendas_inbox.php`, novos) — mesmo conceito do inbox de compra
+  (sidebar+thread+polling+pausar IA automaticamente ao responder manual),
+  mas as conversas vêm de `vendas.comprador_telefone` (sem `clientes`,
+  `listarConversasVendas()` faz `JOIN vendas` em vez de `JOIN clientes`) —
+  arquivo próprio, não um parâmetro a mais no inbox de compra (mesmo
+  raciocínio de sempre). Escopo **intencionalmente mais enxuto** nesta 1ª
+  versão, evitar over-engineering sem pedido real (mesmo espírito já
+  documentado pro inbox de compra): sem busca ao vivo de foto de perfil do
+  WhatsApp (avatar sempre em iniciais) e sem envio de áudio — ficam como
+  possível próxima iteração se a equipe sentir falta. Envio manual assina
+  com o nome do vendedor e sempre manda pela instância DEDICADA de vendas
+  (`zapiCredenciaisVendas()`), nunca pela principal.
+  **Dashboard do vendedor** (`includes/dashboard.php::dashboardVendedor()`/
+  `dashboardVendasGeral()`, novos) — `admin/vendas.php` virou também o
+  dashboard (mesmo espírito de `admin/index.php` ser dashboard+funil pro
+  lado de compra): cards de ativas/atrasadas/recebidas na semana/
+  disponibilidade/vendidas no mês (contagem+valor)/taxa de conversão,
+  filtro "Minhas" (vendedor, por `responsavel_id`) vs "Todas"
+  (super_admin/supervisor) — mesmo padrão exato de `admin/index.php`.
+  `admin/usuarios.php` ganhou a opção "Vendedor" no seletor de perfil
+  (criação e edição).
+  Testado ponta a ponta: **função** — driver isolado simulando 5 turnos de
+  webhook real (payload → `processarMensagemVendasZapi()`) contra
+  servidor Gemini+Z-API fake local, confirmando lead criado com
+  `origem='whatsapp'`, atribuído ao vendedor certo pelo rodízio,
+  qualificação avançando turno a turno até `etapa='negociacao'` com
+  `resumo_ia` preenchido, e a resposta da IA saindo pela instância de
+  VENDAS (`inst-vendas/token/tok-vendas`) — nunca vazando a credencial da
+  instância de compra, conferido no log do fake server. **UI** via
+  Playwright (servidor PHP real + fake Gemini/Z-API): login de vendedor
+  cai em `admin/vendas.php` (nunca `admin/index.php`, redirecionado se
+  tentar); pipeline mostra o lead qualificado; abre a venda, vê os cards
+  "Lead qualificado por IA" e "Vincular veículo da frota", vincula um
+  veículo real da frota (select lista os 2 disponíveis), card some depois
+  do match; WhatsApp Vendas lista a conversa e envia mensagem manual (bolha
+  aparece na thread); super_admin vê o card novo de Configurações
+  ("credenciais preenchidas") e o seletor "Vendedor" em Usuários; consultor
+  não vê mais o link "💰 Vendas" na nav e recebe 403 tentando acessar
+  `admin/vendas.php` direto pela URL. Migração testada idempotente
+  (rodada 2x sem efeito colateral) preservando uma negociação MANUAL já
+  existente no banco (fluxo antigo intocado). **Bug real achado no próprio
+  teste Playwright, antes de qualquer commit**: `admin/venda.php`/
+  `admin/vendas.php` chamavam `e($v['veiculo_ano'])` direto — com o `JOIN`
+  virando `LEFT JOIN` (oportunidade pode ser `NULL` agora), isso é
+  `TypeError` em PHP 8.1+ (`e(string $str)` não aceita `null`), quebrando
+  a página inteira com 500 assim que um lead sem veículo vinculado era
+  aberto; corrigido com `(string)($v['veiculo_ano'] ?? '')` nos 3 pontos
+  afetados (`admin/venda.php` × 2, `admin/vendas.php` × 1).
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
@@ -2512,6 +2651,18 @@ Este ambiente de dev bloqueia acesso externo (só libera alguns hosts tipo
 GitHub/npm), então o que segue foi construído seguindo documentação e
 testado com servidor fake local — nunca contra o serviço real:
 
+- **Instância Z-API dedicada de vendas** (17/09/2026,
+  `includes/zapi_instancias.php`/`whatsapp_config.php`/`mensagens_vendas.php`)
+  — reaproveita o MESMO mecanismo de webhook/envio já confirmado em
+  produção pro lado de compra (mesmo `zapiEnviarTexto()`, só com
+  credenciais/`instanceId` diferentes), então o formato de payload em si
+  não é um risco novo. O que ainda falta, fora do código: criar a
+  instância de verdade na Z-API (número próprio pro módulo de vendas),
+  colar as credenciais em Configurações → 🛒 Instância Z-API — Vendas, e
+  apontar o webhook "Ao receber" dessa instância pra MESMA URL do webhook
+  de compra (`.../chatbot-whatsapp/webhook/whatsapp.php` — o roteamento
+  por `instanceId` já sabe diferenciar as duas). Validar contra uma
+  mensagem real assim que a instância existir.
 - ~~**Formato do payload do webhook Z-API**~~ — ✅ **confirmado em produção,
   15/09/2026**: `messageId`, `phone`, `fromMe`, `isGroup`, `text.message`,
   `instanceId` batem com o padrão herdado do JurídicoSaaS, mensagem real

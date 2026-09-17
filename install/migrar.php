@@ -355,4 +355,142 @@ try {
     echo "❌ config.placafipe_token: {$e->getMessage()}\n";
 }
 
+// 17/09/2026 — perfil 'vendedor' novo (módulo de vendas ganhou funil de
+// entrada de lead pelo WhatsApp, "igual de compra" — pedido José/Jean).
+// Mesma técnica da migração 'supervisor' acima: SQLite não tem ALTER TABLE
+// pra CHECK constraint, só reconstruindo a tabela. Idempotente — só
+// reconstrói se a CHECK atual ainda não aceitar 'vendedor'.
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='usuarios'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'vendedor'")) {
+        $db->exec('BEGIN');
+        $db->exec("
+            CREATE TABLE usuarios_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                email TEXT UNIQUE,
+                whatsapp TEXT DEFAULT '',
+                senha_hash TEXT NOT NULL,
+                perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor')),
+                bloqueado INTEGER DEFAULT 0,
+                disponivel INTEGER DEFAULT 0,
+                plantao_fim_expediente INTEGER DEFAULT 0,
+                ultimo_lead_recebido_em DATETIME,
+                posicao_fila INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $db->exec("
+            INSERT INTO usuarios_novo (id, nome, email, whatsapp, senha_hash, perfil, bloqueado, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at)
+            SELECT id, nome, email, whatsapp, senha_hash, perfil, bloqueado, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at FROM usuarios
+        ");
+        $db->exec('DROP TABLE usuarios');
+        $db->exec('ALTER TABLE usuarios_novo RENAME TO usuarios');
+        $db->exec('COMMIT');
+        echo "✅ usuarios.perfil: CHECK reconstruída pra aceitar 'vendedor'\n";
+    } else {
+        echo "⏭️  usuarios.perfil (CHECK vendedor): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { $db->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ usuarios.perfil (CHECK vendedor): {$e->getMessage()}\n";
+}
+
+// 17/09/2026 — vendas ganhou funil de entrada pelo WhatsApp (lead do
+// comprador, "igual de compra"): oportunidade_id precisa virar nullable
+// (lead pode chegar antes de saber qual veículo específico quer), etapa
+// ganha 'whatsapp'/'qualificacao_ia'/'sem_perfil', e colunas novas de
+// qualificação (origem, resumo_ia, veiculo_interesse_texto,
+// forma_pagamento_pretendida, urgencia, motivo_perda). SQLite não tem
+// ALTER COLUMN pra tirar NOT NULL nem mudar CHECK — reconstrói a tabela,
+// mesma técnica de sempre. Idempotente — só reconstrói se a CHECK atual
+// ainda não aceitar 'whatsapp' como etapa de venda.
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='vendas'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'whatsapp', 'qualificacao_ia'")) {
+        $db->exec('BEGIN');
+        $db->exec("
+            CREATE TABLE vendas_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                oportunidade_id INTEGER REFERENCES oportunidades(id),
+                etapa TEXT NOT NULL DEFAULT 'negociacao'
+                    CHECK (etapa IN ('whatsapp', 'qualificacao_ia', 'negociacao', 'contrato_enviado', 'vendido', 'cancelada', 'sem_perfil')),
+                origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual', 'whatsapp')),
+                responsavel_id INTEGER REFERENCES usuarios(id),
+                proxima_acao TEXT DEFAULT '',
+                proxima_acao_em DATETIME,
+                motivo_cancelamento TEXT DEFAULT '',
+                motivo_perda TEXT DEFAULT '',
+                resumo_ia TEXT DEFAULT '',
+                veiculo_interesse_texto TEXT DEFAULT '',
+                forma_pagamento_pretendida TEXT DEFAULT '',
+                urgencia TEXT DEFAULT '',
+                comprador_nome TEXT DEFAULT '',
+                comprador_nacionalidade TEXT DEFAULT 'brasileiro(a)',
+                comprador_estado_civil TEXT DEFAULT '',
+                comprador_profissao TEXT DEFAULT '',
+                comprador_rg TEXT DEFAULT '',
+                comprador_cpf TEXT DEFAULT '',
+                comprador_cnh TEXT DEFAULT '',
+                comprador_endereco TEXT DEFAULT '',
+                comprador_telefone TEXT DEFAULT '',
+                comprador_email TEXT DEFAULT '',
+                km_entrega INTEGER,
+                preco_venda REAL,
+                valor_pago_contratacao REAL,
+                forma_pagamento TEXT DEFAULT '',
+                saldo_preco_devido REAL,
+                prazo_quitacao_meses INTEGER DEFAULT 24,
+                data_limite_quitacao DATE,
+                prestacao_contas_texto TEXT DEFAULT '',
+                seguro_texto TEXT DEFAULT '',
+                ipva_responsavel_texto TEXT DEFAULT '',
+                multas_texto TEXT DEFAULT 'COMPRADOR, na extensão legal aplicável',
+                rastreador_texto TEXT DEFAULT '',
+                prazo_transferencia_dias INTEGER,
+                penalidade_atraso_texto TEXT DEFAULT '',
+                data_venda DATE,
+                created_at DATETIME DEFAULT (datetime('now','localtime')),
+                updated_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $db->exec("
+            INSERT INTO vendas_novo (
+                id, oportunidade_id, etapa, responsavel_id, proxima_acao, proxima_acao_em, motivo_cancelamento,
+                comprador_nome, comprador_nacionalidade, comprador_estado_civil, comprador_profissao, comprador_rg,
+                comprador_cpf, comprador_cnh, comprador_endereco, comprador_telefone, comprador_email,
+                km_entrega, preco_venda, valor_pago_contratacao, forma_pagamento, saldo_preco_devido,
+                prazo_quitacao_meses, data_limite_quitacao, prestacao_contas_texto, seguro_texto,
+                ipva_responsavel_texto, multas_texto, rastreador_texto, prazo_transferencia_dias,
+                penalidade_atraso_texto, data_venda, created_at, updated_at
+            )
+            SELECT
+                id, oportunidade_id, etapa, responsavel_id, proxima_acao, proxima_acao_em, motivo_cancelamento,
+                comprador_nome, comprador_nacionalidade, comprador_estado_civil, comprador_profissao, comprador_rg,
+                comprador_cpf, comprador_cnh, comprador_endereco, comprador_telefone, comprador_email,
+                km_entrega, preco_venda, valor_pago_contratacao, forma_pagamento, saldo_preco_devido,
+                prazo_quitacao_meses, data_limite_quitacao, prestacao_contas_texto, seguro_texto,
+                ipva_responsavel_texto, multas_texto, rastreador_texto, prazo_transferencia_dias,
+                penalidade_atraso_texto, data_venda, created_at, updated_at
+            FROM vendas
+        ");
+        $db->exec('DROP TABLE vendas');
+        $db->exec('ALTER TABLE vendas_novo RENAME TO vendas');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_vendas_oportunidade ON vendas(oportunidade_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_vendas_etapa ON vendas(etapa)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em)');
+        $db->exec("
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_ativa_por_veiculo
+                ON vendas(oportunidade_id) WHERE etapa IN ('negociacao', 'contrato_enviado')
+        ");
+        $db->exec('COMMIT');
+        echo "✅ vendas: oportunidade_id agora nullable, etapa aceita whatsapp/qualificacao_ia/sem_perfil, colunas novas de qualificação por IA adicionadas\n";
+    } else {
+        echo "⏭️  vendas (funil de entrada por WhatsApp): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { $db->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ vendas (funil de entrada por WhatsApp): {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";
