@@ -235,6 +235,19 @@ body {
 .faq-item[open] summary::after { transform: rotate(45deg); }
 .faq-item p { margin: 0 4px 18px; font-size: 14.5px; color: var(--texto-fraco); line-height: 1.65; }
 
+/* Prévia do blog — cards curtos, o conteúdo de verdade mora em /blog/ */
+.blog-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 4px; }
+.blog-item {
+    display: block; padding: 16px 18px; border-radius: 12px;
+    background: #f6f8fd; border: 1px solid #e9edf7; text-decoration: none;
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.blog-item:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(47,111,237,.1); }
+.blog-item strong { display: block; font-size: 14px; color: var(--texto); line-height: 1.4; margin-bottom: 6px; }
+.blog-item span { font-size: 12.5px; color: var(--blue-dark); font-weight: 700; }
+.blog-ver-todos { display: block; text-align: center; margin-top: 18px; font-size: 14px; font-weight: 700; color: var(--blue-dark); text-decoration: none; }
+.blog-ver-todos:hover { text-decoration: underline; }
+
 /* Contato */
 .contato-grade { display: grid; gap: 14px; margin-top: 22px; }
 .contato-item {
@@ -362,6 +375,19 @@ body {
             <summary>Vocês compram só carro?</summary>
             <p>Não — também compramos moto, caminhão, caminhonete, van e jet ski ainda financiados.</p>
         </details>
+    </div>
+
+    <div class="secao-titulo">
+        <h2>Aprenda mais</h2>
+        <p>Dicas sobre financiamento e venda de veículos no nosso blog.</p>
+    </div>
+    <div class="card">
+        <div class="blog-grade">
+            <a class="blog-item" href="/blog/posso-vender-carro-financiado.php"><strong>Posso vender um carro financiado? Entenda como funciona</strong><span>Ler →</span></a>
+            <a class="blog-item" href="/blog/carro-financiado-atrasado-busca-e-apreensao.php"><strong>Carro financiado atrasado: o que fazer</strong><span>Ler →</span></a>
+            <a class="blog-item" href="/blog/contrato-de-gaveta-riscos-vender-carro-financiado.php"><strong>Contrato de gaveta: por que é um risco sério</strong><span>Ler →</span></a>
+        </div>
+        <a class="blog-ver-todos" href="/blog/">Ver todos os artigos →</a>
     </div>
 
     <div class="secao-titulo">

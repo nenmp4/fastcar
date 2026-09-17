@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /$
+Allow: /blog/
 Allow: /public/assets/
 Allow: /admin/assets/img/icon-512.png
 Disallow: /

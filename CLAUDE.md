@@ -223,6 +223,64 @@ segue no schema sem uso novo, não removida sem ganho real),
   (`LocalBusiness` e `FAQPage`, 7 perguntas), e via Playwright confirmado
   que o accordion abre/fecha de verdade ao clicar (2º item aberto,
   screenshot conferido visualmente).
+  **Blog SEO com 10 artigos** (mesmo dia, "cria blog seo com alguns
+  artigos sobre esse assunto usando pesquisa mais no google" / "uns 10
+  artigos bons de puxar cliques pro site") — antes de escrever qualquer
+  artigo, rodei uma pesquisa real (WebSearch, fontes: bancos, Serasa,
+  Jusbrasil, Conjur, portais de trânsito) sobre os 10 temas, porque é
+  conteúdo financeiro/jurídico-adjacente (alienação fiduciária, busca e
+  apreensão, negativação SPC/Serasa) — regra #3 do projeto ("nunca
+  inventar/chutar") aplicada aqui também, não só a dado de cliente. A
+  pesquisa achou pontos de divergência real entre "o que a lei permite
+  tecnicamente" e "o que os bancos fazem na prática" (ex: busca e
+  apreensão juridicamente cabe com 1 parcela em atraso, mas na prática de
+  mercado os bancos só acionam depois de 2-3, ~60-90 dias) — os artigos
+  deixam essa distinção explícita em vez de simplificar/arredondar.
+  Arquitetura nova, **sem nenhuma dependência de VPS pra funcionar**
+  (diferente da página pública em si, que precisou de DNS/nginx/certbot):
+  `includes/blog.php` (array `BLOG_ARTIGOS` com metadados — slug/título/
+  resumo/tempo de leitura — + `blogAbrirPagina()`/`blogRodape()`
+  compartilhadas) e um arquivo PHP por artigo em `blog/{slug}.php`
+  (URL limpa, sem query string, sem precisar de rewrite no nginx — cada
+  arquivo já É a URL final, mesmo padrão de sempre do projeto de nunca
+  adicionar roteamento quando um arquivo por rota já resolve). CSS
+  extraído pra `public/assets/blog.css` compartilhado entre os 11
+  arquivos (índice + 10 artigos) — único CSS externo do projeto até agora
+  (index.php e o wizard público mantêm `<style>` inline de propósito, são
+  páginas únicas; o blog tem muitos arquivos repetindo o mesmo layout, aí
+  compensa extrair). Cada artigo: meta tags OG/Twitter/canonical
+  individuais + JSON-LD `schema.org/Article`, CTA pro WhatsApp (2x: meio
+  e fim do texto, mesmo `wa.me` de sempre) e bloco "Continue lendo" com
+  links pros outros 4 artigos (nunca fica em beco sem saída de navegação).
+  Todo artigo termina com aviso "conteúdo informativo, não é
+  aconselhamento jurídico ou financeiro individual" — a própria pesquisa
+  sinalizou pontos de tensão jurisprudencial não totalmente pacíficos
+  (ex: até que ponto certas regras do CDC convivem com o rito específico
+  da ação de busca e apreensão), então o texto evita afirmação categórica
+  demais nesses pontos específicos, mantendo o tom em "geralmente"/"na
+  prática" onde a própria pesquisa achou divergência. Os 10 temas:
+  posso vender carro financiado, atraso e busca e apreensão, transferência
+  de financiamento, negativação SPC/Serasa, documentos necessários,
+  como consultar saldo devedor, moto/caminhão/caminhonete financiados,
+  Tabela FIPE na prática, direitos do consumidor (CDC), e riscos do
+  "contrato de gaveta" (esse último é o mais forte pro ângulo de negócio —
+  vender sem autorização do banco pode configurar estelionato, achado
+  real da pesquisa que reforça institucionalmente por que vender pela
+  Fastcar é mais seguro que "vender por fora"). Homepage (`index.php`)
+  ganhou seção nova "Aprenda mais" com 3 artigos em destaque + link "Ver
+  todos os artigos" pro índice do blog — link interno nos dois sentidos
+  (blog linka pra home no cabeçalho, home linka pro blog), bom pra SEO e
+  pra não deixar o blog "órfão" sem nenhum caminho de chegada dentro do
+  próprio site. `robots.txt` ganhou `Allow: /blog/` (blog É pensado pra
+  ser indexado, diferente do resto do site — nenhuma mudança na regra de
+  bloquear o CRM). Testado: lint PHP limpo nos 12 arquivos novos
+  (`includes/blog.php` + índice + 10 artigos), todas as URLs retornando
+  200 via `curl`, todo link interno entre artigos (`/blog/{slug}.php`)
+  conferido um por um resolvendo 200 (nenhum link quebrado), os 10 JSON-LD
+  `Article` decodificando válidos, e via Playwright screenshot do índice
+  do blog, de um artigo completo e da seção nova da home — visual
+  consistente com o resto do site (mesma paleta navy/azul, mesmo botão
+  flutuante de WhatsApp).
 - **1 instância Z-API só + WhatsApp Box** (`includes/whatsapp_inbox.php` +
   `admin/whatsapp_inbox.php`, 15/09/2026, decisão do José/Jean: "decidimos
   manter só uma instância — e os números dos usuários somente para

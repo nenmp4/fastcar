@@ -1,0 +1,132 @@
+/* public/assets/blog.css — estilo compartilhado do blog institucional da
+   Fastcar (blog/*.php), 17/09/2026. Extraído do CSS inline do index.php
+   pra não repetir o mesmo bloco de ~150 linhas em 11 arquivos (index do
+   blog + 10 artigos) — único CSS compartilhado do projeto até agora
+   (index.php e o wizard público continuam com <style> inline de propósito,
+   são páginas únicas; o blog tem muitos arquivos com o mesmo layout, aí
+   compensa). Mesma paleta de sempre (navy #151722 + azul #2f6fed). */
+:root {
+    --navy: #151722;
+    --navy-2: #0d1024;
+    --blue: #2f6fed;
+    --blue-dark: #1a4fc4;
+    --blue-light: #6b9bff;
+    --texto: #1c1e29;
+    --texto-fraco: #5b5f72;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f4f5f9;
+    color: var(--texto);
+    margin: 0;
+}
+a { color: var(--blue-dark); }
+
+/* Cabeçalho compacto (menor que o hero da home — página de conteúdo, não landing) */
+.blog-topo {
+    background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
+    color: #fff;
+    padding: 22px 16px;
+}
+.blog-topo-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.blog-topo .marca-link { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; }
+.blog-topo .marca-link img { height: 34px; }
+.blog-topo .marca-link .logotipo { font-size: 18px; font-weight: 800; }
+.blog-topo .marca-link .logotipo b { color: var(--blue-light); }
+.blog-topo nav a { color: #c3cdec; text-decoration: none; font-size: 13.5px; font-weight: 600; margin-left: 18px; }
+.blog-topo nav a:hover { color: #fff; }
+
+.blog-wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 60px; }
+
+/* Cabeçalho do artigo */
+.blog-artigo-meta { font-size: 13px; color: var(--texto-fraco); font-weight: 600; margin-bottom: 10px; }
+.blog-artigo-meta span:not(:last-child)::after { content: '·'; margin: 0 8px; color: #c7ccdb; }
+h1.blog-titulo { font-size: 30px; line-height: 1.25; margin: 0 0 22px; letter-spacing: -.3px; }
+
+/* Corpo do artigo */
+.blog-corpo { background: #fff; border-radius: 16px; padding: 32px 34px; box-shadow: 0 10px 30px rgba(10,18,41,.07); }
+.blog-corpo h2 { font-size: 21px; margin: 32px 0 12px; letter-spacing: -.2px; }
+.blog-corpo h2:first-child { margin-top: 0; }
+.blog-corpo p { font-size: 15.5px; line-height: 1.75; color: #333748; margin: 0 0 16px; }
+.blog-corpo ul, .blog-corpo ol { font-size: 15.5px; line-height: 1.75; color: #333748; margin: 0 0 16px; padding-left: 22px; }
+.blog-corpo li { margin-bottom: 6px; }
+.blog-corpo strong { color: var(--texto); }
+
+/* Caixa de destaque/dica dentro do artigo */
+.blog-destaque {
+    background: #eef3fe; border-left: 4px solid var(--blue);
+    border-radius: 10px; padding: 16px 20px; margin: 20px 0;
+    font-size: 14.5px; line-height: 1.65; color: #1e3a72;
+}
+.blog-destaque strong { color: var(--blue-dark); }
+
+/* CTA pro WhatsApp dentro do artigo */
+.blog-cta {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+    border-radius: 14px; padding: 24px 26px; margin: 30px 0 8px; color: #fff;
+}
+.blog-cta p { margin: 0; font-size: 15px; color: #dfe4f5; max-width: 420px; }
+.blog-cta p strong { color: #fff; }
+.blog-cta a.botao {
+    display: inline-flex; align-items: center; gap: 8px; flex: none;
+    background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
+    color: #fff; text-decoration: none; padding: 12px 22px; border-radius: 10px;
+    font-size: 14.5px; font-weight: 700; white-space: nowrap;
+}
+
+/* Aviso legal/informativo no fim do artigo */
+.blog-aviso { font-size: 12.5px; color: #8a93b0; line-height: 1.7; margin-top: 26px; padding-top: 18px; border-top: 1px solid #ececf3; }
+
+/* Lista de "continue lendo" */
+.blog-continue { margin-top: 40px; }
+.blog-continue h3 { font-size: 16px; margin: 0 0 14px; }
+.blog-continue-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.blog-continue-item {
+    display: block; background: #fff; border-radius: 12px; padding: 16px 18px;
+    text-decoration: none; box-shadow: 0 6px 18px rgba(10,18,41,.06);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.blog-continue-item:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(10,18,41,.1); }
+.blog-continue-item .titulo { display: block; font-size: 14px; font-weight: 700; color: var(--texto); margin-bottom: 4px; line-height: 1.4; }
+.blog-continue-item .tempo { font-size: 12px; color: var(--texto-fraco); }
+
+/* Listagem do índice do blog */
+.blog-lista-item {
+    display: block; background: #fff; border-radius: 14px; padding: 24px 26px; margin-bottom: 16px;
+    text-decoration: none; box-shadow: 0 8px 24px rgba(10,18,41,.06);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.blog-lista-item:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(10,18,41,.1); }
+.blog-lista-item h2 { font-size: 18.5px; margin: 0 0 8px; color: var(--texto); letter-spacing: -.1px; }
+.blog-lista-item p { font-size: 14.5px; color: var(--texto-fraco); line-height: 1.6; margin: 0 0 10px; }
+.blog-lista-item .meta { font-size: 12.5px; color: var(--blue-dark); font-weight: 700; }
+
+/* Rodapé */
+.rodape-empresa {
+    text-align: center; font-size: 11.5px; color: #8a93b0; line-height: 1.8;
+    margin-top: 50px; padding-top: 22px; border-top: 1px solid #e3e7f2;
+}
+.rodape-empresa strong { color: var(--blue-dark); font-size: 12.5px; letter-spacing: .02em; }
+.rodape-empresa a { color: var(--blue-dark); }
+
+/* Botão flutuante de WhatsApp — mesmo padrão do index.php */
+.flutuante {
+    position: fixed; right: 20px; bottom: 20px; z-index: 50;
+    width: 58px; height: 58px; border-radius: 50%;
+    background: linear-gradient(135deg, #29c060, #1fa84f);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 24px rgba(31,168,79,.45);
+    text-decoration: none; font-size: 27px;
+    transition: transform .15s ease;
+}
+.flutuante:hover { transform: scale(1.07); }
+
+@media (max-width: 560px) {
+    .blog-corpo { padding: 24px 20px; }
+    h1.blog-titulo { font-size: 24px; }
+    .blog-cta { flex-direction: column; align-items: stretch; text-align: center; }
+    .blog-topo nav a { margin-left: 12px; }
+}
