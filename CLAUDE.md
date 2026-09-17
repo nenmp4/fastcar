@@ -1637,6 +1637,46 @@ segue no schema sem uso novo, não removida sem ganho real),
   clara sem escrever nada em disco; upload válido salva com permissão 600
   e é reconhecido na hora por `GoogleDrive::hasCredentials()`/
   `getCredentialEmail()`, sem precisar reiniciar nada.
+  **Bug real de produção — documentos anexados, mas nenhuma pasta criada no
+  Drive** (17/09/2026, achado direto: "ja anexamos documentos de cliente
+  não criou pasta"). Causa raiz: `GoogleDrive::authenticate()`
+  (`includes/google_drive.php`) montava o JWT sem claim `sub` — ou seja, a
+  Drive API sempre rodava autenticada como a PRÓPRIA service account, nunca
+  impersonando um usuário real do Workspace. Service account "pura" não tem
+  cota de armazenamento própria no Drive (política do Google, não bug
+  daqui) — toda escrita (`createFolder()`, `uploadFile()`) falha com
+  `"Service Accounts do not have storage quota. Leverage shared drives, or
+  use OAuth delegation instead."`, e como o código só verificava o HTTP
+  status e caía no fallback local (`storage/uploads/`) sem propagar o erro
+  pra tela nenhuma, o upload "funcionava" do ponto de vista do consultor
+  (documento salvo, sem mensagem de erro) mas nunca criava nada visível no
+  Drive — exatamente o sintoma relatado. **Por que o "Testar conexão" de
+  Configurações não pegou isso antes**: `testarConexao()` só faz uma
+  LEITURA (`GET /about?fields=user`), que não precisa de cota nenhuma —
+  passa mesmo com a credencial "pura", sem nunca exercitar o caminho que
+  quebra (escrita). Corrigido reaproveitando exatamente o mesmo mecanismo
+  que o e-mail transacional (`includes/mail.php::mailAutenticar()`) já usa
+  com sucesso: `authenticate()` agora inclui `'sub' => getConfig('email_from')`
+  no JWT quando esse e-mail estiver configurado — passa a autenticar
+  IMPERSONANDO a caixa `contato@fastcar.solutions` (mesma delegação em todo
+  o domínio já autorizada no Workspace Admin pros escopos `drive` E
+  `gmail.send` juntos, ver "Gmail API" abaixo — não precisou de nenhuma
+  config nova nem autorização adicional no Google Cloud/Workspace). Sem
+  `email_from` configurado, comportamento não regride (roda sem `sub`,
+  igual antes — só não funciona pra escrita, mesma limitação de sempre).
+  De quebra, `createFolder()` passou a gravar `lastError` na falha (só
+  `uploadFile()`/`authenticate()` faziam isso antes), pra facilitar
+  diagnóstico se aparecer outro caso parecido. Testado contra servidor
+  OAuth+Drive fake local simulando exatamente essa política do Google
+  (rejeita `createFolder()` com 403 quando o token não carrega `sub`,
+  aceita quando carrega): sem `email_from` configurado, JWT sai sem `sub`
+  e `createFolder()` falha com a mensagem real do Google capturada em
+  `lastError`; com `email_from` configurado, JWT sai com `sub` batendo
+  exatamente o e-mail configurado e `createFolder()` sucede — confirma que
+  o fix ataca a causa raiz real, não só mascara o sintoma. ⚠️ Não valida
+  ainda que a pasta "Fastcar" aparece de fato visível na conta
+  `contato@fastcar.solutions` em produção — precisa confirmar depois do
+  deploy, anexando um documento de teste e checando o Drive dessa caixa.
 - **E-mails transacionais** (`includes/email_templates.php`, 16/09/2026,
   "cria todos os templates" depois do 1º envio real de e-mail funcionar em
   produção) — moldura visual compartilhada (`emailLayout()`/`emailBotao()`)

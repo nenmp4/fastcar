@@ -47,13 +47,28 @@ class GoogleDrive {
         $creds = json_decode(file_get_contents($this->credentials_path), true);
         $now = time();
         $header  = $this->b64u(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
-        $payload = $this->b64u(json_encode([
+        $payloadArr = [
             'iss'   => $creds['client_email'],
             'scope' => 'https://www.googleapis.com/auth/drive',
             'aud'   => 'https://oauth2.googleapis.com/token',
             'exp'   => $now + 3600,
             'iat'   => $now,
-        ]));
+        ];
+        // Sem 'sub' (impersonar um usuário real do Workspace), toda escrita
+        // (criar pasta, subir arquivo) roda como a PRÓPRIA service account —
+        // que não tem cota de armazenamento própria no Drive (política do
+        // Google, não bug daqui) e falha silenciosamente, caindo sempre no
+        // fallback local (storage/uploads/) mesmo com a credencial válida e
+        // o teste de conexão passando (esse só faz uma leitura em /about,
+        // que não precisa de cota). Achado real: "já anexamos documentos de
+        // cliente não criou pasta" — 17/09/2026. Reaproveita config.email_from
+        // (mesma caixa já usada pra impersonar no Gmail, includes/mail.php)
+        // porque a delegação em todo o domínio já autorizada no Workspace
+        // Admin cobre os escopos drive E gmail.send juntos pro mesmo Client
+        // ID — não precisa de nenhuma config nova nem autorização adicional.
+        $impersonar = getConfig('email_from');
+        if ($impersonar) $payloadArr['sub'] = $impersonar;
+        $payload = $this->b64u(json_encode($payloadArr));
         $key = openssl_pkey_get_private($creds['private_key']);
         if (!$key) return false;
         $sig = '';
@@ -113,7 +128,11 @@ class GoogleDrive {
         $resp   = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        if ($status !== 200 && $status !== 201) return false;
+        if ($status !== 200 && $status !== 201) {
+            $err = json_decode($resp ?: '{}', true);
+            $this->lastError = ($err['error']['message'] ?? '') ?: "HTTP {$status}";
+            return false;
+        }
         $data = json_decode($resp, true);
         return $data['id'] ?? false;
     }
