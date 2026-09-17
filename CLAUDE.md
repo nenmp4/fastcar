@@ -2294,6 +2294,36 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 >
 > Ainda falta cadastrar no crontab real quando a hospedagem for definida
 > (pendência #1 abaixo) — por enquanto só existe o script, sem agendamento.
+>
+> **Bug real achado investigando bloqueio do número no WhatsApp**
+> (17/09/2026, usuário perguntou "possíveis causas" do bloqueio; apontado
+> como hipótese e confirmado): `cron/followup.php` não tinha NENHUMA trava
+> contra rodadas sobrepostas — se uma execução demorasse mais que o
+> intervalo de 30min (Z-API lenta, volume alto de oportunidades pendentes)
+> e a próxima já começasse, as duas liam o dedup (`getConfig`/`setConfig`
+> por oportunidade/telefone) ainda vazio — checagem e gravação em passos
+> separados, nunca atômica — e as duas mandavam a MESMA mensagem pro MESMO
+> contato. É exatamente o padrão (mensagem duplicada em rajada) que mais
+> costuma disparar bloqueio automático de número em APIs não-oficiais como
+> a Z-API. Reproduzido isolado com 2 execuções CONCORRENTES DE VERDADE
+> (não simulado): as duas mandaram o reengajamento pro mesmo telefone com
+> 0.0002s de diferença uma da outra. Corrigido com `flock()` — trava
+> exclusiva não-bloqueante em `storage/followup.lock` logo no início do
+> script; se já tem outra rodada em andamento, a nova aborta na hora
+> (loga e sai, não fica esperando). `flock()` em vez de um arquivo-
+> marcador tipo `storage/.deploy` (padrão já usado no webhook de deploy)
+> de propósito: a trava libera sozinha se o processo morrer no meio —
+> nunca fica "presa" exigindo remoção manual, diferente de um marcador
+> que precisa ser apagado explicitamente. Testado em 2 cenários: 2
+> processos reais disputando o lock ao mesmo tempo (sem trava, os dois
+> mandavam; com a trava, só 1 manda e o outro aborta antes de qualquer
+> chamada à Z-API); e trava sendo segurada manualmente por 3s enquanto o
+> cron real tenta rodar — aborta na hora com a mensagem certa no log,
+> zero chamada à Z-API nesse cenário. Vale considerar isso como possível
+> causa raiz de um bloqueio de número já visto em produção, junto com o
+> incidente de flood documentado no bullet "1 instância Z-API só +
+> WhatsApp Box" acima (mesma classe de problema — mensagem repetida em
+> rajada —, causa diferente).
 
 ## Pendências (aguardando definição antes de codar mais)
 

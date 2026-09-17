@@ -32,6 +32,27 @@ function log_followup(string $msg): void {
     echo $line;
 }
 
+// Trava contra rodadas sobrepostas — achado real (17/09/2026, investigando
+// bloqueio do número no WhatsApp): o dedup por oportunidade/telefone
+// (getConfig/setConfig abaixo) faz "lê, decide, grava" em passos separados,
+// nunca atômico — se esse cron demorar mais que o intervalo de 30min (Z-API
+// lenta, muitas oportunidades pendentes) e uma 2ª rodada começar antes da
+// 1ª terminar, as duas leem o guard ainda vazio e mandam a MESMA mensagem
+// pro MESMO contato. Reproduzido isolado (2 execuções concorrentes reais,
+// não simulado): as duas mandaram o reengajamento pro mesmo telefone com
+// 0.0002s de diferença. Esse é exatamente o tipo de padrão (mensagem
+// duplicada em rajada) que a Z-API/WhatsApp mais pune com bloqueio de
+// número. flock() em vez de um arquivo-marcador (padrão storage/.deploy do
+// webhook de deploy) de propósito: a trava libera sozinha se o processo
+// morrer no meio (nunca fica "presa" exigindo limpeza manual, diferente de
+// um marcador que precisa ser removido explicitamente).
+$lockPath = ROOT . '/storage/followup.lock';
+$lockHandle = fopen($lockPath, 'c');
+if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    log_followup('Já existe uma execução em andamento — abortando esta pra evitar mensagem duplicada.');
+    exit;
+}
+
 $db = getDB();
 log_followup('Iniciando em ' . date('d/m/Y H:i'));
 
@@ -186,3 +207,6 @@ log_followup("{$reengajados} reengajamento(s) enviado(s).");
 
 log_followup('Concluído.');
 setConfig('followup_ultimo_run', date('Y-m-d H:i:s'));
+
+flock($lockHandle, LOCK_UN);
+fclose($lockHandle);
