@@ -1419,6 +1419,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   parcela (999) não recalcula mais, mantendo o valor digitado; oportunidade
   já com saldo salvo (9999.99) carrega esse valor certo e permanece
   intocado mesmo editando a parcela depois.
+  **Generalizada pros 3 sentidos + roda no carregamento da página**
+  (mesmo dia, achado real em produção: print mostrando parcela=872,67 e
+  parcelas=42 já salvos no card "Dados do veículo", mas saldo vazio no
+  card "Financiamento" — "fazer calculo deu erro"; e pedido de
+  acompanhamento "ao digitar valor da parcela calcular parcelas restante
+  enteu preencher campo parcela restantes"). Causa raiz do "cálculo não
+  aconteceu": a 1ª versão só calculava quando o usuário digitava DIRETO
+  nos campos (evento `input`); no fluxo real do consultor — preencher
+  parcela+parcelas no card "Dados do veículo", clicar "Salvar dados do
+  veículo" (form separado do card "Financiamento") — a página recarrega e
+  os dois campos vêm PRÉ-PREENCHIDOS do servidor, sem disparar `input`
+  nenhum, então o saldo nunca calculava sozinho, exatamente o vazio visto
+  no print. Reescrita numa regra só, sem precisar de flag de "editado
+  manualmente" separada: sempre que exatamente 1 dos 3 campos
+  (`valor_parcela`/`parcelas_restantes`/`saldo_financiamento_atual`)
+  estiver vazio e os outros 2 tiverem valor válido, calcula e preenche o
+  vazio — parcela×parcelas=saldo, saldo÷parcela=parcelas restantes, OU
+  saldo÷parcelas=parcela; com os 3 já preenchidos não sobra "vazio" pra
+  calcular, então um saldo customizado nunca é sobrescrito (mesmo
+  comportamento de antes, agora decorrência natural da regra em vez de
+  caso especial). Chamada 1x já no carregamento da página, além de a cada
+  digitação — cobre o caso real que faltava. Dica "🧮 calculado
+  automaticamente" replicada nos 3 campos (não só no saldo). Testado em
+  banco isolado com Playwright: oportunidade com parcela+parcelas já
+  salvos calcula o saldo sozinho já no carregamento, sem digitar nada
+  (872,67×42=36652,14); oportunidade com parcela+saldo já salvos calcula
+  parcelas restantes sozinha no carregamento (5000÷500=10); oportunidade
+  com os 3 já preenchidos e saldo customizado (9999,99, não bate com o
+  produto) nunca é sobrescrita mesmo editando a parcela depois; fluxo do
+  zero (digitar parcela, depois parcelas restantes) continua calculando o
+  saldo igual antes.
+  **Erro 500 relatado ao salvar, não reproduzido**: no mesmo print, o
+  usuário relatou erro 500 ao clicar "Salvar dados do contrato". Reproduzi
+  em banco isolado com os MESMOS valores exatos do print (incluindo
+  `encargos_texto` com vírgula, `saldo_financiamento_atual` vazio) contra
+  PHP com `display_errors`/`error_reporting` no máximo — salvou normal
+  (200, sucesso, valores conferidos no banco), nenhum erro PHP registrado.
+  Não achei nenhum caminho de código nesse handler que explique um fatal
+  error com esses dados — hipótese mais provável é a request ter batido
+  bem na janela do auto-deploy (~1min entre `git pull` trocar os arquivos
+  e `smoke.php` confirmar), coincidindo com os pushes desse mesmo dia; sem
+  acesso a `storage/logs/`/log do PHP-FPM da VPS pra confirmar de verdade.
+  Se acontecer de novo, pegar o texto exato do erro (ou os logs na VPS)
+  antes de assumir causa — a reprodução isolada não encontrou nada.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

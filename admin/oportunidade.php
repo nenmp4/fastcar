@@ -391,8 +391,10 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="text" name="banco_financiamento" value="<?= e($op['banco_financiamento'] ?? '') ?>">
                 <label>Valor da parcela (R$)</label>
                 <input type="number" step="0.01" name="valor_parcela" id="valor_parcela" value="<?= e((string)($op['valor_parcela'] ?? '')) ?>">
+                <small id="parcela-auto-hint" style="display:none;color:var(--texto-fraco)">🧮 calculado automaticamente (saldo ÷ parcelas restantes) — edite se for diferente</small>
                 <label>Parcelas restantes</label>
                 <input type="number" name="parcelas_restantes" id="parcelas_restantes" value="<?= e((string)($op['parcelas_restantes'] ?? '')) ?>">
+                <small id="parcelas-restantes-auto-hint" style="display:none;color:var(--texto-fraco)">🧮 calculado automaticamente (saldo ÷ parcela) — edite se for diferente</small>
                 <label>Parcelas em atraso</label>
                 <input type="number" name="parcelas_atraso" value="<?= e((string)($op['parcelas_atraso'] ?? 0)) ?>">
                 <label>Valor pretendido pelo cliente (R$)</label>
@@ -830,45 +832,69 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
 <script>
 (function () {
-    // Saldo do financiamento calculado automático (17/09/2026, "pode
-    // calcular saldo do financiamento automático ao preencher o valor da
-    // parcela") — estimativa simples (parcela × parcelas restantes), nunca
-    // exata (não desconta juros/amortização), por isso sempre editável:
-    // se o consultor digitar algo diferente direto no campo de saldo, o
-    // cálculo automático para de mexer nele a partir daí (mesmo espírito
-    // de "sistema nunca sobrescreve o que já foi confirmado por humano" do
-    // resto da tela) — reassignment via JS (.value=) nunca dispara o
-    // evento "input" do navegador, só digitação de verdade, então dá pra
-    // distinguir os dois casos sem precisar de flag extra além dessa.
-    // Fora do bloco condicional do PlacaFIPE de propósito (bug real achado
-    // testando: essa calculadora não depende de FIPE nenhum, mas tinha
-    // ficado presa dentro do mesmo <?php if (getConfig('placafipe_token')) ?>
-    // do widget de busca por placa — sem o token configurado, o script
-    // inteiro nunca era incluído na página e o cálculo simplesmente não
-    // rodava, nada a ver com falta de configuração de FIPE).
+    // Calculadora de financiamento (parcela × parcelas restantes = saldo)
+    // — 17/09/2026, "pode calcular saldo do financiamento automático ao
+    // preencher o valor da parcela", ampliada no mesmo dia pra funcionar
+    // nos 3 sentidos ("ao digitar valor da parcela calcular parcelas
+    // restante[s] ... preencher campo parcela restantes" — o pedido original
+    // só calculava o saldo a partir de parcela+parcelas; faltava o caminho
+    // inverso, útil quando o saldo já é conhecido — ex: extraído do
+    // contrato de financiamento ou digitado pelo consultor primeiro — e só
+    // falta a parcela OU as parcelas restantes). Estimativa simples (não
+    // desconta juros/amortização), por isso sempre editável: os 3 campos
+    // (`valor_parcela`, `parcelas_restantes`, `saldo_financiamento_atual`)
+    // vivem em 2 forms diferentes ("Dados do veículo" e "Financiamento e
+    // contrato de compra"), mas como estão na MESMA página, o JS enxerga
+    // os 3 juntos — só o `<form>` que o consultor clicar "Salvar" persiste
+    // de fato.
+    //
+    // Regra: sempre que exatamente 1 dos 3 campos estiver vazio e os
+    // outros 2 tiverem valor válido, calcula e preenche o vazio — nunca
+    // mexe num campo que já tem valor (nem quando só 1 dos outros dois
+    // muda depois), porque nesse caso os 3 já estão preenchidos e não há
+    // "vazio" pra calcular; é assim, sem precisar de flag de "editado
+    // manualmente" separada, que um saldo já salvo (ex: 9999.99, diferente
+    // de parcela×parcelas) nunca é sobrescrito só porque a parcela mudou
+    // depois. Roda 1x já no carregamento da página (além de a cada
+    // digitação) — bug real achado em produção: parcela+parcelas salvos
+    // numa visita anterior (ex: via "Salvar dados do veículo") só
+    // apareciam pré-preenchidos vindos do servidor no reload, sem disparar
+    // nenhum evento "input" (isso só acontece em digitação de verdade) —
+    // o saldo continuava vazio pra sempre até o consultor digitar de novo
+    // manualmente num dos dois campos, mesmo com tudo que precisava pro
+    // cálculo já ali na tela.
     var campoParcela = document.getElementById('valor_parcela');
     var campoParcelasRestantes = document.getElementById('parcelas_restantes');
     var campoSaldo = document.getElementById('saldo_financiamento_atual');
-    var dicaSaldo = document.getElementById('saldo-auto-hint');
     if (!campoParcela || !campoParcelasRestantes || !campoSaldo) return;
 
-    var editadoManualmente = campoSaldo.value !== '';
+    var dicaParcela = document.getElementById('parcela-auto-hint');
+    var dicaParcelasRestantes = document.getElementById('parcelas-restantes-auto-hint');
+    var dicaSaldo = document.getElementById('saldo-auto-hint');
 
-    function recalcular() {
-        if (editadoManualmente) return;
-        var parcela = parseFloat(campoParcela.value);
-        var parcelas = parseInt(campoParcelasRestantes.value, 10);
-        if (!(parcela > 0) || !(parcelas > 0)) return;
-        campoSaldo.value = (parcela * parcelas).toFixed(2);
-        if (dicaSaldo) dicaSaldo.style.display = 'block';
+    function esconder(dica) { if (dica) dica.style.display = 'none'; }
+    function mostrar(dica) { if (dica) dica.style.display = 'block'; }
+
+    function recalcularTudo() {
+        var p = parseFloat(campoParcela.value);
+        var n = parseInt(campoParcelasRestantes.value, 10);
+        var s = parseFloat(campoSaldo.value);
+        var pOk = campoParcela.value !== '' && p > 0;
+        var nOk = campoParcelasRestantes.value !== '' && n > 0;
+        var sOk = campoSaldo.value !== '' && s > 0;
+        var vazios = (pOk ? 0 : 1) + (nOk ? 0 : 1) + (sOk ? 0 : 1);
+        if (vazios !== 1) return; // só dá pra calcular com exatamente 1 incógnita
+
+        if (!sOk) { campoSaldo.value = (p * n).toFixed(2); mostrar(dicaSaldo); }
+        else if (!nOk) { campoParcelasRestantes.value = String(Math.round(s / p)); mostrar(dicaParcelasRestantes); }
+        else if (!pOk) { campoParcela.value = (s / n).toFixed(2); mostrar(dicaParcela); }
     }
 
-    campoParcela.addEventListener('input', recalcular);
-    campoParcelasRestantes.addEventListener('input', recalcular);
-    campoSaldo.addEventListener('input', function () {
-        editadoManualmente = true;
-        if (dicaSaldo) dicaSaldo.style.display = 'none';
-    });
+    campoParcela.addEventListener('input', function () { esconder(dicaParcela); recalcularTudo(); });
+    campoParcelasRestantes.addEventListener('input', function () { esconder(dicaParcelasRestantes); recalcularTudo(); });
+    campoSaldo.addEventListener('input', function () { esconder(dicaSaldo); recalcularTudo(); });
+
+    recalcularTudo(); // cobre os 2 campos já vindos preenchidos do servidor
 })();
 </script>
 
