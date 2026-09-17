@@ -108,6 +108,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   `chatbot-whatsapp/includes/mensagens.php` (lógica compartilhada com o
   simulador de CLI `chatbot-whatsapp/simulate.php`, útil pra testar o bot
   sem precisar de credencial Z-API real)
+- **Página pública institucional (`index.php`, raiz do domínio)** —
+  17/09/2026, "Faz pagina publica fastcar solutions para verificação no
+  google" → confirmado com o usuário: é pra dar suporte à verificação do
+  **Google Business Profile** (ficha da empresa no Google Maps/Busca, que
+  cruza nome/endereço/telefone cadastrados com um site real). Até então o
+  domínio só tinha `sistema.fastcar.solutions` (CRM, atrás de login) e o
+  wizard de documentos (`public/documentos.php`, público mas com
+  `X-Robots-Tag: noindex` + token — nunca pensado pra ser achado/indexado);
+  não existia nenhuma página pensada pra aparecer no Google. `index.php`
+  novo na raiz do repo (raiz do domínio) — home simples e honesta (o que a
+  Fastcar faz, como funciona em 4 passos, contato) reaproveitando a mesma
+  identidade visual do wizard (`public/documentos.php` — navy `#151722` +
+  azul `#2f6fed`, logo com fallback de texto) e os MESMOS dados já usados
+  no rodapé do contrato/wizard (`includes/contratos_pdf.php`) — nome
+  "FASTCAR SOLUTIONS", CNPJ `66.934.500/0001-09`, endereço de Barueri/SP —
+  nunca inventados. Inclui JSON-LD `schema.org/LocalBusiness` (nome,
+  endereço, telefone, CNPJ como `taxID`, logo) — sinal estruturado extra
+  que ajuda o Google a entender que é a mesma empresa do Business Profile,
+  além do texto visível. Botão principal "💬 Falar no WhatsApp" aponta pro
+  `wa.me` do número já em uso como canal oficial de entrada do funil
+  (instância Z-API "FastCar | JEAN", `11 9 5834-7764` — o mesmo número já
+  ativo no bot, não um contato novo pra manter). De propósito **nunca**
+  chama `require db.php`/nenhuma config — é a única página do projeto
+  pensada pra sempre ficar no ar mesmo que o banco ou alguma integração
+  externa esteja com problema (diferente do resto do CRM, que depende do
+  banco pra praticamente tudo). `robots.txt` (bloqueava TUDO desde sempre,
+  `Disallow: /` — correto pro CRM inteiro, que nunca deveria ser indexado)
+  ganhou 2 exceções mínimas (`Allow: /$` só pra raiz exata, `Allow:
+  /public/assets/` pro Google conseguir buscar a logo referenciada na
+  página) — o resto do site continua 100% bloqueado de indexação, nunca
+  regrediu nisso. Testado: lint PHP limpo, servido localmente confere
+  título/meta certos, link do WhatsApp monta a URL `wa.me` certa com texto
+  pré-preenchido, e o JSON-LD decodifica válido com `name`/`taxID` batendo.
+  ⚠️ **Só fica acessível em `https://fastcar.solutions/` depois de 3 passos
+  manuais fora do código** (sem acesso SSH/DNS deste ambiente pra fazer
+  isso sozinho): 1) registro DNS (A/CNAME) do domínio **APEX**
+  `fastcar.solutions` apontando pra VPS — hoje só `sistema.fastcar.solutions`
+  tem registro confirmado (ver pendência #1); 2) nginx: adicionar
+  `fastcar.solutions www.fastcar.solutions` ao `server_name` já existente
+  (mesmo `root /var/www/fastcar`, mesma app — não precisa de vhost novo,
+  só mais nomes no que já existe); 3) certbot: expandir o certificado SSL
+  pra cobrir os nomes novos. Depois disso no ar, ainda falta cadastrar/
+  reverificar o Business Profile no Painel do Google Meu Negócio apontando
+  pra essa URL — passo fora do código, do lado do Google.
 - **1 instância Z-API só + WhatsApp Box** (`includes/whatsapp_inbox.php` +
   `admin/whatsapp_inbox.php`, 15/09/2026, decisão do José/Jean: "decidimos
   manter só uma instância — e os números dos usuários somente para
