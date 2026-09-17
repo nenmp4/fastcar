@@ -141,17 +141,70 @@ segue no schema sem uso novo, não removida sem ganho real),
   regrediu nisso. Testado: lint PHP limpo, servido localmente confere
   título/meta certos, link do WhatsApp monta a URL `wa.me` certa com texto
   pré-preenchido, e o JSON-LD decodifica válido com `name`/`taxID` batendo.
-  ⚠️ **Só fica acessível em `https://fastcar.solutions/` depois de 3 passos
-  manuais fora do código** (sem acesso SSH/DNS deste ambiente pra fazer
-  isso sozinho): 1) registro DNS (A/CNAME) do domínio **APEX**
-  `fastcar.solutions` apontando pra VPS — hoje só `sistema.fastcar.solutions`
-  tem registro confirmado (ver pendência #1); 2) nginx: adicionar
-  `fastcar.solutions www.fastcar.solutions` ao `server_name` já existente
-  (mesmo `root /var/www/fastcar`, mesma app — não precisa de vhost novo,
-  só mais nomes no que já existe); 3) certbot: expandir o certificado SSL
-  pra cobrir os nomes novos. Depois disso no ar, ainda falta cadastrar/
-  reverificar o Business Profile no Painel do Google Meu Negócio apontando
-  pra essa URL — passo fora do código, do lado do Google.
+  **✅ No ar em produção, 17/09/2026** — os 3 passos manuais (DNS do domínio
+  apex `fastcar.solutions` apontando pra VPS, `server_name` do nginx
+  expandido pra incluir `fastcar.solutions www.fastcar.solutions` no mesmo
+  arquivo/app de `sistema.fastcar.solutions`, certbot expandindo o
+  certificado com `certbot --nginx --expand -d sistema.fastcar.solutions -d
+  fastcar.solutions -d www.fastcar.solutions`) foram feitos direto na VPS
+  (fora deste ambiente, sem SSH daqui) — `curl -I https://fastcar.solutions/`
+  confirmado 200 pelo usuário. **2 tropeços reais no meio do processo**,
+  registrados porque são o tipo de erro fácil de repetir: (1) a instrução
+  de editar o `server_name` foi colada direto no terminal em vez de dentro
+  do arquivo de config — `server_name` não é comando de shell, virou
+  "command not found"; corrigido orientando um `sed -i` direto no arquivo
+  em vez de pedir edição manual num editor; (2) o primeiro `certbot`
+  (sem `--expand`) fez a pergunta interativa `(E)xpand/(C)ancel:`, mas como
+  os comandos seguintes (nginx reload, curl) já tinham sido colados
+  junto no mesmo bloco, foram interpretados como resposta ao prompt e o
+  certbot cancelou sozinho — corrigido usando `certbot --nginx --expand`
+  (evita o prompt) e orientando rodar cada comando separado, um de cada
+  vez. Ainda falta cadastrar/reverificar o Business Profile no Painel do
+  Google Meu Negócio apontando pra essa URL — passo fora do código, do
+  lado do Google.
+  **Redesign visual** (mesmo dia, "poderia ficar mais bonita essa pagina")
+  — 1ª versão era funcional mas básica (cards simples sem hierarquia).
+  Reforçado só com CSS (nenhum JS novo): hero com brilho radial atrás do
+  logo, tira de confiança (🔒 Negociação segura / 📄 Contrato formalizado /
+  ⚡ Resposta rápida), grade de veículos virou cards com ícone em destaque
+  e hover, "Como funciona" virou uma timeline conectada por linha vertical
+  em vez de lista numerada simples, cards de contato com badge de ícone, e
+  um botão flutuante de WhatsApp sempre visível ao rolar a página (mesmo
+  `wa.me` do botão principal). Testado via Playwright com screenshot full
+  page em desktop (1280px) e mobile (390px) antes de considerar pronto —
+  conferido visualmente que nada quebra/sobrepõe nos dois tamanhos.
+  **SEO + preview de link pro WhatsApp/redes sociais** ("coloca seo para
+  google meta dados whasApp") — a 1ª versão já tinha OG básico
+  (title/description/url/image) e JSON-LD; reforçado com o que faltava
+  pro link renderizar bem quando alguém cola a URL numa conversa de
+  WhatsApp: `og:image` trocado de `public/assets/logo.png` (retangular,
+  fundo transparente — corta estranho no card de preview) pro
+  `admin/assets/img/icon-512.png` já gerado por `includes/marca.php`
+  (512×512, quadrado, fundo sólido da marca — formato que WhatsApp/
+  Facebook esperam), com `og:image:width/height/type` explícitos;
+  `twitter:card=summary_large_image` + `twitter:title/description/image`
+  (mesmo conteúdo do OG, cobre Twitter/X e qualquer unfurler que prefira
+  esse padrão); `og:site_name`; `meta robots=index,follow` explícito (não
+  só implícito por ausência de `noindex`); `theme-color` (cor da barra do
+  navegador em mobile). Como o ícone novo mora em `/admin/assets/img/`
+  (bloqueado pra crawler pelo `robots.txt`, correto pro resto do `/admin/`
+  — correto, ver confirmação do usuário logo abaixo),
+  `robots.txt` ganhou 1 exceção a mais, bem específica (`Allow:
+  /admin/assets/img/icon-512.png`), só esse arquivo — não abre a pasta
+  inteira, e o resto de `/admin/` continua 100% bloqueado. Testado:
+  servido localmente, todas as tags OG/Twitter/robots conferidas no HTML
+  renderizado com os valores certos (URL absoluta do ícone, `512`/`512`/
+  `image/png`, `index, follow`).
+  **Confirmado com o usuário, mesmo dia ("sistema não poder ser indexado
+  blz")**: o CRM inteiro (`sistema.fastcar.solutions`, `/admin/`, `/api/`,
+  `/chatbot-whatsapp/`, wizard de documentos) continua 100% fora de
+  indexação — nunca mudou, e não é regressão nenhuma dessas mudanças de
+  SEO: o `robots.txt` só abriu exceção pra a raiz exata (`Allow: /$`) e 2
+  arquivos de imagem estáticos referenciados na home
+  (`public/assets/`, o ícone 512px), nunca uma pasta inteira nem qualquer
+  rota do CRM; e o CRM em si sempre mandou `X-Robots-Tag: noindex` por
+  cima disso (dupla proteção, camada de aplicação + `robots.txt`, mesmo
+  padrão de sempre).
 - **1 instância Z-API só + WhatsApp Box** (`includes/whatsapp_inbox.php` +
   `admin/whatsapp_inbox.php`, 15/09/2026, decisão do José/Jean: "decidimos
   manter só uma instância — e os números dos usuários somente para
