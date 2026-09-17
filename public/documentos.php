@@ -68,6 +68,7 @@ if (!$op) {
 
 $erro = '';
 $avisoIA = ''; // "li seu documento, confira se bateu certo" — só informativo, nunca bloqueia
+$avisoErroTipo = ''; // "esse arquivo não parece ser o documento certo" (17/09/2026) — bloqueia SÓ a aplicação dos dados, nunca o upload em si
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -92,7 +93,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $arquivoLido = lerConteudoArquivoDocumento($docSalvo['drive_file_id'] ?: null, $docSalvo['arquivo_url'] ?: null);
                         if ($arquivoLido) {
                             $dadosExtraidos = extrairDadosDocumentoComIA($tipoForm, $arquivoLido);
-                            if ($dadosExtraidos) {
+                            if ($dadosExtraidos && !$dadosExtraidos['_documento_correto']) {
+                                // 17/09/2026, achado real de operação
+                                // ("consultor subiu documento do carro no
+                                // lugar da cnh") — a IA identificou que o
+                                // arquivo enviado não é o tipo esperado pra
+                                // esse campo. NUNCA aplica os dados extraídos
+                                // nem compara divergência nesse caso — um
+                                // CRLV lido com o prompt de CNH podia
+                                // "achar" um nome de pessoa (dono anterior do
+                                // carro) e preencher errado via fill-if-empty
+                                // sem ninguém perceber. O arquivo já foi
+                                // SALVO acima (dá pra ver/substituir), só os
+                                // dados não são aplicados — avisoErroTipo (nova
+                                // variável, estilo alerta-erro, mais forte que
+                                // o alerta-info de divergência comum) força o
+                                // cliente a reenviar o arquivo certo.
+                                $tipoPercebido = $dadosExtraidos['_tipo_real_se_diferente'] ?: 'outro tipo de documento';
+                                $avisoErroTipo = "Esse arquivo não parece ser " . ($labelEtapa[$tipoForm] ?? $tipoForm)
+                                    . " — parece ser {$tipoPercebido}. Envie o arquivo certo pra continuar (os dados não foram preenchidos automaticamente).";
+                                getDB()->prepare("
+                                    INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao)
+                                    VALUES (?, ?, ?, ?)
+                                ")->execute([
+                                    $op['oportunidade_id'], $op['etapa'], $op['etapa'],
+                                    "IA identificou documento no slot errado — enviado como '" . ($labelEtapa[$tipoForm] ?? $tipoForm) . "', parece ser: {$tipoPercebido}.",
+                                ]);
+                            } elseif ($dadosExtraidos) {
                                 // Compara ANTES de aplicar (aplicar só preenche vazio,
                                 // nunca sobrescreve — a comparação precisa do valor que
                                 // já existia pra detectar documento de outra
@@ -322,6 +349,7 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
     <?php endif; ?>
 
     <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
+    <?php if ($avisoErroTipo): ?><div class="alerta-erro">🤖 <?= e($avisoErroTipo) ?></div><?php endif; ?>
     <?php if ($avisoIA): ?><div class="alerta-info">🤖 <?= e($avisoIA) ?></div><?php endif; ?>
 
     <?php if ($fase === 'upload'): ?>
@@ -340,6 +368,17 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
 
     <?php elseif ($fase === 'revisao'): ?>
         <p>Confira os dados abaixo — corrija o que estiver errado antes de avançar.</p>
+        <details style="margin-bottom:14px">
+            <summary style="cursor:pointer;color:var(--blue-dark);font-size:13.5px">Enviou o arquivo errado? Envie outro no lugar</summary>
+            <form method="post" enctype="multipart/form-data" style="margin-top:10px">
+                <?= csrfField() ?>
+                <input type="hidden" name="token" value="<?= e($token) ?>">
+                <input type="hidden" name="acao" value="enviar_documento">
+                <input type="hidden" name="tipo" value="<?= e($tipoAtual) ?>">
+                <input type="file" name="arquivo" accept="image/jpeg,image/png,image/webp,application/pdf" required>
+                <button type="submit">Substituir arquivo</button>
+            </form>
+        </details>
         <div class="card">
             <form method="post">
                 <?= csrfField() ?>

@@ -1830,6 +1830,54 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmados (testado a query isoladamente com os outros 3 já
   confirmados — 0 pendentes, dispararia a gravação de
   `documentos_confirmados_em`).
+  **IA identifica o TIPO do documento antes de extrair, pra nunca
+  contaminar o cadastro com dado de outro tipo de documento** (mesmo dia,
+  achado real de operação — José: "então o consultor subiu documento do
+  carro no lugar da cnh kk se acredita permita substutir documento
+  bloquear indetificar documento"). Antes disso, a extração
+  (`includes/extracao_documentos.php`) confiava cegamente que o arquivo no
+  slot "CNH" era mesmo uma CNH — um CRLV (documento do veículo, que também
+  tem "nome do proprietário") anexado por engano nesse slot podia fazer a
+  IA "achar" um nome de verdade (o do dono ANTERIOR do carro) e preenchê-lo
+  no cadastro do cliente via fill-if-empty, sem ninguém perceber, porque o
+  campo estava vazio antes. Os 4 prompts (`extracaoDocumentoPrompt()`)
+  ganharam uma AUTOCHECAGEM: antes de extrair qualquer campo, a IA
+  responde `"parece_ser_esse_documento"` (bool) — false quando o arquivo
+  claramente não é o tipo esperado pro slot — e `"tipo_real_se_diferente"`
+  (o que ela acha que é de verdade, ex: "CRLV (documento do veículo)").
+  `extrairDadosDocumentoComIA()` devolve isso como `_documento_correto`/
+  `_tipo_real_se_diferente` (prefixo `_` de propósito — nunca colide com
+  nome de campo real, `aplicarDadosExtraidosDocumento()` ignora
+  automaticamente qualquer chave que não reconhece). **"Bloquear"**: nos 2
+  pontos onde a extração roda (`public/documentos.php`, wizard do cliente,
+  E `admin/oportunidade.php`, anexo manual do consultor) — quando
+  `_documento_correto` é false, `aplicarDadosExtraidosDocumento()` NUNCA é
+  chamada (nenhum campo é gravado, nem os que por acaso vieram
+  preenchidos) — testado justamente o pior caso, a IA "achando" um nome
+  mesmo marcando o documento como errado, confirmando que mesmo assim nada
+  é aplicado. **"Identificar"**: aviso forte (classe `alerta-erro`, mais
+  chamativo que o `alerta-info` de divergência de dado comum) explica o
+  que aconteceu — "Esse arquivo não parece ser CNH ou RG... parece ser
+  CRLV (documento do veículo)" — no wizard e, do lado do consultor, no
+  lugar da mensagem de sucesso muda de sempre. Fica registrado em
+  `oportunidade_historico` também (mesmo padrão de divergência de dado já
+  existente). **"Permitir substituir"**: o arquivo (mesmo errado) já É
+  salvo normalmente — reenviar o mesmo tipo sempre sobrescreve (já existia,
+  `ON CONFLICT DO UPDATE` em `salvarUploadDocumento()`); o wizard ganhou um
+  `<details>` novo "Enviou o arquivo errado? Envie outro no lugar" bem na
+  tela de revisão, com upload direto, sem precisar voltar etapa — antes
+  disso não tinha nenhum jeito de trocar o arquivo a partir dessa tela, só
+  editar os campos de texto. Nunca falso-bloqueia por falta de sinal — IA
+  que não respondeu o campo de autochecagem (falha de parse, por exemplo)
+  conta como "correto" (`_documento_correto` default true), documento
+  sem chave Gemini configurada segue sem checagem nenhuma, igual sempre foi.
+  Testado ponta a ponta: função (`extrairDadosDocumentoComIA()` isolada
+  contra Gemini fake, confirmando `_documento_correto=false` +
+  `_tipo_real_se_diferente` certos pro caso de mismatch, e o caminho normal
+  intacto pro caso de documento certo) + Playwright nos 2 pontos de upload
+  (wizard: aviso aparece, campo `nome` fica vazio mesmo a IA "achando" um
+  nome, botão de substituir aparece; admin: aviso aparece no lugar do
+  "Documento anexado." de sempre).
 - **Módulo de contrato (só COMPRA)** — `includes/contratos.php` +
   `includes/contratos_pdf.php` (PDF via FPDF puro, sem LibreOffice/Composer —
   shared hosting não teria isso — transcrito do modelo real

@@ -186,7 +186,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $arquivoLido = $docSalvo ? lerConteudoArquivoDocumento($docSalvo['drive_file_id'] ?: null, $docSalvo['arquivo_url'] ?: null) : null;
                             if ($arquivoLido) {
                                 $dadosExtraidos = extrairDadosDocumentoComIA($tipoDoc, $arquivoLido);
-                                if ($dadosExtraidos) {
+                                // 17/09/2026, achado real ("consultor subiu
+                                // documento do carro no lugar da cnh"): se a
+                                // IA identificou que o arquivo NÃO é o tipo
+                                // esperado pro slot (ex: CRLV no lugar da
+                                // CNH), nunca aplica os campos extraídos —
+                                // um documento errado podia "achar" um nome
+                                // de pessoa (ex: dono anterior do carro no
+                                // CRLV) e preencher o cadastro errado via
+                                // fill-if-empty, sem ninguém perceber. O
+                                // arquivo já foi salvo (dá pra ver/substituir
+                                // reenviando o mesmo tipo), só os dados não
+                                // são aplicados — vira aviso forte em vez do
+                                // sucesso mudo de sempre.
+                                if ($dadosExtraidos && !$dadosExtraidos['_documento_correto']) {
+                                    $tipoPercebido = $dadosExtraidos['_tipo_real_se_diferente'] ?: 'outro tipo de documento';
+                                    $sucesso = '';
+                                    $erro = 'Anexado, mas esse arquivo não parece ser ' . (TIPOS_DOCUMENTOS_CLIENTE[$tipoDoc] ?? $tipoDoc)
+                                        . ' — parece ser ' . $tipoPercebido . '. Confira e anexe o arquivo certo (os dados não foram preenchidos automaticamente).';
+                                } elseif ($dadosExtraidos) {
                                     aplicarDadosExtraidosDocumento((int)$op['cliente_id'], $id, $tipoDoc, $dadosExtraidos);
                                 }
                             }

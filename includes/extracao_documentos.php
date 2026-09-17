@@ -40,25 +40,56 @@ const EXTRACAO_DOCUMENTO_CAMPOS = [
     'crlv' => ['veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam', 'veiculo_chassi'],
 ];
 
+/**
+ * Descrição curta (pro PROMPT, não pra tela) do que cada tipo de slot
+ * espera — usada só pra IA se autocorrigir sobre o tipo do documento, ver
+ * `parece_ser_esse_documento` abaixo.
+ */
+const EXTRACAO_DOCUMENTO_ESPERADO_DESCRICAO = [
+    'cnh'                    => 'uma CNH (Carteira Nacional de Habilitação) ou documento de identidade com foto (RG) — documento de uma PESSOA, nunca do veículo',
+    'comprovante_endereco'   => 'um comprovante de endereço (conta de luz, água, telefone, internet ou documento similar em nome de alguém)',
+    'contrato_financiamento' => 'um contrato de financiamento de veículo com banco/financeira',
+    'crlv'                   => 'um CRLV (Certificado de Registro e Licenciamento de Veículo — documento oficial do VEÍCULO, pode ser o CRLV-e digital)',
+];
+
 function extracaoDocumentoPrompt(string $tipo): string {
+    // 17/09/2026, achado real de operação ("consultor subiu documento do
+    // carro no lugar da cnh") — antes disso a IA só tentava extrair os
+    // campos esperados, sem nunca checar se o documento era realmente
+    // aquele tipo; olhando um CRLV com o prompt de CNH, ela podia (o CRLV
+    // também tem "nome do proprietário") extrair um nome de verdade — só
+    // que o nome do DONO ANTERIOR do carro, não do cliente atual — e esse
+    // valor errado ia direto pro cadastro via fill-if-empty, sem ninguém
+    // perceber. Todo prompt agora pede 2 coisas: os campos de sempre E uma
+    // autoidentificação honesta ("isso realmente parece ser esse tipo de
+    // documento?") — ver extrairDadosDocumentoComIA()/aplicarDadosExtraidosDocumento()
+    // pra como isso trava a aplicação dos campos quando bate errado.
+    $esperado = EXTRACAO_DOCUMENTO_ESPERADO_DESCRICAO[$tipo] ?? '';
+    $checagemTipo = "\n\nANTES de extrair qualquer campo, confira se esse arquivo é MESMO {$esperado}. "
+        . "Se NÃO for — por exemplo, é um documento de outro tipo (do veículo em vez da pessoa, ou vice-versa, "
+        . "ou qualquer outra coisa) — marque \"parece_ser_esse_documento\": false e descreva em poucas palavras, "
+        . "em \"tipo_real_se_diferente\", o que ele realmente parece ser (ex: \"CRLV (documento do veículo)\", "
+        . "\"comprovante de endereço\", \"contrato de financiamento\"); nesse caso pode deixar os outros campos vazios. "
+        . "Se for mesmo o documento certo, marque \"parece_ser_esse_documento\": true e deixe \"tipo_real_se_diferente\" vazio.";
+
     return match ($tipo) {
-        'cnh' => "Leia esta CNH (Carteira Nacional de Habilitação) ou documento de identidade com foto e extraia os dados abaixo. NUNCA invente informação — se não conseguir ler algum campo com certeza, deixe como string vazia \"\".\n\n"
+        'cnh' => "Leia esta CNH (Carteira Nacional de Habilitação) ou documento de identidade com foto e extraia os dados abaixo. NUNCA invente informação — se não conseguir ler algum campo com certeza, deixe como string vazia \"\".{$checagemTipo}\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
-            . '{"nome": "", "cpf": "", "rg": "", "cnh": ""}' . "\n"
+            . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","nome": "", "cpf": "", "rg": "", "cnh": ""}' . "\n"
             . '("cnh" é o número de registro da carteira de habilitação, se estiver visível — não confundir com o CPF.)',
 
-        'comprovante_endereco' => "Leia este comprovante de endereço (conta de luz, água, telefone, internet etc.) e extraia o endereço completo (rua, número, bairro, cidade, estado, CEP — o que estiver visível, numa linha só). NUNCA invente informação — se não conseguir ler com certeza, deixe vazio.\n\n"
+        'comprovante_endereco' => "Leia este comprovante de endereço (conta de luz, água, telefone, internet etc.) e extraia o endereço completo (rua, número, bairro, cidade, estado, CEP — o que estiver visível, numa linha só). NUNCA invente informação — se não conseguir ler com certeza, deixe vazio.{$checagemTipo}\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
-            . '{"endereco": ""}',
+            . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","endereco": ""}',
 
-        'contrato_financiamento' => "Leia este contrato de financiamento de veículo (com banco/financeira) e extraia o que estiver visível dos campos abaixo. NUNCA invente informação — campo não legível fica como string vazia \"\".\n\n"
+        'contrato_financiamento' => "Leia este contrato de financiamento de veículo (com banco/financeira) e extraia o que estiver visível dos campos abaixo. NUNCA invente informação — campo não legível fica como string vazia \"\".{$checagemTipo}\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
-            . '{"banco_financiamento":"","veiculo_marca":"","veiculo_modelo":"","veiculo_ano":"","veiculo_placa":"","veiculo_renavam":"","veiculo_chassi":"","valor_parcela":"","parcelas_restantes":"","contrato_financiamento_numero":""}' . "\n"
+            . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","banco_financiamento":"","veiculo_marca":"","veiculo_modelo":"","veiculo_ano":"","veiculo_placa":"","veiculo_renavam":"","veiculo_chassi":"","valor_parcela":"","parcelas_restantes":"","contrato_financiamento_numero":""}' . "\n"
             . '"valor_parcela" em número, ex: 850.50 (sem "R$", sem separador de milhar). "parcelas_restantes" só o número inteiro de parcelas que ainda faltam pagar, se estiver explícito no contrato.',
 
-        'crlv' => "Leia este CRLV (Certificado de Registro e Licenciamento de Veículo, documento oficial do veículo — pode ser o CRLV-e digital) e extraia os dados abaixo. NUNCA invente informação — campo não legível fica como string vazia \"\".\n\n"
+        'crlv' => "Leia este CRLV (Certificado de Registro e Licenciamento de Veículo, documento oficial do veículo — pode ser o CRLV-e digital) e extraia os dados abaixo. NUNCA invente informação — campo não legível fica como string vazia \"\".{$checagemTipo}\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
-            . '{"veiculo_marca":"","veiculo_modelo":"","veiculo_ano":"","veiculo_placa":"","veiculo_renavam":"","veiculo_chassi":""}' . "\n"
+            . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","veiculo_marca":"","veiculo_modelo":"","veiculo_ano":"","veiculo_placa":"","veiculo_renavam":"","veiculo_chassi":""}' . "\n"
             . '"veiculo_ano" é o ano-modelo do veículo (ou ano de fabricação/modelo, o que estiver mais visível).',
 
         default => '',
@@ -66,11 +97,25 @@ function extracaoDocumentoPrompt(string $tipo): string {
 }
 
 /**
- * Chama a IA pra ler 1 documento já salvo e devolve só os campos
- * previstos pro tipo dele (array associativo, valor '' quando a IA não
- * leu/não tinha certeza). Nunca lança — falha de rede/API/parse vira
- * array vazio, igual ao padrão do resto do projeto (provedor externo fora
- * do ar nunca trava o fluxo principal).
+ * Chama a IA pra ler 1 documento já salvo e devolve os campos previstos
+ * pro tipo dele (array associativo, valor '' quando a IA não leu/não
+ * tinha certeza), MAIS 2 chaves de metadado sobre o tipo do documento em
+ * si (17/09/2026, ver extracaoDocumentoPrompt()):
+ *   '_documento_correto' => bool — false quando a IA identificou que o
+ *      arquivo NÃO é o tipo esperado pra esse slot (ex: CRLV no lugar da
+ *      CNH). Ausência do campo na resposta da IA (nunca perguntou/não
+ *      respondeu) conta como true — nunca bloqueia por falta de sinal,
+ *      só quando a IA disse explicitamente que está errado.
+ *   '_tipo_real_se_diferente' => string — o que a IA acha que o
+ *      documento realmente é, só preenchido quando '_documento_correto'
+ *      é false.
+ * Prefixo `_` nos dois de propósito — aplicarDadosExtraidosDocumento()
+ * só reconhece nomes de campo de verdade (nome/cpf/veiculo_marca/etc),
+ * então esses dois nunca acabam gravados em `clientes`/`oportunidades`
+ * por engano, mesmo passando pelo mesmo array.
+ * Nunca lança — falha de rede/API/parse vira array vazio, igual ao padrão
+ * do resto do projeto (provedor externo fora do ar nunca trava o fluxo
+ * principal).
  */
 function extrairDadosDocumentoComIA(string $tipo, array $arquivo): array {
     $campos = EXTRACAO_DOCUMENTO_CAMPOS[$tipo] ?? [];
@@ -106,6 +151,8 @@ function extrairDadosDocumentoComIA(string $tipo, array $arquivo): array {
     foreach ($campos as $campo) {
         $resultado[$campo] = trim((string)($dados[$campo] ?? ''));
     }
+    $resultado['_documento_correto'] = !array_key_exists('parece_ser_esse_documento', $dados) || $dados['parece_ser_esse_documento'] !== false;
+    $resultado['_tipo_real_se_diferente'] = trim((string)($dados['tipo_real_se_diferente'] ?? ''));
     return $resultado;
 }
 
