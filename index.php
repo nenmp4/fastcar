@@ -86,6 +86,24 @@ $anoAtual = date('Y');
     }
 }
 </script>
+<!-- FAQPage — mesmo conteúdo textual da seção "Perguntas frequentes" abaixo,
+     nunca deve dessincronizar: se o texto de alguma pergunta mudar, mudar
+     aqui também. -->
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+        {"@type": "Question", "name": "A Fastcar realmente assume o financiamento do meu veículo?", "acceptedAnswer": {"@type": "Answer", "text": "Sim — é exatamente esse o nosso foco: comprar veículos que ainda estão financiados, assumindo o saldo devedor junto ao banco como parte da negociação. Você não precisa quitar o financiamento antes de vender."}},
+        {"@type": "Question", "name": "Preciso estar com as parcelas em dia para vender?", "acceptedAnswer": {"@type": "Answer", "text": "Não. Recebemos veículos com parcelas em dia ou em atraso — a situação do financiamento é só uma das informações que avaliamos pra montar a proposta."}},
+        {"@type": "Question", "name": "Quais documentos preciso enviar?", "acceptedAnswer": {"@type": "Answer", "text": "Documento de identidade com foto (CNH ou RG), comprovante de endereço, contrato de financiamento do veículo com o banco e o CRLV. Depois do primeiro contato, mandamos um link pra você enviar tudo com calma, direto pelo celular."}},
+        {"@type": "Question", "name": "Como é definido o valor da proposta?", "acceptedAnswer": {"@type": "Answer", "text": "Levamos em conta o veículo (modelo, ano, estado de conservação) e a situação do financiamento (valor da parcela, quanto ainda falta pagar). A proposta final é sempre conversada e aprovada com você antes de qualquer contrato."}},
+        {"@type": "Question", "name": "Quanto tempo leva o processo?", "acceptedAnswer": {"@type": "Answer", "text": "Varia conforme a análise do veículo e do financiamento, mas o atendimento inicial é rápido — em geral um consultor já entra em contato no mesmo dia depois da conversa no WhatsApp."}},
+        {"@type": "Question", "name": "A negociação é formalizada com contrato?", "acceptedAnswer": {"@type": "Answer", "text": "Sim. Depois de alinhadas as condições, formalizamos tudo em contrato assinado por ambas as partes antes da transferência do veículo."}},
+        {"@type": "Question", "name": "Vocês compram só carro?", "acceptedAnswer": {"@type": "Answer", "text": "Não — também compramos moto, caminhão, caminhonete, van e jet ski ainda financiados."}}
+    ]
+}
+</script>
 <style>
 :root {
     --navy: #151722;
@@ -200,6 +218,23 @@ body {
 .timeline strong { display: block; font-size: 15.5px; margin-bottom: 3px; }
 .timeline span { font-size: 14.5px; color: var(--texto-fraco); line-height: 1.6; }
 
+/* FAQ — <details>/<summary> nativos, sem JS nenhum (mesmo espírito leve
+   do resto da página: nada que precise de script pra funcionar). */
+.faq-item { border-bottom: 1px solid #ececf3; }
+.faq-item:last-child { border-bottom: none; }
+.faq-item summary {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 18px 4px; font-size: 15.5px; font-weight: 700; color: var(--texto);
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+    content: '+'; flex: none; font-size: 22px; font-weight: 400; color: var(--blue);
+    transition: transform .18s ease;
+}
+.faq-item[open] summary::after { transform: rotate(45deg); }
+.faq-item p { margin: 0 4px 18px; font-size: 14.5px; color: var(--texto-fraco); line-height: 1.65; }
+
 /* Contato */
 .contato-grade { display: grid; gap: 14px; margin-top: 22px; }
 .contato-item {
@@ -292,6 +327,41 @@ body {
             <li><strong>Alinhamento das condições</strong><span>Definimos valor, prazo de quitação do financiamento e entrega do veículo.</span></li>
             <li><strong>Contrato e transferência</strong><span>Assinamos o contrato e formalizamos a transferência com segurança.</span></li>
         </ol>
+    </div>
+
+    <div class="secao-titulo">
+        <h2>Perguntas frequentes</h2>
+        <p>As dúvidas mais comuns de quem está pensando em vender.</p>
+    </div>
+    <div class="card">
+        <details class="faq-item" open>
+            <summary>A Fastcar realmente assume o financiamento do meu veículo?</summary>
+            <p>Sim — é exatamente esse o nosso foco: comprar veículos que ainda estão financiados, assumindo o saldo devedor junto ao banco como parte da negociação. Você não precisa quitar o financiamento antes de vender.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Preciso estar com as parcelas em dia para vender?</summary>
+            <p>Não. Recebemos veículos com parcelas em dia ou em atraso — a situação do financiamento é só uma das informações que avaliamos pra montar a proposta.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Quais documentos preciso enviar?</summary>
+            <p>Documento de identidade com foto (CNH ou RG), comprovante de endereço, contrato de financiamento do veículo com o banco e o CRLV. Depois do primeiro contato, mandamos um link pra você enviar tudo com calma, direto pelo celular.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Como é definido o valor da proposta?</summary>
+            <p>Levamos em conta o veículo (modelo, ano, estado de conservação) e a situação do financiamento (valor da parcela, quanto ainda falta pagar). A proposta final é sempre conversada e aprovada com você antes de qualquer contrato.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Quanto tempo leva o processo?</summary>
+            <p>Varia conforme a análise do veículo e do financiamento, mas o atendimento inicial é rápido — em geral um consultor já entra em contato no mesmo dia depois da conversa no WhatsApp.</p>
+        </details>
+        <details class="faq-item">
+            <summary>A negociação é formalizada com contrato?</summary>
+            <p>Sim. Depois de alinhadas as condições, formalizamos tudo em contrato assinado por ambas as partes antes da transferência do veículo.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Vocês compram só carro?</summary>
+            <p>Não — também compramos moto, caminhão, caminhonete, van e jet ski ainda financiados.</p>
+        </details>
     </div>
 
     <div class="secao-titulo">

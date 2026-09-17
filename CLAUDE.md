@@ -205,6 +205,24 @@ segue no schema sem uso novo, não removida sem ganho real),
   rota do CRM; e o CRM em si sempre mandou `X-Robots-Tag: noindex` por
   cima disso (dupla proteção, camada de aplicação + `robots.txt`, mesmo
   padrão de sempre).
+  **FAQ** (mesmo dia, "coloca uma faq como funciona e principais dúvidas")
+  — 7 perguntas reais de quem tá pensando em vender (assume financiamento?
+  precisa estar com parcela em dia? quais documentos? como é definido o
+  valor? quanto tempo demora? tem contrato? só compra carro?), respostas
+  honestas e sem prometer número/prazo específico (mesmo espírito da regra
+  #3 do projeto — nunca inventar/chutar o que só o consultor pode
+  confirmar caso a caso). Accordion via `<details>/<summary>` nativos do
+  HTML — zero JS novo, mesmo espírito leve do resto da página; `summary`
+  perde o marcador padrão do navegador e ganha um `+` que gira 45° (vira
+  `×`) quando aberto, só CSS (`.faq-item[open] summary::after`). Ganhou
+  também `schema.org/FAQPage` (JSON-LD, novo `<script>` separado do
+  `LocalBusiness` já existente) com as mesmas 7 perguntas/respostas
+  palavra por palavra — texto duplicado de propósito entre o HTML visível
+  e o JSON-LD, comentário no código avisando pra manter os dois em sync se
+  alguma resposta mudar. Testado: os 2 blocos JSON-LD decodificam válidos
+  (`LocalBusiness` e `FAQPage`, 7 perguntas), e via Playwright confirmado
+  que o accordion abre/fecha de verdade ao clicar (2º item aberto,
+  screenshot conferido visualmente).
 - **1 instância Z-API só + WhatsApp Box** (`includes/whatsapp_inbox.php` +
   `admin/whatsapp_inbox.php`, 15/09/2026, decisão do José/Jean: "decidimos
   manter só uma instância — e os números dos usuários somente para
