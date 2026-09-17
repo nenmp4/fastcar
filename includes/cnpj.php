@@ -19,14 +19,44 @@ function cnpjSomenteDigitos(string $cnpj): string {
 }
 
 /**
+ * "Último erro" da consulta mais recente — mesmo espírito de
+ * GoogleDrive::lastError e logDiagnosticoMidiaZapi(): a 1ª versão desta
+ * função só devolvia null em qualquer falha, sem nenhum jeito de saber
+ * o motivo (CNPJ mal formatado? não encontrado de verdade? erro de rede?
+ * resposta num formato inesperado?) — achado real de produção (17/09/2026,
+ * "cnpj não tá buscando api"), sem acesso a este sandbox pra reproduzir
+ * (BrasilAPI bloqueada aqui, mesma limitação já documentada no CLAUDE.md).
+ * `admin/fornecedor_cnpj_ajax.php` usa isso pra mostrar um aviso
+ * específico em vez do genérico de sempre.
+ */
+function cnpjSetUltimoErro(string $motivo): void {
+    $GLOBALS['__cnpj_ultimo_erro'] = $motivo;
+}
+function cnpjUltimoErro(): string {
+    return $GLOBALS['__cnpj_ultimo_erro'] ?? '';
+}
+
+function cnpjLogDiagnostico(string $motivo, string $corpo): void {
+    $dir = dirname(__DIR__) . '/storage/logs';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $linha = '[' . date('Y-m-d H:i:s') . "] {$motivo}\n" . substr($corpo, 0, 2000) . "\n---\n";
+    @file_put_contents($dir . '/cnpj_debug.log', $linha, FILE_APPEND);
+}
+
+/**
  * Consulta um CNPJ na Receita (via BrasilAPI). Retorna null se o CNPJ não
  * tem 14 dígitos, não foi encontrado, ou a API está fora do ar — nunca
  * inventa dado (regra #3 do projeto), quem chama decide o que fazer com
- * o null (avisar o usuário, nunca preencher nada).
+ * o null (avisar o usuário, nunca preencher nada). `cnpjUltimoErro()` logo
+ * depois de um null explica o motivo específico.
  */
 function cnpjConsultar(string $cnpjDigitado): ?array {
+    cnpjSetUltimoErro('');
     $cnpj = cnpjSomenteDigitos($cnpjDigitado);
     if (strlen($cnpj) !== 14) {
+        cnpjSetUltimoErro('CNPJ precisa ter 14 dígitos (pode digitar com ou sem pontuação — só os números importam).');
         return null;
     }
 
@@ -43,18 +73,37 @@ function cnpjConsultar(string $cnpjDigitado): ?array {
     $ch = curl_init(CNPJ_BASE_URL . '/' . $cnpj);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 8,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 10,
         CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        // Sem User-Agent, alguns provedores atrás de CDN (Cloudflare/Vercel,
+        // é o caso da BrasilAPI) rejeitam a request como bot — curl sem essa
+        // opção manda vazio por padrão.
+        CURLOPT_USERAGENT => 'FastcarCRM/1.0 (+https://fastcar.solutions)',
     ]);
     $body = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $erroCurl = curl_error($ch);
     curl_close($ch);
 
-    if ($body === false || $code !== 200) {
+    if ($body === false || $erroCurl) {
+        cnpjSetUltimoErro('Falha de conexão com a Receita/BrasilAPI: ' . ($erroCurl ?: 'sem resposta'));
+        cnpjLogDiagnostico("erro_curl cnpj={$cnpj} http_code={$code}", $erroCurl);
+        return null;
+    }
+    if ($code === 404) {
+        cnpjSetUltimoErro('CNPJ não encontrado na Receita.');
+        return null;
+    }
+    if ($code !== 200) {
+        cnpjSetUltimoErro("A Receita/BrasilAPI respondeu com erro (HTTP {$code}). Tente de novo em alguns minutos.");
+        cnpjLogDiagnostico("http_nao_200 cnpj={$cnpj} http_code={$code}", (string)$body);
         return null;
     }
     $dados = json_decode($body, true);
     if (!is_array($dados) || empty($dados['cnpj'])) {
+        cnpjSetUltimoErro('A Receita/BrasilAPI respondeu num formato inesperado.');
+        cnpjLogDiagnostico("formato_inesperado cnpj={$cnpj}", (string)$body);
         return null;
     }
 

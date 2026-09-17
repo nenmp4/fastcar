@@ -2696,6 +2696,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   preenche os 3 campos certos, fill-if-empty confirmado não sobrescrevendo
   nome editado à mão, fornecedor salvo aparece na listagem, CNPJ inválido
   mostra aviso sem travar).
+  **Sem diagnóstico nenhum quando falhava em produção** (mesmo dia, achado
+  real do usuário: "cnpj não tá buscando api") — causa mais provável:
+  `cnpjConsultar()` chamava curl SEM header `User-Agent` — confirmado
+  isoladamente que a extensão cURL do PHP (diferente do CLI `curl`) não
+  manda User-Agent nenhum por padrão, e a BrasilAPI roda atrás de CDN
+  (Cloudflare/Vercel), exatamente o tipo de provedor que costuma bloquear
+  request sem esse header. Corrigido com `CURLOPT_USERAGENT` +
+  `CURLOPT_FOLLOWLOCATION` (defesa a mais contra redirect silencioso). Mas
+  o problema maior era estrutural: a função só retornava `null` em
+  QUALQUER falha, sem log nem mensagem específica — só o aviso genérico
+  de sempre. `cnpjUltimoErro()`/`cnpjSetUltimoErro()` (mesmo espírito de
+  `GoogleDrive::lastError`) diferenciam CNPJ mal formatado, não encontrado
+  (404), erro HTTP do provedor (com o código), formato de resposta
+  inesperado, e falha de conexão (com o erro real do curl) —
+  `admin/fornecedor_cnpj_ajax.php` mostra essa mensagem específica na tela
+  agora. `cnpjLogDiagnostico()` grava o corpo cru em
+  `storage/logs/cnpj_debug.log` nos casos que não são "CNPJ simplesmente
+  não existe" — mesmo padrão de `whatsapp_contato_debug.log`. ⚠️ Este
+  sandbox de dev não consegue alcançar `brasilapi.com.br` de jeito nenhum
+  (mesma limitação de acesso externo já documentada no CLAUDE.md) — não
+  dá pra confirmar se o User-Agent era A causa raiz de verdade, só que era
+  uma lacuna real e a causa mais plausível pro sintoma; se persistir
+  depois deste deploy, `storage/logs/cnpj_debug.log` + a mensagem
+  específica na tela devem apontar o motivo real. Testado: função isolada
+  contra servidor fake local simulando exatamente esse cenário (rejeita
+  403 sem User-Agent, aceita com) + os 5 caminhos de erro (formato
+  inválido, 404, HTTP 500 com log gravado, formato inesperado com log
+  gravado, falha de conexão real com erro do curl capturado) + Playwright
+  ponta a ponta confirmando mensagem específica na tela por tipo de erro
+  e que o caminho de sucesso continua funcionando com o header novo.
   **Colaboradores — puxar direto de um usuário do sistema** (mesmo dia,
   "nos colaboradores permita puxar do sistema adicionar manuall") — card
   novo "🔗 Adicionar a partir de um usuário do sistema" em

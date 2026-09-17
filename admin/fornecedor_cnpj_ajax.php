@@ -16,7 +16,7 @@ $cnpj = (string)($_GET['cnpj'] ?? '');
 $dados = cnpjConsultar($cnpj);
 
 if ($dados === null) {
-    echo json_encode(['ok' => false, 'msg' => 'CNPJ inválido, não encontrado na Receita, ou o serviço está fora do ar no momento.']);
+    echo json_encode(['ok' => false, 'msg' => cnpjUltimoErro() ?: 'Não foi possível consultar esse CNPJ.']);
     exit;
 }
 
