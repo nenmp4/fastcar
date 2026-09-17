@@ -597,6 +597,54 @@ segue no schema sem uso novo, não removida sem ganho real),
   `drive_file_id` ou `arquivo_url` preenchido (cópia salva); IA pausada
   depois do envio; payload capturado pelo Z-API fake confere `phone`
   normalizado + `audio` como data URI base64 no formato certo.
+  **Trocado pra gravação direto do microfone** (17/09/2026, achado real:
+  "Mandar audio está com bug ainda está abrindo pasta no pc") — a 1ª
+  versão do botão 🎤 abria o seletor de arquivo do navegador
+  (`<input type=file accept="audio/*">`), pra ESCOLHER um áudio já salvo no
+  PC; o consultor esperava gravar a voz na hora, tipo WhatsApp de verdade —
+  confirmado com o usuário (2 perguntas diretas) antes de trocar. Reescrito
+  com `MediaRecorder` (API nativa do navegador, sem lib externa): clique no
+  🎤 pede permissão do microfone e começa a gravar (botão vira ⏹️, aparece
+  um botão ✕ "cancelar" e um timer "🔴 Gravando... 0:0X"), clique de novo
+  no mesmo botão para e envia — padrão clique/clique escolhido de propósito
+  em vez de segurar/soltar (mais robusto num mouse: soltar sem querer fora
+  do botão perderia a gravação). Auto-para em 10min
+  (`AUDIO_MAX_SEGUNDOS`) como rede de segurança, nunca grava pra sempre se
+  esquecerem a aba aberta. Formato de gravação: tenta
+  `audio/ogg;codecs=opus` primeiro (o que o WhatsApp usa de verdade pra
+  nota de voz), cai pra `audio/webm;codecs=opus`/`audio/webm`/`audio/mp4`
+  conforme o que o navegador suportar (`MediaRecorder.isTypeSupported()`)
+  — **novo item pra validar em produção**: qual formato cada navegador
+  real escolhe e se o Z-API/WhatsApp renderiza a bolha de voz igual em
+  todos, nunca testado contra API real (só contra fake local). Sem
+  `MediaRecorder`/`getUserMedia` no navegador ou permissão de microfone
+  negada, mostra alerta explicando em vez de travar silencioso. Reaproveita
+  o MESMO endpoint AJAX (`enviar_audio`) e a mesma
+  `enviarAudioManualWhatsapp()` de antes — só troca a ORIGEM do base64 (do
+  `FileReader` num arquivo escolhido pro `FileReader` num `Blob` gravado),
+  nenhuma mudança no backend. **Bug real achado no próprio teste
+  Playwright, antes de qualquer commit**: a 1ª versão do botão "cancelar"
+  só esvaziava o array de pedaços de áudio (`pedacos = []`) antes de
+  chamar `gravador.stop()`, mas `MediaRecorder.stop()` dispara um último
+  evento `dataavailable` (com o pedaço final pendente) ANTES do evento
+  `stop` — esse pedaço final entrava de novo no array bem a tempo do
+  listener de `stop` ver `pedacos.length > 0` e mandar mesmo assim,
+  cancelamento não cancelava nada de verdade. Corrigido com uma flag
+  `cancelando` explícita, checada no listener de `stop` (`if (cancelando
+  || pedacos.length === 0)`), sem depender de esvaziar o array. Testado
+  ponta a ponta com Playwright usando um microfone FAKE do Chromium
+  (`--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`,
+  concede a permissão automaticamente sem diálogo real) contra banco +
+  servidor Z-API fake isolados: clique inicia a gravação (botão vira ⏹️,
+  timer aparece), clique de novo para e envia — payload capturado pelo
+  Z-API fake confere `audio` como data URI `audio/webm;codecs=opus`
+  (formato que o Chromium headless escolheu) com ~29KB de áudio real de
+  ~2s, mensagem gravada no banco com `tipo=audio`/`direcao=out`; botão
+  "cancelar" durante a gravação NÃO dispara nenhuma chamada pro Z-API
+  (conferido comparando o log do fake server antes/depois — vazio nos
+  dois), volta pro estado inicial (🎤, sem timer) — esse teste especificamente
+  foi o que pegou o bug do `cancelando` acima, a 1ª versão passava no teste
+  de "gravar e enviar" mas falhava nesse.
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
