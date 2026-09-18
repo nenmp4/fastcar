@@ -72,6 +72,7 @@ $asaasPendenteImportar = asaasConfigured();
     <a href="/admin/financeiro-fornecedores.php" class="btn" style="width:auto">🏭 Fornecedores</a>
     <a href="/admin/financeiro-colaboradores.php" class="btn" style="width:auto">👥 Colaboradores</a>
     <a href="/admin/financeiro-asaas.php" class="btn" style="width:auto">🔄 Asaas</a>
+    <a href="/admin/clientes.php" class="btn" style="width:auto">🙋 Clientes</a>
   </div>
 </div>
 
@@ -97,10 +98,10 @@ $asaasPendenteImportar = asaasConfigured();
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">Saldo do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:<?= $saldo >= 0 ? '#16a34a' : '#dc2626' ?>">R$ <?= number_format($saldo, 2, ',', '.') ?></div>
   </div>
-  <div class="card" style="border-top:4px solid <?= $contasAtrasadas > 0 ? '#dc2626' : '#94a3b8' ?>">
+  <a class="card" href="/admin/financeiro-lancamentos.php?status=atrasado&todos_periodos=1" style="display:block;color:inherit;text-decoration:none;border-top:4px solid <?= $contasAtrasadas > 0 ? '#dc2626' : '#94a3b8' ?>">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">⏰ Contas atrasadas</div>
     <div style="font-size:1.6rem;font-weight:800"><?= $contasAtrasadas ?></div>
-  </div>
+  </a>
 </div>
 
 <div class="card">

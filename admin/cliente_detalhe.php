@@ -26,9 +26,14 @@ $sucesso = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
-    } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
+    } elseif (in_array($_SESSION['admin_perfil'], ['supervisor', 'financeiro'], true)) {
+        // 18/09/2026, "financeiro tem ter acesso ao clientes" — liberado só
+        // pra CONSULTAR (ex: conferir contato de quem está com conta
+        // atrasada), mesma trava de só-acompanha do supervisor: financeiro
+        // nunca edita cadastro de cliente por aqui, só pelo funil de
+        // compra/vendas isso faz sentido.
         http_response_code(403);
-        $erro = 'Perfil de supervisão só acompanha, não edita cadastro de cliente.';
+        $erro = 'Este perfil só consulta o cadastro de cliente, não edita.';
     } elseif (($_POST['acao'] ?? 'salvar') === 'atualizar_foto_whatsapp') {
         // 16/09/2026, "puxa foto do zap e nome" — cliente já cadastrado
         // antes dessa função existir (ou cuja busca automática não achou

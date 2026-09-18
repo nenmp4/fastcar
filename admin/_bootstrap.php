@@ -54,12 +54,18 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
 // 17/09/2026 — perfil `financeiro` (módulo financeiro, "criar perfil
 // gestão financeira") nunca acessa funil de compra/vendas/WhatsApp — mesma
 // técnica de allowlist central do guard do `vendedor` acima.
+// 18/09/2026, "financeiro tem ter acesso ao clientes" — liberado
+// `clientes.php`/`cliente_detalhe.php` (consulta de cadastro, ex: conferir
+// contato de quem está com conta atrasada no Asaas) — nunca EDITA cliente
+// por aqui, mesma trava de só-acompanha do supervisor (ver guard de POST
+// em admin/cliente_detalhe.php).
 if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
     $paginaAtualFin = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
     $permitidasFin = [
         'financeiro.php', 'financeiro-lancamentos.php', 'financeiro-categorias.php',
         'financeiro-fornecedores.php', 'financeiro-colaboradores.php', 'financeiro-asaas.php',
-        'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'logout.php',
+        'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'clientes.php',
+        'cliente_detalhe.php', 'logout.php',
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
