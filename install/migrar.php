@@ -742,4 +742,28 @@ if (!colunaExiste($db, 'fin_colaboradores', 'periodicidade_pagamento')) {
     echo "⏭️  fin_colaboradores.periodicidade_pagamento: já existia\n";
 }
 
+// 18/09/2026, "isso que puxamos do assas são receitas de parcela dos
+// veiculos temos organizar" — fill-if-empty da categoria padrão do Asaas
+// (config.asaas_categoria_padrao_id): se ainda não foi configurada à mão,
+// aponta sozinho pra "Venda de veículo — parcela" (já seedada acima, mesmo
+// bloco desta migração) — nunca sobrescreve se o super_admin já tiver
+// escolhido outra em Configurações → Asaas.
+try {
+    if (getConfig('asaas_categoria_padrao_id') === null) {
+        $stmt = $db->prepare("SELECT id FROM fin_categorias WHERE nome = ?");
+        $stmt->execute(['Venda de veículo — parcela']);
+        $catId = $stmt->fetchColumn();
+        if ($catId) {
+            setConfig('asaas_categoria_padrao_id', (string)$catId);
+            echo "✅ asaas_categoria_padrao_id: apontada pra 'Venda de veículo — parcela' (id {$catId})\n";
+        } else {
+            echo "⏭️  asaas_categoria_padrao_id: categoria 'Venda de veículo — parcela' não encontrada, pulando\n";
+        }
+    } else {
+        echo "⏭️  asaas_categoria_padrao_id: já configurada\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ asaas_categoria_padrao_id: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -47,6 +47,14 @@ $camposAsaas = [
     'asaas_webhook_token' => 'Token do webhook (opcional — mesmo valor cadastrado no painel Asaas em Configurações → Webhooks, se você optar por autenticar)',
 ];
 
+// 18/09/2026, "isso que puxamos do assas são receitas de parcela dos
+// veiculos temos organizar" — categoria padrão aplicada automaticamente a
+// toda cobrança NOVA importada do Asaas (fill-if-empty, nunca sobrescreve
+// categoria já escolhida à mão — ver includes/asaas.php::asaasImportarCobrancas()).
+$categoriasReceitaAsaas = getDB()->query(
+    "SELECT id, nome, icone FROM fin_categorias WHERE tipo='receita' AND ativo=1 ORDER BY nome"
+)->fetchAll(PDO::FETCH_ASSOC);
+
 $camposEmail = [
     'email_from'      => 'E-mail remetente — precisa ser uma caixa real do Google Workspace (ex: contato@fastcar.solutions)',
     'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
@@ -153,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $ambiente = ($_POST['asaas_ambiente'] ?? '') === 'producao' ? 'producao' : 'sandbox';
             setConfig('asaas_ambiente', $ambiente);
+            setConfig('asaas_categoria_padrao_id', trim((string)($_POST['asaas_categoria_padrao_id'] ?? '')));
             $sucesso = 'Configurações do Asaas salvas.';
         } elseif ($acao === 'testar_asaas') {
             $r = asaasTestarConexao();
@@ -581,6 +590,18 @@ unset($f);
                    value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
+        <label for="asaas_categoria_padrao_id">Categoria padrão pra cobrança importada</label>
+        <select id="asaas_categoria_padrao_id" name="asaas_categoria_padrao_id">
+            <option value="">— nenhuma (fica "—" na tela, como hoje) —</option>
+            <?php foreach ($categoriasReceitaAsaas as $cat): ?>
+                <option value="<?= (int)$cat['id'] ?>" <?= (string)getConfig('asaas_categoria_padrao_id') === (string)$cat['id'] ? 'selected' : '' ?>>
+                    <?= e($cat['icone'] . ' ' . $cat['nome']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <p><small>Aplicada só em cobrança NOVA a partir de agora (fill-if-empty — nunca sobrescreve categoria já
+           escolhida à mão). Pra categorizar retroativamente as cobranças já importadas antes disso existir, rodar
+           <code>php install/asaas_categorizar_importados.php --confirmar</code> na VPS.</small></p>
         <label>URL do webhook (cadastre no painel Asaas → Integrações → Webhooks)</label>
         <input type="text" value="https://fastcar.solutions/api/asaas_webhook.php" readonly onclick="this.select()">
         <button type="submit">Salvar</button>

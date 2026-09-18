@@ -157,10 +157,18 @@ function asaasImportarCobrancas(): array {
     $db = getDB();
     $buscarNomeCliente = $db->prepare("SELECT nome, cliente_id, venda_id FROM fin_asaas_clientes WHERE asaas_id = ?");
 
+    // 18/09/2026, "isso que puxamos do assas são receitas de parcela dos
+    // veiculos temos organizar" — cobrança nova importada já entra com a
+    // categoria padrão configurada (Configurações → Asaas, config
+    // `asaas_categoria_padrao_id`), fill-if-empty por natureza (só afeta o
+    // INSERT de linha nova — o UPDATE abaixo nunca mexe em categoria_id,
+    // então uma categoria trocada à mão depois nunca é sobrescrita).
+    $categoriaPadraoId = (int)(getConfig('asaas_categoria_padrao_id') ?: 0) ?: null;
+
     $insert = $db->prepare("
         INSERT INTO fin_lancamentos
-            (tipo, descricao, valor, data_vencimento, data_pagamento, status, forma_pagamento, cliente_nome_manual, cliente_id, venda_id, origem, asaas_payment_id, asaas_customer_id, parcela_numero, parcela_total)
-        VALUES ('receita', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'asaas', ?, ?, ?, ?)
+            (tipo, descricao, valor, data_vencimento, data_pagamento, status, forma_pagamento, cliente_nome_manual, cliente_id, venda_id, origem, asaas_payment_id, asaas_customer_id, parcela_numero, parcela_total, categoria_id)
+        VALUES ('receita', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'asaas', ?, ?, ?, ?, ?)
     ");
     $update = $db->prepare("
         UPDATE fin_lancamentos SET
@@ -201,7 +209,7 @@ function asaasImportarCobrancas(): array {
                 $update->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $parcelaNum, $parcelaTotal, $asaasId]);
                 $atualizados++;
             } else {
-                $insert->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $nomeManual, $clienteId, $vendaId, $asaasId, $custId ?: null, $parcelaNum, $parcelaTotal]);
+                $insert->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $nomeManual, $clienteId, $vendaId, $asaasId, $custId ?: null, $parcelaNum, $parcelaTotal, $categoriaPadraoId]);
                 $novos++;
             }
         }

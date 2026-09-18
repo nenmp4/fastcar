@@ -3007,6 +3007,35 @@ segue no schema sem uso novo, não removida sem ganho real),
   nome do cliente é rejeitado com 403 (banco confirmado sem alteração), e
   o resto do silo continua intacto (`admin/veiculos.php` direto ainda
   redireciona pra `financeiro.php`).
+  **Categoria automática pra cobrança importada do Asaas** (18/09/2026,
+  pedido direto: "isso que puxamos do assas são receitas de pacerla de
+  veiculos temos organizar como podemos fazer", confirmado que os 35
+  registros do print eram parcela de venda de veículo com descrição
+  digitada no próprio Asaas) — Configurações → Asaas ganhou um select
+  "Categoria padrão pra cobrança importada" (`config.asaas_categoria_padrao_id`,
+  populado com as categorias `tipo='receita'` já cadastradas);
+  `asaasImportarCobrancas()` grava esse valor em `categoria_id` só no
+  INSERT de cobrança NOVA — fill-if-empty, o UPDATE de cobrança já
+  existente nunca mexe em `categoria_id`, então uma categoria trocada à
+  mão pelo financeiro depois nunca é sobrescrita numa resincronização
+  seguinte. `install/migrar.php` faz o mesmo fill-if-empty no nível da
+  config: se ainda não foi escolhida à mão, aponta sozinha pra "Venda de
+  veículo — parcela" (💳, já seedada desde a 1ª versão do módulo
+  financeiro) — nunca sobrescreve se o super_admin já tiver escolhido
+  outra. **`install/asaas_categorizar_importados.php`** (novo, CLI,
+  dry-run por padrão, `--confirmar` pra aplicar) resolve o backfill das
+  cobranças importadas ANTES dessa mudança existir (usuário confirmou
+  "importamos ontem" — sem esse script ficariam com `categoria_id` NULL
+  pra sempre, já que a importação só categoriza linha NOVA) — só toca
+  `origem='asaas' AND categoria_id IS NULL`, mesma disciplina de nunca
+  sobrescrever categoria já escolhida. Testado em banco isolado: migração
+  seeda a categoria padrão + aponta a config sozinha; script de backfill
+  em dry-run lista certo as cobranças sem categoria, com `--confirmar`
+  aplica e rodando de novo confirma "nada a fazer" (idempotente);
+  reimportação simulada com 1 cobrança nova + 1 já existente recategorizada
+  manualmente pra outra categoria ANTES da resincronização confirma que a
+  nova recebe a categoria padrão sozinha e a recategorizada à mão nunca é
+  sobrescrita.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
