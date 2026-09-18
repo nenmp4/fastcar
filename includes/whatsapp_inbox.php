@@ -162,11 +162,12 @@ function usuarioPodeVerConversaWhatsapp(string $telefone, ?int $responsavelFiltr
  */
 function tipoMidiaMensagemWhatsapp(array $m): ?string {
     if (!$m['drive_file_id'] && !$m['arquivo_url']) return null;
-    if (in_array($m['tipo'], ['audio', 'image', 'video'], true)) return $m['tipo'];
+    if (in_array($m['tipo'], ['audio', 'image', 'video', 'document'], true)) return $m['tipo'];
     $texto = (string)$m['mensagem'];
     if (str_starts_with($texto, '🎤')) return 'audio';
     if (str_starts_with($texto, '🎥')) return 'video';
     if (str_starts_with($texto, '📷')) return 'image';
+    if (str_starts_with($texto, '📎')) return 'document';
     return null;
 }
 
@@ -184,6 +185,7 @@ function renderizarMidiaWhatsapp(array $m): string {
         'audio' => '<audio controls preload="none" src="' . e($url) . '" style="max-width:260px;display:block;margin-top:6px"></audio>',
         'video' => '<video controls preload="none" src="' . e($url) . '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>',
         'image' => '<a href="' . e($url) . '" target="_blank" rel="noopener"><img src="' . e($url) . '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>',
+        'document' => '<a href="' . e($url) . '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:inherit;font-size:.85rem">📎 ' . e(preg_replace('/^📎\s*/u', '', (string)$m['mensagem'])) . '</a>',
         default => '',
     };
 }
@@ -269,6 +271,78 @@ function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string
         $cliente = $stmt->fetch();
         if ($cliente) {
             salvarMidiaWhatsappRecebida($id, $bytes, $mime, 'audio', (int)$cliente['id'], $cliente['nome'] ?: $telNorm);
+        }
+    }
+    pausarIA($telNorm);
+    return ['ok' => true, 'id' => $id];
+}
+
+/**
+ * Envia um anexo (imagem ou documento) manual pelo WhatsApp Box do
+ * consultor (18/09/2026, "adicionei opção de enviar anexo para clientes
+ * no ibox do consultor") — mesmo espírito de `enviarAudioManualWhatsapp()`:
+ * grava no histórico e PAUSA a IA (regra #4), envia PRIMEIRO pro Z-API e
+ * só registra + salva a cópia reproduzível na thread se o envio deu certo
+ * de verdade (mesma ordem/disciplina do resto). Diferente de áudio (sem
+ * legenda no WhatsApp), imagem e documento ACEITAM legenda — vai assinada
+ * com o nome do consultor, mesmo padrão/regra de
+ * `enviarMensagemManualWhatsapp()` (15/09/2026, "as mensagens do inbox tem
+ * que ser assinado pelo consultor"). Imagem vai por `zapiEnviarImagem()`
+ * (já aceita data URI base64, mesmo caminho usado pra mandar foto do
+ * catálogo de vendas); qualquer outro tipo (PDF, Word, planilha etc) vai
+ * por `zapiEnviarDocumento()` — `send-document/{extensão}`, nunca
+ * confirmado contra instância real ainda, mesma ressalva de "a validar em
+ * produção" de todo endpoint Z-API que não seja texto puro.
+ */
+function enviarAnexoManualWhatsapp(string $telefone, string $conteudoBase64, string $mime, string $nomeArquivoOriginal, int $usuarioId): array {
+    $telNorm = normalizarTelefone($telefone);
+    if ($conteudoBase64 === '') {
+        return ['ok' => false, 'erro' => 'Nenhum arquivo selecionado.'];
+    }
+    $bytes = base64_decode($conteudoBase64, true);
+    if ($bytes === false || $bytes === '') {
+        return ['ok' => false, 'erro' => 'Arquivo inválido.'];
+    }
+    if (strlen($bytes) > WHATSAPP_MIDIA_MAX_BYTES) {
+        return ['ok' => false, 'erro' => 'Arquivo maior que o limite de ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
+    }
+
+    $ehImagem = str_starts_with($mime, 'image/');
+    $extensao = extensaoPorMime($mime);
+    $nomeArquivo = trim($nomeArquivoOriginal);
+    if ($nomeArquivo === '') {
+        $nomeArquivo = 'anexo.' . ($extensao !== 'bin' ? $extensao : 'dat');
+    } elseif ($extensao === 'bin' && str_contains($nomeArquivo, '.')) {
+        // Mime não reconhecido no mapa — usa a extensão do nome original
+        // (que o navegador já sabe) só pro parâmetro do send-document, nunca
+        // grava esse valor de volta no nome exibido.
+        $extensao = strtolower(substr($nomeArquivo, strrpos($nomeArquivo, '.') + 1));
+    }
+
+    $usuario = buscarUsuario($usuarioId);
+    $nomeConsultor = trim((string)($usuario['nome'] ?? ''));
+    $legenda = $nomeConsultor !== '' ? "*{$nomeConsultor}:*\n📎 {$nomeArquivo}" : "📎 {$nomeArquivo}";
+    $dataUri = 'data:' . $mime . ';base64,' . $conteudoBase64;
+
+    if ($ehImagem) {
+        $ok = zapiEnviarImagem($telNorm, $dataUri, $legenda);
+    } else {
+        $ok = zapiEnviarDocumento($telNorm, $dataUri, $nomeArquivo, $extensao);
+    }
+    if (!$ok) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância em Configurações.'];
+    }
+
+    $tipoRegistro = $ehImagem ? 'image' : 'document';
+    $emoji = $ehImagem ? '📷' : '📎';
+    $id = registrarMensagem($telNorm, 'out', "{$emoji} {$nomeArquivo}", null, false, $tipoRegistro, $usuarioId);
+    if ($id > 0) {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
+        $stmt->execute([$telNorm]);
+        $cliente = $stmt->fetch();
+        if ($cliente) {
+            salvarMidiaWhatsappRecebida($id, $bytes, $mime, $tipoRegistro, (int)$cliente['id'], $cliente['nome'] ?: $telNorm);
         }
     }
     pausarIA($telNorm);

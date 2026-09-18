@@ -860,6 +860,64 @@ segue no schema sem uso novo, não removida sem ganho real),
   dois), volta pro estado inicial (🎤, sem timer) — esse teste especificamente
   foi o que pegou o bug do `cancelando` acima, a 1ª versão passava no teste
   de "gravar e enviar" mas falhava nesse.
+  **Envio de anexo (foto ou documento)** (18/09/2026, "adicionei opção de
+  enviar anexo para clientes no ibox do consultor") — recurso que a 1ª
+  versão do WhatsApp Box tinha deixado de propósito de fora (ver nota no
+  topo desta seção: "envio de documento/imagem pela caixa... fica como
+  possível próxima iteração se a equipe sentir falta"), agora pedido de
+  verdade. Botão 📎 novo no formulário de envio, ao lado do de áudio —
+  clique abre o seletor de arquivo nativo do navegador (aceita imagem +
+  PDF/Word/Excel/texto — `accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"`),
+  lê como base64 e manda pelo mesmo padrão AJAX já usado pro áudio.
+  `enviarAnexoManualWhatsapp()` (novo, `includes/whatsapp_inbox.php`)
+  decide entre 2 caminhos: imagem vai por `zapiEnviarImagem()` (já
+  existia, aceita data URI base64 — mesmo caminho usado pra mandar foto
+  do catálogo de revenda) com legenda assinada `*{nome do consultor}:*\n📎
+  {arquivo}` (mesma regra de 15/09/2026, "as mensagens do inbox tem que
+  ser assinado pelo consultor"); qualquer outro tipo (PDF, Word, planilha,
+  texto) vai por `zapiEnviarDocumento()` (novo, `includes/whatsapp_config.php`,
+  `POST /send-document/{extensão}` — endpoint/formato confirmado via
+  WebSearch na documentação oficial Z-API + um espelho PlugZapi, mas os
+  dois domínios de doc estão bloqueados neste sandbox pra ler página a
+  página, então nunca confirmado contra instância real, mesma ressalva de
+  todo endpoint Z-API que não seja texto puro). Diferente do áudio (sem
+  legenda no WhatsApp), imagem/documento aceitam legenda — daí a
+  assinatura entrar direto na mensagem que o cliente recebe, igual ao
+  texto. Mesma disciplina do áudio: envia PRIMEIRO pro Z-API, só registra
+  no histórico + salva a cópia reproduzível (`salvarMidiaWhatsappRecebida()`,
+  reaproveitada) se o envio deu certo de verdade; mesmo limite de tamanho
+  (`WHATSAPP_MIDIA_MAX_BYTES`, 20MB) checado no cliente (feedback
+  imediato) e no servidor (autoritativo, nunca só confia no JS); nunca
+  desenha bolha otimista, deixa o polling de 2s já existente trazer a
+  mensagem nova como qualquer outra. `tipoMidiaMensagemWhatsapp()`/
+  `renderizarMidiaWhatsapp()` (`includes/whatsapp_inbox.php`) e os
+  espelhos em JS (`admin/whatsapp_inbox.php`) ganharam o tipo `document`
+  — imagem renderiza `<img>` como antes, documento renderiza um link com
+  ícone 📎 e o nome do arquivo, servido por `admin/ver_midia_whatsapp.php`
+  (já genérico o bastante, mesma trava de quem pode ver a conversa,
+  nenhuma mudança precisou lá). `extensaoPorMime()`
+  (`chatbot-whatsapp/includes/mensagens.php`, já existia pra áudio/
+  imagem/vídeo) ganhou mimes de documento (pdf/doc/docx/xls/xlsx/txt/csv)
+  — passou a ser usado também pro parâmetro obrigatório de extensão do
+  `send-document`, não mais só cosmético pro nome do arquivo como antes.
+  Testado ponta a ponta: banco isolado com 2 consultores (um responsável
+  pela conversa, outro não) contra servidor Z-API fake local — envio de
+  imagem PNG real confere payload exato no fake Z-API (`send-image`,
+  base64 + legenda assinada certa) e mensagem gravada com `tipo='image'`;
+  envio de PDF confere payload exato (`send-document/pdf`, base64 +
+  `fileName` certo) e mensagem gravada com `tipo='document'`; recarregar
+  a página renderiza a bolha de imagem como `<img>` e a de documento como
+  link, ambos servidos com `Content-Type` certo (200); consultor sem
+  responsabilidade pela conversa bloqueado com 403 tentando ver o anexo
+  direto pela URL e com POST forjado tentando mandar anexo pro telefone
+  de outro consultor; função isolada confirmando os 3 caminhos de
+  rejeição no servidor (arquivo vazio, base64 inválido, maior que 20MB)
+  — esse último teste rodou direto na função, não via HTTP, porque o
+  `post_max_size` padrão do PHP-CLI de dev (8M) rejeita um corpo de
+  20MB+ antes mesmo de chegar no código, mascarando esse caso
+  especificamente pela via HTTP (não é uma limitação do código, só do
+  ambiente de teste — vale conferir em produção se o PHP-FPM da VPS tem
+  `post_max_size` alto o bastante pro maior anexo esperado).
 - **Fila de leads / plantão** — `includes/fila_leads.php`: round-robin entre
   consultores `disponivel=1` via contador monotônico `usuarios.posicao_fila`
   (não timestamp — SQLite só tem granularidade de 1s, ver bug real na seção
@@ -3676,6 +3734,25 @@ testado com servidor fake local — nunca contra o serviço real:
   vendas existir de verdade: se o campo/formato bate, e se o Z-API aceita
   vídeo como data URI base64 (usado pra evitar precisar de URL pública pra
   pasta do Drive) do mesmo jeito que já confirmamos funcionar pra áudio.
+- **`zapiEnviarDocumento()` (envio de anexo/documento)** — 18/09/2026,
+  `includes/whatsapp_config.php`, usado pelo WhatsApp Box do consultor pra
+  mandar PDF/Word/planilha/texto anexado ("adicionei opção de enviar
+  anexo para clientes no ibox do consultor"). `POST /send-document/{extensão}`,
+  campos `document` (data URI base64) + `fileName` — confirmado via
+  WebSearch na documentação oficial Z-API (`developer.z-api.io`) e num
+  espelho PlugZapi, mas os dois domínios de doc estão bloqueados neste
+  sandbox pra ler a página inteira/confirmar campo a campo (mesma
+  limitação já documentada pro `doc.placafipe.com.br`), então nunca
+  confirmado contra instância real de verdade — mesma ressalva de todo
+  endpoint Z-API que não seja envio de texto. Diferente de imagem/vídeo/
+  áudio, a extensão do arquivo vai na própria URL do endpoint, não só no
+  corpo — `extensaoPorMime()` (`chatbot-whatsapp/includes/mensagens.php`)
+  precisa acertar o mime certo, senão cai em `'bin'` e o envio
+  provavelmente falha. Validar assim que possível: se o campo `fileName`
+  é aceito exatamente assim, se `'bin'` (mime não mapeado) é rejeitado
+  pela Z-API ou se ela aceita mesmo assim, e se o limite de tamanho real
+  do endpoint bate com o `WHATSAPP_MIDIA_MAX_BYTES` (20MB) já usado no
+  resto do projeto.
 - ~~**Formato do payload do webhook Z-API**~~ — ✅ **confirmado em produção,
   15/09/2026**: `messageId`, `phone`, `fromMe`, `isGroup`, `text.message`,
   `instanceId` batem com o padrão herdado do JurídicoSaaS, mensagem real

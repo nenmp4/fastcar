@@ -122,6 +122,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Content-Type: application/json');
             echo json_encode($resultado);
             exit;
+        } elseif ($acao === 'enviar_anexo' && $telPost) {
+            // 18/09/2026, "adicionei opção de enviar anexo para clientes no
+            // ibox do consultor" — mesmo padrão do envio de áudio: sempre
+            // via AJAX (base64 de imagem/documento é grande demais pra ida
+            // e volta de página inteira).
+            $resultado = enviarAnexoManualWhatsapp(
+                $telPost,
+                (string)($_POST['anexo_base64'] ?? ''),
+                (string)($_POST['mime'] ?? ''),
+                (string)($_POST['nome_arquivo'] ?? ''),
+                (int)$_SESSION['admin_id']
+            );
+            header('Content-Type: application/json');
+            echo json_encode($resultado);
+            exit;
         } elseif ($acao === 'toggle_ia' && $telPost) {
             if (iaPausada($telPost)) {
                 retomarIA($telPost);
@@ -349,10 +364,13 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                     <input type="hidden" name="ajax" value="1">
                     <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                    <button type="button" id="wpp-btn-anexo" title="Anexar arquivo (foto ou documento)" style="padding:0 12px">📎</button>
+                    <input type="file" id="wpp-input-anexo" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none">
                     <button type="button" id="wpp-btn-audio" title="Gravar áudio" style="padding:0 12px">🎤</button>
                     <button type="button" id="wpp-btn-audio-cancelar" title="Cancelar gravação" style="padding:0 12px;display:none;color:#c0392b">✕</button>
                     <button type="submit">Enviar</button>
                 </form>
+                <p id="wpp-anexo-status" style="display:none;font-size:12.5px;color:var(--texto-fraco);margin:4px 0 0"></p>
                 <p id="wpp-audio-status" style="display:none;font-size:12.5px;color:var(--texto-fraco);margin:4px 0 0"></p>
             <?php endif; ?>
         <?php endif; ?>
@@ -467,10 +485,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
     // mesmo fallback por prefixo do lado PHP.
     function tipoMidiaMsg(m) {
         if (!m.drive_file_id && !m.arquivo_url) return null;
-        if (m.tipo === 'audio' || m.tipo === 'image' || m.tipo === 'video') return m.tipo;
+        if (m.tipo === 'audio' || m.tipo === 'image' || m.tipo === 'video' || m.tipo === 'document') return m.tipo;
         if (m.mensagem.indexOf('🎤') === 0) return 'audio';
         if (m.mensagem.indexOf('🎥') === 0) return 'video';
         if (m.mensagem.indexOf('📷') === 0) return 'image';
+        if (m.mensagem.indexOf('📎') === 0) return 'document';
         return null;
     }
 
@@ -480,6 +499,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         var url = '/admin/ver_midia_whatsapp.php?id=' + m.id;
         if (midia === 'audio') return '<audio controls preload="none" src="' + url + '" style="max-width:260px;display:block;margin-top:6px"></audio>';
         if (midia === 'video') return '<video controls preload="none" src="' + url + '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>';
+        if (midia === 'document') return '<a href="' + url + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:inherit;font-size:.85rem">📎 ' + escapeHtml(m.mensagem.replace(/^📎\s*/, '')) + '</a>';
         return '<a href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>';
     }
 
@@ -695,6 +715,70 @@ if ($telefoneAtivo && !$contatoAtivo) {
     // fica pendurado esperando o usuário "soltar" um botão (padrão
     // clique/clique, mais robusto que segurar/soltar num mouse — soltar
     // fora do botão por acidente perderia a gravação).
+    // Anexo (foto ou documento) manual — 18/09/2026, "adicionei opção de
+    // enviar anexo para clientes no ibox do consultor". Clique abre o
+    // seletor de arquivo nativo (diferente do áudio, aqui faz sentido
+    // escolher um arquivo já salvo — foto tirada antes, PDF de contrato
+    // etc — não é uma "gravação ao vivo"); ao escolher, lê como base64 e
+    // manda via o mesmo padrão AJAX do áudio. Mesmo limite de tamanho do
+    // servidor (WHATSAPP_MIDIA_MAX_BYTES, 20MB) checado aqui também, só
+    // pra dar feedback imediato sem esperar a ida e volta da rede.
+    var btnAnexo = document.getElementById('wpp-btn-anexo');
+    var inputAnexo = document.getElementById('wpp-input-anexo');
+    var statusAnexo = document.getElementById('wpp-anexo-status');
+    var ANEXO_MAX_BYTES = 20 * 1024 * 1024;
+    if (btnAnexo && inputAnexo && statusAnexo) {
+        btnAnexo.addEventListener('click', function () {
+            inputAnexo.value = '';
+            inputAnexo.click();
+        });
+        inputAnexo.addEventListener('change', function () {
+            var arquivo = inputAnexo.files && inputAnexo.files[0];
+            if (!arquivo) return;
+            if (arquivo.size > ANEXO_MAX_BYTES) {
+                alert('Arquivo maior que o limite de 20MB.');
+                return;
+            }
+            btnAnexo.disabled = true;
+            statusAnexo.style.display = 'block';
+            statusAnexo.textContent = '📎 Enviando ' + arquivo.name + '...';
+            var leitor = new FileReader();
+            leitor.onload = function () {
+                var base64 = String(leitor.result).split(',')[1] || '';
+                var body = new URLSearchParams();
+                body.set('csrf_token', csrf.value);
+                body.set('acao', 'enviar_anexo');
+                body.set('telefone', telefone);
+                body.set('ajax', '1');
+                body.set('mime', arquivo.type || 'application/octet-stream');
+                body.set('nome_arquivo', arquivo.name);
+                body.set('anexo_base64', base64);
+                fetch('', { method: 'POST', body: body })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        // Mesmo espírito do áudio — nunca desenha bolha
+                        // otimista aqui, o polling de 2s já em andamento
+                        // traz a mensagem nova sozinho, com o link/preview
+                        // certo já pronto pra servir.
+                        if (!data.ok) alert(data.erro || 'Falha ao enviar anexo.');
+                    })
+                    .catch(function () {
+                        alert('Falha ao enviar anexo — confira sua conexão.');
+                    })
+                    .finally(function () {
+                        btnAnexo.disabled = false;
+                        statusAnexo.style.display = 'none';
+                    });
+            };
+            leitor.onerror = function () {
+                alert('Não consegui processar esse arquivo.');
+                btnAnexo.disabled = false;
+                statusAnexo.style.display = 'none';
+            };
+            leitor.readAsDataURL(arquivo);
+        });
+    }
+
     var btnAudio = document.getElementById('wpp-btn-audio');
     var btnAudioCancelar = document.getElementById('wpp-btn-audio-cancelar');
     var statusAudio = document.getElementById('wpp-audio-status');

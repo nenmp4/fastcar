@@ -213,6 +213,49 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl): bool {
 }
 
 /**
+ * Envia documento (PDF, Word, planilha etc) via Z-API (POST
+ * /send-document/{extensao}, campos `document` [URL pública ou data URI
+ * base64] + `fileName` — confirmado via busca na documentação oficial
+ * Z-API, docs.z-api.io/message/send-message-document, mas o domínio da
+ * doc está bloqueado neste sandbox pra confirmar campo a campo; formato
+ * batido em 2 fontes: a doc oficial (via WebSearch) e um espelho
+ * PlugZapi, mesma ressalva de "a validar em produção" de todo endpoint
+ * Z-API que não seja envio de texto). Diferente de imagem/vídeo/áudio, o
+ * endpoint carrega a EXTENSÃO na própria URL, não só no corpo. Usado pelo
+ * WhatsApp Box do consultor (18/09/2026, "adicionei opção de enviar
+ * anexo para clientes no ibox do consultor") pra mandar anexo que não é
+ * imagem — imagem continua indo por `zapiEnviarImagem()` (já aceita
+ * base64, mesmo caminho usado pra mandar foto do catálogo de revenda).
+ */
+function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName, string $extensao, ?array $instanciaOverride = null): bool {
+    [$inst, $tok, $ctok] = $instanciaOverride ?? [
+        _chatbot_getConfig('zapi_instance_id'),
+        _chatbot_getConfig('zapi_token'),
+        _chatbot_getConfig('zapi_client_token'),
+    ];
+    if (!$inst || !$tok || !$phone || !$documentoDataUriOuUrl || !$extensao) return false;
+
+    $phone = normalizarTelefone($phone);
+    if (strlen($phone) < 12) return false;
+
+    $headers = ['Content-Type: application/json'];
+    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-document/{$extensao}");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'document' => $documentoDataUriOuUrl, 'fileName' => $fileName]),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $code === 200;
+}
+
+/**
  * Busca nome/foto de perfil do WhatsApp pra um telefone — 2 chamadas em
  * paralelo (curl_multi), confirmadas contra produção no repo irmão
  * JurídicoSaaS (`nenmp4/iabadvocaciaboutique`, `api/clientes.php` ação

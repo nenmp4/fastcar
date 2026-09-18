@@ -218,12 +218,26 @@ function descreverMidiaComGemini(string $bytes, string $mimeType, string $tipo):
     }
 }
 
-/** Extensão de arquivo razoável a partir do mimeType — só pra nome legível, nunca crítico. */
+/**
+ * Extensão de arquivo razoável a partir do mimeType — pra nome legível E,
+ * desde 18/09/2026 (envio de anexo/documento no WhatsApp Box do
+ * consultor), pro parâmetro de URL exigido por `zapiEnviarDocumento()`
+ * (`/send-document/{extensao}`) — nesse caso não é só cosmético, um mime
+ * sem entrada no mapa cai em 'bin' e o envio provavelmente falha (extensão
+ * inválida pro endpoint).
+ */
 function extensaoPorMime(string $mime): string {
     $mapa = [
         'audio/ogg' => 'ogg', 'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a',
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
         'video/mp4' => 'mp4', 'video/3gpp' => '3gp', 'video/quicktime' => 'mov',
+        'application/pdf' => 'pdf',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.ms-excel' => 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        'text/plain' => 'txt',
+        'text/csv' => 'csv',
     ];
     return $mapa[$mime] ?? 'bin';
 }
