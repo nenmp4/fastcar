@@ -40,6 +40,22 @@ function zapiCredenciaisVendas(): array {
 }
 
 /**
+ * Credenciais da instância Z-API DEDICADA do financeiro (18/09/2026, pedido
+ * José/Jean: "vamos fazer gestão desses clientes que não paga fazer
+ * cobrança pelo sistema vai ser instancias só do finceir outro numero") —
+ * mesmo padrão de `zapiCredenciaisVendas()`, número/webhook PRÓPRIO,
+ * separado da instância principal (compra) e da de vendas. Retorna
+ * [instance_id, token, client_token], '' se ainda não configurada.
+ */
+function zapiCredenciaisFinanceiro(): array {
+    return [
+        _chatbot_getConfig('zapi_instancia_financeiro_id'),
+        _chatbot_getConfig('zapi_instancia_financeiro_token'),
+        _chatbot_getConfig('zapi_instancia_financeiro_client_token'),
+    ];
+}
+
+/**
  * Envia mensagem de texto via Z-API. Mesma assinatura/lógica do
  * aaspNotificarWpp() do JurídicoSaaS (includes/aasp.php), renomeada pro
  * contexto deste projeto.

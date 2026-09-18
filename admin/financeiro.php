@@ -73,6 +73,7 @@ $asaasPendenteImportar = asaasConfigured();
     <a href="/admin/financeiro-colaboradores.php" class="btn" style="width:auto">👥 Colaboradores</a>
     <a href="/admin/financeiro-asaas.php" class="btn" style="width:auto">🔄 Asaas</a>
     <a href="/admin/clientes.php" class="btn" style="width:auto">🙋 Clientes</a>
+    <a href="/admin/financeiro_inbox.php" class="btn" style="width:auto">💬 WhatsApp Cobrança</a>
   </div>
 </div>
 

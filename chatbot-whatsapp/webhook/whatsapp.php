@@ -44,6 +44,7 @@ require_once ROOT . '/includes/vendas.php';
 require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens_vendas.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens_financeiro.php';
 
 header('Content-Type: application/json');
 
@@ -116,9 +117,11 @@ if ($instancia['tipo'] === 'desconhecida') {
 // um tempo relatado, não confirmável sem acesso aos logs/métricas da
 // VPS).
 try {
-    $resultado = $instancia['tipo'] === 'vendas'
-        ? processarMensagemVendasZapi($payload, $instancia)
-        : processarMensagemZapi($payload, $instancia);
+    $resultado = match ($instancia['tipo']) {
+        'vendas' => processarMensagemVendasZapi($payload, $instancia),
+        'financeiro' => processarMensagemFinanceiroZapi($payload, $instancia),
+        default => processarMensagemZapi($payload, $instancia),
+    };
 } catch (Throwable $e) {
     log_webhook('Erro ao processar mensagem (' . get_class($e) . '): ' . $e->getMessage());
     http_response_code(500);

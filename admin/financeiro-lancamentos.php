@@ -115,6 +115,14 @@ $fStatus = (string)($_GET['status'] ?? '');
 $fTodos = !empty($_GET['todos_periodos']);
 $fDe = (string)($_GET['de'] ?? date('Y-m-01'));
 $fAte = (string)($_GET['ate'] ?? date('Y-m-t'));
+// 18/09/2026, "em atrasados da para colocar separados atraso 3 meses -
+// atraso 2 meses - atraso de 1 mes pois vamos fazer gestão desses
+// clientes que não paga" — bucket por dias em atraso a partir do
+// vencimento (1-30 dias = "1 mês", 31-60 = "2 meses", 61+ = "3+ meses",
+// mesmo corte usado nos artigos do blog sobre busca e apreensão — só faz
+// sentido combinado com status=atrasado, ignorado em qualquer outro filtro.
+$fAtraso = (int)($_GET['atraso'] ?? 0);
+$diasAtrasoExpr = "CAST((julianday('now','localtime') - julianday(l.data_vencimento)) AS INTEGER)";
 
 $where = [];
 $params = [];
@@ -125,10 +133,14 @@ if (!$fTodos) {
 }
 if ($fTipo) { $where[] = 'l.tipo=?'; $params[] = $fTipo; }
 if ($fStatus) { $where[] = 'l.status=?'; $params[] = $fStatus; }
+if ($fStatus === 'atrasado' && $fAtraso) {
+    $where[] = "l.data_vencimento IS NOT NULL AND " . ($fAtraso === 1 ? "{$diasAtrasoExpr} BETWEEN 1 AND 30" : ($fAtraso === 2 ? "{$diasAtrasoExpr} BETWEEN 31 AND 60" : "{$diasAtrasoExpr} >= 61"));
+}
 $whereSql = $where ? implode(' AND ', $where) : '1=1';
 
 $stmt = $db->prepare("
-    SELECT l.*, c.nome as categoria_nome, c.icone, fo.nome as fornecedor_nome, fc.nome as funcionario_nome
+    SELECT l.*, c.nome as categoria_nome, c.icone, fo.nome as fornecedor_nome, fc.nome as funcionario_nome,
+           CASE WHEN l.status='atrasado' AND l.data_vencimento IS NOT NULL THEN {$diasAtrasoExpr} ELSE NULL END AS dias_atraso
     FROM fin_lancamentos l
     LEFT JOIN fin_categorias c ON c.id=l.categoria_id
     LEFT JOIN fin_fornecedores fo ON fo.id=l.fornecedor_id
@@ -138,6 +150,22 @@ $stmt = $db->prepare("
 ");
 $stmt->execute($params);
 $lancamentos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Contagem por faixa de atraso, sempre sem filtro de tipo/período — mesmo
+// escopo do card "Contas atrasadas" do dashboard financeiro (todo atrasado,
+// qualquer mês) — usada nos badges clicáveis acima da tabela.
+$bucketsAtraso = ['1' => 0, '2' => 0, '3' => 0];
+if ($fStatus === 'atrasado') {
+    $r = $db->query("
+        SELECT
+            SUM(CASE WHEN {$diasAtrasoExpr} BETWEEN 1 AND 30 THEN 1 ELSE 0 END) AS b1,
+            SUM(CASE WHEN {$diasAtrasoExpr} BETWEEN 31 AND 60 THEN 1 ELSE 0 END) AS b2,
+            SUM(CASE WHEN {$diasAtrasoExpr} >= 61 THEN 1 ELSE 0 END) AS b3
+        FROM fin_lancamentos l
+        WHERE l.status='atrasado' AND l.data_vencimento IS NOT NULL
+    ")->fetch(PDO::FETCH_ASSOC);
+    $bucketsAtraso = ['1' => (int)($r['b1'] ?? 0), '2' => (int)($r['b2'] ?? 0), '3' => (int)($r['b3'] ?? 0)];
+}
 
 $categorias = $db->query('SELECT * FROM fin_categorias WHERE ativo=1 ORDER BY tipo, nome')->fetchAll(PDO::FETCH_ASSOC);
 $colaboradores = $db->query("SELECT id, nome FROM fin_colaboradores WHERE status='ativo' ORDER BY nome")->fetchAll(PDO::FETCH_ASSOC);
@@ -296,9 +324,28 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <div><label><input type="checkbox" name="todos_periodos" value="1" <?= $fTodos ? 'checked' : '' ?> style="width:auto;display:inline-block"> Todos os períodos</label></div>
     <div><label>Tipo</label><select name="tipo"><option value="">Todos</option><option value="receita" <?= $fTipo === 'receita' ? 'selected' : '' ?>>Receita</option><option value="despesa" <?= $fTipo === 'despesa' ? 'selected' : '' ?>>Despesa</option></select></div>
     <div><label>Status</label><select name="status"><option value="">Todos</option><?php foreach ($statusLabels as $k => [$lbl,,]): ?><option value="<?= $k ?>" <?= $fStatus === $k ? 'selected' : '' ?>><?= $lbl ?></option><?php endforeach; ?></select></div>
+    <?php if ($fAtraso): ?><input type="hidden" name="atraso" value="<?= (int)$fAtraso ?>"><?php endif; ?>
     <button type="submit" style="width:auto">Filtrar</button>
   </form>
 </div>
+
+<?php if ($fStatus === 'atrasado'): ?>
+<div class="card" style="margin-bottom:1.5rem">
+  <div style="font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:.5rem">🔴 Gestão de cobrança — separado por tempo de atraso</div>
+  <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+    <?php
+    $baseQs = 'status=atrasado&todos_periodos=1' . ($fTipo ? '&tipo=' . urlencode($fTipo) : '');
+    $bucketsLabel = ['1' => '1 mês (1-30 dias)', '2' => '2 meses (31-60 dias)', '3' => '3+ meses (61+ dias)'];
+    ?>
+    <?php foreach ($bucketsLabel as $n => $lblBucket): ?>
+      <a href="?<?= $baseQs ?>&atraso=<?= $n ?>" class="btn<?= $fAtraso === (int)$n ? '-primary' : '' ?>" style="width:auto;text-decoration:none">
+        ⏰ <?= $lblBucket ?> — <strong><?= $bucketsAtraso[$n] ?></strong>
+      </a>
+    <?php endforeach; ?>
+    <?php if ($fAtraso): ?><a href="?<?= $baseQs ?>" style="align-self:center">Ver todos os atrasados</a><?php endif; ?>
+  </div>
+</div>
+<?php endif; ?>
 
 <div class="card">
   <h2>📋 Lançamentos (<?= count($lancamentos) ?>)</h2>
@@ -312,7 +359,12 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
         <td><?= e(($l['icone'] ?? '') . ' ' . ($l['categoria_nome'] ?? '—')) ?></td>
         <td><?= e($l['cliente_nome_manual'] ?: ($l['fornecedor_nome'] ?? $l['funcionario_nome'] ?? '—')) ?></td>
         <td style="font-weight:700;color:<?= $l['tipo'] === 'receita' ? '#166534' : '#991b1b' ?>"><?= $l['tipo'] === 'receita' ? '+' : '-' ?> R$ <?= number_format((float)$l['valor'], 2, ',', '.') ?></td>
-        <td><span class="badge" style="background:<?= $bg ?>;color:<?= $cor ?>"><?= $lbl ?></span></td>
+        <td>
+          <span class="badge" style="background:<?= $bg ?>;color:<?= $cor ?>"><?= $lbl ?></span>
+          <?php if ($l['dias_atraso'] !== null): ?>
+            <br><small style="color:#991b1b"><?= (int)$l['dias_atraso'] ?> dia(s)</small>
+          <?php endif; ?>
+        </td>
         <td style="white-space:nowrap">
           <?php if ($l['origem'] !== 'asaas'): ?>
             <a href="?action=edit&id=<?= (int)$l['id'] ?>">✏️</a>

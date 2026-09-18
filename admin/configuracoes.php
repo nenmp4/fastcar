@@ -25,6 +25,17 @@ $camposZapiVendas = [
     'zapi_instancia_vendas_client_token' => 'Client-Token (vendas)',
 ];
 
+// Instância DEDICADA do financeiro (18/09/2026, pedido José/Jean: "vamos
+// fazer gestão desses clientes que não paga fazer cobrança pelo sistema
+// vai ser instancias só do finceir outro numero") — número/webhook
+// PRÓPRIO, separado das instâncias de compra/vendas acima. Convivem lado
+// a lado, mesmo padrão.
+$camposZapiFinanceiro = [
+    'zapi_instancia_financeiro_id'           => 'ID da instância Z-API (financeiro)',
+    'zapi_instancia_financeiro_token'        => 'Token da instância Z-API (financeiro)',
+    'zapi_instancia_financeiro_client_token' => 'Client-Token (financeiro)',
+];
+
 $camposIA = [
     'gemini_api_key' => 'Chave da API Gemini (principal)',
     'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
@@ -103,6 +114,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sucesso = 'Mensagem de teste (vendas) enviada com sucesso.';
                 } else {
                     $erro = 'Falha ao enviar — confira as credenciais da instância de vendas e se ela está conectada.';
+                }
+            }
+        } elseif ($acao === 'salvar_zapi_financeiro') {
+            foreach (array_keys($camposZapiFinanceiro) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da instância do financeiro salvas.';
+        } elseif ($acao === 'testar_zapi_financeiro') {
+            $telefoneTeste = (string)($_POST['telefone_teste_financeiro'] ?? '');
+            if (!$telefoneTeste) {
+                $erro = 'Informe um telefone pra receber a mensagem de teste.';
+            } else {
+                $ok = zapiEnviarTexto($telefoneTeste, '✅ Teste de conexão Z-API (financeiro) — Fastcar CRM.', zapiCredenciaisFinanceiro());
+                if ($ok) {
+                    $sucesso = 'Mensagem de teste (financeiro) enviada com sucesso.';
+                } else {
+                    $erro = 'Falha ao enviar — confira as credenciais da instância do financeiro e se ela está conectada.';
                 }
             }
         } elseif ($acao === 'salvar_ia') {
@@ -281,6 +309,11 @@ foreach (array_keys($camposZapiVendas) as $chave) {
     $valoresVendas[$chave] = getConfig($chave) ?? '';
 }
 $configuradoZapiVendas = $valoresVendas['zapi_instancia_vendas_id'] && $valoresVendas['zapi_instancia_vendas_token'];
+$valoresFinanceiro = [];
+foreach (array_keys($camposZapiFinanceiro) as $chave) {
+    $valoresFinanceiro[$chave] = getConfig($chave) ?? '';
+}
+$configuradoZapiFinanceiro = $valoresFinanceiro['zapi_instancia_financeiro_id'] && $valoresFinanceiro['zapi_instancia_financeiro_token'];
 $fila = listarFilaConsultores();
 foreach ($fila as &$f) {
     $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
@@ -410,6 +443,47 @@ unset($f);
         <input type="text" name="telefone_teste_vendas" placeholder="Ex: 31999998888">
         <button type="submit" <?= $configuradoZapiVendas ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
         <?php if (!$configuradoZapiVendas): ?>
+            <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>💳 Instância Z-API — Financeiro</h2>
+    <p><small>Instância DEDICADA de gestão de cobrança (18/09/2026) — número/webhook PRÓPRIO, separado das instâncias
+       de compra e vendas acima: conversa com cliente em atraso acontece pelo
+       <a href="/admin/financeiro_inbox.php">WhatsApp Financeiro</a>, sem se misturar com os outros funis. Mesma
+       instância nunca dispara mensagem sozinha — só quando alguém do financeiro digita e envia pela caixa. Mesmo
+       webhook (<code>chatbot-whatsapp/webhook/whatsapp.php</code>) — o Z-API manda <code>instanceId</code> no
+       payload, e o sistema descobre sozinho qual instância é qual.</small></p>
+
+    <p>
+        Status Z-API (financeiro):
+        <span class="badge <?= $configuradoZapiFinanceiro ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoZapiFinanceiro ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_zapi_financeiro">
+        <?php foreach ($camposZapiFinanceiro as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresFinanceiro[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresFinanceiro[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Manda uma mensagem de teste pro número informado, usando as credenciais salvas acima.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_zapi_financeiro">
+        <label>Telefone (com DDD)</label>
+        <input type="text" name="telefone_teste_financeiro" placeholder="Ex: 31999998888">
+        <button type="submit" <?= $configuradoZapiFinanceiro ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
+        <?php if (!$configuradoZapiFinanceiro): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
         <?php endif; ?>
     </form>

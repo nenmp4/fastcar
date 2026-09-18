@@ -3078,6 +3078,100 @@ segue no schema sem uso novo, não removida sem ganho real),
   manualmente pra outra categoria ANTES da resincronização confirma que a
   nova recebe a categoria padrão sozinha e a recategorizada à mão nunca é
   sobrescrita.
+  **Lista de atrasados separada por tempo de atraso (1/2/3+ meses)**
+  (18/09/2026, mesmo pedido da instância dedicada de cobrança abaixo:
+  "em atrasados da para colocar separados atraso 3 meses - atraso 2 meses -
+  atraso de 1 mes pois vamos fazer gestão desses clientes que não paga") —
+  `admin/financeiro-lancamentos.php`, com `?status=atrasado`, calcula os
+  dias de atraso inline via SQLite (`julianday('now','localtime') -
+  julianday(data_vencimento)`, sem coluna nova — sempre correto no
+  momento da consulta, nunca dessincroniza) e ganhou o parâmetro
+  `atraso=1|2|3` (1-30/31-60/61+ dias): 3 badges clicáveis mostrando a
+  contagem de cada faixa (query própria, sem filtro de tipo/período,
+  sempre reflete o total real por faixa independente do mês selecionado
+  no filtro principal), e a coluna Status da tabela passou a mostrar os
+  dias de atraso de cada lançamento junto do badge de status. Contexto
+  direto de priorização de cobrança — cliente com 3+ meses de atraso é
+  caso mais urgente que um com 1 mês. Testado em banco isolado com
+  Playwright: 4 lançamentos semeados em -10/-40/-90/-100 dias — badges
+  mostram "1 mês — 1", "2 meses — 1", "3+ meses — 2" certos, clicar em
+  cada badge filtra exatamente as linhas certas.
+  **Instância Z-API dedicada do financeiro + WhatsApp Box de cobrança**
+  (18/09/2026, mesmo pedido acima, seguido de "adcione o inbox das
+  mensagens resumo pegou ideia") — mesmo padrão já validado em produção
+  pro módulo de vendas (instância dedicada + roteamento por `instanceId`
+  + WhatsApp Box próprio), portado como arquivo novo, nunca ramificando
+  em cima de compra/vendas já validados (mesmo raciocínio documentado
+  neste arquivo pro WhatsApp Box original e pra instância de vendas).
+  `zapiCredenciaisFinanceiro()` (`includes/whatsapp_config.php`) +
+  `zapiIdentificarInstancia()` (`includes/zapi_instancias.php`) ganharam
+  o tipo `financeiro`; o webhook único
+  (`chatbot-whatsapp/webhook/whatsapp.php`) roteia pra
+  `processarMensagemFinanceiroZapi()` (novo
+  `chatbot-whatsapp/includes/mensagens_financeiro.php`) — bem mais
+  simples que compra/vendas de propósito: cobrança é gestão ATIVA de
+  dívida de cliente já convertido, não lead, então sem qualificação por
+  IA, sem criar oportunidade/venda nenhuma — só registra a mensagem no
+  histórico compartilhado (`whatsapp_mensagens`) pra aparecer na caixa;
+  mesmo guard anti-flood das outras 2 instâncias (`tipoMidia()==='desconhecido'`
+  ignorado silenciosamente, ver incidente de flood de 15/09/2026).
+  `includes/financeiro_inbox.php` + `admin/financeiro_inbox.php` (novo,
+  mesmo sidebar+thread+polling dos outros inboxes) resolvem "a conversa"
+  de um jeito novo — `fin_lancamentos` não tem telefone próprio, então
+  `_finInboxFonteSql()` une os 3 caminhos possíveis pelos quais um
+  lançamento pode estar ligado a um contato de verdade: `cliente_id` →
+  `clientes.telefone` (funil de compra), `venda_id` →
+  `vendas.comprador_telefone` (revenda), `asaas_customer_id` →
+  `fin_asaas_clientes.telefone` (importado do Asaas — o caminho mais
+  comum na prática agora, cobrança de parcela de venda de veículo);
+  `cliente_nome_manual` sozinho (sem nenhum dos 3 vínculos) nunca aparece
+  na caixa, não tem telefone resolvível. Sidebar mostra o total em atraso
+  de cada contato direto na lista (contexto de cobrança já visível sem
+  abrir a conversa) — sem "responsável"/round-robin, perfil `financeiro`
+  já é um time pequeno e restrito (super_admin + financeiro), todo mundo
+  com acesso vê a caixa inteira, mesmo espírito de super_admin/supervisor
+  nos outros inboxes. **Decisão de segurança assumida, não pedida
+  explicitamente** (avisar a equipe se não era essa a intenção): esta 1ª
+  versão NUNCA dispara mensagem sozinha — toda mensagem sai só quando um
+  humano do financeiro digita e aperta enviar
+  (`enviarMensagemManualFinanceiro()` nunca chamada por cron/automação
+  nenhuma), dado o histórico real deste projeto de bloqueio de número por
+  mensagem repetida em rajada (ver bullets "Incidente real de produção —
+  flood de mensagens duplicadas" e o fix de `flock()` em
+  `cron/followup.php`) — cobrança automatizada em massa é exatamente o
+  tipo de padrão que mais arrisca isso. Escopo cortado de propósito nesta
+  1ª versão (mesmo espírito já documentado pro inbox de vendas): sem foto
+  de perfil ao vivo, sem envio de áudio, e mídia recebida (ex: comprovante
+  de pagamento) fica só com o rótulo do tipo, sem descrição por IA nem
+  cópia salva ainda — ficam como possível próxima iteração se a equipe
+  sentir falta. Mensagem manual assina com `*{nome do usuário}:*\n` (mesmo
+  padrão de compra/vendas), sempre pela instância dedicada
+  (`zapiCredenciaisFinanceiro()`), nunca pela principal. Card novo "💳
+  Instância Z-API — Financeiro" em `admin/configuracoes.php` (mesmo padrão
+  salvar+testar conexão da instância de vendas) + botão "💬 WhatsApp
+  Cobrança" em `admin/financeiro.php`. Testado ponta a ponta: função
+  isolada (mensagem processada certa, dedup de `messageId`, `fromMe`
+  registrado sem processar, grupo ignorado, evento não-mensagem tipo
+  presença/status ignorado, roteamento por `instanceId` confirmado,
+  `ia_pausada` sempre presente no retorno — sem esse campo o webhook
+  compartilhado gera PHP warning ao acessá-lo incondicionalmente mais
+  adiante, mesmo contrato que compra/vendas já seguem) + webhook HTTP real
+  via `php -S` confirmando fim a fim que uma requisição POST simulando o
+  payload da Z-API grava a mensagem certa no banco + Playwright contra
+  servidor Z-API fake local (sidebar mostra a conversa com o total em
+  atraso certo; enviar mensagem manual chega no fake Z-API assinada com o
+  nome do usuário pela instância/token dedicados do financeiro — nunca
+  vazando credencial de compra/vendas —, e a cópia salva no CRM fica sem
+  a assinatura; telefone sem nenhum vínculo financeiro não mostra
+  conversa nem aceita POST forjado, ambos bloqueados por
+  `usuarioPodeVerConversaFinanceiro()`; "+ Iniciar conversa" abre normal
+  um telefone financeiro válido ainda sem mensagens; perfil consultor
+  bloqueado com 403 tentando acessar a caixa direto pela URL) +
+  Configurações (salvar credenciais persiste ao recarregar, teste de
+  conexão chega no fake Z-API e reporta sucesso). ⚠️ A instância Z-API de
+  verdade ainda precisa ser criada (número próprio pro financeiro) e as
+  credenciais coladas em Configurações — mesmo "a validar em produção" de
+  toda integração nova deste projeto.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
@@ -3561,6 +3655,18 @@ testado com servidor fake local — nunca contra o serviço real:
   de compra (`.../chatbot-whatsapp/webhook/whatsapp.php` — o roteamento
   por `instanceId` já sabe diferenciar as duas). Validar contra uma
   mensagem real assim que a instância existir.
+- **Instância Z-API dedicada do financeiro** (18/09/2026,
+  `includes/zapi_instancias.php`/`whatsapp_config.php`/`mensagens_financeiro.php`)
+  — mesma situação da instância de vendas acima: reaproveita o MESMO
+  mecanismo de webhook/envio já confirmado em produção (mesmo
+  `zapiEnviarTexto()`, só com credenciais/`instanceId` diferentes), então
+  o formato de payload em si não é um risco novo, só testado contra
+  servidor Z-API fake local até aqui. Falta, fora do código: criar a
+  instância de verdade na Z-API (número próprio pro financeiro), colar as
+  credenciais em Configurações → 💳 Instância Z-API — Financeiro, e
+  apontar o webhook "Ao receber" dessa instância pra MESMA URL do webhook
+  de compra/vendas (o roteamento por `instanceId` já sabe diferenciar as
+  3). Validar contra uma mensagem real assim que a instância existir.
 - **`zapiEnviarVideo()` (envio de vídeo)** — 17/09/2026,
   `includes/whatsapp_config.php`, usado pela IA de vendas pra mandar vídeo
   do catálogo de um veículo. Construído copiando o mesmo formato já usado

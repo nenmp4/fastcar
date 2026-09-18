@@ -83,6 +83,11 @@ function zapiIdentificarInstancia(string $instanceId): array {
         return ['tipo' => 'vendas', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_vendas_client_token')];
     }
 
+    $instanciaFinanceiro = getConfig('zapi_instancia_financeiro_id') ?? '';
+    if ($instanciaFinanceiro !== '' && $instanceId === $instanciaFinanceiro) {
+        return ['tipo' => 'financeiro', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_financeiro_client_token')];
+    }
+
     $db = getDB();
     $stmt = $db->prepare("SELECT usuario_id, client_token FROM zapi_instancias_consultores WHERE instance_id = ? AND ativo = 1");
     $stmt->execute([$instanceId]);
