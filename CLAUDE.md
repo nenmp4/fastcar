@@ -2546,6 +2546,22 @@ segue no schema sem uso novo, não removida sem ganho real),
   (Minhas/ativas) continua mostrando só oportunidade ativa, sem a fechada
   aparecer lá (sem regressão); super_admin vê "Fechadas (3)" (empresa
   inteira) e as 3 linhas certas ao clicar.
+  **Coluna "Recebido em" (data/hora de entrada do lead)** (18/09/2026,
+  pedido direto: "da para registrar datas dos leads ?" seguido de "ficar
+  melhor organizados") — o dado (`created_at`) já era gravado desde
+  sempre em `clientes`/`oportunidades` (inclusive já usado internamente
+  pra ordenar as duas listagens), só nunca tinha sido exposto na tela —
+  o consultor não tinha como ver, só de olhar a tabela, há quanto tempo
+  um lead está no funil. Coluna nova em `admin/index.php` (logo depois de
+  "Cliente") e em `admin/clientes.php` (logo depois de "Nome"), formato
+  `d/m/Y H:i`, mesmo padrão já usado em `admin/cliente_detalhe.php`/
+  `admin/oportunidade.php` pro histórico. Na aba "✅ Fechadas" (bullet
+  acima) a coluna também mostra a data de fechamento (`data_compra`) numa
+  linha extra abaixo, quando existir — as duas datas juntas (quando
+  entrou, quando fechou) fazem mais sentido ali do que só uma. Testado em
+  banco isolado com Playwright: dashboard mostra a data/hora certa de uma
+  oportunidade semeada; listagem de clientes mostra a data/hora certa de
+  um cliente semeado.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,

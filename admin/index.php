@@ -297,12 +297,12 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 <table class="tabela-oportunidades">
     <thead>
         <tr>
-            <th>Cliente</th><th>Veículo</th><th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th></th>
+            <th>Cliente</th><th>Recebido em</th><th>Veículo</th><th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th></th>
         </tr>
     </thead>
     <tbody>
     <?php if (!$oportunidades): ?>
-        <tr><td colspan="6"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
+        <tr><td colspan="7"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
@@ -313,6 +313,12 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
                     <?= ['quente' => '🔥', 'morno' => '🌤️', 'frio' => '❄️'][$op['temperatura_lead']] ?? '' ?>
                 <?php endif; ?>
                 <br><small><?= e($op['cliente_telefone']) ?></small>
+            </td>
+            <td>
+                <?= $op['created_at'] ? date('d/m/Y H:i', strtotime($op['created_at'])) : '—' ?>
+                <?php if ($etapaBuscandoFechadas && $op['data_compra']): ?>
+                    <br><small>fechado <?= date('d/m/Y', strtotime($op['data_compra'])) ?></small>
+                <?php endif; ?>
             </td>
             <td><?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>
             <td><?= e(etapaLabel($op['etapa'])) ?></td>

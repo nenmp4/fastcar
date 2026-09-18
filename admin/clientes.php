@@ -69,15 +69,16 @@ $clientes = $stmt->fetchAll();
 
 <table class="tabela-oportunidades">
     <thead>
-        <tr><th>Nome</th><th>Telefone</th><th>Cidade/UF</th><th>Origem</th><th>Oportunidades</th><th>Status</th><th></th></tr>
+        <tr><th>Nome</th><th>Recebido em</th><th>Telefone</th><th>Cidade/UF</th><th>Origem</th><th>Oportunidades</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
     <?php if (!$clientes): ?>
-        <tr><td colspan="7">Nenhum cliente encontrado.</td></tr>
+        <tr><td colspan="8">Nenhum cliente encontrado.</td></tr>
     <?php endif; ?>
     <?php foreach ($clientes as $c): ?>
         <tr>
             <td><?= e($c['nome'] ?: '(sem nome)') ?></td>
+            <td><?= $c['created_at'] ? date('d/m/Y H:i', strtotime($c['created_at'])) : '—' ?></td>
             <td><?= e($c['telefone']) ?></td>
             <td><?= e($c['cidade'] ?: '—') ?><?= $c['estado'] ? '/' . e($c['estado']) : '' ?></td>
             <td><?= e($c['canal_origem'] ?: 'direto') ?></td>
