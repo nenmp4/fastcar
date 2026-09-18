@@ -24,6 +24,8 @@
     --vermelho-bg: #fef2f2;
     --amarelo: #b45309;
     --amarelo-bg: #fffbeb;
+    --laranja: #c2410c;
+    --laranja-bg: #fff2e8;
     --raio: 14px;
     --raio-sm: 9px;
     --sombra: 0 1px 2px rgba(10, 18, 41, .05), 0 1px 3px rgba(10, 18, 41, .07);
@@ -134,6 +136,14 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .tabela-oportunidades tbody tr:hover { background: #fafbff; }
 .linha-atrasada { background: var(--vermelho-bg) !important; }
 .linha-atrasada:hover { background: #fde8e8 !important; }
+/* 18/09/2026, "classifica os ledas quentes bem destacados prioriza em com os
+   primeiros" — borda lateral (nunca perde pro !important do atrasado, os dois
+   podem coexistir na mesma linha) + fundo âmbar/laranja, cor diferente do
+   vermelho de atraso pra nunca confundir "urgente por prazo" com "urgente por
+   temperatura do lead". */
+.linha-quente { border-left: 4px solid var(--laranja); background: var(--laranja-bg); }
+.linha-quente:hover { background: #ffe4cc; }
+.badge-quente { background: var(--laranja-bg); color: var(--laranja); font-weight: 700; }
 .sem-proxima-acao { color: var(--texto-fraco); font-style: italic; font-size: 12px; }
 
 /* ── Paginação (includes/paginacao.php::renderPaginacao()) ─────────────── */
@@ -289,8 +299,16 @@ body.pagina-login {
     box-shadow: var(--sombra);
     border-left: 3px solid var(--azul);
     transition: box-shadow .15s;
+    /* 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
+       abri os leads" — cards que levam a uma lista filtrada viram <a>, os
+       que não têm lista por trás (taxa de conversão, toggle de disponível)
+       continuam <div>; estilo igual nos dois pra não denunciar a diferença. */
+    display: block;
+    color: inherit;
+    text-decoration: none;
 }
 .stat-card:hover { box-shadow: var(--sombra-hover); }
+a.stat-card:hover { border-left-color: var(--azul-escuro); }
 .stat-card .valor { font-size: 28px; font-weight: 800; color: var(--texto); line-height: 1.15; letter-spacing: -.01em; }
 .stat-card .rotulo { font-size: 12px; color: var(--texto-suave); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
 .stat-card.alerta { border-left-color: var(--vermelho); }

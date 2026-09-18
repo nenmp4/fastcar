@@ -20,6 +20,15 @@ $souDono = $perfil === 'consultor';
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
 
+// 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
+// abri os leads" — os cards de KPI (Atrasadas/Leads novos hoje/na semana/
+// Em negociação/Fechadas este mês) viraram link pra essa mesma tela com
+// `?filtro=...`, listando exatamente o que o card está contando. Nunca se
+// combina com `?etapa=` (filtro especial sempre vence — evita o usuário
+// cair numa combinação impossível tipo "atrasadas" + "fechado").
+$filtroEspecial = (string)($_GET['filtro'] ?? '');
+$extraWhere = '';
+
 // 18/09/2026, achado real do usuário: "em dasbord clientes que conluiio
 // toda etapa ate pasta como consultor pode localizar nçao tem essa opção"
 // — o dashboard inteiro (nav de etapas, busca, tabela) sempre foi
@@ -31,15 +40,41 @@ $busca = trim((string)($_GET['q'] ?? ''));
 // fechado a partir do dashboard. "✅ Fechadas" na nav abaixo busca fora do
 // conjunto de etapas ativas — monta sua própria lista de etapas pro WHERE
 // em vez de sempre usar ETAPAS_ATIVAS.
-$etapaBuscandoFechadas = $etapaFiltro === 'fechado';
-$etapasEscopo = $etapaBuscandoFechadas ? ['fechado'] : ETAPAS_ATIVAS;
+switch ($filtroEspecial) {
+    case 'hoje':
+        $etapasEscopo = ETAPAS_ATIVAS;
+        $extraWhere = " AND date(o.created_at) = date('now','localtime')";
+        break;
+    case 'semana':
+        $etapasEscopo = ETAPAS_ATIVAS;
+        $extraWhere = " AND o.created_at >= datetime('now','localtime','-7 days')";
+        break;
+    case 'atrasadas':
+        $etapasEscopo = ETAPAS_ATIVAS;
+        $extraWhere = " AND o.proxima_acao_em IS NOT NULL AND o.proxima_acao_em < datetime('now','localtime')";
+        break;
+    case 'negociacao':
+        $etapasEscopo = ['negociacao', 'presencial'];
+        break;
+    case 'fechado_mes':
+        $etapasEscopo = ['fechado'];
+        $extraWhere = " AND o.data_compra >= date('now','localtime','start of month')";
+        break;
+    default:
+        $etapasEscopo = ($etapaFiltro === 'fechado') ? ['fechado'] : ETAPAS_ATIVAS;
+}
+// "Escopo fechado" (fechado_por em vez de responsavel_id, coluna extra de
+// data de fechamento na tabela) vale tanto pra aba "✅ Fechadas" quanto pro
+// card "Fechadas este mês" (?filtro=fechado_mes) — os dois terminam no
+// mesmo conjunto de etapa ('fechado').
+$etapaBuscandoFechadas = $etapasEscopo === ['fechado'];
 $placeholders = implode(',', array_fill(0, count($etapasEscopo), '?'));
 
 // WHERE construído uma vez só e reaproveitado pra contar o total ANTES de
 // paginar (precisa ser o total que bate com ESSE filtro específico —
 // etapa + dono + busca — não $totalAtivas mais abaixo, que é sempre a soma
 // de TODAS as etapas ativas, serve só pro contador "Todas (N)" da nav).
-$where = "WHERE o.etapa IN ({$placeholders})";
+$where = "WHERE o.etapa IN ({$placeholders}){$extraWhere}";
 $params = $etapasEscopo;
 if ($souDono) {
     // "Fechadas" filtra por fechado_por (quem executou o fechamento —
@@ -50,7 +85,7 @@ if ($souDono) {
     $where .= $etapaBuscandoFechadas ? " AND o.fechado_por = ?" : " AND o.responsavel_id = ?";
     $params[] = $meuId;
 }
-if ($etapaFiltro && !$etapaBuscandoFechadas && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
+if ($filtroEspecial === '' && $etapaFiltro && !$etapaBuscandoFechadas && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
     $where .= " AND o.etapa = ?";
     $params[] = $etapaFiltro;
 }
@@ -69,6 +104,12 @@ $stmtTotalFiltrado = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN cli
 $stmtTotalFiltrado->execute($params);
 $totalFiltrado = (int)$stmtTotalFiltrado->fetchColumn();
 
+// 18/09/2026, pedido direto: "classifica os ledas quentes bem destacados
+// prioriza em com os primeiros" — lead quente (dor financeira real, urgência
+// de vender, ver critério em includes/ia_qualificacao.php) sobe pro topo de
+// QUALQUER view (Minhas/Todas ou dentro de uma etapa específica), na frente
+// de morno/frio/sem classificação — só depois disso entra o critério de
+// sempre (próxima ação atrasada/mais próxima primeiro, depois mais recente).
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
            u.nome AS responsavel_nome
@@ -76,7 +117,8 @@ $sql = "
     JOIN clientes c ON c.id = o.cliente_id
     LEFT JOIN usuarios u ON u.id = o.responsavel_id
     {$where}
-    ORDER BY (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.updated_at DESC
+    ORDER BY CASE o.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
+             (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.updated_at DESC
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);
@@ -186,53 +228,68 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 
 <?php $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : ''; ?>
 <nav class="etapas-nav">
-    <a href="/admin/index.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
+    <a href="/admin/index.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' && $filtroEspecial === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
     <?php foreach (ETAPAS_ATIVAS as $et): ?>
-        <a href="/admin/index.php?etapa=<?= urlencode($et) . $qsBusca ?>" class="<?= $etapaFiltro === $et ? 'ativo' : '' ?>">
+        <a href="/admin/index.php?etapa=<?= urlencode($et) . $qsBusca ?>" class="<?= $etapaFiltro === $et && $filtroEspecial === '' ? 'ativo' : '' ?>">
             <?= e(etapaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
         </a>
     <?php endforeach; ?>
-    <a href="/admin/index.php?etapa=fechado<?= $qsBusca ?>" class="<?= $etapaFiltro === 'fechado' ? 'ativo' : '' ?>">
+    <a href="/admin/index.php?etapa=fechado<?= $qsBusca ?>" class="<?= $etapaFiltro === 'fechado' && $filtroEspecial === '' ? 'ativo' : '' ?>">
         ✅ Fechadas (<?= $totalFechadas ?>)
     </a>
 </nav>
 
 <main>
 
+<?php
+// Rótulo de cada ?filtro= especial, pro banner "filtro ativo" abaixo —
+// mesmo texto usado no rótulo do card que originou o clique.
+$filtroEspecialLabel = [
+    'hoje' => 'Leads novos hoje', 'semana' => 'Recebidos nos últimos 7 dias',
+    'atrasadas' => 'Atrasadas', 'negociacao' => 'Em negociação/presencial',
+    'fechado_mes' => 'Fechadas este mês',
+][$filtroEspecial] ?? '';
+if ($filtroEspecialLabel !== ''): ?>
+<div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;margin-bottom:14px">
+    <span>🔎 Mostrando: <strong><?= e($filtroEspecialLabel) ?></strong></span>
+    <a href="/admin/index.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>">Limpar filtro</a>
+</div>
+<?php endif; ?>
+
 <?php if ($perfil === 'consultor'): ?>
     <div class="stat-grid">
-        <div class="stat-card">
+        <a class="stat-card" href="/admin/index.php">
             <div class="valor"><?= (int)$stats['ativas'] ?></div>
             <div class="rotulo">Minhas oportunidades ativas</div>
-        </div>
-        <div class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>">
+        </a>
+        <a class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>" href="/admin/index.php?filtro=atrasadas">
             <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
             <div class="rotulo">Atrasadas</div>
-        </div>
-        <div class="stat-card neutro">
+        </a>
+        <a class="stat-card neutro" href="/admin/index.php?filtro=semana">
             <div class="valor"><?= (int)$stats['recebidas_semana'] ?></div>
             <div class="rotulo">Recebidas nos últimos 7 dias</div>
-        </div>
+        </a>
         <div class="stat-card <?= $stats['disponivel'] ? 'sucesso' : 'neutro' ?>">
             <div class="valor"><?= $stats['disponivel'] ? '🟢' : '⚪' ?></div>
             <div class="rotulo"><?= $stats['disponivel'] ? 'Disponível pra fila' : ($stats['plantao'] ? 'Offline (plantão)' : 'Offline') ?></div>
         </div>
-        <div class="stat-card">
+        <a class="stat-card" href="/admin/index.php?filtro=negociacao">
             <div class="valor"><?= (int)$stats['em_negociacao'] ?></div>
             <div class="rotulo">Em negociação/presencial</div>
-        </div>
-        <div class="stat-card neutro">
+        </a>
+        <a class="stat-card neutro" href="/admin/index.php?filtro=negociacao">
             <div class="valor"><?= moeda($stats['valor_em_negociacao']) ?></div>
             <div class="rotulo">Valor em negociação</div>
-        </div>
-        <div class="stat-card sucesso">
+        </a>
+        <a class="stat-card sucesso" href="/admin/index.php?filtro=fechado_mes">
             <div class="valor"><?= (int)$stats['fechadas_mes'] ?></div>
             <div class="rotulo">Fechadas este mês</div>
-        </div>
-        <div class="stat-card sucesso">
+        </a>
+        <a class="stat-card sucesso" href="/admin/index.php?filtro=fechado_mes">
             <div class="valor"><?= moeda($stats['valor_fechado_mes']) ?></div>
             <div class="rotulo">Valor fechado este mês</div>
-        </div>
+        </a>
         <div class="stat-card neutro">
             <div class="valor"><?= $stats['taxa_conversao'] === null ? '—' : $stats['taxa_conversao'] . '%' ?></div>
             <div class="rotulo">Taxa de conversão</div>
@@ -240,30 +297,30 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     </div>
 <?php elseif (perfilVeTudo()): ?>
     <div class="stat-grid">
-        <div class="stat-card">
+        <a class="stat-card" href="/admin/index.php">
             <div class="valor"><?= (int)$stats['ativas'] ?></div>
             <div class="rotulo">Oportunidades ativas</div>
-        </div>
-        <div class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>">
+        </a>
+        <a class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>" href="/admin/index.php?filtro=atrasadas">
             <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
             <div class="rotulo">Atrasadas</div>
-        </div>
-        <div class="stat-card neutro">
+        </a>
+        <a class="stat-card neutro" href="/admin/index.php?filtro=hoje">
             <div class="valor"><?= (int)$stats['novas_hoje'] ?></div>
             <div class="rotulo">Leads novos hoje</div>
-        </div>
-        <div class="stat-card neutro">
+        </a>
+        <a class="stat-card neutro" href="/admin/index.php?filtro=semana">
             <div class="valor"><?= (int)$stats['novas_semana'] ?></div>
             <div class="rotulo">Leads novos (7 dias)</div>
-        </div>
-        <div class="stat-card sucesso">
+        </a>
+        <a class="stat-card sucesso" href="/admin/index.php?filtro=fechado_mes">
             <div class="valor"><?= (int)$stats['fechadas_mes'] ?></div>
             <div class="rotulo">Fechadas este mês</div>
-        </div>
-        <div class="stat-card sucesso">
+        </a>
+        <a class="stat-card sucesso" href="/admin/index.php?filtro=fechado_mes">
             <div class="valor"><?= moeda($stats['valor_fechado_mes']) ?></div>
             <div class="rotulo">Valor fechado este mês</div>
-        </div>
+        </a>
         <div class="stat-card neutro">
             <div class="valor"><?= $stats['taxa_conversao'] === null ? '—' : $stats['taxa_conversao'] . '%' ?></div>
             <div class="rotulo">Taxa de conversão geral</div>
@@ -287,10 +344,16 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 
 <div class="card">
     <form method="get">
-        <?php if ($etapaFiltro !== ''): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
+        <?php if ($filtroEspecial !== ''): ?>
+            <input type="hidden" name="filtro" value="<?= e($filtroEspecial) ?>">
+        <?php elseif ($etapaFiltro !== ''): ?>
+            <input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>">
+        <?php endif; ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por nome, telefone, marca, modelo ou placa...">
         <button type="submit">Buscar</button>
-        <?php if ($busca !== ''): ?><a href="/admin/index.php<?= $etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '' ?>">Limpar</a><?php endif; ?>
+        <?php if ($busca !== ''):
+            $voltarQs = $filtroEspecial !== '' ? '?filtro=' . urlencode($filtroEspecial) : ($etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '');
+        ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar</a><?php endif; ?>
     </form>
 </div>
 
@@ -306,11 +369,16 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
-        <tr class="<?= $atrasada ? 'linha-atrasada' : '' ?>">
+        <?php $quente = $op['temperatura_lead'] === 'quente'; ?>
+        <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
             <td>
                 <a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>"><?= e($op['cliente_nome'] ?: '(sem nome)') ?></a>
-                <?php if ($op['temperatura_lead']): ?>
-                    <?= ['quente' => '🔥', 'morno' => '🌤️', 'frio' => '❄️'][$op['temperatura_lead']] ?? '' ?>
+                <?php if ($quente): ?>
+                    <span class="badge badge-quente">🔥 Quente</span>
+                <?php elseif ($op['temperatura_lead'] === 'morno'): ?>
+                    <span class="badge">🌤️ Morno</span>
+                <?php elseif ($op['temperatura_lead'] === 'frio'): ?>
+                    <span class="badge">❄️ Frio</span>
                 <?php endif; ?>
                 <br><small><?= e($op['cliente_telefone']) ?></small>
             </td>

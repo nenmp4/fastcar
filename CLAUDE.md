@@ -2562,6 +2562,51 @@ segue no schema sem uso novo, não removida sem ganho real),
   banco isolado com Playwright: dashboard mostra a data/hora certa de uma
   oportunidade semeada; listagem de clientes mostra a data/hora certa de
   um cliente semeado.
+  **Lead "quente" destacado e priorizado + cards de estatística clicáveis**
+  (18/09/2026, 2 pedidos diretos: "classifica os ledas quentes bem
+  destacados prioriza em com os primeiros" e "coloca clicavil os cads tipo
+  leads de hoje clicar em cima abri os leads"). (1) Temperatura: a query
+  principal de `admin/index.php` passou a ordenar primeiro por
+  `temperatura_lead` (`CASE ... WHEN 'quente' THEN 0 WHEN 'morno' THEN 1
+  WHEN 'frio' THEN 2 ELSE 3 END`), só depois por atraso/atualização — antes
+  a ordem era só por próxima ação/atualização, então um lead quente podia
+  ficar enterrado no meio da lista atrás de vários frios mais recentes.
+  Linha da tabela ganhou classe `.linha-quente` (borda esquerda laranja +
+  fundo laranja claro — cores novas `--laranja`/`--laranja-bg` em
+  `admin/assets/style.css`, deliberadamente distintas do vermelho de
+  `.linha-atrasada` pra um lead que é as duas coisas ao mesmo tempo — atrasado
+  E quente — mostrar os dois sinais sem colidir) e badge "🔥 Quente" ao
+  lado do nome (morno/frio ganharam badge neutro ❄️/🌤️ só pra contexto,
+  sem o destaque forte reservado ao quente). (2) Cards clicáveis: mecanismo
+  novo `?filtro=` em `admin/index.php` (`hoje`/`semana`/`atrasadas`/
+  `negociacao`/`fechado_mes`), cada valor mapeando pra um escopo de etapa +
+  filtro SQL próprio (ex: `fechado_mes` = etapa `fechado` + `data_compra`
+  dentro do mês corrente; `atrasadas` = etapas ativas + `proxima_acao_em`
+  no passado) — sempre mutuamente exclusivo com a nav por etapa normal
+  (`?etapa=`) e com a aba "✅ Fechadas" (bullet acima). Os cards de
+  estatística que já mostravam esses números (Atrasadas, Recebidas nos
+  últimos 7 dias, Leads novos hoje/semana, Em negociação/presencial,
+  Fechadas este mês/Valor fechado este mês) viraram `<a class="stat-card">`
+  em vez de `<div>` puro — clicar abre a mesma tabela do dashboard já
+  filtrada, com banner "🔎 Mostrando: [rótulo]" e link "Limpar filtro" pra
+  voltar à visão padrão; cards sem contrapartida de lista específica (Taxa
+  de conversão, toggle Disponível/Offline) continuam `<div>` normais.
+  `.stat-card` no CSS ganhou `display:block;color:inherit;text-decoration:none`
+  pra renderizar idêntico como link ou div. Busca (`?q=`) continua
+  combinando com o filtro especial ativo (filtro tem prioridade sobre
+  `?etapa=`; buscar dentro de um filtro mantém os dois juntos); "Limpar"
+  preserva o outro parâmetro quando presente. **Bug pego e corrigido antes
+  do commit**: ao converter o card "Valor fechado este mês" pra `<a>`, a
+  tag de fechamento tinha ficado como `</div>` (mismatch) — achado relendo
+  o arquivo antes de qualquer teste, corrigido. Testado em banco isolado
+  com Playwright (2 scripts): ordenação com 3 oportunidades em
+  temperaturas diferentes confirma quente sempre primeiro mesmo sendo a
+  mais antiga das três, borda/badge aparecendo certo nas 3 classes; cada
+  um dos 5 valores de `?filtro=` abre a lista certa (contagem batendo com
+  o que o card mostrava), banner de contexto com o rótulo certo, "Limpar
+  filtro" volta à visão padrão; clicar num card navega pra URL com o
+  `?filtro=` certo; combinação filtro+busca funciona; nav por etapa/aba
+  Fechadas continuam funcionando sem filtro ativo (sem regressão).
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
