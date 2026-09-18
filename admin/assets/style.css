@@ -179,6 +179,24 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .card h2, .card h3 { margin-top: 0; }
 .card h2 { font-size: 18px; font-weight: 700; }
 .card h3 { font-size: 15px; font-weight: 700; }
+
+/* Modal genérico via <dialog> nativo — 18/09/2026, "lyout poderia novo
+   lançamentos ser modal fica mais bonitos". Reutilizável em qualquer
+   formulário do admin, não só financeiro. */
+dialog.modal-lancamento {
+    border: none;
+    border-radius: var(--raio);
+    padding: 22px 26px;
+    width: min(640px, 92vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 60px rgba(10, 18, 41, .35);
+}
+dialog.modal-lancamento::backdrop {
+    background: rgba(10, 18, 41, .55);
+    backdrop-filter: blur(1px);
+}
+dialog.modal-lancamento h2 { font-size: 18px; font-weight: 700; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
 

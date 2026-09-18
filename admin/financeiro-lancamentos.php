@@ -102,6 +102,13 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
     $stmt->execute([(int)$_GET['id']]);
     $editando = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
+// 18/09/2026, "lyout poderia novo lançamentos ser modal fica mais bonitos"
+// — formulário de novo/editar lançamento virou <dialog> (nativo do
+// navegador, sem lib nova) em vez de card sempre visível ocupando o topo
+// da página; abre sozinho quando chega por aqui via edição (?action=edit)
+// ou pelo botão "Novo lançamento" (?novo=1), sem mudar nada do POST/fluxo
+// de salvar — mesma URL, mesmo formulário, só a apresentação mudou.
+$abrirModalLancamento = $editando !== null || isset($_GET['novo']);
 
 $fTipo = (string)($_GET['tipo'] ?? '');
 $fStatus = (string)($_GET['status'] ?? '');
@@ -166,8 +173,15 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
-<div class="card" style="margin-bottom:1.5rem">
-  <h2><?= $editando ? '✏️ Editar lançamento' : '➕ Novo lançamento' ?></h2>
+<div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+  <a href="?novo=1" class="btn-primary" style="width:auto">➕ Novo lançamento</a>
+</div>
+
+<dialog id="modal-lancamento" class="modal-lancamento">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+    <h2 style="margin:0"><?= $editando ? '✏️ Editar lançamento' : '➕ Novo lançamento' ?></h2>
+    <button type="button" onclick="document.getElementById('modal-lancamento').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
+  </div>
   <form method="POST" enctype="multipart/form-data">
     <?= csrfField() ?>
     <input type="hidden" name="acao" value="salvar">
@@ -268,9 +282,12 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <textarea name="observacoes" rows="2"><?= e($editando['observacoes'] ?? '') ?></textarea>
 
     <button type="submit"><?= $editando ? 'Salvar alterações' : 'Lançar' ?></button>
-    <?php if ($editando): ?><a href="/admin/financeiro-lancamentos.php">Cancelar</a><?php endif; ?>
+    <button type="button" onclick="document.getElementById('modal-lancamento').close()">Cancelar</button>
   </form>
-</div>
+</dialog>
+<?php if ($abrirModalLancamento): ?>
+<script>document.getElementById('modal-lancamento').showModal();</script>
+<?php endif; ?>
 
 <div class="card" style="margin-bottom:1.5rem">
   <form method="GET" style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">

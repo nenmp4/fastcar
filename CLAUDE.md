@@ -3033,6 +3033,22 @@ segue no schema sem uso novo, não removida sem ganho real),
   (nenhum a mais/menos, o pendente corretamente de fora); clicar na
   descrição de um lançamento em "Contas a vencer" navega pra URL de edição
   certa e o formulário já abre com a descrição certa preenchida.
+  **Formulário "Novo/Editar lançamento" virou modal** (18/09/2026, pedido
+  direto: "lyout poderia novo lançamentos ser modal fica mais bonitos") —
+  antes ficava sempre visível, fixo no topo de `admin/financeiro-lancamentos.php`,
+  ocupando espaço mesmo sem ninguém lançando nada; virou `<dialog>` nativo
+  do navegador (sem lib nova) — fechado por padrão, abre sozinho via
+  `?novo=1` (link "➕ Novo lançamento" novo, canto superior direito) ou
+  `?action=edit&id=X` (mesmo ✏️ de sempre na tabela), com botão × e
+  "Cancelar" pra fechar sem navegar. Nenhuma mudança no fluxo de salvar/
+  POST, só a apresentação. CSS novo `dialog.modal-lancamento` em
+  `admin/assets/style.css` — genérico, de propósito reutilizável em
+  qualquer outro formulário do admin que quiser virar modal depois (mesmo
+  espírito de componente compartilhado do resto do CSS). Testado em banco
+  isolado com Playwright: modal fechado no carregamento normal; "Novo
+  lançamento" abre vazio, preencher+enviar cria o lançamento (linha nova
+  na tabela, banner de sucesso); "Cancelar" fecha sem submeter; ✏️ numa
+  linha existente abre já pré-preenchido com os dados certos.
   **Categoria automática pra cobrança importada do Asaas** (18/09/2026,
   pedido direto: "isso que puxamos do assas são receitas de pacerla de
   veiculos temos organizar como podemos fazer", confirmado que os 35
