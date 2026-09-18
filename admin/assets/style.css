@@ -72,7 +72,6 @@ a:hover { text-decoration: underline; }
 .topbar strong b, .login-box h2 b { font-weight: 800; }
 .topbar strong b { color: var(--azul-vivo); }
 .login-box h2 b { color: var(--azul); }
-.crm-tag { opacity: .65; font-weight: 500; font-size: .82em; margin-left: 2px; }
 .topbar a {
     color: #cbd5e1;
     font-size: 13.5px;

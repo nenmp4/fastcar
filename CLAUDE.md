@@ -2642,6 +2642,16 @@ segue no schema sem uso novo, não removida sem ganho real),
   Logo do topbar/login aumentada (`.topbar-logo` 28px→40px, `.login-logo`
   36px→44px) e com sombra sutil, a pedido explícito ("aumenta mais logo" /
   "deixa mais caprichado").
+  **Palavra "CRM" removida do topbar/login** (18/09/2026, "no topo do site
+  fastcar é junto" seguido de "pode tirar palavra crm") — todas as ~25
+  páginas do admin mostravam "Fast**Car** CRM" (`<span class="crm-tag">CRM</span>`,
+  opacidade reduzida) ao lado do ícone no cabeçalho/tela de login; removido
+  esse span nas ~25 páginas (mesmo trecho duplicado de propósito em cada
+  arquivo, sem `layout.php` compartilhado, mesma decisão de sempre) — fica
+  só "Fast**Car**" ao lado do ícone. Regra CSS `.crm-tag` (sem nenhuma
+  referência depois disso) removida de `admin/assets/style.css`. Testado:
+  `php -l` limpo em todos os arquivos editados, `tests/smoke.php` sem
+  avisos.
 - **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da

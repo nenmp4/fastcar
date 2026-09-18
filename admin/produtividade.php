@@ -38,7 +38,7 @@ $linhas = zapiContarMensagensPorConsultor($dias);
 <body>
 <header class="topbar">
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
-    <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b> <span class="crm-tag">CRM</span></strong>
+    <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
     <a href="/admin/configuracoes.php">⚙️ Configurações</a>
     <a href="/admin/logout.php">Sair</a>
