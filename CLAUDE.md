@@ -2297,6 +2297,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   de 24, regra já travada) gera "18 (dezoito)" etc a partir do número
   salvo. Testado gerando o PDF com prazo=18 e decodificando o conteúdo:
   texto batendo exatamente nos 2 lugares (Quadro-Resumo e cláusula 5.1).
+  **Aviso automático de assinatura confirmada** (18/09/2026, pergunta direta:
+  "quando cliente assina o contrato tem como saber assinatura ok?") — até
+  então era 100% "puxar": só descobria abrindo a oportunidade/venda na tela
+  e olhando o badge ✅ assinado, nenhum aviso saía sozinho.
+  `notificarAssinaturaContrato()` (novo, `includes/contratos.php`) segue o
+  mesmo padrão já usado pra lead qualificado
+  (`notificarConsultorLeadQualificado()`/`notificarVendedorLeadQualificado()`):
+  manda pro WhatsApp PESSOAL do responsável (consultor da oportunidade, se
+  contrato de compra; vendedor da negociação, se contrato de venda/revenda)
+  uma mensagem com nome do cliente/comprador, veículo e link direto pra
+  tela — sem responsável definido ou sem `usuarios.whatsapp` cadastrado,
+  cai no aviso genérico de `notificacao_leads_whatsapp` como fallback,
+  nunca deixa passar batido. Chamada de dentro de `zapsignSincronizarContrato()`
+  (webhook `api/zapsign_webhook.php` E o polling de fallback
+  `cron/zapsign_sync.php`, os 2 únicos pontos que já detectam assinatura)
+  só no momento em que a cópia assinada é salva de verdade — mesma
+  condição que já grava `contratos.assinado_em` pela 1ª vez — então nunca
+  reenvia numa resincronização seguinte que só está conferindo o status de
+  novo. Best-effort (try/catch), nunca trava a sincronização do contrato
+  por causa disso. Testado em banco isolado, função a função (é aviso de
+  backend, não tela, não precisa de navegador): contrato de COMPRA com
+  consultor responsável+whatsapp cadastrado recebe a mensagem certa (nome
+  do cliente, veículo, link `/admin/oportunidade.php`) e não cai no
+  fallback; resincronizar o MESMO contrato assinado de novo não reenvia
+  (early-return já existente); contrato de compra sem responsável/whatsapp
+  cadastrado cai certo no fallback genérico; contrato de VENDA com
+  vendedor responsável recebe a mensagem certa (nome do comprador,
+  veículo, link `/admin/venda.php`), e o comportamento pré-existente de
+  marcar a negociação como `vendido` na assinatura continua intacto — sem
+  regressão nos 2 fluxos de sincronização já validados em produção.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

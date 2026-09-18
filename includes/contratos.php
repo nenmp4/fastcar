@@ -505,6 +505,7 @@ function zapsignSincronizarContrato(int $contratoId): void {
                     if ($etapaVendaAtual->fetchColumn() === 'contrato_enviado') {
                         mudarEtapaVenda((int)$c['venda_id'], 'vendido', null, 'Contrato assinado pelo comprador (ZapSign)');
                     }
+                    notificarAssinaturaContrato($contratoId, true);
                 }
             } elseif ($driveFileId || $arquivoUrl) {
                 // A pasta fechada (bloco 8, regra #7) só conta esse
@@ -521,6 +522,7 @@ function zapsignSincronizarContrato(int $contratoId): void {
                 ")->execute([$c['oportunidade_id'], $driveFileId, $arquivoUrl]);
 
                 $db->prepare("UPDATE oportunidades SET contrato_assinado = 1 WHERE id = ?")->execute([$c['oportunidade_id']]);
+                notificarAssinaturaContrato($contratoId, false);
             }
         }
     }
@@ -535,4 +537,78 @@ function zapsignSincronizarContrato(int $contratoId): void {
     $db->prepare("
         UPDATE contratos SET status = ?, drive_file_id = ?, arquivo_url = ?, assinado_em = ?, updated_at = datetime('now','localtime') WHERE id = ?
     ")->execute([$novoStatus, $driveFileId, $arquivoUrl, $assinadoEm, $contratoId]);
+}
+
+/**
+ * Avisa o RESPONSÁVEL (consultor de compra, ou vendedor de venda), por
+ * WhatsApp, assim que a assinatura eletrônica é confirmada de verdade —
+ * 18/09/2026, respondendo a "quando cliente assina o contrato tem como
+ * saber assinatura ok?": até então era 100% "puxar" (só descobria abrindo
+ * a oportunidade/venda na tela), nenhum aviso automático saía. Mesmo
+ * padrão de notificarConsultorLeadQualificado()/notificarVendedorLeadQualificado()
+ * — sem responsável definido ou sem WhatsApp cadastrado pra ele, cai no
+ * aviso genérico de `notificacao_leads_whatsapp` como fallback, nunca
+ * deixa passar batido. Chamada só de dentro de zapsignSincronizarContrato(),
+ * e só quando a cópia assinada foi salva de verdade (mesma condição que já
+ * grava assinado_em pela 1ª vez) — nunca dispara de novo numa
+ * resincronização seguinte. Best-effort, nunca lança, nunca trava a
+ * sincronização do contrato por causa disso.
+ */
+function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
+    try {
+        $db = getDB();
+        $baseUrl = getConfig('app_base_url') ?: '';
+
+        if ($ehVenda) {
+            $stmt = $db->prepare("
+                SELECT v.id AS ref_id, v.comprador_nome, o.veiculo_marca, o.veiculo_modelo,
+                       u.whatsapp AS responsavel_whatsapp
+                FROM contratos c
+                JOIN vendas v ON v.id = c.venda_id
+                LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+                LEFT JOIN usuarios u ON u.id = v.responsavel_id
+                WHERE c.id = ?
+            ");
+            $stmt->execute([$contratoId]);
+            $d = $stmt->fetch();
+            if (!$d) return;
+
+            $nomeContato = $d['comprador_nome'] ?: '(sem nome)';
+            $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/venda.php?id={$d['ref_id']}" : '';
+            $rotuloContato = 'Comprador';
+        } else {
+            $stmt = $db->prepare("
+                SELECT o.id AS ref_id, cl.nome AS cliente_nome, o.veiculo_marca, o.veiculo_modelo,
+                       u.whatsapp AS responsavel_whatsapp
+                FROM contratos c
+                JOIN oportunidades o ON o.id = c.oportunidade_id
+                JOIN clientes cl ON cl.id = o.cliente_id
+                LEFT JOIN usuarios u ON u.id = o.responsavel_id
+                WHERE c.id = ?
+            ");
+            $stmt->execute([$contratoId]);
+            $d = $stmt->fetch();
+            if (!$d) return;
+
+            $nomeContato = $d['cliente_nome'] ?: '(sem nome)';
+            $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/oportunidade.php?id={$d['ref_id']}" : '';
+            $rotuloContato = 'Cliente';
+        }
+
+        $veiculo = trim(($d['veiculo_marca'] ?? '') . ' ' . ($d['veiculo_modelo'] ?? '')) ?: 'veículo';
+        $msg = "✅ Contrato assinado!\n{$rotuloContato}: {$nomeContato}\nVeículo: {$veiculo}"
+             . ($link ? "\n{$link}" : '');
+
+        if (!empty($d['responsavel_whatsapp'])) {
+            zapiEnviarTexto($d['responsavel_whatsapp'], $msg);
+            return;
+        }
+
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
+            zapiEnviarTexto($numero, $msg);
+        }
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a sincronização do contrato.
+    }
 }
