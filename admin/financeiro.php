@@ -115,7 +115,7 @@ $asaasPendenteImportar = asaasConfigured();
       <?php foreach ($contasVencer7 as $c): ?>
         <tr>
           <td><?= date('d/m', strtotime($c['data_vencimento'])) ?></td>
-          <td><?= e($c['descricao']) ?></td>
+          <td><a href="/admin/financeiro-lancamentos.php?action=edit&id=<?= (int)$c['id'] ?>"><?= e($c['descricao']) ?></a></td>
           <td><?= e(($c['icone'] ?? '') . ' ' . ($c['categoria_nome'] ?? '—')) ?></td>
           <td style="font-weight:600"><?= $c['tipo'] === 'receita' ? '+' : '-' ?> R$ <?= number_format((float)$c['valor'], 2, ',', '.') ?></td>
         </tr>

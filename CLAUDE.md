@@ -3007,6 +3007,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   nome do cliente é rejeitado com 403 (banco confirmado sem alteração), e
   o resto do silo continua intacto (`admin/veiculos.php` direto ainda
   redireciona pra `financeiro.php`).
+  **Dashboard financeiro (`admin/financeiro.php`) ganhou 2 pontos
+  clicáveis** (18/09/2026, achados numa sessão de acompanhamento em cima
+  do print da tela): (1) card "⏰ Contas atrasadas" — mostrava só o número
+  (35), sem nenhum jeito de ver quem são; virou `<a>` apontando pra
+  `/admin/financeiro-lancamentos.php?status=atrasado&todos_periodos=1`
+  (mesmo padrão dos cards de KPI do dashboard principal, `admin/index.php`)
+  — o `todos_periodos=1` é necessário porque a contagem do card
+  (`WHERE status='atrasado'`, sem filtro de data) soma atrasados de
+  QUALQUER mês, mas a listagem por padrão só mostra o mês corrente; sem
+  esse parâmetro o clique abriria uma lista menor que o número mostrado.
+  (2) Descrição de cada linha em "⏰ Contas a vencer nos próximos 7 dias"
+  — pedido direto "da pra clicar" — virou link pra
+  `/admin/financeiro-lancamentos.php?action=edit&id=X`, abrindo o
+  lançamento certo já pré-preenchido pra edição, mesmo padrão de
+  link-em-célula já usado no resto do projeto (ex: "Abrir →" em
+  `admin/clientes.php`) em vez de um padrão novo de linha inteira
+  clicável via JS. Os outros 3 cards (Receitas/Despesas/Saldo do mês)
+  continuam `<div>` normais — já têm o detalhamento completo logo abaixo
+  na tabela, diferente do card de atrasadas, que não tinha nenhuma lista
+  correspondente na própria tela. Testado em banco isolado com Playwright:
+  3 lançamentos atrasados de mês anterior (fora do mês corrente) + 1
+  pendente do mês atual semeados — card mostra a contagem certa, clique
+  navega pro href certo, lista retornada mostra exatamente os atrasados
+  (nenhum a mais/menos, o pendente corretamente de fora); clicar na
+  descrição de um lançamento em "Contas a vencer" navega pra URL de edição
+  certa e o formulário já abre com a descrição certa preenchida.
   **Categoria automática pra cobrança importada do Asaas** (18/09/2026,
   pedido direto: "isso que puxamos do assas são receitas de pacerla de
   veiculos temos organizar como podemos fazer", confirmado que os 35
