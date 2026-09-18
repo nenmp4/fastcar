@@ -40,7 +40,7 @@ $labelEtapa = [
     // era opcional lá, "Nº da CNH (se tiver)") — o problema era só o rótulo
     // do passo de upload não deixar isso óbvio de cara.
     'cnh' => 'CNH ou RG (documento de identidade com foto, frente e verso)',
-    'comprovante_endereco' => 'Comprovante de endereço (últimos 3 meses)',
+    'comprovante_endereco' => 'Comprovante de endereço (conta ou boleto de luz, água, internet, condomínio etc. — últimos 3 meses)',
     'contrato_financiamento' => 'Contrato de financiamento do veículo (com o banco)',
     'crlv' => 'CRLV (Certificado de Registro e Licenciamento do Veículo)',
 ];

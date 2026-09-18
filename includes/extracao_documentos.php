@@ -47,7 +47,7 @@ const EXTRACAO_DOCUMENTO_CAMPOS = [
  */
 const EXTRACAO_DOCUMENTO_ESPERADO_DESCRICAO = [
     'cnh'                    => 'uma CNH (Carteira Nacional de Habilitação) ou documento de identidade com foto (RG) — documento de uma PESSOA, nunca do veículo',
-    'comprovante_endereco'   => 'um comprovante de endereço (conta de luz, água, telefone, internet ou documento similar em nome de alguém)',
+    'comprovante_endereco'   => 'um comprovante de endereço — qualquer conta, fatura ou BOLETO (luz, água, telefone, internet, condomínio, cartão de crédito, financiamento etc.) desde que mostre um endereço, em nome de alguém — não precisa ser em nome do próprio cliente (pode ser de um familiar, por exemplo)',
     'contrato_financiamento' => 'um contrato de financiamento de veículo com banco/financeira',
     'crlv'                   => 'um CRLV (Certificado de Registro e Licenciamento de Veículo — documento oficial do VEÍCULO, pode ser o CRLV-e digital)',
 ];
@@ -78,7 +78,7 @@ function extracaoDocumentoPrompt(string $tipo): string {
             . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","nome": "", "cpf": "", "rg": "", "cnh": ""}' . "\n"
             . '("cnh" é o número de registro da carteira de habilitação, se estiver visível — não confundir com o CPF.)',
 
-        'comprovante_endereco' => "Leia este comprovante de endereço (conta de luz, água, telefone, internet etc.) e extraia o endereço completo (rua, número, bairro, cidade, estado, CEP — o que estiver visível, numa linha só). NUNCA invente informação — se não conseguir ler com certeza, deixe vazio.{$checagemTipo}\n\n"
+        'comprovante_endereco' => "Leia este comprovante de endereço — pode ser qualquer conta, fatura ou BOLETO (luz, água, telefone, internet, condomínio, cartão de crédito, financiamento etc.), desde que mostre um endereço — e extraia o endereço completo (rua, número, bairro, cidade, estado, CEP — o que estiver visível, numa linha só). Um boleto de cobrança é um comprovante de endereço válido, não é um tipo de documento diferente. NUNCA invente informação — se não conseguir ler com certeza, deixe vazio.{$checagemTipo}\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
             . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","endereco": ""}',
 

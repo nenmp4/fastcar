@@ -1813,6 +1813,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   precisou lá. Testado servindo a página real em banco isolado: "Etapa 1
   de 4 — envie: CNH ou RG (documento de identidade com foto, frente e
   verso)" aparece certo no HTML renderizado.
+  **Boleto rejeitado como comprovante de endereço** (18/09/2026, achado
+  real do usuário: "quero colocar um comprovante de residência como
+  boleto e nao consigo") — a autochecagem de tipo do documento (fix de
+  17/09/2026, "IA identifica o TIPO do documento antes de extrair") usa
+  uma descrição do que é esperado em cada slot pra IA se autocorrigir; a
+  descrição de `comprovante_endereco`
+  (`EXTRACAO_DOCUMENTO_ESPERADO_DESCRICAO`, `includes/extracao_documentos.php`)
+  só citava "conta de luz, água, telefone, internet" como exemplo — um
+  boleto (de condomínio, cartão, financiamento etc., muito comum como
+  comprovante de residência no Brasil) não batia com nenhum desses
+  exemplos explícitos, então a IA podia concluir (errado) que não era o
+  documento certo e disparar o aviso forte de tipo divergente; o arquivo
+  já era salvo mesmo assim (o bloqueio nunca foi no upload em si), mas na
+  prática o cliente via um alerta vermelho dizendo que o arquivo estava
+  errado e ficava sem saber que podia simplesmente digitar o endereço e
+  seguir. Corrigido generalizando a descrição e o prompt de extração pra
+  deixar explícito que qualquer conta, fatura OU BOLETO conta como
+  comprovante de endereço válido, desde que mostre um endereço — o
+  critério real nunca foi "precisa ser uma dessas 4 contas específicas".
+  Rótulos visíveis ao cliente (`includes/documentos.php::TIPOS_DOCUMENTOS_CLIENTE`,
+  `public/documentos.php`) também ficaram mais explícitos ("conta ou
+  boleto de luz, água, internet, condomínio etc."), mesmo espírito do fix
+  de rótulo CNH/RG de 17/09/2026. Mudança de prompt (julgamento de IA)
+  não é 100% testável contra servidor fake pra confirmar que a IA vai
+  aceitar um boleto real de verdade — validação final só na próxima
+  conversa/upload real —, mas testado: função isolada confirmando que o
+  texto novo menciona "BOLETO" explicitamente, e o pipeline completo
+  (`extrairDadosDocumentoComIA()` → parsing do JSON → `_documento_correto`)
+  rodando normal simulando a IA reconhecendo um boleto como comprovante de
+  endereço válido e extraindo o endereço certo.
   **Comprovante de pagamento e laudo de avaliação viraram opcionais**
   (17/09/2026, "vamos deixar opcional o laudo e comprovante de pagamento
   opcional para fechar pasta"), motivo de negócio explicado no mesmo dia

@@ -19,7 +19,7 @@ const TIPOS_DOCUMENTOS_CLIENTE = [
     // separado na revisão, e a CNH já era opcional — só o rótulo do passo
     // de upload não deixava isso óbvio pra quem não tem CNH).
     'cnh'                    => 'CNH ou RG (documento de identidade com foto, frente e verso)',
-    'comprovante_endereco'   => 'Comprovante de endereço (últimos 3 meses)',
+    'comprovante_endereco'   => 'Comprovante de endereço (conta ou boleto de luz, água, internet, condomínio etc. — últimos 3 meses)',
     'contrato_financiamento' => 'Contrato de financiamento do veículo (com o banco)',
     // CRLV (16/09/2026, "falta o documento do carro crlv") — o próprio
     // contrato-mestre de compra (cláusula 2.2, includes/contratos_pdf.php)
