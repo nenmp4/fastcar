@@ -2514,6 +2514,38 @@ segue no schema sem uso novo, não removida sem ganho real),
   ANTES da migração e some corretamente DEPOIS; oportunidade fechada há
   45 dias (fora do mês atual) corretamente NUNCA conta em "este mês",
   mesmo depois da migração; migração idempotente rodando 2x.
+  **Nenhum jeito de localizar cliente que chegou até a pasta fechada**
+  (18/09/2026, achado real do usuário: "em dasbord clientes que conluiio
+  toda etapa ate pasta como consultor pode localizar nçao tem essa
+  opção") — a nav de etapas, a busca (`?q=`) e a tabela inteira do
+  dashboard sempre foram hard-limitadas a `ETAPAS_ATIVAS` (as 6 etapas do
+  funil em andamento, `whatsapp`→`presencial`) — a única tela que já
+  listava `etapa='fechado'` é a Frota (`admin/veiculos.php`), restrita ao
+  `super_admin`, então consultor (e supervisor, mesmo gap) não tinha
+  NENHUM caminho pra achar um cliente já fechado a partir do dashboard,
+  nem pela busca. Adicionado item "✅ Fechadas (N)" na nav de
+  `admin/index.php` — monta seu próprio escopo de etapa pro `WHERE`
+  (`['fechado']` em vez de `ETAPAS_ATIVAS`) quando selecionado, com
+  contador próprio e busca funcionando igual dentro dele. Pro consultor,
+  filtra por `fechado_por` (não `responsavel_id`) — mesmo campo que o
+  card "Fechadas este mês" do próprio dashboard já usa
+  (`dashboardConsultor()`, ver bullet acima), a pessoa que efetivamente
+  fechou o negócio, consistente com o resto da tela; pra
+  super_admin/supervisor, mostra a empresa inteira (sem filtro de dono),
+  igual ao resto do dashboard. Bug lateral corrigido no caminho: a query
+  de contagem da nav das etapas ATIVAS reaproveitava a mesma variável do
+  filtro atual pro `IN(...)`, que passou a variar de tamanho (1 elemento
+  quando "Fechadas" está selecionado) — quebraria o número de binds;
+  corrigido com uma variável própria, sempre do tamanho de
+  `ETAPAS_ATIVAS`, independente do filtro ativo no momento. Testado em
+  banco isolado com Playwright, 2 consultores + super_admin: nav do
+  consultor A mostra "Fechadas (2)" (só as 2 que ele mesmo fechou, não
+  conta a fechada pelo consultor B); clicar em Fechadas lista as 2
+  certas, nunca a do outro consultor nem um cliente ainda em etapa ativa;
+  busca por nome funciona dentro da aba Fechadas; aba padrão
+  (Minhas/ativas) continua mostrando só oportunidade ativa, sem a fechada
+  aparecer lá (sem regressão); super_admin vê "Fechadas (3)" (empresa
+  inteira) e as 3 linhas certas ao clicar.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,

@@ -19,19 +19,38 @@ $souDono = $perfil === 'consultor';
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
-$placeholders = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+
+// 18/09/2026, achado real do usuário: "em dasbord clientes que conluiio
+// toda etapa ate pasta como consultor pode localizar nçao tem essa opção"
+// — o dashboard inteiro (nav de etapas, busca, tabela) sempre foi
+// hard-limitado a ETAPAS_ATIVAS; um cliente que chegou até 'fechado'
+// (pasta fechada, bloco 8) literalmente não aparecia em lugar nenhum
+// daqui, nem pela busca — a única tela que lista `etapa='fechado'` é a
+// Frota (admin/veiculos.php), restrita ao super_admin, então consultor
+// (e supervisor, mesmo gap) não tinha NENHUM jeito de achar um cliente já
+// fechado a partir do dashboard. "✅ Fechadas" na nav abaixo busca fora do
+// conjunto de etapas ativas — monta sua própria lista de etapas pro WHERE
+// em vez de sempre usar ETAPAS_ATIVAS.
+$etapaBuscandoFechadas = $etapaFiltro === 'fechado';
+$etapasEscopo = $etapaBuscandoFechadas ? ['fechado'] : ETAPAS_ATIVAS;
+$placeholders = implode(',', array_fill(0, count($etapasEscopo), '?'));
 
 // WHERE construído uma vez só e reaproveitado pra contar o total ANTES de
 // paginar (precisa ser o total que bate com ESSE filtro específico —
 // etapa + dono + busca — não $totalAtivas mais abaixo, que é sempre a soma
 // de TODAS as etapas ativas, serve só pro contador "Todas (N)" da nav).
 $where = "WHERE o.etapa IN ({$placeholders})";
-$params = ETAPAS_ATIVAS;
+$params = $etapasEscopo;
 if ($souDono) {
-    $where .= " AND o.responsavel_id = ?";
+    // "Fechadas" filtra por fechado_por (quem executou o fechamento —
+    // mesmo campo que dashboardConsultor() já usa pro card "Fechadas este
+    // mês", ver includes/dashboard.php) — as etapas ativas continuam
+    // filtrando por responsavel_id (quem está cuidando da carteira em
+    // aberto agora), que é um conceito diferente.
+    $where .= $etapaBuscandoFechadas ? " AND o.fechado_por = ?" : " AND o.responsavel_id = ?";
     $params[] = $meuId;
 }
-if ($etapaFiltro && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
+if ($etapaFiltro && !$etapaBuscandoFechadas && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
     $where .= " AND o.etapa = ?";
     $params[] = $etapaFiltro;
 }
@@ -64,9 +83,15 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $oportunidades = $stmt->fetchAll();
 
+// Contadores da nav das etapas ATIVAS — sempre contra ETAPAS_ATIVAS
+// (nunca $placeholders/$etapasEscopo, que agora podem estar reduzidos a
+// só 'fechado' quando esse filtro está selecionado, ver acima) — a nav
+// precisa mostrar as 6 etapas ativas + seus contadores independente de
+// qual filtro está ativo no momento.
+$placeholdersAtivas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
 $sqlContagem = "SELECT o.etapa, COUNT(*) AS total FROM oportunidades o
                 JOIN clientes c ON c.id = o.cliente_id
-                WHERE o.etapa IN ({$placeholders})";
+                WHERE o.etapa IN ({$placeholdersAtivas})";
 $paramsContagem = ETAPAS_ATIVAS;
 if ($souDono) {
     $sqlContagem .= " AND o.responsavel_id = ?";
@@ -85,6 +110,24 @@ $stmtContagem = $db->prepare($sqlContagem);
 $stmtContagem->execute($paramsContagem);
 $contagemPorEtapa = array_column($stmtContagem->fetchAll(), 'total', 'etapa');
 $totalAtivas = array_sum($contagemPorEtapa);
+
+// Contador do badge "✅ Fechadas" — mesmo filtro por dono (fechado_por)/
+// busca do bloco "Fechadas" acima, independente do filtro atual.
+$sqlFechadas = "SELECT COUNT(*) FROM oportunidades o
+                JOIN clientes c ON c.id = o.cliente_id
+                WHERE o.etapa = 'fechado'";
+$paramsFechadas = [];
+if ($souDono) {
+    $sqlFechadas .= " AND o.fechado_por = ?";
+    $paramsFechadas[] = $meuId;
+}
+if ($busca !== '') {
+    $sqlFechadas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
+    array_push($paramsFechadas, $like, $like, $like, $like, $like);
+}
+$stmtFechadas = $db->prepare($sqlFechadas);
+$stmtFechadas->execute($paramsFechadas);
+$totalFechadas = (int)$stmtFechadas->fetchColumn();
 
 $stats = match ($perfil) {
     'consultor' => dashboardConsultor($meuId),
@@ -149,6 +192,9 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
             <?= e(etapaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
         </a>
     <?php endforeach; ?>
+    <a href="/admin/index.php?etapa=fechado<?= $qsBusca ?>" class="<?= $etapaFiltro === 'fechado' ? 'ativo' : '' ?>">
+        ✅ Fechadas (<?= $totalFechadas ?>)
+    </a>
 </nav>
 
 <main>
