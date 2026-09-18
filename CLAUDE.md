@@ -2650,6 +2650,42 @@ segue no schema sem uso novo, não removida sem ganho real),
   banco isolado com Playwright: dashboard mostra a data/hora certa de uma
   oportunidade semeada; listagem de clientes mostra a data/hora certa de
   um cliente semeado.
+  **Aba "❌ Encerradas" (leads perdidos/sem perfil)** (18/09/2026, pedido
+  direto: "colocar os leads de encerrar oportunidade em aba para futuras
+  consultas") — achado ao investigar: `perdido`/`sem_perfil` nunca
+  estiveram em `ETAPAS_ATIVAS` nem na aba "✅ Fechadas" (só `etapa='fechado'`,
+  bloco 8), então um lead encerrado sem virar compra literalmente sumia do
+  dashboard pra sempre — nenhuma tela mostrava, nem a busca achava (ex:
+  cliente que recusou vender desta vez, mas pode voltar meses depois com
+  outro veículo — não tinha como nem confirmar que ele já tinha conversado
+  antes). Nova aba "❌ Encerradas (N)" na nav de `admin/index.php`, mesmo
+  padrão exato da aba "✅ Fechadas" (`?etapa=encerradas` monta seu próprio
+  escopo `['perdido', 'sem_perfil']` pro `WHERE` em vez de `ETAPAS_ATIVAS`),
+  mas filtrando por `responsavel_id` (não `fechado_por`, que só existe pra
+  transição de verdade pra `'fechado'` — `mudarEtapa()` nunca preenche
+  isso pra `perdido`/`sem_perfil`, só quem já era responsável continua
+  sendo). Busca (`?q=`) funciona igual dentro da aba. Cada linha mostra
+  `motivo_perda` (o texto que o consultor/IA registrou ao encerrar) e uma
+  linha extra "encerrado {data}" na coluna Recebido em, usando
+  `updated_at` como proxy (não existe uma coluna própria tipo
+  `data_perda` — `mudarEtapa()` já atualiza `updated_at` na transição,
+  suficiente pra esse fim). **Bug lateral corrigido no caminho**: a
+  badge vermelha de "⚠️ atrasada" (coluna Próxima ação) era calculada
+  igual pra QUALQUER etapa, inclusive fechado/perdido/sem_perfil — um
+  lead já encerrado com `proxima_acao_em` velho (resto de quando a etapa
+  ainda estava ativa) aparecia com destaque de atraso, como se ainda
+  precisasse de ação urgente; corrigido restringindo o cálculo de
+  `$atrasada` a `in_array($op['etapa'], ETAPAS_ATIVAS, true)` — nunca
+  mais destaca atraso numa oportunidade já resolvida, no Fechadas
+  também, não só no Encerradas novo. Testado em banco isolado com
+  Playwright, 2 consultores + super_admin: nav do Carlos mostra
+  "Encerradas (2)" (1 perdido + 1 sem_perfil dele, não conta o perdido
+  do Rafael); aba lista os 2 certos com motivo_perda e data de
+  encerramento visíveis, sem badge de atraso mesmo com
+  `proxima_acao_em` no passado; aba padrão (Minhas) continua sem mostrar
+  os encerrados (sem regressão); busca dentro da aba filtra certo;
+  super_admin vê "Encerradas (3)" (empresa inteira) e as 3 linhas ao
+  clicar.
   **Lead "quente" destacado e priorizado + cards de estatística clicáveis**
   (18/09/2026, 2 pedidos diretos: "classifica os ledas quentes bem
   destacados prioriza em com os primeiros" e "coloca clicavil os cads tipo

@@ -61,13 +61,27 @@ switch ($filtroEspecial) {
         $extraWhere = " AND o.data_compra >= date('now','localtime','start of month')";
         break;
     default:
-        $etapasEscopo = ($etapaFiltro === 'fechado') ? ['fechado'] : ETAPAS_ATIVAS;
+        $etapasEscopo = match ($etapaFiltro) {
+            'fechado' => ['fechado'],
+            // 18/09/2026, "colocar os leads de encerrar oportunidade em aba
+            // para futuras consultas" — perdido/sem_perfil nunca estavam em
+            // ETAPAS_ATIVAS nem na aba Fechadas (só etapa='fechado'), então
+            // um lead encerrado sem virar compra literalmente sumia do
+            // dashboard pra sempre, sem nenhum jeito de consultar depois
+            // (ex: cliente que recusou desta vez pode voltar meses depois).
+            'encerradas' => ['perdido', 'sem_perfil'],
+            default => ETAPAS_ATIVAS,
+        };
 }
 // "Escopo fechado" (fechado_por em vez de responsavel_id, coluna extra de
 // data de fechamento na tabela) vale tanto pra aba "✅ Fechadas" quanto pro
 // card "Fechadas este mês" (?filtro=fechado_mes) — os dois terminam no
 // mesmo conjunto de etapa ('fechado').
 $etapaBuscandoFechadas = $etapasEscopo === ['fechado'];
+// "Escopo encerradas" filtra por responsavel_id igual às etapas ativas
+// (nunca teve um "fechado_por" próprio — só a transição pra 'fechado' grava
+// isso) — quem estava com a oportunidade quando ela foi perdida/desqualificada.
+$etapaBuscandoEncerradas = $etapasEscopo === ['perdido', 'sem_perfil'];
 $placeholders = implode(',', array_fill(0, count($etapasEscopo), '?'));
 
 // WHERE construído uma vez só e reaproveitado pra contar o total ANTES de
@@ -171,6 +185,25 @@ $stmtFechadas = $db->prepare($sqlFechadas);
 $stmtFechadas->execute($paramsFechadas);
 $totalFechadas = (int)$stmtFechadas->fetchColumn();
 
+// Contador do badge "❌ Encerradas" — mesmo padrão do de Fechadas acima,
+// mas filtrado por responsavel_id (não fechado_por, que só existe pro
+// fechamento de verdade).
+$sqlEncerradas = "SELECT COUNT(*) FROM oportunidades o
+                JOIN clientes c ON c.id = o.cliente_id
+                WHERE o.etapa IN ('perdido', 'sem_perfil')";
+$paramsEncerradas = [];
+if ($souDono) {
+    $sqlEncerradas .= " AND o.responsavel_id = ?";
+    $paramsEncerradas[] = $meuId;
+}
+if ($busca !== '') {
+    $sqlEncerradas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
+    array_push($paramsEncerradas, $like, $like, $like, $like, $like);
+}
+$stmtEncerradas = $db->prepare($sqlEncerradas);
+$stmtEncerradas->execute($paramsEncerradas);
+$totalEncerradas = (int)$stmtEncerradas->fetchColumn();
+
 $stats = match ($perfil) {
     'consultor' => dashboardConsultor($meuId),
     // supervisor vê a mesma visão geral do super_admin (regra do
@@ -236,6 +269,9 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php endforeach; ?>
     <a href="/admin/index.php?etapa=fechado<?= $qsBusca ?>" class="<?= $etapaFiltro === 'fechado' && $filtroEspecial === '' ? 'ativo' : '' ?>">
         ✅ Fechadas (<?= $totalFechadas ?>)
+    </a>
+    <a href="/admin/index.php?etapa=encerradas<?= $qsBusca ?>" class="<?= $etapaFiltro === 'encerradas' && $filtroEspecial === '' ? 'ativo' : '' ?>">
+        ❌ Encerradas (<?= $totalEncerradas ?>)
     </a>
 </nav>
 
@@ -368,7 +404,11 @@ if ($filtroEspecialLabel !== ''): ?>
         <tr><td colspan="7"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
-        <?php $atrasada = $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
+        <?php // "Atrasada" só faz sentido pra oportunidade ainda em aberto —
+              // 'próxima ação' de um lead já fechado/perdido/sem_perfil é
+              // resto de quando a etapa ainda estava ativa, não uma
+              // pendência de verdade pra destacar em vermelho aqui. ?>
+        <?php $atrasada = in_array($op['etapa'], ETAPAS_ATIVAS, true) && $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
         <?php $quente = $op['temperatura_lead'] === 'quente'; ?>
         <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
             <td>
@@ -386,10 +426,17 @@ if ($filtroEspecialLabel !== ''): ?>
                 <?= $op['created_at'] ? date('d/m/Y H:i', strtotime($op['created_at'])) : '—' ?>
                 <?php if ($etapaBuscandoFechadas && $op['data_compra']): ?>
                     <br><small>fechado <?= date('d/m/Y', strtotime($op['data_compra'])) ?></small>
+                <?php elseif ($etapaBuscandoEncerradas && $op['updated_at']): ?>
+                    <br><small>encerrado <?= date('d/m/Y', strtotime($op['updated_at'])) ?></small>
                 <?php endif; ?>
             </td>
             <td><?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>
-            <td><?= e(etapaLabel($op['etapa'])) ?></td>
+            <td>
+                <?= e(etapaLabel($op['etapa'])) ?>
+                <?php if ($etapaBuscandoEncerradas && $op['motivo_perda']): ?>
+                    <br><small><?= e($op['motivo_perda']) ?></small>
+                <?php endif; ?>
+            </td>
             <td><?= e($op['responsavel_nome'] ?? '—') ?></td>
             <td>
                 <?php if ($op['proxima_acao_em']): ?>
