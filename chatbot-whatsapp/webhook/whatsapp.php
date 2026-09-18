@@ -96,9 +96,35 @@ if ($instancia['tipo'] === 'desconhecida') {
 
 // Instância de vendas (17/09/2026) tem processador PRÓPRIO — nunca passa
 // pela lógica de compra (criar oportunidade/cliente), nem o contrário.
-$resultado = $instancia['tipo'] === 'vendas'
-    ? processarMensagemVendasZapi($payload, $instancia)
-    : processarMensagemZapi($payload, $instancia);
+//
+// 18/09/2026, achado real de produção (erro em admin/saude.php + usuário
+// relatando WhatsApp fora do ar por um tempo): um SQLITE_BUSY genuíno
+// ("database is locked", mesmo com PRAGMA busy_timeout=5000 — contenção
+// de escrita real que durou mais que os 5s de espera do SQLite, ex:
+// rajada de mensagens concorrentes) dentro de
+// processarMensagemZapi()/registrarMensagem() propagava sem NENHUM
+// try/catch por aqui, virando PHP Fatal Error não tratado — quebrando o
+// contrato "sempre responde 200 rápido" documentado no topo deste
+// arquivo (nenhum outro ponto do webhook protegia essa chamada). Capturado
+// explicitamente agora: loga o erro de verdade (mesmo arquivo de sempre,
+// storage/logs/whatsapp_webhook_*.log) e responde HTTP 500 (nunca "ok":
+// true) — deixa o Z-API reentregar o mesmo webhook depois, o
+// comportamento que o próprio código já documenta como esperado pra
+// falha real ("reenvia em loop se não confirmar"), só sem o crash cru
+// (que podia deixar o worker do PHP-FPM preso nos 5s do busy_timeout e,
+// numa rajada, esgotar o pool — hipótese plausível pro "fora do ar" por
+// um tempo relatado, não confirmável sem acesso aos logs/métricas da
+// VPS).
+try {
+    $resultado = $instancia['tipo'] === 'vendas'
+        ? processarMensagemVendasZapi($payload, $instancia)
+        : processarMensagemZapi($payload, $instancia);
+} catch (Throwable $e) {
+    log_webhook('Erro ao processar mensagem (' . get_class($e) . '): ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'erro' => 'erro_interno']);
+    exit;
+}
 
 if ($resultado['ignored'] === 'no_phone') {
     log_webhook('Webhook sem phone, ignorando. Payload: ' . substr($raw, 0, 300));

@@ -108,6 +108,48 @@ segue no schema sem uso novo, não removida sem ganho real),
   `chatbot-whatsapp/includes/mensagens.php` (lógica compartilhada com o
   simulador de CLI `chatbot-whatsapp/simulate.php`, útil pra testar o bot
   sem precisar de credencial Z-API real)
+  **PHP Fatal Error não tratado numa contenção real de escrita do SQLite
+  derrubava o webhook** (18/09/2026, achado real de produção via
+  `admin/saude.php` — "Erros recentes" mostrando
+  `PDOException: SQLSTATE[HY000]: General error: 5 database is locked` —
+  seguido do próprio usuário relatando "voltou whatsapp" / "liberam do
+  bloque de ontem", sugerindo o bot ficou fora do ar por um tempo até se
+  recuperar sozinho). Investigação: `PRAGMA busy_timeout=5000` +
+  `journal_mode=WAL` estão corretos em TODA conexão do projeto (via
+  `includes/db.php::getDB()`, forçado pelo guard `sqlite-sem-busy-timeout`
+  do smoke — auditado de novo, nenhuma conexão avulsa sem essa proteção),
+  e as transações de escrita (`mudarEtapa()`, `mudarEtapaVenda()`, fila de
+  leads/vendas, financeiro) nunca fazem chamada de rede *dentro* do
+  `beginTransaction()`/`commit()` — não era o mesmo bug de sempre. O erro
+  real é contenção de escrita que durou MAIS que os 5s de espera (rajada
+  de mensagens concorrentes, por exemplo) — só que a chamada mais
+  concorrida do sistema, `processarMensagemZapi()`/
+  `processarMensagemVendasZapi()` (`chatbot-whatsapp/webhook/whatsapp.php`,
+  dispara a cada mensagem recebida — inclui `registrarMensagem()`, que é a
+  própria gravação de dedup em `whatsapp_mensagens`), nunca teve NENHUM
+  try/catch ao redor, ao contrário de toda outra escrita crítica do
+  projeto — uma exceção aí virava PHP Fatal Error cru, quebrando o
+  contrato "sempre responde 200 rápido" documentado no topo do próprio
+  arquivo (Z-API reentrega se não receber 200 — um fatal error sem
+  resposta válida não cumpre isso). Corrigido envolvendo a chamada num
+  try/catch — loga no mesmo `storage/logs/whatsapp_webhook_*.log` de
+  sempre e responde HTTP 500 (nunca `"ok":true`) — deixa o Z-API
+  reentregar depois, comportamento que o próprio arquivo já documentava
+  como esperado pra falha real, só sem o crash cru. ⚠️ Hipótese não
+  confirmável sem acesso aos logs/métricas da VPS, mas plausível pro "fora
+  do ar por mais tempo" relatado: numa rajada de mensagens concorrentes,
+  cada worker do PHP-FPM ficava preso até 5s (o busy_timeout) esperando a
+  mesma trava antes de crashar — o suficiente pra esgotar o pool de
+  workers numa VPS pequena (2 vCPU/4GB, pendência #1), não só derrubar 1
+  mensagem. Testado contra um lock real (não simulado): 2ª conexão
+  segurando `BEGIN IMMEDIATE` por 10s enquanto o webhook tentava escrever
+  — a request esperou ~5s (busy_timeout) e bateu no
+  `SQLSTATE[HY000] General error 5` de verdade; ANTES da correção isso
+  derrubava o script (Fatal Error, sem resposta válida pro Z-API); DEPOIS,
+  HTTP 500 limpo (`{"ok":false,"erro":"erro_interno"}`), log gravado com a
+  mensagem exata, e **nenhuma** entrada nova em `php_errors.log` (o card
+  de Saúde não veria mais esse caso como Fatal Error) — caminho normal
+  (sem contenção) continua idêntico, mensagem salva certa, resposta 200.
 - **Página pública institucional (`index.php`, raiz do domínio)** —
   17/09/2026, "Faz pagina publica fastcar solutions para verificação no
   google" → confirmado com o usuário: é pra dar suporte à verificação do
