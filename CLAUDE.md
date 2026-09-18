@@ -3425,7 +3425,23 @@ testado com servidor fake local — nunca contra o serviço real:
 - **API Asaas** (`includes/asaas.php`, `api/asaas_webhook.php`,
   `cron/asaas_sync.php`, 17/09/2026) — construída a partir da documentação
   pública da API v3 (docs.asaas.com), nunca confirmada contra uma
-  conta/credencial real. Pontos específicos a confirmar quando a chave
+  conta/credencial real até 18/09/2026. **✅ 1ª importação real confirmada
+  em produção, 18/09/2026** ("puxamos os dados do assas", print de
+  `admin/financeiro.php` mostrando "Cobrança Asaas #pay_1ftjb3k0lmzjoxsx"
+  já listada em "Contas a vencer nos próximos 7 dias", R$ 2.200,00,
+  vencimento 18/09) — confirma que **ponto (1) abaixo** (header
+  `access_token`) está certo: a chave real autenticou e `GET /payments`
+  (via `admin/financeiro-asaas.php`, botão "Importar cobranças") trouxe
+  cobranças de verdade pra `fin_lancamentos` (`origem='asaas'`), aparecendo
+  certo no card "Contas a vencer" do dashboard financeiro. Formato do ID
+  (`pay_...`) bate com o assumido em `asaas_payment_id`. **Ainda não
+  confirmados** pelo mesmo print: campos de parcela
+  (`installmentNumber`/`installmentCount`) — a cobrança do print não é
+  visivelmente parcelada —, o header do webhook (`asaas-access-token`,
+  nada indica que o webhook já foi cadastrado/disparado, só a importação
+  manual via botão), e o fluxo de `POST /payments` com `installmentCount>1`
+  (`asaasGerarCobrancaParceladaVenda()`, cobrança nova gerada por aqui, não
+  importada de lá). Pontos específicos a confirmar quando a chave
   chegar: (1) nome exato do header de autenticação (`access_token` —
   documentado, mas nunca testado contra o serviço real); (2) nomes de campo
   no payload de `/payments` — `installmentNumber`/`installmentCount`
