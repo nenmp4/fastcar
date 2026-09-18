@@ -3654,12 +3654,47 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
    simulando um banco com o schema ANTIGO (rejeitava `supervisor` antes,
    aceitava depois, dados de usuários existentes preservados, idempotente
    numa 2ª rodada).
-5. **Anúncio/tráfego (bloco 1)** — combinado em 12/09/2026: anúncio "Clique
-   para WhatsApp" do Meta — a WhatsApp Cloud API manda um `referral`
-   (headline, source_id) na 1ª mensagem, capturado automaticamente em
-   `extrairOrigemAnuncio()`. Sem link/UTM manual. Fica em aberto até validar
-   contra uma instância Z-API real e um clique de anúncio de teste (ver
-   seção de validação em produção abaixo) — formato exato ainda não confirmado.
+5. ~~**Anúncio/tráfego (bloco 1)**~~ — ✅ decidido em 12/09/2026 (anúncio
+   "Clique para WhatsApp" do Meta, sem link/UTM manual, capturado
+   automaticamente na 1ª mensagem via `extrairOrigemAnuncio()`), **bug real
+   corrigido em 18/09/2026**: `admin/origem_leads.php` mostrando 137/137
+   oportunidades como "(direto / sem anúncio)" mesmo com campanhas reais
+   rodando no Meta Ads Manager (print mostrando 4 campanhas ativas com
+   conversas de verdade — confirmado com o usuário: "sim, tem clique de
+   anúncio real chegando"). Causa raiz: a 1ª implementação checava
+   `referral`/`message.referral` — esse é o formato da WhatsApp **Cloud
+   API oficial** da Meta (BSP registrado, webhook direto do Graph API). A
+   Z-API **não é isso**: conecta via protocolo padrão do WhatsApp
+   (WhatsApp Web/multi-device, o mesmo de qualquer app comum), nunca recebe
+   o objeto `referral` da Meta — o clique em anúncio chega por um mecanismo
+   diferente, que já faz parte do próprio protocolo do WhatsApp (é o que
+   desenha o card de preview do anúncio em cima da 1ª mensagem em qualquer
+   WhatsApp comum, oficial ou não). Confirmado via busca na documentação
+   real da Z-API (domínio bloqueado pra leitura direta neste sandbox, mesma
+   limitação de sempre — confirmado só via snippet de busca, nunca a página
+   inteira): formato certo é `contextInfo.externalAdReply` (`title`,
+   `sourceType: "ad"`, `sourceId`, `ctwaClid`, `sourceUrl`...), não
+   `referral`. `extrairOrigemAnuncio()` (`chatbot-whatsapp/includes/mensagens.php`)
+   reescrita pra checar `contextInfo.externalAdReply` primeiro (raiz do
+   payload OU dentro de `message`, mesma cautela de sempre com formato não
+   confirmado), mantendo o `referral` antigo como fallback secundário (nunca
+   atrapalha manter, cobre o caso de a Z-API mudar de mecanismo ou o projeto
+   trocar de provedor no futuro). Sinal parcial (`contextInfo.conversionSource`/
+   `entryPointConversionSource` presentes sem `externalAdReply` completo)
+   loga o bloco cru em `storage/logs/whatsapp_origem_anuncio_debug.log`
+   (novo `logDiagnosticoOrigemAnuncio()`, mesmo padrão de
+   `logDiagnosticoMidiaZapi()`) em vez de continuar chutando às cegas.
+   **Sem backfill possível**: o payload bruto nunca foi logado nas
+   mensagens que já chegaram (só em falha), então os 137 leads já marcados
+   "direto" antes da correção ficam assim pra sempre — não tem como
+   recuperar retroativamente qual anúncio gerou cada um. Testado com
+   função isolada (5 cenários: `contextInfo.externalAdReply` na raiz,
+   aninhado em `message.contextInfo`, fallback `referral` antigo ainda
+   funcionando, sinal parcial gravando o log de diagnóstico, mensagem
+   comum continuando "direto") — ⚠️ ainda não confirmado contra um clique
+   de anúncio real depois dessa correção (mesma ressalva de sempre pra
+   formato achado só via busca), validar assim que o próximo lead de
+   anúncio chegar e conferir `admin/origem_leads.php`.
 6. ~~**Módulo de contrato**~~ — ✅ decidido e implementado, **COMPRA e VENDA**:
    modelo real de compra recebido do Jean (`01_Contrato_Mestre_FASTCAR_Compra_Quitacao_Futura.docx`,
    30 cláusulas + Quadro-Resumo), transcrito pra geração via FPDF puro
@@ -3811,10 +3846,16 @@ testado com servidor fake local — nunca contra o serviço real:
   de verdade, esse log revela o nome real do campo pra travar
   `extrairUrlMidia()` nele em vez de continuar tentando adivinhar. Remover
   esse log depois que o formato for confirmado e corrigido de vez.
-- **Campo `referral` do clique em anúncio Meta Ads** — `extrairOrigemAnuncio()`
-  aceita tanto `referral` solto quanto `message.referral`, mas o nome/formato
-  exato dos campos (`source_id`, `headline`, `ctwa_clid`) só dá pra confirmar
-  com um clique de anúncio de teste passando pela Z-API real.
+- **Campo `contextInfo.externalAdReply` do clique em anúncio Meta Ads** —
+  `extrairOrigemAnuncio()` corrigida em 18/09/2026 (ver pendência #5): trocou
+  de `referral` (formato da WhatsApp Cloud API oficial, que a Z-API não usa)
+  pra `contextInfo.externalAdReply` (`title`, `sourceId`, `sourceType`,
+  `ctwaClid`), confirmado via busca na documentação real da Z-API — nunca
+  contra uma instância real ainda (o domínio da doc está bloqueado pra
+  leitura direta neste sandbox). Validar assim que o próximo clique de
+  anúncio real chegar: conferir `storage/logs/whatsapp_origem_anuncio_debug.log`
+  (só grava se um sinal parcial de anúncio aparecer sem bater com o parsing
+  atual) e `admin/origem_leads.php` (deveria parar de mostrar 100% "direto").
 - **API de marcas da FIPE (BrasilAPI, v1)** — `includes/fipe.php` só foi
   testado contra um servidor fake local simulando `/marcas/v1/carros`;
   validar o formato de resposta real assim que rodar com internet livre.

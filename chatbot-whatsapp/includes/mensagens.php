@@ -60,30 +60,87 @@ function extrairTexto(array $payload): ?string {
 /**
  * Extrai a atribuição de anúncio (bloco 1 do funil) de um clique em
  * anúncio "Clique para WhatsApp" do Meta — decisão confirmada com o Jean
- * (pendência #5 do CLAUDE.md). A WhatsApp Cloud API manda um objeto
- * `referral` na primeira mensagem originada de um anúncio desses:
- * { source_id, source_type: "ad"|"post", source_url, headline, body,
- *   media_type, ctwa_clid, ... }. A Z-API deve repassar isso no webhook,
- * mas o formato exato (nome do campo, se vem plano ou aninhado) só dá pra
- * confirmar contra uma instância real — sem instância ainda (pendência #1
- * do CLAUDE.md), então esta função aceita tanto `referral` quanto
- * `message.referral` (variações comuns de proxy de webhook) e nunca
- * lança: sem `referral` no payload, retorna tudo vazio (contato direto,
- * sem anúncio) — nunca inventa atribuição que não veio no evento.
+ * (pendência #5 do CLAUDE.md).
+ *
+ * 18/09/2026, achado real: `admin/origem_leads.php` mostrando 137/137
+ * oportunidades como "(direto / sem anúncio)" mesmo com campanhas reais
+ * rodando no Meta Ads Manager (confirmado com o usuário — "sim, tem
+ * clique de anúncio real chegando"). Causa raiz: a 1ª versão só checava
+ * `referral`/`message.referral` — esse é o formato da WhatsApp **Cloud
+ * API oficial** da Meta (BSP registrado, webhook direto do Graph API). A
+ * Z-API **não é isso**: ela conecta via protocolo padrão do WhatsApp
+ * (WhatsApp Web/multi-device, o mesmo que qualquer app comum usa), nunca
+ * recebe o objeto `referral` da Meta. O clique em anúncio chega por um
+ * mecanismo diferente, que faz parte do PRÓPRIO protocolo do WhatsApp (é
+ * o que desenha aquele card de preview do anúncio em cima da 1ª mensagem,
+ * em qualquer WhatsApp comum) — confirmado via busca na documentação
+ * real da Z-API: `contextInfo.externalAdReply`
+ * (`title`, `body`, `sourceType: "ad"`, `sourceId`, `sourceUrl`,
+ * `ctwaClid`, `mediaType`...), não `referral`. Formato só confirmado via
+ * busca (o domínio da doc está bloqueado pra leitura direta neste
+ * sandbox, mesma limitação de sempre) — nunca contra uma instância real
+ * ainda, então mantém tolerância a variação de formato: aceita
+ * `contextInfo` tanto na raiz do payload quanto dentro de `message`
+ * (mesma cautela já usada nos outros campos incertos deste arquivo), e
+ * preserva o `referral` antigo como fallback secundário (nunca faz mal
+ * manter, e cobre o caso de a Z-API mudar de mecanismo ou o projeto trocar
+ * de provedor no futuro pra um BSP oficial). Nunca lança: sem nenhum dos
+ * dois formatos, retorna tudo vazio (contato direto) — nunca inventa
+ * atribuição que não veio no evento.
  */
 function extrairOrigemAnuncio(array $payload): array {
-    $referral = $payload['referral'] ?? $payload['message']['referral'] ?? null;
-    if (!is_array($referral) || empty($referral['source_id'])) {
-        return ['canal_origem' => '', 'campanha_origem' => '', 'anuncio_origem' => ''];
+    $contextInfo = $payload['contextInfo'] ?? $payload['message']['contextInfo'] ?? [];
+    $ad = $contextInfo['externalAdReply'] ?? $payload['externalAdReply'] ?? null;
+
+    if (is_array($ad) && (!empty($ad['sourceId']) || ($ad['sourceType'] ?? '') === 'ad')) {
+        return [
+            'canal_origem' => 'meta_ads',
+            // title é o texto do anúncio exibido — mais legível que só um ID
+            // pra identificar "de qual campanha" na hora de olhar o relatório.
+            'campanha_origem' => (string)($ad['title'] ?? ''),
+            'anuncio_origem' => (string)($ad['sourceId'] ?? $ad['ctwaClid'] ?? ''),
+        ];
     }
 
-    return [
-        'canal_origem' => 'meta_ads',
-        // headline é o texto do anúncio exibido — mais legível que só um ID
-        // pra identificar "de qual campanha" na hora de olhar o relatório.
-        'campanha_origem' => (string)($referral['headline'] ?? ''),
-        'anuncio_origem' => (string)($referral['source_id'] ?? $referral['ctwa_clid'] ?? ''),
-    ];
+    // Fallback pro formato da WhatsApp Cloud API oficial (referral) — a
+    // Z-API não usa isso hoje (ver comentário acima), mas mantém por
+    // segurança caso o provedor mude de mecanismo no futuro.
+    $referral = $payload['referral'] ?? $payload['message']['referral'] ?? null;
+    if (is_array($referral) && !empty($referral['source_id'])) {
+        return [
+            'canal_origem' => 'meta_ads',
+            'campanha_origem' => (string)($referral['headline'] ?? ''),
+            'anuncio_origem' => (string)($referral['source_id'] ?? $referral['ctwa_clid'] ?? ''),
+        ];
+    }
+
+    // Sinal parcial (contextInfo indica que a mensagem veio de um clique de
+    // anúncio — conversionSource/entryPointConversionSource — mas sem os
+    // campos que a gente lê pra title/sourceId) — loga o bloco cru, mesmo
+    // padrão de logDiagnosticoMidiaZapi(), pra ajustar o parsing sem
+    // chutar de novo na próxima vez que acontecer.
+    if (!empty($contextInfo['conversionSource']) || !empty($contextInfo['entryPointConversionSource'])) {
+        logDiagnosticoOrigemAnuncio($contextInfo);
+        return ['canal_origem' => 'meta_ads', 'campanha_origem' => '', 'anuncio_origem' => ''];
+    }
+
+    return ['canal_origem' => '', 'campanha_origem' => '', 'anuncio_origem' => ''];
+}
+
+/** Log de diagnóstico — mesmo padrão de logDiagnosticoMidiaZapi(), pra
+ *  descobrir o formato exato quando um sinal parcial de anúncio aparece
+ *  sem bater com o parsing atual. Remover depois que o formato real for
+ *  confirmado contra um clique de anúncio de verdade. */
+function logDiagnosticoOrigemAnuncio($contextInfo): void {
+    try {
+        $dir = dirname(__DIR__, 2) . '/storage/logs';
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        $linha = '[' . date('Y-m-d H:i:s') . '] contextInfo='
+            . json_encode($contextInfo, JSON_UNESCAPED_UNICODE) . "\n";
+        file_put_contents($dir . '/whatsapp_origem_anuncio_debug.log', $linha, FILE_APPEND);
+    } catch (Throwable $e) {
+        // diagnóstico nunca pode quebrar o fluxo principal
+    }
 }
 
 /** Nome legível do tipo de mídia recebida, pra registrar um marcador no histórico. */

@@ -1,9 +1,9 @@
 <?php
 /**
  * Analytics de origem dos leads (bloco 1 do funil) — quanto vem de Meta
- * Ads (anúncio "Clique para WhatsApp", via referral capturado no webhook —
- * chatbot-whatsapp/includes/mensagens.php::extrairOrigemAnuncio()) vs.
- * contato direto, e o funil de conversão de cada campanha/anúncio.
+ * Ads (anúncio "Clique para WhatsApp", via `contextInfo.externalAdReply`
+ * capturado no webhook — chatbot-whatsapp/includes/mensagens.php::extrairOrigemAnuncio())
+ * vs. contato direto, e o funil de conversão de cada campanha/anúncio.
  *
  * Restrito ao super_admin — dado de tráfego pago é decisão de negócio do
  * Jean, não operacional do dia a dia do consultor.
@@ -67,10 +67,13 @@ $resumoCanal = $db->query("
 <main>
 <div class="card">
     <h2>📣 Origem dos leads (bloco 1 — anúncio/tráfego)</h2>
-    <p><small>Meta Ads é identificado pelo <code>referral</code> que a WhatsApp Cloud API manda quando o cliente clica
-       num anúncio "Clique para WhatsApp" — capturado automaticamente na 1ª mensagem, sem link manual.
-       ⚠️ Ainda não testado contra uma instância Z-API real (pendência #1 do CLAUDE.md — hospedagem/instância); validar
-       o formato do campo assim que a instância existir.</small></p>
+    <p><small>Meta Ads é identificado pelo <code>contextInfo.externalAdReply</code> que o WhatsApp anexa na 1ª mensagem
+       de uma conversa iniciada por um anúncio "Clique para WhatsApp" — capturado automaticamente, sem link manual
+       (18/09/2026: corrigido de <code>referral</code>, formato da WhatsApp Cloud API oficial, que a Z-API não usa —
+       ela conecta via protocolo padrão do WhatsApp, não como BSP oficial da Meta).
+       ⚠️ Formato confirmado via documentação da Z-API, ainda não validado contra um clique de anúncio real depois
+       dessa correção — oportunidades criadas ANTES de 18/09/2026 continuam marcadas "direto" mesmo se vieram de
+       anúncio (o dado bruto do clique nunca foi salvo, não dá pra corrigir retroativamente).</small></p>
 
     <table class="tabela-oportunidades">
         <thead><tr><th>Canal</th><th>Total de oportunidades</th><th>Fechadas</th><th>Taxa de fechamento</th></tr></thead>
