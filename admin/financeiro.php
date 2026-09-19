@@ -87,14 +87,14 @@ $asaasPendenteImportar = asaasConfigured();
 </form>
 
 <div class="grid-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem">
-  <div class="card" style="border-top:4px solid #16a34a">
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=receita&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #16a34a">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">📥 Receitas do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:#16a34a">R$ <?= number_format($totalReceitas, 2, ',', '.') ?></div>
-  </div>
-  <div class="card" style="border-top:4px solid #dc2626">
+  </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #dc2626">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">📤 Despesas do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:#dc2626">R$ <?= number_format($totalDespesas, 2, ',', '.') ?></div>
-  </div>
+  </a>
   <div class="card" style="border-top:4px solid <?= $saldo >= 0 ? '#16a34a' : '#dc2626' ?>">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">Saldo do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:<?= $saldo >= 0 ? '#16a34a' : '#dc2626' ?>">R$ <?= number_format($saldo, 2, ',', '.') ?></div>

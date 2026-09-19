@@ -3737,6 +3737,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   certos, campo de descrição confirmado desabilitado, sem botão "Salvar"
   nenhum; lançamento manual normal confirmado intocado (título "Editar
   lançamento", campos habilitados, botão "Salvar" presente).
+  **Cards "Receitas"/"Despesas" do dashboard financeiro viraram clicáveis**
+  (19/09/2026, pedido direto: "se clicar na receita listar as receitas e
+  se clicar na despesas lista todas despesas") — `admin/financeiro.php`:
+  os cards "📥 Receitas do mês"/"📤 Despesas do mês" eram só `<div>`
+  (mostravam o total, sem jeito de ver quais lançamentos compõem aquele
+  valor) — viraram `<a>` apontando pra
+  `/admin/financeiro-lancamentos.php?tipo=receita&de={início do mês}&ate={fim do mês}`
+  (e o equivalente com `tipo=despesa`), sempre usando o MESMO período
+  selecionado no filtro `?mes=` do dashboard (não hardcoded no mês
+  corrente) — mesmo padrão já usado pelo card "⏰ Contas atrasadas" (já
+  era link) e pelos cards de KPI clicáveis do dashboard principal
+  (`admin/index.php`). Nenhuma mudança em `admin/financeiro-lancamentos.php`
+  — os parâmetros `tipo`/`de`/`ate` já existiam e já filtravam certo, só
+  faltava o link. "Saldo do mês" continua `<div>` normal, de propósito —
+  não tem lista própria de "lançamentos de saldo", é derivado dos outros
+  dois. Testado em banco isolado com Playwright: 2 receitas + 1 despesa
+  semeadas no mês corrente — clicar em Receitas mostra as 2 receitas e
+  nenhuma despesa; clicar em Despesas mostra a despesa e nenhuma receita;
+  Saldo confirmado continuando `<div>`, não `<a>`.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
