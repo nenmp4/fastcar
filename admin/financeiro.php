@@ -68,6 +68,7 @@ $asaasPendenteImportar = asaasConfigured();
   <h1 style="margin:0">🧾 Financeiro</h1>
   <div style="display:flex;gap:.5rem;flex-wrap:wrap">
     <a href="/admin/financeiro-lancamentos.php" class="btn-primary" style="width:auto">➕ Novo lançamento</a>
+    <a href="/admin/financeiro-relatorios.php" class="btn" style="width:auto;background:#6d28d9;color:#fff;border:none">📊 Relatórios / DRE</a>
     <a href="/admin/financeiro-categorias.php" class="btn" style="width:auto">🏷️ Categorias</a>
     <a href="/admin/financeiro-fornecedores.php" class="btn" style="width:auto">🏭 Fornecedores</a>
     <a href="/admin/financeiro-colaboradores.php" class="btn" style="width:auto">👥 Colaboradores</a>

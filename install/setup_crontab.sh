@@ -35,6 +35,7 @@ CRON_LINES=$(cat <<EOF
 */30 * * * * $PHP_BIN $BASE_DIR/cron/asaas_sync.php >> $BASE_DIR/storage/logs/asaas_sync.log 2>&1 $MARK
 30 19 * * * $PHP_BIN $BASE_DIR/cron/resumo_produtividade.php >> $BASE_DIR/storage/logs/resumo_produtividade.log 2>&1 $MARK
 0 5 * * * $PHP_BIN $BASE_DIR/cron/lancamentos_fixos.php >> $BASE_DIR/storage/logs/lancamentos_fixos.log 2>&1 $MARK
+0 8 * * * $PHP_BIN $BASE_DIR/cron/financeiro_relatorio_mensal.php >> $BASE_DIR/storage/logs/financeiro_relatorio.log 2>&1 $MARK
 0 2,8,13,18 * * * $PHP_BIN $BASE_DIR/cron/backup_db.php >> $BASE_DIR/storage/logs/backup_db.log 2>&1 $MARK
 0 3 * * * $PHP_BIN $BASE_DIR/cron/backup.php >> $BASE_DIR/storage/logs/backup.log 2>&1 $MARK
 0 4 * * * $PHP_BIN $BASE_DIR/cron/backup_drive.php >> $BASE_DIR/storage/logs/backup_drive.log 2>&1 $MARK
@@ -51,5 +52,5 @@ CURRENT=$(crontab -l 2>/dev/null | grep -v "$MARK" || true)
   echo "$CRON_LINES"
 } | grep -v '^\s*$' | crontab -
 
-echo "✅ 9 cron jobs do Fastcar CRM instalados/atualizados (8 jobs + o puxador de deploy do webhook)."
+echo "✅ 10 cron jobs do Fastcar CRM instalados/atualizados (9 jobs + o puxador de deploy do webhook)."
 echo "Conferir com: crontab -l"

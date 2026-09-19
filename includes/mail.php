@@ -87,6 +87,17 @@ function mailAutenticar(string $impersonar): string|bool {
 /**
  * Envia um e-mail HTML via Gmail API, autenticado como a caixa configurada
  * em `config.email_from`.
+ *
+ * `$anexos` (novo, 19/09/2026 — envio automático mensal do DRE pro
+ * contador) — array de `['nome' => 'arquivo.pdf', 'conteudo_base64' =>
+ * '...', 'mime' => 'application/pdf']`; vazio (padrão) continua mandando
+ * e-mail simples igual sempre, texto puro sem anexo — nenhum dos 4 call
+ * sites que já usavam `enviarEmail()` antes desta mudança precisou mudar
+ * (mesmo espírito de quando a Brevo virou Gmail API: contrato da função
+ * continua compatível, só ganhou um parâmetro novo opcional no fim).
+ * `mime` cai pra `application/pdf` se omitido — hoje só PDF é anexado em
+ * lugar nenhum do projeto.
+ *
  * @return bool|array true em sucesso, ['erro' => 'mensagem'] em falha —
  *   mesmo padrão string|array dos outros helpers (gemini/openai), nunca
  *   lança exceção: e-mail é sempre "melhor esforço", nunca pode derrubar o
@@ -94,7 +105,7 @@ function mailAutenticar(string $impersonar): string|bool {
  *   propósito — só existe a partir do PHP 8.2, e a VPS de produção roda
  *   8.1 (ver guard version-php-82-plus no tests/smoke.php).
  */
-function enviarEmail(string $para, string $assunto, string $corpoHtml, string $paraNome = ''): bool|array {
+function enviarEmail(string $para, string $assunto, string $corpoHtml, string $paraNome = '', array $anexos = []): bool|array {
     $from     = getConfig('email_from') ?: '';
     $fromNome = getConfig('email_from_nome') ?: 'Fastcar';
     if (!$from) return ['erro' => 'E-mail remetente não configurado. Vá em Configurações → E-mail.'];
@@ -112,12 +123,36 @@ function enviarEmail(string $para, string $assunto, string $corpoHtml, string $p
     $remetente    = "{$fromNome} <{$from}>";
     $assuntoMime  = '=?UTF-8?B?' . base64_encode($assunto) . '?=';
 
-    $mime = "From: {$remetente}\r\n"
-          . "To: {$destinatario}\r\n"
-          . "Subject: {$assuntoMime}\r\n"
-          . "MIME-Version: 1.0\r\n"
-          . "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-          . $corpoHtml;
+    if ($anexos) {
+        $boundary = 'fastcar_' . bin2hex(random_bytes(12));
+        $mime = "From: {$remetente}\r\n"
+              . "To: {$destinatario}\r\n"
+              . "Subject: {$assuntoMime}\r\n"
+              . "MIME-Version: 1.0\r\n"
+              . "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n\r\n"
+              . "--{$boundary}\r\n"
+              . "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+              . $corpoHtml . "\r\n\r\n";
+        foreach ($anexos as $a) {
+            $nome = (string)($a['nome'] ?? 'anexo.pdf');
+            $mimeAnexo = (string)($a['mime'] ?? 'application/pdf');
+            $conteudo = (string)($a['conteudo_base64'] ?? '');
+            if (!$conteudo) continue;
+            $mime .= "--{$boundary}\r\n"
+                   . "Content-Type: {$mimeAnexo}; name=\"{$nome}\"\r\n"
+                   . "Content-Disposition: attachment; filename=\"{$nome}\"\r\n"
+                   . "Content-Transfer-Encoding: base64\r\n\r\n"
+                   . chunk_split($conteudo) . "\r\n";
+        }
+        $mime .= "--{$boundary}--";
+    } else {
+        $mime = "From: {$remetente}\r\n"
+              . "To: {$destinatario}\r\n"
+              . "Subject: {$assuntoMime}\r\n"
+              . "MIME-Version: 1.0\r\n"
+              . "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+              . $corpoHtml;
+    }
 
     $ch = curl_init(mailApiUrl() . '/users/me/messages/send');
     curl_setopt_array($ch, [

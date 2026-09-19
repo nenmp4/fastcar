@@ -964,4 +964,23 @@ try {
     echo "❌ asaas_categoria_padrao_id: {$e->getMessage()}\n";
 }
 
+// 19/09/2026, "tem parta cadastrar os dados da empresa com logo para
+// ficar bacana dre" — semeia os dados da empresa (config.empresa_*, usados
+// só no cabeçalho do DRE Gerencial, admin/financeiro-empresa.php) com os
+// MESMOS dados legais reais já usados no contrato de compra/venda
+// (includes/contratos_pdf.php, confirmados pelo José em 13/09/2026) — fill-
+// if-empty, nunca sobrescreve se alguém já tiver editado pela tela.
+try {
+    if (getConfig('empresa_razao_social') === null) {
+        setConfig('empresa_razao_social', 'FASTCAR SOLUTIONS');
+        setConfig('empresa_cnpj', '66.934.500/0001-09');
+        setConfig('empresa_endereco', 'Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices, Alphaville Conde II, Barueri/SP — CEP 06473-073');
+        echo "✅ Dados da empresa (config.empresa_*): semeados com os dados reais do contrato\n";
+    } else {
+        echo "⏭️  Dados da empresa: já configurados\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ Dados da empresa (seed): {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

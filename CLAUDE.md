@@ -3803,6 +3803,133 @@ segue no schema sem uso novo, não removida sem ganho real),
   semeadas no mês corrente — clicar em Receitas mostra as 2 receitas e
   nenhuma despesa; clicar em Despesas mostra a despesa e nenhuma receita;
   Saldo confirmado continuando `<div>`, não `<a>`.
+  **DRE Gerencial + Extrato Completo pra mandar pro contador + dados da
+  empresa + envio automático mensal** (19/09/2026, sequência de pedidos:
+  "da uma olhada no finceiiro do iab questão da finceiro e parte de
+  relatórios como foi implementado" → "dre para enviar para contabiidade
+  queremos exatamente nessa pegada" → "tem parta cadastrar os dados da
+  empresa com logo para ficar bancama dre" → "essa parte é legal"
+  (mostrando o Envio Automático Mensal do JurídicoSaaS, repo irmão) →
+  "permita gerar sempre extrato completo para contado[r]" → "permita
+  castrar o e-mail do contador para encaminhar pelo e-mail automático
+  todo mês - cadastro email do contatador fica top" → "tem enviar o
+  arquivo para ele") — portado de lá, mas **nunca copy-paste direto**:
+  grupos do DRE adaptados ao negócio de compra/revenda de veículo (sem
+  "Repasses e Custas Processuais", específico de escritório de
+  advocacia), reaproveitado o cabeçalho de PDF já existente pro contrato,
+  e o envio automático manda o DRE pela instância Z-API DEDICADA do
+  financeiro (`zapiCredenciaisFinanceiro()`, já criada pro WhatsApp Box
+  de cobrança), nunca a principal.
+  **(1) `includes/financeiro_dre.php`** (novo) — `finGerarDrePdf()`
+  agrupa lançamentos por `fin_categorias.grupo_dre` (coluna que já
+  existia desde a criação do módulo financeiro, 17/09/2026, pré-semeada
+  nas categorias padrão, mas nunca exposta em tela nenhuma nem usada por
+  relatório nenhum) em blocos com subtotal — Receita → Despesas
+  Operacionais (compra de veículo/comissão/manutenção/despachante/
+  combustível, o "custo do produto" de quem revende carro, por isso vem
+  primeiro entre as despesas) → Pessoal → Administrativas → Marketing →
+  Impostos e Contabilidade → Outras → Resultado Líquido do Período — sem
+  o 2º nível "operacional vs líquido" que o JurídicoSaaS tem (existe lá
+  só por causa do grupo "repasses", pass-through de custas processuais
+  sem equivalente aqui). Reaproveita `_pdfNovo()`/`_pdfCabecalho()`/
+  `_pdfTexto()` já existentes em `includes/contratos_pdf.php` em vez de
+  duplicar a lógica de desenhar cabeçalho com logo/marca. Lançamento SEM
+  categoria nunca entra na soma (mesmo `JOIN` do JurídicoSaaS), mas nunca
+  fica silencioso aqui: conta quantos ficaram de fora do período e
+  imprime um aviso forte no próprio rodapé do PDF — o contador não
+  deveria receber um DRE que parece completo mas está descontando/somando
+  menos do que devia sem nenhum sinal disso. `admin/financeiro-relatorio-dre.php`
+  (novo) streama o PDF direto pro navegador (`ob_start()`/`Output('I',...)`,
+  mesmo cuidado do JurídicoSaaS com o `\n` vazado pelo `fpdf.php` depois
+  da tag de fechamento do PHP).
+  **(2) `admin/financeiro-empresa.php`** (novo) — CNPJ/Razão Social/
+  Endereço/e-mail do contador editáveis (`config.empresa_*`/
+  `contador_email`), usados SÓ nos relatórios financeiros — deliberadamente
+  separado dos dados legais fixos já usados nos CONTRATOS
+  (`includes/contratos_pdf.php`, hardcoded — "FASTCAR SOLUTIONS", CNPJ
+  66.934.500/0001-09, endereço de Barueri/SP — confirmados pelo José em
+  13/09/2026, já validados em contrato real assinado): editar aqui NUNCA
+  muda o texto do contrato de compra/venda, só o cabeçalho dos relatórios
+  — evita o risco real de um documento legal já validado mudar sozinho se
+  os dois compartilhassem a mesma fonte de verdade. CNPJ/razão social/
+  endereço pré-semeados (`install/migrar.php`, fill-if-empty) com os
+  MESMOS dados reais do contrato, então sai certo desde o primeiro DRE
+  gerado, sem precisar preencher nada antes — a tela só existe pra
+  permitir corrigir/editar sem precisar mexer em código. Busca de CNPJ
+  reaproveita o MESMO endpoint já usado em Fornecedores
+  (`admin/fornecedor_cnpj_ajax.php` → `includes/cnpj.php::cnpjConsultar()`,
+  BrasilAPI) — já genérico o bastante (só recebe `?cnpj=`, devolve JSON),
+  nenhuma mudança precisou lá. Logo é a mesma já cadastrada em
+  Configurações → Identidade visual, nunca duplicada. **E-mail do
+  contador** (mesmo dia, pedido de acompanhamento) — campo próprio
+  (`config.contador_email`), SEMPRE entra no Envio Automático Mensal
+  (`cron/financeiro_relatorio_mensal.php`) sem precisar digitar de novo
+  em "E-mails extras" — `array_unique()` já existente evita duplicar se
+  alguém cadastrar o mesmo endereço nos dois lugares. O e-mail recebe o
+  PDF do DRE **anexado de verdade** (não só um aviso/link — "tem enviar o
+  arquivo para ele"), mesmo mecanismo de anexo do item (4) abaixo.
+  **(3) `admin/financeiro-categorias.php`** ganhou o campo "Grupo no DRE"
+  (select com os 7 grupos, `finGruposDreComRotulos()`) no formulário de
+  criar/editar + badge roxo na listagem — antes a coluna existia no banco
+  desde sempre mas não tinha UI nenhuma pra ver/editar, só dava pra
+  corrigir direto no banco.
+  **(4) Envio Automático Mensal** — `admin/financeiro-relatorios.php`
+  (novo, landing page com período + botões "Ver / Baixar DRE Gerencial" e
+  "Ver / Baixar Extrato Completo" + link pra Dados da Empresa + o card de
+  envio automático) + `cron/financeiro_relatorio_mensal.php` (novo, 1x/dia
+  às 8h — decide sozinho se hoje é o dia configurado, sem precisar de
+  agendamento fino): manda o DRE do mês anterior por WhatsApp (documento,
+  `zapiEnviarDocumento()`, sempre pela instância DEDICADA do financeiro)
+  e/ou e-mail (anexo — `enviarEmail()`, `includes/mail.php`, ganhou
+  parâmetro novo opcional `array $anexos = []` no fim, monta MIME
+  `multipart/mixed` quando não vazio; nenhum dos call sites antigos
+  precisou mudar, mesmo espírito de quando a troca Brevo→Gmail API não
+  quebrou nenhum call site) pra quem estiver marcado — checkbox de
+  usuários do sistema (mostra se cada um já tem e-mail/WhatsApp
+  cadastrado, mesmo padrão visual do JurídicoSaaS) + e-mails/WhatsApp
+  extras pra gente sem login no sistema + o e-mail do contador (item 2
+  acima), sempre incluído. Configuração em 4 chaves de `config`
+  (`financeiro_relatorio_dia`/`_user_ids`/`_emails_extra`/
+  `_whatsapp_extra`), sem precisar de schema novo.
+  **(5) `includes/financeiro_extrato.php`** (novo, "permita gerar sempre
+  extrato completo para contado[r]") — `finGerarExtratoPdf()`, portado de
+  `includes/financeiro_pdf.php::gerarRelatorioFinanceiroPdf()` do
+  JurídicoSaaS: lista todo lançamento do período (data/categoria/
+  descrição/vínculo/forma de pagamento/status/valor), paisagem (A4
+  landscape) — não reaproveita `_pdfNovo()` (fixo em retrato, usado pelos
+  contratos, nunca deve mudar de orientação), monta o próprio cabeçalho
+  em 297mm de largura só pra este arquivo, reaproveitando apenas
+  `_pdfTexto()` (conversão UTF-8→ISO-8859-1, independente de orientação
+  de página). `admin/financeiro-relatorio-extrato.php` (novo) streama
+  igual ao DRE. `admin/_bootstrap.php` ganhou as 4 telas novas
+  (`financeiro-relatorios.php`, `financeiro-empresa.php`,
+  `financeiro-relatorio-dre.php`, `financeiro-relatorio-extrato.php`) no
+  allowlist do perfil `financeiro`.
+  Testado: função isolada (`finGerarDrePdf()` — receita/despesas
+  agrupadas certas por bloco, resultado líquido bate a conta, lançamento
+  cancelado nunca entra, lançamento fora do período nunca entra,
+  lançamento sem categoria gera o aviso e nunca é somado, razão
+  social/CNPJ aparecem no cabeçalho; `finGerarExtratoPdf()` — lançamento
+  aparece com categoria/vínculo/forma de pagamento/valor certos) +
+  migração (seed fill-if-empty confirmado não sobrescrevendo edição
+  manual numa 2ª rodada) + `enviarEmail()` com anexo contra servidor
+  Gmail fake local (MIME multipart decodifica pro PDF original exato,
+  byte a byte; chamada sem anexo continua idêntica a antes) + cron ponta
+  a ponta contra Z-API+Gmail fake local (WhatsApp confirmado saindo pela
+  instância DEDICADA do financeiro — nunca vazando credencial de outra
+  instância, conferido no path exato da chamada capturada pelo fake
+  server —, e-mail do contador cadastrado em Dados da Empresa entra
+  sozinho no envio mesmo com "E-mails extras" vazio, com o PDF do DRE
+  anexado de verdade — confirmado `Content-Disposition: attachment` +
+  `application/pdf` no MIME capturado —, dia errado do mês corretamente
+  não dispara nada) + Playwright (Relatórios mostra os 2 botões de
+  relatório + card de envio automático, salvar configuração persiste os
+  4 campos; DRE e Extrato baixam como PDF de verdade — 200,
+  `Content-Type: application/pdf`, começam com `%PDF`; Dados da Empresa
+  já vem preenchido com o seed, salva edição de razão social e do e-mail
+  do contador; Categorias mostra o select/badge do grupo DRE; perfil
+  `financeiro` acessa as 4 telas novas; perfil `consultor` bloqueado com
+  403 em todas).
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
@@ -3988,6 +4115,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | `cron/zapsign_sync.php` | a cada 30 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook da ZapSign não chegue) — frequência menor que o antigo `assinafy_sync.php` (que era a cada 1 min): assinatura eletrônica não é tão sensível a atraso de minutos quanto lead esfriando |
 | `cron/asaas_sync.php` | a cada 30 min | **18/09/2026, achado real: "tenho que sicornizar assas manual as cobranças de parcela dos carros"** — o script já existia no código desde 17/09/2026, mas nunca tinha sido cadastrado em `install/setup_crontab.sh` (arquivo que a própria cabeça do script declara como "fonte de verdade dos horários", mas ficou desatualizado — `resumo_produtividade.php`, linha abaixo, tinha o mesmo problema, também corrigido agora), então nunca rodou sozinho na VPS; e mesmo rodando, só resincronizava STATUS de cobrança já importada, nunca trazia cobrança NOVA criada direto no painel do Asaas — só o clique manual em "Importar cobranças" (`admin/financeiro-asaas.php`) fazia isso. Corrigido em 2 frentes: (1) `cron/asaas_sync.php` passou a chamar `asaasImportarCobrancas()` (mesma função do botão manual, dedup por `asaas_payment_id`, importa novas E atualiza status de todas numa passada) antes de `asaasSincronizarPendentes()` (mantido, mais barato pro caso comum de só status mudando); (2) linha nova em `install/setup_crontab.sh`, junto com a linha de `resumo_produtividade.php` que também estava faltando lá. Testado em banco isolado contra servidor Asaas fake local: 1 cobrança nova (`pay_novo123`, `PENDING`) + 1 já existente (`pay_existente456`, `pendente` no banco) — rodar o cron importa a nova (`status='pendente'`) e atualiza a existente pro status real vindo da API (`RECEIVED`→`pago`, `data_pagamento` preenchida), rodando de novo mostra "0 nova(s)" (dedup funcionando, não duplica). |
 | `cron/lancamentos_fixos.php` | 1x/dia (5h) | Gera automaticamente a próxima ocorrência mensal de toda despesa marcada como "Fixa" (`natureza='fixa'`) no financeiro — 19/09/2026, "todas despesas fixas pode lançar todo mês automático". Ver `finGerarDespesasFixasDoMes()` (`includes/financeiro.php`, bullet completo na seção "Módulo financeiro") — idempotente, agrupa em cadeias via `recorrencia_origem_id`, copia o valor mais recente da série, e marcar o último lançamento como 'Cancelado' interrompe a série. |
+| `cron/financeiro_relatorio_mensal.php` | 1x/dia (8h) | Envio Automático Mensal do DRE Gerencial — 19/09/2026, "essa parte é legal" (mostrando o Envio Automático Mensal do JurídicoSaaS). Decide sozinho se hoje é o dia configurado (`config.financeiro_relatorio_dia`); manda o DRE do mês anterior por WhatsApp (instância DEDICADA do financeiro) e/ou e-mail (anexo de verdade) pros usuários marcados + e-mails/WhatsApp extras + o e-mail do contador (`config.contador_email`, sempre incluído). Ver bullet completo na seção "Módulo financeiro" acima. |
 | `cron/resumo_produtividade.php` | 1x/dia, 19h30 | Resumo diário de produtividade pro WhatsApp pessoal de quem tem `perfil=supervisor` (15/09/2026, pedido José/Jean: "envia notificação de produção para números de notificação, supervisores acompanhar a produtividade"). Reaproveita exatamente `dashboardSuperAdmin()` (`includes/dashboard.php`, mesmas métricas de visão geral da empresa já usadas no dashboard — ativas/atrasadas/novas hoje/novas na semana/fechadas no mês/taxa de conversão), sem duplicar query nenhuma. Confirmado com o usuário (3 perguntas diretas): frequência = resumo diário automático (não sob demanda); destinatários = telefone (`usuarios.whatsapp`) de quem já tem `perfil=supervisor` cadastrado (não um campo novo de config com números avulsos); conteúdo = visão geral da empresa (não quebrado por consultor). Dedup por dia via `config.resumo_prod_enviado_{data}` — só marca como enviado se pelo menos 1 supervisor recebeu de verdade (`zapiEnviarTexto()` retornou sucesso), senão tenta de novo na próxima rodada do cron em vez de desistir o dia inteiro por causa de uma falha temporária da Z-API. Sem nenhum supervisor com `whatsapp` cadastrado, não manda nada (nunca quebra o cron). Testado ponta a ponta com banco isolado + servidor Z-API fake: 1 supervisor com WhatsApp recebe o resumo certo (métricas batendo com os dados semeados), 1 supervisor sem WhatsApp corretamente ignorado, rodando o cron de novo no mesmo dia o dedup bloqueia reenvio, e cenário sem nenhum supervisor cadastrado não dispara chamada nenhuma pra Z-API. |
 | `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
 | `cron/backup.php` | 1x/dia (3h) | ZIP completo (`.db` + `storage/uploads/` + credencial do Drive), mantém os últimos 5 dias — código não entra, já está no git |

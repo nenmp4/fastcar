@@ -2,11 +2,19 @@
 /** Categorias financeiras — CRUD simples (17/09/2026, módulo financeiro). */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/financeiro_dre.php';
 requireAcessoFinanceiro();
 
 $db = getDB();
 $erro = '';
 $sucesso = '';
+// 19/09/2026, "dre para enviar para contabiidade queremos exatamente
+// nessa pegada" — `grupo_dre` já existia na coluna desde a criação do
+// módulo financeiro (17/09/2026, pré-semeado nas categorias padrão), mas
+// esta tela nunca deixava ver/editar o campo — só dava pra corrigir direto
+// no banco. `finGruposDreComRotulos()` (includes/financeiro_dre.php)
+// centraliza a lista, mesma usada pelo gerador do relatório.
+$gruposDre = finGruposDreComRotulos();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -19,13 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tipo = in_array($_POST['tipo'] ?? '', ['receita', 'despesa'], true) ? $_POST['tipo'] : 'despesa';
             $icone = clean((string)($_POST['icone'] ?? '')) ?: '💰';
             $natureza = in_array($_POST['natureza_sugerida'] ?? '', ['fixa', 'variavel'], true) ? $_POST['natureza_sugerida'] : '';
+            $grupoDre = array_key_exists($_POST['grupo_dre'] ?? '', $gruposDre)
+                ? $_POST['grupo_dre']
+                : ($tipo === 'receita' ? 'receita' : 'outras');
             if (!$nome) {
                 $erro = 'Nome é obrigatório.';
             } elseif ($id) {
-                $db->prepare('UPDATE fin_categorias SET nome=?, tipo=?, icone=?, natureza_sugerida=? WHERE id=?')->execute([$nome, $tipo, $icone, $natureza, $id]);
+                $db->prepare('UPDATE fin_categorias SET nome=?, tipo=?, icone=?, natureza_sugerida=?, grupo_dre=? WHERE id=?')->execute([$nome, $tipo, $icone, $natureza, $grupoDre, $id]);
                 $sucesso = 'Categoria atualizada.';
             } else {
-                $db->prepare('INSERT INTO fin_categorias (nome, tipo, icone, natureza_sugerida) VALUES (?,?,?,?)')->execute([$nome, $tipo, $icone, $natureza]);
+                $db->prepare('INSERT INTO fin_categorias (nome, tipo, icone, natureza_sugerida, grupo_dre) VALUES (?,?,?,?,?)')->execute([$nome, $tipo, $icone, $natureza, $grupoDre]);
                 $sucesso = 'Categoria criada.';
             }
         } elseif ($acao === 'desativar') {
@@ -91,6 +102,13 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
           <option value="fixa" <?= ($editando['natureza_sugerida'] ?? '') === 'fixa' ? 'selected' : '' ?>>Fixa</option>
           <option value="variavel" <?= ($editando['natureza_sugerida'] ?? '') === 'variavel' ? 'selected' : '' ?>>Variável</option>
         </select>
+        <label>Grupo no DRE</label>
+        <select name="grupo_dre">
+          <?php foreach ($gruposDre as $k => $lbl): ?>
+            <option value="<?= e($k) ?>" <?= ($editando['grupo_dre'] ?? '') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <small style="color:var(--muted)">Usado só pelo relatório DRE Gerencial (Financeiro → Relatórios) pra agrupar as categorias em blocos com subtotal.</small>
       </div>
     </div>
     <button type="submit"><?= $editando ? 'Salvar' : 'Criar' ?></button>
@@ -105,7 +123,12 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
     <tbody>
     <?php foreach ($categorias as $c): ?>
       <tr>
-        <td><?= e($c['icone'] . ' ' . $c['nome']) ?></td>
+        <td>
+          <?= e($c['icone'] . ' ' . $c['nome']) ?>
+          <?php if (!empty($c['grupo_dre']) && isset($gruposDre[$c['grupo_dre']])): ?>
+            <br><small style="color:#6d28d9">📊 <?= e($gruposDre[$c['grupo_dre']]) ?></small>
+          <?php endif; ?>
+        </td>
         <td><?= $c['tipo'] === 'receita' ? '📥 Receita' : '📤 Despesa' ?></td>
         <td><?= $c['ativo'] ? '<span class="badge badge-ok">✅ ativa</span>' : '<span class="badge">⛔ inativa</span>' ?></td>
         <td style="white-space:nowrap">

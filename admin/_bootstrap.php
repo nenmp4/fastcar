@@ -66,7 +66,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
         'financeiro.php', 'financeiro-lancamentos.php', 'financeiro-categorias.php',
         'financeiro-fornecedores.php', 'financeiro-colaboradores.php', 'financeiro-asaas.php',
         'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'clientes.php',
-        'cliente_detalhe.php', 'financeiro_inbox.php', 'logout.php',
+        'cliente_detalhe.php', 'financeiro_inbox.php', 'financeiro-relatorio-dre.php',
+        'financeiro-relatorio-extrato.php', 'financeiro-relatorios.php',
+        'financeiro-empresa.php', 'logout.php',
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
