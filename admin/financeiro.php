@@ -31,6 +31,8 @@ function finSoma(PDO $db, string $tipo, string $inicio, string $fim, ?string $na
 
 $totalReceitas = finSoma($db, 'receita', $inicioMes, $fimMes);
 $totalDespesas = finSoma($db, 'despesa', $inicioMes, $fimMes);
+$totalDespesasFixas = finSoma($db, 'despesa', $inicioMes, $fimMes, 'fixa');
+$totalDespesasVariaveis = finSoma($db, 'despesa', $inicioMes, $fimMes, 'variavel');
 $saldo = $totalReceitas - $totalDespesas;
 
 $hoje = date('Y-m-d');
@@ -95,6 +97,14 @@ $asaasPendenteImportar = asaasConfigured();
   <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #dc2626">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">📤 Despesas do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:#dc2626">R$ <?= number_format($totalDespesas, 2, ',', '.') ?></div>
+  </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&natureza=fixa&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #b45309">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">📌 Despesas fixas do mês</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#b45309">R$ <?= number_format($totalDespesasFixas, 2, ',', '.') ?></div>
+  </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&natureza=variavel&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #7c3aed">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">📊 Despesas variáveis do mês</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#7c3aed">R$ <?= number_format($totalDespesasVariaveis, 2, ',', '.') ?></div>
   </a>
   <div class="card" style="border-top:4px solid <?= $saldo >= 0 ? '#16a34a' : '#dc2626' ?>">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">Saldo do mês</div>

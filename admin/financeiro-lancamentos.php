@@ -160,6 +160,7 @@ $somenteLeituraLancamento = ($editando['origem'] ?? '') === 'asaas';
 
 $fTipo = (string)($_GET['tipo'] ?? '');
 $fStatus = (string)($_GET['status'] ?? '');
+$fNatureza = in_array($_GET['natureza'] ?? '', ['fixa', 'variavel'], true) ? $_GET['natureza'] : '';
 $fTodos = !empty($_GET['todos_periodos']);
 $fDe = (string)($_GET['de'] ?? date('Y-m-01'));
 $fAte = (string)($_GET['ate'] ?? date('Y-m-t'));
@@ -181,6 +182,7 @@ if (!$fTodos) {
 }
 if ($fTipo) { $where[] = 'l.tipo=?'; $params[] = $fTipo; }
 if ($fStatus) { $where[] = 'l.status=?'; $params[] = $fStatus; }
+if ($fNatureza) { $where[] = 'l.natureza=?'; $params[] = $fNatureza; }
 if ($fStatus === 'atrasado' && $fAtraso) {
     $where[] = "l.data_vencimento IS NOT NULL AND " . ($fAtraso === 1 ? "{$diasAtrasoExpr} BETWEEN 1 AND 30" : ($fAtraso === 2 ? "{$diasAtrasoExpr} BETWEEN 31 AND 60" : "{$diasAtrasoExpr} >= 61"));
 }
@@ -393,6 +395,7 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <div><label><input type="checkbox" name="todos_periodos" value="1" <?= $fTodos ? 'checked' : '' ?> style="width:auto;display:inline-block"> Todos os períodos</label></div>
     <div><label>Tipo</label><select name="tipo"><option value="">Todos</option><option value="receita" <?= $fTipo === 'receita' ? 'selected' : '' ?>>Receita</option><option value="despesa" <?= $fTipo === 'despesa' ? 'selected' : '' ?>>Despesa</option></select></div>
     <div><label>Status</label><select name="status"><option value="">Todos</option><?php foreach ($statusLabels as $k => [$lbl,,]): ?><option value="<?= $k ?>" <?= $fStatus === $k ? 'selected' : '' ?>><?= $lbl ?></option><?php endforeach; ?></select></div>
+    <div><label>Natureza</label><select name="natureza"><option value="">Todas</option><option value="fixa" <?= $fNatureza === 'fixa' ? 'selected' : '' ?>>Fixa</option><option value="variavel" <?= $fNatureza === 'variavel' ? 'selected' : '' ?>>Variável</option></select></div>
     <?php if ($fAtraso): ?><input type="hidden" name="atraso" value="<?= (int)$fAtraso ?>"><?php endif; ?>
     <button type="submit" style="width:auto">Filtrar</button>
   </form>

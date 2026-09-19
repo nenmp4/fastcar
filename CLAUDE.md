@@ -3980,6 +3980,29 @@ segue no schema sem uso novo, não removida sem ganho real),
   mas nunca os botões de classificar (só receita); clicar "Entrada"
   atualiza `categoria_id`/`parcela_numero` certos no banco e mostra a
   mensagem de sucesso.
+  **Cards de Despesas Fixas/Variáveis no dashboard financeiro** (19/09/2026,
+  pedido direto: "mostrar no dashboard despesas fixas - clicar lista -
+  mostrar despesas variável lista mostrar") — o campo "Natureza"
+  (Fixa/Variável, só despesa, já usado desde a feature de despesa fixa
+  automática) nunca tinha aparecido no dashboard nem era filtrável na
+  listagem de Lançamentos, só existia no formulário de cada lançamento
+  individual. `finSoma()` (`admin/financeiro.php`) já aceitava um 4º
+  parâmetro opcional `$natureza` (usado internamente desde sempre, nunca
+  chamado com ele) — 2 cards novos "📌 Despesas fixas do mês"/"📊 Despesas
+  variáveis do mês", mesmo padrão clicável dos cards de Receitas/Despesas já
+  existentes, sempre no MESMO período selecionado no filtro `?mes=` (nunca
+  hardcoded no mês corrente), apontando pra
+  `/admin/financeiro-lancamentos.php?tipo=despesa&natureza=fixa|variavel&de=...&ate=...`.
+  `admin/financeiro-lancamentos.php` ganhou o filtro `?natureza=` que
+  faltava (`$fNatureza`, validado contra `['fixa','variavel']`, aplicado no
+  `WHERE` da listagem) + um select "Natureza" no próprio formulário de
+  filtro da tela, pra ajustar/combinar manualmente sem precisar voltar pro
+  dashboard. Testado em banco isolado com Playwright: 1 despesa fixa (R$
+  2.500) + 1 variável (R$ 300) + 1 receita (R$ 1.000) semeadas no mês —
+  os 2 cards mostram os valores certos; clicar em "Despesas fixas" lista só
+  a fixa (nunca a variável nem a receita); clicar em "Despesas variáveis"
+  lista só a variável (nunca a fixa); o select "Natureza" do formulário
+  reflete o filtro ativo vindo da URL.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
