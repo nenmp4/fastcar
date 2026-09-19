@@ -430,6 +430,51 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
 }
 
 /**
+ * Gera o PDF do contrato de venda SÓ PRA VISUALIZAR — 19/09/2026,
+ * "espelhar compra... analisar contrato antes enviar". Mesmo espírito de
+ * gerarContratoCompraPreview(): nunca chama a ZapSign nem manda e-mail, só
+ * gera o PDF, salva uma cópia (mesmo destino Drive/local de
+ * gerarEEnviarContratoVenda(), o cliente ORIGINAL — vendedor que trouxe o
+ * veículo, não existe `clientes` pro comprador de revenda) e registra em
+ * `contratos` com `status='gerado'` (mesmo status/badge que o preview de
+ * compra já usa, `admin/ver_contrato.php` já é genérico o bastante pros
+ * dois tipos). Gerar de novo cria uma NOVA linha, nunca sobrescreve —
+ * mesmo espírito de nunca perder histórico do resto do projeto. Nunca
+ * move a etapa da negociação (diferente do envio de verdade, que move
+ * pra 'contrato_enviado') — é só um rascunho pra conferir antes.
+ */
+function gerarContratoVendaPreview(int $vendaId, ?int $usuarioId): array {
+    $campos = montarCamposContratoVenda($vendaId);
+    if (!$campos) return ['ok' => false, 'erro' => 'Venda não encontrada.'];
+
+    $faltando = verificarCamposObrigatoriosContratoVenda($campos);
+    if ($faltando) {
+        return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
+    }
+
+    $pdfPath = gerarPdfContratoVenda($campos);
+    $nomeDoc = 'Contrato de Venda (rascunho) - ' . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+
+    $nomeArquivoCopia = 'contrato_venda_preview_' . $vendaId . '_' . time() . '.pdf';
+    $copia = salvarArquivoGeradoComoDocumento(
+        $campos['_cliente_id'], $campos['comprador_nome'], $pdfPath, $nomeArquivoCopia,
+        'application/pdf', 'contratos/' . $campos['_oportunidade_id']
+    );
+    @unlink($pdfPath);
+
+    $db = getDB();
+    $db->prepare("
+        INSERT INTO contratos
+            (oportunidade_id, venda_id, tipo, nome, campos_json, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, ?, 'venda', ?, ?, 'gerado', ?, ?, ?)
+    ")->execute([
+        $campos['_oportunidade_id'], $vendaId, $nomeDoc, json_encode($campos), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
+    ]);
+
+    return ['ok' => true, 'contrato_id' => (int)$db->lastInsertId(), 'aviso' => null];
+}
+
+/**
  * Consulta o status do contrato na ZapSign e sincroniza — usado pelo
  * webhook (api/zapsign_webhook.php) e pelo polling de fallback
  * (cron/zapsign_sync.php). Quando assinado, baixa o PDF final e sobe pra

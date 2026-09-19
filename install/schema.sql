@@ -505,6 +505,11 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- mesmo mecanismo de oportunidades.documentos_token — link mandado via
     -- WhatsApp, sem login (public/documentos_venda.php).
     documentos_token TEXT,
+    -- Mesmo mecanismo de oportunidades.documentos_confirmados_em — marca
+    -- que o comprador já revisou o resumo final e confirmou; editar um
+    -- documento depois disso zera de novo, forçando revisão (mesmo rito
+    -- do wizard de compra).
+    documentos_confirmados_em DATETIME,
 
     -- Condições da venda — Quadro-Resumo do contrato-mestre de venda
     -- (includes/contratos_pdf.php::gerarPdfContratoVenda(), transcrito de

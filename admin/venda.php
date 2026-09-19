@@ -169,6 +169,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $erro = $resultadoContrato['erro'];
                     }
                 }
+            } elseif ($acao === 'gerar_contrato_preview') {
+                // 19/09/2026, "espelhar compra... analisar contrato antes
+                // enviar" — mesmo espírito de gerarContratoCompraPreview():
+                // gera o PDF SÓ pra conferir os dados mesclados antes do
+                // comprador já ter recebido o link de assinatura de verdade.
+                if (!$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota a esta negociação antes de gerar o contrato.';
+                } else {
+                    $resultadoPreview = gerarContratoVendaPreview($id, (int)$_SESSION['admin_id']);
+                    if ($resultadoPreview['ok']) {
+                        $sucesso = 'Rascunho do contrato gerado — confira os dados antes de enviar pra assinatura.';
+                    } else {
+                        $erro = $resultadoPreview['erro'];
+                    }
+                }
+            } elseif ($acao === 'enviar_link_documentos_venda') {
+                // 19/09/2026, "espelhar compra - subir os documentos
+                // preencher tudo ter link igual de compra" — mesmo padrão
+                // de admin/oportunidade.php (ação enviar_link_documentos),
+                // mas pela instância DEDICADA de vendas (zapiCredenciaisVendas()),
+                // nunca pela principal, e link pro wizard próprio do
+                // comprador (public/documentos_venda.php).
+                if (!$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota antes de mandar o link de documentos.';
+                } else {
+                    $tokenDoc = getOuCriarTokenDocumentosVenda($id);
+                    if (!$tokenDoc) {
+                        $erro = 'Não foi possível gerar o link — vincule um veículo da frota primeiro.';
+                    } else {
+                        $baseUrl = getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'];
+                        $link = rtrim($baseUrl, '/') . '/public/documentos_venda.php?token=' . $tokenDoc;
+                        $msg = "Olá! Pra continuar a compra do veículo, preencha seus dados e envie os documentos por aqui:\n{$link}";
+
+                        $enviado = marcaLogoConfigurada()
+                            ? zapiEnviarImagem($v['comprador_telefone'], rtrim($baseUrl, '/') . '/public/assets/logo.png', $msg, zapiCredenciaisVendas())
+                            : zapiEnviarTexto($v['comprador_telefone'], $msg, zapiCredenciaisVendas());
+
+                        if ($enviado) {
+                            $sucesso = 'Link enviado por WhatsApp.';
+                        } else {
+                            $erro = "Não deu pra enviar por WhatsApp (confira as credenciais da instância de vendas em Configurações). Link: {$link}";
+                        }
+
+                        // Cópia por e-mail, mesmo padrão do lado de compra —
+                        // canal independente, nunca troca com o WhatsApp acima.
+                        if (!empty($v['comprador_email'])) {
+                            $corpoEmail = "<p>Olá, " . e($v['comprador_nome'] ?: '') . "!</p>"
+                                . "<p>Pra continuar a compra do veículo, preencha seus dados e envie os documentos pelo link abaixo:</p>"
+                                . emailBotao('Enviar documentos', $link)
+                                . "<p style=\"font-size:12.5px;color:#6b7280\">Se o botão não funcionar, copie e cole este link no navegador:<br>"
+                                . "<a href=\"" . e($link) . "\" style=\"color:#2f6fed\">" . e($link) . "</a></p>";
+                            enviarEmail($v['comprador_email'], 'Fastcar — envio de documentos', emailLayout($corpoEmail), $v['comprador_nome'] ?: '');
+                        }
+                    }
+                }
+            } elseif ($acao === 'upload_documento_staff_venda') {
+                $tipoDoc = (string)($_POST['tipo_documento'] ?? '');
+                if (!isset(TIPOS_DOCUMENTOS_COMPRADOR[$tipoDoc])) {
+                    $erro = 'Tipo de documento inválido.';
+                } elseif (empty($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                    $erro = 'Selecione um arquivo pra enviar.';
+                } elseif (!$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota antes de anexar documentos.';
+                } else {
+                    $resultado = salvarUploadDocumentoVenda($id, $tipoDoc, $_FILES['arquivo'], false);
+                    if ($resultado['ok']) {
+                        $sucesso = 'Documento anexado.';
+                        // Mesma extração por IA e mesma proteção contra
+                        // documento no slot errado do lado de compra (ver
+                        // admin/oportunidade.php, ação upload_documento_staff).
+                        $docSalvo = listarDocumentosVenda($id)[$tipoDoc] ?? null;
+                        $arquivoLido = $docSalvo ? lerConteudoArquivoDocumento($docSalvo['drive_file_id'] ?: null, $docSalvo['arquivo_url'] ?: null) : null;
+                        if ($arquivoLido) {
+                            $dadosExtraidos = extrairDadosDocumentoComIA($tipoDoc, $arquivoLido);
+                            if ($dadosExtraidos && !$dadosExtraidos['_documento_correto']) {
+                                $tipoPercebido = $dadosExtraidos['_tipo_real_se_diferente'] ?: 'outro tipo de documento';
+                                $sucesso = '';
+                                $erro = 'Anexado, mas esse arquivo não parece ser ' . (TIPOS_DOCUMENTOS_COMPRADOR[$tipoDoc] ?? $tipoDoc)
+                                    . ' — parece ser ' . $tipoPercebido . '. Confira e anexe o arquivo certo (os dados não foram preenchidos automaticamente).';
+                            } elseif ($dadosExtraidos) {
+                                aplicarDadosExtraidosDocumentoVenda($id, $dadosExtraidos);
+                            }
+                        }
+                    } else {
+                        $erro = $resultado['erro'] ?? 'Falha ao anexar documento.';
+                    }
+                }
+            } elseif ($acao === 'confirmar_documento_staff_venda') {
+                // "Aceite em nome do comprador" — mesmo espírito de
+                // admin/oportunidade.php (ação confirmar_documento_staff):
+                // quando o comprador não usa o wizard, o vendedor confirma
+                // por ele; nunca reescreve os campos, só marca "já revisei".
+                $tipoDocConfirmar = (string)($_POST['tipo_documento'] ?? '');
+                if (!isset(TIPOS_DOCUMENTOS_COMPRADOR[$tipoDocConfirmar])) {
+                    $erro = 'Tipo de documento inválido.';
+                } else {
+                    $db->prepare("
+                        UPDATE venda_documentos SET dados_confirmados = 1, updated_at = datetime('now','localtime')
+                        WHERE venda_id = ? AND tipo = ?
+                    ")->execute([$id, $tipoDocConfirmar]);
+
+                    $tiposComprador = array_keys(TIPOS_DOCUMENTOS_COMPRADOR);
+                    $ph = implode(',', array_fill(0, count($tiposComprador), '?'));
+                    $stmtPendentes = $db->prepare("
+                        SELECT COUNT(*) FROM venda_documentos
+                        WHERE venda_id = ? AND tipo IN ({$ph}) AND dados_confirmados = 0
+                    ");
+                    $stmtPendentes->execute([$id, ...$tiposComprador]);
+                    if ((int)$stmtPendentes->fetchColumn() === 0) {
+                        $db->prepare("UPDATE vendas SET documentos_confirmados_em = datetime('now','localtime') WHERE id = ?")->execute([$id]);
+                    }
+
+                    $sucesso = 'Documento confirmado em nome do comprador.';
+                }
             } elseif ($acao === 'atualizar_proxima_acao') {
                 $db->prepare("
                     UPDATE vendas
@@ -410,6 +524,93 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     </form>
 </div>
 
+<?php if ($v['oportunidade_id']): ?>
+<div class="card">
+    <h3>📎 Documentos do comprador</h3>
+    <p><small>Espelha o wizard de compra — mesmo rito (1 documento por vez, IA lê e pré-preenche, comprador revisa e
+       confirma), mas só 2 etapas: CNH/RG e comprovante de endereço (comprador de revenda não tem financiamento
+       ativo nem CRLV pra entregar).</small></p>
+
+    <?php
+        $tokenDocVendaAtual = getOuCriarTokenDocumentosVenda($id);
+        $linkDocumentosVenda = $tokenDocVendaAtual
+            ? rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'], '/')
+                . '/public/documentos_venda.php?token=' . $tokenDocVendaAtual
+            : null;
+        $documentosVenda = listarDocumentosVenda($id);
+    ?>
+
+    <?php if ($v['documentos_confirmados_em']): ?>
+        <div class="alerta-sucesso" style="padding:8px 12px;border-radius:6px;background:#e3f3e6;color:#2a7a3b;margin-bottom:10px">
+            ✅ Dados e documentos confirmados em <?= date('d/m/Y H:i', strtotime($v['documentos_confirmados_em'])) ?>
+            (pelo comprador via wizard, ou pelo vendedor em nome dele quando ele não conseguiu usar o link).
+        </div>
+    <?php elseif (array_filter($documentosVenda, fn($d) => $d['arquivo_url'] || $d['drive_file_id'])): ?>
+        <div class="alerta-erro" style="padding:8px 12px;border-radius:6px;background:#fbe4e1;color:#a33;margin-bottom:10px">
+            ⏳ Comprador ainda está no meio do wizard de documentos (não confirmou o resumo final ainda).
+        </div>
+    <?php endif; ?>
+
+    <p>
+        <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentosVenda ?: '(gerado ao clicar em enviar)') ?></code><br>
+        <form method="post" class="inline" style="display:inline-block;margin-top:8px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="enviar_link_documentos_venda">
+            <button type="submit" style="margin-top:0">Enviar link por WhatsApp</button>
+        </form>
+    </p>
+
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Documento</th><th>Status</th><th>Enviado por</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach (TIPOS_DOCUMENTOS_COMPRADOR as $tipo => $label): ?>
+            <?php
+                $doc = $documentosVenda[$tipo] ?? null;
+                $temArquivo = $doc && ($doc['arquivo_url'] || $doc['drive_file_id']);
+            ?>
+            <tr>
+                <td><?= e($label) ?></td>
+                <td>
+                    <?php if (!$temArquivo): ?>
+                        <span class="badge badge-atraso">⏳ pendente</span>
+                    <?php elseif (!$doc['dados_confirmados']): ?>
+                        <span class="badge badge-atraso">📝 enviado, aguardando comprador confirmar dados</span>
+                        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                            <form method="post" class="inline" style="margin-top:4px" onsubmit="return confirm('Confirmar que já revisou os dados desse documento em nome do comprador?');">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="confirmar_documento_staff_venda">
+                                <input type="hidden" name="tipo_documento" value="<?= e($tipo) ?>">
+                                <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11.5px">✅ Confirmar em nome do comprador</button>
+                            </form>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <span class="badge badge-ok">✅ enviado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
+                    <?php endif; ?>
+                </td>
+                <td><?= $doc ? ($doc['enviado_pelo_cliente'] ? 'comprador' : 'equipe') : '—' ?></td>
+                <td><?= $temArquivo ? '<a href="/admin/ver_documento_venda.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" enctype="multipart/form-data" style="margin-top:12px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="upload_documento_staff_venda">
+            <label>Anexar documento manualmente</label>
+            <select name="tipo_documento">
+                <?php foreach (TIPOS_DOCUMENTOS_COMPRADOR as $tipo => $label): ?>
+                    <option value="<?= e($tipo) ?>"><?= e($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input type="file" name="arquivo" accept="image/jpeg,image/png,image/webp,application/pdf" style="margin-top:8px">
+            <button type="submit">Anexar</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <h3>📝 Condições da venda</h3>
     <p><small>Alimentam o Quadro-Resumo do contrato-mestre de venda — mesma disciplina do lado de compra: o consultor
@@ -459,7 +660,12 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 
     <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
         <hr>
-        <form method="post" onsubmit="return confirm('Gerar o contrato de venda e enviar pra assinatura eletrônica?');">
+        <form method="post" style="display:inline-block;margin-right:8px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="gerar_contrato_preview">
+            <button type="submit" class="secundario">👁️ Gerar contrato (só visualizar)</button>
+        </form>
+        <form method="post" style="display:inline-block" onsubmit="return confirm('Gerar o contrato de venda e enviar pra assinatura eletrônica?');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_contrato">
             <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>

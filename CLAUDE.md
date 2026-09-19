@@ -1932,18 +1932,11 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmando que `temperatura_lead` reavalia a cada chamada (não é
   fill-if-empty), nunca conta como avanço real, e ignora valor fora de
   frio/morno/quente.
-  ⚠️ **Schema preparado, ainda sem UI** (mesmo dia, "espelhar compra - subir
-  os documentos preencher tudo ter link igual de compra... analisar
-  contrato antes enviar") — `vendas.documentos_token` +
-  `venda_documentos` (nova tabela, mesma estrutura de
-  `oportunidade_documentos` mas pro COMPRADOR, escopo confirmado com o
-  usuário: só CNH/RG + comprovante de endereço, nunca contrato de
-  financiamento/CRLV — comprador de revenda não tem financiamento ativo
-  nem CRLV pra entregar) já entraram no `schema.sql`/`migrar.php` desta
-  leva, mas o wizard público (`public/documentos_venda.php`) e o botão de
-  preview de contrato (`gerarContratoVendaPreview()`, espelhando
-  `gerarContratoCompraPreview()`) ainda não foram implementados — fica
-  pendente pra próxima sessão, tabela nova sem uso real ainda.
+  **Wizard de documentos do comprador implementado** (19/09/2026, "segue
+  mesmmo rito do compras" — a tabela `venda_documentos`/coluna
+  `vendas.documentos_token` tinham entrado no schema nesta mesma leva mas
+  ficaram sem UI; ver bullet completo mais abaixo, "Wizard de documentos
+  do comprador").
   **Atribuição de origem de anúncio portada pro lado de vendas** (mesmo
   dia, "sistema registrar campanhas de vendas também") — até aqui
   `extrairOrigemAnuncio()` (`contextInfo.externalAdReply`,
@@ -1971,6 +1964,64 @@ segue no schema sem uso novo, não removida sem ganho real),
   `admin/origem_leads.php` (as 2 seções aparecem, campanha de compra E de
   venda visíveis) + migração testada contra schema pré-mudança (colunas
   adicionadas, dado pré-existente preservado, idempotente).
+  **Wizard de documentos do comprador** (19/09/2026, "segue mesmmo rito do
+  compras") — espelha rigorosamente o wizard de compra
+  (`public/documentos.php`): 1 documento por vez, IA lê e pré-preenche,
+  comprador revisa/confirma, resumo final antes de enviar — mas só 2
+  etapas (CNH/RG → comprovante de endereço), escopo já confirmado com o
+  usuário na leva anterior (comprador de revenda não tem financiamento
+  ativo nem CRLV pra entregar). `includes/venda_documentos.php` (novo) —
+  arquivo PRÓPRIO de propósito (mesmo raciocínio de sempre pro módulo de
+  vendas: modelo de dado diferente, `vendas.comprador_*` em vez de
+  `clientes`, `venda_documentos` em vez de `oportunidade_documentos`, sem
+  checklist de fechamento — regra #7 é só de compra). Reaproveita 100%
+  sem nenhuma mudança o que já era genérico: `extrairDadosDocumentoComIA()`/
+  `extracaoDocumentoPrompt()` (`includes/extracao_documentos.php`, os
+  tipos `'cnh'`/`'comprovante_endereco'` já existiam e não dependiam de
+  nada específico de compra) e `compararDivergenciasDocumento()` (só
+  compara arrays associativos por nome de campo, nunca toca em tabela) —
+  só a aplicação dos dados extraídos precisou ser própria
+  (`aplicarDadosExtraidosDocumentoVenda()`, fill-if-empty nas colunas
+  `comprador_*`). `public/documentos_venda.php` (novo) — mesma identidade
+  visual/CSS do wizard de compra, mesma autochecagem de tipo de documento
+  (nunca aplica dado de um documento que não parece ser o esperado pro
+  slot — mesma proteção de 17/09/2026), mesmo `<details>` pra substituir
+  arquivo errado sem voltar etapa. `getOuCriarTokenDocumentosVenda()` só
+  gera o link depois que o veículo já está vinculado
+  (`vincularVeiculoVenda()`) — a cópia dos documentos ancora no Drive do
+  cliente ORIGINAL (vendedor que trouxe o carro), mesmo destino que
+  `gerarEEnviarContratoVenda()` já usa, sem pasta nova.
+  `gerarContratoVendaPreview()` (novo, `includes/contratos.php`) — espelha
+  `gerarContratoCompraPreview()`: gera o PDF só pra visualizar, nunca
+  chama a ZapSign, `status='gerado'`, gerar de novo cria uma NOVA linha
+  (nunca sobrescreve). `admin/venda.php` ganhou: card "📎 Documentos do
+  comprador" (link + status table + upload manual + confirmar em nome do
+  comprador, espelhando o card equivalente de `admin/oportunidade.php`) e
+  botão "👁️ Gerar contrato (só visualizar)" ao lado do envio de verdade.
+  `admin/ver_documento_venda.php` (novo) serve os arquivos, mesma trava
+  `requireAcessoVendas()` do resto do módulo. Link mandado pela instância
+  DEDICADA de vendas (`zapiCredenciaisVendas()`, nunca a principal) +
+  cópia por e-mail (`comprador_email`, canal independente). Nova coluna
+  `vendas.documentos_confirmados_em` (mesmo mecanismo de
+  `oportunidades.documentos_confirmados_em`). Testado: função isolada
+  (token só gera depois de vincular veículo; 2 linhas obrigatórias
+  pré-criadas; upload local funciona sem Drive configurado;
+  `aplicarDadosExtraidosDocumentoVenda()` fill-if-empty confirmado não
+  sobrescrevendo dado já preenchido; `compararDivergenciasDocumento()`
+  genérica detecta divergência sem nenhuma mudança nela;
+  `gerarContratoVendaPreview()` bloqueia sem campos obrigatórios, gera com
+  sucesso preenchidos, `status='gerado'`/`zapsign_doc_token` vazio/nunca
+  move etapa, gerar 2x cria 2 linhas) + Playwright ponta a ponta contra
+  servidor Gemini fake local (wizard completo: upload CNH → IA pré-preenche
+  nome/CPF → confirma → upload comprovante → IA pré-preenche endereço →
+  confirma → resumo final → "Tudo certo!"; admin reflete tudo — nome do
+  comprador atualizado, badges "✅ enviado" nos 2 documentos, banner de
+  confirmação, links "ver" funcionando; preview de contrato gera com
+  sucesso) + testes de permissão (supervisor vê o card mas não o botão de
+  anexar, POST forjado bloqueado 403; `ver_documento_venda.php` exige
+  login; token inválido mostra "link inválido") + migração testada contra
+  schema pré-mudança (coluna e tabela criadas, dado pré-existente
+  preservado, idempotente numa 2ª rodada).
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

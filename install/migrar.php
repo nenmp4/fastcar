@@ -185,6 +185,10 @@ $migracoes = [
     'vendas.canal_origem' => "ALTER TABLE vendas ADD COLUMN canal_origem TEXT DEFAULT ''",
     'vendas.campanha_origem' => "ALTER TABLE vendas ADD COLUMN campanha_origem TEXT DEFAULT ''",
     'vendas.anuncio_origem' => "ALTER TABLE vendas ADD COLUMN anuncio_origem TEXT DEFAULT ''",
+
+    // 19/09/2026, wizard de documentos do comprador ("segue mesmo rito do
+    // compras") — mesmo mecanismo de oportunidades.documentos_confirmados_em.
+    'vendas.documentos_confirmados_em' => "ALTER TABLE vendas ADD COLUMN documentos_confirmados_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {
