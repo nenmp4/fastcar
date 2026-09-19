@@ -175,6 +175,13 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
     // venda assinou contrato gera receita" — ver finGerarReceitaVendaAssinatura().
     if ($etapaNova === 'vendido') {
         finGerarReceitaVendaAssinatura($vendaId, $responsavelId);
+    } elseif ($etapaNova === 'cancelada') {
+        // 19/09/2026, "cliente devolver veiculo... aquelas cobrança é
+        // cancelada" — cobre tanto cancelamento pré-venda (normalmente sem
+        // lançamento nenhum ainda) quanto devolução pós-venda (parcelas
+        // futuras já rodando) com o mesmo gatilho — ver
+        // finCancelarLancamentosPendentesVenda().
+        finCancelarLancamentosPendentesVenda($vendaId);
     }
 
     return true;

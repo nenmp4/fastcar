@@ -93,6 +93,26 @@ function asaasTestarConexao(): array {
     return ['ok' => true, 'msg' => "Conexão ok — {$total} cliente(s) cadastrado(s) no Asaas."];
 }
 
+/**
+ * Cancela (deleta) uma cobrança ainda pendente no Asaas — usado quando uma
+ * venda é devolvida e uma parcela futura que já tinha virado cobrança real
+ * precisa parar de cobrar o comprador que devolveu o veículo (19/09/2026,
+ * "cliente devolver veiculo... aquelas cobrança é cancelada", confirmado
+ * via pergunta direta: "cancelar tudo automaticamente, inclusive no
+ * Asaas"). `DELETE /payments/{id}` — a API só permite deletar cobrança
+ * ainda não recebida; cobrança já paga (RECEIVED/CONFIRMED) o Asaas
+ * rejeita, o que é o comportamento certo aqui (nunca mexemos em pago,
+ * mesma decisão confirmada pro lado local). Nunca confirmado contra a API
+ * real ainda — mesma ressalva de todo endpoint Asaas além do já validado
+ * em produção (ver CLAUDE.md → "a validar em produção").
+ */
+function asaasCancelarCobranca(string $paymentId): array {
+    if (!$paymentId) return ['ok' => false, 'erro' => 'Sem asaas_payment_id.'];
+    $r = asaasRequest('DELETE', '/payments/' . rawurlencode($paymentId));
+    if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro']];
+    return ['ok' => true];
+}
+
 /** Mapeia o status de cobrança do Asaas pro conjunto de status do Fastcar (pendente/pago/atrasado/cancelado). */
 function asaasStatusParaFin(string $statusAsaas): string {
     return match ($statusAsaas) {

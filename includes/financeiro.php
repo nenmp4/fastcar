@@ -272,6 +272,59 @@ function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal
  * (`finGerarPlanoParcelamentoVenda()`, entrada+parcelas juntas) — nunca
  * trava a venda por causa da integração externa.
  */
+/**
+ * Cancela os lançamentos FUTUROS (ainda 'pendente') de uma venda que caiu —
+ * usado tanto no cancelamento pré-venda (negociação nunca chegou a fechar)
+ * quanto na DEVOLUÇÃO pós-venda (19/09/2026, "temos aquele problema de
+ * cliente devolver veiculo agente vende para outro aquelas cobrança é
+ * cancelada e novo cliente vendido gera nova entrar dinheiro novas
+ * parcela"): comprador devolveu o veículo depois de já ter parcelas
+ * rodando, e essas cobranças futuras não podem continuar ativas.
+ *
+ * Nunca mexe em lançamento já 'pago' — confirmado com o usuário via
+ * pergunta direta: o que já entrou fica como receita normal, só é
+ * registrada a devolução; um eventual estorno do que já foi recebido é
+ * decisão contábil separada, lançada manualmente se for o caso, nunca
+ * decidida sozinho aqui. Se a parcela já tinha virado cobrança real no
+ * Asaas (origem='asaas', asaas_payment_id preenchido), tenta cancelar de
+ * verdade lá também (confirmado: "cancelar tudo automaticamente, inclusive
+ * no Asaas") — best-effort por parcela: uma falha na API do Asaas nunca
+ * impede o cancelamento LOCAL de seguir pras outras parcelas nem de travar
+ * a transição de etapa da venda.
+ *
+ * Chamada de dentro de mudarEtapaVenda() na transição pra 'cancelada' —
+ * cobre os dois cenários (cancelamento pré-venda normalmente não tem
+ * lançamento nenhum ainda, então isso vira um no-op silencioso pra ele) com
+ * o mesmo código, sem precisar diferenciar de onde veio a transição.
+ */
+function finCancelarLancamentosPendentesVenda(int $vendaId): array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT id, origem, asaas_payment_id FROM fin_lancamentos WHERE venda_id = ? AND status = 'pendente'");
+        $stmt->execute([$vendaId]);
+        $pendentes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$pendentes) return ['canceladas' => 0, 'asaas_falhas' => 0];
+
+        $asaasFalhas = 0;
+        foreach ($pendentes as $l) {
+            if ($l['origem'] === 'asaas' && !empty($l['asaas_payment_id'])) {
+                $r = asaasCancelarCobranca((string)$l['asaas_payment_id']);
+                if (!$r['ok']) $asaasFalhas++;
+            }
+        }
+
+        $db->prepare("
+            UPDATE fin_lancamentos SET status = 'cancelado', updated_at = datetime('now','localtime')
+            WHERE venda_id = ? AND status = 'pendente'
+        ")->execute([$vendaId]);
+
+        return ['canceladas' => count($pendentes), 'asaas_falhas' => $asaasFalhas];
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a transição de etapa da venda
+        return ['canceladas' => 0, 'asaas_falhas' => 0];
+    }
+}
+
 function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
     try {
         if (finContarLancamentosVenda($vendaId) > 0) return;

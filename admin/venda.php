@@ -190,8 +190,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sucesso = 'Etapa atualizada.';
                 }
             } elseif ($acao === 'cancelar_venda') {
+                // 19/09/2026, "cliente devolver veiculo agente vende para
+                // outro" — a mesma ação/etapa ('cancelada') cobre cancelar
+                // ANTES de vender e devolução DEPOIS de já vendido; captura
+                // a etapa de origem antes da chamada só pra escolher a
+                // mensagem certa (mudarEtapaVenda() já cancela os
+                // lançamentos futuros nos dois casos, ver includes/vendas.php).
+                $eraVendido = $v['etapa'] === 'vendido';
                 mudarEtapaVenda($id, 'cancelada', (int)$_SESSION['admin_id'], clean((string)($_POST['motivo'] ?? '')));
-                $sucesso = 'Negociação cancelada — veículo liberado pra uma nova tentativa de venda.';
+                $sucesso = $eraVendido
+                    ? 'Devolução registrada — veículo liberado pra uma nova venda. Parcelas futuras ainda pendentes foram canceladas no financeiro (o que já tinha sido pago continua como receita).'
+                    : 'Negociação cancelada — veículo liberado pra uma nova tentativa de venda.';
             }
         } catch (Throwable $e) {
             $erro = $e->getMessage();
@@ -581,6 +590,31 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <label>Motivo do cancelamento (obrigatório)</label>
                 <input type="text" name="motivo" required placeholder="Ex: comprador desistiu, não fechou preço...">
                 <button type="submit" class="perigo">Cancelar negociação</button>
+            </form>
+        <?php elseif ($v['etapa'] === 'vendido'): ?>
+            <p>✅ Vendido<?= $v['data_venda'] ? ' em ' . date('d/m/Y', strtotime($v['data_venda'])) : '' ?>.</p>
+            <hr>
+            <!-- 19/09/2026, "temos aquele problema de cliente devolver
+                 veiculo agente vende para outro" — antes disso não existia
+                 NENHUM jeito de reabrir um veículo já 'vendido' pra uma
+                 nova venda: listarFrotaDisponivelParaVenda()/
+                 veiculoDisponivelParaVenda() (includes/vendas.php) sempre
+                 excluíam qualquer veículo com venda em etapa='vendido', e
+                 esta tela só mostrava o botão de cancelar quando a etapa
+                 ainda era negociacao/contrato_enviado. Reusa a MESMA ação
+                 'cancelar_venda'/etapa 'cancelada' de sempre (nunca inventa
+                 uma etapa nova só pra isso) — mudarEtapaVenda() já cancela
+                 as parcelas futuras pendentes (includes/financeiro.php::
+                 finCancelarLancamentosPendentesVenda()) e, uma vez
+                 'cancelada', o veículo passa a bater de novo no critério de
+                 "disponível" das duas funções acima, sem precisar de
+                 nenhuma mudança nelas. -->
+            <form method="post" onsubmit="return confirm('Registrar devolução deste veículo? O comprador devolveu o carro — as parcelas futuras ainda pendentes serão canceladas no financeiro (o que já foi pago continua como receita), e o veículo volta a ficar disponível pra uma nova venda.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="cancelar_venda">
+                <label>Motivo da devolução (obrigatório)</label>
+                <input type="text" name="motivo" required placeholder="Ex: comprador devolveu o veículo, inadimplência...">
+                <button type="submit" class="perigo">🔙 Registrar devolução do veículo</button>
             </form>
         <?php elseif (in_array($v['etapa'], ['whatsapp', 'qualificacao_ia'], true)): ?>
             <p>🤖 Ainda em qualificação pela IA (<?= e(etapaVendaLabel($v['etapa'])) ?>) — assim que terminar, vira negociação

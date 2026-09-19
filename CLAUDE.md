@@ -3421,6 +3421,59 @@ segue no schema sem uso novo, não removida sem ganho real),
   normalmente (consultor fecha na mão depois de completar); oportunidade
   já estava 'fechado' manualmente antes da sincronização rodar → não
   duplica histórico nem despesa.
+  **Devolução de veículo já vendido** (19/09/2026, pedido direto: "temos
+  aquele problema de cliente devolver veiculo agente vende para outro
+  aquelas cobrança é cancelada e novo cliente vendido gera nova entrar
+  dinheiro novas parcela") — até então não existia NENHUM jeito de reabrir
+  uma negociação de venda já `etapa='vendido'` (com parcelas rodando) pra
+  uma nova venda: `listarFrotaDisponivelParaVenda()`/
+  `veiculoDisponivelParaVenda()` (`includes/vendas.php`) sempre excluíam
+  qualquer veículo com venda em `etapa='vendido'`, e `admin/venda.php` só
+  mostrava o botão de cancelar enquanto a etapa ainda era `negociacao`/
+  `contrato_enviado` — uma vez vendido, a tela só mostrava "Negociação
+  encerrada", sem ação nenhuma. Corrigido reaproveitando a MESMA transição
+  `mudarEtapaVenda(..., 'cancelada', ...)` de sempre (nunca uma etapa nova
+  só pra isso) — botão "🔙 Registrar devolução do veículo" novo em
+  `admin/venda.php`, visível quando `etapa='vendido'`, chama a mesma ação
+  `cancelar_venda`; como `veiculoDisponivelParaVenda()` já não considerava
+  `cancelada` como bloqueio, o veículo volta a ficar disponível pra nova
+  venda sozinho, sem mexer em nenhuma das duas funções.
+  Confirmado com o usuário via 2 perguntas diretas antes de mexer no
+  dinheiro: (1) o que já foi PAGO pelo comprador que devolveu (entrada/
+  parcelas já quitadas) — "mantém como receita, só registra a devolução":
+  `fin_lancamentos` com `status='pago'` nunca é tocado, um eventual
+  estorno fica pra lançamento manual à parte, nunca decidido sozinho; (2)
+  as parcelas FUTURAS ainda pendentes, inclusive as que já viraram
+  cobrança real no Asaas — "cancelar tudo automaticamente, inclusive no
+  Asaas": nova `finCancelarLancamentosPendentesVenda()`
+  (`includes/financeiro.php`), chamada de dentro de `mudarEtapaVenda()` na
+  transição pra `'cancelada'` (cobre tanto essa devolução pós-venda quanto
+  o cancelamento pré-venda de sempre, que normalmente não tem lançamento
+  nenhum ainda — vira só um no-op silencioso nesse caso), marca todo
+  `fin_lancamentos` daquela venda com `status='pendente'` como
+  `'cancelado'`, e se a parcela tinha `origem='asaas'`+`asaas_payment_id`,
+  tenta cancelar de verdade lá também via nova `asaasCancelarCobranca()`
+  (`includes/asaas.php`, `DELETE /payments/{id}` — nunca confirmado contra
+  a API real ainda) — best-effort por parcela: uma falha do Asaas em
+  cancelar 1 cobrança nunca impede o cancelamento local de continuar pras
+  outras nem trava a devolução. Quando a venda pro comprador seguinte
+  chega em `'vendido'`, `finGerarReceitaVendaAssinatura()` (já existia,
+  ver bullet acima) gera a receita (entrada+parcelas) da conta dessa
+  negociação NOVA — `venda_id` diferente, guard de idempotência não
+  colide em nada com os lançamentos (cancelados) da negociação anterior,
+  então "vende pra outro gera nova entrada e novas parcelas" já funciona
+  sozinho sem código extra além de liberar o veículo. Testado ponta a
+  ponta em banco isolado + servidor Asaas fake local: venda com 4
+  lançamentos misturados (1 pago, 1 pendente local, 1 pendente Asaas
+  cancelável, 1 pendente Asaas que a API rejeita simulando cobrança já
+  recebida) — devolução mantém o pago intacto, cancela os 3 pendentes
+  locais (inclusive o que a API do Asaas rejeitou — best-effort
+  confirmado não travando os outros), confirma a chamada DELETE real
+  disparada pro Asaas nos 2 casos; veículo indisponível antes da
+  devolução e disponível depois; revenda pra um comprador novo cria uma
+  negociação com id diferente, gera lançamentos financeiros próprios, e
+  os 4 lançamentos da negociação cancelada continuam intactos (nunca
+  apagados/reaproveitados).
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
