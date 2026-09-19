@@ -4114,6 +4114,35 @@ segue no schema sem uso novo, não removida sem ganho real),
   a fixa (nunca a variável nem a receita); clicar em "Despesas variáveis"
   lista só a variável (nunca a fixa); o select "Natureza" do formulário
   reflete o filtro ativo vindo da URL.
+  **Botões de ação apareciam como retângulo branco vazio** (19/09/2026,
+  screenshot de `admin/financeiro-colaboradores.php` mostrando uma caixa em
+  branco ao lado de "Editar" em cada linha — "editar arrumas css"). Causa:
+  a regra global `button { color:#fff; padding:10px 18px; margin-top:14px;
+  box-shadow:...; }` (`admin/assets/style.css`) vale pra TODO `<button>` do
+  site; os botões inline de "Inativar"/"Reativar"/"Desativar" e os ícones
+  de ação em linha (✅ marcar pago/🗑️ excluir/🏷️ classificar, em
+  `admin/financeiro-lancamentos.php`) só sobrescreviam `background`/`border`
+  via `style="background:none;border:none;cursor:pointer"` — nunca `color`
+  — então herdavam o branco do botão padrão (texto invisível em cima de
+  fundo transparente), mas `padding`/`margin-top`/`box-shadow` continuavam
+  lá, desenhando exatamente o retângulo fantasma do print. Nova classe
+  `button.btn-texto` (+ `.perigo`, vermelho, pra ação destrutiva) reseta
+  TUDO explicitamente em vez de tentar sobrescrever `style=` caso a caso —
+  aplicada nas 4 telas com o mesmo padrão quebrado:
+  `admin/financeiro-categorias.php` (Desativar/Reativar),
+  `admin/financeiro-colaboradores.php` (Inativar/Reativar, a tela do
+  print), `admin/financeiro-fornecedores.php` (Inativar/Reativar) e
+  `admin/financeiro-lancamentos.php` (✅/🗑️/🏷️ Entrada/🏷️ Parcela — os 2
+  últimos mantêm a cor laranja própria via `style="color:#c2410c"` ao lado
+  da classe, que tem precedência sobre o azul padrão do `.btn-texto`).
+  Testado: `php -l` limpo nos 4 arquivos + `tests/smoke.php` sem avisos +
+  Playwright em banco isolado nas 3 telas com botão de ação
+  (colaboradores/categorias/fornecedores) confirmando via
+  `getComputedStyle` que `color` virou legível (`rgb(220,38,38)`),
+  `box-shadow` sumiu (`none`) e `padding` zerou (`0px`) — nenhum retângulo
+  fantasma mais; screenshot da tabela de Colaboradores (a mesma tela do
+  print original) conferido visualmente mostrando "Editar Inativar" como
+  texto limpo, sem caixa nenhuma ao redor.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

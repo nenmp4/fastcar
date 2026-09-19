@@ -455,16 +455,16 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
           <?php if ($l['origem'] !== 'asaas'): ?>
             <a href="?action=edit&id=<?= (int)$l['id'] ?>">✏️</a>
             <?php if ($l['status'] !== 'pago'): ?>
-              <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="marcar_pago"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer" title="Marcar pago">✅</button></form>
+              <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="marcar_pago"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" class="btn-texto" title="Marcar pago">✅</button></form>
             <?php endif; ?>
-            <form method="POST" style="display:inline" onsubmit="return confirm('Excluir este lançamento?')"><?= csrfField() ?><input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer" title="Excluir">🗑️</button></form>
+            <form method="POST" style="display:inline" onsubmit="return confirm('Excluir este lançamento?')"><?= csrfField() ?><input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" class="btn-texto perigo" title="Excluir">🗑️</button></form>
           <?php else: ?>
             <a href="?action=edit&id=<?= (int)$l['id'] ?>" title="Ver detalhes">👁️ via Asaas</a>
           <?php endif; ?>
           <?php if ($semVinculo && $l['tipo'] === 'receita'): ?>
-            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="entrada"><button type="submit" style="background:none;border:none;cursor:pointer;color:#c2410c" title="Classificar como entrada da venda">🏷️ Entrada</button></form>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="entrada"><button type="submit" class="btn-texto" style="color:#c2410c" title="Classificar como entrada da venda">🏷️ Entrada</button></form>
             <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="parcela">
-              <button type="submit" style="background:none;border:none;cursor:pointer;color:#c2410c" title="Classificar como parcela normal">🏷️ Parcela</button></form>
+              <button type="submit" class="btn-texto" style="color:#c2410c" title="Classificar como parcela normal">🏷️ Parcela</button></form>
           <?php endif; ?>
         </td>
       </tr>

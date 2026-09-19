@@ -134,9 +134,9 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
         <td style="white-space:nowrap">
           <a href="?action=edit&id=<?= (int)$c['id'] ?>">Editar</a>
           <?php if ($c['ativo']): ?>
-            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="desativar"><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer">Desativar</button></form>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="desativar"><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button type="submit" class="btn-texto perigo">Desativar</button></form>
           <?php else: ?>
-            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reativar"><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer">Reativar</button></form>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reativar"><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button type="submit" class="btn-texto">Reativar</button></form>
           <?php endif; ?>
         </td>
       </tr>

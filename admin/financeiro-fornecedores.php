@@ -179,9 +179,9 @@ function buscarCnpjFornecedor() {
         <td style="white-space:nowrap">
           <a href="?action=edit&id=<?= (int)$f['id'] ?>">Editar</a>
           <?php if ($f['status'] === 'ativo'): ?>
-            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="inativar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer">Inativar</button></form>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="inativar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button type="submit" class="btn-texto perigo">Inativar</button></form>
           <?php else: ?>
-            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reativar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer">Reativar</button></form>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reativar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button type="submit" class="btn-texto">Reativar</button></form>
           <?php endif; ?>
         </td>
       </tr>

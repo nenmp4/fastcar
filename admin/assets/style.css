@@ -271,6 +271,32 @@ button.perigo:hover { background: #b91c1c; }
 button.secundario { background: var(--fundo); color: var(--texto); box-shadow: none; border: 1px solid var(--borda); }
 button.secundario:hover { background: var(--azul-claro); filter: none; }
 
+/* 19/09/2026, achado real (print de admin/financeiro-colaboradores.php) —
+   "Inativar"/"Reativar"/"Desativar" e ícones de ação em linha (✅/🗑️) só
+   sobrescreviam `background`/`border` no style="" inline, mas nunca `color`
+   — herdavam o `color:#fff` do `button` padrão acima, texto branco em cima
+   de fundo transparente/branco fica invisível, mas padding/margin-top/
+   box-shadow continuavam lá, formando um retângulo em branco fantasma do
+   lado de "Editar". Classe própria reseta TUDO (nunca herda chrome de botão
+   normal), cor explícita e legível — usada no lugar do style="" repetido em
+   admin/financeiro-categorias.php, financeiro-colaboradores.php,
+   financeiro-fornecedores.php e financeiro-lancamentos.php. */
+button.btn-texto {
+    margin-top: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    color: var(--azul);
+    font-weight: 600;
+    font-size: inherit;
+    cursor: pointer;
+}
+button.btn-texto:hover { text-decoration: underline; filter: none; box-shadow: none; }
+button.btn-texto:active { transform: none; }
+button.btn-texto.perigo { color: var(--vermelho); }
+
 /* 19/09/2026 — `.btn`/`.btn-primary` em <a> (nav de admin/financeiro.php,
    badges clicáveis de atraso/prazo em admin/financeiro-lancamentos.php e
    admin/veiculos.php) nunca tiveram regra própria — as duas classes
