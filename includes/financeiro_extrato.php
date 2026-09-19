@@ -150,6 +150,15 @@ function finGerarExtratoPdf(PDO $db, string $de, string $ate): FPDF {
     $pdf->Line(15, $pdf->GetY(), 282, $pdf->GetY());
     $pdf->SetDrawColor(0, 0, 0);
     $pdf->Ln(2);
+    // 19/09/2026, mesma nota do DRE (includes/financeiro_dre.php) — este
+    // extrato também é regime de caixa (cada linha é a data efetiva de
+    // pagamento/vencimento, entrada e parcela separadas), não regime de
+    // competência.
+    $pdf->SetFont('Helvetica', '', 7.5);
+    $pdf->SetTextColor(120, 120, 120);
+    $pdf->MultiCell(0, 4, _pdfTexto('ℹ Regime de caixa: cada lançamento aparece na data em que foi efetivamente pago/recebido (entrada e cada parcela de venda são lançadas separadamente, conforme o vencimento) — não é o regime de competência da escrituração contábil oficial. O contrato assinado de cada negociação (armazenado no sistema) é o documento de suporte de cada lançamento.'));
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Ln(1);
     $pdf->SetFont('Helvetica', 'I', 7);
     $pdf->SetTextColor(120, 120, 120);
     $pdf->Cell(0, 4, _pdfTexto('Gerado automaticamente em ' . date('d/m/Y H:i') . ' — documento confidencial, uso interno'), 0, 1);

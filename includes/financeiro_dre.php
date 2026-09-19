@@ -183,6 +183,19 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
     $pdf->SetTextColor(0, 0, 0);
 
     $pdf->Ln(8);
+    // 19/09/2026, pergunta direta do usuário sobre reconhecimento de
+    // receita de parcela de venda — este relatório é regime de CAIXA
+    // (entrada/parcela lançadas na data de pagamento/vencimento, uma por
+    // uma), não regime de competência (que reconheceria o valor total do
+    // contrato na data da venda, com o saldo a receber virando ativo, não
+    // receita futura) — a escrituração contábil formal pra fins fiscais é
+    // sempre decisão/responsabilidade do contador, este relatório é só
+    // controle gerencial interno de fluxo de caixa.
+    $pdf->SetFont('Helvetica', '', 7.5);
+    $pdf->SetTextColor(120, 120, 120);
+    $pdf->MultiCell(0, 4, _pdfTexto('ℹ Regime de caixa: cada valor entra nesta soma na data em que foi efetivamente pago/recebido (entrada e cada parcela de venda são lançadas separadamente, conforme o vencimento) — não é o regime de competência da escrituração contábil oficial, que normalmente reconheceria o valor total do contrato na data da venda. O contrato assinado de cada negociação (armazenado no sistema) é o documento de suporte de cada lançamento.'));
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Ln(2);
     if ($semCategoria > 0) {
         $pdf->SetFont('Helvetica', 'B', 8);
         $pdf->SetTextColor(153, 27, 27);

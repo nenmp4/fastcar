@@ -3930,6 +3930,29 @@ segue no schema sem uso novo, não removida sem ganho real),
   do contador; Categorias mostra o select/badge do grupo DRE; perfil
   `financeiro` acessa as 4 telas novas; perfil `consultor` bloqueado com
   403 em todas).
+  **Nota de regime de caixa no rodapé do DRE/Extrato** (19/09/2026, sequência
+  de perguntas diretas do usuário sobre como o contador justificaria/
+  reconheceria contabilmente entrada+parcela de venda: "essas entradas são
+  justifcada com contrato certo" → "no ponto de vista contabil" → "sim -
+  para contador não precisa dos contratos ?") — respondido em conversa que
+  o sistema hoje lança em **regime de caixa** (entrada na data da
+  assinatura, cada parcela na data de vencimento, uma por vez — nunca o
+  valor total do contrato de uma vez), diferente do **regime de
+  competência** que a escrituração contábil formal normalmente aplicaria
+  (reconheceria o valor total na data da venda, com o saldo virando contas
+  a receber) — e que os relatórios (`admin/financeiro-relatorio-dre.php`/
+  `-extrato.php`) sozinhos não substituem os contratos assinados como
+  documento de suporte pra auditoria/fins fiscais (não implementado ainda:
+  exportar/enviar todos os contratos assinados de um período de uma vez
+  pro contador — sinalizado como possível próximo pedido, não implementado
+  sem confirmação). Parágrafo novo no rodapé dos dois PDFs
+  (`includes/financeiro_dre.php`/`financeiro_extrato.php`) explicando
+  exatamente isso — regime de caixa, diferença pro regime de competência, e
+  que o contrato assinado de cada negociação é o documento de suporte de
+  cada lançamento — pra nunca o contador receber o relatório sem esse
+  contexto. Testado: função isolada decodificando os content streams do
+  PDF gerado (`gzuncompress` + extração de string entre parênteses),
+  confirmando o texto novo presente nos dois relatórios.
   **Classificar receita Asaas sem cliente vinculado (entrada vs. parcela)**
   (19/09/2026, screenshot de `admin/financeiro-lancamentos.php` filtrado em
   receitas mostrando várias linhas "Cobrança gerada automaticamente a
