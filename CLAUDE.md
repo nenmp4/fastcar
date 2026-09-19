@@ -1439,6 +1439,44 @@ segue no schema sem uso novo, não removida sem ganho real),
   quando o módulo de vendas saiu do papel (15/09/2026, ver bullet próprio
   abaixo): coluna "Venda" nova aqui mostra disponível/em negociação/vendido
   de cada veículo, com botão "Vender" direto na linha.
+  **Alerta "perto de negociar financiamento" (12/18/24 meses) + botão
+  "veículo quitado"** (19/09/2026, pedido direto: "em veiculos colocar
+  tempo que está nosso mão ter aba verculos perto de negociar
+  financiamento apartir 12 meses 18 24 - ter botão veiculo quitado",
+  refinado logo em seguida com "usa dados da assinatura do contrato") —
+  três peças. (1) "Meses com a Fastcar" (já existia) passou a preferir a
+  data REAL de assinatura do contrato de compra (`contratos.assinado_em`,
+  `tipo='compra'` — o momento em que a obrigação de quitar o financiamento
+  junto ao banco começa de verdade), caindo pra `data_compra`/`updated_at`
+  só quando não existe contrato assinado (ex: veículo cadastrado
+  manualmente via `criarVeiculoManualFrota()`, nunca passou pelo funil
+  normal). (2) Card "⏰ Perto de negociar financiamento" com 3 badges
+  clicáveis (12 a 17 / 18 a 23 / 24+ meses, aproximados em dias — 30,44
+  dias/mês), mesmo padrão exato dos badges de atraso de cobrança do
+  financeiro (`admin/financeiro-lancamentos.php`) — sempre excluindo
+  veículo já marcado quitado; a própria linha da tabela também ganha um
+  badge "⏰ N+ meses" quando aplicável. (3) Nova coluna
+  `oportunidades.financiamento_quitado`/`financiamento_quitado_em` (flag
+  manual + data, nunca inferido sozinho — regra #3) com botão "✅ Marcar
+  quitado"/"↩️ Desfazer" direto na linha — deliberadamente separado de
+  `etapa='fechado'` (só marca o NEGÓCIO de compra concluído) e de
+  `oportunidade_pendencias_pos_venda` (genérico pra qualquer pendência
+  pós-venda; este é um flag simples e específico, 1 clique, sem
+  formulário). CSS novo `a.btn`/`a.btn-primary` em `admin/assets/style.css`
+  — essas 2 classes já eram usadas em `<a>` por toda a nav do financeiro e
+  pelos badges de atraso, mas nunca tinham regra própria (renderizavam
+  como link puro do navegador); corrigido de brinde, os badges de atraso
+  do financeiro também ganharam o visual de botão que já deveriam ter.
+  Testado ponta a ponta em banco isolado: 4 veículos semeados (1 com
+  contrato assinado 20 dias depois da `data_compra`, 1 sem contrato/
+  cadastro manual, 1 quitado, 1 recente) — `ref_posse` confirmado usando a
+  data de assinatura (não a `data_compra` crua) quando existe contrato;
+  faixas 12/18/24 contam certo e excluem o quitado; toggle marca/desmarca
+  `financiamento_quitado`/`_em` certo. Playwright ponta a ponta: badges
+  mostram as contagens certas, clicar num badge filtra a tabela pro
+  veículo certo, clicar "Marcar quitado" atualiza a linha na hora (badge
+  vira "✅ quitado" com a data, botão vira "↩️ Desfazer"), screenshot
+  conferido visualmente.
 - **Módulo de vendas (revenda de veículo da frota)** — `includes/vendas.php` +
   `admin/vendas.php` (pipeline) + `admin/venda.php` (negociação individual),
   15/09/2026, pedido direto do José/Jean ("você colocar galera para fazer o

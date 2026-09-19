@@ -159,6 +159,17 @@ $migracoes = [
     // oportunidade (normal 12-18 meses, nunca mais que 24) em vez de fixo
     // em 24 meses direto nas cláusulas do contrato-mestre de compra
     'oportunidades.prazo_quitacao_meses' => "ALTER TABLE oportunidades ADD COLUMN prazo_quitacao_meses INTEGER",
+
+    // 19/09/2026 — "ter botão veiculo quitado": flag manual de que o
+    // financiamento do banco que a Fastcar assumiu na compra já foi
+    // quitado de verdade — separado de oportunidades.etapa='fechado'
+    // (que só marca o NEGÓCIO de compra concluído) e separado também de
+    // oportunidade_pendencias_pos_venda (genérico pra qualquer pendência
+    // pós-venda; este aqui é um flag simples e específico, pensado só pra
+    // alimentar/desligar o alerta de "perto de negociar financiamento"
+    // em admin/veiculos.php, um clique só, sem precisar abrir formulário).
+    'oportunidades.financiamento_quitado' => "ALTER TABLE oportunidades ADD COLUMN financiamento_quitado INTEGER NOT NULL DEFAULT 0",
+    'oportunidades.financiamento_quitado_em' => "ALTER TABLE oportunidades ADD COLUMN financiamento_quitado_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {

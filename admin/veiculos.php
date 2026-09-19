@@ -33,6 +33,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
             $erro = $e->getMessage();
         }
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['marcar_quitado', 'desmarcar_quitado'], true)) {
+    // 19/09/2026, "ter botão veiculo quitado" — flag manual de que o
+    // financiamento do banco (assumido na compra) já foi pago de verdade.
+    // Simples toggle, sem formulário — a decisão de quando está quitado é
+    // sempre humana (regra #3), o sistema nunca infere isso sozinho.
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        $quitar = ($_POST['acao'] === 'marcar_quitado');
+        $db->prepare("
+            UPDATE oportunidades SET financiamento_quitado = ?, financiamento_quitado_em = ? WHERE id = ?
+        ")->execute([$quitar ? 1 : 0, $quitar ? date('Y-m-d H:i:s') : null, (int)$_POST['oportunidade_id']]);
+        $sucesso = $quitar ? 'Veículo marcado como financiamento quitado.' : 'Veículo voltou a constar como financiamento em aberto.';
+    }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastrar_manual') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
@@ -65,6 +79,31 @@ $consultoresParaCompra = array_values(array_filter(
     fn($u) => in_array($u['perfil'], ['consultor', 'super_admin'], true)
 ));
 
+// 19/09/2026, "usa dados da assinatura do contrato" — o "tempo que o
+// veículo está com a Fastcar" passou a preferir a data REAL de assinatura
+// do contrato de compra (contratos.assinado_em, o momento em que a
+// obrigação de quitar o financiamento junto ao banco começa de verdade),
+// caindo pra data_compra/updated_at só quando não existe contrato assinado
+// (ex: veículo cadastrado manualmente na frota, nunca passou pelo funil
+// normal de compra — ver criarVeiculoManualFrota()).
+$refPosseExpr = "COALESCE(ctr.assinado_em, o.data_compra, o.updated_at)";
+$diasPosseExpr = "CAST((julianday('now','localtime') - julianday({$refPosseExpr})) AS INTEGER)";
+$joinContratoAssinado = "
+    LEFT JOIN (
+        SELECT oportunidade_id, MAX(assinado_em) AS assinado_em
+        FROM contratos WHERE tipo = 'compra' AND assinado_em IS NOT NULL
+        GROUP BY oportunidade_id
+    ) ctr ON ctr.oportunidade_id = o.id
+";
+
+// "ter aba veiculos perto de negociar financiamento apartir 12 meses 18 24"
+// — 3 faixas (dias aproximados: 12/18/24 meses × 30,44 dias), mesmo padrão
+// de badge clicável já usado em admin/financeiro-lancamentos.php pro atraso
+// de cobrança. Só entra veículo com financiamento AINDA em aberto — uma vez
+// marcado quitado (botão "✅ Marcar quitado"), some do alerta sozinho.
+$fPrazo = (int)($_GET['prazo'] ?? 0);
+$faixasPrazo = ['12' => [365, 547], '18' => [548, 729], '24' => [730, 999999]];
+
 $where = "WHERE o.etapa = 'fechado'";
 $params = [];
 if ($busca !== '') {
@@ -72,17 +111,23 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     $params = [$like, $like, $like, $like, $like];
 }
+if (isset($faixasPrazo[(string)$fPrazo])) {
+    [$diasMin, $diasMax] = $faixasPrazo[(string)$fPrazo];
+    $where .= " AND o.financiamento_quitado = 0 AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
+}
 
-$stmtTotal = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
+$stmtTotal = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$joinContratoAssinado} {$where}");
 $stmtTotal->execute($params);
 $totalVeiculos = (int)$stmtTotal->fetchColumn();
 
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
            vd.id AS venda_id, vd.etapa AS venda_etapa,
+           {$refPosseExpr} AS ref_posse,
            (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
+    {$joinContratoAssinado}
     LEFT JOIN vendas vd ON vd.id = (
         SELECT id FROM vendas WHERE oportunidade_id = o.id AND etapa != 'cancelada'
         ORDER BY CASE etapa WHEN 'vendido' THEN 0 WHEN 'contrato_enviado' THEN 1 ELSE 2 END
@@ -99,15 +144,36 @@ $veiculos = $stmt->fetchAll();
 // Soma de TODOS os veículos que batem com a busca, não só os da página
 // atual — com paginação, array_sum() em cima de $veiculos somaria só os
 // 25 da tela, dando um "total pago" errado assim que passasse de 1 página.
-$stmtTotalPago = $db->prepare("SELECT SUM(o.valor_final) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
+$stmtTotalPago = $db->prepare("SELECT SUM(o.valor_final) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$joinContratoAssinado} {$where}");
 $stmtTotalPago->execute($params);
 $totalPago = (float)($stmtTotalPago->fetchColumn() ?: 0);
 
-/** Meses inteiros desde a data de compra (ou updated_at se data_compra não foi preenchida) até hoje. */
-function mesesComAFastcar(?string $dataCompra, string $updatedAt): int {
-    $ref = $dataCompra ?: $updatedAt;
-    if (!$ref) return 0;
-    $inicio = new DateTime($ref);
+// Contagem por faixa de "perto de negociar financiamento" — sempre global
+// (sem filtro de busca/prazo ativo), mesmo espírito dos badges de atraso do
+// financeiro: o número do badge sempre reflete o total real da faixa,
+// independente do que está sendo visto na tabela no momento.
+$bucketsPrazo = ['12' => 0, '18' => 0, '24' => 0];
+$rBuckets = $db->query("
+    SELECT
+        SUM(CASE WHEN {$diasPosseExpr} BETWEEN 365 AND 547 THEN 1 ELSE 0 END) AS b12,
+        SUM(CASE WHEN {$diasPosseExpr} BETWEEN 548 AND 729 THEN 1 ELSE 0 END) AS b18,
+        SUM(CASE WHEN {$diasPosseExpr} >= 730 THEN 1 ELSE 0 END) AS b24
+    FROM oportunidades o
+    {$joinContratoAssinado}
+    WHERE o.etapa = 'fechado' AND o.financiamento_quitado = 0
+")->fetch();
+if ($rBuckets) {
+    $bucketsPrazo = ['12' => (int)($rBuckets['b12'] ?? 0), '18' => (int)($rBuckets['b18'] ?? 0), '24' => (int)($rBuckets['b24'] ?? 0)];
+}
+
+/**
+ * Meses inteiros desde a referência de posse (`ref_posse` da query — a
+ * data de assinatura do contrato de compra, quando existe; senão
+ * data_compra/updated_at, ver comentário no SQL acima) até hoje.
+ */
+function mesesComAFastcar(?string $refPosse): int {
+    if (!$refPosse) return 0;
+    $inicio = new DateTime($refPosse);
     $agora = new DateTime();
     $diff = $inicio->diff($agora);
     return $diff->y * 12 + $diff->m;
@@ -239,31 +305,83 @@ function lerCrlvManual() {
 </div>
 
 <div class="card">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:.5rem">
+        ⏰ Perto de negociar financiamento — tempo com a Fastcar desde a assinatura do contrato de compra
+        (financiamento ainda em aberto)
+    </div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <?php
+        $baseQsPrazo = $busca ? ('busca=' . urlencode($busca)) : '';
+        $rotulosPrazo = ['12' => '12 a 17 meses', '18' => '18 a 23 meses', '24' => '24+ meses'];
+        ?>
+        <?php foreach ($rotulosPrazo as $n => $lbl): ?>
+            <a href="?<?= $baseQsPrazo ?><?= $baseQsPrazo ? '&' : '' ?>prazo=<?= $n ?>" class="btn<?= $fPrazo === (int)$n ? '-primary' : '' ?>" style="width:auto;text-decoration:none">
+                ⏰ <?= $lbl ?> — <strong><?= $bucketsPrazo[$n] ?></strong>
+            </a>
+        <?php endforeach; ?>
+        <?php if ($fPrazo): ?><a href="?<?= $baseQsPrazo ?>" style="align-self:center">Ver todos os veículos</a><?php endif; ?>
+    </div>
+</div>
+
+<div class="card">
     <table class="tabela-oportunidades">
         <thead>
             <tr>
                 <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th>
                 <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
-                <th>Contrato compra</th><th>Fotos/vídeos</th><th>Venda</th><th></th>
+                <th>Contrato compra</th><th>Financiamento</th><th>Fotos/vídeos</th><th>Venda</th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="10"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="11"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
+            <?php
+            $mesesFastcar = mesesComAFastcar($v['ref_posse']);
+            $diasFastcar = $v['ref_posse'] ? (int)((strtotime('now') - strtotime($v['ref_posse'])) / 86400) : 0;
+            $faixaAlerta = null;
+            if (!$v['financiamento_quitado']) {
+                if ($diasFastcar >= 730) $faixaAlerta = '24+';
+                elseif ($diasFastcar >= 548) $faixaAlerta = '18+';
+                elseif ($diasFastcar >= 365) $faixaAlerta = '12+';
+            }
+            ?>
             <tr>
                 <td><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?></td>
                 <td><?= e($v['veiculo_placa'] ?: '—') ?><?php if ($v['veiculo_chassi']): ?><br><small><?= e($v['veiculo_chassi']) ?></small><?php endif; ?></td>
                 <td><a href="/admin/cliente_detalhe.php?id=<?= (int)$v['cliente_id'] ?>"><?= e($v['cliente_nome']) ?></a><br><small><?= e($v['cliente_telefone']) ?></small></td>
                 <td><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></td>
                 <td><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?></td>
-                <td><?= mesesComAFastcar($v['data_compra'], $v['updated_at']) ?> mês(es)</td>
+                <td>
+                    <?= $mesesFastcar ?> mês(es)
+                    <?php if ($faixaAlerta): ?><br><span class="badge badge-aviso">⏰ <?= $faixaAlerta ?> meses</span><?php endif; ?>
+                </td>
                 <td>
                     <?php if ($v['contrato_assinado'] ?? false): ?>
                         <span class="badge badge-ok">✅ assinado</span>
                     <?php else: ?>
                         <span class="badge badge-aviso">pendente</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($v['financiamento_quitado']): ?>
+                        <span class="badge badge-ok">✅ quitado</span>
+                        <?php if ($v['financiamento_quitado_em']): ?><br><small><?= date('d/m/Y', strtotime($v['financiamento_quitado_em'])) ?></small><?php endif; ?><br>
+                        <form method="post" class="inline">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="desmarcar_quitado">
+                            <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
+                            <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11px" class="secundario">↩️ Desfazer</button>
+                        </form>
+                    <?php else: ?>
+                        <span class="badge">⏳ em aberto</span><br>
+                        <form method="post" class="inline">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="marcar_quitado">
+                            <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
+                            <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11px">✅ Marcar quitado</button>
+                        </form>
                     <?php endif; ?>
                 </td>
                 <td><a href="/admin/veiculo_midias.php?id=<?= (int)$v['id'] ?>">📸 <?= (int)$v['total_midias'] ?></a></td>

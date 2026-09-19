@@ -262,6 +262,26 @@ button.perigo:hover { background: #b91c1c; }
 button.secundario { background: var(--fundo); color: var(--texto); box-shadow: none; border: 1px solid var(--borda); }
 button.secundario:hover { background: var(--azul-claro); filter: none; }
 
+/* 19/09/2026 — `.btn`/`.btn-primary` em <a> (nav de admin/financeiro.php,
+   badges clicáveis de atraso/prazo em admin/financeiro-lancamentos.php e
+   admin/veiculos.php) nunca tiveram regra própria — as duas classes
+   renderizavam como link puro do navegador, sem parecer botão nenhum.
+   Estilo próprio pra <a>, deliberadamente mais discreto que `button`
+   (é navegação/filtro, não ação destrutiva/de confirmação). */
+a.btn, a.btn-primary {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: var(--raio-sm);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter .15s, background .15s;
+}
+a.btn { background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); }
+a.btn:hover { background: var(--azul-claro); }
+a.btn-primary { background: linear-gradient(135deg, var(--azul) 0%, var(--azul-escuro) 100%); color: #fff; }
+a.btn-primary:hover { filter: brightness(1.08); }
+
 /* ── Alertas ─────────────────────────────────────────────────────────── */
 .alerta-erro, .alerta-sucesso {
     padding: 12px 16px;

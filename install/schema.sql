@@ -122,6 +122,15 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     seguro_texto TEXT DEFAULT '',      -- condição de seguro/proteção durante a posse da FASTCAR (Quadro-Resumo do contrato)
     encargos_texto TEXT DEFAULT '',    -- responsável por IPVA/licenciamento/multas após a entrega (Quadro-Resumo do contrato)
     prazo_quitacao_meses INTEGER,      -- prazo negociado pra quitar o financiamento (normal: 12-18, nunca > 24 meses — cláusulas 1.3/4.1/5ª/18.3 do contrato-mestre de compra); sem DEFAULT de propósito, sempre confirmado com o cliente por oportunidade, nunca fixo em 24
+    -- Flag manual (19/09/2026, "ter botão veiculo quitado") de que o
+    -- financiamento do banco que a FASTCAR assumiu na compra já foi
+    -- quitado de verdade — separado de etapa='fechado' (só marca o
+    -- NEGÓCIO de compra concluído) e de oportunidade_pendencias_pos_venda
+    -- (genérico pra qualquer pendência pós-venda); este flag é específico,
+    -- pensado só pra alimentar/desligar o alerta de "perto de negociar
+    -- financiamento" em admin/veiculos.php.
+    financiamento_quitado INTEGER NOT NULL DEFAULT 0,
+    financiamento_quitado_em DATETIME,
 
     -- Bloco 7 — Presencial/fechamento
     reuniao_agendada_em DATETIME,
