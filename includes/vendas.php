@@ -41,6 +41,7 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/fila_vendas.php';
 require_once __DIR__ . '/whatsapp_config.php';
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()/lerConteudoArquivoDocumento() — catálogo de mídia de revenda
+require_once __DIR__ . '/financeiro.php'; // finGerarReceitaVendaAssinatura() — receita automática ao vender
 
 // 'whatsapp'/'qualificacao_ia'/'sem_perfil' são exclusivas de leads que
 // entraram por origem='whatsapp' — negociação manual nunca passa por elas.
@@ -163,11 +164,20 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
         ")->execute([$vendaId, $atual, $etapaNova, $responsavelId, clean($observacao)]);
 
         $db->commit();
-        return true;
     } catch (Throwable $e) {
         $db->rollBack();
         throw $e;
     }
+
+    // Fora da transação de propósito: nunca queremos um rollBack() numa
+    // transação já commitada só porque o lançamento financeiro deu
+    // problema. 19/09/2026, pedido direto: "você faz mesma coinsa com
+    // venda assinou contrato gera receita" — ver finGerarReceitaVendaAssinatura().
+    if ($etapaNova === 'vendido') {
+        finGerarReceitaVendaAssinatura($vendaId, $responsavelId);
+    }
+
+    return true;
 }
 
 /**

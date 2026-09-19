@@ -22,6 +22,7 @@ require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php'; // garantirPastaDriveCliente()
 require_once __DIR__ . '/vendas.php'; // mudarEtapaVenda() — auto-transição ao gerar/assinar contrato de venda
+require_once __DIR__ . '/oportunidades.php'; // mudarEtapa()/checklistFechamentoCompleto() — fecha a compra sozinha ao assinar (19/09/2026)
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
 
@@ -523,6 +524,35 @@ function zapsignSincronizarContrato(int $contratoId): void {
 
                 $db->prepare("UPDATE oportunidades SET contrato_assinado = 1 WHERE id = ?")->execute([$c['oportunidade_id']]);
                 notificarAssinaturaContrato($contratoId, false);
+
+                // 19/09/2026, pedido direto: "recebeu a resposta muda etapa
+                // automatico negociação concluida" — fecha a oportunidade
+                // sozinha assim que a assinatura chega, SE o checklist de
+                // fechamento (regra #7) já estiver completo (os outros
+                // documentos obrigatórios já enviados antes da assinatura
+                // chegar) — nunca força quando falta algo, o consultor
+                // fecha manualmente como sempre nesse caso. Nunca refecha
+                // uma oportunidade que já estava 'fechado' (ex: consultor
+                // já fechou na mão antes desta sincronização rodar) — evita
+                // duplicar entrada em oportunidade_historico com
+                // etapa_anterior=etapa_nova='fechado'. Best-effort: nunca
+                // pode travar a sincronização do contrato por causa disso
+                // (mesmo espírito de notificarAssinaturaContrato() acima).
+                try {
+                    $etapaAtualStmt = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
+                    $etapaAtualStmt->execute([$c['oportunidade_id']]);
+                    $etapaAtual = $etapaAtualStmt->fetchColumn();
+                    if ($etapaAtual !== 'fechado' && checklistFechamentoCompleto((int)$c['oportunidade_id'])) {
+                        mudarEtapa(
+                            (int)$c['oportunidade_id'],
+                            'fechado',
+                            null,
+                            'Fechado automaticamente — contrato assinado via ZapSign e checklist já estava completo'
+                        );
+                    }
+                } catch (Throwable $e) {
+                    // best-effort — nunca pode travar a sincronização do contrato
+                }
             }
         }
     }

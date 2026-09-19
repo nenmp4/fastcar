@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php';
+require_once __DIR__ . '/asaas.php'; // finGerarReceitaVendaAssinatura() chama asaasConfigured()/etc direto
 
 /**
  * Calcula o status automaticamente a partir de data_pagamento/
@@ -109,6 +110,12 @@ function finListarLancamentosVenda(int $vendaId): array {
  * $valorEntrada pode ser 0 (venda 100% parcelada, sem entrada) — nesse caso
  * não cria a linha de entrada. parcela_numero da entrada é sempre 0, as
  * parcelas em si vão de 1 a $numParcelas.
+ *
+ * $categoriaEntradaId (novo, 19/09/2026) — categoria SÓ da linha de
+ * entrada, separada da categoria das parcelas ($categoriaId); omitido
+ * (null) cai no mesmo $categoriaId de sempre — o formulário manual em
+ * admin/venda.php nunca passa esse parâmetro, continua se comportando
+ * exatamente como antes.
  */
 function finGerarPlanoParcelamentoVenda(
     int $vendaId,
@@ -118,7 +125,8 @@ function finGerarPlanoParcelamentoVenda(
     string $primeiraParcelaData,
     ?int $categoriaId,
     string $nomeCompradorManual,
-    int $criadoPor
+    int $criadoPor,
+    ?int $categoriaEntradaId = null
 ): array {
     if (finContarLancamentosVenda($vendaId) > 0) {
         return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros gerados — não é possível gerar de novo.'];
@@ -141,7 +149,7 @@ function finGerarPlanoParcelamentoVenda(
 
         $criadas = 0;
         if ($valorEntrada > 0) {
-            $ins->execute([$categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
+            $ins->execute([$categoriaEntradaId ?? $categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
             $criadas++;
         }
         for ($i = 1; $i <= $numParcelas; $i++) {
@@ -160,5 +168,176 @@ function finGerarPlanoParcelamentoVenda(
     } catch (Throwable $e) {
         $db->rollBack();
         return ['ok' => false, 'erro' => $e->getMessage()];
+    }
+}
+
+/**
+ * Despesa AUTOMÁTICA quando uma compra fecha (bloco 8, "sai do caixa") —
+ * 19/09/2026, pedido direto do usuário pra conciliar negociação com
+ * financeiro ("quando compra veiculo sai do caixa... isso entra e saide
+ * de fluxo de negociação"). Chamada de dentro de mudarEtapa()
+ * (includes/oportunidades.php), na mesma transição que já preenche
+ * valor_final/data_compra/fechado_por — nunca em outro lugar, pra sempre
+ * usar o valor final real pago. Nasce direto como 'pago' (confirmado com
+ * o usuário via 2 perguntas diretas: gatilho automático, sem passo extra
+ * de confirmação — valor_final já É o que foi pago de verdade na hora do
+ * fechamento). Best-effort: nunca lança, nunca pode travar o fechamento
+ * da oportunidade por causa disso — mesmo espírito de enviarEmail()/
+ * notificarAssinaturaContrato(). Idempotente por oportunidade_id+origem —
+ * nunca duplica mesmo se `mudarEtapa()` rodar de novo pra 'fechado' na
+ * mesma oportunidade.
+ *
+ * Confirmado também que fechar só é possível DEPOIS do contrato assinado
+ * de verdade (regra #7, checklistFechamentoCompleto() já exige a linha
+ * `contrato_compra` em oportunidade_documentos, só preenchida por
+ * zapsignSincronizarContrato() quando o status vira 'assinado') — então
+ * "só depois do contrato assinado" já é garantido pelo ponto de gatilho
+ * escolhido, sem checagem extra aqui.
+ */
+function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal, ?int $criadoPor): void {
+    try {
+        if ($valorFinal <= 0) return;
+        $db = getDB();
+
+        $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE oportunidade_id = ? AND origem = 'fechamento_compra'");
+        $existe->execute([$oportunidadeId]);
+        if ($existe->fetchColumn()) return;
+
+        $stmt = $db->prepare("
+            SELECT o.veiculo_marca, o.veiculo_modelo, cl.nome AS cliente_nome
+            FROM oportunidades o JOIN clientes cl ON cl.id = o.cliente_id
+            WHERE o.id = ?
+        ");
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op) return;
+
+        $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Compra de veículo (pagamento ao vendedor)'")->fetchColumn();
+        $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) ?: 'veículo';
+        $descricao = "Compra de {$veiculo} — {$op['cliente_nome']} (oportunidade #{$oportunidadeId})";
+
+        $db->prepare("
+            INSERT INTO fin_lancamentos
+                (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, oportunidade_id, origem, created_by)
+            VALUES ('despesa', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, 'fechamento_compra', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorFinal, $oportunidadeId, $criadoPor]);
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar o fechamento da oportunidade
+    }
+}
+
+/**
+ * Receita AUTOMÁTICA (entrada + parcelas) quando o contrato de VENDA é
+ * assinado — 19/09/2026, pedido direto ("você faz mesma coinsa com venda
+ * assinou contrato gera receita"), espelhando o mesmo gatilho automático
+ * do lado da compra acima. Calcula os parâmetros a partir do que a
+ * negociação já tem (`preco_venda`/`valor_pago_contratacao`/
+ * `prazo_quitacao_meses`, já preenchidos pelo vendedor no card de
+ * condições antes de gerar o contrato), em vez de exigir digitar tudo de
+ * novo no formulário manual — que continua existindo do jeito que está,
+ * pra corrigir/gerar na mão quando o cálculo automático não se aplica
+ * (ex: negociação sem prazo/preço definidos direito). Chamada de dentro
+ * de mudarEtapaVenda(), na transição pra 'vendido' — mesma etapa que já
+ * marca `data_venda`, disparada por `zapsignSincronizarContrato()` assim
+ * que a assinatura é confirmada. Best-effort: nunca lança, nunca trava a
+ * transição de etapa da venda. Nunca duplica (checa
+ * `finContarLancamentosVenda()` antes de qualquer escrita) — se o
+ * vendedor já tinha gerado manualmente antes da assinatura chegar, essa
+ * chamada simplesmente não faz nada. 1ª parcela vence no 1º dia do mês
+ * seguinte à assinatura — assunção razoável sem pedido específico de
+ * data, sempre corrigível à mão editando o lançamento depois. Nunca gera
+ * nada se a venda for inteiramente à vista (saldo restante ≤ 0) ou sem
+ * prazo definido — fica pro botão manual nesses casos.
+ *
+ * Categorias separadas (19/09/2026, "como podemos chamar essas despesa
+ * compra de veiculo e venda de veiculos" → confirmado "separar entrada e
+ * parcela em categorias diferentes"): entrada vai pra "Venda de veículo —
+ * entrada" (existia cadastrada, nunca usada até agora), parcelas locais
+ * pra "Venda de veículo — parcela" (mesma que a importação do Asaas já
+ * usa).
+ *
+ * Asaas (19/09/2026, "da para criar o parcelamento direto pelo sistema
+ * usando api? [...] do assas") — tenta cobrança REAL primeiro, igual o
+ * botão manual do card de parcelamento já faz
+ * (`admin/venda.php::gerar_parcelamento`, `$usarAsaas`): se
+ * `asaasConfigured()` e o comprador tem CPF/nome suficiente pra
+ * `asaasCriarClienteSeNecessario()` achar/criar o cliente no Asaas,
+ * `asaasGerarCobrancaParceladaVenda()` cria as parcelas do SALDO como
+ * cobrança de verdade (origem='asaas', cliente escolhe boleto/PIX/cartão
+ * na hora de pagar) — a ENTRADA nunca passa pelo Asaas (mesma decisão de
+ * escopo já documentada em `asaasGerarCobrancaParceladaVenda()`: Asaas só
+ * parcela o saldo), sempre gravada como lançamento local separado. Sem
+ * Asaas configurado, sem CPF/nome suficiente, ou a chamada à API falhando
+ * por qualquer motivo, cai inteiro pro caminho 100% local
+ * (`finGerarPlanoParcelamentoVenda()`, entrada+parcelas juntas) — nunca
+ * trava a venda por causa da integração externa.
+ */
+function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
+    try {
+        if (finContarLancamentosVenda($vendaId) > 0) return;
+
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT v.preco_venda, v.valor_pago_contratacao, v.prazo_quitacao_meses,
+                   v.comprador_nome, v.comprador_cpf, v.comprador_telefone, v.comprador_email,
+                   o.veiculo_marca, o.veiculo_modelo
+            FROM vendas v
+            LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+            WHERE v.id = ?
+        ");
+        $stmt->execute([$vendaId]);
+        $v = $stmt->fetch();
+        if (!$v || !$v['preco_venda']) return;
+
+        $valorEntrada = (float)($v['valor_pago_contratacao'] ?? 0);
+        $restante = (float)$v['preco_venda'] - $valorEntrada;
+        $numParcelas = (int)($v['prazo_quitacao_meses'] ?? 0);
+        if ($restante <= 0 || $numParcelas < 1) return;
+
+        $valorParcela = round($restante / $numParcelas, 2);
+        $primeiraParcela = date('Y-m-d', strtotime('first day of next month'));
+        $categoriaParcelaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Venda de veículo — parcela'")->fetchColumn();
+        $categoriaEntradaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Venda de veículo — entrada'")->fetchColumn();
+        $veiculo = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'veículo';
+
+        $criadoViaAsaas = false;
+        if (asaasConfigured()) {
+            $asaasCustomerId = asaasCriarClienteSeNecessario(
+                (string)($v['comprador_nome'] ?? ''), (string)($v['comprador_cpf'] ?? ''),
+                (string)($v['comprador_telefone'] ?? ''), (string)($v['comprador_email'] ?? '')
+            );
+            if ($asaasCustomerId) {
+                $r = asaasGerarCobrancaParceladaVenda(
+                    $vendaId, $asaasCustomerId, $valorParcela, $numParcelas, $primeiraParcela,
+                    "Venda #{$vendaId} — {$veiculo}"
+                );
+                $criadoViaAsaas = $r['ok'];
+            }
+        }
+
+        if ($criadoViaAsaas) {
+            // Asaas já criou as parcelas do saldo (origem='asaas') — só falta
+            // a entrada, que nunca passa pelo Asaas, sempre local.
+            if ($valorEntrada > 0) {
+                $db->prepare("
+                    INSERT INTO fin_lancamentos
+                        (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, venda_id, parcela_numero, parcela_total, cliente_nome_manual, origem, created_by)
+                    VALUES ('receita', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, 0, ?, ?, 'parcelamento_venda', ?)
+                ")->execute([
+                    $categoriaEntradaId ?: null, "Entrada — venda #{$vendaId}", $valorEntrada,
+                    $vendaId, $numParcelas, (string)($v['comprador_nome'] ?? ''), $criadoPor,
+                ]);
+            }
+        } else {
+            // Fallback 100% local — entrada + parcelas juntas, via a função já
+            // existente/testada (mesma que o botão manual usa).
+            finGerarPlanoParcelamentoVenda(
+                $vendaId, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela,
+                $categoriaParcelaId ?: null, (string)($v['comprador_nome'] ?? ''), (int)$criadoPor,
+                $categoriaEntradaId ?: null
+            );
+        }
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a transição de etapa da venda
     }
 }

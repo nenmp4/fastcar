@@ -652,8 +652,9 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
     observacoes TEXT DEFAULT '',
     -- 'manual' (digitado na tela) / 'parcelamento_venda' (gerado ao fechar
     -- uma venda parcelada, sem Asaas) / 'asaas' (importado/criado via API
-    -- Asaas) — ver nota (5) acima.
-    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas')),
+    -- Asaas) / 'fechamento_compra' (despesa automática ao fechar uma
+    -- compra, 19/09/2026) — ver nota (5) acima.
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra')),
     asaas_payment_id TEXT DEFAULT NULL,
     asaas_customer_id TEXT DEFAULT NULL,
     created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),

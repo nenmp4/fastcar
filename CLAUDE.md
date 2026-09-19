@@ -3296,6 +3296,131 @@ segue no schema sem uso novo, não removida sem ganho real),
   verdade ainda precisa ser criada (número próprio pro financeiro) e as
   credenciais coladas em Configurações — mesmo "a validar em produção" de
   toda integração nova deste projeto.
+  **Negociação conciliada automaticamente com o financeiro** (19/09/2026,
+  pedido direto: "quanto isso temos conciliar negocicação financeiro -
+  para aparece lá endendeu qudno compra veiculo sai do caixa e quando
+  vende colocar entrada e quantas parcelas isso entra e saide de fluxo de
+  negociação") — até então o funil de negociação (compra/venda) e o
+  módulo financeiro eram 100% desacoplados: fechar uma compra ou vender um
+  veículo nunca deixava rastro nenhum em `fin_lancamentos`, só o botão
+  manual de parcelamento em `admin/venda.php` criava lançamento, e nada do
+  lado de compra. Duas pontas, ambas automáticas, sem botão novo pra
+  clicar:
+  (1) **Despesa ao fechar uma COMPRA** — `finRegistrarDespesaCompraFechada()`
+  (novo, `includes/financeiro.php`), chamada de dentro de `mudarEtapa()`
+  (`includes/oportunidades.php`) na mesma transição que já grava
+  `valor_final`/`data_compra`/`fechado_por`. Nasce direto como
+  `status='pago'` (confirmado com o usuário via 2 perguntas diretas:
+  gatilho automático, sem passo extra de confirmação — o valor_final já É
+  o que foi pago de verdade na hora do fechamento), categoria "Compra de
+  veículo (pagamento ao vendedor)", valor = `valor_ofertado` (a única
+  "proposta final" que o sistema rastreia pro bloco 6). "Só depois do
+  contrato assinado" ("só depois deo contrato assinado") já é garantido de
+  graça pelo ponto de gatilho escolhido: regra #7
+  (`checklistFechamentoCompleto()`) sempre exige a linha `contrato_compra`
+  em `oportunidade_documentos`, que só é preenchida por
+  `zapsignSincronizarContrato()` quando a assinatura chega — `mudarEtapa()`
+  pra 'fechado' é estruturalmente impossível antes da assinatura, sem
+  checagem extra nenhuma.
+  (2) **Receita (entrada + parcelas) ao assinar uma VENDA** —
+  `finGerarReceitaVendaAssinatura()` (novo, mesmo arquivo), respondendo a
+  "você faz mesma coinsa com venda assinou contrato gera receita":
+  chamada de dentro de `mudarEtapaVenda()` (`includes/vendas.php`) na
+  transição pra 'vendido', calculando os parâmetros a partir do que a
+  negociação já tem (`preco_venda`/`valor_pago_contratacao`/
+  `prazo_quitacao_meses`, já preenchidos pelo vendedor no card "Condições
+  da venda" antes de gerar o contrato) em vez de exigir digitar tudo de
+  novo — o botão manual de sempre continua existindo, pra corrigir/gerar
+  na mão quando o cálculo automático não se aplica (ex: negociação sem
+  prazo/preço definidos direito). Categorias separadas ("como podemos
+  chamar essas despesa compra de veiculo e venda de veiculos" →
+  confirmado "separar entrada e parcela em categorias diferentes"):
+  entrada sempre em "Venda de veículo — entrada" (existia cadastrada,
+  nunca usada até agora), parcelas em "Venda de veículo — parcela" (mesma
+  que a importação do Asaas já usa).
+  **Integração com Asaas** ("da para criar o parcelamento direto pelo
+  sistema usando api? [...] do assas"): tenta cobrança REAL primeiro,
+  igual o botão manual do card de parcelamento já faz — se
+  `asaasConfigured()` e `asaasCriarClienteSeNecessario()` conseguir
+  achar/criar o cliente no Asaas (precisa de CPF/nome cadastrados no card
+  "Condições da venda" de `admin/venda.php`, confirmado com o usuário:
+  "isso tem ser preenchido na venda ne"), `asaasGerarCobrancaParceladaVenda()`
+  cria as parcelas do SALDO como cobrança de verdade (`origem='asaas'`,
+  cliente escolhe boleto/PIX/cartão na hora de pagar) — a ENTRADA nunca
+  passa pelo Asaas (mesma decisão de escopo já documentada nessa função:
+  Asaas só parcela o saldo), sempre gravada como lançamento local
+  separado, mesmo quando as parcelas vão pelo Asaas. Sem Asaas
+  configurado, sem dado suficiente do comprador, ou a chamada à API
+  falhando por qualquer motivo, cai inteiro pro caminho 100% local
+  (`finGerarPlanoParcelamentoVenda()`, já existia pro botão manual) —
+  nunca trava a venda por causa da integração externa.
+  `finGerarPlanoParcelamentoVenda()` ganhou um parâmetro novo opcional no
+  fim (`?int $categoriaEntradaId = null`), 100% retrocompatível — o botão
+  manual em `admin/venda.php` nunca passa esse parâmetro, continua se
+  comportando exatamente como antes (entrada cai na mesma categoria das
+  parcelas, igual sempre foi). As duas funções novas são best-effort
+  (try/catch, nunca lançam) e idempotentes (checam se já existe
+  lançamento pra aquela oportunidade/venda antes de criar qualquer coisa)
+  — nunca podem travar a transição de etapa por causa de um problema no
+  financeiro. `includes/financeiro.php` ganhou `require_once` de
+  `asaas.php` (faltava — só funcionava por acidente de ordem de load via
+  `admin/_bootstrap.php`; sem isso, o primeiro webhook real do ZapSign pra
+  uma venda, batendo em `includes/contratos.php` → `includes/vendas.php`
+  → `includes/financeiro.php` sem passar pelo bootstrap admin, daria
+  Fatal Error "call to undefined function asaasConfigured()"). Migração de
+  `fin_lancamentos.origem` (CHECK ganhou o valor `'fechamento_compra'`,
+  mesma técnica de reconstrução de tabela já usada pras migrações de
+  `usuarios.perfil` acima) testada isoladamente: reproduz o schema antigo,
+  roda a migração real, confirma dado antigo preservado e o valor novo
+  aceito, roda de novo confirmando idempotência. Testado ponta a ponta em
+  banco isolado + servidor Asaas fake local, 6 cenários: despesa criada
+  certa ao fechar compra (categoria/valor/status='pago'/idempotência/
+  `valor_final<=0` nunca gera nada); receita local (sem Asaas) com
+  entrada+parcelas nas categorias certas; receita via Asaas de verdade
+  (cliente criado no Asaas, parcelas com `origem='asaas'`+
+  `asaas_payment_id`, entrada sempre local); Asaas configurado mas
+  criação de cliente falhando (sem nome) cai pro fallback local sem
+  travar a venda; venda à vista ou sem prazo definido não gera nada
+  automático (fica pro botão manual); regressão confirmando que a chamada
+  manual antiga (sem o parâmetro novo) continua idêntica a antes.
+  **Fechamento automático da compra ao chegar a assinatura** (mesmo
+  pedido, "recebeu a resposta muda etapa automatico negociação
+  concluidoa", confirmado via pergunta direta: "Sim — fecha sozinho
+  quando tudo já está completo") — até então, mesmo com a assinatura
+  confirmada e todos os documentos obrigatórios já enviados antes, o
+  consultor ainda precisava abrir a tela e clicar em fechar manualmente.
+  `zapsignSincronizarContrato()` (`includes/contratos.php`) ganhou uma
+  checagem logo depois de gravar a linha `contrato_compra` em
+  `oportunidade_documentos`: se a etapa atual NÃO é 'fechado' e
+  `checklistFechamentoCompleto()` já dá true (todos os OUTROS documentos
+  obrigatórios já estavam preenchidos antes da assinatura chegar), chama
+  `mudarEtapa()` pra 'fechado' sozinho, com uma observação explicando que
+  foi automático — encadeando de brinde com a despesa automática do
+  ponto (1) acima (o fechamento passa pelo mesmo `mudarEtapa()` de
+  sempre, então `finRegistrarDespesaCompraFechada()` dispara junto, sem
+  código duplicado). Quando falta algum outro documento, não força nada —
+  fica exatamente como sempre foi, esperando o consultor fechar na mão
+  depois de completar o que falta. Nunca refecha uma oportunidade que já
+  estava 'fechado' (ex: consultor já tinha fechado manualmente antes
+  dessa sincronização rodar) — evita duplicar entrada em
+  `oportunidade_historico` com `etapa_anterior=etapa_nova='fechado'`.
+  Best-effort (try/catch), nunca pode travar a sincronização do contrato
+  por causa disso — mesmo espírito de `notificarAssinaturaContrato()`,
+  que já roda logo antes. `includes/contratos.php` ganhou `require_once`
+  de `oportunidades.php` (faltava pelo mesmo motivo do `asaas.php` acima
+  — os 2 pontos que disparam essa sincronização de verdade em produção,
+  `api/zapsign_webhook.php` e `cron/zapsign_sync.php`, nunca requeriam
+  `oportunidades.php` diretamente, então o primeiro webhook real de
+  assinatura teria dado Fatal Error "call to undefined function
+  checklistFechamentoCompleto()" assim que essa checagem nova rodasse).
+  Testado ponta a ponta em banco isolado + servidor ZapSign fake local, 3
+  cenários: checklist já completo (só faltava a própria assinatura) →
+  fecha automático, `valor_final`/despesa/histórico todos certos,
+  observação explica que foi automático; checklist incompleto (falta
+  outro documento, ex: CNH) → NÃO fecha, mas a assinatura em si é salva
+  normalmente (consultor fecha na mão depois de completar); oportunidade
+  já estava 'fechado' manualmente antes da sincronização rodar → não
+  duplica histórico nem despesa.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

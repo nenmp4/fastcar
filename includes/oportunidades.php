@@ -11,6 +11,7 @@ require_once __DIR__ . '/fila_leads.php';
 require_once __DIR__ . '/whatsapp_config.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
+require_once __DIR__ . '/financeiro.php';
 
 const ETAPAS_VALIDAS = [
     'whatsapp', 'qualificacao_ia', 'crm_preenchido', 'atendimento',
@@ -450,9 +451,13 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
     }
 
     // Fora da transação de propósito: nunca queremos um rollBack() numa
-    // transação já commitada só porque o envio de e-mail deu problema.
+    // transação já commitada só porque o envio de e-mail/lançamento
+    // financeiro deu problema.
     if ($etapaNova === 'fechado') {
         enviarEmailCompraConcluida($oportunidadeId);
+        // 19/09/2026, pedido direto: conciliar negociação com financeiro —
+        // "quando compra veiculo sai do caixa" — ver finRegistrarDespesaCompraFechada().
+        finRegistrarDespesaCompraFechada($oportunidadeId, (float)$op['valor_ofertado'], $responsavelId);
     }
 
     return true;
