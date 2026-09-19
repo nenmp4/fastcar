@@ -254,6 +254,11 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
         <span class="badge"><?= e(etapaVendaLabel($v['etapa'])) ?></span>
         <?php if ($atrasada): ?><span class="badge badge-atraso">⚠️ ação atrasada</span><?php endif; ?>
+        <?php if ($v['temperatura_lead']): ?>
+            <span class="badge" title="Leitura da IA sobre a prontidão de compra do lead">
+                <?= ['quente' => '🔥 Quente', 'morno' => '🌤️ Morno', 'frio' => '❄️ Frio'][$v['temperatura_lead']] ?? '' ?>
+            </span>
+        <?php endif; ?>
     </h2>
     <div class="grid-2">
         <div>

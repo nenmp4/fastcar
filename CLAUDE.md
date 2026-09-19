@@ -1828,6 +1828,71 @@ segue no schema sem uso novo, não removida sem ganho real),
   "entrada R$ 8.000,00", "parcela até R$ 950,50" formatados certos) +
   migração testada idempotente preservando uma venda já existente sem as
   colunas novas (rodada 2x sem efeito colateral).
+  **Lead quente/morno/frio + dashboard/etapas completo, igual compra**
+  (19/09/2026, 2 pedidos diretos: "crm tem tá preechido igual na compra
+  lead quente frio e mornos" e "aproveita adciona dasbord também em
+  vendas igual de compras etapas igual de compras", "todo funil
+  compreto"). (1) **Temperatura do lead comprador** — nova coluna
+  `vendas.temperatura_lead`, mesmo conceito de
+  `oportunidades.temperatura_lead` mas critério adaptado ao COMPRADOR
+  (não ao vendedor/dívida financiada): orçamento definido (entrada/
+  parcela) OU forma de pagamento decidida + veículo específico da frota
+  já identificado + urgência real pra decidir = "quente"; só pesquisando,
+  sem orçamento/veículo confirmado, sem pressa = "frio"; "morno" no meio.
+  `includes/ia_qualificacao_vendas.php` ganhou o campo na extração e a
+  mesma disciplina de `includes/ia_qualificacao.php`: reavalia a cada
+  turno (nunca fill-if-empty) e de propósito NÃO conta como "avanço real"
+  pro contador de estagnação (senão a conversa nunca escalaria mesmo
+  girando em círculos, já que esse campo muda sozinho todo turno). Badge
+  🔥/🌤️/❄️ e ordenação (quente sempre primeiro) em `admin/vendas.php`
+  (pipeline) e `admin/venda.php` (cabeçalho do detalhe), mesmo padrão
+  visual/CSS já usado em `admin/index.php` pro lado de compra.
+  (2) **Dashboard/nav completos** — a nav de `admin/vendas.php` sempre foi
+  hard-limitada a `ETAPAS_VENDA_ATIVAS` (whatsapp/qualificacao_ia/
+  negociacao/contrato_enviado): uma negociação já `vendido`/`cancelada`/
+  `sem_perfil` não aparecia em LUGAR NENHUM do dashboard, nem pela busca —
+  mesmo gap já corrigido uma vez do lado de compra ("✅ Fechadas"/
+  "❌ Encerradas", 18/09/2026, ver bullet "Dashboard por perfil"). Duas
+  abas novas: "✅ Vendidas" (`?etapa=vendido`, reaproveitando o próprio
+  valor real da etapa terminal como aba especial, igual compra faz com
+  `?etapa=fechado`) e "❌ Encerradas" (`?etapa=encerradas`, cobre
+  `cancelada`+`sem_perfil` juntos) — cada uma monta seu próprio escopo de
+  etapa pro `WHERE` em vez de sempre `ETAPAS_VENDA_ATIVAS`; como vendas
+  nunca teve um `fechado_por` próprio (diferente de compra), as 3 abas
+  usam sempre `responsavel_id` pro filtro de dono. Linha da tabela mostra
+  a data de venda ou o motivo de cancelamento/perda quando aplicável.
+  **2 bugs pegos e corrigidos no caminho, antes de qualquer teste**
+  (mesma classe já corrigida uma vez do lado de compra): a query de
+  contagem da nav das etapas ativas reaproveitava a mesma variável de
+  `$placeholders` que passou a variar de tamanho conforme a aba
+  selecionada — quebraria o número de binds; corrigida com uma
+  `$placeholdersAtivas` própria, sempre do tamanho de
+  `ETAPAS_VENDA_ATIVAS`. E o cálculo de "⚠️ atrasada" não restringia a
+  etapas ativas — uma venda já `vendido`/`cancelada`/`sem_perfil` com
+  `proxima_acao_em` velho (resto de quando ainda estava ativa) apareceria
+  com destaque de atraso; só passou a ser um problema de verdade agora que
+  essas etapas ficaram visíveis nas abas novas — corrigido restringindo a
+  `ETAPAS_VENDA_ATIVAS`. Testado ponta a ponta em banco isolado com
+  Playwright: nav mostra as contagens certas nas 3 negociações semeadas (1
+  em negociação/quente, 1 vendido, 1 cancelada com motivo); clicar
+  "Vendidas" mostra só a vendida; clicar "Encerradas" mostra só a
+  cancelada com o motivo visível e sem badge de atraso; detalhe da venda
+  quente mostra o badge "🔥 Quente" no cabeçalho; função isolada
+  confirmando que `temperatura_lead` reavalia a cada chamada (não é
+  fill-if-empty), nunca conta como avanço real, e ignora valor fora de
+  frio/morno/quente.
+  ⚠️ **Schema preparado, ainda sem UI** (mesmo dia, "espelhar compra - subir
+  os documentos preencher tudo ter link igual de compra... analisar
+  contrato antes enviar") — `vendas.documentos_token` +
+  `venda_documentos` (nova tabela, mesma estrutura de
+  `oportunidade_documentos` mas pro COMPRADOR, escopo confirmado com o
+  usuário: só CNH/RG + comprovante de endereço, nunca contrato de
+  financiamento/CRLV — comprador de revenda não tem financiamento ativo
+  nem CRLV pra entregar) já entraram no `schema.sql`/`migrar.php` desta
+  leva, mas o wizard público (`public/documentos_venda.php`) e o botão de
+  preview de contrato (`gerarContratoVendaPreview()`, espelhando
+  `gerarContratoCompraPreview()`) ainda não foram implementados — fica
+  pendente pra próxima sessão, tabela nova sem uso real ainda.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

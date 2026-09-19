@@ -170,6 +170,14 @@ $migracoes = [
     // em admin/veiculos.php, um clique só, sem precisar abrir formulário).
     'oportunidades.financiamento_quitado' => "ALTER TABLE oportunidades ADD COLUMN financiamento_quitado INTEGER NOT NULL DEFAULT 0",
     'oportunidades.financiamento_quitado_em' => "ALTER TABLE oportunidades ADD COLUMN financiamento_quitado_em DATETIME",
+
+    // 19/09/2026 — "espelhar compra" no módulo de vendas: link de
+    // documentos do comprador (mesmo mecanismo de
+    // oportunidades.documentos_token) e temperatura do lead comprador
+    // (mesmo conceito de oportunidades.temperatura_lead, "crm tem tá
+    // preechido igual na compra lead quente frio e mornos").
+    'vendas.documentos_token' => "ALTER TABLE vendas ADD COLUMN documentos_token TEXT",
+    'vendas.temperatura_lead' => "ALTER TABLE vendas ADD COLUMN temperatura_lead TEXT DEFAULT ''",
 ];
 
 foreach ($migracoes as $nome => $sql) {
@@ -190,6 +198,33 @@ try {
     echo "✅ idx_pendencias_oportunidade: ok\n";
 } catch (Throwable $e) {
     echo "❌ idx_pendencias_oportunidade: {$e->getMessage()}\n";
+}
+
+// 19/09/2026 — "espelhar compra" no módulo de vendas: documentos que o
+// COMPRADOR sobe sozinho no wizard público (public/documentos_venda.php) —
+// tabela PRÓPRIA, nunca reaproveita oportunidade_documentos (que é sobre o
+// vendedor original). Texto idêntico ao de install/schema.sql.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS venda_documentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            venda_id INTEGER NOT NULL REFERENCES vendas(id),
+            tipo TEXT NOT NULL,
+            arquivo_url TEXT DEFAULT '',
+            drive_file_id TEXT DEFAULT '',
+            obrigatorio INTEGER DEFAULT 1,
+            enviado_pelo_cliente INTEGER DEFAULT 0,
+            dados_confirmados INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime')),
+            UNIQUE(venda_id, tipo)
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_venda_documentos_venda ON venda_documentos(venda_id)");
+    $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_documentos_token ON vendas(documentos_token) WHERE documentos_token IS NOT NULL");
+    echo "✅ venda_documentos: tabela + índices ok\n";
+} catch (Throwable $e) {
+    echo "❌ venda_documentos: {$e->getMessage()}\n";
 }
 
 // 17/09/2026 — "vamos deixar opcional o laudo e comprovante de pagamento

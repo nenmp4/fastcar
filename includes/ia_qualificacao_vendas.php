@@ -129,7 +129,7 @@ disse explicitamente — nunca invente, deduza ou arredonde. Campo não
 informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false}
+{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false}
 
 - nome_comprador: o nome que a própria pessoa deu na conversa. null se ela não disse ainda.
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
@@ -138,6 +138,7 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - valor_entrada_disponivel: número (sem "R$", só o valor) do quanto a pessoa disse ter disponível de entrada. null se não informado.
 - valor_parcela_orcamento: número (sem "R$", só o valor) do quanto a pessoa disse caber no orçamento dela de parcela mensal. null se não informado.
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
+- temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRONTA PRA COMPRAR AGORA (não pergunte isso a ela, é uma leitura sua da conversa). Sinal principal: tem orçamento definido (entrada e/ou parcela mensal) OU forma de pagamento decidida (à vista/financiado/promissória), JÁ identificou um veículo específico da frota que bate com o que procura, e demonstrou urgência real pra decidir = "quente". Ainda só pesquisando, sem orçamento/veículo confirmado, sem pressa nenhuma = "frio" — mesmo respondendo rápido e educadamente. "morno" fica no meio (ex: já sabe o que procura e tem orçamento, mas ainda não bateu com um veículo específico da frota; ou o contrário). Tom/engajamento na conversa é sinal SECUNDÁRIO — desempata dentro da mesma faixa, nunca sozinho vira "quente" sem orçamento/veículo/urgência real. null só se ainda não houver conversa suficiente pra avaliar.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - sem_perfil: true se a pessoa disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
 - qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), E a forma de pagamento pretendida.
@@ -302,6 +303,17 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
             $params[] = (float)str_replace(',', '.', (string)$dados[$c]);
             $avancouDadoReal = true;
         }
+    }
+
+    // temperatura_lead: julgamento vivo da IA sobre a conversa até agora —
+    // sempre atualiza quando a IA reavalia (mesmo padrão de
+    // includes/ia_qualificacao.php, "crm tem tá preechido igual na compra
+    // lead quente frio e mornos"), de propósito NÃO conta como "avanço"
+    // pro contador de estagnação.
+    if (!empty($dados['temperatura_lead']) && in_array($dados['temperatura_lead'], ['frio', 'morno', 'quente'], true)
+        && $dados['temperatura_lead'] !== $v['temperatura_lead']) {
+        $sets[] = "temperatura_lead = ?";
+        $params[] = $dados['temperatura_lead'];
     }
 
     if ($sets) {

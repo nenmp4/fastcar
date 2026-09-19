@@ -459,6 +459,14 @@ CREATE TABLE IF NOT EXISTS vendas (
     valor_entrada_disponivel REAL,
     valor_parcela_orcamento REAL,
     urgencia TEXT DEFAULT '',
+    -- Leitura viva da IA sobre a prontidão de compra do lead (19/09/2026,
+    -- "crm tem tá preechido igual na compra lead quente frio e mornos") —
+    -- mesmo conceito de oportunidades.temperatura_lead, mas critério
+    -- adaptado ao COMPRADOR: sinal principal é ter orçamento definido
+    -- (entrada/parcela) + veículo específico já identificado + urgência
+    -- real pra decidir = "quente"; ainda pesquisando, sem orçamento nem
+    -- veículo confirmado, sem pressa = "frio"; "morno" no meio.
+    temperatura_lead TEXT DEFAULT '' CHECK (temperatura_lead IN ('', 'frio', 'morno', 'quente')),
     -- Último oportunidade_id (frota) pra quem a IA já mandou foto/vídeo
     -- do catálogo NESTA conversa (17/09/2026, "ela precisa enviar fotos
     -- do veículos - vídeo") — evita mandar a mesma mídia de novo a cada
@@ -482,6 +490,11 @@ CREATE TABLE IF NOT EXISTS vendas (
     comprador_endereco TEXT DEFAULT '',
     comprador_telefone TEXT DEFAULT '',
     comprador_email TEXT DEFAULT '',
+    -- Token do wizard público de documentos do COMPRADOR (19/09/2026,
+    -- "espelhar compra - subir os documentos... ter link igual de compra"),
+    -- mesmo mecanismo de oportunidades.documentos_token — link mandado via
+    -- WhatsApp, sem login (public/documentos_venda.php).
+    documentos_token TEXT,
 
     -- Condições da venda — Quadro-Resumo do contrato-mestre de venda
     -- (includes/contratos_pdf.php::gerarPdfContratoVenda(), transcrito de
@@ -550,6 +563,34 @@ CREATE TABLE IF NOT EXISTS venda_historico (
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_venda_historico_venda ON venda_historico(venda_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_documentos_token
+    ON vendas(documentos_token) WHERE documentos_token IS NOT NULL;
+
+-- Documentos que o COMPRADOR sobe sozinho no wizard público, espelhando
+-- oportunidade_documentos do lado da compra (19/09/2026, "espelhar compra -
+-- subir os documentos preencher tudo ter link igual de compra... analisar
+-- contrato antes enviar"), mas tabela PRÓPRIA — nunca reaproveita
+-- oportunidade_documentos, que é sobre o VENDEDOR original (dono anterior
+-- do carro), um contato diferente do comprador da revenda. Escopo de
+-- documento bem mais enxuto que o de compra: só CNH/RG + comprovante de
+-- endereço (comprador de revenda não tem financiamento ativo nem CRLV pra
+-- entregar — os outros 2 tipos que o wizard de compra pede não fazem
+-- sentido aqui, decisão confirmada com o usuário).
+CREATE TABLE IF NOT EXISTS venda_documentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    venda_id INTEGER NOT NULL REFERENCES vendas(id),
+    tipo TEXT NOT NULL,                 -- cnh, comprovante_endereco
+    arquivo_url TEXT DEFAULT '',        -- caminho relativo em storage/uploads/ — só quando NÃO subiu pro Drive (fallback)
+    drive_file_id TEXT DEFAULT '',      -- preenchido quando o arquivo foi pro Google Drive
+    obrigatorio INTEGER DEFAULT 1,
+    enviado_pelo_cliente INTEGER DEFAULT 0, -- 1 = veio do wizard público, 0 = vendedor anexou manualmente
+    dados_confirmados INTEGER DEFAULT 0,    -- mesmo mecanismo do wizard de compra: decide qual etapa mostrar
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime')),
+    UNIQUE(venda_id, tipo)
+);
+CREATE INDEX IF NOT EXISTS idx_venda_documentos_venda ON venda_documentos(venda_id);
 
 -- ── Módulo financeiro (17/09/2026, pedido José/Jean: "tem modulo
 -- financeiro no iab boutique - precisamos copia de la para colocar aqui") —
