@@ -4259,6 +4259,81 @@ segue no schema sem uso novo, não removida sem ganho real),
   consultor diferente do usuário logado, cadastrar, e confirmar no banco
   que `fechado_por`/`responsavel_id` gravaram o consultor selecionado, não
   quem estava logado).
+- **Importação do CRM antigo (Yaqar/IACAR) — Fase 1: clientes/frota**
+  (19/09/2026, "manda email completo" → usuário compartilhou a pasta
+  raiz do export com a service account do Fastcar, confirmando via
+  screenshot — "Compartilhado com Fast Car Solution SOLUTIONS") — o
+  usuário tinha um backup completo do CRM que a Fastcar usava ANTES deste
+  sistema (mesmo CNPJ, `66.934.500.0001-09`, confirmado via
+  `distribution_config.csv` do export — e os mesmos vendedores já citados
+  nos incidentes deste CLAUDE.md: Jean Jesus, Ingrid Gonçalves, Dayane
+  Carmo, Anderson Souza, Rafael Rocha Bueno), exportado como 14 CSVs
+  (`tabelas/`) + arquivos reais organizados por UUID (`arquivos/`),
+  compartilhado no Google Drive com a service account do Fastcar
+  (Compartilhar → e-mail da service account → Leitor — passo manual do
+  usuário, sem código envolvido). Análise prévia (contagem de linhas por
+  CSV, cruzamento com o que já tinha sido importado via ZapSign na mesma
+  sessão) levou a um plano em fases, confirmado com o usuário: Fase 1
+  (clientes/frota, esta rodada) → Fase 2 (vendas/revenda, "depois temos
+  ver da venda", ainda não ligada no script) → Fase 3 (leads won/lost como
+  histórico, ainda não ligada). `includes/importar_crm_antigo.php` (novo)
+  reaproveita `criarVeiculoManualFrota()`/`salvarArquivoGeradoComoDocumento()`
+  sem mudar nenhuma delas (mesmo raciocínio de sempre —
+  `includes/zapsign_importar.php` — é IMPORTAÇÃO de dado histórico, não
+  operação normal, nunca `mudarEtapa()`) — grava `oportunidade_historico`
+  manual pra manter a auditoria mesmo pulando a função central. Usa
+  `GoogleDrive::list()`/`download()` (já existiam, genéricos o bastante
+  pra ler qualquer pasta compartilhada, não só a própria) pra baixar CSVs
+  E documentos — sem mudar `includes/google_drive.php`. Campos sem
+  equivalente direto no schema atual (custos de avaliação/despachante,
+  dados de PIX, saldo devedor detalhado) nunca são descartados
+  silenciosamente — viram texto legível dentro do `oportunidade_historico`.
+  Mapeamento de tipo de documento: `cnh`→`cnh`, `proof_of_address`→
+  `comprovante_endereco`, `financing_contract`→`contrato_financiamento`,
+  `vehicle_document`→`crlv`, `contract`→`contrato_compra` (confirmado
+  contra o usuário: "se tiver os documentos contrato compra" — sim, já
+  estava mapeado). Dedup em 3 camadas: (1) `zapsign_doc_token` já em
+  `contratos` (nunca reimporta o que já veio pela importação direta da
+  ZapSign feita antes nesta mesma sessão); (2) telefone já cadastrado em
+  `clientes` (reaproveita o cliente, nunca duplica); (3) **trava de
+  idempotência por ID antigo** (`config.crm_antigo_importado_clients_{id}`,
+  mesmo padrão `config.chave_id` já usado em `alerta_atraso_{id}`/
+  `reeng_sent_{telefone}`) — achado real no próprio teste: nem todo
+  cliente tem `zapsign_doc_token` preenchido, então rodar o script
+  `--confirmar` 2x sem essa trava reaproveitava o CLIENTE (por telefone)
+  mas criava uma OPORTUNIDADE duplicada pra ele; corrigido marcando cada
+  linha importada por um ID que nunca muda entre rodadas. Vendedor antigo
+  → `usuarios.id` atual mapeado por TELEFONE normalizado (nunca por nome,
+  que diverge fácil entre os dois sistemas) — sem match, fica sem
+  responsável, nunca chuta um id (regra #3). CLI dry-run por padrão
+  (`php install/importar_crm_antigo.php <drive_folder_id>`), `--confirmar`
+  pra aplicar de verdade, mesmo molde do `install/limpar_leads_invalidos.php`
+  já usado no projeto. `install/importar_crm_antigo.php` acha as subpastas
+  `tabelas`/`arquivos` pelo nome dentro da pasta raiz informada — não
+  precisa de mais nenhuma configuração além do ID da pasta (da URL do
+  Drive) na hora de rodar. Testado ponta a ponta em banco isolado contra
+  servidor Google Drive fake local (OAuth + `/files` list/download,
+  credencial de teste com chave RSA real gerada via `openssl`): dry-run
+  reporta certo os 3 cenários (importaria / já cadastrado por telefone,
+  reaproveita sem duplicar / já importado via zapsign, pula);
+  `--confirmar` grava cliente com CPF/RG/endereço/nacionalidade/estado
+  civil/profissão preenchidos, oportunidade com marca/modelo separados
+  corretamente de "MARCA/MODELO", placa/chassi/renavam, banco/parcela/
+  parcelas restantes/atraso, `valor_final`/`data_compra` reais (não
+  "hoje", que é o padrão de `criarVeiculoManualFrota()`), `responsavel_id`
+  mapeado certo pelo telefone do vendedor; os 2 documentos (CNH + contrato
+  de compra) baixados do Drive fake e salvos em `oportunidade_documentos`
+  com o conteúdo exato confirmado byte a byte; rodar `--confirmar` uma 2ª
+  vez seguida (mesma origem) não duplica NADA — 0 importados, 3 pulados,
+  contagem de clientes/oportunidades/documentos idêntica antes e depois,
+  confirmando que a correção da trava de idempotência funciona de
+  verdade. `php tests/smoke.php` do projeto principal continua limpo
+  depois da mudança. Fase 2 (`crmAntigoImportarVenda()`) e Fase 3
+  (`crmAntigoImportarLeadEncerrado()`) já estão escritas em
+  `includes/importar_crm_antigo.php` (mesmo raciocínio de nunca disparar
+  `mudarEtapaVenda()`/gerar lançamento financeiro falso pra venda
+  histórica), mas **ainda não plugadas** no CLI — ficam pra próxima
+  rodada, depois de validar a Fase 1 em produção.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
