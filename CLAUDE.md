@@ -3706,6 +3706,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   negociação com id diferente, gera lançamentos financeiros próprios, e
   os 4 lançamentos da negociação cancelada continuam intactos (nunca
   apagados/reaproveitados).
+  **Lançamento de receita importado do Asaas sem nenhum jeito de ver
+  detalhes** (19/09/2026, achado real: "la no financeiro não conseguimos
+  ver detalhes da receitas") — `admin/financeiro-lancamentos.php` só
+  desenhava o link ✏️ (editar) quando `origem != 'asaas'` — correto não
+  poder EDITAR (o Asaas é a fonte de verdade dessas cobranças, o POST já
+  rejeitava no servidor), mas pro caso `origem='asaas'` (a maioria das
+  receitas reais hoje, parcela de venda de veículo importada do Asaas) a
+  célula de ação só mostrava o texto estático "via Asaas", sem nenhum
+  jeito de ver parcela (`parcela_numero`/`parcela_total`), ID da
+  cobrança/cliente no Asaas, forma de pagamento, observações ou anexo —
+  só as 6 colunas já visíveis na própria linha da tabela. `GET
+  action=edit` já buscava a linha inteira independente da origem, só
+  faltava o link e um modo de exibição adequado no modal. Corrigido
+  reaproveitando o MESMO modal de sempre, em modo somente-leitura quando
+  `$editando['origem'] === 'asaas'`: formulário inteiro entra num
+  `<fieldset disabled>` (desabilita todos os campos de uma vez), botão
+  "Salvar" some (fica só "Fechar"), título vira "👁️ Detalhes do
+  lançamento (Asaas)", e um bloco novo no topo do modal mostra os 3
+  dados que só existem pro Asaas e não tinham lugar nenhum na tela antes:
+  parcela ("N de M", ou "Entrada" quando `parcela_numero=0`), ID da
+  cobrança e ID do cliente no Asaas (só aparecem quando preenchidos).
+  Texto da célula na tabela trocou de "via Asaas" solto pra um link "👁️
+  via Asaas" apontando pro mesmo `?action=edit&id=`. Nenhuma mudança no
+  POST/fluxo de salvar, só a apresentação pro caso Asaas, que antes não
+  tinha nenhuma. Testado ponta a ponta em banco isolado com Playwright:
+  lançamento Asaas semeado com parcela 2 de 12 + IDs de cobrança/cliente
+  + observações + forma de pagamento — clicar "via Asaas" abre o modal
+  com título "Detalhes", mostra "2 de 12"/os 2 IDs/valor/observações
+  certos, campo de descrição confirmado desabilitado, sem botão "Salvar"
+  nenhum; lançamento manual normal confirmado intocado (título "Editar
+  lançamento", campos habilitados, botão "Salvar" presente).
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

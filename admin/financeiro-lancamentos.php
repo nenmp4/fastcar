@@ -109,6 +109,15 @@ if (($_GET['action'] ?? '') === 'edit' && !empty($_GET['id'])) {
 // ou pelo botão "Novo lançamento" (?novo=1), sem mudar nada do POST/fluxo
 // de salvar — mesma URL, mesmo formulário, só a apresentação mudou.
 $abrirModalLancamento = $editando !== null || isset($_GET['novo']);
+// 19/09/2026, "la no financeiro não conseguimos ver detalhes da receitas"
+// — lançamento importado do Asaas (a maioria das receitas reais, parcela
+// de venda de veículo) não tinha NENHUM link clicável na tabela, só o
+// texto estático "via Asaas" (correto não poder editar — o Asaas é a
+// fonte de verdade — mas errado não dar nem pra VER parcela/ID do
+// pagamento/observações/anexo). Mesmo modal de sempre, só em modo
+// somente-leitura (sem POST possível de qualquer forma, `origem != 'asaas'`
+// já trava no servidor) via <fieldset disabled>.
+$somenteLeituraLancamento = ($editando['origem'] ?? '') === 'asaas';
 
 $fTipo = (string)($_GET['tipo'] ?? '');
 $fStatus = (string)($_GET['status'] ?? '');
@@ -207,15 +216,32 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
 
 <dialog id="modal-lancamento" class="modal-lancamento">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-    <h2 style="margin:0"><?= $editando ? '✏️ Editar lançamento' : '➕ Novo lançamento' ?></h2>
+    <h2 style="margin:0"><?= $somenteLeituraLancamento ? '👁️ Detalhes do lançamento (Asaas)' : ($editando ? '✏️ Editar lançamento' : '➕ Novo lançamento') ?></h2>
     <button type="button" onclick="document.getElementById('modal-lancamento').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
   </div>
+  <?php if ($somenteLeituraLancamento): ?>
+    <div class="alerta-info" style="margin-bottom:1rem">
+      🔄 Este lançamento veio do Asaas — o Asaas é a fonte de verdade, então os campos abaixo são só pra consulta, não é possível editar por aqui.
+      <ul style="margin:.5rem 0 0;padding-left:1.2rem">
+        <?php if ((int)($editando['parcela_total'] ?? 0) > 1): ?>
+          <li><strong>Parcela:</strong> <?= (int)$editando['parcela_numero'] === 0 ? 'Entrada' : ((int)$editando['parcela_numero'] . ' de ' . (int)$editando['parcela_total']) ?></li>
+        <?php endif; ?>
+        <?php if (!empty($editando['asaas_payment_id'])): ?>
+          <li><strong>ID da cobrança no Asaas:</strong> <?= e($editando['asaas_payment_id']) ?></li>
+        <?php endif; ?>
+        <?php if (!empty($editando['asaas_customer_id'])): ?>
+          <li><strong>ID do cliente no Asaas:</strong> <?= e($editando['asaas_customer_id']) ?></li>
+        <?php endif; ?>
+      </ul>
+    </div>
+  <?php endif; ?>
   <form method="POST" enctype="multipart/form-data">
     <?= csrfField() ?>
     <input type="hidden" name="acao" value="salvar">
     <input type="hidden" name="id" value="<?= (int)($editando['id'] ?? 0) ?>">
     <input type="hidden" name="drive_file_id_atual" value="<?= e($editando['drive_file_id'] ?? '') ?>">
     <input type="hidden" name="arquivo_url_atual" value="<?= e($editando['arquivo_url'] ?? '') ?>">
+    <fieldset <?= $somenteLeituraLancamento ? 'disabled' : '' ?> style="border:none;padding:0;margin:0">
 
     <div class="grid-2">
       <div>
@@ -309,8 +335,11 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <label>Observações</label>
     <textarea name="observacoes" rows="2"><?= e($editando['observacoes'] ?? '') ?></textarea>
 
-    <button type="submit"><?= $editando ? 'Salvar alterações' : 'Lançar' ?></button>
-    <button type="button" onclick="document.getElementById('modal-lancamento').close()">Cancelar</button>
+    </fieldset>
+    <?php if (!$somenteLeituraLancamento): ?>
+      <button type="submit"><?= $editando ? 'Salvar alterações' : 'Lançar' ?></button>
+    <?php endif; ?>
+    <button type="button" onclick="document.getElementById('modal-lancamento').close()"><?= $somenteLeituraLancamento ? 'Fechar' : 'Cancelar' ?></button>
   </form>
 </dialog>
 <?php if ($abrirModalLancamento): ?>
@@ -373,7 +402,7 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
             <?php endif; ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Excluir este lançamento?')"><?= csrfField() ?><input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer" title="Excluir">🗑️</button></form>
           <?php else: ?>
-            <small style="color:var(--muted)">via Asaas</small>
+            <a href="?action=edit&id=<?= (int)$l['id'] ?>" title="Ver detalhes">👁️ via Asaas</a>
           <?php endif; ?>
         </td>
       </tr>
