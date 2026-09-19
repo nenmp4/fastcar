@@ -30,6 +30,7 @@ require_once __DIR__ . '/../includes/paginacao.php';
 require_once __DIR__ . '/../includes/gemini.php';
 require_once __DIR__ . '/../includes/openai.php';
 require_once __DIR__ . '/../includes/contratos.php';
+require_once __DIR__ . '/../includes/zapsign_importar.php';
 require_once __DIR__ . '/../includes/pendencias_pos_venda.php';
 require_once __DIR__ . '/../includes/mail.php';
 require_once __DIR__ . '/../includes/email_templates.php';

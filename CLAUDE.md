@@ -2559,6 +2559,69 @@ segue no schema sem uso novo, não removida sem ganho real),
   veículo, link `/admin/venda.php`), e o comportamento pré-existente de
   marcar a negociação como `vendido` na assinatura continua intacto — sem
   regressão nos 2 fluxos de sincronização já validados em produção.
+  **Importar contratos antigos da ZapSign (CRM anterior)** (19/09/2026,
+  "zapasine tem monte contrato do crm anti será possivel puxar concliar" →
+  "pela api" → escolhendo "listar + tentar vincular automaticamente" e
+  confirmando "esses clientes não está no sistema" → "teria importar
+  cadastrar todas infomaçoes") — a conta ZapSign usada por este sistema já
+  tinha, de antes, documentos assinados de negociações do **CRM anterior**
+  (nunca criados via `zapsignCriarDocumentoEAssinatura()`), sem nenhuma
+  linha correspondente em `contratos` — nova tela
+  `admin/zapsign_importar.php` (super_admin, mesma trava de
+  `admin/veiculos.php`) puxa **todos** os documentos já existentes na conta
+  (`zapsignListarDocumentos()`/`zapsignListarTodosDocumentos()`, novo em
+  `includes/zapsign.php` — `GET /docs/?page=N`, paginação assumida estilo
+  Django REST `count`/`next`/`previous`/`results`, **nunca confirmada
+  contra a API real**, mesma ressalva de todo endpoint ZapSign além dos 2
+  já validados em produção) e separa em 3 grupos, nunca criando nada
+  sozinho (regra #3): (1) **já importado** —
+  `contratos.zapsign_doc_token` já existe, só contagem, nunca reimporta;
+  (2) **telefone bate com cliente já cadastrado**
+  (`zapsignExtrairSignatario()` extrai nome/telefone/cpf do 1º signatário,
+  mesmos campos que a criação já manda pra ZapSign — sem sinal reconhecido,
+  grava o item cru em
+  `storage/logs/zapsign_importacao_debug.log`, mesmo padrão de
+  `logDiagnosticoMidiaZapi()`) — mostra o cliente encontrado com link pra
+  abrir, mas **nunca vincula sozinho a nenhuma oportunidade específica**
+  (um cliente pode ter mais de 1 veículo, regra #1 — não dá pra saber qual
+  é o certo só pelo telefone); (3) **sem match** — formulário de
+  importação com nome/telefone pré-preenchidos da ZapSign
+  (marca/modelo/ano/placa/chassi/renavam/valor a ZapSign não tem
+  estruturado, só o que foi digitado no PDF — o admin digita na hora,
+  mesmos campos do cadastro manual de veículo). Nova
+  `zapsignImportarContratoComoVeiculoManual()`
+  (`includes/zapsign_importar.php`, arquivo próprio — é IMPORTAÇÃO, não
+  geração normal de contrato) reaproveita `criarVeiculoManualFrota()`
+  (já existia/testada, mesmo caminho de "veículo que a Fastcar já tem mas
+  nunca passou pelo funil normal") sem nenhuma mudança nela, baixa o PDF
+  assinado de verdade via `zapsignBaixarAssinado()` (já existia) e anexa
+  como contrato de compra (`status='assinado'`, `assinado_em` = data real
+  da assinatura na ZapSign) + grava `oportunidade_documentos.contrato_compra`
+  — mesma consistência com o checklist de fechamento (regra #7) que
+  `zapsignSincronizarContrato()` já mantém pro fluxo normal. Nunca importa
+  o mesmo `zapsign_doc_token` 2x (índice único já existente,
+  `idx_contratos_zapsign_doc`, checado antes de qualquer coisa ser criada).
+  ⚠️ **Escopo desta 1ª versão, decisão assumida**: só contrato de
+  **COMPRA** — contrato de VENDA (revenda) do CRM antigo ficou de fora de
+  propósito, porque depende do veículo já estar na frota (regra #3, nunca
+  invento vínculo) e provavelmente teria o contrato de compra
+  correspondente também só na ZapSign, não ainda na Fastcar — importar os
+  dois em conjunto é decisão maior, não assumida sem confirmar; sinalizar
+  se a equipe quiser isso depois. Link "📥 Importar contratos antigos da
+  ZapSign" novo em Configurações → ZapSign, só aparece com o token já
+  configurado. Testado: função isolada contra servidor ZapSign fake local
+  com 5 documentos simulados (paginação de 2 páginas agregada certa —
+  `TOTAL_DOCS=5`; extração de signatário certa; documento sem signatário
+  reconhecível grava o log de diagnóstico; importar cria
+  cliente/oportunidade `etapa='fechado'`/contrato `status='assinado'`/
+  `oportunidade_documentos.contrato_compra` todos certos; reimportar o
+  MESMO token é bloqueado, nunca duplica cliente nem oportunidade) +
+  Playwright ponta a ponta (tela separa os 3 grupos com as contagens
+  certas; link do cliente já cadastrado aponta pro cliente certo sem criar
+  nada; importar um documento sem match preenche o formulário, redireciona
+  pra `admin/oportunidade.php` da oportunidade recém-criada com marca/
+  modelo certos, e o documento importado some da lista "sem match" na
+  próxima visita — já aparece como "já importado").
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em
@@ -4717,6 +4780,23 @@ testado com servidor fake local — nunca contra o serviço real:
   ZapSign ou via `POST /user/company/webhook/header/` — não implementado
   automaticamente, mesmo padrão que a Assinafy já tinha (nunca teve
   auto-registro de webhook via código aqui).
+  **`GET /docs/` (listagem, pra importar contratos antigos)** — 19/09/2026,
+  `zapsignListarDocumentos()`/`zapsignListarTodosDocumentos()`
+  (`includes/zapsign.php`), usado por `admin/zapsign_importar.php`.
+  Formato de paginação assumido estilo Django REST
+  (`count`/`next`/`previous`/`results`, padrão comum de API brasileira),
+  **nunca confirmado contra a API real** — com fallback pra tratar a
+  resposta como lista simples se vier sem esse envelope. Também não
+  confirmados: nomes exatos de campo dentro de cada `signers[]`
+  (`name`/`phone_country`/`phone_number`/`cpf` — os 3 primeiros já
+  validados na CRIAÇÃO de documento, `cpf` é um chute, a ZapSign pode nem
+  preencher isso dependendo de como o documento foi configurado no CRM
+  antigo). Validar assim que rodar contra a conta real: se a paginação
+  bate, se `signers[].cpf` existe de verdade ou fica sempre vazio, e
+  conferir no log `storage/logs/zapsign_importacao_debug.log` (só grava
+  quando nome E telefone vêm vazios) se algum documento real cai nesse
+  caminho — se cair, revisar `zapsignExtrairSignatario()` com o formato
+  real capturado ali.
 - **API Google Drive** (`includes/google_drive.php`) — ✅ **credencial real
   provisionada e autenticação confirmada em produção, 15-16/09/2026**.
   Service account criada pelo José direto no Google Cloud Console

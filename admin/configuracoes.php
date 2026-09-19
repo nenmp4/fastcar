@@ -604,6 +604,12 @@ unset($f);
         <?php endforeach; ?>
         <button type="submit">Salvar</button>
     </form>
+    <?php if (getConfig('zapsign_api_token')): ?>
+    <p style="margin-top:1rem">
+        <a href="/admin/zapsign_importar.php" class="btn" style="width:auto">📥 Importar contratos antigos da ZapSign</a>
+        — puxa documentos já existentes na conta (ex: do CRM anterior) e ajuda a cadastrar como veículo da frota.
+    </p>
+    <?php endif; ?>
 </div>
 
 <div class="card">
