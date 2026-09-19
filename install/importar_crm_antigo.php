@@ -57,6 +57,17 @@ if (!$driveFolderId) {
 
 $db = getDB();
 
+// Aumenta o busy_timeout só pra ESTA conexão (getDB() é singleton por
+// processo — nunca afeta requests web/webhook, que continuam nos 15s
+// padrão de includes/db.php) — achado real 19/09/2026: rodando de noite
+// de sábado, mesmo assim vários clientes seguidos esgotavam os 15s padrão
+// + as 4 tentativas de retry (~50s a mais) e ainda batiam "database is
+// locked" — sinal de disputa REAL sustentada por minutos, não só um pico.
+// Diferente de um request HTTP normal (usuário esperando resposta rápida),
+// este é um job em background que ninguém está olhando o relógio — dá pra
+// ser bem mais paciente por escrita antes de desistir.
+$db->exec('PRAGMA busy_timeout=60000');
+
 $criadoPor = $criadoPorArg;
 if (!$criadoPor) {
     $stmt = $db->query("SELECT id FROM usuarios WHERE perfil = 'super_admin' ORDER BY id LIMIT 1");
