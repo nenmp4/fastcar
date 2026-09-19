@@ -386,6 +386,32 @@ function crmAntigoImportarCliente(array $linha, GoogleDrive $drive, string $arqu
         }
     }
 
+    // 19/09/2026, "esses não pode fecha[r] dados incompletos" / "joga para
+    // negociação" — criarVeiculoManualFrota() sempre cria já em
+    // etapa='fechado' (correto pra frota legada, que nunca teve documento
+    // nenhum como exigência), mas pro import do CRM antigo isso mostra
+    // "✅ Pasta fechada" pra negócio que, na verdade, ainda está com
+    // documento obrigatório faltando — nunca deveria contar como fechado
+    // de verdade. `garantirLinhasDocumentosObrigatorios()` primeiro (mesma
+    // função que o wizard normal usa) garante as 5 linhas obrigatórias
+    // existirem de verdade (mesmo vazias) antes de checar — sem isso,
+    // `checklistFechamentoCompleto()` julgaria "completo" um cliente que só
+    // teve 2 dos 5 tipos de documento no sistema antigo, porque só contaria
+    // as linhas que EXISTEM, não as que deveriam existir. Volta pra
+    // 'negociacao' (nunca 'crm_preenchido'/'whatsapp' — a qualificação já
+    // aconteceu de verdade, só falta documento) via mudarEtapa() (regra #6,
+    // nunca UPDATE direto), grava histórico explicando o motivo — quem
+    // pegar essa oportunidade sabe exatamente o que falta.
+    garantirLinhasDocumentosObrigatorios($oportunidadeId);
+    if (!checklistFechamentoCompleto($oportunidadeId)) {
+        mudarEtapa(
+            $oportunidadeId,
+            'negociacao',
+            $responsavelId,
+            'Importado do CRM antigo (Yaqar/IACAR) com documento obrigatório pendente — voltou pra negociação até completar; nunca deveria ter ficado marcado como fechado.'
+        );
+    }
+
     return ['ok' => true, 'motivo' => null, 'cliente_id' => $clienteId, 'oportunidade_id' => $oportunidadeId, 'ja_existia' => false];
 }
 
