@@ -313,24 +313,89 @@ function crmAntigoImportarCliente(array $linha, GoogleDrive $drive, string $arqu
     $vd = crmAntigoSepararMarcaModelo((string)($linha['vehicle_brand_model'] ?? ''));
     $responsavelId = $telefoneVendedorAntigo ? crmAntigoMapearVendedorPorTelefone($telefoneVendedorAntigo) : null;
 
-    $r = criarVeiculoManualFrota(
-        $nome,
-        $telefone,
-        $vd['marca'],
-        $vd['modelo'],
-        (string)($linha['vehicle_year_model'] ?? ''),
-        (string)($linha['vehicle_plate'] ?? ''),
-        (string)($linha['vehicle_chassis'] ?? ''),
-        (string)($linha['vehicle_renavam'] ?? ''),
-        crmAntigoParseMoeda($linha['payment_to_client'] ?? null),
-        $criadoPor,
-        $responsavelId
-    );
-    $clienteId = $r['cliente_id'];
-    $oportunidadeId = $r['oportunidade_id'];
-
     $db = getDB();
 
+    // Tudo daqui até a marcação de "já importado" roda numa transação só —
+    // nenhuma chamada de rede no meio (regra do projeto, mesma disciplina
+    // de mudarEtapa()/mudarEtapaVenda()), então fica atômico: ou o
+    // cliente+oportunidade+histórico+marcação saem 100% gravados juntos, ou
+    // nada é gravado — uma "database is locked" bem no início (ex: dentro
+    // de criarVeiculoManualFrota()) nunca deixa um cliente/oportunidade
+    // órfão que causaria duplicata numa nova tentativa.
+    $db->beginTransaction();
+    try {
+        $r = criarVeiculoManualFrota(
+            $nome,
+            $telefone,
+            $vd['marca'],
+            $vd['modelo'],
+            (string)($linha['vehicle_year_model'] ?? ''),
+            (string)($linha['vehicle_plate'] ?? ''),
+            (string)($linha['vehicle_chassis'] ?? ''),
+            (string)($linha['vehicle_renavam'] ?? ''),
+            crmAntigoParseMoeda($linha['payment_to_client'] ?? null),
+            $criadoPor,
+            $responsavelId
+        );
+        $clienteId = $r['cliente_id'];
+        $oportunidadeId = $r['oportunidade_id'];
+
+        crmAntigoGravarNucleoCliente($db, $linha, $clienteId, $oportunidadeId, $responsavelId);
+        if ($idAntigo) crmAntigoMarcarImportadoPorIdAntigo('clients', $idAntigo, $oportunidadeId);
+
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+
+    // Documentos reais — best-effort, nunca trava a importação por causa
+    // de 1 arquivo que não baixou nem por uma falha de banco no meio do
+    // loop (mesma disciplina do resto do projeto: ZapSign/mídia do
+    // WhatsApp também nunca bloqueiam o fluxo principal) — cada documento
+    // é isolado no próprio try/catch, um falhando nunca derruba os outros
+    // nem marca o cliente inteiro como erro (já está marcado como
+    // importado acima; documento que falhar fica só sem cópia, visível no
+    // log de diagnóstico, corrigível depois sem duplicar nada).
+    $mapaTipoDoc = [
+        'cnh' => 'cnh',
+        'proof_of_address' => 'comprovante_endereco',
+        'financing_contract' => 'contrato_financiamento',
+        'vehicle_document' => 'crlv',
+        'contract' => 'contrato_compra',
+    ];
+    foreach ($documentosDoCliente as $doc) {
+        try {
+            $tipoOriginal = (string)($doc['type'] ?? '');
+            $tipoFastcar = $mapaTipoDoc[$tipoOriginal] ?? null;
+            if (!$tipoFastcar) continue;
+            $baixado = crmAntigoBaixarArquivoPorCaminho($drive, $arquivosFolderId, (string)($doc['storage_path'] ?? ''));
+            if (!$baixado) continue;
+            $tmp = tempnam(sys_get_temp_dir(), 'crm_antigo_') . '_' . preg_replace('/[^a-zA-Z0-9.]/', '_', $baixado['name']);
+            file_put_contents($tmp, $baixado['content']);
+            $copia = salvarArquivoGeradoComoDocumento($clienteId, $nome ?: "Cliente #{$clienteId}", $tmp, $baixado['name'], $baixado['mime'], 'documentos/' . $oportunidadeId);
+            @unlink($tmp);
+            $db->prepare("
+                INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, obrigatorio, enviado_pelo_cliente, dados_confirmados)
+                VALUES (?, ?, ?, ?, 1, 0, 1)
+                ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
+                    arquivo_url = excluded.arquivo_url, drive_file_id = excluded.drive_file_id
+            ")->execute([$oportunidadeId, $tipoFastcar, $copia['arquivo_url'], $copia['drive_file_id']]);
+        } catch (Throwable $e) {
+            crmAntigoLogDiagnostico("Falha ao salvar documento (oportunidade #{$oportunidadeId}, tipo {$tipoOriginal}): " . $e->getMessage());
+        }
+    }
+
+    return ['ok' => true, 'motivo' => null, 'cliente_id' => $clienteId, 'oportunidade_id' => $oportunidadeId, 'ja_existia' => false];
+}
+
+/**
+ * Extraído de crmAntigoImportarCliente() pra ficar dentro da transação sem
+ * duplicar o corpo — enriquece cliente/oportunidade com os campos ricos do
+ * CRM antigo (fill-if-empty pro cliente, sobrescreve os dados históricos da
+ * oportunidade) e grava o histórico. Nenhuma chamada de rede aqui.
+ */
+function crmAntigoGravarNucleoCliente(PDO $db, array $linha, int $clienteId, int $oportunidadeId, ?int $responsavelId): void {
     // Fill-if-empty nos campos do cliente — nunca sobrescreve o que já
     // existia (mesma disciplina do resto do projeto).
     $db->prepare("
@@ -402,38 +467,6 @@ function crmAntigoImportarCliente(array $linha, GoogleDrive $drive, string $arqu
         INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
         VALUES (?, 'fechado', 'fechado', ?, ?)
     ")->execute([$oportunidadeId, $responsavelId, $observacao]);
-
-    // Documentos reais — best-effort, nunca trava a importação por causa
-    // de 1 arquivo que não baixou (mesma disciplina do resto do projeto:
-    // ZapSign/mídia do WhatsApp também nunca bloqueiam o fluxo principal).
-    $mapaTipoDoc = [
-        'cnh' => 'cnh',
-        'proof_of_address' => 'comprovante_endereco',
-        'financing_contract' => 'contrato_financiamento',
-        'vehicle_document' => 'crlv',
-        'contract' => 'contrato_compra',
-    ];
-    foreach ($documentosDoCliente as $doc) {
-        $tipoOriginal = (string)($doc['type'] ?? '');
-        $tipoFastcar = $mapaTipoDoc[$tipoOriginal] ?? null;
-        if (!$tipoFastcar) continue;
-        $baixado = crmAntigoBaixarArquivoPorCaminho($drive, $arquivosFolderId, (string)($doc['storage_path'] ?? ''));
-        if (!$baixado) continue;
-        $tmp = tempnam(sys_get_temp_dir(), 'crm_antigo_') . '_' . preg_replace('/[^a-zA-Z0-9.]/', '_', $baixado['name']);
-        file_put_contents($tmp, $baixado['content']);
-        $copia = salvarArquivoGeradoComoDocumento($clienteId, $nome ?: "Cliente #{$clienteId}", $tmp, $baixado['name'], $baixado['mime'], 'documentos/' . $oportunidadeId);
-        @unlink($tmp);
-        $db->prepare("
-            INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, obrigatorio, enviado_pelo_cliente, dados_confirmados)
-            VALUES (?, ?, ?, ?, 1, 0, 1)
-            ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
-                arquivo_url = excluded.arquivo_url, drive_file_id = excluded.drive_file_id
-        ")->execute([$oportunidadeId, $tipoFastcar, $copia['arquivo_url'], $copia['drive_file_id']]);
-    }
-
-    if ($idAntigo) crmAntigoMarcarImportadoPorIdAntigo('clients', $idAntigo, $oportunidadeId);
-
-    return ['ok' => true, 'motivo' => null, 'cliente_id' => $clienteId, 'oportunidade_id' => $oportunidadeId, 'ja_existia' => false];
 }
 
 // ---------------------------------------------------------------------
