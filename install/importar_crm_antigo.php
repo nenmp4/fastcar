@@ -20,9 +20,11 @@
  * (Configurações → Google Drive), como Leitor.
  *
  * Uso:
- *   php install/importar_crm_antigo.php <drive_folder_id>                    — dry-run (só lista)
- *   php install/importar_crm_antigo.php <drive_folder_id> --confirmar        — importa de verdade
+ *   php install/importar_crm_antigo.php <drive_folder_id>                    — dry-run Fase 1 (só lista)
+ *   php install/importar_crm_antigo.php <drive_folder_id> --confirmar        — Fase 1 de verdade
  *   php install/importar_crm_antigo.php <drive_folder_id> --criado-por=ID    — usuário responsável pelo registro de auditoria (default: 1º super_admin)
+ *   php install/importar_crm_antigo.php <drive_folder_id> --fase2            — dry-run Fase 2 (vendas — precisa da Fase 1 já ter rodado pro veículo em questão)
+ *   php install/importar_crm_antigo.php <drive_folder_id> --fase2 --confirmar
  *
  * Nunca reimporta o mesmo zapsign_doc_token 2x (mesma trava de
  * includes/zapsign_importar.php) nem cria cliente duplicado por telefone
@@ -41,10 +43,12 @@ require_once __DIR__ . '/../includes/importar_crm_antigo.php';
 $args = $argv;
 array_shift($args); // remove o nome do script
 $confirmar = false;
+$fase2 = false;
 $criadoPorArg = null;
 $driveFolderId = null;
 foreach ($args as $arg) {
     if ($arg === '--confirmar') { $confirmar = true; continue; }
+    if ($arg === '--fase2') { $fase2 = true; continue; }
     if (str_starts_with($arg, '--criado-por=')) { $criadoPorArg = (int)substr($arg, strlen('--criado-por=')); continue; }
     if (!$driveFolderId && !str_starts_with($arg, '--')) { $driveFolderId = $arg; continue; }
 }
@@ -78,7 +82,7 @@ if (!$criadoPor) {
     exit(1);
 }
 
-echo "== Importação CRM antigo (Yaqar/IACAR) — Fase 1: clientes/frota ==\n";
+echo "== Importação CRM antigo (Yaqar/IACAR) — Fase " . ($fase2 ? '2: vendas' : '1: clientes/frota') . " ==\n";
 echo $confirmar ? "Modo: CONFIRMAR (grava de verdade)\n" : "Modo: DRY-RUN (só lista, nada é gravado — rode com --confirmar pra aplicar)\n";
 echo "Responsável pelo registro de auditoria: usuário #{$criadoPor}\n\n";
 
@@ -94,6 +98,126 @@ $arquivosId = crmAntigoAcharSubpasta($drive, $driveFolderId, 'arquivos');
 if (!$tabelasId || !$arquivosId) {
     fwrite(STDERR, "Não achei as subpastas \"tabelas\"/\"arquivos\" dentro da pasta informada — confirme o ID e o compartilhamento.\n");
     exit(1);
+}
+
+if ($fase2) {
+    echo "Lendo CSVs...\n";
+    $sales = crmAntigoLerCsv($drive, $tabelasId, 'sales.csv');
+    echo "  sales.csv: " . count($sales) . " linha(s)\n";
+
+    $vehicles = [];
+    try {
+        $vehicles = crmAntigoLerCsv($drive, $tabelasId, 'vehicles.csv');
+        echo "  vehicles.csv: " . count($vehicles) . " linha(s)\n";
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "Não achei vehicles.csv na pasta tabelas/ — preciso dele pra ligar cada venda ao cliente/veículo já importado na Fase 1: {$e->getMessage()}\n");
+        exit(1);
+    }
+
+    $saleDocuments = [];
+    try {
+        $saleDocsRaw = crmAntigoLerCsv($drive, $tabelasId, 'sale_documents.csv');
+        echo "  sale_documents.csv: " . count($saleDocsRaw) . " linha(s)\n";
+        foreach ($saleDocsRaw as $d) {
+            $sid = (string)($d['sale_id'] ?? '');
+            if ($sid === '') continue;
+            $saleDocuments[$sid][] = $d;
+        }
+    } catch (RuntimeException $e) {
+        echo "  sale_documents.csv: não encontrado (ok, segue sem documento de comprador — {$e->getMessage()})\n";
+    }
+    echo "\n";
+
+    // vehicles.csv.id → source_client_id (id antigo do cliente/vendedor na
+    // Fase 1) — usado só pra achar, via crmAntigoJaImportadoPorIdAntigo(),
+    // a oportunidade que a Fase 1 já criou pra esse veículo. Nunca cria
+    // nada aqui, só resolve o vínculo.
+    $sourceClientPorVehicleId = [];
+    foreach ($vehicles as $v) {
+        $vid = (string)($v['id'] ?? '');
+        if ($vid !== '') $sourceClientPorVehicleId[$vid] = (string)($v['source_client_id'] ?? '');
+    }
+
+    $resultados = ['importado' => 0, 'ja_importado' => 0, 'erro' => 0, 'sem_veiculo' => 0];
+    $log = [];
+
+    foreach ($sales as $i => $linha) {
+        $n = $i + 1;
+        $comprador = $linha['buyer_name'] ?? '(sem nome)';
+        $total = count($sales);
+        $vehicleId = (string)($linha['vehicle_id'] ?? '');
+        $sourceClientId = $sourceClientPorVehicleId[$vehicleId] ?? '';
+        $oportunidadeId = $sourceClientId ? (int)(getConfig("crm_antigo_importado_clients_{$sourceClientId}") ?: 0) : 0;
+
+        if (!$oportunidadeId) {
+            echo "[{$n}/{$total}] SEM VEÍCULO — comprador {$comprador} — o veículo (vehicle_id={$vehicleId}) ainda não foi importado na Fase 1, ou o vínculo não bateu. Rode/confira a Fase 1 antes.\n";
+            $resultados['sem_veiculo']++;
+            continue;
+        }
+
+        $idAntigo = (string)($linha['id'] ?? '');
+        if (!$confirmar) {
+            if ($idAntigo && crmAntigoJaImportadoPorIdAntigo('sales', $idAntigo)) {
+                echo "[{$n}/{$total}] PULARIA (já importada numa rodada anterior) — comprador {$comprador} → oportunidade #{$oportunidadeId}\n";
+                $resultados['ja_importado']++;
+            } else {
+                $qtdDocs = count($saleDocuments[$linha['id'] ?? ''] ?? []);
+                echo "[{$n}/{$total}] importaria — comprador {$comprador} → oportunidade #{$oportunidadeId} ({$qtdDocs} documento(s))\n";
+                $resultados['importado']++;
+            }
+            continue;
+        }
+
+        $docsDaVenda = $saleDocuments[$linha['id'] ?? ''] ?? [];
+        $tentativas = 0;
+        $maxTentativas = 5;
+        do {
+            $tentativas++;
+            try {
+                $r = crmAntigoImportarVenda($linha, $oportunidadeId, $drive, $arquivosId, $docsDaVenda, $criadoPor);
+                break;
+            } catch (Throwable $e) {
+                $ehLock = str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'HY000');
+                if ($ehLock && $tentativas < $maxTentativas) {
+                    $espera = $tentativas * 5;
+                    echo "  (tentativa {$tentativas} travou no banco, esperando {$espera}s antes de tentar de novo...)\n";
+                    sleep($espera);
+                    continue;
+                }
+                $r = ['ok' => false, 'motivo' => 'Exceção: ' . $e->getMessage(), 'venda_id' => null, 'ja_existia' => false];
+                break;
+            }
+        } while ($tentativas < $maxTentativas);
+
+        if ($r['ok']) {
+            echo "[{$n}/{$total}] OK — comprador {$comprador} → oportunidade #{$oportunidadeId}, venda #{$r['venda_id']}\n";
+            $resultados['importado']++;
+        } elseif ($r['ja_existia']) {
+            echo "[{$n}/{$total}] pulado (já importado) — comprador {$comprador} — {$r['motivo']}\n";
+            $resultados['ja_importado']++;
+        } else {
+            echo "[{$n}/{$total}] ERRO — comprador {$comprador} — {$r['motivo']}\n";
+            $resultados['erro']++;
+        }
+        $log[] = ['comprador' => $comprador, 'oportunidade_id' => $oportunidadeId, 'resultado' => $r];
+    }
+
+    echo "\n== Resumo (Fase 2) ==\n";
+    echo "Importado(s): {$resultados['importado']}\n";
+    echo "Já importado(s)/pulado(s): {$resultados['ja_importado']}\n";
+    echo "Sem veículo (Fase 1 pendente pra esse vehicle_id): {$resultados['sem_veiculo']}\n";
+    echo "Erro(s): {$resultados['erro']}\n";
+
+    if ($confirmar) {
+        $dir = __DIR__ . '/../storage/logs';
+        @mkdir($dir, 0755, true);
+        $arquivoLog = $dir . '/importar_crm_antigo_fase2_' . date('Y-m-d_His') . '.log';
+        file_put_contents($arquivoLog, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        echo "Log detalhado: {$arquivoLog}\n";
+    } else {
+        echo "\nDry-run — nada foi gravado. Rode com --confirmar pra aplicar de verdade.\n";
+    }
+    exit(0);
 }
 
 echo "Lendo CSVs...\n";

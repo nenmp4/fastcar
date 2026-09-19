@@ -503,32 +503,29 @@ function crmAntigoGravarNucleoCliente(PDO $db, array $linha, int $clienteId, int
  * Importa 1 linha de sales.csv como negociação de venda já `vendido` —
  * exige $oportunidadeId (o veículo já importado na fase 1, achado por
  * vehicle_id → vehicles.csv.source_client_id → cliente/oportunidade já
- * criados) e reaproveita criarVenda() só pra abrir a linha, gravando
- * `etapa='vendido'` direto por fora (nunca mudarEtapaVenda(), mesma
- * disciplina de zapsignImportarContratoVendaComoNegociacaoManual() — evita
+ * criados, via crmAntigoJaImportadoPorIdAntigo()/config) e reaproveita
+ * criarVenda() só pra abrir a linha, gravando `etapa='vendido'` direto
+ * por fora (nunca mudarEtapaVenda(), mesma disciplina de
+ * zapsignImportarContratoVendaComoNegociacaoManual() — evita
  * finGerarReceitaVendaAssinatura() lançar um financeiro FALSO com data de
  * hoje pra uma venda que já aconteceu há meses).
  *
- * @return array{ok:bool,motivo:?string,venda_id:?int}
+ * Reforçada 19/09/2026 com as mesmas 3 correções feitas na Fase 1 depois
+ * do incidente real de "database is locked" durante a importação de
+ * clientes: (1) idempotência por ID antigo de verdade (sales.csv.id),
+ * marcada ATOMICAMENTE junto da criação — nunca só por
+ * "já existe venda vendido" (frágil: 2 vendas do mesmo veículo em datas
+ * diferentes são legítimas, regra de negócio já documentada); (2) a
+ * criação do núcleo (criarVenda + UPDATE + histórico + marcação) numa
+ * transação só, sem chamada de rede no meio; (3) documentos isolados em
+ * try/catch por item, nunca derrubando a venda inteira.
+ *
+ * @return array{ok:bool,motivo:?string,venda_id:?int,ja_existia:bool}
  */
 function crmAntigoImportarVenda(array $linha, int $oportunidadeId, GoogleDrive $drive, string $arquivosFolderId, array $documentosDaVenda, ?int $responsavelId): array {
-    $zapsignPlaceholder = (string)($linha['contract_file_url'] ?? '');
-    // sales.csv não tem coluna zapsign_doc_token própria — usa a URL do
-    // contrato como chave de dedup alternativa (única por negociação),
-    // nunca reimporta a mesma venda 2x mesmo rodando o script de novo.
-    if ($zapsignPlaceholder) {
-        $db = getDB();
-        $stmt = $db->prepare("SELECT 1 FROM vendas WHERE oportunidade_id = ? AND etapa = 'vendido'");
-        $stmt->execute([$oportunidadeId]);
-        if ($stmt->fetchColumn()) {
-            return ['ok' => false, 'motivo' => 'Já existe venda concluída pra esse veículo (provavelmente já importada antes).', 'venda_id' => null];
-        }
-    }
-
-    try {
-        $vendaId = criarVenda($oportunidadeId, $responsavelId);
-    } catch (RuntimeException $e) {
-        return ['ok' => false, 'motivo' => $e->getMessage(), 'venda_id' => null];
+    $idAntigo = (string)($linha['id'] ?? '');
+    if ($idAntigo && crmAntigoJaImportadoPorIdAntigo('sales', $idAntigo)) {
+        return ['ok' => false, 'motivo' => 'Esta linha (id do CRM antigo) já foi importada numa rodada anterior deste script.', 'venda_id' => null, 'ja_existia' => true];
     }
 
     $db = getDB();
@@ -536,76 +533,99 @@ function crmAntigoImportarVenda(array $linha, int $oportunidadeId, GoogleDrive $
     $compradorTelefone = normalizarTelefone((string)($linha['buyer_whatsapp'] ?? ''));
     $dataVenda = crmAntigoParseData($linha['contract_date'] ?? '') ?: crmAntigoParseData($linha['created_at'] ?? '');
 
-    $db->prepare("
-        UPDATE vendas SET
-            etapa = 'vendido',
-            comprador_nome = ?,
-            comprador_telefone = ?,
-            comprador_email = ?,
-            comprador_cpf = ?,
-            comprador_rg = ?,
-            comprador_endereco = ?,
-            comprador_nacionalidade = ?,
-            comprador_estado_civil = ?,
-            comprador_profissao = ?,
-            preco_venda = ?,
-            valor_pago_contratacao = ?,
-            forma_pagamento = ?,
-            prazo_quitacao_meses = COALESCE(?, prazo_quitacao_meses),
-            data_venda = ?,
-            updated_at = datetime('now','localtime')
-        WHERE id = ?
-    ")->execute([
-        $compradorNome,
-        $compradorTelefone,
-        clean((string)($linha['buyer_email'] ?? '')),
-        clean((string)($linha['buyer_cpf'] ?? '')),
-        clean((string)($linha['buyer_rg'] ?? '')),
-        clean(crmAntigoMontarEndereco($linha, 'buyer_address_')),
-        clean((string)($linha['buyer_nationality'] ?? '')) ?: 'brasileiro(a)',
-        clean((string)($linha['buyer_marital_status'] ?? '')),
-        clean((string)($linha['buyer_profession'] ?? '')),
-        crmAntigoParseMoeda($linha['sale_value'] ?? null),
-        crmAntigoParseMoeda($linha['down_payment_value'] ?? null),
-        (string)($linha['type'] ?? '') === 'parcelada' ? 'parcelado' : 'quitacao_futura',
-        crmAntigoParseInt($linha['installments_count'] ?? null),
-        $dataVenda,
-        $vendaId,
-    ]);
+    // Núcleo (venda + histórico + marcação de idempotência) numa transação
+    // só — nenhuma chamada de rede no meio, mesmo raciocínio de
+    // crmAntigoImportarCliente(): ou tudo grava junto, ou nada grava, nunca
+    // fica uma venda "quase importada" sem marca que duplicaria numa retry.
+    $db->beginTransaction();
+    try {
+        $vendaId = criarVenda($oportunidadeId, $responsavelId);
 
-    $db->prepare("
-        INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
-        VALUES (?, 'negociacao', 'vendido', ?, 'Importado do CRM antigo (Yaqar/IACAR) — venda já concluída na época; nenhum lançamento financeiro gerado automaticamente (venda histórica, não de hoje)')
-    ")->execute([$vendaId, $responsavelId]);
-
-    $mapaTipoDoc = ['cnh' => 'cnh', 'proof_of_address' => 'comprovante_endereco'];
-    foreach ($documentosDaVenda as $doc) {
-        $tipoOriginal = (string)($doc['type'] ?? '');
-        $tipoFastcar = $mapaTipoDoc[$tipoOriginal] ?? null;
-        if (!$tipoFastcar) continue;
-        $baixado = crmAntigoBaixarArquivoPorCaminho($drive, $arquivosFolderId, (string)($doc['storage_path'] ?? ''));
-        if (!$baixado) continue;
-        $tmp = tempnam(sys_get_temp_dir(), 'crm_antigo_venda_') . '_' . preg_replace('/[^a-zA-Z0-9.]/', '_', $baixado['name']);
-        file_put_contents($tmp, $baixado['content']);
-        // Ancorado no cliente ORIGINAL (vendedor que trouxe o veículo pra
-        // Fastcar) — mesmo destino que gerarEEnviarContratoVenda() já usa,
-        // não existe cadastro em `clientes` pro comprador da revenda.
-        $stmtCli = $db->prepare('SELECT id, nome FROM clientes WHERE id = (SELECT cliente_id FROM oportunidades WHERE id = ?)');
-        $stmtCli->execute([$oportunidadeId]);
-        $cliOriginal = $stmtCli->fetch(PDO::FETCH_ASSOC);
-        $copia = salvarArquivoGeradoComoDocumento(
-            (int)$cliOriginal['id'], (string)$cliOriginal['nome'], $tmp, $baixado['name'], $baixado['mime'], 'documentos_venda/' . $vendaId
-        );
-        @unlink($tmp);
         $db->prepare("
-            INSERT INTO venda_documentos (venda_id, tipo, arquivo_url, drive_file_id, obrigatorio, enviado_pelo_cliente, dados_confirmados)
-            VALUES (?, ?, ?, ?, 1, 0, 1)
-            ON CONFLICT(venda_id, tipo) DO UPDATE SET
-                arquivo_url = excluded.arquivo_url, drive_file_id = excluded.drive_file_id
-        ")->execute([$vendaId, $tipoFastcar, $copia['arquivo_url'], $copia['drive_file_id']]);
+            UPDATE vendas SET
+                etapa = 'vendido',
+                comprador_nome = ?,
+                comprador_telefone = ?,
+                comprador_email = ?,
+                comprador_cpf = ?,
+                comprador_rg = ?,
+                comprador_endereco = ?,
+                comprador_nacionalidade = ?,
+                comprador_estado_civil = ?,
+                comprador_profissao = ?,
+                preco_venda = ?,
+                valor_pago_contratacao = ?,
+                forma_pagamento = ?,
+                prazo_quitacao_meses = COALESCE(?, prazo_quitacao_meses),
+                data_venda = ?,
+                updated_at = datetime('now','localtime')
+            WHERE id = ?
+        ")->execute([
+            $compradorNome,
+            $compradorTelefone,
+            clean((string)($linha['buyer_email'] ?? '')),
+            clean((string)($linha['buyer_cpf'] ?? '')),
+            clean((string)($linha['buyer_rg'] ?? '')),
+            clean(crmAntigoMontarEndereco($linha, 'buyer_address_')),
+            clean((string)($linha['buyer_nationality'] ?? '')) ?: 'brasileiro(a)',
+            clean((string)($linha['buyer_marital_status'] ?? '')),
+            clean((string)($linha['buyer_profession'] ?? '')),
+            crmAntigoParseMoeda($linha['sale_value'] ?? null),
+            crmAntigoParseMoeda($linha['down_payment_value'] ?? null),
+            (string)($linha['type'] ?? '') === 'parcelada' ? 'parcelado' : 'quitacao_futura',
+            crmAntigoParseInt($linha['installments_count'] ?? null),
+            $dataVenda,
+            $vendaId,
+        ]);
+
+        $db->prepare("
+            INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
+            VALUES (?, 'negociacao', 'vendido', ?, 'Importado do CRM antigo (Yaqar/IACAR) — venda já concluída na época; nenhum lançamento financeiro gerado automaticamente (venda histórica, não de hoje)')
+        ")->execute([$vendaId, $responsavelId]);
+
+        if ($idAntigo) crmAntigoMarcarImportadoPorIdAntigo('sales', $idAntigo, $vendaId);
+
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        return ['ok' => false, 'motivo' => $e->getMessage(), 'venda_id' => null, 'ja_existia' => false];
     }
 
-    return ['ok' => true, 'motivo' => null, 'venda_id' => $vendaId];
+    // Documentos — best-effort, mesma disciplina da Fase 1: cada um isolado
+    // no próprio try/catch, uma falha nunca derruba a venda inteira (já
+    // marcada como importada acima) nem os outros documentos do loop.
+    $mapaTipoDoc = ['cnh' => 'cnh', 'proof_of_address' => 'comprovante_endereco'];
+    foreach ($documentosDaVenda as $doc) {
+        try {
+            $tipoOriginal = (string)($doc['type'] ?? '');
+            $tipoFastcar = $mapaTipoDoc[$tipoOriginal] ?? null;
+            if (!$tipoFastcar) continue;
+            $baixado = crmAntigoBaixarArquivoPorCaminho($drive, $arquivosFolderId, (string)($doc['storage_path'] ?? ''));
+            if (!$baixado) continue;
+            $tmp = tempnam(sys_get_temp_dir(), 'crm_antigo_venda_') . '_' . preg_replace('/[^a-zA-Z0-9.]/', '_', $baixado['name']);
+            file_put_contents($tmp, $baixado['content']);
+            // Ancorado no cliente ORIGINAL (vendedor que trouxe o veículo pra
+            // Fastcar) — mesmo destino que gerarEEnviarContratoVenda() já usa,
+            // não existe cadastro em `clientes` pro comprador da revenda.
+            $stmtCli = $db->prepare('SELECT id, nome FROM clientes WHERE id = (SELECT cliente_id FROM oportunidades WHERE id = ?)');
+            $stmtCli->execute([$oportunidadeId]);
+            $cliOriginal = $stmtCli->fetch(PDO::FETCH_ASSOC);
+            $copia = salvarArquivoGeradoComoDocumento(
+                (int)$cliOriginal['id'], (string)$cliOriginal['nome'], $tmp, $baixado['name'], $baixado['mime'], 'documentos_venda/' . $vendaId
+            );
+            @unlink($tmp);
+            $db->prepare("
+                INSERT INTO venda_documentos (venda_id, tipo, arquivo_url, drive_file_id, obrigatorio, enviado_pelo_cliente, dados_confirmados)
+                VALUES (?, ?, ?, ?, 1, 0, 1)
+                ON CONFLICT(venda_id, tipo) DO UPDATE SET
+                    arquivo_url = excluded.arquivo_url, drive_file_id = excluded.drive_file_id
+            ")->execute([$vendaId, $tipoFastcar, $copia['arquivo_url'], $copia['drive_file_id']]);
+        } catch (Throwable $e) {
+            crmAntigoLogDiagnostico("Falha ao salvar documento de venda (venda #{$vendaId}, tipo {$tipoOriginal}): " . $e->getMessage());
+        }
+    }
+
+    return ['ok' => true, 'motivo' => null, 'venda_id' => $vendaId, 'ja_existia' => false];
 }
 
 // ---------------------------------------------------------------------
