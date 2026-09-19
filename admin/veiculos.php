@@ -104,6 +104,34 @@ $joinContratoAssinado = "
 $fPrazo = (int)($_GET['prazo'] ?? 0);
 $faixasPrazo = ['12' => [365, 547], '18' => [548, 729], '24' => [730, 999999]];
 
+// 19/09/2026, achado direto no import do CRM antigo (Yaqar/IACAR):
+// "temos que descobrir clientes não está completo, eliminar ele do
+// estoque" — o import (includes/importar_crm_antigo.php) cria a
+// oportunidade já em etapa='fechado' sem passar pelo checklist de
+// fechamento normal (regra #7, mudarEtapa()), então um cliente que perdeu
+// documento no meio de uma rodada com "database is locked" fica na Frota
+// como se fosse um veículo comprado normal, mas sem CNH/comprovante/
+// contrato — nunca deveria aparecer pra vender/negociar assim. Filtro
+// aplica só em quem tem o marcador de histórico do import antigo
+// (`Importado do CRM antigo`) — nunca em veículo do funil normal (esse já
+// é estruturalmente impossível de chegar em 'fechado' com documento
+// faltando, mudarEtapa() trava isso) nem no cadastro manual de frota
+// legada (criarVeiculoManualFrota(), que nunca teve esses documentos como
+// exigência — usa fotos/vídeos de revenda, coisa diferente). Escondido por
+// padrão (nunca apagado — "só esconder da listagem", confirmado com o
+// usuário), com um link pra ver também os incompletos quando precisar
+// resolver um por um.
+$condIncompletoImportAntigo = "(
+    EXISTS (SELECT 1 FROM oportunidade_historico oh WHERE oh.oportunidade_id = o.id AND oh.observacao LIKE 'Importado do CRM antigo%')
+    AND (
+        (SELECT COUNT(*) FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.obrigatorio = 1) = 0
+        OR (SELECT COUNT(*) FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.obrigatorio = 1
+                AND ((od.arquivo_url IS NOT NULL AND od.arquivo_url != '') OR (od.drive_file_id IS NOT NULL AND od.drive_file_id != '')))
+           < (SELECT COUNT(*) FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.obrigatorio = 1)
+    )
+)";
+$mostrarIncompletos = ($_GET['incompletos'] ?? '') === '1';
+
 $where = "WHERE o.etapa = 'fechado'";
 $params = [];
 if ($busca !== '') {
@@ -115,6 +143,15 @@ if (isset($faixasPrazo[(string)$fPrazo])) {
     [$diasMin, $diasMax] = $faixasPrazo[(string)$fPrazo];
     $where .= " AND o.financiamento_quitado = 0 AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
 }
+if (!$mostrarIncompletos) {
+    $where .= " AND NOT {$condIncompletoImportAntigo}";
+}
+
+// Contagem separada (sem o filtro de incompletos) pro link "ver também
+// incompletos" mostrar quantos estão escondidos agora.
+$stmtIncompletos = $db->prepare("SELECT COUNT(*) FROM oportunidades o {$joinContratoAssinado} WHERE o.etapa = 'fechado' AND {$condIncompletoImportAntigo}");
+$stmtIncompletos->execute();
+$totalIncompletosImportAntigo = (int)$stmtIncompletos->fetchColumn();
 
 $stmtTotal = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$joinContratoAssinado} {$where}");
 $stmtTotal->execute($params);
@@ -124,7 +161,8 @@ $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
            vd.id AS venda_id, vd.etapa AS venda_etapa,
            {$refPosseExpr} AS ref_posse,
-           (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias
+           (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias,
+           {$condIncompletoImportAntigo} AS incompleto_import_antigo
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
     {$joinContratoAssinado}
@@ -210,6 +248,13 @@ function mesesComAFastcar(?string $refPosse): int {
         <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Placa, chassi, marca/modelo ou vendedor...">
         <button type="submit">Buscar</button>
     </form>
+    <?php if ($mostrarIncompletos): ?>
+        <p style="margin-top:10px"><small>⚠️ Mostrando também <?= $totalIncompletosImportAntigo ?> veículo(s) importado(s) do CRM antigo com documento incompleto (marcados abaixo).
+            <a href="?busca=<?= urlencode($busca) ?>">Esconder de novo →</a></small></p>
+    <?php elseif ($totalIncompletosImportAntigo > 0): ?>
+        <p style="margin-top:10px"><small>⚠️ <?= $totalIncompletosImportAntigo ?> veículo(s) importado(s) do CRM antigo com documento incompleto estão escondidos desta listagem
+            (nunca apagados, só fora do estoque até completar). <a href="?busca=<?= urlencode($busca) ?>&incompletos=1">Ver também incompletos →</a></small></p>
+    <?php endif; ?>
 </div>
 
 <div class="card">
@@ -347,8 +392,10 @@ function lerCrlvManual() {
                 elseif ($diasFastcar >= 365) $faixaAlerta = '12+';
             }
             ?>
-            <tr>
-                <td><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?></td>
+            <tr<?= $v['incompleto_import_antigo'] ? ' class="linha-sem-vinculo"' : '' ?>>
+                <td><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?>
+                    <?php if ($v['incompleto_import_antigo']): ?><br><span class="badge badge-aviso" title="Importado do CRM antigo, faltando documento obrigatório">⚠️ doc. incompleto</span><?php endif; ?>
+                </td>
                 <td><?= e($v['veiculo_placa'] ?: '—') ?><?php if ($v['veiculo_chassi']): ?><br><small><?= e($v['veiculo_chassi']) ?></small><?php endif; ?></td>
                 <td><a href="/admin/cliente_detalhe.php?id=<?= (int)$v['cliente_id'] ?>"><?= e($v['cliente_nome']) ?></a><br><small><?= e($v['cliente_telefone']) ?></small></td>
                 <td><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></td>
