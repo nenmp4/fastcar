@@ -2601,27 +2601,52 @@ segue no schema sem uso novo, não removida sem ganho real),
   `zapsignSincronizarContrato()` já mantém pro fluxo normal. Nunca importa
   o mesmo `zapsign_doc_token` 2x (índice único já existente,
   `idx_contratos_zapsign_doc`, checado antes de qualquer coisa ser criada).
-  ⚠️ **Escopo desta 1ª versão, decisão assumida**: só contrato de
-  **COMPRA** — contrato de VENDA (revenda) do CRM antigo ficou de fora de
-  propósito, porque depende do veículo já estar na frota (regra #3, nunca
-  invento vínculo) e provavelmente teria o contrato de compra
-  correspondente também só na ZapSign, não ainda na Fastcar — importar os
-  dois em conjunto é decisão maior, não assumida sem confirmar; sinalizar
-  se a equipe quiser isso depois. Link "📥 Importar contratos antigos da
-  ZapSign" novo em Configurações → ZapSign, só aparece com o token já
-  configurado. Testado: função isolada contra servidor ZapSign fake local
-  com 5 documentos simulados (paginação de 2 páginas agregada certa —
+  Link "📥 Importar contratos antigos da ZapSign" em Configurações →
+  ZapSign, só aparece com o token já configurado.
+  **Importar VENDA também** (mesmo dia, pergunta direta do usuário: "uma
+  pergunta como vai saber se contrato venda ou compra" → confirmado que a
+  conta ZapSign tem os dois tipos misturados) — a resposta honesta é que a
+  ZapSign nunca diz sozinha se um documento é compra ou venda (não é campo
+  estruturado, só o nome do documento em texto livre, não confiável — regra
+  #3); reverte a decisão assumida original ("só compra nesta 1ª versão").
+  Cada documento sem match agora mostra os **2 caminhos possíveis lado a
+  lado** (dois `<form>` dentro do mesmo `<details>`), e quem escolhe qual é
+  o certo, olhando nome/signatário, é sempre o super_admin — nunca
+  inferido automaticamente. Nova
+  `zapsignImportarContratoVendaComoNegociacaoManual()`
+  (`includes/zapsign_importar.php`) exige vincular a um veículo **JÁ na
+  frota** (mesmo `listarFrotaDisponivelParaVenda()` que `admin/venda.php`
+  usa pro card "Vincular veículo") — se a compra desse veículo também só
+  existir na ZapSign, precisa importar ela primeiro (aqui mesmo ou em
+  Frota), depois voltar pra importar a venda. Diferente da compra, a
+  importação de venda **de propósito nunca passa por `mudarEtapaVenda()`**
+  — grava `etapa='vendido'` + histórico direto (mesma disciplina de
+  `criarVeiculoManualFrota()` pulando `mudarEtapa()`), justamente pra
+  **nunca disparar `finGerarReceitaVendaAssinatura()`**: essa função assume
+  que a venda está acontecendo AGORA (entrada com `data_vencimento=hoje`,
+  parcelas começando mês que vem) — rodar ela numa importação geraria
+  lançamentos financeiros FALSOS pra uma venda que já aconteceu no
+  passado (exatamente o dado sendo importado do CRM antigo). Se quiser
+  registrar o financeiro dessa venda histórica, é lançamento manual à
+  parte em Financeiro → Lançamentos — deixado assim de propósito, nunca
+  decidido sozinho. Testado: função isolada contra servidor ZapSign fake
+  local (paginação de 2 páginas agregada certa pro caso de compra —
   `TOTAL_DOCS=5`; extração de signatário certa; documento sem signatário
-  reconhecível grava o log de diagnóstico; importar cria
-  cliente/oportunidade `etapa='fechado'`/contrato `status='assinado'`/
-  `oportunidade_documentos.contrato_compra` todos certos; reimportar o
-  MESMO token é bloqueado, nunca duplica cliente nem oportunidade) +
-  Playwright ponta a ponta (tela separa os 3 grupos com as contagens
-  certas; link do cliente já cadastrado aponta pro cliente certo sem criar
-  nada; importar um documento sem match preenche o formulário, redireciona
-  pra `admin/oportunidade.php` da oportunidade recém-criada com marca/
-  modelo certos, e o documento importado some da lista "sem match" na
-  próxima visita — já aparece como "já importado").
+  reconhecível grava o log de diagnóstico; importar como compra cria
+  cliente/oportunidade/contrato certos, reimportar o mesmo token bloqueado;
+  importar como venda — veículo já seedado na frota — cria a negociação
+  já `etapa='vendido'`/`comprador_nome`/`preco_venda`/`data_venda` certos,
+  contrato `tipo='venda'`/`venda_id` certo, **zero linhas novas em
+  `fin_lancamentos`** confirmado antes/depois — o ponto crítico do teste —,
+  histórico gravado com a observação certa, reimportar o mesmo token
+  bloqueado, veículo sai da lista de disponíveis pra venda depois) +
+  Playwright ponta a ponta (tela mostra os 2 formulários — compra e venda —
+  por documento sem match; select de veículo lista o carro certo já
+  seedado; submeter o formulário de venda redireciona pra
+  `admin/venda.php` da negociação criada, mostrando comprador e status
+  "vendido" certos; confirmado via HTTP real, não só chamada direta de
+  função, que nenhum lançamento financeiro aparece depois do fluxo
+  completo).
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

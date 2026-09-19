@@ -14,15 +14,22 @@
  *      mais de 1 veículo — não dá pra saber qual oportunidade é a certa só
  *      pelo telefone); tela oferece o link pra abrir o cliente e anexar
  *      manualmente por lá.
- *   3. Sem match — formulário de importação: nome/telefone pré-preenchidos
- *      da ZapSign, resto (marca/modelo/placa/valor) digitado na hora —
- *      mesmos campos de `admin/veiculos.php` → "Adicionar veículo
- *      manualmente", só que aqui já anexa o PDF assinado de verdade
- *      (baixado da ZapSign) como contrato de compra.
+ *   3. Sem match — formulário de importação, com 2 caminhos possíveis por
+ *      documento (o admin decide qual, a ZapSign nunca diz sozinha — ver
+ *      nota grande em includes/zapsign_importar.php, "como vai saber se
+ *      contrato venda ou compra", 19/09/2026, confirmado que a conta tem
+ *      os dois tipos misturados):
+ *        a) Importar como COMPRA — nome/telefone pré-preenchidos da
+ *           ZapSign, marca/modelo/placa/valor digitados na hora (mesmos
+ *           campos de `admin/veiculos.php` → "Adicionar veículo
+ *           manualmente"), vira veículo novo na frota.
+ *        b) Importar como VENDA (revenda) — vincula a um veículo JÁ na
+ *           frota (select com `listarFrotaDisponivelParaVenda()`), nome/
+ *           telefone do comprador pré-preenchidos, preço digitado — nunca
+ *           gera lançamento financeiro sozinho (venda histórica, não de
+ *           hoje).
  *
- * Restrito ao super_admin, mesma trava de admin/veiculos.php. Só contrato
- * de COMPRA nesta 1ª versão — ver nota grande em
- * includes/zapsign_importar.php sobre por que venda ficou de fora.
+ * Restrito ao super_admin, mesma trava de admin/veiculos.php.
  */
 require_once __DIR__ . '/_bootstrap.php';
 requireSuperAdmin();
@@ -56,9 +63,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'importa
         }
         $erro = $r['erro'];
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'importar_venda') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        $precoPost = trim((string)($_POST['preco_venda'] ?? ''));
+        $r = zapsignImportarContratoVendaComoNegociacaoManual(
+            (string)($_POST['doc_token'] ?? ''),
+            (int)($_POST['oportunidade_id'] ?? 0),
+            (string)($_POST['comprador_nome'] ?? ''),
+            (string)($_POST['comprador_telefone'] ?? ''),
+            $precoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $precoPost)) : null,
+            (string)($_POST['data_assinatura'] ?? ''),
+            (int)$_SESSION['admin_id']
+        );
+        if ($r['ok']) {
+            header('Location: /admin/venda.php?id=' . $r['venda_id'] . '&importado_zapsign=1');
+            exit;
+        }
+        $erro = $r['erro'];
+    }
 }
 
 $zapsignConfigurado = (bool)getConfig('zapsign_api_token');
+$frotaDisponivelVenda = listarFrotaDisponivelParaVenda(100);
 $documentos = [];
 $erroListagem = '';
 if ($zapsignConfigurado) {
@@ -124,8 +152,9 @@ foreach ($documentos as $doc) {
     <h2>📥 Importar contratos da ZapSign (CRM antigo)</h2>
     <p><small>Puxa todos os documentos já existentes na conta ZapSign (mesma conta configurada em
        Configurações → ZapSign) e tenta casar cada um por telefone com um cliente já cadastrado aqui. Nada é criado
-       automaticamente — cada importação é uma ação explícita, sempre revisada antes. Só contrato de COMPRA nesta
-       versão (o veículo já pertencia à Fastcar e vira frota).</small></p>
+       automaticamente — cada importação é uma ação explícita, sempre revisada antes. A ZapSign nunca diz sozinha se
+       um documento é contrato de COMPRA ou de VENDA (revenda) — não tem esse dado estruturado — então cada
+       documento sem match mostra os 2 caminhos possíveis, e você escolhe o certo olhando o nome/signatário.</small></p>
 </div>
 
 <?php if (!$zapsignConfigurado): ?>
@@ -167,10 +196,9 @@ foreach ($documentos as $doc) {
 
     <?php if ($semMatch): ?>
     <div class="card">
-        <h3>❓ Sem cliente correspondente — importar</h3>
-        <p><small>Nome/telefone vêm pré-preenchidos da ZapSign; marca/modelo/placa/valor a ZapSign não tem
-           estruturado (só o que foi digitado no PDF), então completa aqui antes de importar — mesmos campos do
-           cadastro manual de veículo em Frota.</small></p>
+        <h3>❓ Sem cliente correspondente — escolha compra ou venda</h3>
+        <p><small>Abra o documento e escolha UM dos 2 caminhos — nunca os dois pro mesmo documento. Nome/telefone
+           vêm pré-preenchidos da ZapSign nos dois formulários.</small></p>
         <?php foreach ($semMatch as $i => $item): $doc = $item['doc']; $sig = $item['sig']; ?>
         <details style="margin-bottom:.75rem;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:.5rem .75rem">
             <summary style="cursor:pointer;font-weight:600">
@@ -178,7 +206,9 @@ foreach ($documentos as $doc) {
                 — <?= e($sig['nome'] ?: 'sem nome identificado') ?>
                 <span style="color:var(--muted);font-weight:400"> · <?= e($doc['status'] ?? '—') ?></span>
             </summary>
-            <form method="post" style="margin-top:.75rem">
+
+            <h4 style="margin-top:1rem">🚗 Importar como COMPRA (veículo novo na frota)</h4>
+            <form method="post" style="margin-top:.5rem">
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="importar">
                 <input type="hidden" name="doc_token" value="<?= e((string)($doc['token'] ?? '')) ?>">
@@ -207,8 +237,41 @@ foreach ($documentos as $doc) {
                         <input type="text" name="veiculo_renavam">
                     </div>
                 </div>
-                <button type="submit">📥 Importar este contrato</button>
+                <button type="submit">📥 Importar como compra</button>
             </form>
+
+            <hr style="margin:1.25rem 0;border:none;border-top:1px dashed var(--border,#e2e8f0)">
+
+            <h4>💰 Importar como VENDA (revenda de veículo já na frota)</h4>
+            <?php if (!$frotaDisponivelVenda): ?>
+                <p><small style="color:var(--muted)">Nenhum veículo disponível na frota ainda pra vincular — importe a compra
+                   correspondente primeiro (aqui mesmo ou em Frota), depois volte pra importar esta venda.</small></p>
+            <?php else: ?>
+                <form method="post" style="margin-top:.5rem">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="importar_venda">
+                    <input type="hidden" name="doc_token" value="<?= e((string)($doc['token'] ?? '')) ?>">
+                    <input type="hidden" name="data_assinatura" value="<?= e((string)($doc['created_at'] ?? $doc['last_update_at'] ?? '')) ?>">
+                    <label>Veículo da frota *</label>
+                    <select name="oportunidade_id" required>
+                        <option value="">— selecione —</option>
+                        <?php foreach ($frotaDisponivelVenda as $v): ?>
+                            <option value="<?= (int)$v['oportunidade_id'] ?>">
+                                #<?= (int)$v['oportunidade_id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'] . ' ' . $v['veiculo_ano'])) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <label>Nome do comprador *</label>
+                    <input type="text" name="comprador_nome" value="<?= e($sig['nome']) ?>" required>
+                    <label>Telefone do comprador *</label>
+                    <input type="text" name="comprador_telefone" value="<?= e($sig['telefone']) ?>" required placeholder="Ex: 31999998888">
+                    <label>Preço de venda (R$)</label>
+                    <input type="text" name="preco_venda" placeholder="0,00">
+                    <p><small style="color:var(--muted)">Não gera lançamento financeiro sozinho — é venda histórica, não de
+                       hoje. Se quiser registrar a receita, faça manualmente em Financeiro → Lançamentos.</small></p>
+                    <button type="submit">📥 Importar como venda</button>
+                </form>
+            <?php endif; ?>
         </details>
         <?php endforeach; ?>
     </div>

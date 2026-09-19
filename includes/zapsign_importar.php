@@ -10,22 +10,39 @@
  * (includes/contratos.php), é IMPORTAÇÃO de um contrato que já existe do
  * lado de fora, sem passar por `zapsignCriarDocumentoEAssinatura()`.
  *
- * Escopo desta 1ª versão, confirmado com o usuário — **só contrato de
- * COMPRA**: reaproveita `criarVeiculoManualFrota()` (já existe, já
+ * **Compra**: reaproveita `criarVeiculoManualFrota()` (já existe, já
  * testada, mesmo caminho de "veículo que a Fastcar já tem mas nunca passou
  * pelo funil normal") — nome/telefone do vendedor vêm pré-preenchidos da
  * ZapSign, mas marca/modelo/ano/placa/chassi/renavam/valor a ZapSign NÃO
  * tem (ela só sabe o que foi digitado no PDF/formulário de assinatura, não
  * dados estruturados de veículo) — o admin digita esses na tela de
  * importação, exatamente como já faz pro cadastro manual normal de veículo.
- * Contrato de VENDA antigo (revenda) fica DE FORA por enquanto — depende
- * de o veículo já estar na frota (regra #3, nunca invento vínculo), e um
- * contrato de venda do CRM antigo provavelmente teria o contrato de COMPRA
- * correspondente também só na ZapSign, não na Fastcar ainda — importar os
- * dois em conjunto é decisão maior, não assumida aqui sem confirmar.
+ *
+ * **Venda** (19/09/2026, "como vai saber se contrato venda ou compra" →
+ * confirmado que a conta ZapSign tem os dois tipos misturados): a ZapSign
+ * NUNCA diz sozinha se um documento é compra ou venda — não existe campo
+ * estruturado pra isso, só o nome do documento (texto livre, não confiável
+ * — regra #3, nunca inferir) — então quem decide é sempre o admin, olhando
+ * o nome/signatário na tela e escolhendo o botão certo por documento.
+ * Contrato de venda exige vincular a um veículo JÁ na frota
+ * (`listarFrotaDisponivelParaVenda()`, mesma função que `admin/venda.php`
+ * usa) — se o veículo ainda não foi importado (a compra dele também só
+ * existe na ZapSign), precisa importar a COMPRA primeiro, depois voltar
+ * aqui pra importar a venda vinculando a ele. Diferente da compra, a
+ * importação de venda **nunca chama `mudarEtapaVenda()`** — grava
+ * `etapa='vendido'` direto + histórico manual (mesma disciplina de
+ * `criarVeiculoManualFrota()` pulando `mudarEtapa()`), de propósito pra
+ * NUNCA disparar `finGerarReceitaVendaAssinatura()` — essa função assume
+ * que a venda está acontecendo AGORA (lança entrada com
+ * `data_vencimento=hoje` e parcelas começando no mês que vem), o que
+ * geraria lançamentos financeiros FALSOS pra uma venda que na verdade já
+ * aconteceu no passado (é exatamente o dado que estamos importando do
+ * CRM antigo). Se quiser registrar o financeiro dessa venda histórica,
+ * é lançamento manual à parte em Financeiro → Lançamentos.
  */
 require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/oportunidades.php'; // criarVeiculoManualFrota()
+require_once __DIR__ . '/vendas.php'; // criarVenda()/veiculoDisponivelParaVenda()
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()
 
 /**
@@ -120,4 +137,91 @@ function zapsignImportarContratoComoVeiculoManual(
     }
 
     return ['ok' => true, 'erro' => null, 'oportunidade_id' => $oportunidadeId, 'cliente_id' => $clienteId];
+}
+
+/**
+ * Importa 1 documento da ZapSign como negociação de VENDA (revenda) já
+ * concluída, vinculada a um veículo que JÁ está na frota (só oferece os
+ * mesmos veículos de `listarFrotaDisponivelParaVenda()`). Nunca importa o
+ * mesmo `docToken` 2x, mesma checagem de `zapsignImportarContratoComoVeiculoManual()`.
+ *
+ * De propósito NÃO passa por `mudarEtapaVenda()` — grava `etapa='vendido'`
+ * direto + histórico manual, pra nunca disparar `finGerarReceitaVendaAssinatura()`
+ * com dados de "hoje" pra uma venda que já aconteceu no passado (ver nota
+ * grande no topo do arquivo).
+ *
+ * @return array ['ok'=>bool, 'erro'=>?string, 'venda_id'=>?int]
+ */
+function zapsignImportarContratoVendaComoNegociacaoManual(
+    string $docToken,
+    int $oportunidadeId,
+    string $compradorNome,
+    string $compradorTelefone,
+    ?float $precoVenda,
+    string $dataAssinatura, // 'Y-m-d H:i:s' ou '' (usa hoje)
+    int $criadoPor
+): array {
+    $db = getDB();
+
+    $jaImportado = $db->prepare('SELECT id FROM contratos WHERE zapsign_doc_token = ?');
+    $jaImportado->execute([$docToken]);
+    if ($jaImportado->fetchColumn()) {
+        return ['ok' => false, 'erro' => 'Este documento já foi importado antes.', 'venda_id' => null];
+    }
+
+    try {
+        $vendaId = criarVenda($oportunidadeId, $criadoPor);
+    } catch (RuntimeException $e) {
+        return ['ok' => false, 'erro' => $e->getMessage(), 'venda_id' => null];
+    }
+
+    $telNorm = $compradorTelefone ? (normalizarTelefone($compradorTelefone) ?: $compradorTelefone) : '';
+    $dataVenda = $dataAssinatura ? substr($dataAssinatura, 0, 10) : date('Y-m-d');
+    $db->prepare("
+        UPDATE vendas SET comprador_nome = ?, comprador_telefone = ?, preco_venda = ?,
+               etapa = 'vendido', data_venda = ?, updated_at = datetime('now','localtime')
+        WHERE id = ?
+    ")->execute([clean($compradorNome), $telNorm, $precoVenda, $dataVenda, $vendaId]);
+
+    $db->prepare("
+        INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
+        VALUES (?, 'negociacao', 'vendido', ?, 'Importado da ZapSign (CRM antigo) — contrato já assinado; nenhum lançamento financeiro gerado automaticamente (venda histórica, não de hoje)')
+    ")->execute([$vendaId, $criadoPor]);
+
+    // Baixa o PDF assinado — mesma âncora do Drive já usada pra contrato de
+    // venda gerado normalmente (`zapsignSincronizarContrato()`): o cliente
+    // ORIGINAL (vendedor que trouxe o veículo), nunca o comprador (que não
+    // tem cadastro em `clientes`).
+    $driveFileId = '';
+    $arquivoUrl = '';
+    $conteudo = zapsignBaixarAssinado($docToken);
+    if ($conteudo) {
+        $tmp = tempnam(sys_get_temp_dir(), 'zapsign_import_venda_') . '.pdf';
+        file_put_contents($tmp, $conteudo);
+        $stmtCli = $db->prepare('SELECT cl.id, cl.nome FROM oportunidades o JOIN clientes cl ON cl.id = o.cliente_id WHERE o.id = ?');
+        $stmtCli->execute([$oportunidadeId]);
+        $cli = $stmtCli->fetch();
+        if ($cli) {
+            $copia = salvarArquivoGeradoComoDocumento(
+                (int)$cli['id'], (string)($cli['nome'] ?: "Cliente #{$cli['id']}"), $tmp,
+                "contrato_venda_assinado_importado_zapsign_{$vendaId}.pdf",
+                'application/pdf', 'contratos/' . $oportunidadeId
+            );
+            $driveFileId = $copia['drive_file_id'];
+            $arquivoUrl = $copia['arquivo_url'];
+        }
+        @unlink($tmp);
+    }
+
+    $assinadoEm = $dataAssinatura ?: date('Y-m-d H:i:s');
+    $db->prepare('
+        INSERT INTO contratos (oportunidade_id, venda_id, tipo, nome, zapsign_doc_token, status, assinado_em, drive_file_id, arquivo_url, created_by, campos_json)
+        VALUES (?, ?, \'venda\', ?, ?, \'assinado\', ?, ?, ?, ?, ?)
+    ')->execute([
+        $oportunidadeId, $vendaId, 'Contrato de venda importado da ZapSign (CRM antigo) — ' . $compradorNome,
+        $docToken, $assinadoEm, $driveFileId, $arquivoUrl, $criadoPor,
+        json_encode(['origem' => 'importado_zapsign_crm_antigo', 'importado_em' => date('Y-m-d H:i:s')]),
+    ]);
+
+    return ['ok' => true, 'erro' => null, 'venda_id' => $vendaId];
 }
