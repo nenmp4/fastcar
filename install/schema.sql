@@ -718,8 +718,11 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
     -- 'manual' (digitado na tela) / 'parcelamento_venda' (gerado ao fechar
     -- uma venda parcelada, sem Asaas) / 'asaas' (importado/criado via API
     -- Asaas) / 'fechamento_compra' (despesa automática ao fechar uma
-    -- compra, 19/09/2026) — ver nota (5) acima.
-    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra')),
+    -- compra, 19/09/2026) / 'recorrencia_fixa' (despesa fixa gerada
+    -- automaticamente pro mês seguinte por cron/lancamentos_fixos.php,
+    -- 19/09/2026, "todas despesas fixas pode lançar todo mês automático")
+    -- — ver nota (5) acima.
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa')),
     asaas_payment_id TEXT DEFAULT NULL,
     asaas_customer_id TEXT DEFAULT NULL,
     created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),

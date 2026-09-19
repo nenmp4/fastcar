@@ -394,3 +394,116 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
         // best-effort — nunca pode travar a transição de etapa da venda
     }
 }
+
+/**
+ * Gera automaticamente a próxima ocorrência mensal de toda despesa FIXA
+ * (`natureza='fixa'`) que ainda não tenha um lançamento pro mês corrente —
+ * 19/09/2026, pedido direto: "todas despesas fixas pode lançar todo mês
+ * automático". "Fixa" já é o sinal de que a despesa se repete todo mês
+ * (aluguel, salário, assinatura — o campo Natureza já distingue isso de
+ * "Variável" na tela de lançamentos), então o gatilho é só
+ * `natureza='fixa'`, sem precisar também marcar o checkbox "Recorrente"
+ * (esse continua existindo pra outros casos — receita recorrente,
+ * intervalo quinzenal/anual — mas fica inerte pra este fluxo específico,
+ * que é só mensal por definição de "fixa").
+ *
+ * Cada despesa fixa forma uma CADEIA de lançamentos ligados por
+ * `recorrencia_origem_id` (sempre apontando pro id do lançamento ORIGINAL
+ * da série, nunca pro anterior — assim qualquer membro da cadeia resolve
+ * pra raiz numa consulta só, sem precisar seguir ponteiro por ponteiro).
+ * Pra cada cadeia: se já existe algum lançamento com vencimento no mês
+ * corrente, não faz nada (idempotente — seguro rodar o cron quantas vezes
+ * quiser no mesmo mês, nunca duplica); senão, copia os dados do
+ * lançamento MAIS RECENTE da cadeia (categoria, valor, fornecedor, forma
+ * de pagamento etc — reflete um reajuste de valor feito à mão na última
+ * ocorrência, nunca trava no valor original da 1ª vez) pro mês corrente,
+ * no mesmo dia do mês (ajustado se o mês corrente não tiver esse dia, ex:
+ * dia 31 vira dia 30 em abril), sempre como 'pendente', sem copiar
+ * comprovante/anexo do mês anterior (é de outro pagamento).
+ *
+ * Escape hatch sem precisar de campo novo: marcar o ÚLTIMO lançamento de
+ * uma cadeia como `status='cancelado'` (status já existente, "assinatura
+ * cancelada esse mês") interrompe a geração do mês seguinte pra aquela
+ * série — sem isso, uma despesa fixa continuaria gerando pra sempre até
+ * alguém apagar manualmente todo mês.
+ *
+ * Nunca lança (best-effort) — quem chama (cron/lancamentos_fixos.php)
+ * decide o que fazer com o resultado.
+ */
+function finGerarDespesasFixasDoMes(): array {
+    $db = getDB();
+
+    try {
+        $todas = $db->query("
+            SELECT * FROM fin_lancamentos WHERE tipo = 'despesa' AND natureza = 'fixa'
+        ")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return ['criadas' => 0, 'puladas' => 0, 'erros' => [$e->getMessage()]];
+    }
+
+    // Agrupa por cadeia — raiz é recorrencia_origem_id, ou o próprio id
+    // quando é a 1ª ocorrência da série (recorrencia_origem_id ainda NULL).
+    $cadeias = [];
+    foreach ($todas as $l) {
+        $raiz = (int)($l['recorrencia_origem_id'] ?: $l['id']);
+        $cadeias[$raiz][] = $l;
+    }
+
+    $mesAlvo = date('Y-m');
+    $ultimoDiaMesAlvo = (int)date('t', strtotime($mesAlvo . '-01'));
+
+    $criadas = 0;
+    $puladas = 0;
+    $erros = [];
+
+    foreach ($cadeias as $raizId => $membros) {
+        $jaTemNoMes = false;
+        $maisRecente = null;
+        foreach ($membros as $m) {
+            if (!$m['data_vencimento']) continue;
+            if (substr($m['data_vencimento'], 0, 7) === $mesAlvo) $jaTemNoMes = true;
+            if ($maisRecente === null || $m['data_vencimento'] > $maisRecente['data_vencimento']) {
+                $maisRecente = $m;
+            }
+        }
+
+        // Sem vencimento em nenhum membro (nunca deveria acontecer — campo
+        // opcional, mas sem ele não dá pra calcular "mês seguinte"), série
+        // já cancelada, mês alvo não é estritamente posterior ao último
+        // lançamento, ou valor inválido: pula, sem gerar nada.
+        if (
+            $jaTemNoMes || !$maisRecente
+            || $maisRecente['status'] === 'cancelado'
+            || substr($maisRecente['data_vencimento'], 0, 7) >= $mesAlvo
+            || (float)$maisRecente['valor'] <= 0
+        ) {
+            $puladas++;
+            continue;
+        }
+
+        $diaOriginal = (int)date('d', strtotime($maisRecente['data_vencimento']));
+        $diaAlvo = min($diaOriginal, $ultimoDiaMesAlvo);
+        $novoVencimento = sprintf('%s-%02d', $mesAlvo, $diaAlvo);
+
+        try {
+            $db->prepare("
+                INSERT INTO fin_lancamentos
+                    (tipo, categoria_id, descricao, valor, natureza, data_vencimento, status,
+                     cliente_id, cliente_nome_manual, oportunidade_id, venda_id, funcionario_id,
+                     fornecedor_id, forma_pagamento, recorrente, recorrencia_intervalo,
+                     recorrencia_origem_id, origem)
+                VALUES ('despesa', ?, ?, ?, 'fixa', ?, 'pendente', ?, ?, ?, ?, ?, ?, ?, 1, 'mensal', ?, 'recorrencia_fixa')
+            ")->execute([
+                $maisRecente['categoria_id'], $maisRecente['descricao'], $maisRecente['valor'], $novoVencimento,
+                $maisRecente['cliente_id'], $maisRecente['cliente_nome_manual'], $maisRecente['oportunidade_id'],
+                $maisRecente['venda_id'], $maisRecente['funcionario_id'], $maisRecente['fornecedor_id'],
+                $maisRecente['forma_pagamento'], $raizId,
+            ]);
+            $criadas++;
+        } catch (Throwable $e) {
+            $erros[] = "cadeia #{$raizId}: {$e->getMessage()}";
+        }
+    }
+
+    return ['criadas' => $criadas, 'puladas' => $puladas, 'erros' => $erros];
+}

@@ -187,7 +187,7 @@ $statusLabels = [
     'atrasado' => ['Atrasado', '#991b1b', '#fef2f2'],
     'cancelado' => ['Cancelado', '#475569', '#f1f5f9'],
 ];
-$origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelamento', 'asaas' => '🔄 Asaas'];
+$origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelamento', 'asaas' => '🔄 Asaas', 'fechamento_compra' => '🚗 fechamento de compra', 'recorrencia_fixa' => '🔁 despesa fixa (automática)'];
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -302,6 +302,7 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
           <option value="fixa" <?= ($editando['natureza'] ?? '') === 'fixa' ? 'selected' : '' ?>>Fixa</option>
           <option value="variavel" <?= ($editando['natureza'] ?? '') === 'variavel' ? 'selected' : '' ?>>Variável</option>
         </select>
+        <small style="color:var(--muted)">🔁 "Fixa" lança sozinha o mês seguinte automaticamente (mesmo valor/categoria da última vez) — pra parar, marque o último mês como "Cancelado".</small>
         <label>Colaborador (salário/pró-labore)</label>
         <select name="funcionario_id">
           <option value="">—</option>

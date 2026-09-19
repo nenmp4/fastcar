@@ -794,6 +794,76 @@ try {
     echo "❌ fin_lancamentos.origem (CHECK fechamento_compra): {$e->getMessage()}\n";
 }
 
+// 19/09/2026 — despesa fixa gerada automaticamente todo mês, pedido direto
+// ("todas despesas fixas pode lançar todo mês automático").
+// fin_lancamentos.origem ganhou o valor 'recorrencia_fixa'
+// (finGerarDespesasFixasDoMes(), includes/financeiro.php, chamada por
+// cron/lancamentos_fixos.php) — mesma técnica de reconstrução de CHECK da
+// migração 'fechamento_compra' logo acima. Idempotente — só reconstrói se
+// a CHECK atual ainda não aceitar 'recorrencia_fixa'.
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='fin_lancamentos'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'recorrencia_fixa'")) {
+        $db->exec('BEGIN');
+        $db->exec("
+            CREATE TABLE fin_lancamentos_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo TEXT NOT NULL DEFAULT 'despesa' CHECK (tipo IN ('receita','despesa')),
+                categoria_id INTEGER DEFAULT NULL REFERENCES fin_categorias(id),
+                descricao TEXT NOT NULL,
+                valor REAL NOT NULL DEFAULT 0,
+                natureza TEXT DEFAULT '',
+                data_vencimento TEXT DEFAULT NULL,
+                data_pagamento TEXT DEFAULT NULL,
+                status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','pago','atrasado','cancelado')),
+                cliente_id INTEGER DEFAULT NULL REFERENCES clientes(id),
+                cliente_nome_manual TEXT DEFAULT '',
+                oportunidade_id INTEGER DEFAULT NULL REFERENCES oportunidades(id),
+                venda_id INTEGER DEFAULT NULL REFERENCES vendas(id),
+                parcela_numero INTEGER DEFAULT NULL,
+                parcela_total INTEGER DEFAULT NULL,
+                funcionario_id INTEGER DEFAULT NULL REFERENCES fin_colaboradores(id),
+                fornecedor_id INTEGER DEFAULT NULL REFERENCES fin_fornecedores(id),
+                forma_pagamento TEXT DEFAULT '',
+                recorrente INTEGER DEFAULT 0,
+                recorrencia_intervalo TEXT DEFAULT '',
+                recorrencia_origem_id INTEGER DEFAULT NULL,
+                drive_file_id TEXT DEFAULT '',
+                arquivo_url TEXT DEFAULT '',
+                observacoes TEXT DEFAULT '',
+                origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa')),
+                asaas_payment_id TEXT DEFAULT NULL,
+                asaas_customer_id TEXT DEFAULT NULL,
+                created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
+                created_at DATETIME DEFAULT (datetime('now','localtime')),
+                updated_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $db->exec("
+            INSERT INTO fin_lancamentos_novo
+            SELECT id, tipo, categoria_id, descricao, valor, natureza, data_vencimento, data_pagamento, status,
+                   cliente_id, cliente_nome_manual, oportunidade_id, venda_id, parcela_numero, parcela_total,
+                   funcionario_id, fornecedor_id, forma_pagamento, recorrente, recorrencia_intervalo, recorrencia_origem_id,
+                   drive_file_id, arquivo_url, observacoes, origem, asaas_payment_id, asaas_customer_id, created_by,
+                   created_at, updated_at
+            FROM fin_lancamentos
+        ");
+        $db->exec('DROP TABLE fin_lancamentos');
+        $db->exec('ALTER TABLE fin_lancamentos_novo RENAME TO fin_lancamentos');
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_venda ON fin_lancamentos(venda_id)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_oportunidade ON fin_lancamentos(oportunidade_id)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status)");
+        $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL");
+        $db->exec('COMMIT');
+        echo "✅ fin_lancamentos.origem: CHECK reconstruída pra aceitar 'recorrencia_fixa'\n";
+    } else {
+        echo "⏭️  fin_lancamentos.origem (CHECK recorrencia_fixa): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { $db->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ fin_lancamentos.origem (CHECK recorrencia_fixa): {$e->getMessage()}\n";
+}
+
 // Categorias padrão do financeiro Fastcar — só insere as que ainda não
 // existem (por nome), mesmo padrão idempotente do JurídicoSaaS original.
 try {

@@ -3737,6 +3737,53 @@ segue no schema sem uso novo, não removida sem ganho real),
   certos, campo de descrição confirmado desabilitado, sem botão "Salvar"
   nenhum; lançamento manual normal confirmado intocado (título "Editar
   lançamento", campos habilitados, botão "Salvar" presente).
+  **Despesa fixa lança sozinha o mês seguinte, automaticamente**
+  (19/09/2026, pedido direto: "todas despesas fixas pode lançar todo mês
+  automático") — até então "Natureza" (Fixa/Variável, só despesa) era só
+  informativo, marcar Fixa nunca gerava nada sozinho no mês seguinte (os
+  campos `recorrente`/`recorrencia_intervalo`/`recorrencia_origem_id` já
+  existiam no schema desde a portação do JurídicoSaaS, mas nunca ligados a
+  nenhuma geração automática). `finGerarDespesasFixasDoMes()`
+  (`includes/financeiro.php`) — gatilho é só `natureza='fixa'`, sem
+  precisar também marcar "Recorrente" (que continua existindo pra outros
+  casos — receita recorrente, quinzenal/anual — mas fica inerte pra esse
+  fluxo, mensal por definição de "fixa"). Cada despesa fixa forma uma
+  CADEIA de lançamentos ligados por `recorrencia_origem_id` (sempre aponta
+  pro id do lançamento ORIGINAL da série, nunca pro anterior — qualquer
+  membro resolve pra raiz numa consulta só). Por cadeia: já existe
+  lançamento no mês corrente → não faz nada (idempotente, seguro rodar o
+  cron quantas vezes quiser no mesmo mês); senão, copia os dados do
+  lançamento MAIS RECENTE da cadeia (categoria/valor/fornecedor/forma de
+  pagamento — reflete reajuste feito à mão, nunca trava no valor
+  original) pro mês corrente, mesmo dia do mês (ajustado quando o mês
+  corrente não tem esse dia, ex: 31 vira 30 em abril), sempre 'pendente',
+  sem copiar comprovante/anexo do mês anterior. Escape hatch sem campo
+  novo: marcar o ÚLTIMO lançamento de uma cadeia como 'Cancelado' (status
+  já existente) interrompe a geração seguinte daquela série.
+  `cron/lancamentos_fixos.php` (novo, 1x/dia de madrugada — idempotente e
+  barato o bastante pra rodar todo dia, sem precisar de agendamento fino
+  tipo "só no dia 1") chama a função e loga em
+  `storage/logs/lancamentos_fixos_*.log`; cadastrado em
+  `install/setup_crontab.sh`. Nova origem `'recorrencia_fixa'` no CHECK de
+  `fin_lancamentos.origem` (mesma técnica de reconstrução de tabela das
+  migrações anteriores) — badge "🔁 despesa fixa (automática)" na listagem
+  de Lançamentos (aproveitado pra também rotular `'fechamento_compra'`,
+  que não tinha rótulo nenhum antes). Dica nova no formulário explicando o
+  comportamento assim que "Fixa" é selecionada. Testado: migração rodada
+  contra o schema real ANTES desta mudança (`git show HEAD:install/schema.sql`,
+  confirmado sem nenhuma menção a `recorrencia_fixa` nem no CHECK nem em
+  comentário) — aplica a CHECK nova preservando lançamento existente,
+  idempotente numa 2ª rodada; função isolada com 8 cenários (despesa fixa
+  de 2 meses atrás gera certo pro mês corrente com todos os campos
+  copiados e `recorrencia_origem_id` apontando pra si mesma; despesa já
+  com lançamento no mês corrente não duplica; cadeia com 2 gerações
+  anteriores aponta o novo pra RAIZ da cadeia — não pro meio — e copia o
+  valor da ocorrência mais recente, não da original; série com último
+  lançamento 'cancelado' nunca gera de novo; despesa 'variável' nunca é
+  tocada; valor ≤ 0 nunca gera; rodar a função 2x seguidas no mesmo mês
+  não duplica nada) + cron testado ponta a ponta (gera e loga certo, roda
+  de novo sem gerar nada) + Playwright (lançamento gerado aparece na
+  listagem com o badge certo, dica no formulário aparece).
   **Cards "Receitas"/"Despesas" do dashboard financeiro viraram clicáveis**
   (19/09/2026, pedido direto: "se clicar na receita listar as receitas e
   se clicar na despesas lista todas despesas") — `admin/financeiro.php`:
@@ -3940,6 +3987,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | `cron/followup.php` | a cada 30 min | Três papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) **lead "quente" parado** (15/09/2026, "fazer followup de lead quente... se não agir rápido") — `temperatura_lead='quente'` ainda em `crm_preenchido` (acabou de cair pro consultor, ainda não avançou) há mais de `IA_QUENTE_MINUTOS_LIMITE` (20min) — cobre o buraco que o alerta (1) sozinho deixava: lead recém-qualificado geralmente ainda não tem `proxima_acao_em` marcada, então nunca cairia lá mesmo sendo o caso mais urgente; dedup de 1h via `config.alerta_quente_{id}` (mais apertado que o de atraso, urgência real de financiamento atrasado); (3) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup de 24h por telefone via `config.reeng_sent_{telefone}` (não é permanente — um mesmo telefone pode esfriar de novo numa oportunidade futura, ex: 2º veículo meses depois — bug real corrigido); mensagem de reengajamento fica registrada em `whatsapp_mensagens` (`out`, `enviado_por_ia=1`) igual qualquer outra mensagem ao cliente, pro consultor que assumir depois ver a pergunta que gerou a resposta. Testado (2): 4 cenários simulados — quente parado 30min (dispara), quente parado só 5min (não dispara, dentro do limite), morno parado 30min (não dispara, só quente), quente já avançado pra `negociacao` (não dispara, consultor já agiu) — só o 1º caso alertou, e rodando o cron de novo imediatamente o dedup de 1h bloqueou reenvio. |
 | `cron/zapsign_sync.php` | a cada 30 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook da ZapSign não chegue) — frequência menor que o antigo `assinafy_sync.php` (que era a cada 1 min): assinatura eletrônica não é tão sensível a atraso de minutos quanto lead esfriando |
 | `cron/asaas_sync.php` | a cada 30 min | **18/09/2026, achado real: "tenho que sicornizar assas manual as cobranças de parcela dos carros"** — o script já existia no código desde 17/09/2026, mas nunca tinha sido cadastrado em `install/setup_crontab.sh` (arquivo que a própria cabeça do script declara como "fonte de verdade dos horários", mas ficou desatualizado — `resumo_produtividade.php`, linha abaixo, tinha o mesmo problema, também corrigido agora), então nunca rodou sozinho na VPS; e mesmo rodando, só resincronizava STATUS de cobrança já importada, nunca trazia cobrança NOVA criada direto no painel do Asaas — só o clique manual em "Importar cobranças" (`admin/financeiro-asaas.php`) fazia isso. Corrigido em 2 frentes: (1) `cron/asaas_sync.php` passou a chamar `asaasImportarCobrancas()` (mesma função do botão manual, dedup por `asaas_payment_id`, importa novas E atualiza status de todas numa passada) antes de `asaasSincronizarPendentes()` (mantido, mais barato pro caso comum de só status mudando); (2) linha nova em `install/setup_crontab.sh`, junto com a linha de `resumo_produtividade.php` que também estava faltando lá. Testado em banco isolado contra servidor Asaas fake local: 1 cobrança nova (`pay_novo123`, `PENDING`) + 1 já existente (`pay_existente456`, `pendente` no banco) — rodar o cron importa a nova (`status='pendente'`) e atualiza a existente pro status real vindo da API (`RECEIVED`→`pago`, `data_pagamento` preenchida), rodando de novo mostra "0 nova(s)" (dedup funcionando, não duplica). |
+| `cron/lancamentos_fixos.php` | 1x/dia (5h) | Gera automaticamente a próxima ocorrência mensal de toda despesa marcada como "Fixa" (`natureza='fixa'`) no financeiro — 19/09/2026, "todas despesas fixas pode lançar todo mês automático". Ver `finGerarDespesasFixasDoMes()` (`includes/financeiro.php`, bullet completo na seção "Módulo financeiro") — idempotente, agrupa em cadeias via `recorrencia_origem_id`, copia o valor mais recente da série, e marcar o último lançamento como 'Cancelado' interrompe a série. |
 | `cron/resumo_produtividade.php` | 1x/dia, 19h30 | Resumo diário de produtividade pro WhatsApp pessoal de quem tem `perfil=supervisor` (15/09/2026, pedido José/Jean: "envia notificação de produção para números de notificação, supervisores acompanhar a produtividade"). Reaproveita exatamente `dashboardSuperAdmin()` (`includes/dashboard.php`, mesmas métricas de visão geral da empresa já usadas no dashboard — ativas/atrasadas/novas hoje/novas na semana/fechadas no mês/taxa de conversão), sem duplicar query nenhuma. Confirmado com o usuário (3 perguntas diretas): frequência = resumo diário automático (não sob demanda); destinatários = telefone (`usuarios.whatsapp`) de quem já tem `perfil=supervisor` cadastrado (não um campo novo de config com números avulsos); conteúdo = visão geral da empresa (não quebrado por consultor). Dedup por dia via `config.resumo_prod_enviado_{data}` — só marca como enviado se pelo menos 1 supervisor recebeu de verdade (`zapiEnviarTexto()` retornou sucesso), senão tenta de novo na próxima rodada do cron em vez de desistir o dia inteiro por causa de uma falha temporária da Z-API. Sem nenhum supervisor com `whatsapp` cadastrado, não manda nada (nunca quebra o cron). Testado ponta a ponta com banco isolado + servidor Z-API fake: 1 supervisor com WhatsApp recebe o resumo certo (métricas batendo com os dados semeados), 1 supervisor sem WhatsApp corretamente ignorado, rodando o cron de novo no mesmo dia o dedup bloqueia reenvio, e cenário sem nenhum supervisor cadastrado não dispara chamada nenhuma pra Z-API. |
 | `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
 | `cron/backup.php` | 1x/dia (3h) | ZIP completo (`.db` + `storage/uploads/` + credencial do Drive), mantém os últimos 5 dias — código não entra, já está no git |
