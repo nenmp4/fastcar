@@ -45,6 +45,39 @@ $resumoCanal = $db->query("
     GROUP BY canal
     ORDER BY total DESC
 ")->fetchAll();
+
+// 19/09/2026, "sistema registrar campanhas de vendas também" — mesmo
+// relatório, agora pro lado de VENDA (comprador de revenda). Sem tabela
+// `clientes` aqui — origem vive direto em `vendas` (ver
+// includes/vendas.php::criarOuAbrirVendaLead()) — só lead que entrou
+// sozinho pelo WhatsApp (origem='whatsapp') tem canal/campanha/anúncio
+// preenchidos; negociação criada manualmente (botão "Vender" na frota)
+// nunca teve clique de anúncio por trás, sempre cai em "(direto / sem
+// anúncio)".
+$linhasVenda = $db->query("
+    SELECT
+        CASE WHEN canal_origem = '' THEN '(direto / sem anúncio)' ELSE canal_origem END AS canal,
+        CASE WHEN campanha_origem = '' THEN '—' ELSE campanha_origem END AS campanha,
+        CASE WHEN anuncio_origem = '' THEN '—' ELSE anuncio_origem END AS anuncio,
+        COUNT(*) AS total_negociacoes,
+        SUM(CASE WHEN etapa = 'vendido' THEN 1 ELSE 0 END) AS vendidas,
+        SUM(CASE WHEN etapa = 'cancelada' THEN 1 ELSE 0 END) AS canceladas,
+        SUM(CASE WHEN etapa = 'sem_perfil' THEN 1 ELSE 0 END) AS sem_perfil,
+        SUM(CASE WHEN etapa IN ('whatsapp','qualificacao_ia','negociacao','contrato_enviado') THEN 1 ELSE 0 END) AS em_andamento
+    FROM vendas
+    GROUP BY canal_origem, campanha_origem, anuncio_origem
+    ORDER BY total_negociacoes DESC
+")->fetchAll();
+
+$resumoCanalVenda = $db->query("
+    SELECT
+        CASE WHEN canal_origem = '' THEN '(direto / sem anúncio)' ELSE canal_origem END AS canal,
+        COUNT(*) AS total,
+        SUM(CASE WHEN etapa = 'vendido' THEN 1 ELSE 0 END) AS vendidas
+    FROM vendas
+    GROUP BY canal
+    ORDER BY total DESC
+")->fetchAll();
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -115,6 +148,60 @@ $resumoCanal = $db->query("
                 <td><?= (int)$l['em_andamento'] ?></td>
                 <td><?= (int)$l['fechadas'] ?></td>
                 <td><?= (int)$l['perdidas'] ?></td>
+                <td><?= (int)$l['sem_perfil'] ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>📣 Origem dos leads de vendas (compradores de revenda)</h2>
+    <p><small>Só lead que entrou sozinho pela instância Z-API dedicada de vendas (WhatsApp) tem canal/campanha/anúncio
+       preenchidos — negociação criada manualmente a partir da Frota (botão "Vender") sempre cai em "(direto / sem
+       anúncio)", nunca teve clique de anúncio por trás. Mesmo mecanismo de captura do lado de compra
+       (<code>extrairOrigemAnuncio()</code>), mesma ressalva: ainda não validado contra um clique de anúncio real.</small></p>
+
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Canal</th><th>Total de negociações</th><th>Vendidas</th><th>Taxa de conversão</th></tr></thead>
+        <tbody>
+        <?php if (!$resumoCanalVenda): ?>
+            <tr><td colspan="4">Nenhuma negociação de venda registrada ainda.</td></tr>
+        <?php endif; ?>
+        <?php foreach ($resumoCanalVenda as $r): ?>
+            <tr>
+                <td><?= e($r['canal']) ?></td>
+                <td><?= (int)$r['total'] ?></td>
+                <td><?= (int)$r['vendidas'] ?></td>
+                <td><?= $r['total'] > 0 ? number_format($r['vendidas'] / $r['total'] * 100, 1) . '%' : '—' ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Detalhe por campanha/anúncio (vendas)</h3>
+    <table class="tabela-oportunidades">
+        <thead>
+            <tr>
+                <th>Canal</th><th>Campanha (headline do anúncio)</th><th>ID do anúncio</th>
+                <th>Total</th><th>Em andamento</th><th>Vendidas</th><th>Canceladas</th><th>Sem perfil</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php if (!$linhasVenda): ?>
+            <tr><td colspan="8">Nenhuma negociação de venda registrada ainda.</td></tr>
+        <?php endif; ?>
+        <?php foreach ($linhasVenda as $l): ?>
+            <tr>
+                <td><?= e($l['canal']) ?></td>
+                <td><?= e($l['campanha']) ?></td>
+                <td><?= e($l['anuncio']) ?></td>
+                <td><?= (int)$l['total_negociacoes'] ?></td>
+                <td><?= (int)$l['em_andamento'] ?></td>
+                <td><?= (int)$l['vendidas'] ?></td>
+                <td><?= (int)$l['canceladas'] ?></td>
                 <td><?= (int)$l['sem_perfil'] ?></td>
             </tr>
         <?php endforeach; ?>

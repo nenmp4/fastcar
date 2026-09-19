@@ -1893,6 +1893,33 @@ segue no schema sem uso novo, não removida sem ganho real),
   preview de contrato (`gerarContratoVendaPreview()`, espelhando
   `gerarContratoCompraPreview()`) ainda não foram implementados — fica
   pendente pra próxima sessão, tabela nova sem uso real ainda.
+  **Atribuição de origem de anúncio portada pro lado de vendas** (mesmo
+  dia, "sistema registrar campanhas de vendas também") — até aqui
+  `extrairOrigemAnuncio()` (`contextInfo.externalAdReply`,
+  `chatbot-whatsapp/includes/mensagens.php`, já genérica) só alimentava
+  `clientes.canal_origem/campanha_origem/anuncio_origem` do lado de
+  COMPRA; um comprador de revenda clicando num anúncio nunca tinha isso
+  registrado. 3 colunas iguais em `vendas` — só preenchidas quando
+  `origem='whatsapp'` (lead que entrou sozinho pela instância dedicada de
+  vendas); negociação manual (Frota → "Vender") sempre fica vazia, nunca
+  teve clique de anúncio por trás. `criarOuAbrirVendaLead()` ganhou 3º
+  parâmetro opcional `array $origem = []`, gravado só na criação do lead
+  NOVO — reabrir uma negociação ativa pro mesmo telefone nunca reescreve a
+  origem já gravada (first-touch, mesma regra do lado de compra).
+  `mensagens_vendas.php` passou a chamar
+  `criarOuAbrirVendaLead($phone, $nomeContato, extrairOrigemAnuncio($payload))`.
+  `admin/origem_leads.php` ganhou uma 2ª seção completa espelhando a de
+  compra (resumo por canal + detalhe por campanha/anúncio, consultando
+  `vendas` direto — sem `clientes`, que não existe pro comprador) — página
+  já era só relatório, não fazia sentido um arquivo novo pra isso. Testado:
+  função isolada (lead sem origem grava vazio; lead com payload de anúncio
+  real grava os 3 campos certos; reabertura NUNCA reescreve origem já
+  gravada; negociação manual continua `canal_origem` vazio, sem
+  regressão) + webhook completo (`processarMensagemVendasZapi()` ponta a
+  ponta com payload de `externalAdReply` grava certo) + Playwright em
+  `admin/origem_leads.php` (as 2 seções aparecem, campanha de compra E de
+  venda visíveis) + migração testada contra schema pré-mudança (colunas
+  adicionadas, dado pré-existente preservado, idempotente).
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

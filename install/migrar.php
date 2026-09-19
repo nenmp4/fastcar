@@ -178,6 +178,13 @@ $migracoes = [
     // preechido igual na compra lead quente frio e mornos").
     'vendas.documentos_token' => "ALTER TABLE vendas ADD COLUMN documentos_token TEXT",
     'vendas.temperatura_lead' => "ALTER TABLE vendas ADD COLUMN temperatura_lead TEXT DEFAULT ''",
+
+    // 19/09/2026, "sistema registrar campanhas de vendas também" — mesma
+    // atribuição de clique em anúncio já usada em oportunidades
+    // (canal_origem/campanha_origem/anuncio_origem), portada pra vendas.
+    'vendas.canal_origem' => "ALTER TABLE vendas ADD COLUMN canal_origem TEXT DEFAULT ''",
+    'vendas.campanha_origem' => "ALTER TABLE vendas ADD COLUMN campanha_origem TEXT DEFAULT ''",
+    'vendas.anuncio_origem' => "ALTER TABLE vendas ADD COLUMN anuncio_origem TEXT DEFAULT ''",
 ];
 
 foreach ($migracoes as $nome => $sql) {

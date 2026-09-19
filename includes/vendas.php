@@ -197,8 +197,13 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
  * módulo — ver comentário no topo do arquivo/schema.sql).
  * `oportunidade_id` fica NULL até o vendedor confirmar o match com um
  * veículo real da frota (vincularVeiculoVenda()).
+ *
+ * $origem (opcional, 19/09/2026): ['canal_origem', 'campanha_origem',
+ * 'anuncio_origem'] vindos de extrairOrigemAnuncio() — só gravados na
+ * criação do lead NOVO, nunca reescritos numa reabertura (mesma regra do
+ * lado de compra, criarOuAbrirOportunidade()).
  */
-function criarOuAbrirVendaLead(string $telefone, string $nome = ''): array {
+function criarOuAbrirVendaLead(string $telefone, string $nome = '', array $origem = []): array {
     $db = getDB();
     $telNorm = normalizarTelefone($telefone);
     if (!$telNorm || strlen($telNorm) < 12) {
@@ -227,9 +232,15 @@ function criarOuAbrirVendaLead(string $telefone, string $nome = ''): array {
     }
 
     $db->prepare("
-        INSERT INTO vendas (etapa, origem, comprador_nome, comprador_telefone)
-        VALUES ('whatsapp', 'whatsapp', ?, ?)
-    ")->execute([clean($nome), $telNorm]);
+        INSERT INTO vendas (etapa, origem, comprador_nome, comprador_telefone, canal_origem, campanha_origem, anuncio_origem)
+        VALUES ('whatsapp', 'whatsapp', ?, ?, ?, ?, ?)
+    ")->execute([
+        clean($nome),
+        $telNorm,
+        $origem['canal_origem'] ?? '',
+        $origem['campanha_origem'] ?? '',
+        $origem['anuncio_origem'] ?? '',
+    ]);
     $vendaId = (int)$db->lastInsertId();
 
     // Distribuição automática (mesmo padrão do rodízio de compra) já na

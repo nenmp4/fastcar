@@ -431,6 +431,16 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- veículo já na frota) ou 'whatsapp' (lead entrou sozinho pela instância
     -- Z-API dedicada de vendas, qualificado por IA antes de virar negociação).
     origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual', 'whatsapp')),
+    -- Atribuição de clique em anúncio (19/09/2026, "sistema registrar
+    -- campanhas de vendas também") — mesmo mecanismo de
+    -- oportunidades.canal_origem/campanha_origem/anuncio_origem
+    -- (extrairOrigemAnuncio(), chatbot-whatsapp/includes/mensagens.php,
+    -- já genérica), só que só é preenchido quando origem='whatsapp'; lead
+    -- criado manualmente (botão "Vender" na frota) nunca tem clique de
+    -- anúncio nenhum por trás, fica vazio mesmo.
+    canal_origem TEXT DEFAULT '',
+    campanha_origem TEXT DEFAULT '',
+    anuncio_origem TEXT DEFAULT '',
     responsavel_id INTEGER REFERENCES usuarios(id),
     proxima_acao TEXT DEFAULT '',
     proxima_acao_em DATETIME,

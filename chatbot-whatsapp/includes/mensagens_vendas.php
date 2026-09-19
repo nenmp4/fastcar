@@ -104,7 +104,7 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
     $vendaLead = null;
     $erroVenda = null;
     try {
-        $vendaLead = criarOuAbrirVendaLead($phone, $nomeContato);
+        $vendaLead = criarOuAbrirVendaLead($phone, $nomeContato, extrairOrigemAnuncio($payload));
     } catch (Throwable $e) {
         $erroVenda = $e->getMessage();
     }
