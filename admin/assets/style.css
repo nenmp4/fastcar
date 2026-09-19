@@ -143,6 +143,15 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .linha-quente { border-left: 4px solid var(--laranja); background: var(--laranja-bg); }
 .linha-quente:hover { background: #ffe4cc; }
 .badge-quente { background: var(--laranja-bg); color: var(--laranja); font-weight: 700; }
+/* 19/09/2026, "aqui muda as cores - provalmente as receitas que entraram
+   sem cliente deve se pagamento de entrada da compra do veiculo -
+   classificar dessa forma pode diferencia na cor" — lançamento financeiro
+   (normalmente importado do Asaas) sem cliente/fornecedor/colaborador
+   vinculado, mesmo tom âmbar/laranja de "precisa de atenção" já usado pro
+   lead quente, mas classe própria (nunca reaproveita .linha-quente — são
+   conceitos de tela diferentes, funil de vendas x financeiro). */
+.linha-sem-vinculo { background: var(--laranja-bg); }
+.linha-sem-vinculo:hover { background: #ffe4cc; }
 .sem-proxima-acao { color: var(--texto-fraco); font-style: italic; font-size: 12px; }
 
 /* ── Paginação (includes/paginacao.php::renderPaginacao()) ─────────────── */

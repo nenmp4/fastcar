@@ -3930,6 +3930,56 @@ segue no schema sem uso novo, não removida sem ganho real),
   do contador; Categorias mostra o select/badge do grupo DRE; perfil
   `financeiro` acessa as 4 telas novas; perfil `consultor` bloqueado com
   403 em todas).
+  **Classificar receita Asaas sem cliente vinculado (entrada vs. parcela)**
+  (19/09/2026, screenshot de `admin/financeiro-lancamentos.php` filtrado em
+  receitas mostrando várias linhas "Cobrança gerada automaticamente a
+  partir de Pix recebido." com "—" na coluna Cliente — "aqui muda as cores
+  - provalmente as receitas que entraram sem cliente deve se pagamento de
+  entrada da compra do veiculo - classificar dessa forma pode diferencia
+  na cor" → "vamos clasificar" → "isso estou dizendo assas") — hipótese do
+  usuário confirmada como plausível: cobrança Pix importada do Asaas sem
+  `cliente_nome_manual`/`cliente_id`/`venda_id` resolvido é provavelmente
+  a ENTRADA do comprador de uma revenda (que às vezes paga de uma conta
+  Pix diferente do cadastro, ou antes do vínculo manual em
+  `admin/financeiro-asaas.php` acontecer), mas o sistema sempre importava
+  tudo com a MESMA categoria "Venda de veículo — parcela"
+  (`config.asaas_categoria_padrao_id`) — sem jeito de diferenciar entrada
+  de parcela nem de sinalizar visualmente que faltava revisar. Duas
+  partes: (1) **destaque visual** — `$semVinculo` (nenhum
+  cliente/fornecedor/colaborador resolvido pra aquela linha) agora aplica
+  a classe `linha-sem-vinculo` (`admin/assets/style.css`, reaproveitando
+  as cores `--laranja`/`--laranja-bg` já existentes da feature de "lead
+  quente" — deliberadamente não reaproveitando `.linha-quente` em si, são
+  conceitos de tela diferentes, funil de vendas x financeiro) + texto
+  "⚠️ sem cliente vinculado" abaixo da célula Cliente, pra QUALQUER
+  lançamento sem vínculo (não só Asaas) — mesmo sinal visual de "precisa
+  de atenção" já usado em outros cantos do projeto. (2) **classificar de
+  verdade** — 2 botões inline "🏷️ Entrada"/"🏷️ Parcela", só na linha
+  quando é receita E está sem vínculo (`$l['tipo'] === 'receita' &&
+  $semVinculo`), ação POST nova `'classificar'` em
+  `admin/financeiro-lancamentos.php` que troca `categoria_id` pra "Venda
+  de veículo — entrada" ou "Venda de veículo — parcela" (busca por nome,
+  as 2 categorias já existiam seedadas desde a 1ª versão do módulo
+  financeiro) e `parcela_numero` (`0` pra entrada — mesma convenção já
+  documentada em `finGerarPlanoParcelamentoVenda()`, `NULL` pra parcela).
+  Funciona pra QUALQUER `origem`, inclusive `'asaas'` — confirmado
+  lendo `asaasImportarCobrancas()` (`includes/asaas.php`) antes de mexer:
+  o UPDATE de resincronização nunca toca em `categoria_id` (só o INSERT
+  inicial grava a categoria padrão, fill-if-empty), então classificar à
+  mão uma linha Asaas é seguro e permanente — uma resincronização futura
+  nunca desfaz a correção manual. Classificar NUNCA inventa/preenche
+  `cliente_nome_manual` — só resolve o lado contábil (qual categoria), o
+  vínculo com cliente continua genuinamente desconhecido até alguém
+  vincular de verdade (`admin/financeiro-asaas.php`), então o destaque/
+  aviso "sem cliente vinculado" continua aparecendo mesmo depois de
+  classificado — os dois problemas são independentes de propósito (regra
+  #3, nunca fingir que um dado incerto foi resolvido). Testado em banco
+  isolado com Playwright: lançamento Asaas sem cliente mostra a linha
+  destacada + aviso + os 2 botões; lançamento Asaas COM cliente vinculado
+  nunca ganha destaque nem botão; despesa sem vínculo mostra o destaque
+  mas nunca os botões de classificar (só receita); clicar "Entrada"
+  atualiza `categoria_id`/`parcela_numero` certos no banco e mostra a
+  mensagem de sucesso.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

@@ -90,6 +90,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($_POST['id'] ?? 0);
             $db->prepare("DELETE FROM fin_lancamentos WHERE id=? AND origem != 'asaas'")->execute([$id]);
             $sucesso = 'Lançamento excluído.';
+        } elseif ($acao === 'classificar') {
+            // 19/09/2026, "aqui muda as cores - provalmente as receitas que
+            // entraram sem cliente deve se pagamento de entrada da compra
+            // do veiculo - classificar dessa forma pode diferencia na cor"
+            // → "vamos clasificar" — cobrança importada do Asaas sem
+            // cliente_nome_manual resolvido (Pix avulso, sem match em
+            // fin_asaas_clientes) é ambígua: pode ser a entrada da compra
+            // ou uma parcela normal ainda sem vínculo. Reclassifica só a
+            // CATEGORIA (nunca os outros campos — Asaas continua sendo a
+            // fonte de verdade do valor/status/data) — categoria nunca é
+            // tocada pela resincronização (`asaasImportarCobrancas()`, só
+            // preenchida no INSERT de linha nova), então essa troca manual
+            // nunca é perdida num resync futuro. Funciona pra QUALQUER
+            // lançamento, inclusive `origem='asaas'` — diferente do resto
+            // do formulário (bloqueado pra Asaas), classificar por
+            // categoria sempre foi pensado como edição manual mesmo pra
+            // linha importada (só não tinha UI nenhuma pra isso ainda).
+            $id = (int)($_POST['id'] ?? 0);
+            $tipoClass = (string)($_POST['tipo_classificacao'] ?? '');
+            $mapaClass = [
+                'entrada' => 'Venda de veículo — entrada',
+                'parcela' => 'Venda de veículo — parcela',
+            ];
+            if (isset($mapaClass[$tipoClass])) {
+                $catStmt = $db->prepare('SELECT id FROM fin_categorias WHERE nome=?');
+                $catStmt->execute([$mapaClass[$tipoClass]]);
+                $catId = $catStmt->fetchColumn();
+                if ($catId) {
+                    // Entrada é sempre parcela_numero=0 (mesma convenção de
+                    // finGerarPlanoParcelamentoVenda()); parcela normal sem
+                    // número identificado fica NULL, nunca chutado.
+                    $novoParcelaNumero = $tipoClass === 'entrada' ? 0 : null;
+                    $db->prepare('UPDATE fin_lancamentos SET categoria_id=?, parcela_numero=?, updated_at=datetime(\'now\',\'localtime\') WHERE id=?')
+                        ->execute([$catId, $novoParcelaNumero, $id]);
+                    $sucesso = 'Lançamento classificado como ' . ($tipoClass === 'entrada' ? 'entrada' : 'parcela') . '.';
+                } else {
+                    $erro = 'Categoria padrão não encontrada — confira em Categorias.';
+                }
+            }
         }
     }
 }
@@ -382,12 +421,26 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
   <table class="tabela-oportunidades">
     <thead><tr><th>Vencimento</th><th>Descrição</th><th>Categoria</th><th>Cliente</th><th>Valor</th><th>Status</th><th></th></tr></thead>
     <tbody>
-    <?php foreach ($lancamentos as $l): [$lbl, $cor, $bg] = $statusLabels[$l['status']] ?? ['—', '#475569', '#f1f5f9']; ?>
-      <tr>
+    <?php foreach ($lancamentos as $l): [$lbl, $cor, $bg] = $statusLabels[$l['status']] ?? ['—', '#475569', '#f1f5f9'];
+      $vinculo = $l['cliente_nome_manual'] ?: ($l['fornecedor_nome'] ?? $l['funcionario_nome'] ?? '');
+      // 19/09/2026, "aqui muda as cores - provalmente as receitas que
+      // entraram sem cliente deve se pagamento de entrada da compra do
+      // veiculo - classificar dessa forma pode diferencia na cor" →
+      // "vamos clasificar" — lançamento sem NENHUM vínculo resolvido
+      // (cliente/fornecedor/colaborador, mostrava só "—" antes) é ambíguo
+      // o bastante pra merecer destaque visual + ação rápida de
+      // classificar, nunca decidido sozinho (regra #3) — só sinaliza pro
+      // financeiro revisar.
+      $semVinculo = $vinculo === '';
+    ?>
+      <tr <?= $semVinculo ? 'class="linha-sem-vinculo"' : '' ?>>
         <td><?= $l['data_vencimento'] ? date('d/m/Y', strtotime($l['data_vencimento'])) : '—' ?></td>
         <td><?= e($l['descricao']) ?> <?php if ($origemLabels[$l['origem']] ?? ''): ?><br><small><?= e($origemLabels[$l['origem']]) ?></small><?php endif; ?></td>
         <td><?= e(($l['icone'] ?? '') . ' ' . ($l['categoria_nome'] ?? '—')) ?></td>
-        <td><?= e($l['cliente_nome_manual'] ?: ($l['fornecedor_nome'] ?? $l['funcionario_nome'] ?? '—')) ?></td>
+        <td>
+          <?= e($vinculo ?: '—') ?>
+          <?php if ($semVinculo): ?><br><small style="color:#c2410c">⚠️ sem cliente vinculado</small><?php endif; ?>
+        </td>
         <td style="font-weight:700;color:<?= $l['tipo'] === 'receita' ? '#166534' : '#991b1b' ?>"><?= $l['tipo'] === 'receita' ? '+' : '-' ?> R$ <?= number_format((float)$l['valor'], 2, ',', '.') ?></td>
         <td>
           <span class="badge" style="background:<?= $bg ?>;color:<?= $cor ?>"><?= $lbl ?></span>
@@ -404,6 +457,11 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
             <form method="POST" style="display:inline" onsubmit="return confirm('Excluir este lançamento?')"><?= csrfField() ?><input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" style="background:none;border:none;cursor:pointer" title="Excluir">🗑️</button></form>
           <?php else: ?>
             <a href="?action=edit&id=<?= (int)$l['id'] ?>" title="Ver detalhes">👁️ via Asaas</a>
+          <?php endif; ?>
+          <?php if ($semVinculo && $l['tipo'] === 'receita'): ?>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="entrada"><button type="submit" style="background:none;border:none;cursor:pointer;color:#c2410c" title="Classificar como entrada da venda">🏷️ Entrada</button></form>
+            <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="parcela">
+              <button type="submit" style="background:none;border:none;cursor:pointer;color:#c2410c" title="Classificar como parcela normal">🏷️ Parcela</button></form>
           <?php endif; ?>
         </td>
       </tr>
