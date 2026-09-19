@@ -142,11 +142,35 @@ foreach ($clients as $i => $linha) {
     $telefoneVendedorAntigo = $telefonePorVendedorId[$linha['assigned_seller_id'] ?? ''] ?? null;
     $docsDoCliente = $documentosPorCliente[$linha['id'] ?? ''] ?? [];
 
-    try {
-        $r = crmAntigoImportarCliente($linha, $drive, $arquivosId, $docsDoCliente, $criadoPor, $telefoneVendedorAntigo);
-    } catch (Throwable $e) {
-        $r = ['ok' => false, 'motivo' => 'Exceção: ' . $e->getMessage(), 'cliente_id' => null, 'oportunidade_id' => null, 'ja_existia' => false];
-    }
+    // Retry com backoff específico pra "database is locked" — achado real
+    // em produção 19/09/2026: rodando junto com tráfego normal do admin
+    // (polling do WhatsApp Box, navegação ao vivo), o banco fica disputado
+    // por escritores reais o tempo todo, e o busy_timeout (15s) sozinho não
+    // é suficiente quando a disputa é sustentada, não só um pico passageiro.
+    // Nunca reexecuta um cliente que já teve sucesso (só chega aqui se
+    // lançou exceção) — como a marcação de idempotência agora acontece
+    // dentro da mesma transação atômica (includes/importar_crm_antigo.php),
+    // uma tentativa que "ok=true" sempre já está 100% commitada, nunca
+    // precisa de retry.
+    $tentativas = 0;
+    $maxTentativas = 5;
+    do {
+        $tentativas++;
+        try {
+            $r = crmAntigoImportarCliente($linha, $drive, $arquivosId, $docsDoCliente, $criadoPor, $telefoneVendedorAntigo);
+            break;
+        } catch (Throwable $e) {
+            $ehLock = str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'HY000');
+            if ($ehLock && $tentativas < $maxTentativas) {
+                $espera = $tentativas * 5; // 5s, 10s, 15s, 20s
+                echo "  (tentativa {$tentativas} travou no banco, esperando {$espera}s antes de tentar de novo...)\n";
+                sleep($espera);
+                continue;
+            }
+            $r = ['ok' => false, 'motivo' => 'Exceção: ' . $e->getMessage(), 'cliente_id' => null, 'oportunidade_id' => null, 'ja_existia' => false];
+            break;
+        }
+    } while ($tentativas < $maxTentativas);
 
     if ($r['ok']) {
         echo "[{$n}/" . count($clients) . "] OK — {$nome} / {$telefone} → cliente #{$r['cliente_id']}, oportunidade #{$r['oportunidade_id']}\n";
