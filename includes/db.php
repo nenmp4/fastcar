@@ -1,10 +1,20 @@
 <?php
 /**
  * Conexão SQLite — padrão reaproveitado do JurídicoSaaS.
- * PRAGMA busy_timeout=5000 é obrigatório aqui: evita "database is locked"
+ * PRAGMA busy_timeout é obrigatório aqui: evita "database is locked"
  * quando o webhook do WhatsApp (alta concorrência) escreve ao mesmo tempo
  * que um cron ou uma request do admin. Ver histórico de bugs desse tipo
  * documentado no CLAUDE.md do projeto irmão (iabadvocaciaboutique).
+ *
+ * 19/09/2026 — subido de 5000 pra 15000ms ("temos arrumar isso essa
+ * disputa pelo bd", achado direto em admin/saude.php: "database is
+ * locked" continuava aparecendo mesmo depois do webhook já ter try/catch
+ * pra não derrubar cru — ver handler global logo abaixo). O SQLite já
+ * espera automaticamente até esse tempo antes de desistir e lançar o
+ * erro; 5s era curto demais pra uma rajada real de escrita concorrente
+ * (webhook + cron + admin todos gravando quase junto), 15s dá bem mais
+ * margem pra terminar sem precisar falhar, sem mudar nada mais no
+ * comportamento (só espera mais antes de desistir de verdade).
  */
 
 define('DB_PATH', dirname(__DIR__) . '/database/fastcar.db');
@@ -25,12 +35,73 @@ if (!is_dir($errorLogDir)) @mkdir($errorLogDir, 0755, true);
 ini_set('log_errors', '1');
 ini_set('error_log', $errorLogDir . '/php_errors.log');
 
+// Handler global de exceção/erro fatal não capturada (19/09/2026, "temos
+// arrumar isso essa disputa pelo bd") — achado real em admin/saude.php:
+// "database is locked" (PDOException de SQLITE_BUSY) aparecia repetido
+// como "PHP Fatal error: Uncaught..." bem DEPOIS do fix de 18/09/2026 que
+// já tinha colocado try/catch ao redor do processamento do webhook do
+// WhatsApp — a causa real é que `mudarEtapa()`/`mudarEtapaVenda()` (as
+// funções centrais que gravam etapa+histórico, chamadas de vários lugares
+// — ver CLAUDE.md regra #6) são chamadas SEM try/catch em vários pontos
+// que não são o webhook, principalmente os handlers de POST do admin
+// (`admin/oportunidade.php`, `admin/venda.php` — um consultor clicando
+// "mudar etapa"/"marcar perdida"/"cancelar venda"): uma contenção de
+// escrita genuína ali virava um PHP Fatal Error cru na tela do usuário,
+// sem nenhum try/catch pra evitar — provável causa real do "Erro 500
+// relatado ao salvar, não reproduzido" já registrado antes (nunca
+// reproduzido em teste isolado porque contenção de verdade só acontece
+// com concorrência real de produção, não dá pra simular sozinho). Em vez
+// de caçar e envolver cada chamada de `mudarEtapa()`/`mudarEtapaVenda()`
+// espalhada pelo admin uma por uma (arriscado esquecer alguma — eram ~15
+// call sites diferentes), registrado aqui, em `includes/db.php`
+// (carregado por PRATICAMENTE toda entrada do sistema — admin, webhook,
+// crons, wizard público), como rede de segurança única: nenhum Throwable
+// esquecido derruba mais uma tela com stack trace cru pro usuário — loga
+// certo (mesmo `storage/logs/php_errors.log` de sempre, formato
+// `"...Fatal error: Uncaught..."` que `admin/saude.php` já sabe
+// reconhecer via `str_contains()`, nenhuma mudança precisou lá) e responde
+// com algo limpo em vez do dump padrão do PHP. Nunca substitui um
+// try/catch já existente (só herda o Throwable quando NENHUM catch pegou
+// antes), e nunca impede a subida do busy_timeout acima de ser a correção
+// de verdade — é só o que sobra depois de reduzir a contenção real.
+set_exception_handler(function (Throwable $e): void {
+    error_log(sprintf(
+        'PHP Fatal error: Uncaught %s: %s in %s:%d',
+        get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()
+    ));
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, $e->getMessage() . "\n");
+        exit(1);
+    }
+    if (!headers_sent()) {
+        http_response_code(500);
+    }
+    echo 'Erro interno — tivemos uma instabilidade momentânea (ex: contenção de escrita no banco). '
+       . 'Recarregue a página e tente de novo; se persistir, avise o suporte.';
+});
+
+// Complementa o handler acima: cobre erro fatal do PHP que NUNCA vira uma
+// Throwable capturável (ex: função indefinida, esgotamento de memória) —
+// set_exception_handler() só pega Throwable de verdade, não isso.
+register_shutdown_function(function (): void {
+    $err = error_get_last();
+    if (!$err || !in_array($err['type'], [E_ERROR, E_PARSE, E_COMPILE_ERROR, E_CORE_ERROR], true)) {
+        return;
+    }
+    error_log(sprintf('PHP Fatal error: %s in %s:%d', $err['message'], $err['file'], $err['line']));
+    if (PHP_SAPI !== 'cli' && !headers_sent()) {
+        http_response_code(500);
+        echo 'Erro interno — tivemos uma instabilidade momentânea. '
+           . 'Recarregue a página e tente de novo; se persistir, avise o suporte.';
+    }
+});
+
 function getDB(): PDO {
     static $db = null;
     if ($db === null) {
         $novo = !file_exists(DB_PATH);
         $db = new PDO('sqlite:' . DB_PATH);
-        $db->exec('PRAGMA busy_timeout=5000');
+        $db->exec('PRAGMA busy_timeout=15000');
         $db->exec('PRAGMA journal_mode=WAL');
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);

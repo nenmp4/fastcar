@@ -150,6 +150,57 @@ segue no schema sem uso novo, não removida sem ganho real),
   mensagem exata, e **nenhuma** entrada nova em `php_errors.log` (o card
   de Saúde não veria mais esse caso como Fatal Error) — caminho normal
   (sem contenção) continua idêntico, mensagem salva certa, resposta 200.
+  **"database is locked" continuava aparecendo mesmo depois desse fix**
+  (19/09/2026, pedido direto: "temos arrumar isso essa disputa pelo bd",
+  achado real vendo `admin/saude.php` com o MESMO erro repetindo em vários
+  horários — 18-Sep 18h/19h/21h, 19-Sep 11h30 — todos bem DEPOIS do fix
+  acima já estar em produção). Investigação: a proteção do webhook
+  continuava certa e funcionando (reconfirmado neste teste), mas
+  `mudarEtapa()`/`mudarEtapaVenda()` — as funções centrais de mudança de
+  etapa, chamadas de ~15 lugares diferentes no projeto (regra #6) — são
+  chamadas SEM NENHUM try/catch na maioria desses pontos, principalmente
+  nos handlers de POST do admin (`admin/oportunidade.php` ação
+  `mudar_etapa`/`marcar_perdida`, `admin/venda.php` mudar etapa/cancelar):
+  um consultor clicando um botão normal durante uma contenção real de
+  escrita (rajada de webhook+cron+admin gravando quase junto) recebia um
+  PHP Fatal Error cru direto na tela, sem chance de recuperação —
+  provável causa real do "Erro 500 relatado ao salvar, não reproduzido"
+  já registrado antes na seção do contrato (nunca reproduzido em teste
+  isolado porque contenção de verdade só acontece com concorrência real
+  de produção, não dá pra simular sozinho sem 2 processos reais
+  disputando o banco). Corrigido em 2 frentes, sem precisar caçar e
+  envolver cada um dos ~15 call sites individualmente: (1) `PRAGMA
+  busy_timeout` subido de 5000 pra 15000ms em `includes/db.php` — o
+  SQLite já espera automaticamente até esse tempo antes de desistir; 5s
+  era curto demais pra uma rajada real, 15s dá bem mais margem pra
+  terminar sem precisar falhar (comportamento igual, só espera mais antes
+  de desistir de verdade); (2) handler global (`set_exception_handler()`
+  + `register_shutdown_function()`) registrado em `includes/db.php`
+  (carregado por praticamente toda entrada do sistema — admin, webhook,
+  crons, wizard público) — rede de segurança única pra qualquer Throwable
+  que escape de todo try/catch existente: loga certo no mesmo
+  `storage/logs/php_errors.log` de sempre, no MESMO formato
+  (`"...Fatal error: Uncaught..."`) que `admin/saude.php` já sabe
+  reconhecer via `str_contains()` (nenhuma mudança precisou lá), e
+  responde com mensagem limpa ("Erro interno — tivemos uma instabilidade
+  momentânea... recarregue a página") em vez do dump de stack trace cru
+  do PHP — nunca substitui um try/catch já existente, só herda o
+  Throwable quando NENHUM catch pegou antes. Testado ponta a ponta em
+  banco isolado: (a) lock real de 8s segurado por uma 2ª conexão — ANTES
+  do fix (busy_timeout=5000) isso falhava com "database is locked" (mesmo
+  teste documentado no fix anterior); DEPOIS (busy_timeout=15000), a
+  escrita concorrente espera ~7s e sucede limpo, zero erro no log; (b)
+  exceção não capturada em contexto CLI vira log limpo + `exit(1)`, nunca
+  um dump cru; (c) mesma exceção em contexto HTTP responde 500 com a
+  mensagem amigável, nunca vaza stack trace, log gravado no formato
+  certo; (d) `Call to undefined function` (fatal nativo do PHP, hoje um
+  `Error`/`Throwable` desde o PHP 8) também cai limpo pelo mesmo handler;
+  (e) lock de 20s (maior que o NOVO busy_timeout de 15s) disparado contra
+  o webhook real via HTTP confirma que o try/catch PRÓPRIO do webhook
+  continua respondendo primeiro (JSON `{"ok":false,"erro":"erro_interno"}`,
+  500) — o handler genérico nunca chega a rodar nesse caminho,
+  `php_errors.log` fica vazio, confirmando zero interferência/duplicação
+  com a proteção que já existia.
 - **Página pública institucional (`index.php`, raiz do domínio)** —
   17/09/2026, "Faz pagina publica fastcar solutions para verificação no
   google" → confirmado com o usuário: é pra dar suporte à verificação do
