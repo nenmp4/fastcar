@@ -2,6 +2,17 @@
 /**
  * Login do admin. Não usa admin/_bootstrap.php (que já exige sessão
  * logada) — senão vira loop de redirect pra si mesmo.
+ *
+ * 20/09/2026, "dois fatores usando código enviado pelo WhatsApp e ou
+ * e-mail igual do jurídico Sass — tentativa de login" — 3 passos, sempre
+ * nessa ordem, nunca abre sessão de admin de verdade antes do 3º:
+ *   1. e-mail + senha (autenticar(), includes/usuarios.php — já cobre
+ *      bloqueio automático por tentativa errada repetida)
+ *   2. escolher canal do código — só aparece se o usuário tem WhatsApp E
+ *      e-mail cadastrados; com só 1 canal disponível, pula direto pro 3
+ *   3. digitar o código de 6 dígitos (includes/login_2fa.php)
+ * 2FA é OBRIGATÓRIO pra todo mundo, sem exceção — inclusive super_admin
+ * (confirmado com o usuário, não é opcional por conta).
  */
 
 // Mesmo header de admin/_bootstrap.php — este arquivo não passa por lá.
@@ -10,6 +21,7 @@ header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';
+require_once __DIR__ . '/../includes/login_2fa.php';
 
 startSecureSession();
 
@@ -28,24 +40,112 @@ if (!empty($_SESSION['admin_id'])) {
 }
 
 $erro = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
-        $erro = 'Sessão expirada, tente novamente.';
-    } else {
-        $email = (string)($_POST['email'] ?? '');
-        $senha = (string)($_POST['senha'] ?? '');
-        $user = autenticar($email, $senha);
-        if ($user) {
-            session_regenerate_id(true);
-            $_SESSION['admin_id']     = (int)$user['id'];
-            $_SESSION['admin_nome']   = $user['nome'];
-            $_SESSION['admin_perfil'] = $user['perfil'];
-            header('Location: ' . paginaInicialPorPerfil($user['perfil']));
-            exit;
-        }
-        $erro = 'E-mail ou senha inválidos.';
-    }
+$aviso = '';
+$acao = (string)($_POST['acao'] ?? '');
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validateCSRF($_POST['csrf_token'] ?? '')) {
+    $erro = 'Sessão expirada, tente novamente.';
+    unset($_SESSION['2fa_pendente']);
+    $acao = '';
 }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
+    $email = (string)($_POST['email'] ?? '');
+    $senha = (string)($_POST['senha'] ?? '');
+    $resultado = autenticar($email, $senha);
+
+    if ($resultado['status'] === 'bloqueado') {
+        $minutos = max(1, (int)ceil((strtotime($resultado['bloqueado_ate']) - time()) / 60));
+        $erro = "Conta temporariamente bloqueada por muitas tentativas erradas. Tente de novo em {$minutos} min.";
+    } elseif ($resultado['status'] !== 'ok') {
+        $erro = 'E-mail ou senha inválidos.';
+    } else {
+        $usuario = $resultado['user'];
+        $canais = login2faCanaisDisponiveis($usuario);
+        if (count($canais) > 1) {
+            // Mais de 1 canal — deixa escolher, ainda sem mandar nenhum código.
+            $_SESSION['2fa_pendente'] = [
+                'usuario_id' => (int)$usuario['id'],
+                'nome' => $usuario['nome'],
+                'perfil' => $usuario['perfil'],
+                'canal' => null,
+                'canais_disponiveis' => $canais,
+                'codigo_hash' => null,
+                'expira_em' => null,
+                'tentativas' => 0,
+                'criado_em' => time(),
+                'aguardando_canal' => true,
+            ];
+        } else {
+            $envio = login2faEnviarCodigo($usuario, $canais[0]);
+            if ($envio['ok']) {
+                $aviso = 'Código enviado por ' . login2faRotuloCanal($canais[0]) . '.';
+            } else {
+                $erro = 'Não consegui enviar o código de verificação agora. Tente de novo em instantes.';
+            }
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'escolher_canal' && login2faPendenteValido() && !empty($_SESSION['2fa_pendente']['aguardando_canal'])) {
+    $pendente = $_SESSION['2fa_pendente'];
+    $canalEscolhido = (string)($_POST['canal'] ?? '');
+    if (!in_array($canalEscolhido, $pendente['canais_disponiveis'], true)) {
+        $erro = 'Canal inválido.';
+    } else {
+        $usuario = buscarUsuario((int)$pendente['usuario_id']);
+        if (!$usuario) {
+            unset($_SESSION['2fa_pendente']);
+            $erro = 'Sessão de login expirada, comece de novo.';
+        } else {
+            $envio = login2faEnviarCodigo($usuario, $canalEscolhido);
+            if ($envio['ok']) {
+                $aviso = 'Código enviado por ' . login2faRotuloCanal($canalEscolhido) . '.';
+            } else {
+                $erro = 'Não consegui enviar o código de verificação agora. Tente de novo em instantes.';
+            }
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'reenviar_codigo' && login2faPendenteValido() && empty($_SESSION['2fa_pendente']['aguardando_canal'])) {
+    $pendente = $_SESSION['2fa_pendente'];
+    $usuario = buscarUsuario((int)$pendente['usuario_id']);
+    if (!$usuario) {
+        unset($_SESSION['2fa_pendente']);
+        $erro = 'Sessão de login expirada, comece de novo.';
+    } else {
+        $envio = login2faEnviarCodigo($usuario, $pendente['canal']);
+        if ($envio['ok']) {
+            $aviso = 'Novo código enviado por ' . login2faRotuloCanal($pendente['canal']) . '.';
+        } elseif ($envio['motivo'] === 'cooldown') {
+            $erro = 'Aguarde ' . $envio['aguardar_segundos'] . 's antes de pedir um novo código.';
+        } else {
+            $erro = 'Não consegui reenviar o código agora. Tente de novo em instantes.';
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'trocar_canal' && login2faPendenteValido()) {
+    $_SESSION['2fa_pendente']['aguardando_canal'] = true;
+    $_SESSION['2fa_pendente']['canal'] = null;
+    $_SESSION['2fa_pendente']['codigo_hash'] = null;
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'verificar_codigo' && login2faPendenteValido()) {
+    $codigo = (string)($_POST['codigo'] ?? '');
+    $r = login2faVerificarCodigo($codigo);
+    if ($r['status'] === 'ok') {
+        session_regenerate_id(true);
+        $_SESSION['admin_id']     = $r['usuario_id'];
+        $_SESSION['admin_nome']   = $r['nome'];
+        $_SESSION['admin_perfil'] = $r['perfil'];
+        header('Location: ' . paginaInicialPorPerfil($r['perfil']));
+        exit;
+    }
+    $erro = match ($r['status']) {
+        'expirado' => 'Código expirado. Peça um novo.',
+        'max_tentativas' => 'Muitas tentativas erradas. Faça login de novo.',
+        default => 'Código inválido.',
+    };
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'cancelar_2fa') {
+    unset($_SESSION['2fa_pendente']);
+}
+
+$pendente = login2faPendenteValido() ? $_SESSION['2fa_pendente'] : null;
+$etapa = $pendente ? (!empty($pendente['aguardando_canal']) ? 'canal' : 'codigo') : 'login';
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -60,14 +160,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="login-box">
     <h2><img class="login-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></h2>
     <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
-    <form method="post">
-        <?= csrfField() ?>
-        <label for="email">E-mail</label>
-        <input type="email" id="email" name="email" required autofocus>
-        <label for="senha">Senha</label>
-        <input type="password" id="senha" name="senha" required>
-        <button type="submit">Entrar</button>
-    </form>
+    <?php if ($aviso): ?><div class="alerta-sucesso"><?= e($aviso) ?></div><?php endif; ?>
+
+    <?php if ($etapa === 'login'): ?>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="login">
+            <label for="email">E-mail</label>
+            <input type="email" id="email" name="email" required autofocus>
+            <label for="senha">Senha</label>
+            <input type="password" id="senha" name="senha" required>
+            <button type="submit">Entrar</button>
+        </form>
+
+    <?php elseif ($etapa === 'canal'): ?>
+        <p>Olá, <?= e($pendente['nome']) ?>! Por onde você quer receber o código de verificação?</p>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="escolher_canal">
+            <?php foreach ($pendente['canais_disponiveis'] as $c): ?>
+                <button type="submit" name="canal" value="<?= e($c) ?>" style="margin-bottom:10px">
+                    <?= $c === 'whatsapp' ? '💬 WhatsApp' : '✉️ E-mail' ?>
+                </button>
+            <?php endforeach; ?>
+        </form>
+        <form method="post" style="margin-top:8px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="cancelar_2fa">
+            <button type="submit" style="background:none;border:none;color:var(--azul,#2f6fed);cursor:pointer;padding:0;margin-top:0">Cancelar e voltar</button>
+        </form>
+
+    <?php elseif ($etapa === 'codigo'): ?>
+        <p>Enviamos um código de 6 dígitos por <?= e(login2faRotuloCanal($pendente['canal'])) ?>. Ele vale por 10 minutos.</p>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="verificar_codigo">
+            <label for="codigo">Código de verificação</label>
+            <input type="text" id="codigo" name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
+            <button type="submit">Confirmar</button>
+        </form>
+        <form method="post" style="margin-top:8px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="reenviar_codigo">
+            <button type="submit" style="background:none;border:none;color:var(--azul,#2f6fed);cursor:pointer;padding:0;margin-top:0">Reenviar código</button>
+        </form>
+        <?php if (count($pendente['canais_disponiveis']) > 1): ?>
+        <form method="post" style="margin-top:4px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="trocar_canal">
+            <button type="submit" style="background:none;border:none;color:var(--azul,#2f6fed);cursor:pointer;padding:0;margin-top:0">Usar outro canal</button>
+        </form>
+        <?php endif; ?>
+        <form method="post" style="margin-top:4px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="cancelar_2fa">
+            <button type="submit" style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:0;margin-top:0">Cancelar e voltar</button>
+        </form>
+    <?php endif; ?>
 </div>
 </body>
 </html>

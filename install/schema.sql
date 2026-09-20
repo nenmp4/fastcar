@@ -333,6 +333,13 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- podeAcessarFinanceiro().
     perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor','financeiro')),
     bloqueado INTEGER DEFAULT 0,
+    -- 20/09/2026, "dois fatores... tentativa de login" — bloqueio
+    -- AUTOMÁTICO e temporário por senha errada repetida (distinto de
+    -- `bloqueado` acima, que é manual/permanente). tentativas_falhas zera
+    -- a cada senha certa; bloqueado_ate fica NULL até bater
+    -- LOGIN_MAX_TENTATIVAS (includes/usuarios.php::autenticar()).
+    tentativas_falhas INTEGER NOT NULL DEFAULT 0,
+    bloqueado_ate DATETIME,
 
     -- Fila de distribuição automática de leads (decisão do Jean,
     -- includes/fila_leads.php): toggle manual que o próprio consultor liga/

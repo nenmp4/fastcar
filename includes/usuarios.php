@@ -32,13 +32,61 @@ function listarUsuarios(bool $apenasAtivos = true): array {
     return $db->query($sql)->fetchAll();
 }
 
-/** Confere e-mail/senha; retorna o usuário (sem bloqueio) ou null. */
-function autenticar(string $email, string $senha): ?array {
+// 20/09/2026, "tentativa de login" — bloqueio AUTOMÁTICO e temporário por
+// senha errada repetida, distinto de `usuarios.bloqueado` (manual/
+// permanente, só o super_admin liga em admin/usuarios.php).
+const LOGIN_MAX_TENTATIVAS = 5;
+const LOGIN_BLOQUEIO_MINUTOS = 15;
+
+/**
+ * Confere e-mail/senha (só a senha — o 2º fator é conferido à parte, ver
+ * includes/login_2fa.php). Nunca autentica sozinho: mesmo com status='ok',
+ * quem chama (admin/login.php) ainda precisa do código de verificação
+ * antes de abrir sessão de verdade.
+ *
+ * @return array{status:string, user:?array, bloqueado_ate:?string}
+ *   status: 'ok' | 'senha_invalida' | 'bloqueado'.
+ *   'senha_invalida' cobre tanto e-mail inexistente quanto senha errada —
+ *   nunca revela qual dos dois, mesma mensagem genérica de sempre, pra
+ *   não vazar quais e-mails têm conta cadastrada.
+ */
+function autenticar(string $email, string $senha): array {
     $u = buscarUsuarioPorEmail($email);
-    if (!$u || !password_verify($senha, $u['senha_hash'])) {
-        return null;
+    if (!$u) {
+        return ['status' => 'senha_invalida', 'user' => null, 'bloqueado_ate' => null];
     }
-    return $u;
+
+    if (!empty($u['bloqueado_ate']) && strtotime($u['bloqueado_ate']) > time()) {
+        return ['status' => 'bloqueado', 'user' => null, 'bloqueado_ate' => $u['bloqueado_ate']];
+    }
+
+    if (!password_verify($senha, $u['senha_hash'])) {
+        registrarTentativaLoginFalha((int)$u['id']);
+        return ['status' => 'senha_invalida', 'user' => null, 'bloqueado_ate' => null];
+    }
+
+    resetarTentativasLogin((int)$u['id']);
+    return ['status' => 'ok', 'user' => $u, 'bloqueado_ate' => null];
+}
+
+/** Soma 1 na senha errada; ao bater LOGIN_MAX_TENTATIVAS seguidas, bloqueia por LOGIN_BLOQUEIO_MINUTOS. */
+function registrarTentativaLoginFalha(int $usuarioId): void {
+    $db = getDB();
+    $db->prepare("UPDATE usuarios SET tentativas_falhas = tentativas_falhas + 1 WHERE id = ?")->execute([$usuarioId]);
+
+    $stmt = $db->prepare("SELECT tentativas_falhas FROM usuarios WHERE id = ?");
+    $stmt->execute([$usuarioId]);
+    $tentativas = (int)$stmt->fetchColumn();
+
+    if ($tentativas >= LOGIN_MAX_TENTATIVAS) {
+        $ate = date('Y-m-d H:i:s', time() + LOGIN_BLOQUEIO_MINUTOS * 60);
+        $db->prepare("UPDATE usuarios SET bloqueado_ate = ? WHERE id = ?")->execute([$ate, $usuarioId]);
+    }
+}
+
+/** Senha certa zera o contador de tentativas erradas e qualquer bloqueio automático em andamento. */
+function resetarTentativasLogin(int $usuarioId): void {
+    getDB()->prepare("UPDATE usuarios SET tentativas_falhas = 0, bloqueado_ate = NULL WHERE id = ?")->execute([$usuarioId]);
 }
 
 function criarUsuario(string $nome, string $email, string $senha, string $perfil = 'consultor', string $whatsapp = ''): int {

@@ -983,4 +983,26 @@ try {
     echo "❌ Dados da empresa (seed): {$e->getMessage()}\n";
 }
 
+// 20/09/2026, "dois fatores usando código enviado pelo WhatsApp e ou
+// e-mail... tentativa de login" — bloqueio automático e temporário por
+// senha errada repetida (distinto de usuarios.bloqueado, manual). Ver
+// includes/usuarios.php::autenticar()/registrarTentativaLoginFalha() e
+// includes/login_2fa.php (2º fator em si, sem coluna nova — estado
+// pendente fica só em $_SESSION, curta duração, não precisa de tabela).
+foreach ([
+    ['tentativas_falhas', "ALTER TABLE usuarios ADD COLUMN tentativas_falhas INTEGER NOT NULL DEFAULT 0"],
+    ['bloqueado_ate', "ALTER TABLE usuarios ADD COLUMN bloqueado_ate DATETIME"],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'usuarios', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ usuarios.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ usuarios.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  usuarios.{$coluna}: já existia\n";
+    }
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -2862,6 +2862,60 @@ segue no schema sem uso novo, não removida sem ganho real),
   resolver o caso "sou o único super_admin e esqueci a minha". Testado em
   banco isolado: senha antiga para de bater depois do reset, nova bate,
   e-mail inexistente é rejeitado com mensagem clara.
+- **2º fator obrigatório no login + bloqueio automático por senha errada**
+  (20/09/2026, "dois fatores usando código enviado pelo WhatsApp e ou
+  e-mail igual do jurídico Sass — tentativa de login") — item que estava
+  na "Segunda etapa" desde o início virou pedido de verdade. Confirmado
+  com o usuário (2 perguntas diretas): obrigatório pra TODO login, sem
+  exceção, inclusive super_admin (nunca opcional por conta); quando o
+  usuário tem WhatsApp E e-mail cadastrados, escolhe o canal na hora do
+  login em vez de ordem fixa. `includes/usuarios.php::autenticar()`
+  passou a devolver `status` (`ok`/`senha_invalida`/`bloqueado`) em vez de
+  só o usuário ou `null` — 5 senhas erradas seguidas bloqueiam a conta por
+  15min (`usuarios.tentativas_falhas`/`bloqueado_ate`, colunas novas,
+  distintas de `bloqueado` que é manual/permanente); senha certa reseta o
+  contador. `includes/login_2fa.php` (novo) gera o código de 6 dígitos
+  (hash SHA-256, nunca texto puro em repouso), guarda o estado pendente só
+  em `$_SESSION` (10min de vida — curto demais pra justificar tabela nova)
+  e dispara por `zapiEnviarTexto()`/`enviarEmail()+emailLayout()` conforme
+  o canal; e-mail sempre disponível (campo obrigatório), WhatsApp só se
+  `usuarios.whatsapp` estiver cadastrado — com só 1 canal, pula direto pro
+  código. Dedup de reenvio (60s, `config.2fa_enviado_{usuario_id}`, mesmo
+  padrão `alerta_atraso_{id}` de `cron/followup.php`) — sem isso, alguém
+  com a senha vazada (mas sem acesso real ao WhatsApp/e-mail) podia ficar
+  logando repetido só pra spammar o dono da conta de código em código.
+  Máximo de 5 tentativas erradas de código força reiniciar do zero.
+  `admin/login.php` reescrito em 3 passos (senha → escolher canal, se
+  aplicável → código), roteado pelo campo `acao` do POST, nunca abre
+  sessão de admin de verdade antes do código confirmado. Testado ponta a
+  ponta: 26 asserções em teste isolado direto nas funções (bloqueio na 6ª
+  tentativa errada, reset após senha certa, canais disponíveis por
+  usuário, código certo/errado/expirado, máximo de tentativas, cooldown de
+  reenvio, canal inválido rejeitado) + 14 asserções via HTTP real (curl +
+  cookie jar + CSRF de verdade, código extraído do payload real mandado
+  pro Z-API fake) cobrindo login→escolha de canal→código→sessão
+  autenticada, cancelar/reenviar/trocar de canal, e bloqueio de conta
+  visível na tela real.
+- **Instância Z-API fallback (só envio)** (20/09/2026, depois do bloqueio
+  da instância principal em 19-20/09/2026, "quero clocar instancia
+  fallback", confirmado "Fallback só pra ENVIAR mensagem") —
+  `zapiEnviarTexto()` (`includes/whatsapp_config.php`) tenta uma 2ª
+  instância configurada automaticamente quando a principal falha ao
+  mandar texto — nunca quando chamada com `$instanciaOverride` explícito
+  (nunca interfere com vendas/financeiro, que têm número próprio). Card
+  novo "🆘 Instância Z-API — Fallback" em `admin/configuracoes.php`.
+  ⚠️ Nunca ajuda contra um número genuinamente banido — não existe como
+  "herdar" a conversa de um número banido pra outro no WhatsApp, é rede de
+  segurança só pra falha passageira de envio. Toda vez que o fallback
+  precisa assumir: loga em `storage/logs/whatsapp_fallback_usado.log` e
+  manda aviso por WhatsApp pros números de notificação genérica
+  (`notificacao_leads_whatsapp`, dedup de 1h pra nunca virar spam numa
+  sequência de falhas seguidas da principal), e `admin/saude.php` ganhou
+  indicador (ok/warn) mostrando uso do fallback nas últimas 24h — "como
+  vou saber que instância estou operando". Testado contra servidor Z-API
+  fake: fallback assume quando a principal falha, log gravado, alerta
+  disparado pros números configurados, dedup bloqueando reenvio numa 2ª
+  falha em seguida, indicador de Saúde lendo o log certo.
 - **Dashboard por perfil** — `admin/index.php` mostra cards diferentes pra
   cada perfil (`includes/dashboard.php`): consultor vê a própria carteira
   de atendimento (ativas/atrasadas/recebidas na semana/status da fila) E o
@@ -4339,7 +4393,6 @@ segue no schema sem uso novo, não removida sem ganho real),
 
 Itens explicitamente adiados durante a conversa, pra não se perderem:
 
-- **2FA no login do admin** — reaproveitando o padrão do JurídicoSaaS
 - **Verificação de documentos por IA** (OCR/conferência automática do que o
   cliente subiu contra o que foi digitado) — depende de decidir o provedor
   de IA (✅ já decidido, Gemini+GPT) mas o **fluxo de verificação em si**
