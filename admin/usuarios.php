@@ -69,7 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $erro = 'Já existe um usuário ativo com esse e-mail.';
             } else {
                 try {
-                    criarUsuario($nome, $email, $senha, $perfil, $whatsapp);
+                    $novoId = criarUsuario($nome, $email, $senha, $perfil, $whatsapp);
+                    auditoriaRegistrar('usuario_criado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'usuario', $novoId, "Criou {$nome} ({$email}) como {$perfil}.");
                     $sucesso = "Usuário {$nome} criado.";
                 } catch (Throwable $e) {
                     $erro = 'Falha ao criar: ' . $e->getMessage();
@@ -103,13 +104,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Nome e e-mail são obrigatórios.';
                 } else {
                     try {
+                        $quemFez = (int)$_SESSION['admin_id'];
+                        $nomeQuemFez = (string)$_SESSION['admin_nome'];
                         atualizarUsuario($id, $nome, $email, $whatsapp, $perfil, $bloqueado);
+
+                        if ($alvo['perfil'] !== $perfil) {
+                            auditoriaRegistrar('usuario_perfil_alterado', $quemFez, $nomeQuemFez, 'usuario', $id, "{$nome}: {$alvo['perfil']} → {$perfil}.");
+                        }
+                        if ((bool)$alvo['bloqueado'] !== $bloqueado) {
+                            auditoriaRegistrar($bloqueado ? 'usuario_bloqueado' : 'usuario_desbloqueado', $quemFez, $nomeQuemFez, 'usuario', $id, "{$nome} ({$email}).");
+                        }
+
                         $novaSenha = (string)($_POST['nova_senha'] ?? '');
                         if ($novaSenha !== '') {
                             if (strlen($novaSenha) < 8) {
                                 $erro = 'Dados salvos, mas a nova senha precisa de pelo menos 8 caracteres — não foi alterada.';
                             } else {
                                 redefinirSenhaUsuario($id, $novaSenha);
+                                auditoriaRegistrar('usuario_senha_redefinida', $quemFez, $nomeQuemFez, 'usuario', $id, "Senha de {$nome} redefinida pelo super_admin.");
                             }
                         }
                         if (!$erro) $sucesso = "Usuário {$nome} atualizado.";
@@ -142,6 +154,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
+    <a href="/admin/auditoria.php">🕵️ Auditoria</a>
     <a href="/admin/configuracoes.php">⚙️ Configurações</a>
     <a href="/admin/logout.php">Sair</a>
 </header>

@@ -57,12 +57,16 @@ function autenticar(string $email, string $senha): array {
     }
 
     if (!empty($u['bloqueado_ate']) && strtotime($u['bloqueado_ate']) > time()) {
-        return ['status' => 'bloqueado', 'user' => null, 'bloqueado_ate' => $u['bloqueado_ate']];
+        // 'user' preenchido aqui de propósito (diferente do caso "e-mail não
+        // existe" acima) — nunca é mostrado ao cliente, só usado pra
+        // auditoria server-side (admin/login.php); e-mail já bateu com uma
+        // conta real, não há nada a mais sendo revelado.
+        return ['status' => 'bloqueado', 'user' => $u, 'bloqueado_ate' => $u['bloqueado_ate']];
     }
 
     if (!password_verify($senha, $u['senha_hash'])) {
         registrarTentativaLoginFalha((int)$u['id']);
-        return ['status' => 'senha_invalida', 'user' => null, 'bloqueado_ate' => null];
+        return ['status' => 'senha_invalida', 'user' => $u, 'bloqueado_ate' => null];
     }
 
     resetarTentativasLogin((int)$u['id']);

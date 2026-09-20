@@ -2927,6 +2927,53 @@ segue no schema sem uso novo, não removida sem ganho real),
   FORJADO/inexistente no banco não pula nada, confirmado voltando pra
   tela de escolher canal normalmente (a checagem é sempre contra o hash
   no banco, nunca confia cegamente no valor do cookie).
+- **Módulo de auditoria (versão enxuta)** (20/09/2026, "temos ter modulo
+  auditoria igual do jutidicosass" → "vai atrapalhar a operação?" →
+  confirmado "sim" pra ir com a versão enxuta). `includes/auditoria.php`
+  (novo, tabela `auditoria`) grava só os eventos que importam pra
+  segurança/rastreabilidade — nunca "toda escrita do sistema", que
+  adicionaria carga de escrita real bem na área onde o projeto já teve
+  incidentes reais de "database is locked" (SQLite sob concorrência de
+  webhook+admin+cron). `auditoriaRegistrar()` é sempre best-effort
+  (try/catch, nunca lança) — um evento de auditoria nunca pode travar a
+  ação que está sendo auditada, mesmo se o próprio INSERT falhar.
+  Eventos cobertos: `login`/`login_falha`/`login_bloqueado` (wired em
+  `admin/login.php`, distinguindo login via senha+código de login via
+  dispositivo confiável no campo "Via:"), `logout` (`admin/logout.php`,
+  logado antes de `session_destroy()`), `usuario_criado`/
+  `usuario_perfil_alterado`/`usuario_bloqueado`/`usuario_desbloqueado`/
+  `usuario_senha_redefinida` (`admin/usuarios.php` — perfil/bloqueio só
+  logam quando o valor de fato MUDOU, comparando contra o registro antes
+  do UPDATE, nunca a cada submit do formulário), `conversa_excluida`
+  (`admin/whatsapp_inbox.php::excluirConversaWhatsapp()`) e
+  `cliente_dado_editado` (`admin/cliente_detalhe.php` — só CPF/e-mail/
+  endereço contam como "sensível" pra esse evento, nome/cidade/estado
+  ficam de fora; nunca grava o valor antigo/novo no log, só QUAIS campos
+  mudaram, pra não criar um 2º lugar de CPF em repouso). IP resolvido via
+  `CF-Connecting-IP` (a VPS roda atrás de Cloudflare, `REMOTE_ADDR`
+  sozinho seria só o IP da Cloudflare, nunca o do cliente de verdade),
+  fallback pra `REMOTE_ADDR`. `admin/auditoria.php` (novo, restrito ao
+  super_admin, `requireSuperAdmin()`) — só consulta, nunca edita/apaga —
+  lista os 200 eventos mais recentes com filtro por tipo de evento e
+  busca livre (usuário/detalhe/IP); link "🕵️ Auditoria" adicionado no
+  topbar de `admin/index.php`/`admin/usuarios.php`/`admin/saude.php` (os
+  3 pontos de entrada mais lógicos pra esse tipo de trabalho — as ~25
+  páginas do admin não têm `layout.php` compartilhado, então nem todo
+  arquivo ganhou o link, mesma decisão de escopo já registrada outras
+  vezes nesse projeto). Testado: 9 asserções em teste isolado direto nas
+  funções (`auditoriaRegistrar()`/`auditoriaListar()` com filtro por
+  evento e busca livre, ordenação mais recente primeiro,
+  `auditoriaRotuloEvento()` com fallback pro nome cru, e confirmado que
+  `auditoriaRegistrar()` NUNCA lança mesmo com a tabela ausente) + 20
+  asserções via HTTP real cobrindo TODOS os eventos: 2 senhas erradas +
+  login certo (via 2FA) aparecem na tela de auditoria; criar usuário,
+  promover perfil (só quando muda de verdade), bloquear e redefinir senha
+  geram os 4 eventos certos; filtro por evento funciona e não vaza outros
+  tipos; excluir conversa grava o telefone certo no detalhe; editar
+  CPF+e-mail+endereço de um cliente grava os 3 campos alterados, e editar
+  só o nome (não-sensível) depois disso confirmadamente NÃO gera um novo
+  evento; logout aparece na auditoria; e 6 tentativas de senha errada
+  seguidas geram o `login_bloqueado` esperado.
 - **Instância Z-API fallback (só envio)** (20/09/2026, depois do bloqueio
   da instância principal em 19-20/09/2026, "quero clocar instancia
   fallback", confirmado "Fallback só pra ENVIAR mensagem") —

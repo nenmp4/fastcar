@@ -29,6 +29,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';
 require_once __DIR__ . '/../includes/login_2fa.php';
+require_once __DIR__ . '/../includes/auditoria.php';
 
 startSecureSession();
 
@@ -46,12 +47,13 @@ if (!empty($_SESSION['admin_id'])) {
     exit;
 }
 
-/** Sempre a única saída de sucesso do fluxo — regenera a sessão, abre de verdade e (opcional) renova/grava o cookie de dispositivo confiável. */
-function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?array $cookieDispositivo): void {
+/** Sempre a única saída de sucesso do fluxo — regenera a sessão, abre de verdade, audita e (opcional) renova/grava o cookie de dispositivo confiável. */
+function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?array $cookieDispositivo, string $via): void {
     session_regenerate_id(true);
     $_SESSION['admin_id']     = $usuarioId;
     $_SESSION['admin_nome']   = $nome;
     $_SESSION['admin_perfil'] = $perfil;
+    auditoriaRegistrar('login', $usuarioId, $nome, 'usuario', $usuarioId, "Via: {$via}");
     if ($cookieDispositivo) {
         setcookie($cookieDispositivo['nome'], $cookieDispositivo['valor'], [
             'expires' => $cookieDispositivo['expira'],
@@ -83,15 +85,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
     if ($resultado['status'] === 'bloqueado') {
         $minutos = max(1, (int)ceil((strtotime($resultado['bloqueado_ate']) - time()) / 60));
         $erro = "Conta temporariamente bloqueada por muitas tentativas erradas. Tente de novo em {$minutos} min.";
+        $u = $resultado['user'];
+        auditoriaRegistrar('login_bloqueado', (int)$u['id'], $u['nome'], 'usuario', (int)$u['id'], 'Tentativa de login enquanto a conta estava temporariamente bloqueada.');
     } elseif ($resultado['status'] !== 'ok') {
         $erro = 'E-mail ou senha inválidos.';
+        // Só audita quando o e-mail bate com uma conta real — sem isso,
+        // um e-mail inexistente geraria linha sem usuário nenhum pra
+        // atribuir, e o volume de tentativa aleatória/varredura de e-mail
+        // é bem maior que o de senha errada numa conta real.
+        if ($resultado['user']) {
+            $u = $resultado['user'];
+            auditoriaRegistrar('login_falha', (int)$u['id'], $u['nome'], 'usuario', (int)$u['id'], 'Senha incorreta.');
+        }
     } else {
         $usuario = $resultado['user'];
 
         $tokenDispositivo = (string)($_COOKIE[LOGIN_2FA_DISPOSITIVO_COOKIE] ?? '');
         $confiavel = $tokenDispositivo !== '' ? login2faVerificarDispositivoConfiavel((int)$usuario['id'], $tokenDispositivo) : null;
         if ($confiavel) {
-            finalizarLoginEExit((int)$usuario['id'], $usuario['nome'], $usuario['perfil'], $confiavel);
+            finalizarLoginEExit((int)$usuario['id'], $usuario['nome'], $usuario['perfil'], $confiavel, 'dispositivo confiável (sem pedir código)');
         }
 
         $canais = login2faCanaisDisponiveis($usuario);
@@ -164,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
         $cookieDispositivo = !empty($_POST['confiar_dispositivo'])
             ? login2faGerarTokenDispositivo($r['usuario_id'])
             : null;
-        finalizarLoginEExit($r['usuario_id'], $r['nome'], $r['perfil'], $cookieDispositivo);
+        finalizarLoginEExit($r['usuario_id'], $r['nome'], $r['perfil'], $cookieDispositivo, 'senha + código de verificação');
     }
     $erro = match ($r['status']) {
         'expirado' => 'Código expirado. Peça um novo.',

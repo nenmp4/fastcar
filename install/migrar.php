@@ -1026,4 +1026,29 @@ try {
     echo "❌ usuarios_dispositivos_confiaveis: {$e->getMessage()}\n";
 }
 
+// 20/09/2026, "temos ter modulo auditoria igual do jutidicosass" — versão
+// enxuta confirmada ("vai atrapalhar a operação?" → "sim" pra ir com essa
+// versão em vez do módulo completo). Ver includes/auditoria.php.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS auditoria (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER,
+            usuario_nome TEXT NOT NULL DEFAULT '',
+            evento TEXT NOT NULL,
+            alvo_tipo TEXT DEFAULT '',
+            alvo_id INTEGER,
+            detalhe TEXT DEFAULT '',
+            ip TEXT DEFAULT '',
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_created ON auditoria(created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria(usuario_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_evento ON auditoria(evento)");
+    echo "✅ auditoria: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ auditoria: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

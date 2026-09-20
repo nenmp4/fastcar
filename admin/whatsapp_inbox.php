@@ -155,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $telefoneAtivo = $telPost;
             } else {
                 excluirConversaWhatsapp($telPost);
+                auditoriaRegistrar('conversa_excluida', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'conversa_whatsapp', null, "Telefone {$telPost}.");
                 $sucesso = 'Conversa excluída.';
                 $telefoneAtivo = '';
             }

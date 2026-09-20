@@ -62,17 +62,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cliente = $stmt->fetch();
     } else {
         try {
+            $novoCpf = clean((string)($_POST['cpf'] ?? ''));
+            $novoEmail = clean((string)($_POST['email'] ?? ''));
+            $novoEndereco = clean((string)($_POST['endereco'] ?? ''));
             $db->prepare("
                 UPDATE clientes SET nome = ?, cidade = ?, estado = ?, cpf = ?, email = ?, endereco = ? WHERE id = ?
             ")->execute([
                 clean((string)($_POST['nome'] ?? '')),
                 clean((string)($_POST['cidade'] ?? '')),
                 clean((string)($_POST['estado'] ?? '')),
-                clean((string)($_POST['cpf'] ?? '')),
-                clean((string)($_POST['email'] ?? '')),
-                clean((string)($_POST['endereco'] ?? '')),
+                $novoCpf,
+                $novoEmail,
+                $novoEndereco,
                 $id,
             ]);
+            // 20/09/2026, "modulo auditoria" — só CPF/e-mail/endereço contam
+            // como "dado sensível" pra esse evento (nome/cidade/estado ficam
+            // de fora, mudam com frequência maior e são bem menos sensíveis);
+            // nunca grava o valor antigo/novo no log, só QUAIS campos
+            // mudaram — o CPF em si não precisa virar um 2º lugar de dado
+            // sensível em repouso.
+            $camposMudaram = [];
+            if ((string)($cliente['cpf'] ?? '') !== $novoCpf) $camposMudaram[] = 'CPF';
+            if ((string)($cliente['email'] ?? '') !== $novoEmail) $camposMudaram[] = 'e-mail';
+            if ((string)($cliente['endereco'] ?? '') !== $novoEndereco) $camposMudaram[] = 'endereço';
+            if ($camposMudaram) {
+                auditoriaRegistrar('cliente_dado_editado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'cliente', $id, 'Campo(s) alterado(s): ' . implode(', ', $camposMudaram) . '.');
+            }
             $sucesso = 'Dados do cliente atualizados.';
         } catch (Throwable $e) {
             $erro = $e->getMessage();

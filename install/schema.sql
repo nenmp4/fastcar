@@ -8,6 +8,28 @@ CREATE TABLE IF NOT EXISTS config (
     valor TEXT
 );
 
+-- Log de auditoria (20/09/2026, "temos ter modulo auditoria igual do
+-- jutidicosass" — versão enxuta confirmada: só login/logout, bloqueio de
+-- conta, mudança de perfil/senha/bloqueio de usuário, exclusão de
+-- conversa e edição de dado sensível de cliente. Nunca "toda escrita do
+-- sistema" — ver includes/auditoria.php. usuario_nome fica denormalizado
+-- de propósito (snapshot legível mesmo que o usuário mude de nome ou seja
+-- desativado depois).
+CREATE TABLE IF NOT EXISTS auditoria (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER,
+    usuario_nome TEXT NOT NULL DEFAULT '',
+    evento TEXT NOT NULL,
+    alvo_tipo TEXT DEFAULT '',
+    alvo_id INTEGER,
+    detalhe TEXT DEFAULT '',
+    ip TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_auditoria_created ON auditoria(created_at);
+CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_auditoria_evento ON auditoria(evento);
+
 -- Um cadastro por telefone (regra do Jean) — a oportunidade é o cliente;
 -- o veículo mora em `veiculos`, um cliente pode ter mais de um veículo em
 -- negociação ao mesmo tempo (também regra do Jean).

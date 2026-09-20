@@ -37,6 +37,7 @@ require_once __DIR__ . '/../includes/email_templates.php';
 require_once __DIR__ . '/../includes/financeiro.php';
 require_once __DIR__ . '/../includes/asaas.php';
 require_once __DIR__ . '/../includes/cnpj.php';
+require_once __DIR__ . '/../includes/auditoria.php';
 
 requireAdmin();
 
