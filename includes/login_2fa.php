@@ -30,6 +30,8 @@ const LOGIN_2FA_CODIGO_TTL_SEGUNDOS = 600; // 10 minutos
 const LOGIN_2FA_MAX_TENTATIVAS = 5;
 const LOGIN_2FA_REENVIO_COOLDOWN_SEGUNDOS = 60;
 const LOGIN_2FA_PENDENTE_MAX_IDADE_SEGUNDOS = 900; // 15min — depois disso, considera abandonado e força reiniciar do zero
+const LOGIN_2FA_DISPOSITIVO_DIAS = 15; // 20/09/2026, "confiar no dispositivo por 15 dias sem pedir novamente"
+const LOGIN_2FA_DISPOSITIVO_COOKIE = 'fastcar_2fa_confiavel';
 
 /**
  * Canais de 2FA disponíveis pro usuário — e-mail sempre (campo obrigatório/
@@ -152,4 +154,71 @@ function login2faPendenteValido(): bool {
         return false;
     }
     return true;
+}
+
+/**
+ * "Confiar neste dispositivo" (20/09/2026, "colocar para confiar no
+ * dispositivo por 15 dias sem pedir novamente") — depois de um 2FA
+ * concluído com sucesso, grava um token novo (cru só no cookie do
+ * navegador, hash em `usuarios_dispositivos_confiaveis`) e devolve o
+ * cookie já pronto pra `setcookie()`. Nunca lança — melhor esforço, uma
+ * falha aqui não pode impedir o login que já foi validado de verdade.
+ *
+ * @return array{nome:string, valor:string, expira:int}|null
+ */
+function login2faGerarTokenDispositivo(int $usuarioId): ?array {
+    try {
+        $tokenBruto = bin2hex(random_bytes(32));
+        $expira = time() + LOGIN_2FA_DISPOSITIVO_DIAS * 86400;
+        getDB()->prepare("
+            INSERT INTO usuarios_dispositivos_confiaveis (usuario_id, token_hash, expira_em, ultimo_uso_em)
+            VALUES (?, ?, ?, datetime('now','localtime'))
+        ")->execute([$usuarioId, hash('sha256', $tokenBruto), date('Y-m-d H:i:s', $expira)]);
+
+        return ['nome' => LOGIN_2FA_DISPOSITIVO_COOKIE, 'valor' => $tokenBruto, 'expira' => $expira];
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Confere se o cookie de dispositivo confiável (se veio na request) bate
+ * com um token ainda válido PRA ESSE usuário específico — nunca por
+ * outro usuário que porventura tenha confiado no mesmo navegador antes
+ * (o token é o elo, não o usuário sozinho). Encontrando um token expirado,
+ * apaga a linha (limpeza preguiçosa, sem precisar de cron dedicado).
+ * Achando válido, estende mais 15 dias (sliding window) — só pede o 2FA
+ * de novo se o dispositivo ficar mais de 15 dias sem logar, não 15 dias
+ * fixos desde o 1º "confiar".
+ *
+ * @return array{nome:string, valor:string, expira:int}|null novo cookie
+ *   pra renovar a expiração no navegador, ou null se não havia token
+ *   válido (nesse caso quem chama segue pro fluxo normal de 2FA).
+ */
+function login2faVerificarDispositivoConfiavel(int $usuarioId, string $tokenBruto): ?array {
+    if ($tokenBruto === '') return null;
+    try {
+        $db = getDB();
+        $hash = hash('sha256', $tokenBruto);
+        $stmt = $db->prepare("SELECT id, expira_em FROM usuarios_dispositivos_confiaveis WHERE usuario_id = ? AND token_hash = ?");
+        $stmt->execute([$usuarioId, $hash]);
+        $linha = $stmt->fetch();
+        if (!$linha) return null;
+
+        if (strtotime($linha['expira_em']) < time()) {
+            $db->prepare("DELETE FROM usuarios_dispositivos_confiaveis WHERE id = ?")->execute([$linha['id']]);
+            return null;
+        }
+
+        $novaExpira = time() + LOGIN_2FA_DISPOSITIVO_DIAS * 86400;
+        $db->prepare("
+            UPDATE usuarios_dispositivos_confiaveis
+            SET expira_em = ?, ultimo_uso_em = datetime('now','localtime')
+            WHERE id = ?
+        ")->execute([date('Y-m-d H:i:s', $novaExpira), $linha['id']]);
+
+        return ['nome' => LOGIN_2FA_DISPOSITIVO_COOKIE, 'valor' => $tokenBruto, 'expira' => $novaExpira];
+    } catch (Throwable $e) {
+        return null;
+    }
 }

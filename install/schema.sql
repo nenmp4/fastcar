@@ -361,6 +361,25 @@ CREATE TABLE IF NOT EXISTS usuarios (
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 
+-- "Confiar neste dispositivo" do 2FA (20/09/2026, "colocar para confiar
+-- no dispositivo por 15 dias sem pedir novamente") — includes/login_2fa.php.
+-- 1 linha por navegador que marcou "confiar", nunca por usuário (a mesma
+-- pessoa logando em 2 aparelhos diferentes gera 2 linhas). token_hash
+-- nunca guarda o token cru (mesma disciplina de senha/código) — o valor
+-- cru só existe no cookie do navegador; se vazasse o banco sozinho, não
+-- daria pra reconstituir nenhum token válido. expira_em é sempre
+-- estendido de novo (mais 15 dias) toda vez que o dispositivo é
+-- reconhecido — sliding window, não janela fixa desde o 1º "confiar".
+CREATE TABLE IF NOT EXISTS usuarios_dispositivos_confiaveis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    expira_em DATETIME NOT NULL,
+    criado_em DATETIME DEFAULT (datetime('now','localtime')),
+    ultimo_uso_em DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_dispositivos_confiaveis_usuario ON usuarios_dispositivos_confiaveis(usuario_id);
+
 -- Contratos gerados e enviados pra assinatura eletrônica (Assinafy) — mesmo
 -- padrão do JurídicoSaaS (includes/assinafy.php). 1:N com oportunidades
 -- porque pode gerar de novo (reenvio, correção) — histórico fica todo aqui.

@@ -1005,4 +1005,25 @@ foreach ([
     }
 }
 
+// 20/09/2026, "colocar para confiar no dispositivo por 15 dias sem pedir
+// novamente" — "lembrar deste navegador" do 2FA, ver
+// includes/login_2fa.php::login2faGerarTokenDispositivo()/
+// login2faDispositivoConfiavel().
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS usuarios_dispositivos_confiaveis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+            token_hash TEXT NOT NULL UNIQUE,
+            expira_em DATETIME NOT NULL,
+            criado_em DATETIME DEFAULT (datetime('now','localtime')),
+            ultimo_uso_em DATETIME
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_dispositivos_confiaveis_usuario ON usuarios_dispositivos_confiaveis(usuario_id)");
+    echo "✅ usuarios_dispositivos_confiaveis: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ usuarios_dispositivos_confiaveis: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -13,6 +13,13 @@
  *   3. digitar o código de 6 dígitos (includes/login_2fa.php)
  * 2FA é OBRIGATÓRIO pra todo mundo, sem exceção — inclusive super_admin
  * (confirmado com o usuário, não é opcional por conta).
+ *
+ * "Confiar neste dispositivo" (20/09/2026, "colocar para confiar no
+ * dispositivo por 15 dias sem pedir novamente") — checkbox pré-marcado na
+ * tela do código; quando marcado, grava um cookie (`LOGIN_2FA_DISPOSITIVO_COOKIE`,
+ * includes/login_2fa.php) que pula o 2FA nos próximos logins DESSE mesmo
+ * usuário nesse navegador por 15 dias (sliding window — cada uso renova).
+ * Senha continua sempre exigida; só o código é pulado.
  */
 
 // Mesmo header de admin/_bootstrap.php — este arquivo não passa por lá.
@@ -39,6 +46,25 @@ if (!empty($_SESSION['admin_id'])) {
     exit;
 }
 
+/** Sempre a única saída de sucesso do fluxo — regenera a sessão, abre de verdade e (opcional) renova/grava o cookie de dispositivo confiável. */
+function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?array $cookieDispositivo): void {
+    session_regenerate_id(true);
+    $_SESSION['admin_id']     = $usuarioId;
+    $_SESSION['admin_nome']   = $nome;
+    $_SESSION['admin_perfil'] = $perfil;
+    if ($cookieDispositivo) {
+        setcookie($cookieDispositivo['nome'], $cookieDispositivo['valor'], [
+            'expires' => $cookieDispositivo['expira'],
+            'path' => '/',
+            'httponly' => true,
+            'samesite' => 'Lax',
+            'secure' => (($_SERVER['HTTPS'] ?? '') === 'on'),
+        ]);
+    }
+    header('Location: ' . paginaInicialPorPerfil($perfil));
+    exit;
+}
+
 $erro = '';
 $aviso = '';
 $acao = (string)($_POST['acao'] ?? '');
@@ -61,6 +87,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
         $erro = 'E-mail ou senha inválidos.';
     } else {
         $usuario = $resultado['user'];
+
+        $tokenDispositivo = (string)($_COOKIE[LOGIN_2FA_DISPOSITIVO_COOKIE] ?? '');
+        $confiavel = $tokenDispositivo !== '' ? login2faVerificarDispositivoConfiavel((int)$usuario['id'], $tokenDispositivo) : null;
+        if ($confiavel) {
+            finalizarLoginEExit((int)$usuario['id'], $usuario['nome'], $usuario['perfil'], $confiavel);
+        }
+
         $canais = login2faCanaisDisponiveis($usuario);
         if (count($canais) > 1) {
             // Mais de 1 canal — deixa escolher, ainda sem mandar nenhum código.
@@ -128,12 +161,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
     $codigo = (string)($_POST['codigo'] ?? '');
     $r = login2faVerificarCodigo($codigo);
     if ($r['status'] === 'ok') {
-        session_regenerate_id(true);
-        $_SESSION['admin_id']     = $r['usuario_id'];
-        $_SESSION['admin_nome']   = $r['nome'];
-        $_SESSION['admin_perfil'] = $r['perfil'];
-        header('Location: ' . paginaInicialPorPerfil($r['perfil']));
-        exit;
+        $cookieDispositivo = !empty($_POST['confiar_dispositivo'])
+            ? login2faGerarTokenDispositivo($r['usuario_id'])
+            : null;
+        finalizarLoginEExit($r['usuario_id'], $r['nome'], $r['perfil'], $cookieDispositivo);
     }
     $erro = match ($r['status']) {
         'expirado' => 'Código expirado. Peça um novo.',
@@ -197,6 +228,10 @@ $etapa = $pendente ? (!empty($pendente['aguardando_canal']) ? 'canal' : 'codigo'
             <input type="hidden" name="acao" value="verificar_codigo">
             <label for="codigo">Código de verificação</label>
             <input type="text" id="codigo" name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:12px">
+                <input type="checkbox" name="confiar_dispositivo" value="1" checked style="width:auto">
+                Confiar neste dispositivo por 15 dias (não pedir código de novo aqui)
+            </label>
             <button type="submit">Confirmar</button>
         </form>
         <form method="post" style="margin-top:8px">

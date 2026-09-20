@@ -2896,6 +2896,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   pro Z-API fake) cobrindo login→escolha de canal→código→sessão
   autenticada, cancelar/reenviar/trocar de canal, e bloqueio de conta
   visível na tela real.
+  **"Confiar neste dispositivo" por 15 dias** (mesmo dia, achado real ao
+  ativar em produção — "no super admin não tem cadastro do zap receber
+  notificação" — super_admin ficou só com o canal e-mail disponível,
+  reforçando o pedido de reduzir o quanto o 2FA pede de novo: "colocar
+  para confiar no dispositivo por 15 dias sem pedir novamente"). Nova
+  tabela `usuarios_dispositivos_confiaveis` — 1 linha por NAVEGADOR que
+  marcou confiar, nunca por usuário (a mesma pessoa logando em 2 aparelhos
+  gera 2 linhas). Checkbox pré-marcado na tela do código
+  ("☑️ Confiar neste dispositivo por 15 dias") — marcado, gera um token
+  aleatório de 32 bytes (`bin2hex(random_bytes(32))`), grava só o hash
+  SHA-256 no banco (mesma disciplina do código em si — nunca o valor cru
+  em repouso) e manda o token cru como cookie HttpOnly+SameSite=Lax
+  (`fastcar_2fa_confiavel`, 15 dias). No próximo login, se o cookie bater
+  com um token ainda válido PRO MESMO usuário que está tentando entrar
+  (nunca por outro usuário que porventura tenha confiado no mesmo
+  navegador antes — o elo é o token, não "confiar em qualquer um desse
+  navegador"), pula o 2FA inteiro e vai direto pra sessão — senha continua
+  sempre exigida, só o código é dispensado. Sliding window: cada uso
+  renova mais 15 dias (não é janela fixa desde o 1º "confiar") — token
+  achado já expirado é apagado na hora (limpeza preguiçosa, sem cron
+  dedicado). Nunca some no logout, de propósito — é assim que "não pedir
+  de novo" funciona de verdade: logout e login de novo no mesmo aparelho
+  continua sem pedir código. Testado ponta a ponta via HTTP real: login
+  completo com o checkbox marcado grava o cookie certo; "outro navegador"
+  simulado (jar novo, só com o cookie de dispositivo, sem sessão) pula o
+  2FA e vai direto pro dashboard SEM nenhuma chamada nova à Z-API
+  (confirma que nem tentou mandar código); "outro navegador" sem o cookie
+  continua pedindo 2FA normal (sem falso positivo); e um cookie
+  FORJADO/inexistente no banco não pula nada, confirmado voltando pra
+  tela de escolher canal normalmente (a checagem é sempre contra o hash
+  no banco, nunca confia cegamente no valor do cookie).
 - **Instância Z-API fallback (só envio)** (20/09/2026, depois do bloqueio
   da instância principal em 19-20/09/2026, "quero clocar instancia
   fallback", confirmado "Fallback só pra ENVIAR mensagem") —
