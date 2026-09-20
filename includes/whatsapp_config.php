@@ -56,6 +56,29 @@ function zapiCredenciaisFinanceiro(): array {
 }
 
 /**
+ * Credenciais da instância Z-API FALLBACK, só pra ENVIO (20/09/2026,
+ * "quero clocar instancia fallback" — depois do incidente de bloqueio da
+ * instância principal, 19-20/09/2026). Nunca recebe webhook nem é
+ * roteada por zapiIdentificarInstancia() — é usada só como tentativa
+ * automática de reenvio quando zapiEnviarTexto() pela instância PRINCIPAL
+ * falha (erro/limite temporário), pra nunca perder uma mensagem de saída
+ * (resposta da IA, notificação, reengajamento) por causa de instabilidade
+ * pontual de uma instância só. ⚠️ Nunca ajuda contra um NÚMERO banido de
+ * verdade pelo WhatsApp — nesse caso a mensagem sai por um número
+ * DIFERENTE do que o cliente já conhece (sem jeito técnico de "herdar" a
+ * conversa de um número banido, WhatsApp não permite isso de forma
+ * nenhuma); é rede de segurança pra falha passageira de envio, não pra
+ * bloqueio permanente do número principal.
+ */
+function zapiCredenciaisFallback(): array {
+    return [
+        _chatbot_getConfig('zapi_fallback_instance_id'),
+        _chatbot_getConfig('zapi_fallback_token'),
+        _chatbot_getConfig('zapi_fallback_client_token'),
+    ];
+}
+
+/**
  * Envia mensagem de texto via Z-API. Mesma assinatura/lógica do
  * aaspNotificarWpp() do JurídicoSaaS (includes/aasp.php), renomeada pro
  * contexto deste projeto.
@@ -67,7 +90,18 @@ function zapiCredenciaisFinanceiro(): array {
  * principal, igual sempre foi — nenhum dos ~40 call sites existentes
  * precisou mudar.
  */
+/**
+ * 20/09/2026 — quando chamada pra instância PRINCIPAL (sem
+ * $instanciaOverride, ou seja, nunca pra vendas/financeiro, que têm seus
+ * próprios números e não faz sentido "socorrer" com o número de compra) e
+ * o envio falha, tenta uma vez de novo pela instância FALLBACK
+ * (zapiCredenciaisFallback()) antes de desistir — nunca perde uma
+ * mensagem de saída (resposta da IA, notificação, reengajamento) só
+ * porque a instância principal deu erro passageiro. Sem fallback
+ * configurado, comportamento idêntico a antes (só falha mesmo).
+ */
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
+    $usandoPrincipal = $instanciaOverride === null;
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
         _chatbot_getConfig('zapi_instance_id'),
         _chatbot_getConfig('zapi_token'),
@@ -78,6 +112,18 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
     $phone = normalizarTelefone($phone);
     if (strlen($phone) < 12) return false;
 
+    if (_zapiEnviarTextoBruto($phone, $msg, $inst, $tok, $ctok)) return true;
+
+    if ($usandoPrincipal) {
+        [$instFb, $tokFb, $ctokFb] = zapiCredenciaisFallback();
+        if ($instFb && $tokFb) {
+            return _zapiEnviarTextoBruto($phone, $msg, $instFb, $tokFb, $ctokFb);
+        }
+    }
+    return false;
+}
+
+function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string $tok, string $ctok): bool {
     $headers = ['Content-Type: application/json'];
     if ($ctok) $headers[] = 'client-token: ' . $ctok;
 

@@ -36,6 +36,17 @@ $camposZapiFinanceiro = [
     'zapi_instancia_financeiro_client_token' => 'Client-Token (financeiro)',
 ];
 
+// Instância FALLBACK só de ENVIO (20/09/2026, "quero clocar instancia
+// fallback" — depois do incidente de bloqueio da principal, 19-20/09/2026).
+// Nunca recebe webhook, nunca é roteada — zapiEnviarTexto() tenta ela
+// automaticamente quando a instância PRINCIPAL falha ao enviar, ver
+// includes/whatsapp_config.php::zapiCredenciaisFallback().
+$camposZapiFallback = [
+    'zapi_fallback_instance_id'  => 'ID da instância Z-API (fallback)',
+    'zapi_fallback_token'        => 'Token da instância Z-API (fallback)',
+    'zapi_fallback_client_token' => 'Client-Token (fallback)',
+];
+
 $camposIA = [
     'gemini_api_key' => 'Chave da API Gemini (principal)',
     'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
@@ -131,6 +142,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sucesso = 'Mensagem de teste (financeiro) enviada com sucesso.';
                 } else {
                     $erro = 'Falha ao enviar — confira as credenciais da instância do financeiro e se ela está conectada.';
+                }
+            }
+        } elseif ($acao === 'salvar_zapi_fallback') {
+            foreach (array_keys($camposZapiFallback) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da instância fallback salvas.';
+        } elseif ($acao === 'testar_zapi_fallback') {
+            $telefoneTeste = (string)($_POST['telefone_teste_fallback'] ?? '');
+            if (!$telefoneTeste) {
+                $erro = 'Informe um telefone pra receber a mensagem de teste.';
+            } else {
+                $ok = zapiEnviarTexto($telefoneTeste, '✅ Teste de conexão Z-API (fallback) — Fastcar CRM.', zapiCredenciaisFallback());
+                if ($ok) {
+                    $sucesso = 'Mensagem de teste (fallback) enviada com sucesso.';
+                } else {
+                    $erro = 'Falha ao enviar — confira as credenciais da instância fallback e se ela está conectada.';
                 }
             }
         } elseif ($acao === 'salvar_ia') {
@@ -314,6 +342,11 @@ foreach (array_keys($camposZapiFinanceiro) as $chave) {
     $valoresFinanceiro[$chave] = getConfig($chave) ?? '';
 }
 $configuradoZapiFinanceiro = $valoresFinanceiro['zapi_instancia_financeiro_id'] && $valoresFinanceiro['zapi_instancia_financeiro_token'];
+$valoresFallback = [];
+foreach (array_keys($camposZapiFallback) as $chave) {
+    $valoresFallback[$chave] = getConfig($chave) ?? '';
+}
+$configuradoZapiFallback = $valoresFallback['zapi_fallback_instance_id'] && $valoresFallback['zapi_fallback_token'];
 $fila = listarFilaConsultores();
 foreach ($fila as &$f) {
     $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
@@ -484,6 +517,50 @@ unset($f);
         <input type="text" name="telefone_teste_financeiro" placeholder="Ex: 31999998888">
         <button type="submit" <?= $configuradoZapiFinanceiro ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
         <?php if (!$configuradoZapiFinanceiro): ?>
+            <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🆘 Instância Z-API — Fallback (só envio)</h2>
+    <p><small>20/09/2026, depois do incidente de bloqueio da instância principal (19-20/09/2026, "quero clocar
+       instancia fallback") — número/instância separada, mas <strong>nunca recebe mensagem nem tem webhook próprio</strong>:
+       serve só como reforço automático quando o envio pela instância principal falhar (erro/limite temporário) —
+       <code>zapiEnviarTexto()</code> tenta essa instância sozinho antes de desistir, sem precisar de nenhuma ação
+       manual. Cobre falha passageira de envio (resposta da IA, notificação, reengajamento).</small></p>
+    <p><small>⚠️ <strong>Não substitui trocar de número</strong> se a instância principal for banida de verdade pelo
+       WhatsApp — nesse caso a mensagem sai por um número diferente do que o cliente já conhece (o WhatsApp não
+       permite "herdar" a conversa de um número banido de jeito nenhum), então é rede de segurança pra instabilidade
+       passageira, não solução definitiva pra bloqueio permanente.</small></p>
+
+    <p>
+        Status Z-API (fallback):
+        <span class="badge <?= $configuradoZapiFallback ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoZapiFallback ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_zapi_fallback">
+        <?php foreach ($camposZapiFallback as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresFallback[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresFallback[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Manda uma mensagem de teste pro número informado, usando as credenciais salvas acima.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_zapi_fallback">
+        <label>Telefone (com DDD)</label>
+        <input type="text" name="telefone_teste_fallback" placeholder="Ex: 31999998888">
+        <button type="submit" <?= $configuradoZapiFallback ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
+        <?php if (!$configuradoZapiFallback): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
         <?php endif; ?>
     </form>
