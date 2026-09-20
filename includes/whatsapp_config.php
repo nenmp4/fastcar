@@ -117,10 +117,69 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
     if ($usandoPrincipal) {
         [$instFb, $tokFb, $ctokFb] = zapiCredenciaisFallback();
         if ($instFb && $tokFb) {
-            return _zapiEnviarTextoBruto($phone, $msg, $instFb, $tokFb, $ctokFb);
+            $ok = _zapiEnviarTextoBruto($phone, $msg, $instFb, $tokFb, $ctokFb);
+            if ($ok) {
+                registrarUsoFallbackZapi($phone);
+                alertarUsoFallbackZapi($instFb, $tokFb, $ctokFb);
+            }
+            return $ok;
         }
     }
     return false;
+}
+
+/**
+ * Log de cada vez que o fallback foi realmente usado pra completar um
+ * envio (20/09/2026, "como vou saber que instância estou operando") —
+ * best-effort, nunca pode travar o envio que já deu certo.
+ * admin/saude.php lê este arquivo pra mostrar um indicador visual.
+ */
+function registrarUsoFallbackZapi(string $telefone): void {
+    try {
+        $dir = __DIR__ . '/../storage/logs';
+        @mkdir($dir, 0755, true);
+        @file_put_contents($dir . '/whatsapp_fallback_usado.log', '[' . date('Y-m-d H:i:s') . "] Fallback usado pra {$telefone}\n", FILE_APPEND);
+    } catch (Throwable $e) {
+        // log nunca pode travar o envio
+    }
+}
+
+/**
+ * Avisa os números de notificação genérica (`notificacao_leads_whatsapp`,
+ * mesma lista de `notificarNovoLeadWhatsapp()`) quando a instância
+ * PRINCIPAL falha e o fallback precisou assumir — pra ficar sabendo na
+ * hora, não só olhando o log/Saúde depois. Dedup de 1h
+ * (`zapi_fallback_alerta_enviado`, mesmo padrão `alerta_atraso_{id}` de
+ * cron/followup.php) pra nunca virar spam numa sequência de falhas
+ * seguidas da principal. Manda pela própria instância FALLBACK — a única
+ * confirmada funcionando nesse momento — via _zapiEnviarTextoBruto()
+ * direto, nunca zapiEnviarTexto() de novo aqui (evita repetir uma
+ * tentativa pela principal já fadada a falhar só pra mandar o aviso).
+ */
+function alertarUsoFallbackZapi(string $instFb, string $tokFb, string $ctokFb): void {
+    try {
+        $guardKey = 'zapi_fallback_alerta_enviado';
+        $ultimo = getConfig($guardKey);
+        if ($ultimo && (time() - strtotime($ultimo)) < 3600) return;
+
+        $lista = _chatbot_getConfig('notificacao_leads_whatsapp');
+        $numeros = array_filter(array_map('trim', explode(',', $lista)));
+        if (!$numeros) return;
+
+        $msg = "⚠️ *Fastcar CRM — instância principal do WhatsApp falhou*\n\nO envio caiu automaticamente pra instância FALLBACK. Verifique a conexão da instância principal (Configurações → Z-API, ou admin/saude.php).";
+        $enviouAlgum = false;
+        foreach ($numeros as $numero) {
+            $tel = normalizarTelefone($numero);
+            if (strlen($tel) >= 12 && _zapiEnviarTextoBruto($tel, $msg, $instFb, $tokFb, $ctokFb)) {
+                $enviouAlgum = true;
+            }
+        }
+        if ($enviouAlgum) {
+            setConfig($guardKey, date('Y-m-d H:i:s'));
+        }
+    } catch (Throwable $e) {
+        // alerta nunca pode travar o envio principal
+    }
 }
 
 function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string $tok, string $ctok): bool {

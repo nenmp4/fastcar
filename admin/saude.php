@@ -100,6 +100,41 @@ try {
     check('WhatsApp (Z-API)', 'Instâncias de consultores', 'info', (int)($instancias['ativas'] ?? 0) . ' ativa(s)', (int)($instancias['total'] ?? 0) . ' cadastrada(s) no total');
 } catch (Throwable $e) {}
 
+// ── 3b. Instância fallback (20/09/2026, "como vou saber que instância
+// estou operando") — indicador visual de quando o envio precisou cair pra
+// ela, lendo o log que includes/whatsapp_config.php grava sempre que isso
+// acontece de verdade (best-effort, nunca depende de nada além do arquivo
+// existir).
+$zapiFbInst = getConfig('zapi_fallback_instance_id') ?: '';
+$zapiFbTok  = getConfig('zapi_fallback_token') ?: '';
+if (!$zapiFbInst || !$zapiFbTok) {
+    check('WhatsApp (Z-API)', 'Instância fallback', 'info', 'Não configurada', 'Configurações → Z-API fallback (opcional)');
+} else {
+    check('WhatsApp (Z-API)', 'Instância fallback', 'ok', 'Configurada', "ID: " . substr($zapiFbInst, 0, 8) . '...');
+
+    $logFallback = $basePath . '/storage/logs/whatsapp_fallback_usado.log';
+    $usosRecentes = 0;
+    $ultimoUso = null;
+    if (is_readable($logFallback)) {
+        $linhas = @file($logFallback, FILE_IGNORE_NEW_LINES) ?: [];
+        $corte = time() - 24 * 3600;
+        foreach ($linhas as $linha) {
+            if (preg_match('/^\[(.+?)\]/', $linha, $m)) {
+                $ts = strtotime($m[1]);
+                if ($ts && $ts >= $corte) {
+                    $usosRecentes++;
+                    $ultimoUso = $ts;
+                }
+            }
+        }
+    }
+    if ($usosRecentes > 0) {
+        check('WhatsApp (Z-API)', 'Fallback usado (24h)', 'warn', "{$usosRecentes} vez(es)", 'Última: ' . tempoAtras($ultimoUso) . ' — a instância principal falhou ao enviar, verifique a conexão dela');
+    } else {
+        check('WhatsApp (Z-API)', 'Fallback usado (24h)', 'ok', 'Nenhum uso', 'Instância principal enviando normal — fallback nunca precisou assumir');
+    }
+}
+
 // ── 4. IA (Gemini + fallback OpenAI) ─────────────────────────────────────
 $geminiKey = getConfig('gemini_api_key') ?: '';
 $openaiKey = getConfig('openai_api_key') ?: '';
