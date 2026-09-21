@@ -48,19 +48,22 @@ $criadoPorArg = null;
 $driveFolderId = null;
 $filtroCpf = null;
 $filtroTelefone = null;
+$comecarEm = 1;
 foreach ($args as $arg) {
     if ($arg === '--confirmar') { $confirmar = true; continue; }
     if ($arg === '--fase2') { $fase2 = true; continue; }
     if (str_starts_with($arg, '--criado-por=')) { $criadoPorArg = (int)substr($arg, strlen('--criado-por=')); continue; }
     if (str_starts_with($arg, '--cpf=')) { $filtroCpf = preg_replace('/\D/', '', substr($arg, strlen('--cpf='))); continue; }
     if (str_starts_with($arg, '--telefone=')) { $filtroTelefone = preg_replace('/\D/', '', substr($arg, strlen('--telefone='))); continue; }
+    if (str_starts_with($arg, '--comecar-em=')) { $comecarEm = max(1, (int)substr($arg, strlen('--comecar-em='))); continue; }
     if (!$driveFolderId && !str_starts_with($arg, '--')) { $driveFolderId = $arg; continue; }
 }
 
 if (!$driveFolderId) {
-    fwrite(STDERR, "Uso: php install/importar_crm_antigo.php <drive_folder_id> [--confirmar] [--criado-por=ID] [--cpf=NNNNNNNNNNN] [--telefone=NNNNNNNNNNN]\n");
+    fwrite(STDERR, "Uso: php install/importar_crm_antigo.php <drive_folder_id> [--confirmar] [--criado-por=ID] [--cpf=NNNNNNNNNNN] [--telefone=NNNNNNNNNNN] [--comecar-em=N]\n");
     fwrite(STDERR, "<drive_folder_id> é o ID da pasta raiz do export (URL do Drive: drive.google.com/drive/folders/<ESTE_ID>).\n");
     fwrite(STDERR, "--cpf=/--telefone= (só dígitos) processam só 1 cliente específico — útil pra testar/importar 1 de cada vez sem rodar o lote inteiro.\n");
+    fwrite(STDERR, "--comecar-em=N pula direto pra linha N do clients.csv (o número [N/89] que aparece na saída), ignorando as anteriores — útil pra retomar um lote que travou no meio sem reprocessar quem já passou.\n");
     exit(1);
 }
 
@@ -256,6 +259,8 @@ foreach ($clients as $i => $linha) {
     $n = $i + 1;
     $nome = $linha['full_name'] ?? '(sem nome)';
     $telefone = $linha['phone'] ?? '(sem telefone)';
+
+    if ($n < $comecarEm) continue;
 
     if ($filtroCpf !== null || $filtroTelefone !== null) {
         $cpfLinha = preg_replace('/\D/', '', (string)($linha['cpf'] ?? ''));
