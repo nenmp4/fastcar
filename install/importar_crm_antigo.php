@@ -49,6 +49,7 @@ $driveFolderId = null;
 $filtroCpf = null;
 $filtroTelefone = null;
 $comecarEm = 1;
+$limite = null;
 foreach ($args as $arg) {
     if ($arg === '--confirmar') { $confirmar = true; continue; }
     if ($arg === '--fase2') { $fase2 = true; continue; }
@@ -56,14 +57,16 @@ foreach ($args as $arg) {
     if (str_starts_with($arg, '--cpf=')) { $filtroCpf = preg_replace('/\D/', '', substr($arg, strlen('--cpf='))); continue; }
     if (str_starts_with($arg, '--telefone=')) { $filtroTelefone = preg_replace('/\D/', '', substr($arg, strlen('--telefone='))); continue; }
     if (str_starts_with($arg, '--comecar-em=')) { $comecarEm = max(1, (int)substr($arg, strlen('--comecar-em='))); continue; }
+    if (str_starts_with($arg, '--limite=')) { $limite = max(1, (int)substr($arg, strlen('--limite='))); continue; }
     if (!$driveFolderId && !str_starts_with($arg, '--')) { $driveFolderId = $arg; continue; }
 }
 
 if (!$driveFolderId) {
-    fwrite(STDERR, "Uso: php install/importar_crm_antigo.php <drive_folder_id> [--confirmar] [--criado-por=ID] [--cpf=NNNNNNNNNNN] [--telefone=NNNNNNNNNNN] [--comecar-em=N]\n");
+    fwrite(STDERR, "Uso: php install/importar_crm_antigo.php <drive_folder_id> [--confirmar] [--criado-por=ID] [--cpf=NNNNNNNNNNN] [--telefone=NNNNNNNNNNN] [--comecar-em=N] [--limite=N]\n");
     fwrite(STDERR, "<drive_folder_id> é o ID da pasta raiz do export (URL do Drive: drive.google.com/drive/folders/<ESTE_ID>).\n");
     fwrite(STDERR, "--cpf=/--telefone= (só dígitos) processam só 1 cliente específico — útil pra testar/importar 1 de cada vez sem rodar o lote inteiro.\n");
     fwrite(STDERR, "--comecar-em=N pula direto pra linha N do clients.csv (o número [N/89] que aparece na saída), ignorando as anteriores — útil pra retomar um lote que travou no meio sem reprocessar quem já passou.\n");
+    fwrite(STDERR, "--limite=N processa no máximo N clientes a partir de --comecar-em e para — útil pra rodar em lotes pequenos (ex: de 5 em 5) e reduzir o tempo de escrita concorrente com o resto do sistema. Some --comecar-em ao --limite anterior pra continuar de onde parou (ex: --comecar-em=81 --limite=5, depois --comecar-em=86 --limite=5).\n");
     exit(1);
 }
 
@@ -254,6 +257,7 @@ foreach ($documents as $d) {
 
 $resultados = ['importado' => 0, 'ja_importado' => 0, 'erro' => 0];
 $log = [];
+$processadosNoLote = 0;
 
 foreach ($clients as $i => $linha) {
     $n = $i + 1;
@@ -269,6 +273,12 @@ foreach ($clients as $i => $linha) {
         $bateTelefone = $filtroTelefone !== null && $telLinha !== '' && $telLinha === $filtroTelefone;
         if (!$bateCpf && !$bateTelefone) continue;
     }
+
+    if ($limite !== null && $processadosNoLote >= $limite) {
+        echo "-- Limite de {$limite} atingido, parando aqui. Pra continuar, use --comecar-em=" . $n . " --limite=" . $limite . " --\n";
+        break;
+    }
+    $processadosNoLote++;
 
     if (!$confirmar) {
         // Dry-run: só reporta o que faria, sem tocar no banco.
