@@ -4621,6 +4621,33 @@ segue no schema sem uso novo, não removida sem ganho real),
   `mudarEtapaVenda()`/gerar lançamento financeiro falso pra venda
   histórica), mas **ainda não plugadas** no CLI — ficam pra próxima
   rodada, depois de validar a Fase 1 em produção.
+  **Filtro `--cpf=`/`--telefone=` pra importar 1 cliente por vez**
+  (21/09/2026, "vamos importa só gabriel para não travar o sistema" —
+  depois do incidente real de "database is locked" já documentado no
+  módulo de leads, receio direto de rodar o lote inteiro de novo em
+  produção) — `install/importar_crm_antigo.php <id> --cpf=NNNNNNNNNNN`
+  ou `--telefone=NNNNNNNNNNN` (só dígitos, aceita CPF/telefone com
+  pontuação no argumento — normaliza) processa só o(s) cliente(s) do
+  `clients.csv` que batem, pulando o resto silenciosamente logo no início
+  do loop, antes de qualquer leitura/escrita — sem os filtros, comportamento
+  idêntico a antes (nenhuma mudança no fluxo em lote já validado). Achado
+  no caminho: a pasta raiz do export usada dessa vez tinha um ID diferente
+  do anterior (formato `0A...`, raiz de "Meu Drive" — achado navegando o
+  Drive direto e comparando com a pasta `arquivos/` que já tinha as
+  subpastas por UUID de cliente esperadas) — diagnosticado direto contra a
+  API do Drive usando `GoogleDrive::getToken()` (já pública, existia desde
+  sempre) depois de um primeiro erro bobo (tentei "vazar" o token via
+  subclasse acessando `$this->token`, que é `private` na classe base — em
+  PHP isso lê uma propriedade DIFERENTE/vazia na subclasse, nunca a real,
+  gerando 403 "unregistered callers" que não tinha nada a ver com
+  permissão de fato da pasta). Testado: lógica de normalização/match
+  isolada (CPF com pontuação bate contra filtro limpo, cliente fora do
+  filtro é pulado, filtro por telefone funciona igual) + `php -l` +
+  `tests/smoke.php` limpos. Rodado em produção com sucesso: dry-run
+  (`0APRv7sMXUiwWUk9PVA`) achou 34 clientes pendentes de 89 (55 já
+  importados de uma rodada anterior, cortada pelo mesmo travamento de
+  banco), incluindo "GABRIEL PATRICK DA SILVA / 3191493545 (6
+  documento(s))" — 0 erros no dry-run completo.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

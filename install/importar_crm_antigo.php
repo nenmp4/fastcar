@@ -46,16 +46,21 @@ $confirmar = false;
 $fase2 = false;
 $criadoPorArg = null;
 $driveFolderId = null;
+$filtroCpf = null;
+$filtroTelefone = null;
 foreach ($args as $arg) {
     if ($arg === '--confirmar') { $confirmar = true; continue; }
     if ($arg === '--fase2') { $fase2 = true; continue; }
     if (str_starts_with($arg, '--criado-por=')) { $criadoPorArg = (int)substr($arg, strlen('--criado-por=')); continue; }
+    if (str_starts_with($arg, '--cpf=')) { $filtroCpf = preg_replace('/\D/', '', substr($arg, strlen('--cpf='))); continue; }
+    if (str_starts_with($arg, '--telefone=')) { $filtroTelefone = preg_replace('/\D/', '', substr($arg, strlen('--telefone='))); continue; }
     if (!$driveFolderId && !str_starts_with($arg, '--')) { $driveFolderId = $arg; continue; }
 }
 
 if (!$driveFolderId) {
-    fwrite(STDERR, "Uso: php install/importar_crm_antigo.php <drive_folder_id> [--confirmar] [--criado-por=ID]\n");
+    fwrite(STDERR, "Uso: php install/importar_crm_antigo.php <drive_folder_id> [--confirmar] [--criado-por=ID] [--cpf=NNNNNNNNNNN] [--telefone=NNNNNNNNNNN]\n");
     fwrite(STDERR, "<drive_folder_id> é o ID da pasta raiz do export (URL do Drive: drive.google.com/drive/folders/<ESTE_ID>).\n");
+    fwrite(STDERR, "--cpf=/--telefone= (só dígitos) processam só 1 cliente específico — útil pra testar/importar 1 de cada vez sem rodar o lote inteiro.\n");
     exit(1);
 }
 
@@ -251,6 +256,14 @@ foreach ($clients as $i => $linha) {
     $n = $i + 1;
     $nome = $linha['full_name'] ?? '(sem nome)';
     $telefone = $linha['phone'] ?? '(sem telefone)';
+
+    if ($filtroCpf !== null || $filtroTelefone !== null) {
+        $cpfLinha = preg_replace('/\D/', '', (string)($linha['cpf'] ?? ''));
+        $telLinha = preg_replace('/\D/', '', (string)($linha['phone'] ?? ''));
+        $bateCpf = $filtroCpf !== null && $cpfLinha !== '' && $cpfLinha === $filtroCpf;
+        $bateTelefone = $filtroTelefone !== null && $telLinha !== '' && $telLinha === $filtroTelefone;
+        if (!$bateCpf && !$bateTelefone) continue;
+    }
 
     if (!$confirmar) {
         // Dry-run: só reporta o que faria, sem tocar no banco.
