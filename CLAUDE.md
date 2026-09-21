@@ -1532,6 +1532,17 @@ segue no schema sem uso novo, não removida sem ganho real),
   contra o banco de desenvolvimento real (backup/restore ao redor do
   teste): idempotente, preserva dado existente, segunda rodada não
   reconstrói de novo.
+  **Faltava link de menu pra chegar no módulo** (mesmo dia, achado
+  perguntando "onde vejo perfil do avaliador"/"super admin ver?") — o
+  módulo tinha ficado sem NENHUM item de nav: super_admin só chegava em
+  `admin/avaliacoes.php` abrindo uma oportunidade/venda que já tivesse
+  vistoria (o card) ou digitando a URL direto, e o perfil `vendedor`
+  (siloed em `admin/vendas.php`, nunca alcança `admin/index.php`) não
+  tinha caminho nenhum de navegação até lá, mesmo já liberado no
+  allowlist de `admin/_bootstrap.php` desde o commit anterior. Corrigido
+  com "🔍 Vistorias" (gated por `podeAcessarAvaliacoes()`, mesmo padrão
+  dos outros links de módulo) na topbar de `admin/index.php` E
+  `admin/vendas.php`.
   ⚠️ **Achado em passagem, não corrigido aqui** (fora do escopo deste
   módulo — sinalizado como tarefa separada): `zapsignCriarDocumentoEAssinatura()`
   (`includes/zapsign.php`) nunca manda `phone_country`/`phone_number` pra
