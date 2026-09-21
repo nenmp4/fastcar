@@ -1051,4 +1051,112 @@ try {
     echo "❌ auditoria: {$e->getMessage()}\n";
 }
 
+// 21/09/2026 — perfil 'avaliador' novo (módulo de checklist de vistoria
+// do veículo, compra e venda) — mesma técnica de reconstrução de tabela
+// das migrações 'supervisor'/'vendedor'/'financeiro' acima. Idempotente —
+// só reconstrói se a CHECK atual ainda não aceitar 'avaliador'. Inclui
+// TODAS as colunas atuais de usuarios (tentativas_falhas/bloqueado_ate do
+// 2FA, 20/09/2026 — as migrações anteriores de CHECK rodaram ANTES dessas
+// colunas existirem, então copiá-las cegamente perderia esse dado).
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='usuarios'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'avaliador'")) {
+        $db->exec('BEGIN');
+        $db->exec("
+            CREATE TABLE usuarios_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                email TEXT UNIQUE,
+                whatsapp TEXT DEFAULT '',
+                senha_hash TEXT NOT NULL,
+                perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor','financeiro','avaliador')),
+                bloqueado INTEGER DEFAULT 0,
+                tentativas_falhas INTEGER NOT NULL DEFAULT 0,
+                bloqueado_ate DATETIME,
+                disponivel INTEGER DEFAULT 0,
+                plantao_fim_expediente INTEGER DEFAULT 0,
+                ultimo_lead_recebido_em DATETIME,
+                posicao_fila INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $db->exec("
+            INSERT INTO usuarios_novo (id, nome, email, whatsapp, senha_hash, perfil, bloqueado, tentativas_falhas, bloqueado_ate, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at)
+            SELECT id, nome, email, whatsapp, senha_hash, perfil, bloqueado, tentativas_falhas, bloqueado_ate, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, posicao_fila, created_at FROM usuarios
+        ");
+        $db->exec('DROP TABLE usuarios');
+        $db->exec('ALTER TABLE usuarios_novo RENAME TO usuarios');
+        $db->exec('COMMIT');
+        echo "✅ usuarios.perfil: CHECK reconstruída pra aceitar 'avaliador'\n";
+    } else {
+        echo "⏭️  usuarios.perfil (CHECK avaliador): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { $db->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ usuarios.perfil (CHECK avaliador): {$e->getMessage()}\n";
+}
+
+// 21/09/2026 — módulo de checklist de vistoria/avaliação do veículo
+// (compra e venda, ver includes/veiculo_avaliacoes.php).
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+            venda_id INTEGER REFERENCES vendas(id),
+            tipo TEXT NOT NULL CHECK (tipo IN ('compra', 'venda')),
+            avaliador_id INTEGER REFERENCES usuarios(id),
+            km_atual INTEGER,
+            status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_andamento', 'concluida')),
+            observacoes_gerais TEXT DEFAULT '',
+            concluida_em DATETIME,
+            zapsign_doc_token TEXT DEFAULT '',
+            zapsign_signer_token TEXT DEFAULT '',
+            sign_url TEXT DEFAULT '',
+            termo_status TEXT NOT NULL DEFAULT '' CHECK (termo_status IN ('', 'gerado', 'enviado', 'assinado', 'recusado')),
+            termo_assinado_em DATETIME,
+            drive_file_id TEXT DEFAULT '',
+            arquivo_url TEXT DEFAULT '',
+            created_by INTEGER REFERENCES usuarios(id),
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_oportunidade ON veiculo_avaliacoes(oportunidade_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_venda ON veiculo_avaliacoes(venda_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_avaliador ON veiculo_avaliacoes(avaliador_id)");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS veiculo_avaliacao_itens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            avaliacao_id INTEGER NOT NULL REFERENCES veiculo_avaliacoes(id),
+            item TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'nao_verificado' CHECK (status IN ('ok', 'problema', 'nao_verificado')),
+            observacao TEXT DEFAULT '',
+            UNIQUE(avaliacao_id, item)
+        )
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS veiculo_avaliacao_fotos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            avaliacao_id INTEGER NOT NULL REFERENCES veiculo_avaliacoes(id),
+            tipo TEXT NOT NULL DEFAULT 'foto' CHECK (tipo IN ('foto', 'video')),
+            mime TEXT NOT NULL DEFAULT '',
+            drive_file_id TEXT DEFAULT '',
+            arquivo_url TEXT DEFAULT '',
+            legenda TEXT DEFAULT '',
+            aprovado_para_catalogo INTEGER NOT NULL DEFAULT 0,
+            aprovado_por INTEGER REFERENCES usuarios(id),
+            aprovado_em DATETIME,
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacao_fotos_avaliacao ON veiculo_avaliacao_fotos(avaliacao_id)");
+
+    echo "✅ veiculo_avaliacoes/itens/fotos: tabelas prontas\n";
+} catch (Throwable $e) {
+    echo "❌ veiculo_avaliacoes: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

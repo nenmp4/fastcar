@@ -38,6 +38,7 @@ function paginaInicialPorPerfil(string $perfil): string {
     return match ($perfil) {
         'vendedor' => '/admin/vendas.php',
         'financeiro' => '/admin/financeiro.php',
+        'avaliador' => '/admin/avaliacoes.php',
         default => '/admin/index.php',
     };
 }

@@ -284,6 +284,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($acao === 'reabrir_pendencia_pos_venda') {
                 reabrirPendenciaPosVenda((int)($_POST['pendencia_id'] ?? 0));
                 $sucesso = 'Pendência reaberta.';
+            } elseif ($acao === 'criar_avaliacao') {
+                // Checklist de vistoria (compra) — includes/veiculo_avaliacoes.php.
+                // Consultor responsável já pode escolher um avaliador na hora
+                // de criar (mesmo padrão "responsável" do resto do projeto).
+                $novoAvaliadorId = (int)($_POST['avaliador_id'] ?? 0) ?: null;
+                $novaAvaliacaoId = criarAvaliacao($id, 'compra', null, $novoAvaliadorId, (int)$_SESSION['admin_id']);
+                header('Location: /admin/avaliacao.php?id=' . $novaAvaliacaoId);
+                exit;
             }
         } catch (Throwable $e) {
             $erro = $e->getMessage();
@@ -317,6 +325,8 @@ $stmtMsg->execute([$op['cliente_telefone']]);
 $mensagens = array_reverse($stmtMsg->fetchAll());
 
 $usuarios = listarUsuarios();
+$avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
+$avaliacoesVeiculo = listarAvaliacoesDoVeiculo($id);
 $etapasFechaveis = array_merge(ETAPAS_ATIVAS, ['fechado']);
 $pendenciasPosVenda = $op['etapa'] === 'fechado' ? listarPendenciasDaOportunidade($id) : [];
 $checklistOk = checklistFechamentoCompleto($id);
@@ -986,6 +996,42 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     recalcularTudo(); // cobre os 2 campos já vindos preenchidos do servidor
 })();
 </script>
+
+<div class="card">
+    <h3>🔍 Checklist de vistoria do veículo</h3>
+    <?php if ($avaliacoesVeiculo): ?>
+        <table>
+            <thead><tr><th>Tipo</th><th>Status</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($avaliacoesVeiculo as $a): ?>
+                <tr>
+                    <td><?= $a['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?></td>
+                    <td><?= match ($a['status']) { 'concluida' => '✅ Concluída', 'em_andamento' => '🔧 Em andamento', default => '⏳ Pendente' } ?></td>
+                    <td><?= $a['avaliador_nome'] ? e($a['avaliador_nome']) : '<em>não atribuído</em>' ?></td>
+                    <td><?= date('d/m/Y H:i', strtotime($a['created_at'])) ?></td>
+                    <td><a href="/admin/avaliacao.php?id=<?= (int)$a['id'] ?>">Abrir →</a></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php else: ?>
+        <p><small>Nenhuma vistoria registrada ainda pra este veículo.</small></p>
+    <?php endif; ?>
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" style="margin-top:10px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="criar_avaliacao">
+            <label>Atribuir a (opcional)</label>
+            <select name="avaliador_id">
+                <option value="">— não atribuído ainda —</option>
+                <?php foreach ($avaliadoresDisponiveis as $u): ?>
+                    <option value="<?= (int)$u['id'] ?>"><?= e($u['nome']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit">+ Nova vistoria de recebimento</button>
+        </form>
+    <?php endif; ?>
+</div>
 
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>

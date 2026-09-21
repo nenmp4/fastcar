@@ -1422,6 +1422,124 @@ segue no schema sem uso novo, não removida sem ganho real),
   `$`, etc — ver bullet "puxa foto do zap e nome"). Campo + botão "Salvar
   nome" logo abaixo do cabeçalho `#ID — Nome`, mesmo guard de supervisor
   (só acompanha, não edita) das outras ações da página.
+- **Checklist de vistoria/avaliação do veículo (compra e venda)**
+  (`includes/veiculo_avaliacoes.php` + `includes/veiculo_avaliacoes_pdf.php` +
+  `admin/avaliacoes.php`/`admin/avaliacao.php`, 21/09/2026) — pedido direto:
+  "temos montar modulo de chelist de verificação do veiculo na venda compra
+  acho ser global - tipo avalição marcar ok adiciona as fotos - essas fotos
+  vai servir para ia qualificação da venda... criar documento de entrega do
+  veiculo enviar para email WhatsApp para assinar... perfil avalista no
+  sistema - tipo de avaliação - se compra se venda... vericar km avarias
+  suspenção motor vazamentos estofado". GLOBAL de propósito
+  (`veiculo_avaliacoes.tipo IN ('compra','venda')`, mesma tabela) — cobre os
+  2 momentos em que a Fastcar inspeciona o carro fisicamente: ENTRADA
+  (compra, vendedor original entrega o carro) e SAÍDA (venda, comprador novo
+  recebe) — mesmo checklist, signatário diferente conforme o tipo
+  (confirmado com o usuário, multiSelect com os 2 selecionados: "Vendedor
+  original, na compra" + "Comprador novo, na venda"). Dual-FK
+  `oportunidade_id` (sempre — todo veículo é uma oportunidade)/`venda_id`
+  (só quando `tipo='venda'`, qual negociação/comprador está recebendo agora),
+  mesmo padrão já usado em `contratos`/`fin_lancamentos`. Itens fixos do
+  checklist (`VEICULO_AVALIACAO_ITENS_PADRAO`) são exatamente os pedidos:
+  avarias/motor/suspensão/vazamentos/estofado — cada um com status
+  ok/problema/não verificado + observação; KM fica fora da lista (campo
+  numérico próprio, `km_atual`, não um item do checklist).
+  **Perfil `avaliador`** (novo, confirmado com o usuário: "Perfil novo
+  dedicado", não uma capacidade em cima de perfil existente) — mesma técnica
+  de silo central em `admin/_bootstrap.php` dos perfis `vendedor`/`financeiro`
+  (só acessa `admin/avaliacoes.php`/`admin/avaliacao.php`), `admin/login.php`
+  manda direto pra lá, `admin/usuarios.php` ganhou a opção no seletor.
+  **Quem atribui avaliador** (confirmado via pergunta direta, "recomendado"):
+  super_admin/supervisor sempre, ou o responsável do PRÓPRIO negócio
+  (consultor na compra, vendedor na venda) — mesmo espírito de
+  "responsável" já usado no resto do projeto; `admin/avaliacao.php` calcula
+  `$podeAtribuir` comparando `oportunidade_responsavel_id`/`venda_responsavel_id`
+  com o usuário logado. **Quem edita o checklist**: só o avaliador
+  ATRIBUÍDO, ou super_admin — nunca supervisor (mesma regra geral do
+  projeto, "só acompanha"), nunca outro avaliador não atribuído — testado
+  como POST forjado bloqueado mesmo com CSRF válido roubado de outra tela
+  (não é só esconder o formulário). Criar uma avaliação já com avaliador
+  escolhido pula direto pra `status='em_andamento'` (sem passar por
+  'pendente'); desatribuir volta pra 'pendente'.
+  **Fotos numa galeria PRÓPRIA, separada do catálogo de vendas** (confirmado:
+  "Separada, recomendado", reforçado depois: "as fotos que colher tem que
+  vendedor aprovar para ia usar pois evitar fotos desnecessário") —
+  `veiculo_avaliacao_fotos` nunca é o que a IA de vendas usa
+  (`enviarMidiaCatalogoParaComprador()`, `veiculo_midias_revenda`); uma foto
+  só entra no catálogo depois de `aprovarFotoParaCatalogo()`, ação EXPLÍCITA
+  restrita a super_admin/vendedor (nunca supervisor, nunca automática) —
+  copia a MESMA referência de arquivo (drive_file_id/arquivo_url, nunca
+  re-upload) e marca a foto de origem como aprovada (idempotente, nunca
+  duplica no catálogo se aprovada 2x). Excluir a foto da galeria de vistoria
+  depois de aprovada NUNCA remove a cópia já no catálogo (são registros
+  independentes, não uma referência viva).
+  **Termo de entrega/vistoria (PDF + assinatura eletrônica)** — geração/envio
+  é SEMPRE ação manual (confirmado: "Botão manual, recomendado"), nunca
+  dispara sozinho ao concluir a avaliação, mesmo padrão dos contratos de
+  compra/venda. `includes/veiculo_avaliacoes_pdf.php::gerarPdfTermoAvaliacao()`
+  reaproveita os helpers de baixo nível de `includes/contratos_pdf.php`
+  (`_pdfNovo`/`_pdfCabecalho`/`_pdfTexto`/`_pdfTituloClausula`/`_pdfCorpo`)
+  sem duplicar nada — só a montagem do conteúdo é própria (checklist técnico,
+  não cláusula jurídica). **NUNCA reaproveita `contratos`/
+  `zapsignSincronizarContrato()`** — essa função já é complexa o bastante
+  amarrada a `mudarEtapa()`/`mudarEtapaVenda()`, que não fazem sentido pra um
+  termo de vistoria; campos de assinatura (`zapsign_doc_token` etc) moram
+  direto em `veiculo_avaliacoes`, com sync própria
+  (`sincronizarTermoAvaliacao()`) — mesmo raciocínio "arquivo próprio de
+  propósito" já documentado várias vezes neste projeto. `api/zapsign_webhook.php`
+  e `cron/zapsign_sync.php` (fallback de polling) passaram a checar
+  `veiculo_avaliacoes.zapsign_doc_token` além de `contratos` — webhook tenta
+  `contratos` primeiro, cai pra `veiculo_avaliacoes` se não achar, nunca
+  confunde os dois. Testado ponta a ponta contra servidor ZapSign fake local
+  (via HTTP real, `auto_prepend_file` sobrescrevendo `ZAPSIGN_BASE_URL` só
+  no processo de teste): gerar+enviar monta o signer certo por tipo
+  (compra=cliente, venda=comprador — conferido no payload capturado pelo
+  fake server), grava `doc_token`/`signer_token`/`sign_url`/`termo_status='enviado'`
+  e uma cópia rascunho local; POST simulando o webhook da ZapSign
+  (`api/zapsign_webhook.php`) sincroniza certo pra `termo_status='assinado'`,
+  baixa a cópia assinada de verdade (conteúdo conferido byte a byte) e grava
+  `termo_assinado_em`.
+  Card "🔍 Checklist de vistoria do veículo" em `admin/oportunidade.php`
+  (sempre visível, cria avaliação `tipo='compra'`) e `admin/venda.php`
+  (só quando `oportunidade_id` já vinculado — precisa de veículo pra
+  existir `oportunidade_id`, obrigatório na tabela — cria `tipo='venda'`
+  com `venda_id`) — histórico completo (pedido: "histórico de avaliação do
+  veiculo") via `listarAvaliacoesDoVeiculo()`, mais recente primeiro
+  (`ORDER BY created_at DESC, id DESC` — mesma lição de granularidade de 1s
+  do SQLite já documentada pra `posicao_fila`/fila de leads, achada e
+  corrigida no próprio teste isolado deste módulo). `admin/avaliacoes.php`
+  é a fila de trabalho (home do perfil `avaliador`, também útil pra
+  super_admin/supervisor acompanharem tudo) — abas Pendentes/Concluídas,
+  filtro automático por avaliador quando logado como tal.
+  Testado ponta a ponta via HTTP real (servidor PHP embutido + fake ZapSign
+  local, sessão primed direto por perfil — sem passar pelo 2FA, mesmo
+  artifício já usado nesta sessão): consultor responsável cria avaliação de
+  compra e atribui avaliador; avaliador atribuído preenche checklist/km/
+  observações/foto e conclui; avaliador NÃO atribuído bloqueado tentando
+  editar (POST forjado com CSRF válido, "Ação não permitida", item
+  intocado no banco); supervisor sem nenhum formulário de edição na tela e
+  POST forjado igualmente bloqueado; vendedor cria avaliação de venda a
+  partir de `admin/venda.php` e aprova a foto pro catálogo, confirmado
+  aparecendo em `veiculo_midias_revenda` da oportunidade certa (mesma
+  referência de arquivo, sem re-upload); silo do perfil `avaliador`
+  confirmado (tentativa de acessar `admin/index.php` redireciona pra
+  `admin/avaliacoes.php`). **Bug real achado no próprio teste, antes do
+  commit**: o silo do perfil `vendedor` em `admin/_bootstrap.php` não tinha
+  as páginas novas na allowlist — um vendedor batia 302 tentando abrir
+  `admin/avaliacao.php` mesmo sendo o responsável pela venda; corrigido
+  adicionando as 4 páginas novas à lista. Migração (`install/migrar.php`,
+  reconstrução de CHECK de `usuarios.perfil` + 3 tabelas novas) testada
+  contra o banco de desenvolvimento real (backup/restore ao redor do
+  teste): idempotente, preserva dado existente, segunda rodada não
+  reconstrói de novo.
+  ⚠️ **Achado em passagem, não corrigido aqui** (fora do escopo deste
+  módulo — sinalizado como tarefa separada): `zapsignCriarDocumentoEAssinatura()`
+  (`includes/zapsign.php`) nunca manda `phone_country`/`phone_number` pra
+  ZapSign porque o telefone que todo caller passa já vem com o prefixo DDI
+  55 (`normalizarTelefone()`, 12/13 dígitos), mas a função só aceita
+  exatamente 10/11 dígitos — bug pré-existente, afeta igualmente contratos
+  de compra/venda, confirmado testando o payload capturado contra o fake
+  ZapSign deste módulo (só `name`/`email` chegavam, nunca telefone).
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

@@ -12,6 +12,7 @@
 define('ROOT', dirname(__DIR__));
 require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/contratos.php';
+require_once ROOT . '/includes/veiculo_avaliacoes.php';
 
 function log_zapsign_sync(string $msg): void {
     $dir = ROOT . '/storage/logs';
@@ -47,6 +48,34 @@ foreach ($pendentes as $c) {
         }
     } catch (Throwable $e) {
         log_zapsign_sync("Erro no contrato #{$c['id']}: " . $e->getMessage());
+    }
+}
+
+// Termos de entrega/vistoria (módulo de checklist de avaliação) — mesmo
+// fallback, tabela própria, nunca passa por zapsignSincronizarContrato().
+$pendentesAval = $db->query("
+    SELECT id FROM veiculo_avaliacoes WHERE termo_status IN ('enviado') AND zapsign_doc_token != ''
+")->fetchAll();
+
+log_zapsign_sync(count($pendentesAval) . ' termo(s) de vistoria pendente(s) de assinatura.');
+
+foreach ($pendentesAval as $a) {
+    try {
+        $antes = $db->prepare("SELECT termo_status FROM veiculo_avaliacoes WHERE id = ?");
+        $antes->execute([$a['id']]);
+        $statusAntes = $antes->fetchColumn();
+
+        sincronizarTermoAvaliacao((int)$a['id']);
+
+        $depois = $db->prepare("SELECT termo_status FROM veiculo_avaliacoes WHERE id = ?");
+        $depois->execute([$a['id']]);
+        $statusDepois = $depois->fetchColumn();
+
+        if ($statusAntes !== $statusDepois) {
+            log_zapsign_sync("Termo de vistoria #{$a['id']}: {$statusAntes} → {$statusDepois}");
+        }
+    } catch (Throwable $e) {
+        log_zapsign_sync("Erro no termo de vistoria #{$a['id']}: " . $e->getMessage());
     }
 }
 

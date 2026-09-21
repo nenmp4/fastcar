@@ -193,6 +193,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                         <option value="supervisor" <?= $perfilAtual === 'supervisor' ? 'selected' : '' ?>>Supervisor (só acompanha, não age)</option>
                         <option value="vendedor" <?= $perfilAtual === 'vendedor' ? 'selected' : '' ?>>Vendedor (módulo de vendas/revenda)</option>
                         <option value="financeiro" <?= $perfilAtual === 'financeiro' ? 'selected' : '' ?>>Gestão financeira (módulo financeiro)</option>
+                        <option value="avaliador" <?= $perfilAtual === 'avaliador' ? 'selected' : '' ?>>Avaliador (checklist de vistoria do veículo)</option>
                         <option value="super_admin" <?= $perfilAtual === 'super_admin' ? 'selected' : '' ?>>⚠️ Super admin (acesso total ao sistema)</option>
                     </select>
                     <?php if (($_POST['perfil'] ?? $perfilAtual) === 'super_admin' || $perfilAtual === 'super_admin'): ?>

@@ -353,7 +353,11 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- (admin/financeiro*.php), lançamentos/categorias/fornecedores/
     -- colaboradores + integração Asaas — ver includes/security.php::
     -- podeAcessarFinanceiro().
-    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor','financeiro')),
+    -- 'avaliador' adicionado em 21/09/2026 (módulo de checklist de
+    -- vistoria/avaliação do veículo, compra e venda) — perfil dedicado, só
+    -- acessa admin/avaliacoes.php/admin/avaliacao.php, nunca o funil de
+    -- compra/vendas/WhatsApp — ver includes/security.php::podeAcessarAvaliacoes().
+    perfil TEXT DEFAULT 'consultor' CHECK (perfil IN ('super_admin','closer','consultor','supervisor','vendedor','financeiro','avaliador')),
     bloqueado INTEGER DEFAULT 0,
     -- 20/09/2026, "dois fatores... tentativa de login" — bloqueio
     -- AUTOMÁTICO e temporário por senha errada repetida (distinto de
@@ -612,6 +616,85 @@ CREATE TABLE IF NOT EXISTS veiculo_midias_revenda (
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_veiculo_midias_oportunidade ON veiculo_midias_revenda(oportunidade_id);
+
+-- Módulo de checklist de vistoria/avaliação do veículo (21/09/2026,
+-- "temos montar modulo de chelist de verificação do veiculo na venda
+-- compra acho ser global"), includes/veiculo_avaliacoes.php. GLOBAL de
+-- propósito — mesma tabela serve tanto a vistoria de ENTRADA (compra, o
+-- vendedor original entrega o carro pra Fastcar) quanto a de SAÍDA (venda,
+-- o comprador novo recebe o carro da Fastcar); `tipo` distingue as duas.
+-- oportunidade_id é sempre o veículo (nunca nulo — toda avaliação é sobre
+-- um carro específico da frota/funil); venda_id só é preenchido quando
+-- tipo='venda' (qual negociação/comprador está recebendo o carro agora —
+-- mesmo padrão dual-FK já usado em `contratos`/`fin_lancamentos`).
+CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    venda_id INTEGER REFERENCES vendas(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('compra', 'venda')),
+    -- Quem vai fazer a vistoria — atribuído por super_admin/supervisor ou
+    -- pelo responsável do próprio negócio (consultor na compra, vendedor na
+    -- venda); NULL até alguém atribuir. Perfil dedicado 'avaliador'
+    -- (usuarios.perfil), mas super_admin também pode assumir uma avaliação.
+    avaliador_id INTEGER REFERENCES usuarios(id),
+    km_atual INTEGER,
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_andamento', 'concluida')),
+    observacoes_gerais TEXT DEFAULT '',
+    concluida_em DATETIME,
+    -- Termo de entrega/vistoria (PDF) + assinatura eletrônica via ZapSign —
+    -- mesmos campos de `contratos`, guardados aqui direto (arquivo próprio
+    -- de sincronização, includes/veiculo_avaliacoes.php::sincronizarTermoAvaliacao(),
+    -- nunca reaproveitando zapsignSincronizarContrato() — essa função já é
+    -- complexa o bastante amarrada a mudarEtapa()/mudarEtapaVenda(), que não
+    -- fazem sentido pra um termo de vistoria).
+    zapsign_doc_token TEXT DEFAULT '',
+    zapsign_signer_token TEXT DEFAULT '',
+    sign_url TEXT DEFAULT '',
+    termo_status TEXT NOT NULL DEFAULT '' CHECK (termo_status IN ('', 'gerado', 'enviado', 'assinado', 'recusado')),
+    termo_assinado_em DATETIME,
+    drive_file_id TEXT DEFAULT '',
+    arquivo_url TEXT DEFAULT '',
+    created_by INTEGER REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_oportunidade ON veiculo_avaliacoes(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_venda ON veiculo_avaliacoes(venda_id);
+CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_avaliador ON veiculo_avaliacoes(avaliador_id);
+
+-- Itens fixos do checklist (avarias/motor/suspensão/vazamentos/estofado —
+-- includes/veiculo_avaliacoes.php::VEICULO_AVALIACAO_ITENS_PADRAO), 1 linha
+-- por item já criada junto da avaliação (nunca "aparece" um item novo sem
+-- ter sido semeado — mesmo espírito de garantirLinhasDocumentosObrigatorios()).
+CREATE TABLE IF NOT EXISTS veiculo_avaliacao_itens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    avaliacao_id INTEGER NOT NULL REFERENCES veiculo_avaliacoes(id),
+    item TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'nao_verificado' CHECK (status IN ('ok', 'problema', 'nao_verificado')),
+    observacao TEXT DEFAULT '',
+    UNIQUE(avaliacao_id, item)
+);
+
+-- Galeria PRÓPRIA da vistoria — separada de propósito de
+-- `veiculo_midias_revenda` (catálogo de vendas que a IA usa sozinha pra
+-- mandar foto pro comprador): uma foto de vistoria só entra nesse catálogo
+-- depois de aprovação EXPLÍCITA do vendedor (aprovado_por/aprovado_em),
+-- nunca automática — evita a IA usar foto ruim/desnecessária colhida
+-- durante a inspeção (ex: foto de um defeito, ângulo estranho).
+CREATE TABLE IF NOT EXISTS veiculo_avaliacao_fotos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    avaliacao_id INTEGER NOT NULL REFERENCES veiculo_avaliacoes(id),
+    tipo TEXT NOT NULL DEFAULT 'foto' CHECK (tipo IN ('foto', 'video')),
+    mime TEXT NOT NULL DEFAULT '',
+    drive_file_id TEXT DEFAULT '',
+    arquivo_url TEXT DEFAULT '',
+    legenda TEXT DEFAULT '',
+    aprovado_para_catalogo INTEGER NOT NULL DEFAULT 0,
+    aprovado_por INTEGER REFERENCES usuarios(id),
+    aprovado_em DATETIME,
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacao_fotos_avaliacao ON veiculo_avaliacao_fotos(avaliacao_id);
 
 -- Mesma disciplina de histórico do funil de compra (regra #6) — nunca
 -- UPDATE direto em vendas.etapa, sempre por mudarEtapaVenda()

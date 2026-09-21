@@ -125,6 +125,25 @@ function requireAcessoFinanceiro(): void {
 }
 
 /**
+ * Quem pode acessar o módulo de AVALIAÇÃO/VISTORIA do veículo (21/09/2026,
+ * perfil `avaliador` novo) — super_admin/supervisor sempre veem tudo
+ * (mesmo espírito de perfilVeTudo()), o `avaliador` propriamente dito, e
+ * também consultor/vendedor (podem criar/atribuir avaliação nos próprios
+ * negócios — confirmado com o usuário, mesmo padrão "responsável" do
+ * resto do projeto). `financeiro` nunca entra aqui.
+ */
+function podeAcessarAvaliacoes(): bool {
+    return in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'supervisor', 'avaliador', 'consultor', 'vendedor'], true);
+}
+
+function requireAcessoAvaliacoes(): void {
+    if (!podeAcessarAvaliacoes()) {
+        http_response_code(403);
+        exit('Acesso restrito ao módulo de avaliação/vistoria.');
+    }
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra

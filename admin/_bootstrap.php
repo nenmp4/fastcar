@@ -39,6 +39,7 @@ require_once __DIR__ . '/../includes/asaas.php';
 require_once __DIR__ . '/../includes/cnpj.php';
 require_once __DIR__ . '/../includes/auditoria.php';
 require_once __DIR__ . '/../includes/avatar.php';
+require_once __DIR__ . '/../includes/veiculo_avaliacoes.php';
 
 requireAdmin();
 
@@ -48,7 +49,14 @@ requireAdmin();
 // arquivo por arquivo em cada tela de compra já existente.
 if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     $paginaAtualVendedor = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php', 'meu_perfil.php', 'logout.php'];
+    // 21/09/2026 — módulo de checklist de vistoria liberado aqui também: o
+    // vendedor precisa acompanhar/atribuir a vistoria de entrega da PRÓPRIA
+    // venda e aprovar foto pro catálogo, mesmo em vistoria de COMPRA de um
+    // veículo que ele ainda vai revender (a aprovação de foto não é presa a
+    // uma negociação específica).
+    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
+        'avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
+        'meu_perfil.php', 'logout.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -75,6 +83,18 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
+        exit;
+    }
+}
+
+// 21/09/2026 — perfil `avaliador` (módulo de checklist de vistoria do
+// veículo) nunca acessa funil de compra/vendas/WhatsApp/financeiro — mesma
+// técnica de allowlist central dos guards de `vendedor`/`financeiro` acima.
+if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
+    $paginaAtualAval = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $permitidasAval = ['avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php', 'meu_perfil.php', 'logout.php'];
+    if (!in_array($paginaAtualAval, $permitidasAval, true)) {
+        header('Location: /admin/avaliacoes.php');
         exit;
     }
 }

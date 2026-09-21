@@ -315,6 +315,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sucesso = $eraVendido
                     ? 'Devolução registrada — veículo liberado pra uma nova venda. Parcelas futuras ainda pendentes foram canceladas no financeiro (o que já tinha sido pago continua como receita).'
                     : 'Negociação cancelada — veículo liberado pra uma nova tentativa de venda.';
+            } elseif ($acao === 'criar_avaliacao') {
+                // Checklist de vistoria (entrega ao comprador) — só faz
+                // sentido depois do veículo vinculado (é o que dá
+                // oportunidade_id, sempre obrigatório em veiculo_avaliacoes).
+                if (!$v['oportunidade_id']) {
+                    $erro = 'Vincule um veículo da frota a esta negociação antes de criar a vistoria de entrega.';
+                } else {
+                    $novoAvaliadorId = (int)($_POST['avaliador_id'] ?? 0) ?: null;
+                    $novaAvaliacaoId = criarAvaliacao((int)$v['oportunidade_id'], 'venda', $id, $novoAvaliadorId, (int)$_SESSION['admin_id']);
+                    header('Location: /admin/avaliacao.php?id=' . $novaAvaliacaoId);
+                    exit;
+                }
             }
         } catch (Throwable $e) {
             $erro = $e->getMessage();
@@ -339,6 +351,8 @@ $stmtContratos->execute([$id]);
 $contratos = $stmtContratos->fetchAll();
 
 $usuarios = listarUsuarios();
+$avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
+$avaliacoesVeiculo = $v['oportunidade_id'] ? listarAvaliacoesDoVeiculo((int)$v['oportunidade_id']) : [];
 $atrasada = $v['proxima_acao_em'] && $v['proxima_acao_em'] < date('Y-m-d H:i:s');
 $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     ? round((float)$v['preco_venda'] / (float)$v['valor_fipe_referencia'] * 100, 2) : null;
@@ -867,6 +881,44 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         </div>
     <?php endforeach; ?>
 </div>
+
+<?php if ($v['oportunidade_id']): ?>
+<div class="card">
+    <h3>🔍 Checklist de vistoria do veículo</h3>
+    <?php if ($avaliacoesVeiculo): ?>
+        <table>
+            <thead><tr><th>Tipo</th><th>Status</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($avaliacoesVeiculo as $a): ?>
+                <tr>
+                    <td><?= $a['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?></td>
+                    <td><?= match ($a['status']) { 'concluida' => '✅ Concluída', 'em_andamento' => '🔧 Em andamento', default => '⏳ Pendente' } ?></td>
+                    <td><?= $a['avaliador_nome'] ? e($a['avaliador_nome']) : '<em>não atribuído</em>' ?></td>
+                    <td><?= date('d/m/Y H:i', strtotime($a['created_at'])) ?></td>
+                    <td><a href="/admin/avaliacao.php?id=<?= (int)$a['id'] ?>">Abrir →</a></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php else: ?>
+        <p><small>Nenhuma vistoria registrada ainda pra este veículo.</small></p>
+    <?php endif; ?>
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" style="margin-top:10px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="criar_avaliacao">
+            <label>Atribuir a (opcional)</label>
+            <select name="avaliador_id">
+                <option value="">— não atribuído ainda —</option>
+                <?php foreach ($avaliadoresDisponiveis as $u): ?>
+                    <option value="<?= (int)$u['id'] ?>"><?= e($u['nome']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit">+ Nova vistoria de entrega ao comprador</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
