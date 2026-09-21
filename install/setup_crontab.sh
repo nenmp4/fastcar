@@ -31,6 +31,7 @@ MARK="# fastcar-cron"
 
 CRON_LINES=$(cat <<EOF
 */30 * * * * $PHP_BIN $BASE_DIR/cron/followup.php >> $BASE_DIR/storage/logs/followup.log 2>&1 $MARK
+0 6 * * * $PHP_BIN $BASE_DIR/cron/leads_sem_resposta.php >> $BASE_DIR/storage/logs/leads_sem_resposta.log 2>&1 $MARK
 */30 * * * * $PHP_BIN $BASE_DIR/cron/zapsign_sync.php >> $BASE_DIR/storage/logs/zapsign_sync.log 2>&1 $MARK
 */30 * * * * $PHP_BIN $BASE_DIR/cron/asaas_sync.php >> $BASE_DIR/storage/logs/asaas_sync.log 2>&1 $MARK
 30 19 * * * $PHP_BIN $BASE_DIR/cron/resumo_produtividade.php >> $BASE_DIR/storage/logs/resumo_produtividade.log 2>&1 $MARK
@@ -52,5 +53,5 @@ CURRENT=$(crontab -l 2>/dev/null | grep -v "$MARK" || true)
   echo "$CRON_LINES"
 } | grep -v '^\s*$' | crontab -
 
-echo "✅ 10 cron jobs do Fastcar CRM instalados/atualizados (9 jobs + o puxador de deploy do webhook)."
+echo "✅ 11 cron jobs do Fastcar CRM instalados/atualizados (10 jobs + o puxador de deploy do webhook)."
 echo "Conferir com: crontab -l"

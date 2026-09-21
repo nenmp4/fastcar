@@ -555,3 +555,60 @@ function marcarPerdida(int $oportunidadeId, string $motivo, ?int $responsavelId 
     $db->prepare("UPDATE oportunidades SET motivo_perda = ? WHERE id = ?")->execute([clean($motivo), $oportunidadeId]);
     return mudarEtapa($oportunidadeId, $semPerfil ? 'sem_perfil' : 'perdido', $responsavelId, $motivo);
 }
+
+/**
+ * "7 dias de silêncio" (21/09/2026, pedido direto depois de ver ~25 leads
+ * sem nome que receberam reengajamento — cron/followup.php, bloco 3 — e
+ * nunca responderam nada, ficando presos pra sempre em 'whatsapp'/
+ * 'qualificacao_ia'. Diferente de `whatsapp_sessoes.turnos_sem_avanco`
+ * (só incrementa quando o CLIENTE responde mas sem dar dado novo —
+ * `iaProcessarTurno()` só roda quando chega mensagem nova dele), um
+ * cliente que nunca responde nada nunca dispara reprocessamento nenhum,
+ * então nada tirava esse lead do funil sozinho até hoje.
+ *
+ * Marca como 'perdido' — nunca 'sem_perfil' (o cliente pode ter perfil de
+ * compra genuíno, só sumiu, não foi desqualificado) — qualquer
+ * oportunidade ainda em 'whatsapp'/'qualificacao_ia' cuja última mensagem
+ * DO CLIENTE (nunca conta mensagem nossa, nem reengajamento automático)
+ * passou de LEADS_DIAS_SILENCIO_ENCERRAR dias; sem nenhuma mensagem 'in'
+ * registrada (não deveria acontecer — toda oportunidade nasce de uma
+ * mensagem recebida —, mas cobre o caso), usa `created_at` da própria
+ * oportunidade como referência.
+ *
+ * Se o cliente voltar a escrever meses depois, `criarOuAbrirOportunidade()`
+ * abre uma oportunidade NOVA pra ele — só reaproveita oportunidade em
+ * ETAPAS_ATIVAS, e 'perdido' não está nessa lista — então nada fica
+ * perdido de verdade, só sai da fila de pendências do consultor.
+ */
+const LEADS_DIAS_SILENCIO_ENCERRAR = 7;
+
+function encerrarLeadsSemResposta(): array {
+    $db = getDB();
+    $limite = date('Y-m-d H:i:s', strtotime('-' . LEADS_DIAS_SILENCIO_ENCERRAR . ' days'));
+
+    $candidatos = $db->query("
+        SELECT o.id, o.created_at, c.telefone,
+               (SELECT MAX(m.created_at) FROM whatsapp_mensagens m
+                WHERE m.telefone = c.telefone AND m.direcao = 'in') AS ultima_msg_in
+        FROM oportunidades o
+        JOIN clientes c ON c.id = o.cliente_id
+        WHERE o.etapa IN ('whatsapp', 'qualificacao_ia')
+    ")->fetchAll();
+
+    $encerrados = [];
+    foreach ($candidatos as $op) {
+        $referencia = $op['ultima_msg_in'] ?: $op['created_at'];
+        if ($referencia >= $limite) continue; // ainda dentro do prazo
+
+        $dias = (int)floor((time() - strtotime($referencia)) / 86400);
+        marcarPerdida(
+            (int)$op['id'],
+            "Cliente não respondeu por {$dias} dias — encerrado automaticamente por silêncio.",
+            null,
+            false
+        );
+        $encerrados[] = (int)$op['id'];
+    }
+
+    return ['encerrados' => count($encerrados), 'ids' => $encerrados, 'total_candidatos' => count($candidatos)];
+}
