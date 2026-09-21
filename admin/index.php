@@ -131,6 +131,14 @@ $totalFiltrado = (int)$stmtTotalFiltrado->fetchColumn();
 // QUALQUER view (Minhas/Todas ou dentro de uma etapa específica), na frente
 // de morno/frio/sem classificação — só depois disso entra o critério de
 // sempre (próxima ação atrasada/mais próxima primeiro, depois mais recente).
+// 21/09/2026, "sempre classificar mais recentes" — achado real (screenshot
+// de vários leads quentes SEM próxima ação marcada, aparecendo fora de ordem
+// de data): o desempate final usava updated_at (última vez que QUALQUER
+// coisa mudou na oportunidade — inclusive um toque automático que não é
+// "chegada" nenhuma), não created_at (a coluna "Recebido em" já mostrada na
+// própria tabela) — pra quem não tem próxima ação, a ordem não batia com a
+// data visível na tela. Trocado pra created_at DESC: mais recente primeiro,
+// de verdade, consistente com o que a coluna "Recebido em" mostra.
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
            u.nome AS responsavel_nome
@@ -139,7 +147,7 @@ $sql = "
     LEFT JOIN usuarios u ON u.id = o.responsavel_id
     {$where}
     ORDER BY CASE o.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
-             (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.updated_at DESC
+             (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.created_at DESC
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);

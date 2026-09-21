@@ -1932,6 +1932,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmando que `temperatura_lead` reavalia a cada chamada (não é
   fill-if-empty), nunca conta como avanço real, e ignora valor fora de
   frio/morno/quente.
+  **Desempate de ordenação trocado de `updated_at` pra `created_at`**
+  (21/09/2026, "sempre classificar mais recentes" — achado real via
+  screenshot: dashboard (`admin/index.php`) mostrando vários leads "🔥
+  Quente" sem próxima ação marcada fora de ordem de data, ex: lead de
+  16/09 aparecendo antes de um de 20/09) — a `ORDER BY` (`CASE
+  temperatura_lead` → `proxima_acao_em` → desempate final) usava
+  `updated_at DESC` como último critério; pra lead sem `proxima_acao_em`
+  (a maioria dos recém-qualificados), isso ordenava por "última vez que
+  QUALQUER coisa mudou na linha" — que pode não ter nada a ver com quando
+  o lead chegou — em vez de `created_at`, a mesma data já mostrada na
+  própria coluna "Recebido em" da tabela; por isso a ordem visível não
+  batia com a data visível. Mesmo padrão de `ORDER BY` duplicado em
+  `admin/index.php` (funil de compra) e `admin/vendas.php` (pipeline de
+  vendas) — corrigido nos dois junto, `created_at DESC` no lugar de
+  `updated_at DESC`. Testado: query isolada em banco isolado com 2
+  oportunidades "quente" sem próxima ação (uma criada ontem mas tocada
+  hoje de manhã, outra criada hoje à noite e nunca mais tocada) —
+  confirma que a mais recente por `created_at` vem primeiro agora, não a
+  mais recentemente tocada — + `php -l` + `tests/smoke.php` limpos.
   **Wizard de documentos do comprador implementado** (19/09/2026, "segue
   mesmmo rito do compras" — a tabela `venda_documentos`/coluna
   `vendas.documentos_token` tinham entrado no schema nesta mesma leva mas

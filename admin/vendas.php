@@ -74,7 +74,7 @@ $sql = "
     LEFT JOIN usuarios u ON u.id = v.responsavel_id
     {$where}
     ORDER BY CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
-             (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.updated_at DESC
+             (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
