@@ -307,8 +307,8 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "4.4. Pagamentos ao credor serão comprovados por documentos idôneos. A FASTCAR manterá trilha de acompanhamento e fornecerá ao VENDEDOR informações razoáveis sobre marcos relevantes.\n\n" .
             "4.5. Se a instituição exigir anuência, comparecimento, assinatura ou documento do VENDEDOR, este deverá cooperar em prazo razoável, sem assumir obrigações novas não previstas."],
         ["CLÁUSULA 5ª – PRAZO DE ATÉ {$prazoMeses} MESES",
-            "5.1. O prazo máximo começa na data indicada no Quadro-Resumo. Fica ajustado, entretanto, que o prazo supracitado será de até " .
-            (int)$prazoMeses . " (" . _extensoMeses((int)$prazoMeses) . ") meses, contados a partir dessa data, salvo quitação anterior, podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses.\n\n" .
+            "5.1. A quitação integral da obrigação financeira objeto deste contrato deverá ocorrer, em regra, no prazo inicial de 12 (doze) meses, contados a partir da data da efetiva entrega do veículo à FASTCAR, indicada no Quadro-Resumo. Fica ajustado, entretanto, que o prazo supracitado será de até " .
+            (int)$prazoMeses . " (" . _extensoMeses((int)$prazoMeses) . ") meses, podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses, desde que tal extensão derive de necessidade operacional, administrativa ou financeira, não configurando, em qualquer hipótese, inadimplemento, mora ou descumprimento contratual por parte da FASTCAR.\n\n" .
             "5.2. O prazo é limite máximo para obtenção da quitação e baixa do gravame, não simples prazo para início de negociação.\n\n" .
             "5.3. Nos 90, 60 e 30 dias anteriores ao termo final, a FASTCAR deverá promover revisão documentada do status da dívida e do plano de quitação."],
         ['CLÁUSULA 6ª – POSSE, GUARDA E ENTREGA',

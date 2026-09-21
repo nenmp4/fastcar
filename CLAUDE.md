@@ -2529,6 +2529,35 @@ segue no schema sem uso novo, não removida sem ganho real),
   de 24, regra já travada) gera "18 (dezoito)" etc a partir do número
   salvo. Testado gerando o PDF com prazo=18 e decodificando o conteúdo:
   texto batendo exatamente nos 2 lugares (Quadro-Resumo e cláusula 5.1).
+  **Cláusula 5.1 reforçada com prazo inicial fixo + proteção contra mora
+  na prorrogação** (21/09/2026, pedido direto colando o texto final
+  desejado da cláusula) — o texto da 5.1 ganhou 2 partes novas: (1) uma
+  1ª frase nova, sempre fixa em "12 (doze) meses" (não usa
+  `prazo_quitacao_meses` — é a regra geral inicial da empresa, distinta
+  do prazo efetivamente negociado por oportunidade), contada "a partir da
+  data da efetiva entrega do veículo à FASTCAR" (mesma data já rastreada
+  em `data_entrega_posse`); (2) a frase "Fica ajustado, entretanto..."
+  (já existia, usando `prazo_quitacao_meses`) ganhou o final "...desde que
+  tal extensão derive de necessidade operacional, administrativa ou
+  financeira, não configurando, em qualquer hipótese, inadimplemento,
+  mora ou descumprimento contratual por parte da FASTCAR" — proteção
+  legal nova, nunca existia antes. O texto colado pelo usuário usava o
+  termo "CESSIONÁRIO" (não usado em nenhum outro lugar do contrato, que
+  fala sempre em "FASTCAR"/"VENDEDOR") — confirmado com o usuário (2
+  perguntas diretas) que CESSIONÁRIO = FASTCAR (quem assume a obrigação
+  de quitar o financiamento) e que o "12" fica fixo enquanto o "18"
+  continua vindo do campo `prazo_quitacao_meses` já preenchido por
+  oportunidade (não virou tudo hardcoded) — texto final já traduzido pra
+  terminologia do contrato antes de aplicar. Só a Cláusula 5.1 mudou,
+  Quadro-Resumo e as outras cláusulas (1.3/4.1/10.1/18.3, que só citam o
+  prazo máximo genérico) ficaram como estavam. Testado: função isolada
+  (`clausulasContratoCompra(18)` — texto exato conferido, "FASTCAR" no
+  lugar de "CESSIONÁRIO", "18" vindo do parâmetro) + PDF real gerado
+  ponta a ponta (`montarCamposContratoCompra()` → `gerarPdfContratoCompra()`
+  com uma oportunidade semeada, `prazo_quitacao_meses=18`) decodificando
+  os content streams do FPDF: confirma "efetiva entrega", "doze" (12
+  meses fixo) e "operacional" (cláusula de exceção) presentes no PDF de
+  verdade, e nenhum resíduo de "CESSIONÁRIO" sobrando.
   **Aviso automático de assinatura confirmada** (18/09/2026, pergunta direta:
   "quando cliente assina o contrato tem como saber assinatura ok?") — até
   então era 100% "puxar": só descobria abrindo a oportunidade/venda na tela
