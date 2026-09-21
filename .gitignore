@@ -10,6 +10,11 @@ storage/uploads/*
 !storage/backups/.gitkeep
 !storage/uploads/.gitkeep
 
+# Fotos de perfil enviadas pelos usuários (admin/meu_perfil.php) — dado
+# pessoal por conta, nunca versionado, mesmo espírito de storage/uploads/.
+admin/assets/avatars/*
+!admin/assets/avatars/.gitkeep
+
 # Lock de execução dos crons que mandam WhatsApp (flock) — nunca tem
 # conteúdo relevante, só existe pra travar rodadas sobrepostas.
 storage/followup.lock

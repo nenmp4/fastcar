@@ -117,3 +117,47 @@ function redefinirSenhaUsuario(int $id, string $novaSenha): void {
     $db->prepare("UPDATE usuarios SET senha_hash = ? WHERE id = ?")
        ->execute([password_hash($novaSenha, PASSWORD_DEFAULT), $id]);
 }
+
+/**
+ * Autoedição do próprio perfil (21/09/2026, "Permita os usuários do
+ * sistema editar perfis deles trocar número e-mail nome") —
+ * `admin/meu_perfil.php`, disponível pra QUALQUER perfil logado. Nunca
+ * mexe em `perfil`/`bloqueado` (só `admin/usuarios.php`, restrito ao
+ * super_admin, faz isso — mesma trava de sempre, ninguém se auto-promove
+ * nem se desbloqueia por aqui). `email` é UNIQUE no schema — checado à
+ * mão ANTES do UPDATE pra devolver uma mensagem legível em vez de deixar
+ * a constraint do banco estourar como erro cru.
+ * @return array{ok:bool, erro:?string, campos_alterados:array}
+ */
+function atualizarPerfilProprio(int $id, string $nome, string $email, string $whatsapp): array {
+    $nome = trim($nome);
+    $email = trim(strtolower($email));
+    $whatsapp = clean($whatsapp);
+
+    if ($nome === '') {
+        return ['ok' => false, 'erro' => 'Nome não pode ficar vazio.', 'campos_alterados' => []];
+    }
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'erro' => 'E-mail inválido.', 'campos_alterados' => []];
+    }
+
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id FROM usuarios WHERE email = ? AND id != ?");
+    $stmt->execute([$email, $id]);
+    if ($stmt->fetch()) {
+        return ['ok' => false, 'erro' => 'Esse e-mail já está em uso por outra conta.', 'campos_alterados' => []];
+    }
+
+    $atual = buscarUsuario($id);
+    $camposAlterados = [];
+    if ($atual) {
+        if ($atual['nome'] !== $nome) $camposAlterados[] = 'nome';
+        if ($atual['email'] !== $email) $camposAlterados[] = 'email';
+        if ($atual['whatsapp'] !== $whatsapp) $camposAlterados[] = 'whatsapp';
+    }
+
+    $db->prepare("UPDATE usuarios SET nome = ?, email = ?, whatsapp = ? WHERE id = ?")
+       ->execute([clean($nome), $email, $whatsapp, $id]);
+
+    return ['ok' => true, 'erro' => null, 'campos_alterados' => $camposAlterados];
+}

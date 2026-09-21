@@ -2862,6 +2862,47 @@ segue no schema sem uso novo, não removida sem ganho real),
   resolver o caso "sou o único super_admin e esqueci a minha". Testado em
   banco isolado: senha antiga para de bater depois do reset, nova bate,
   e-mail inexistente é rejeitado com mensagem clara.
+- **Autoedição do próprio perfil (`admin/meu_perfil.php`)** (21/09/2026,
+  pedido direto: "Permita os usuários do sistema editar perfis deles trocar
+  número e-mail nome fazer upload de avatar") — tela nova, disponível pra
+  QUALQUER perfil logado (super_admin/consultor/supervisor/vendedor/
+  financeiro, inclusive os 2 siloed via allowlist em `admin/_bootstrap.php`),
+  distinta de `admin/usuarios.php` (edita OUTRO usuário, controla
+  `perfil`/`bloqueado`, restrita ao super_admin). `atualizarPerfilProprio()`
+  (`includes/usuarios.php`) estruturalmente nunca toca `perfil`/`bloqueado`
+  — essas colunas simplesmente não existem na função — e só reporta em
+  `campos_alterados` o que de fato mudou (comparado contra a linha antes do
+  UPDATE), mesma disciplina de nunca logar/auditar um no-op já usada em
+  `usuario_perfil_alterado`. `usuarios.email` é `UNIQUE`: checagem manual
+  `SELECT` antes do `UPDATE` devolve "já está em uso" em vez de deixar a
+  constraint do SQLite estourar cru. **Avatar sem coluna nova no banco** —
+  `includes/avatar.php` (novo) usa caminho previsível
+  (`admin/assets/avatars/{usuario_id}.png`, gitignored igual a
+  `storage/uploads/`), `is_file()`+`filemtime()` na hora de renderizar
+  (mesmo padrão `?v=filemtime()` já usado no CSS), sem precisar de
+  migração. `avatarGerarQuadradoCover()` — diferente de
+  `marcaGerarQuadrado()` (`includes/marca.php`, "fit"/padding com cor
+  sólida, certo pra logo) — implementa "cover" de verdade via GD: escala
+  pelo MAIOR entre largura/altura (a imagem sobra do quadrado) e corta o
+  excesso do centro, sem barra/distorção, certo pra foto de rosto.
+  Trocar o nome sincroniza `$_SESSION['admin_nome']` na hora (sem isso só
+  atualizaria depois de logout/login, já que a topbar mostra "Olá,
+  {nome}" direto da sessão). Eventos novos em `auditoriaRotuloEvento()`:
+  `perfil_proprio_editado` (🙋, grava só QUAIS campos mudaram, nunca
+  valor antigo/novo) e `avatar_atualizado` (🖼️). Link "🙋 Meu perfil" no
+  topbar antes de "Sair" nas 3 telas raiz de cada perfil
+  (`admin/index.php`, `admin/vendas.php`, `admin/financeiro.php`).
+  Testado ponta a ponta via HTTP real (sessão primed direto, sem passar
+  pelo 2FA — inviável em sandbox sem WhatsApp/e-mail real): perfil
+  `vendedor` (siloed) acessa a tela normal via allowlist; editar
+  nome/e-mail/WhatsApp salva certo e a topbar reflete o nome novo sem
+  logout; e-mail duplicado rejeitado com mensagem clara e ZERO alteração
+  no banco (conferido linha a linha); upload de foto real via multipart
+  gera PNG 256×256 cover-crop servido com `Content-Type: image/png`;
+  remover foto apaga o arquivo e volta pro círculo de iniciais; os 4
+  eventos de auditoria (2× `perfil_proprio_editado`, 2×
+  `avatar_atualizado`) conferidos direto no banco com `usuario_id`/
+  `detalhe` certos.
 - **2º fator obrigatório no login + bloqueio automático por senha errada**
   (20/09/2026, "dois fatores usando código enviado pelo WhatsApp e ou
   e-mail igual do jurídico Sass — tentativa de login") — item que estava

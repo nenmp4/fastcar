@@ -86,6 +86,8 @@ function auditoriaRotuloEvento(string $evento): string {
         'usuario_senha_redefinida' => '🔑 Senha redefinida',
         'conversa_excluida' => '🗑️ Conversa WhatsApp excluída',
         'cliente_dado_editado' => '✏️ Dado sensível de cliente editado',
+        'perfil_proprio_editado' => '🙋 Usuário editou o próprio perfil',
+        'avatar_atualizado' => '🖼️ Avatar atualizado',
         default => $evento,
     };
 }

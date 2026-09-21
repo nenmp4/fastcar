@@ -38,6 +38,7 @@ require_once __DIR__ . '/../includes/financeiro.php';
 require_once __DIR__ . '/../includes/asaas.php';
 require_once __DIR__ . '/../includes/cnpj.php';
 require_once __DIR__ . '/../includes/auditoria.php';
+require_once __DIR__ . '/../includes/avatar.php';
 
 requireAdmin();
 
@@ -47,7 +48,7 @@ requireAdmin();
 // arquivo por arquivo em cada tela de compra já existente.
 if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     $paginaAtualVendedor = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php', 'logout.php'];
+    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php', 'meu_perfil.php', 'logout.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -70,7 +71,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
         'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'clientes.php',
         'cliente_detalhe.php', 'financeiro_inbox.php', 'financeiro-relatorio-dre.php',
         'financeiro-relatorio-extrato.php', 'financeiro-relatorios.php',
-        'financeiro-empresa.php', 'logout.php',
+        'financeiro-empresa.php', 'meu_perfil.php', 'logout.php',
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
