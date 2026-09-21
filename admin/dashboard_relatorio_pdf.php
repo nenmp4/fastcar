@@ -88,6 +88,13 @@ $titulo = [
 };
 if ($busca !== '') $titulo .= ' — busca: "' . $busca . '"';
 
-$pdf = gerarRelatorioDashboardPdf($db, $where, $params, $titulo);
+// 21/09/2026, "ideal gerar com detalhe trazer resumos das convesas" —
+// opt-in via ?detalhado=1 (link separado em admin/index.php), nunca o
+// padrão — ver includes/dashboard_pdf.php pro racional completo.
+$comResumo = ($_GET['detalhado'] ?? '') === '1';
+if ($comResumo) $titulo .= ' (com resumo da IA)';
+
+$pdf = gerarRelatorioDashboardPdf($db, $where, $params, $titulo, $comResumo);
 ob_end_clean();
-$pdf->Output('I', 'relatorio_oportunidades_' . date('Y-m-d_His') . '.pdf');
+$nomeArquivo = ($comResumo ? 'relatorio_detalhado_' : 'relatorio_oportunidades_') . date('Y-m-d_His') . '.pdf';
+$pdf->Output('I', $nomeArquivo);

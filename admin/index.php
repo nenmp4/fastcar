@@ -425,6 +425,14 @@ if ($filtroEspecialLabel !== ''): ?>
         $pdfQs = $pdfQsPartes ? '?' . implode('&', $pdfQsPartes) : '';
     ?>
     <a class="btn" style="margin-top:10px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQs ?>" target="_blank">📄 Gerar PDF do relatório</a>
+    <?php
+        // 21/09/2026, "ideal gerar com detalhe trazer resumos das convesas"
+        // — 2º link opt-in, nunca o padrão (relatório detalhado com o
+        // resumo_ia de cada lead quebra a visão rápida de tabela pra
+        // listas grandes — ver includes/dashboard_pdf.php).
+        $pdfQsDetalhado = $pdfQs !== '' ? $pdfQs . '&detalhado=1' : '?detalhado=1';
+    ?>
+    <a class="btn" style="margin-top:10px;margin-left:8px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQsDetalhado ?>" target="_blank">📄💬 PDF detalhado (com resumo da IA)</a>
 </div>
 
 <table class="tabela-oportunidades">

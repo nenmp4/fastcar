@@ -3510,6 +3510,24 @@ segue no schema sem uso novo, não removida sem ganho real),
   de hoje; PDF gerado começa com `%PDF` e o conteúdo decodificado confirma
   título "Leads novos ontem" + linha "Cliente Ontem"/"WhatsApp" sem emoji)
   + lint + `tests/smoke.php` limpo.
+  **Modo detalhado com resumo da IA** (mesmo dia, "nos relatorios ideal
+  gerar com detalhe trazer resumos das convesas o que acha?" — confirmado
+  com screenshot que era esse mesmo relatório, tabela compacta sem resumo
+  nenhum). `gerarRelatorioDashboardPdf()` (`includes/dashboard_pdf.php`)
+  ganhou `bool $comResumo` — opt-in via `?detalhado=1`, nunca o padrão:
+  numa lista de 50+ leads o `resumo_ia` inteiro de cada um quebraria a
+  visão rápida de tabela que já serve bem pro dia a dia. Modo detalhado
+  troca a tabela por 1 bloco por oportunidade (cabeçalho compacto —
+  veículo/etapa/responsável/data — seguido do `resumo_ia`, dado que a
+  qualificação por IA já gera, checklist ✅/⚠️, nada novo inventado aqui);
+  lead sem resumo mostra "— sem resumo da IA ainda —" em vez de ficar
+  vazio. 2º botão "📄💬 PDF detalhado (com resumo da IA)" em
+  `admin/index.php`, ao lado do de sempre, preservando o mesmo filtro/
+  etapa/busca ativo. Testado: função isolada decodificando os content
+  streams do PDF (`gzuncompress`) — modo padrão confirmado SEM nenhum
+  vestígio de `resumo_ia` (zero regressão no relatório de sempre), modo
+  detalhado confirmado trazendo o resumo real de um lead e o placeholder
+  certo pro lead sem resumo + `php -l` + `tests/smoke.php` limpos.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
