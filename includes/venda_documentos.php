@@ -41,6 +41,20 @@ const TIPOS_DOCUMENTOS_COMPRADOR = [
 ];
 
 /**
+ * Contrato de venda em si, igual o lado de compra já mostra "Contrato de
+ * compra (Fastcar)" na mesma lista de documentos (TIPOS_DOCUMENTOS_FECHAMENTO,
+ * includes/documentos.php) — 21/09/2026, "na lista de documento deveria
+ * mostrar contrato de vendas igual do compras". Diferente de
+ * TIPOS_DOCUMENTOS_COMPRADOR (o comprador sobe pelo wizard), esse é
+ * preenchido sozinho quando a ZapSign confirma a assinatura
+ * (includes/contratos.php::zapsignSincronizarContrato()) — nunca sobe pelo
+ * wizard público, por isso fica em constante separada.
+ */
+const TIPOS_DOCUMENTOS_VENDA_CONTRATO = [
+    'contrato_venda' => 'Contrato de venda (Fastcar)',
+];
+
+/**
  * Token do link público — só faz sentido gerar depois que a venda já tem
  * veículo vinculado (`oportunidade_id` preenchido, `vincularVeiculoVenda()`
  * já rodou), já que o destino Drive da cópia dos documentos depende do

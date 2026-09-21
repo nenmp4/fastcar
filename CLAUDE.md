@@ -2022,6 +2022,30 @@ segue no schema sem uso novo, não removida sem ganho real),
   login; token inválido mostra "link inválido") + migração testada contra
   schema pré-mudança (coluna e tabela criadas, dado pré-existente
   preservado, idempotente numa 2ª rodada).
+  **Contrato de venda aparece na lista de documentos, igual compras**
+  (21/09/2026, "na lista de documento deveria mostrar contrato de vendas
+  igual do compras") — o card "📎 Documentos do comprador" só mostrava
+  CNH/comprovante de endereço (`TIPOS_DOCUMENTOS_COMPRADOR`), sem nenhuma
+  linha pro contrato de venda em si, diferente do lado de compra
+  (`admin/oportunidade.php`, que já mostra "Contrato de compra (Fastcar)"
+  na mesma lista via `TIPOS_DOCUMENTOS_FECHAMENTO`). Nova
+  `TIPOS_DOCUMENTOS_VENDA_CONTRATO` (`includes/venda_documentos.php`),
+  separada de propósito de `TIPOS_DOCUMENTOS_COMPRADOR` — o comprador
+  nunca sobe esse documento pelo wizard, ele é preenchido sozinho quando a
+  ZapSign confirma a assinatura, nunca aparece no formulário de anexo
+  manual. `zapsignSincronizarContrato()` (`includes/contratos.php`), no
+  branch de venda, ganhou o mesmo `INSERT...ON CONFLICT DO UPDATE` em
+  `venda_documentos` que o lado de compra já fazia em
+  `oportunidade_documentos` pra `contrato_compra` — nunca duplica linha
+  numa resincronização, sempre atualiza pro arquivo mais recente. Linha
+  nova mostra "⏳ pendente" antes de assinar e "✅ assinado {data}" com link
+  "ver" depois; nunca bloqueia nada (venda não tem checklist de
+  fechamento, regra #7 é só de compra). Testado: INSERT/upsert isolado
+  contra tabela real (1ª chamada cria a linha, 2ª — simulando
+  resincronização — atualiza o `drive_file_id` sem duplicar, confirmado
+  via `COUNT=1`) + lookup por tipo (`contrato_venda` achado, `cnh` nunca
+  inserido retorna `null`, sem erro) + `php -l` + `tests/smoke.php`
+  limpos.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

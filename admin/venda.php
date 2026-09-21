@@ -591,6 +591,24 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <td><?= $temArquivo ? '<a href="/admin/ver_documento_venda.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
             </tr>
         <?php endforeach; ?>
+        <?php foreach (TIPOS_DOCUMENTOS_VENDA_CONTRATO as $tipo => $label): ?>
+            <?php
+                $doc = $documentosVenda[$tipo] ?? null;
+                $temArquivo = $doc && ($doc['arquivo_url'] || $doc['drive_file_id']);
+            ?>
+            <tr>
+                <td><?= e($label) ?></td>
+                <td>
+                    <?php if ($temArquivo): ?>
+                        <span class="badge badge-ok">✅ assinado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
+                    <?php else: ?>
+                        <span class="badge badge-atraso">⏳ pendente</span>
+                    <?php endif; ?>
+                </td>
+                <td>equipe</td>
+                <td><?= $temArquivo ? '<a href="/admin/ver_documento_venda.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
+            </tr>
+        <?php endforeach; ?>
         </tbody>
     </table>
 

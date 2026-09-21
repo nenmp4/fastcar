@@ -546,6 +546,19 @@ function zapsignSincronizarContrato(int $contratoId): void {
                 // 'contrato_enviado' (nunca força de volta se alguém já
                 // cancelou a negociação manualmente nesse meio-tempo).
                 if ($driveFileId || $arquivoUrl) {
+                    // 21/09/2026, "na lista de documento deveria mostrar
+                    // contrato de vendas igual do compras" — mesmo padrão do
+                    // INSERT de contrato_compra logo abaixo, só que em
+                    // venda_documentos (nunca bloqueia nada, venda não tem
+                    // checklist de fechamento — regra #7 é só compra).
+                    $db->prepare("
+                        INSERT INTO venda_documentos (venda_id, tipo, drive_file_id, arquivo_url, obrigatorio, enviado_pelo_cliente, updated_at)
+                        VALUES (?, 'contrato_venda', ?, ?, 0, 0, datetime('now','localtime'))
+                        ON CONFLICT(venda_id, tipo) DO UPDATE SET
+                            drive_file_id = excluded.drive_file_id, arquivo_url = excluded.arquivo_url,
+                            updated_at = datetime('now','localtime')
+                    ")->execute([$c['venda_id'], $driveFileId, $arquivoUrl]);
+
                     $etapaVendaAtual = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
                     $etapaVendaAtual->execute([$c['venda_id']]);
                     if ($etapaVendaAtual->fetchColumn() === 'contrato_enviado') {
