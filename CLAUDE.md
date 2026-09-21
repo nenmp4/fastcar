@@ -3528,6 +3528,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   vestígio de `resumo_ia` (zero regressão no relatório de sempre), modo
   detalhado confirmado trazendo o resumo real de um lead e o placeholder
   certo pro lead sem resumo + `php -l` + `tests/smoke.php` limpos.
+  **Card "Leads novos hoje/ontem/na semana" inflado, não batendo com a
+  listagem** (mesmo dia, achado real do usuário colando a listagem de
+  `?filtro=hoje` — 17 linhas, batendo com o PDF gerado antes — contra o
+  card mostrando um número maior, 37, depois corrigido pra 31) —
+  `dashboardSuperAdmin()` (`includes/dashboard.php`) contava
+  `novasHoje`/`novasOntem`/`novasSemana` SEM nenhum filtro de etapa
+  (qualquer oportunidade criada no período, mesmo já
+  `perdido`/`sem_perfil`/`fechado`), mas o clique no card
+  (`?filtro=hoje/ontem/semana`, `admin/index.php`) sempre restringiu a
+  listagem a `ETAPAS_ATIVAS` — exatamente o comportamento que o
+  comentário de 18/09/2026 já documentava como intenção ("listando
+  exatamente o que o card está contando"), só a contagem nunca tinha sido
+  alinhada com isso de verdade. Corrigido restringindo as 3 contagens a
+  `etapa IN (ETAPAS_ATIVAS)`, mesmo padrão já usado nas contagens
+  `ativas`/`atrasadas` logo acima na mesma função. Testado: função
+  isolada reproduzindo o cenário exato reportado (5 leads hoje em etapa
+  ativa + 3 `perdido` hoje + 2 `fechado` hoje + 1 de ontem) — card e a
+  query real da listagem "hoje" agora batem exatamente em 5, nenhum dos
+  perdidos/fechados/de-ontem contando + `php -l` + `tests/smoke.php`
+  limpos.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,

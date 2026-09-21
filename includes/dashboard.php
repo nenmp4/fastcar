@@ -194,11 +194,24 @@ function dashboardSuperAdmin(): array {
     $stmt->execute(ETAPAS_ATIVAS);
     $atrasadas = (int)$stmt->fetchColumn();
 
-    $novasHoje = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE date(created_at) = date('now','localtime')")->fetchColumn();
-    // 21/09/2026, "pode colocar fitro por dia ontem hoje" — mesmo padrão de
-    // novasHoje, só um dia antes.
-    $novasOntem = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE date(created_at) = date('now','localtime','-1 day')")->fetchColumn();
-    $novasSemana = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE created_at >= datetime('now','-7 days','localtime')")->fetchColumn();
+    // 21/09/2026, achado real (usuário colou a listagem de "?filtro=hoje" —
+    // 17 linhas — contra o card mostrando 37/31): estas 3 contagens não
+    // filtravam por etapa nenhuma (contavam TUDO criado no período, mesmo
+    // já 'perdido'/'sem_perfil'/'fechado'), mas o clique no card
+    // (?filtro=hoje/ontem/semana, admin/index.php) sempre restringiu a
+    // ETAPAS_ATIVAS — o comentário de 18/09/2026 já documentava a intenção
+    // ("listando exatamente o que o card está contando"), só a contagem
+    // aqui nunca tinha sido alinhada com isso. Restringido a ETAPAS_ATIVAS
+    // pra bater com o que a lista de verdade mostra ao clicar.
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt->execute(ETAPAS_ATIVAS);
+    $novasHoje = (int)$stmt->fetchColumn();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt->execute(ETAPAS_ATIVAS);
+    $novasOntem = (int)$stmt->fetchColumn();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE etapa IN ({$ph}) AND created_at >= datetime('now','-7 days','localtime')");
+    $stmt->execute(ETAPAS_ATIVAS);
+    $novasSemana = (int)$stmt->fetchColumn();
 
     $r = $db->query("
         SELECT COUNT(*) AS qtd, COALESCE(SUM(valor_final), 0) AS total
