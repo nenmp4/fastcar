@@ -186,10 +186,24 @@ foreach ($esfriando as $op) {
     $ultimoReeng = getConfig($guardKey);
     if ($ultimoReeng && (time() - strtotime($ultimoReeng)) < 24 * 3600) continue;
 
+    // Variações (21/09/2026, mesmo racional de RECUPERACAO_MSGS_REENGAJAMENTO
+    // em includes/recuperacao_leads.php) — esse reengajamento roda o tempo
+    // todo, não só numa campanha pontual, então frase idêntica repetida ao
+    // longo do tempo também soma pro mesmo risco de padrão de antispam.
     $nome = $op['nome'] ?: '';
-    $msg  = $nome
-        ? "Oi {$nome}! Vi que a conversa ficou pela metade — ainda tá pensando em vender o veículo? Se quiser continuar é só me responder por aqui. 🙂"
-        : "Oi! Vi que a conversa ficou pela metade — ainda tá pensando em vender o veículo? Se quiser continuar é só me responder por aqui. 🙂";
+    $msg = $nome
+        ? variarMensagem([
+            "Oi {$nome}! Vi que a conversa ficou pela metade — ainda tá pensando em vender o veículo? Se quiser continuar é só me responder por aqui. 🙂",
+            "Olá {$nome}, tudo bem? Percebi que nossa conversa parou no meio — ainda tem interesse em vender o veículo? Fico no aguardo!",
+            "Oi {$nome}! Ficamos sem resposta por aqui — você ainda pretende vender o carro? Se sim, é só me chamar que a gente continua 😊",
+            "Olá {$nome}! Vi que ficou pendente nossa conversa — ainda está pensando em vender o veículo? Me conta quando puder!",
+        ])
+        : variarMensagem([
+            "Oi! Vi que a conversa ficou pela metade — ainda tá pensando em vender o veículo? Se quiser continuar é só me responder por aqui. 🙂",
+            "Olá, tudo bem? Percebi que nossa conversa parou no meio — ainda tem interesse em vender o veículo? Fico no aguardo!",
+            "Oi! Ficamos sem resposta por aqui — você ainda pretende vender o carro? Se sim, é só me chamar que a gente continua 😊",
+            "Olá! Vi que ficou pendente nossa conversa — ainda está pensando em vender o veículo? Me conta quando puder!",
+        ]);
 
     $ok = zapiEnviarTexto($op['telefone'], $msg);
     log_followup(($ok ? '✅' : '❌') . " Reengajamento → oportunidade #{$op['id']} ({$op['telefone']})");

@@ -618,7 +618,15 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 // deixa o lead sem resposta nenhuma (achado real: bot ficava
                 // mudo se a 1ª mensagem fosse um áudio), só não roda extração
                 // de dados em cima de algo que não conseguimos interpretar.
-                $textoAck = 'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?';
+                // Variações (21/09/2026, mesmo racional documentado em
+                // includes/recuperacao_leads.php) — evita repetir texto
+                // idêntico em volume ao longo do tempo.
+                $textoAck = variarMensagem([
+                    'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?',
+                    'Chegou aqui! 🙂 Consegue me explicar em texto ou mandar um áudio?',
+                    'Recebi! Pode me contar em texto ou áudio, por favor? 😊',
+                    'Chegou por aqui, obrigado! Consegue me passar isso em texto ou áudio?',
+                ]);
                 if (zapiEnviarTexto($phone, $textoAck)) {
                     registrarMensagem($phone, 'out', $textoAck, null, true);
                 }

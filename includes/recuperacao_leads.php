@@ -43,12 +43,24 @@ require_once __DIR__ . '/oportunidades.php'; // criarOuAbrirOportunidade()
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem()
 
 /**
- * Mensagem fixa de desculpa + reengajamento — nunca gerada pela IA
- * (a IA só entra depois, quando/se a pessoa responder isso). Faz as 2
- * coisas juntas (desculpa + pergunta) de propósito: é a ÚNICA mensagem
- * proativa deste fluxo, não faz sentido separar em duas.
+ * Variações da mensagem de desculpa + reengajamento — nunca geradas pela IA
+ * (a IA só entra depois, quando/se a pessoa responder isso), 1 sorteada por
+ * envio via `variarMensagem()` (`includes/whatsapp_config.php`). Antes era
+ * 1 texto fixo só — achado real 21/09/2026: mandou a mesma frase pra ~48
+ * clientes numa tarde só, exatamente o padrão que mais aciona antispam do
+ * WhatsApp num número que já tinha sido bloqueado antes (ver incidente de
+ * flood, CLAUDE.md). Faz as 2 coisas juntas (desculpa + pergunta) de
+ * propósito em toda variação: é a ÚNICA mensagem proativa deste fluxo, não
+ * faz sentido separar em duas.
  */
-const RECUPERACAO_MSG_REENGAJAMENTO = 'Oi! Peço desculpas pela demora no retorno — tivemos uma instabilidade técnica aqui e sua mensagem acabou ficando parada, sem resposta. Ainda tem interesse em vender seu veículo? Me conta um pouco mais que eu te ajudo! 😊';
+const RECUPERACAO_MSGS_REENGAJAMENTO = [
+    'Oi! Peço desculpas pela demora no retorno — tivemos uma instabilidade técnica aqui e sua mensagem acabou ficando parada, sem resposta. Ainda tem interesse em vender seu veículo? Me conta um pouco mais que eu te ajudo! 😊',
+    'Olá! Desculpa a demora — tivemos um problema técnico por aqui e sua mensagem não foi respondida a tempo. Você ainda pretende vender o seu veículo? Fico à disposição pra te ajudar! 🙂',
+    'Oi, tudo bem? Passando pra pedir desculpas pela demora — tivemos uma instabilidade no sistema e sua mensagem ficou parada sem resposta. Ainda está pensando em vender o carro? Me conta mais detalhes!',
+    'Olá! Foi mal a demora no retorno, tivemos um probleminha técnico aqui. Você ainda tem interesse em vender seu veículo? Se ainda tiver, me conta um pouco mais sobre ele 😊',
+    'Oi! Peço desculpas — nosso sistema ficou fora do ar por um tempo e sua mensagem não chegou até a gente. Ainda pretende vender o veículo? Me dá mais detalhes que eu te ajudo a avaliar!',
+    'Olá, tudo certo? Tivemos uma instabilidade técnica e acabamos não respondendo sua mensagem a tempo, desculpa por isso. Ainda tem interesse em vender seu carro? Conta um pouco mais pra mim!',
+];
 
 function recuperacaoLogDiagnostico(string $mensagem): void {
     $dir = __DIR__ . '/../storage/logs';
@@ -156,13 +168,14 @@ function recuperacaoProcessarLote(int $tamanhoLote = 10, string $desde = '2026-0
         $telefone = $c['telefone'];
         try {
             $oportunidade = criarOuAbrirOportunidade($telefone, $c['nome']);
+            $msg = variarMensagem(RECUPERACAO_MSGS_REENGAJAMENTO);
 
-            if (!zapiEnviarTexto($telefone, RECUPERACAO_MSG_REENGAJAMENTO)) {
+            if (!zapiEnviarTexto($telefone, $msg)) {
                 $pulados++;
                 $detalhe[] = ['telefone' => $telefone, 'ok' => false, 'motivo' => 'zapiEnviarTexto() falhou'];
                 continue;
             }
-            registrarMensagem($telefone, 'out', RECUPERACAO_MSG_REENGAJAMENTO, null, true);
+            registrarMensagem($telefone, 'out', $msg, null, true);
 
             $processados++;
             $detalhe[] = ['telefone' => $telefone, 'ok' => true, 'oportunidade_id' => $oportunidade['oportunidade_id'] ?? null];

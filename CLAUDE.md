@@ -3035,6 +3035,61 @@ segue no schema sem uso novo, não removida sem ganho real),
   fake: fallback assume quando a principal falha, log gravado, alerta
   disparado pros números configurados, dedup bloqueando reenvio numa 2ª
   falha em seguida, indicador de Saúde lendo o log certo.
+- **Recuperação de leads perdidos no bloqueio de WhatsApp**
+  (`includes/recuperacao_leads.php` + `cron/recuperacao_leads.php`,
+  19-20/09/2026, achado real: "estamos deste ontem tav bloqueado wahatsApp
+  - conseguimos normalizar mais ficou quase 100 leads que não veio desde
+  sexta") — cruza `GET /chats` da Z-API (confirmado contra a instância
+  real, nunca documentado/usado antes) com `clientes`, achando quem mandou
+  mensagem durante o bloqueio e nunca virou lead aqui. `GET
+  /chat-messages/{phone}` (recuperar o texto exato da mensagem perdida)
+  responde `HTTP 400 "Does not work in multi device version"` contra a
+  instância real — limitação da própria API, não bug daqui; desenho final
+  nunca finge que recebeu a mensagem antiga, manda uma mensagem PROATIVA
+  de verdade (desculpa + pergunta se ainda tem interesse), cria a
+  oportunidade via `criarOuAbrirOportunidade()` (mesma função de entrada
+  normal), e só quando/se a pessoa responder o webhook normal assume a
+  qualificação do zero. Processa em lotes de 10 a cada 15min via cron
+  (nunca tudo de uma vez, mesmo cuidado do incidente de flood documentado
+  acima). Idempotência simples: telefone já em `clientes` nunca é
+  reprocessado.
+  **Mensagem fixa idêntica em volume + instância desconectada, 21/09/2026**
+  — investigando por que nenhum dos ~48 leads recuperados respondeu:
+  (1) `admin/saude.php` mostrou a instância principal **desconectada**
+  bem depois do lote ter saído — enquanto assim, envio não confirma
+  entrega de verdade; usuário reconectando via QR Code no painel Z-API. (2)
+  Achado no código, antes de qualquer confirmação de bug em produção: a
+  mensagem de reengajamento (`RECUPERACAO_MSG_REENGAJAMENTO`) era um texto
+  FIXO, idêntico pra todo mundo — mandar a mesma frase pra ~48 números numa
+  tarde só é exatamente o padrão que mais aciona antispam do WhatsApp, e
+  ainda mais arriscado num número que já tinha sido bloqueado antes.
+  Corrigido com `variarMensagem()` (novo, `includes/whatsapp_config.php`,
+  `array_rand()` simples — nunca via IA aqui, não é dado que precisa ser
+  preciso, gerar via IA numa rotina de cron só adicionaria custo/latência/
+  risco sem necessidade real) sorteando 1 entre 5-6 variações pré-escritas
+  do mesmo recado. Aplicado nos 3 pontos do projeto que mandavam texto
+  fixo idêntico repetido pro cliente: `RECUPERACAO_MSGS_REENGAJAMENTO`
+  (`includes/recuperacao_leads.php`, o caso mais crítico — volume alto
+  numa janela curta), o reengajamento de lead esfriando em
+  `cron/followup.php` (roda o tempo todo, não só campanha pontual, então
+  o volume ao longo do tempo também soma pro mesmo risco), e a resposta de
+  mídia não suportada em `chatbot-whatsapp/includes/mensagens.php` (risco
+  bem menor, caso raro, incluído por completude a pedido do usuário).
+  ⚠️ **Achado real de código, ainda não confirmado como causa definitiva
+  em produção**: `recuperacaoProcessarLote()` chama
+  `criarOuAbrirOportunidade()` **antes** de checar se `zapiEnviarTexto()`
+  deu certo — se o envio falhar (instância desconectada, por exemplo), a
+  oportunidade já foi criada mesmo assim, e como
+  `recuperacaoTelefonesFaltando()` só considera candidato quem AINDA não é
+  cliente cadastrado, esse telefone nunca mais é tentado de novo
+  automaticamente — fica "processado" no banco sem nunca ter recebido
+  mensagem nenhuma de verdade. Ainda não corrigido (aguardando confirmar,
+  via `storage/logs/recuperacao_leads_*.log`, quantos dos 38 "PULADO"
+  batem nesse padrão antes de mexer na ordem create→envio). Testado (só a
+  variação de mensagem, já commitada): `variarMensagem()` isolada (sorteia
+  dentro do conjunto, nunca fora, array vazio não quebra, lista com 1 item
+  sempre retorna ele mesmo) + `RECUPERACAO_MSGS_REENGAJAMENTO` confirmada
+  com 6 variações, todas distintas entre si.
 - **Dashboard por perfil** — `admin/index.php` mostra cards diferentes pra
   cada perfil (`includes/dashboard.php`): consultor vê a própria carteira
   de atendimento (ativas/atrasadas/recebidas na semana/status da fila) E o

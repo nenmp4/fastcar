@@ -496,6 +496,23 @@ function _zapiUrlFotoValida($url): bool {
     return str_starts_with($url, 'http://') || str_starts_with($url, 'https://');
 }
 
+/**
+ * Sorteia 1 texto entre variações pré-escritas pro MESMO recado — 21/09/2026,
+ * achado real: `cron/recuperacao_leads.php` mandou o mesmo texto fixo pra
+ * ~48 clientes numa tarde só, e a instância principal apareceu desconectada
+ * logo depois; mensagem idêntica em volume é justamente o padrão que mais
+ * costuma acionar antispam do WhatsApp — ainda mais num número que já foi
+ * bloqueado antes (ver incidente de flood, CLAUDE.md). Sorteio simples
+ * (nunca via IA aqui — não é dado que precisa ser preciso/confiável, é só
+ * forma de escrever, gerar via IA numa rotina de cron adicionaria custo/
+ * latência/risco de erro sem necessidade real) — cada call site mantém sua
+ * própria lista de variações, só o sorteio é compartilhado.
+ */
+function variarMensagem(array $variantes): string {
+    if (!$variantes) return '';
+    return $variantes[array_rand($variantes)];
+}
+
 /** Mesmo padrão de logDiagnosticoMidiaZapi() — grava o corpo cru quando
  *  nenhum nome de campo esperado bate, pra achar o formato real depois. */
 function _zapiLogDiagnosticoContato(string $phone, $detalhe): void {
