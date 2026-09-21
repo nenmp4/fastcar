@@ -3183,6 +3183,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   filtro" volta à visão padrão; clicar num card navega pra URL com o
   `?filtro=` certo; combinação filtro+busca funciona; nav por etapa/aba
   Fechadas continuam funcionando sem filtro ativo (sem regressão).
+  **Filtro "ontem" + badge de status por etapa + PDF do relatório**
+  (21/09/2026, 3 pedidos diretos: "pode colocar fitro por dia ontem hoje
+  para saber lista por data dos leads" — confirmado com screenshot de
+  `?filtro=hoje` já funcionando em produção —, "coloca botão para gerar
+  pdf relatório" e "mostra status da etapa"). (1) `?filtro=ontem` novo,
+  mesmo padrão exato de `?filtro=hoje` só um dia antes
+  (`date(o.created_at) = date('now','localtime','-1 day')`) — card "Leads
+  novos ontem" ao lado do de hoje (mesmo escopo super_admin/supervisor de
+  onde "hoje" já existia), `novas_ontem` novo em `dashboardSuperAdmin()`
+  (`includes/dashboard.php`). (2) coluna Etapa da tabela virou um badge
+  colorido — `etapaBadgeClasse()` (novo, `includes/oportunidades.php`),
+  reaproveitando as classes `.badge-ok`/`.badge-atraso`/`.badge-aviso`/
+  `.badge-info` já existentes: verde pra fechado, vermelho pra perdido,
+  amarelo pra sem perfil, azul pras etapas ainda ativas do funil — status
+  visual rápido sem precisar ler o texto. (3) `includes/dashboard_pdf.php`
+  (novo, `gerarRelatorioDashboardPdf()`) + `admin/dashboard_relatorio_pdf.php`
+  (novo, `ob_start()`/`Output('I',...)`, mesmo padrão dos outros relatórios
+  em PDF do projeto) — botão "📄 Gerar PDF do relatório" na tela, ao lado da
+  busca, listando em paisagem (mesmo padrão de `includes/financeiro_extrato.php`,
+  reaproveitando só `_pdfTexto()` de `includes/contratos_pdf.php`) exatamente
+  o que a tabela está mostrando (mesmo filtro/etapa/busca ativo no momento),
+  sem paginação — todas as linhas, não só a página atual na tela. Etapa no
+  PDF sai sem o emoji (FPDF é ISO-8859-1, sem suporte a emoji) via
+  `_dashboardPdfEtapaTexto()`, que tira o token do emoji de `etapaLabel()`.
+  Testado: função isolada (`dashboardSuperAdmin()['novas_ontem']` bate com
+  lead semeado ontem; `etapaBadgeClasse()` retorna a classe certa pros 4
+  grupos; WHERE de `?filtro=ontem` retorna só o cliente de ontem, nunca o
+  de hoje; PDF gerado começa com `%PDF` e o conteúdo decodificado confirma
+  título "Leads novos ontem" + linha "Cliente Ontem"/"WhatsApp" sem emoji)
+  + lint + `tests/smoke.php` limpo.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,

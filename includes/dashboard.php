@@ -195,6 +195,9 @@ function dashboardSuperAdmin(): array {
     $atrasadas = (int)$stmt->fetchColumn();
 
     $novasHoje = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE date(created_at) = date('now','localtime')")->fetchColumn();
+    // 21/09/2026, "pode colocar fitro por dia ontem hoje" — mesmo padrão de
+    // novasHoje, só um dia antes.
+    $novasOntem = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE date(created_at) = date('now','localtime','-1 day')")->fetchColumn();
     $novasSemana = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE created_at >= datetime('now','-7 days','localtime')")->fetchColumn();
 
     $r = $db->query("
@@ -215,6 +218,7 @@ function dashboardSuperAdmin(): array {
         'ativas'            => $ativas,
         'atrasadas'         => $atrasadas,
         'novas_hoje'        => $novasHoje,
+        'novas_ontem'       => $novasOntem,
         'novas_semana'      => $novasSemana,
         'fechadas_mes'      => (int)$r['qtd'],
         'valor_fechado_mes' => (float)$r['total'],

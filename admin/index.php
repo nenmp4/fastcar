@@ -45,6 +45,13 @@ switch ($filtroEspecial) {
         $etapasEscopo = ETAPAS_ATIVAS;
         $extraWhere = " AND date(o.created_at) = date('now','localtime')";
         break;
+    case 'ontem':
+        // 21/09/2026, "pode colocar fitro por dia ontem hoje para saber
+        // lista por data dos leads" — mesmo padrão de 'hoje', só um dia
+        // antes; permite conferir o que chegou no dia anterior, não só hoje.
+        $etapasEscopo = ETAPAS_ATIVAS;
+        $extraWhere = " AND date(o.created_at) = date('now','localtime','-1 day')";
+        break;
     case 'semana':
         $etapasEscopo = ETAPAS_ATIVAS;
         $extraWhere = " AND o.created_at >= datetime('now','localtime','-7 days')";
@@ -282,7 +289,8 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 // Rótulo de cada ?filtro= especial, pro banner "filtro ativo" abaixo —
 // mesmo texto usado no rótulo do card que originou o clique.
 $filtroEspecialLabel = [
-    'hoje' => 'Leads novos hoje', 'semana' => 'Recebidos nos últimos 7 dias',
+    'hoje' => 'Leads novos hoje', 'ontem' => 'Leads novos ontem',
+    'semana' => 'Recebidos nos últimos 7 dias',
     'atrasadas' => 'Atrasadas', 'negociacao' => 'Em negociação/presencial',
     'fechado_mes' => 'Fechadas este mês',
 ][$filtroEspecial] ?? '';
@@ -346,6 +354,10 @@ if ($filtroEspecialLabel !== ''): ?>
             <div class="valor"><?= (int)$stats['novas_hoje'] ?></div>
             <div class="rotulo">Leads novos hoje</div>
         </a>
+        <a class="stat-card neutro" href="/admin/index.php?filtro=ontem">
+            <div class="valor"><?= (int)$stats['novas_ontem'] ?></div>
+            <div class="rotulo">Leads novos ontem</div>
+        </a>
         <a class="stat-card neutro" href="/admin/index.php?filtro=semana">
             <div class="valor"><?= (int)$stats['novas_semana'] ?></div>
             <div class="rotulo">Leads novos (7 dias)</div>
@@ -392,6 +404,17 @@ if ($filtroEspecialLabel !== ''): ?>
             $voltarQs = $filtroEspecial !== '' ? '?filtro=' . urlencode($filtroEspecial) : ($etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '');
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar</a><?php endif; ?>
     </form>
+    <?php
+        // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
+        // exatamente o que a tabela abaixo está mostrando (mesmo filtro/
+        // etapa/busca), não só a página atual (sem LIMIT/OFFSET no PDF).
+        $pdfQsPartes = [];
+        if ($filtroEspecial !== '') $pdfQsPartes[] = 'filtro=' . urlencode($filtroEspecial);
+        elseif ($etapaFiltro !== '') $pdfQsPartes[] = 'etapa=' . urlencode($etapaFiltro);
+        if ($busca !== '') $pdfQsPartes[] = 'q=' . urlencode($busca);
+        $pdfQs = $pdfQsPartes ? '?' . implode('&', $pdfQsPartes) : '';
+    ?>
+    <a class="btn" style="margin-top:10px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQs ?>" target="_blank">📄 Gerar PDF do relatório</a>
 </div>
 
 <table class="tabela-oportunidades">
@@ -433,7 +456,7 @@ if ($filtroEspecialLabel !== ''): ?>
             </td>
             <td><?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>
             <td>
-                <?= e(etapaLabel($op['etapa'])) ?>
+                <span class="badge <?= e(etapaBadgeClasse($op['etapa'])) ?>"><?= e(etapaLabel($op['etapa'])) ?></span>
                 <?php if ($etapaBuscandoEncerradas && $op['motivo_perda']): ?>
                     <br><small><?= e($op['motivo_perda']) ?></small>
                 <?php endif; ?>

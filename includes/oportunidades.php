@@ -39,6 +39,22 @@ function etapaLabel(string $etapa): string {
 }
 
 /**
+ * Classe de badge (cores já existentes em admin/assets/style.css) pro
+ * "status" visual de cada etapa — 21/09/2026, "mostra status da etapa":
+ * verde pra fechado (sucesso), vermelho pra perdido, amarelo pra sem
+ * perfil (neutro/atenção, não é bem uma "perda"), azul pras etapas ainda
+ * ativas do funil (em andamento).
+ */
+function etapaBadgeClasse(string $etapa): string {
+    return match ($etapa) {
+        'fechado'    => 'badge-ok',
+        'perdido'    => 'badge-atraso',
+        'sem_perfil' => 'badge-aviso',
+        default      => 'badge-info',
+    };
+}
+
+/**
  * Cria (ou reaproveita) o cliente por telefone e já abre a oportunidade na
  * etapa 'whatsapp' — regra #2: "salvar desde o primeiro contato", mesmo
  * antes de qualquer qualificação.
