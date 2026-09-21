@@ -191,6 +191,17 @@ function crmAntigoSepararMarcaModelo(string $brandModel): array {
     return ['marca' => '', 'modelo' => $brandModel];
 }
 
+/**
+ * Placa vinda do CSV antigo pode ter pontuação (ex: "HID-7G76"), diferente
+ * do padrão sem hífen já usado no resto do sistema (CRLV lido por IA,
+ * cadastro manual) — achado real 21/09/2026: importou "HID-7G76", a busca
+ * por "HID7G76" (placa real do CRLV) não achava o veículo em admin/veiculos.php.
+ * Mantém só letras/números, maiúsculo.
+ */
+function crmAntigoNormalizarPlaca(string $placa): string {
+    return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
+}
+
 function crmAntigoMontarEndereco(array $linha, string $prefixo = 'address_'): string {
     $partes = array_filter([
         trim(($linha["{$prefixo}street"] ?? '') . ' ' . ($linha["{$prefixo}number"] ?? '')),
@@ -330,7 +341,7 @@ function crmAntigoImportarCliente(array $linha, GoogleDrive $drive, string $arqu
             $vd['marca'],
             $vd['modelo'],
             (string)($linha['vehicle_year_model'] ?? ''),
-            (string)($linha['vehicle_plate'] ?? ''),
+            crmAntigoNormalizarPlaca((string)($linha['vehicle_plate'] ?? '')),
             (string)($linha['vehicle_chassis'] ?? ''),
             (string)($linha['vehicle_renavam'] ?? ''),
             crmAntigoParseMoeda($linha['payment_to_client'] ?? null),
