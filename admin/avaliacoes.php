@@ -25,8 +25,9 @@ $aba = (string)($_GET['aba'] ?? 'pendentes');
 $pendentes = listarAvaliacoesPendentes($filtroAvaliador);
 $concluidas = $aba === 'concluidas' ? listarAvaliacoesConcluidas($filtroAvaliador) : [];
 
-function avTipoLabel(string $tipo): string {
-    return $tipo === 'venda' ? '🛒 Venda (entrega ao comprador)' : '🚗 Compra (recebimento do vendedor)';
+function avTipoPill(string $tipo): string {
+    $rotulo = $tipo === 'venda' ? '🛒 VENDA' : '🚗 COMPRA';
+    return '<span class="av-tipo-pill tipo-' . e($tipo) . '">' . $rotulo . '</span>';
 }
 function avStatusBadge(string $status): string {
     return match ($status) {
@@ -66,21 +67,23 @@ function avStatusBadge(string $status): string {
     <?php if (!$lista): ?>
         <p><small>Nenhuma vistoria <?= $aba === 'concluidas' ? 'concluída' : 'pendente' ?> <?= $filtroAvaliador ? 'atribuída a você' : '' ?> no momento.</small></p>
     <?php else: ?>
+        <div style="overflow-x:auto">
         <table>
             <thead><tr><th>Veículo</th><th>Tipo</th><th>Status</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
             <tbody>
             <?php foreach ($lista as $a): ?>
                 <tr>
                     <td><?= e(trim($a['veiculo_marca'] . ' ' . $a['veiculo_modelo'])) ?: '—' ?> <?= e((string)($a['veiculo_ano'] ?? '')) ?><br><small><?= e($a['cliente_nome']) ?></small></td>
-                    <td><?= avTipoLabel($a['tipo']) ?></td>
+                    <td><?= avTipoPill($a['tipo']) ?></td>
                     <td><?= avStatusBadge($a['status']) ?></td>
                     <td><?= $a['avaliador_nome'] ? e($a['avaliador_nome']) : '<em>não atribuído</em>' ?></td>
                     <td><?= date('d/m/Y H:i', strtotime($a['created_at'])) ?></td>
-                    <td><a href="/admin/avaliacao.php?id=<?= (int)$a['id'] ?>">Abrir →</a></td>
+                    <td><a class="btn-primary" href="/admin/avaliacao.php?id=<?= (int)$a['id'] ?>">Abrir →</a></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
     <?php endif; ?>
 </div>
 </main>

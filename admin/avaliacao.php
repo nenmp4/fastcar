@@ -138,9 +138,22 @@ function avTermoStatusLabel(string $status): string {
 
 <div class="card">
     <h2>#<?= (int)$av['id'] ?> — <?= e(trim($av['veiculo_marca'] . ' ' . $av['veiculo_modelo'])) ?: '—' ?> <?= e((string)($av['veiculo_ano'] ?? '')) ?></h2>
-    <p><strong>Placa:</strong> <?= e($av['veiculo_placa'] ?: '—') ?> — <strong>Tipo:</strong> <?= $av['tipo'] === 'venda' ? '🛒 Venda (entrega ao comprador)' : '🚗 Compra (recebimento do vendedor)' ?></p>
-    <p><strong><?= $av['tipo'] === 'venda' ? 'Comprador' : 'Vendedor original' ?>:</strong>
-        <?= e($av['tipo'] === 'venda' ? ($av['comprador_nome'] ?: '—') : $av['cliente_nome']) ?></p>
+    <p><strong>Placa:</strong> <?= e($av['veiculo_placa'] ?: '—') ?></p>
+
+    <?php
+        $nomeParte = $av['tipo'] === 'venda' ? ($av['comprador_nome'] ?: '—') : $av['cliente_nome'];
+        $papelParte = $av['tipo'] === 'venda' ? 'Comprador (vai receber o carro)' : 'Vendedor original (vai entregar o carro)';
+    ?>
+    <div class="av-tipo-banner tipo-<?= $av['tipo'] ?>">
+        <span class="av-tipo-titulo"><?= $av['tipo'] === 'venda' ? '🛒 VISTORIA DE VENDA — entrega ao comprador' : '🚗 VISTORIA DE COMPRA — recebimento do vendedor' ?></span>
+        <?= e($papelParte) ?>: <strong><?= e($nomeParte) ?></strong><br>
+        <?php if ($av['tipo'] === 'venda'): ?>
+            📄 O termo de entrega vai ser assinado por: <strong><?= e($nomeParte) ?></strong>
+        <?php else: ?>
+            📋 Registro interno — sem assinatura, só pra documentar como o veículo entrou.
+        <?php endif; ?>
+    </div>
+
     <p><strong>Status:</strong> <?= avStatusLabel($av['status']) ?>
         <?php if ($av['concluida_em']): ?><small>— concluída em <?= date('d/m/Y H:i', strtotime($av['concluida_em'])) ?></small><?php endif; ?></p>
 </div>
@@ -171,24 +184,36 @@ function avTermoStatusLabel(string $status): string {
 
 <div class="card">
     <h3>📋 Checklist de vistoria</h3>
-    <?php foreach ($itens as $item): ?>
-        <div style="border-bottom:1px solid #eee;padding:10px 0">
-            <strong><?= e(VEICULO_AVALIACAO_ITENS_PADRAO[$item['item']] ?? $item['item']) ?></strong>
-            — <?= avItemStatusLabel($item['status']) ?>
-            <?php if ($item['observacao']): ?><br><small><?= nl2br(e($item['observacao'])) ?></small><?php endif; ?>
+    <?php foreach ($itens as $item):
+        $obsAtual = $item['observacao'] ?? '';
+    ?>
+        <div class="av-item">
+            <div class="av-item-nome"><?= e(VEICULO_AVALIACAO_ITENS_PADRAO[$item['item']] ?? $item['item']) ?></div>
             <?php if ($podeEditarChecklist): ?>
-                <form method="post" style="margin-top:6px">
+                <div class="av-status-btns">
+                    <?php foreach (['ok' => '✅ OK', 'problema' => '⚠️ Problema', 'nao_verificado' => '❔ Não verificado'] as $statusOpcao => $rotulo): ?>
+                        <form method="post" style="display:contents">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="atualizar_item">
+                            <input type="hidden" name="item" value="<?= e($item['item']) ?>">
+                            <input type="hidden" name="status" value="<?= $statusOpcao ?>">
+                            <input type="hidden" name="observacao" value="<?= e($obsAtual) ?>">
+                            <button type="submit" class="av-btn-status <?= $item['status'] === $statusOpcao ? 'ativo-' . $statusOpcao : '' ?>"><?= $rotulo ?></button>
+                        </form>
+                    <?php endforeach; ?>
+                </div>
+                <?php if ($obsAtual !== ''): ?><div class="av-item-obs-existente"><?= nl2br(e($obsAtual)) ?></div><?php endif; ?>
+                <form method="post" class="av-item-obs-form">
                     <?= csrfField() ?>
                     <input type="hidden" name="acao" value="atualizar_item">
                     <input type="hidden" name="item" value="<?= e($item['item']) ?>">
-                    <select name="status" style="width:auto;display:inline-block">
-                        <option value="nao_verificado" <?= $item['status'] === 'nao_verificado' ? 'selected' : '' ?>>Não verificado</option>
-                        <option value="ok" <?= $item['status'] === 'ok' ? 'selected' : '' ?>>OK</option>
-                        <option value="problema" <?= $item['status'] === 'problema' ? 'selected' : '' ?>>Problema identificado</option>
-                    </select>
-                    <input type="text" name="observacao" value="<?= e($item['observacao'] ?? '') ?>" placeholder="Observação (opcional)" style="width:auto;display:inline-block">
-                    <button type="submit" style="margin-top:0">Salvar</button>
+                    <input type="hidden" name="status" value="<?= e($item['status']) ?>">
+                    <input type="text" name="observacao" value="<?= e($obsAtual) ?>" placeholder="Observação (opcional) — ex: amassado leve na porta traseira">
+                    <button type="submit">Salvar observação</button>
                 </form>
+            <?php else: ?>
+                <p>— <?= avItemStatusLabel($item['status']) ?></p>
+                <?php if ($obsAtual !== ''): ?><div class="av-item-obs-existente"><?= nl2br(e($obsAtual)) ?></div><?php endif; ?>
             <?php endif; ?>
         </div>
     <?php endforeach; ?>
@@ -199,7 +224,7 @@ function avTermoStatusLabel(string $status): string {
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="salvar_km">
                 <label>Quilometragem atual</label>
-                <input type="text" name="km_atual" value="<?= e((string)($av['km_atual'] ?? '')) ?>" placeholder="Ex: 45000">
+                <input type="text" inputmode="numeric" name="km_atual" value="<?= e((string)($av['km_atual'] ?? '')) ?>" placeholder="Ex: 45000">
                 <button type="submit">Salvar KM</button>
             </form>
             <form method="post">
@@ -213,9 +238,9 @@ function avTermoStatusLabel(string $status): string {
 
         <div style="margin-top:14px">
             <?php if ($av['status'] === 'concluida'): ?>
-                <form method="post" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reabrir"><button type="submit">↩️ Reabrir vistoria</button></form>
+                <form method="post" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reabrir"><button type="submit" style="min-height:48px;font-size:15px">↩️ Reabrir vistoria</button></form>
             <?php else: ?>
-                <form method="post" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="concluir"><button type="submit">✅ Marcar vistoria como concluída</button></form>
+                <form method="post" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="concluir"><button type="submit" style="min-height:48px;font-size:15px">✅ Marcar vistoria como concluída</button></form>
             <?php endif; ?>
         </div>
     <?php endif; ?>
@@ -226,38 +251,39 @@ function avTermoStatusLabel(string $status): string {
     <p><small>Galeria própria da vistoria — uma foto só entra no catálogo de vendas (o que a IA usa pra mandar mídia
        pro comprador) depois de aprovada explicitamente abaixo.</small></p>
     <?php if ($fotos): ?>
-        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <div class="av-foto-grid">
             <?php foreach ($fotos as $f): ?>
-                <div style="width:160px">
+                <div>
                     <?php if ($f['tipo'] === 'foto'): ?>
                         <a href="/admin/ver_avaliacao_foto.php?id=<?= (int)$f['id'] ?>" target="_blank">
-                            <img src="/admin/ver_avaliacao_foto.php?id=<?= (int)$f['id'] ?>" loading="lazy" style="width:100%;height:120px;object-fit:cover;border-radius:8px">
+                            <img src="/admin/ver_avaliacao_foto.php?id=<?= (int)$f['id'] ?>" loading="lazy">
                         </a>
                     <?php else: ?>
-                        <video src="/admin/ver_avaliacao_foto.php?id=<?= (int)$f['id'] ?>" controls preload="metadata" style="width:100%;border-radius:8px"></video>
+                        <video src="/admin/ver_avaliacao_foto.php?id=<?= (int)$f['id'] ?>" controls preload="metadata"></video>
                     <?php endif; ?>
-                    <?php if ($f['legenda']): ?><br><small><?= e($f['legenda']) ?></small><?php endif; ?>
-                    <br>
-                    <?php if ((int)$f['aprovado_para_catalogo'] === 1): ?>
-                        <span class="badge badge-ok" style="font-size:10.5px">✅ no catálogo de vendas</span>
-                    <?php elseif ($podeAprovarFoto): ?>
-                        <form method="post" style="margin-top:4px">
-                            <?= csrfField() ?>
-                            <input type="hidden" name="acao" value="aprovar_foto">
-                            <input type="hidden" name="foto_id" value="<?= (int)$f['id'] ?>">
-                            <button type="submit" style="margin-top:0;padding:3px 8px;font-size:11.5px">✅ Aprovar pro catálogo</button>
-                        </form>
-                    <?php else: ?>
-                        <span class="badge badge-aviso" style="font-size:10.5px">aguardando aprovação do vendedor</span>
-                    <?php endif; ?>
-                    <?php if ($podeEditarChecklist): ?>
-                        <form method="post" onsubmit="return confirm('Remover essa mídia da vistoria?');" style="margin-top:4px">
-                            <?= csrfField() ?>
-                            <input type="hidden" name="acao" value="excluir_foto">
-                            <input type="hidden" name="foto_id" value="<?= (int)$f['id'] ?>">
-                            <button type="submit" class="perigo" style="margin-top:0;padding:3px 8px;font-size:11.5px">🗑️ Remover</button>
-                        </form>
-                    <?php endif; ?>
+                    <?php if ($f['legenda']): ?><small><?= e($f['legenda']) ?></small><?php endif; ?>
+                    <div style="margin-top:4px">
+                        <?php if ((int)$f['aprovado_para_catalogo'] === 1): ?>
+                            <span class="badge badge-ok">✅ no catálogo de vendas</span>
+                        <?php elseif ($podeAprovarFoto): ?>
+                            <form method="post">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="aprovar_foto">
+                                <input type="hidden" name="foto_id" value="<?= (int)$f['id'] ?>">
+                                <button type="submit">✅ Aprovar pro catálogo</button>
+                            </form>
+                        <?php else: ?>
+                            <span class="badge badge-aviso">aguardando aprovação do vendedor</span>
+                        <?php endif; ?>
+                        <?php if ($podeEditarChecklist): ?>
+                            <form method="post" onsubmit="return confirm('Remover essa mídia da vistoria?');">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="excluir_foto">
+                                <input type="hidden" name="foto_id" value="<?= (int)$f['id'] ?>">
+                                <button type="submit" class="perigo">🗑️ Remover</button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -268,15 +294,17 @@ function avTermoStatusLabel(string $status): string {
         <form method="post" enctype="multipart/form-data">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="upload_foto">
-            <label>Arquivo (foto JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
-            <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" required>
+            <label>Foto ou vídeo (JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
+            <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" capture="environment" required>
+            <small>No tablet, isso já abre a opção de tirar a foto na hora com a câmera, ou escolher um arquivo já salvo.</small>
             <label>Legenda (opcional)</label>
             <input type="text" name="legenda" placeholder="Ex: Avaria no para-choque traseiro">
-            <button type="submit">Adicionar</button>
+            <button type="submit" style="min-height:48px">📷 Adicionar</button>
         </form>
     <?php endif; ?>
 </div>
 
+<?php if ($av['tipo'] === 'venda'): ?>
 <div class="card">
     <h3>📄 Termo de entrega e vistoria</h3>
     <?php if ($av['termo_status']): ?>
@@ -293,11 +321,18 @@ function avTermoStatusLabel(string $status): string {
         <form method="post" onsubmit="return confirm('Gerar o termo e enviar pra assinatura eletrônica agora?');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_termo">
-            <button type="submit">📤 Gerar e enviar pra assinatura</button>
+            <button type="submit" style="min-height:48px;font-size:15px">📤 Gerar e enviar pra assinatura</button>
         </form>
-        <p><small><?= $av['tipo'] === 'venda' ? 'Assina o comprador (dados da negociação).' : 'Assina o vendedor original (dados do cliente).' ?></small></p>
+        <p><small>Assina o comprador (dados da negociação).</small></p>
     <?php endif; ?>
 </div>
+<?php else: ?>
+<div class="card">
+    <p><small>📋 Esta vistoria de <strong>compra</strong> é um registro interno — documenta a situação de como o
+       veículo entrou, sem precisar de assinatura de ninguém. O vendedor já assina o contrato de compra
+       principal separadamente.</small></p>
+</div>
+<?php endif; ?>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

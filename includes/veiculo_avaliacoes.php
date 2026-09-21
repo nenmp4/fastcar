@@ -55,16 +55,37 @@ require_once __DIR__ . '/veiculo_avaliacoes_pdf.php';
  */
 
 // Itens fixos do checklist — exatamente os pedidos pelo usuário ("vericar
-// km avarias suspenção motor vazamentos estofado"). KM fica fora da lista
-// (é campo numérico próprio, veiculo_avaliacoes.km_atual, não um item
-// ok/problema/não verificado).
+// km avarias suspenção motor vazamentos estofado" + "tava faltando cambio
+// nesse checlist", 21/09/2026). KM fica fora da lista (é campo numérico
+// próprio, veiculo_avaliacoes.km_atual, não um item ok/problema/não
+// verificado).
 const VEICULO_AVALIACAO_ITENS_PADRAO = [
     'avarias'    => 'Avarias (lataria/pintura/amassados)',
     'motor'      => 'Motor',
+    'cambio'     => 'Câmbio',
     'suspensao'  => 'Suspensão',
     'vazamentos' => 'Vazamentos (óleo/água/fluidos)',
     'estofado'   => 'Estofado/bancos',
 ];
+
+/**
+ * Garante que a avaliação tem uma linha pra CADA item de
+ * VEICULO_AVALIACAO_ITENS_PADRAO — `INSERT OR IGNORE` (índice único
+ * `(avaliacao_id, item)`, sempre idempotente) nunca duplica nem mexe num
+ * item já preenchido. Chamada tanto na criação quanto toda vez que a
+ * lista é lida — self-heal automático (mesmo espírito do wizard de
+ * documentos, "etapa sempre derivada do banco"): se um item novo for
+ * adicionado à lista padrão no futuro (como o "Câmbio" agora), uma
+ * avaliação já criada antes disso ganha a linha faltante sozinha na
+ * próxima vez que a tela for aberta, sem precisar de migração/script.
+ */
+function garantirItensAvaliacao(int $avaliacaoId): void {
+    $db = getDB();
+    $stmt = $db->prepare("INSERT OR IGNORE INTO veiculo_avaliacao_itens (avaliacao_id, item) VALUES (?, ?)");
+    foreach (array_keys(VEICULO_AVALIACAO_ITENS_PADRAO) as $item) {
+        $stmt->execute([$avaliacaoId, $item]);
+    }
+}
 
 /**
  * Cria uma avaliação nova pro veículo — sempre pré-semeia os itens fixos
@@ -92,13 +113,9 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
             $criadoPor,
         ]);
         $avaliacaoId = (int)$db->lastInsertId();
-
-        $stmtItem = $db->prepare("INSERT INTO veiculo_avaliacao_itens (avaliacao_id, item) VALUES (?, ?)");
-        foreach (array_keys(VEICULO_AVALIACAO_ITENS_PADRAO) as $item) {
-            $stmtItem->execute([$avaliacaoId, $item]);
-        }
-
         $db->commit();
+
+        garantirItensAvaliacao($avaliacaoId);
         return $avaliacaoId;
     } catch (Throwable $e) {
         $db->rollBack();
@@ -127,10 +144,20 @@ function buscarAvaliacao(int $avaliacaoId): ?array {
 }
 
 function listarItensAvaliacao(int $avaliacaoId): array {
+    garantirItensAvaliacao($avaliacaoId); // self-heal — ver comentário da função
     $db = getDB();
-    $stmt = $db->prepare("SELECT * FROM veiculo_avaliacao_itens WHERE avaliacao_id = ? ORDER BY id");
+    // ORDER BY item (nunca por id) — item novo self-healed entra com id
+    // maior que os antigos, então "ORDER BY id" jogaria ele pro fim da
+    // lista em vez de aparecer na posição certa (ex: Câmbio logo depois de
+    // Motor); ordenar pela ordem declarada em VEICULO_AVALIACAO_ITENS_PADRAO
+    // mantém a posição certa sempre, independente de quando o item foi
+    // inserido de verdade.
+    $ordem = array_flip(array_keys(VEICULO_AVALIACAO_ITENS_PADRAO));
+    $stmt = $db->prepare("SELECT * FROM veiculo_avaliacao_itens WHERE avaliacao_id = ?");
     $stmt->execute([$avaliacaoId]);
-    return $stmt->fetchAll();
+    $itens = $stmt->fetchAll();
+    usort($itens, fn($a, $b) => ($ordem[$a['item']] ?? 99) <=> ($ordem[$b['item']] ?? 99));
+    return $itens;
 }
 
 /**
@@ -387,17 +414,22 @@ function gerarEEnviarTermoAvaliacao(int $avaliacaoId): array {
         return ['ok' => false, 'erro' => 'Avaliação não encontrada.'];
     }
 
-    if ($av['tipo'] === 'venda') {
-        $nomeSigner = trim((string)$av['comprador_nome']);
-        $telSigner = (string)$av['comprador_telefone'];
-        $emailSigner = (string)$av['comprador_email'];
-        if ($nomeSigner === '') {
-            return ['ok' => false, 'erro' => 'Preencha os dados do comprador na venda antes de gerar o termo.'];
-        }
-    } else {
-        $nomeSigner = trim((string)$av['cliente_nome']);
-        $telSigner = (string)$av['cliente_telefone'];
-        $emailSigner = (string)$av['cliente_email'];
+    // 21/09/2026, "enviar termo mais para venda" — confirmado com o
+    // usuário: termo de entrega/assinatura eletrônica exclusivo de venda
+    // (comprador confirmando recebimento). Na compra, o vendedor já
+    // assina o contrato de compra principal — o checklist/fotos da
+    // vistoria continuam servindo de registro interno, sem exigir uma 2ª
+    // assinatura dele. Nunca confia só em esconder o botão na tela —
+    // trava aqui também, pro caso de POST forjado numa avaliação de compra.
+    if ($av['tipo'] !== 'venda') {
+        return ['ok' => false, 'erro' => 'Termo de entrega é exclusivo das vistorias de venda.'];
+    }
+
+    $nomeSigner = trim((string)$av['comprador_nome']);
+    $telSigner = (string)$av['comprador_telefone'];
+    $emailSigner = (string)$av['comprador_email'];
+    if ($nomeSigner === '') {
+        return ['ok' => false, 'erro' => 'Preencha os dados do comprador na venda antes de gerar o termo.'];
     }
 
     $itens = listarItensAvaliacao($avaliacaoId);

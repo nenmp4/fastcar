@@ -473,3 +473,100 @@ a.stat-card:hover { border-left-color: var(--azul-escuro); }
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
 }
+
+/* ── Módulo de vistoria/avaliação (admin/avaliacao.php/avaliacoes.php) ──
+   21/09/2026, "modulo vistoria tem ficar ideal no tablet vamos usar" — o
+   avaliador usa isso andando ao redor do carro, cutucando o checklist item
+   por item; o resto do admin é feito pra mouse+teclado numa mesa, aqui o
+   alvo é dedo em pé segurando um tablet, então os controles precisam ser
+   bem maiores que o padrão do resto do sistema. */
+.av-item {
+    border-bottom: 1px solid var(--borda);
+    padding: 14px 0;
+}
+.av-item:last-child { border-bottom: none; }
+.av-item-nome { font-weight: 700; font-size: 15px; margin-bottom: 8px; }
+.av-status-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+/* min-height 48px ~ tamanho mínimo recomendado de alvo de toque (o botão
+   padrão do resto do admin, ~40px, é ok pra mouse mas curto pra dedo). */
+button.av-btn-status {
+    margin-top: 0;
+    min-height: 48px;
+    padding: 10px 18px;
+    font-size: 15px;
+    background: var(--superficie);
+    color: var(--texto);
+    border: 2px solid var(--borda);
+    box-shadow: none;
+}
+button.av-btn-status:hover { filter: none; box-shadow: none; border-color: var(--texto-fraco); }
+button.av-btn-status.ativo-ok { background: var(--verde-bg); color: var(--verde); border-color: var(--verde); }
+button.av-btn-status.ativo-problema { background: var(--vermelho-bg); color: var(--vermelho); border-color: var(--vermelho); }
+button.av-btn-status.ativo-nao_verificado { background: var(--fundo); color: var(--texto-suave); border-color: var(--borda); }
+.av-item-obs-existente {
+    margin-top: 8px;
+    font-size: 13.5px;
+    color: var(--texto-suave);
+    background: var(--fundo);
+    border-radius: var(--raio-sm);
+    padding: 8px 10px;
+}
+.av-item-obs-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.av-item-obs-form input[type="text"] { flex: 1; min-width: 200px; margin-top: 0; }
+.av-item-obs-form button { margin-top: 0; min-height: 44px; }
+
+/* Fotos — grid que se adapta à largura real da tela (2-3 colunas no
+   tablet em retrato, mais em paisagem), em vez de largura fixa em px que
+   ou sobra vazio ou aperta demais dependendo da orientação. */
+.av-foto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+}
+.av-foto-grid img, .av-foto-grid video {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    border-radius: var(--raio-sm);
+}
+.av-foto-grid button { min-height: 40px; }
+
+@media (max-width: 700px) {
+    .av-status-btns { flex-direction: column; }
+    button.av-btn-status { width: 100%; }
+}
+
+/* Banner grande no topo do detalhe da vistoria — 21/09/2026, "comom
+   avaliador vai saber se venda ou compra para quem vai termo": a
+   informação já existia em texto pequeno, mas precisa ser óbvia de
+   relance numa tela de tablet, não algo que precise ler com atenção. Azul
+   pra compra (mesma cor da marca), laranja pra venda (mesma cor já usada
+   pra "lead quente"/destaque) — nunca a mesma cor pros dois, contraste
+   visual reforça a diferença. */
+.av-tipo-banner {
+    border-radius: var(--raio-sm);
+    padding: 14px 16px;
+    margin: 10px 0;
+    font-size: 15px;
+}
+.av-tipo-banner.tipo-compra { background: var(--azul-claro); border: 2px solid var(--azul); }
+.av-tipo-banner.tipo-venda { background: var(--laranja-bg); border: 2px solid var(--laranja); }
+.av-tipo-banner .av-tipo-titulo { font-weight: 800; font-size: 17px; display: block; margin-bottom: 4px; }
+.av-tipo-banner.tipo-compra .av-tipo-titulo { color: var(--azul-escuro); }
+.av-tipo-banner.tipo-venda .av-tipo-titulo { color: var(--laranja); }
+/* Selo grande de compra/venda na fila (admin/avaliacoes.php) — mesmo
+   par de cores do banner acima, pro avaliador bater o olho na lista
+   inteira e já saber quais são venda (vai precisar de termo assinado)
+   sem precisar abrir cada uma. */
+.av-tipo-pill {
+    display: inline-block;
+    font-weight: 800;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+.av-tipo-pill.tipo-compra { background: var(--azul-claro); border: 2px solid var(--azul); color: var(--azul-escuro); }
+.av-tipo-pill.tipo-venda { background: var(--laranja-bg); border: 2px solid var(--laranja); color: var(--laranja); }

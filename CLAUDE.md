@@ -1551,6 +1551,70 @@ segue no schema sem uso novo, não removida sem ganho real),
   exatamente 10/11 dígitos — bug pré-existente, afeta igualmente contratos
   de compra/venda, confirmado testando o payload capturado contra o fake
   ZapSign deste módulo (só `name`/`email` chegavam, nunca telefone).
+  **Otimização pra tablet + termo restrito à venda + câmbio no checklist**
+  (21/09/2026, pedido direto "modulo vistoria tem ficar ideal no tablet
+  vamos usar" — o avaliador vai usar em campo, andando ao redor do carro).
+  `admin/avaliacao.php`: cada item do checklist virou 3 botões grandes de
+  toque único (✅ OK / ⚠️ Problema / ❔ Não verificado, `min-height:48px`)
+  em vez do `<select>` original, com a observação numa caixa de texto
+  separada logo abaixo — 2 `<form>` distintos POSTando pra `atualizar_item`,
+  cada um sempre carregando o valor ATUAL do outro campo num input hidden
+  (tocar num botão de status nunca apaga a observação já escrita; salvar
+  uma observação nova nunca reseta o status já marcado) — mesma disciplina
+  fill-if-empty/nunca-clobber do resto do projeto. Galeria de fotos virou
+  grid responsivo (`.av-foto-grid`, era largura fixa 160px); upload de foto
+  ganhou `capture="environment"` (atalho pra câmera em tablet/celular, sem
+  impedir escolher um arquivo já existente); campo de KM ganhou
+  `inputmode="numeric"`; botões de marcar concluída/reabrir também
+  `min-height:48px`; tabela de `admin/avaliacoes.php` ganhou
+  `overflow-x:auto` pra nunca quebrar em tela estreita.
+  **Termo de entrega restrito só à VENDA** — pedido direto "enviar termo
+  mais para venda", confirmado via pergunta direta ("remover/esconder na
+  compra"); racional: vistoria de compra é só registro interno de como o
+  veículo entrou ("na entrada do veiculo mais interno para saber situação
+  de como entrou") — o vendedor original já assina o contrato de compra
+  principal separadamente, nunca precisou de um 2º documento pra isso.
+  `gerarEEnviarTermoAvaliacao()` (`includes/veiculo_avaliacoes.php`) ganhou
+  guard rejeitando `tipo !== 'venda'` direto no servidor (nunca confia só
+  em esconder o botão na tela) — o caminho antigo de assinatura pro
+  vendedor original na compra foi removido por inteiro, inalcançável.
+  `admin/avaliacao.php`: card do termo só renderiza pra `tipo='venda'`;
+  `tipo='compra'` mostra um aviso fixo no lugar, explicando que é registro
+  interno sem assinatura de ninguém. Cabeçalho ganhou um banner grande
+  (`.av-tipo-banner`, azul pra compra/laranja pra venda — mesma cor já
+  usada pra "lead quente") deixando explícito o tipo, quem é a contraparte
+  (vendedor original na compra / comprador na venda) e se vai ter termo ou
+  não — respondendo "comom avaliador vai saber se venda ou compra para
+  quem vai termo". `admin/avaliacoes.php` (fila) ganhou um selo colorido
+  grande (`.av-tipo-pill`, 🚗 COMPRA azul / 🛒 VENDA laranja) na coluna
+  Tipo — mesmo pedido, "na tela do avlista aparecer botão grande compra ou
+  venda", pro avaliador bater o olho na lista inteira sem abrir cada
+  vistoria uma por uma.
+  **Item "Câmbio" faltando no checklist** — achado real "tava faltando
+  cambio nesse checklist". Adicionado em `VEICULO_AVALIACAO_ITENS_PADRAO`
+  (entre Motor e Suspensão). Nova `garantirItensAvaliacao()`
+  (`INSERT OR IGNORE`, aproveitando o `UNIQUE(avaliacao_id, item)` já
+  existente) roda a cada `listarItensAvaliacao()` — self-heal, faz
+  backfill de item novo em avaliação JÁ criada antes da mudança, sem
+  precisar de script de migração (mesma filosofia "etapa sempre derivada
+  do banco" já documentada pro wizard de documentos). Ordenação trocou de
+  `ORDER BY id` (jogaria o item self-healed pro fim, fora de ordem) pra
+  sort em PHP contra a ordem declarada na constante.
+  Testado: teste isolado (função) confirmando os 2 formulários nunca se
+  atropelam (tap de status preserva observação existente; salvar
+  observação preserva o status atual) + self-heal do câmbio (aparece na
+  posição certa numa avaliação pré-existente, nunca sobrescreve item já
+  preenchido) + screenshot real via Playwright (viewport 820×1180, iPad
+  Air em pé, logado como avaliador) conferindo visualmente banner, botões
+  de status, checklist com câmbio e card de "registro interno" numa
+  vistoria de compra + `php -l` + `tests/smoke.php` limpos.
+  **Ideia sinalizada, não implementada ainda**: quando um veículo já
+  vendido volta (devolução, ver bullet "Devolução de veículo já vendido"
+  no módulo financeiro) e ganha uma vistoria nova, comparar contra a
+  vistoria anterior do mesmo veículo e destacar divergência (ex: item que
+  era "OK" antes aparecendo "Problema" agora) — pedido do usuário ("se
+  carro volta mesma coisa avaliação nova para comparar com antiga
+  verificar divergências"), fica pra próxima rodada.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
