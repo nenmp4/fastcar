@@ -1615,6 +1615,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   era "OK" antes aparecendo "Problema" agora) — pedido do usuário ("se
   carro volta mesma coisa avaliação nova para comparar com antiga
   verificar divergências"), fica pra próxima rodada.
+  **Rótulos do checklist ajustados pra moto também** (21/09/2026, "tem
+  detalhe quando é moto kk" → "chelist tem mudar só") — a Fastcar compra
+  carro/moto/caminhão/etc (mesma regra já reforçada no prompt da IA de
+  qualificação, ver bullet "IA recusando lead de moto"), mas 2 dos 6
+  rótulos do checklist só faziam sentido pra carro: "Avarias (lataria/
+  pintura/amassados)" (moto não tem lataria, tem carenagem) e "Estofado/
+  bancos" (soa a estofado de carro; moto tem só "banco"). Ajustado pra
+  "Avarias (lataria/carenagem/pintura/amassados/riscos)" e "Banco/
+  estofado" — cobre os dois sem precisar de um campo novo de "tipo de
+  veículo" (não existe hoje em `oportunidades`, e não foi pedido criar
+  um): a CHAVE de cada item (`avarias`/`estofado`) nunca mudou, só o texto
+  exibido (`VEICULO_AVALIACAO_ITENS_PADRAO`), então nenhuma avaliação já
+  criada precisa de migração — o rótulo novo já aparece sozinho na
+  próxima vez que a tela/PDF do termo for renderizado. Os outros 4 itens
+  (motor/câmbio/suspensão/vazamentos) já eram neutros o bastante, sem
+  mudança. Testado: `php -l` + `tests/smoke.php` limpos; conferido que
+  `includes/veiculo_avaliacoes_pdf.php` (termo de entrega em PDF) lê o
+  rótulo pela mesma constante, sem cópia duplicada em nenhum outro
+  arquivo — o ajuste vale pra tela do avaliador E pro PDF junto.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

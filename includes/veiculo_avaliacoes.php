@@ -59,13 +59,21 @@ require_once __DIR__ . '/veiculo_avaliacoes_pdf.php';
 // nesse checlist", 21/09/2026). KM fica fora da lista (é campo numérico
 // próprio, veiculo_avaliacoes.km_atual, não um item ok/problema/não
 // verificado).
+// Rótulos ajustados em 21/09/2026 ("tem detalhe quando é moto") — a
+// Fastcar compra carro/moto/caminhão/etc (mesma regra já reforçada na IA
+// de qualificação), mas "lataria"/"estofado" sozinhos soam só de carro;
+// generalizado pra cobrir carenagem/banco de moto também, sem precisar de
+// um campo de "tipo de veículo" novo — o checklist continua o mesmo pros
+// dois, só o texto ficou neutro o bastante pra fazer sentido nos dois
+// casos (a `item` (chave) nunca mudou, então nenhuma avaliação já criada
+// precisa de migração).
 const VEICULO_AVALIACAO_ITENS_PADRAO = [
-    'avarias'    => 'Avarias (lataria/pintura/amassados)',
+    'avarias'    => 'Avarias (lataria/carenagem/pintura/amassados/riscos)',
     'motor'      => 'Motor',
     'cambio'     => 'Câmbio',
     'suspensao'  => 'Suspensão',
     'vazamentos' => 'Vazamentos (óleo/água/fluidos)',
-    'estofado'   => 'Estofado/bancos',
+    'estofado'   => 'Banco/estofado',
 ];
 
 /**
