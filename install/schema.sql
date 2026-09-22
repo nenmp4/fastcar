@@ -921,3 +921,34 @@ CREATE TABLE IF NOT EXISTS fin_asaas_clientes (
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
 );
+
+-- Consulta veicular via ZapCar (api.zapcarconsulta.com.br) — 22/09/2026,
+-- "vamos integrar essa api no sistema em oportunidade compras", 1ª versão
+-- só com a "Consulta Simples" (ver includes/zapcar.php). Cada linha é 1
+-- chamada paga (ou tentativa) — histórico de verdade, nunca sobrescrito;
+-- tentativa fica sempre 1 nesta versão (retry manual = novo clique = nova
+-- linha = nova Idempotency-Key, nunca reaproveita id local antigo).
+CREATE TABLE IF NOT EXISTS zapcar_consultas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    zapcar_id TEXT DEFAULT NULL,
+    servico TEXT NOT NULL DEFAULT 'consulta',
+    placa TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'processando' CHECK (status IN ('processando', 'concluido', 'erro')),
+    tentativa INTEGER NOT NULL DEFAULT 1,
+    idempotency_key TEXT DEFAULT '',
+    valor_cobrado REAL,
+    erro_codigo TEXT DEFAULT '',
+    erro_mensagem TEXT DEFAULT '',
+    retryable INTEGER,
+    veiculo_json TEXT,
+    dados_json TEXT,
+    nao_verificado_json TEXT,
+    pdf_url TEXT DEFAULT '',
+    usuario_id INTEGER REFERENCES usuarios(id),
+    criado_em DATETIME DEFAULT (datetime('now','localtime')),
+    atualizado_em DATETIME DEFAULT (datetime('now','localtime')),
+    concluido_em DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_zapcar_consultas_oportunidade ON zapcar_consultas(oportunidade_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_zapcar_consultas_zapcar_id ON zapcar_consultas(zapcar_id) WHERE zapcar_id IS NOT NULL;

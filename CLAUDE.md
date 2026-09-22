@@ -1553,6 +1553,98 @@ segue no schema sem uso novo, não removida sem ganho real),
   oportunidade com marca/modelo/ano vazios recebe os 3 campos preenchidos
   certos após a busca; oportunidade com esses campos JÁ preenchidos
   mantém os valores originais intocados mesmo depois da mesma busca.
+- **Consulta veicular ZapCar (Consulta Simples)** (22/09/2026, "vamos
+  integrar essa api no sistema em oputunidade compras vamos usar por
+  enquanto chamada consulta simples") — provedor DIFERENTE do PlacaFIPE
+  acima (que só traz valor de tabela/dados básicos): a ZapCar
+  (api.zapcarconsulta.com.br) consulta restrições/débitos/sinistro/
+  leilão/gravame direto na base oficial pela placa — ajuda o consultor a
+  avaliar o veículo (ex: financiamento em aberto que não bate com o que
+  o cliente informou, sinistro não declarado) antes de fechar a compra.
+  Doc oficial (openapi v1.1.0, capturada 22/09/2026) colada pelo usuário
+  direto via Google Docs — o domínio da doc/openapi.json está fora do
+  alcance deste sandbox pra leitura direta, mesma limitação já documentada
+  pra `doc.placafipe.com.br`. **Escopo desta 1ª versão, por pedido
+  explícito**: só o serviço "Consulta Simples" (slug `consulta`, o mais
+  barato do catálogo) — os outros serviços (completa, veicular, gravame,
+  RENAJUD, débitos, FIPE via ZapCar) e o webhook (a doc recomenda
+  "preferir ao polling em volume", mas o Portal do Cliente mostrava
+  "Nenhum webhook cadastrado" no momento desta implementação — print
+  conferido) ficam pra uma próxima rodada, sem código morto criado agora
+  à toa.
+  `includes/zapcar.php` (novo) — `zapcarRequest()` (cURL autenticado,
+  `Authorization: Bearer <chave>`, nunca lança) +
+  `zapcarIniciarConsultaSimples()` (`POST /v1/consultas` — cria e
+  **DEBITA**, exceto 4xx/402/429/replay de Idempotency-Key, que nunca
+  cobram) + `zapcarAtualizarStatusLocal()` (`GET /v1/consultas/{id}` —
+  grátis, sem limite). **Assíncrono** (regra de ouro #1 da doc): o POST só
+  cria, o resultado vem via polling — aqui feito pelo **NAVEGADOR**
+  (`admin/zapcar_ajax.php`, ação `status`, a cada 4s enquanto a tela
+  estiver aberta), nunca cron/webhook nesta 1ª versão; se o consultor
+  fechar a aba antes de concluir, a linha local fica `processando` e o JS
+  retoma sozinho na próxima vez que abrir a mesma oportunidade
+  (`zapcarUltimaConsultaDaOportunidade()`, mostra o último resultado sem
+  cobrar de novo). **Nunca repolla um id terminal** (`concluido`/`erro` —
+  regra #3 da doc): `zapcarAtualizarStatusLocal()` checa o status local
+  antes de qualquer chamada nova.
+  **Idempotency-Key sempre derivada do id local + tentativa** (nunca
+  aleatória, regra #4 da doc) — protege contra cobrar 2x por duplo
+  clique/reenvio. **Dedup**: se já existe consulta `processando` pra
+  MESMA placa+oportunidade, reaproveita o id em vez de criar outra e
+  cobrar de novo (mesmo padrão já usado em `criarAvaliacao()`,
+  `includes/veiculo_avaliacoes.php`); criação que falha (4xx/402/rede —
+  nunca cobra) **remove o rascunho local**, nunca deixa linha
+  "processando" órfã que nunca vai concluir porque nem chegou a nascer na
+  ZapCar de verdade. `tentativa` fica sempre 1 nesta versão — cada clique
+  em "Consultar" de novo cria uma linha local NOVA (nunca reaproveita id
+  antigo pra "tentar de novo"), então um retry manual já satisfaz sozinho
+  a regra "consulta NOVA com Idempotency-Key NOVA" sem precisar de loop
+  de retry automático com backoff.
+  Nova tabela `zapcar_consultas` — histórico completo, nunca sobrescrito
+  (cada tentativa é 1 linha). Tela (card "🔎 Consulta veicular (ZapCar)"
+  em `admin/oportunidade.php`, só aparece com chave configurada) respeita
+  o **tri-estado** da doc (regra #7): `true` = alerta vermelho (recall/
+  sinistro/restrição ativa), `false` = verificado e limpo (badge verde),
+  `null`/ausente = "não verificado" (badge neutro) — **nunca** mostra
+  "nada consta" pra falta de informação. Prefere o bloco `veiculo`
+  normalizado (estável, snake_case) sobre `dados` (espelho cru da fonte,
+  regra #8 da doc) pra tudo que renderiza — marca/modelo/ano/cor/situação,
+  restrições ativas (`restricoes[].ativa===true`), débitos (com "valor não
+  informado" quando `valor_informado:false`, e prefixo "a partir de" no
+  total nesse caso), proprietário e o array `nao_verificado[]` top-level
+  listado no rodapé do card. **Preço nunca fixo no código** — a própria
+  doc avisa "no CRM, o ideal é sempre ler os preços da API em vez de
+  fixá-los no código" (achado direto no print do Portal do Cliente ZapCar
+  colado pelo usuário); `zapcarPrecoConsultaSimples()` lê ao vivo de `GET
+  /v1/servicos` (cache 1h, só pra não bater na API a cada carregamento de
+  tela). Card de Configurações → 🚓 ZapCar (chave + "Testar conexão" — o
+  teste usa só as 2 chamadas GRÁTIS do catálogo/saldo, nunca gasta saldo
+  real, diferente do teste da PlacaFIPE que exige placa real porque a
+  busca em si é paga lá). Consultar continua bloqueado pro perfil
+  `supervisor` no servidor (mesmo guard de toda ação de escrita em
+  `admin/oportunidade.php` — supervisor só acompanha, nunca gasta saldo da
+  conta ZapCar). Testado: 14 blocos de asserção em banco isolado contra
+  servidor ZapCar fake local (criação com sucesso grava `zapcar_id`/
+  `valor_cobrado`/Idempotency-Key certos, header `Authorization`/
+  `Idempotency-Key` conferidos byte a byte no request capturado pelo fake
+  server; polling `processando`→`concluido` decodifica `veiculo`/
+  `nao_verificado` certos, tri-estado `recall=false`/`sinistro=true`
+  preservado, `debitos_total_centavos` em centavos sem conversão
+  precoce; id terminal confirmado NUNCA repollado de novo — 0 chamadas
+  GET a mais depois de concluído; erro grava `erro_codigo`/`retryable`
+  certos; dedup confirmado sem 2º POST nem 2ª linha local pra 2 chamadas
+  seguidas na mesma placa `processando`; falha 402/400 na criação
+  confirmada sem deixar linha órfã no banco, nos dois casos; sem chave
+  configurada confirmado nunca tenta a rede) + `php -l` + `tests/smoke.php`
+  limpos.
+  ⚠️ **Nunca confirmado contra a API real ainda** (sandbox de dev bloqueia
+  acesso externo, mesma ressalva de toda integração nova deste projeto) —
+  a implementação segue a doc/openapi colada pelo usuário, mas o formato
+  exato da resposta (nomes de campo dentro de `veiculo`/`restricoes[]`/
+  `debitos[]`, texto de `erro_codigo`) só será confirmado de verdade
+  quando a chave real (produção ou teste, `zc_live_`/`zc_test_`) for
+  colada em Configurações e testada contra um caso real — ver seção "A
+  validar assim que subir em produção" do CLAUDE.md.
 - **Débitos do veículo (IPVA/licenciamento/multas)** (22/09/2026, "campo
   de preencher - debitos do veilucos como ipva linciamento e multoas") —
   confirmado com o usuário (2 perguntas diretas): 3 campos numéricos
@@ -5656,6 +5748,31 @@ Este ambiente de dev bloqueia acesso externo (só libera alguns hosts tipo
 GitHub/npm), então o que segue foi construído seguindo documentação e
 testado com servidor fake local — nunca contra o serviço real:
 
+- **API ZapCar** (`includes/zapcar.php`, `admin/zapcar_ajax.php`,
+  22/09/2026) — construída a partir da doc oficial (openapi v1.1.0)
+  colada pelo usuário direto via Google Docs, nunca confirmada contra a
+  API real ainda. Testado só contra servidor fake local modelado
+  exatamente no formato da doc (ver bullet completo na seção de módulos,
+  "Consulta veicular ZapCar"). Pontos específicos a confirmar quando a
+  chave real (`zc_live_`/`zc_test_`) for colada em Configurações → ZapCar:
+  (1) nomes de campo dentro do bloco `veiculo` (`marca`/`modelo`/
+  `ano_modelo`/`cor`/`situacao`/`recall`/`sinistro`/`leilao`/
+  `restricoes[]`/`debitos[]`/`debitos_total_centavos`/`proprietario`) —
+  a doc documenta isso como "contrato estável", mas nunca visto numa
+  resposta real; (2) se `GET /v1/servicos` realmente devolve
+  `{"servicos": [...]}` (assumido) ou o array direto na raiz —
+  `zapcarServicos()`/`zapcarPrecoConsultaSimples()` já toleram os dois
+  formatos, mas nunca confirmado qual é o real; (3) tempo real de
+  processamento de uma Consulta Simples de verdade (a doc cita até ~2min
+  em placa "fria") — validar se o teto de ~6min de polling do navegador
+  (`admin/oportunidade.php`, `POLL_MAX_TENTATIVAS`) é suficiente na
+  prática; (4) se `erro_codigo` bate exatamente com a tabela da doc
+  (`QUERY_NOT_FOUND`, `PROVIDER_TIMEOUT` etc) — a tela mostra o texto cru
+  de `erro`/`erro_codigo` que vier, nunca traduz/reescreve, então qualquer
+  divergência aparece direto pro consultor sem quebrar nada, só fica menos
+  amigável até confirmar. Cadastro de webhook (preferido pela doc "ao
+  volume", mas fora de escopo nesta 1ª versão — "por enquanto chamada
+  consulta simples") fica pra quando/se for pedido depois.
 - **API Asaas** (`includes/asaas.php`, `api/asaas_webhook.php`,
   `cron/asaas_sync.php`, 17/09/2026) — construída a partir da documentação
   pública da API v3 (docs.asaas.com), nunca confirmada contra uma

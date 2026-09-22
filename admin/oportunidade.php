@@ -510,6 +510,24 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     </form>
 </div>
 
+<?php if (zapcarConfigured()): ?>
+<div class="card" id="zapcar-card">
+    <h3>🔎 Consulta veicular (ZapCar)</h3>
+    <p><small>22/09/2026 — consulta paga (desconta do saldo da conta ZapCar): restrições, débitos, sinistro, leilão
+       e gravame pela placa oficial, direto na base. Ajuda a avaliar o veículo antes de fechar a compra — nunca
+       preenche valor/decisão de compra sozinho, é só informação pra você revisar.</small></p>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div>
+            <label style="font-size:12px">Placa</label>
+            <input type="text" id="zapcar-placa" style="width:120px;text-transform:uppercase" maxlength="8"
+                   value="<?= e($op['veiculo_placa'] ?? '') ?>" placeholder="ABC1D23">
+        </div>
+        <button type="button" id="zapcar-consultar-btn" style="margin:0;padding:8px 14px;font-size:13px;white-space:nowrap">Consultar (paga)</button>
+    </div>
+    <div id="zapcar-resultado" style="margin-top:10px;font-size:13px"></div>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <h3>📝 Financiamento e contrato de compra</h3>
     <p><small>Esses dados alimentam o Quadro-Resumo do contrato-mestre de compra (includes/contratos_pdf.php) — o
@@ -951,6 +969,210 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 resultado.textContent = '⚠️ Falha ao buscar — tente de novo.';
             });
     });
+})();
+</script>
+<?php endif; ?>
+
+<?php if (zapcarConfigured()): ?>
+<script>
+(function () {
+    // Consulta veicular ZapCar (Consulta Simples) — 22/09/2026, "vamos
+    // integrar essa api no sistema em oportunidade compras... por enquanto
+    // chamada consulta simples". Cria (POST, cobra) via admin/zapcar_ajax.php
+    // e o navegador repolla o status (GET, grátis) a cada 4s até concluir/
+    // errar — nunca um cron/webhook nesta 1ª versão. Ao abrir a tela,
+    // busca a última consulta já feita pra essa oportunidade (nunca cobra
+    // de novo só por recarregar a página) e retoma o polling se ainda
+    // estiver 'processando'.
+    var oportunidadeId = <?= (int)$op['id'] ?>;
+    var inputPlaca = document.getElementById('zapcar-placa');
+    var btnConsultar = document.getElementById('zapcar-consultar-btn');
+    var resultado = document.getElementById('zapcar-resultado');
+    var csrf = document.querySelector('input[name="csrf_token"]');
+    if (!inputPlaca || !csrf) return;
+
+    var pollTimer = null;
+    var pollTentativas = 0;
+    var POLL_INTERVALO_MS = 4000;
+    var POLL_MAX_TENTATIVAS = 90; // ~6min, teto da doc é 5min de polling — folga pra latência de rede
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = (s === null || s === undefined) ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    // Tri-estado (regra #7 da doc ZapCar): true = alerta (vermelho),
+    // false = verificado e limpo (verde), null/ausente = NÃO VERIFICADO
+    // (azul/neutro) — nunca mostrar "nada consta" pra falta de informação.
+    function badgeTriEstado(valor, textoTrue, textoFalse) {
+        if (valor === true) return '<span class="badge badge-atraso">⚠️ ' + escapeHtml(textoTrue) + '</span>';
+        if (valor === false) return '<span class="badge badge-ok">✅ ' + escapeHtml(textoFalse) + '</span>';
+        return '<span class="badge badge-info">❔ não verificado</span>';
+    }
+
+    function formatarMoeda(centavos) {
+        return 'R$ ' + (centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function pararPolling() {
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    }
+
+    function renderizar(data) {
+        if (!data || !data.ok) {
+            resultado.innerHTML = '<div class="alerta-erro">⚠️ ' + escapeHtml((data && data.erro) || 'Falha ao consultar.') + '</div>';
+            return;
+        }
+        if (data.status === 'processando') {
+            resultado.innerHTML = '<p style="color:var(--texto-fraco)">⏳ Consultando na base oficial… pode levar até alguns minutos '
+                + '(placa "fria" demora mais). Pode continuar usando a tela normalmente, o resultado aparece sozinho aqui.</p>';
+            return;
+        }
+        if (data.status === 'erro') {
+            resultado.innerHTML = '<div class="alerta-erro">⚠️ Consulta não concluiu: '
+                + escapeHtml(data.erro_mensagem || data.erro_codigo || 'erro desconhecido')
+                + (data.erro_codigo ? ' <small>(' + escapeHtml(data.erro_codigo) + ')</small>' : '')
+                + '<br><small>Nada foi cobrado por essa falha (consultas com erro são estornadas automaticamente).'
+                + ' Clique em "Consultar" de novo pra tentar outra vez.</small></div>';
+            return;
+        }
+        // concluido
+        var v = data.veiculo || {};
+        var naoVerificado = data.nao_verificado || [];
+        var html = '';
+        html += '<p><strong>' + escapeHtml(v.placa || data.placa) + '</strong> — '
+            + escapeHtml((v.marca || '') + ' ' + (v.modelo || '')) + ' '
+            + (v.ano_modelo ? '(' + escapeHtml(v.ano_modelo) + ')' : '')
+            + (v.cor ? ' · ' + escapeHtml(v.cor) : '')
+            + (v.situacao ? ' · ' + escapeHtml(v.situacao) : '')
+            + (data.valor_cobrado !== null ? ' <small style="color:var(--texto-fraco)">(consulta R$ '
+                + Number(data.valor_cobrado).toFixed(2).replace('.', ',') + ')</small>' : '')
+            + '</p>';
+
+        if (v.baixado === true) {
+            html += '<div class="alerta-erro">🚫 Veículo com registro de BAIXA — confirme com o vendedor antes de seguir.</div>';
+        }
+
+        html += '<p>' + badgeTriEstado(v.recall, 'recall', 'sem recall')
+            + ' ' + badgeTriEstado(v.sinistro, 'sinistro', 'sem sinistro');
+        if (v.leilao && typeof v.leilao === 'object') {
+            html += ' ' + badgeTriEstado(v.leilao.consta, 'passou por leilão (' + (v.leilao.fotos || 0) + ' foto(s))', 'sem leilão');
+        } else {
+            html += ' ' + badgeTriEstado(null, '', '');
+        }
+        html += '</p>';
+
+        var restricoes = Array.isArray(v.restricoes) ? v.restricoes : [];
+        var restricoesAtivas = restricoes.filter(function (r) { return r && r.ativa === true; });
+        if (restricoesAtivas.length) {
+            html += '<p><strong>⚠️ Restrições ativas:</strong></p><ul style="margin:4px 0 8px 18px">';
+            restricoesAtivas.forEach(function (r) {
+                html += '<li>' + escapeHtml(r.tipo || 'RESTRIÇÃO') + (r.descricao ? ' — ' + escapeHtml(r.descricao) : '') + '</li>';
+            });
+            html += '</ul>';
+        } else if (restricoes.length) {
+            html += '<p><span class="badge badge-ok">✅ nenhuma restrição ativa</span> <small style="color:var(--texto-fraco)">(entre as verificadas)</small></p>';
+        }
+
+        var debitos = Array.isArray(v.debitos) ? v.debitos : [];
+        if (debitos.length) {
+            html += '<p><strong>💰 Débitos encontrados:</strong></p><ul style="margin:4px 0 8px 18px">';
+            debitos.forEach(function (d) {
+                var valorTxt = (d.valor_informado === false)
+                    ? 'valor não informado'
+                    : formatarMoeda(d.valor_centavos || 0);
+                html += '<li>' + escapeHtml(d.tipo || 'OUTRO') + (d.descricao ? ' (' + escapeHtml(d.descricao) + ')' : '') + ': <strong>' + valorTxt + '</strong></li>';
+            });
+            var totalPrefixo = debitos.some(function (d) { return d.valor_informado === false; }) ? 'a partir de ' : '';
+            html += '</ul><p><small>Total ' + totalPrefixo + '<strong>' + formatarMoeda(v.debitos_total_centavos || 0) + '</strong></small></p>';
+        } else {
+            html += '<p><span class="badge badge-ok">✅ sem débitos encontrados</span></p>';
+        }
+
+        if (v.proprietario && v.proprietario.nome) {
+            html += '<p><small>Proprietário no CRLV: ' + escapeHtml(v.proprietario.nome)
+                + (v.proprietario.documento ? ' — ' + escapeHtml(v.proprietario.documento) : '') + '</small></p>';
+        }
+
+        if (naoVerificado.length) {
+            html += '<p><small style="color:var(--texto-fraco)">❔ Não verificado nesta consulta: '
+                + escapeHtml(naoVerificado.join(', ')) + '</small></p>';
+        }
+
+        if (data.pdf_url) {
+            html += '<p><a href="' + escapeHtml(data.pdf_url) + '" target="_blank" rel="noopener">📄 Ver documento da consulta</a></p>';
+        }
+
+        resultado.innerHTML = html;
+    }
+
+    function poll(idLocal) {
+        pararPolling();
+        fetch('/admin/zapcar_ajax.php?acao=status&id_local=' + encodeURIComponent(idLocal))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                renderizar(data);
+                pollTentativas++;
+                if (data && data.ok && data.status === 'processando' && pollTentativas < POLL_MAX_TENTATIVAS) {
+                    pollTimer = setTimeout(function () { poll(idLocal); }, POLL_INTERVALO_MS);
+                } else if (data && data.status === 'processando') {
+                    resultado.innerHTML += '<p><small>Ainda processando depois de alguns minutos — recarregue a página '
+                        + 'mais tarde pra conferir, o resultado fica salvo assim que a ZapCar concluir.</small></p>';
+                }
+            })
+            .catch(function () {
+                // Falha de rede no polling em si — tenta de novo no próximo
+                // ciclo, nunca desiste silenciosamente enquanto não bater o teto.
+                pollTentativas++;
+                if (pollTentativas < POLL_MAX_TENTATIVAS) {
+                    pollTimer = setTimeout(function () { poll(idLocal); }, POLL_INTERVALO_MS);
+                }
+            });
+    }
+
+    btnConsultar.addEventListener('click', function () {
+        var placa = inputPlaca.value.trim();
+        if (!placa) { resultado.innerHTML = '<p>⚠️ Digite a placa primeiro.</p>'; return; }
+        if (!confirm('Consultar essa placa na ZapCar? Isso desconta do saldo da conta ZapCar (consulta paga).')) return;
+
+        btnConsultar.disabled = true;
+        resultado.innerHTML = '<p>Enviando…</p>';
+        var body = new URLSearchParams();
+        body.set('csrf_token', csrf.value);
+        body.set('oportunidade_id', String(oportunidadeId));
+        body.set('placa', placa);
+
+        fetch('/admin/zapcar_ajax.php?acao=consultar', { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btnConsultar.disabled = false;
+                if (!data.ok) {
+                    resultado.innerHTML = '<div class="alerta-erro">⚠️ ' + escapeHtml(data.erro || 'Falha ao consultar.') + '</div>';
+                    return;
+                }
+                pollTentativas = 0;
+                poll(data.id_local);
+            })
+            .catch(function () {
+                btnConsultar.disabled = false;
+                resultado.innerHTML = '<div class="alerta-erro">⚠️ Falha ao consultar — tente de novo.</div>';
+            });
+    });
+
+    // Ao abrir a tela: mostra a última consulta já feita (sem cobrar de
+    // novo) e retoma o polling se ainda estava 'processando'.
+    fetch('/admin/zapcar_ajax.php?acao=ultima&oportunidade_id=' + encodeURIComponent(oportunidadeId))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data || data.vazio) return;
+            renderizar(data);
+            if (data.ok && data.status === 'processando') {
+                pollTentativas = 0;
+                poll(data.id_local);
+            }
+        })
+        .catch(function () {});
 })();
 </script>
 <?php endif; ?>

@@ -40,6 +40,7 @@ require_once __DIR__ . '/../includes/cnpj.php';
 require_once __DIR__ . '/../includes/auditoria.php';
 require_once __DIR__ . '/../includes/avatar.php';
 require_once __DIR__ . '/../includes/veiculo_avaliacoes.php';
+require_once __DIR__ . '/../includes/zapcar.php';
 
 requireAdmin();
 

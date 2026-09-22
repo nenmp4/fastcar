@@ -60,6 +60,15 @@ $camposFipe = [
     'placafipe_token' => 'Token da API PlacaFIPE (api.placafipe.com.br)',
 ];
 
+// Consulta veicular ZapCar (22/09/2026, "vamos integrar essa api no
+// sistema em oportunidade compras") — restrições, débitos, sinistro,
+// leilão e gravame pela placa (ver includes/zapcar.php). 1ª versão só com
+// a "Consulta Simples" (por pedido: "por enquanto chamada consulta
+// simples"), usada no card do mesmo nome em admin/oportunidade.php.
+$camposZapcar = [
+    'zapcar_api_key' => 'Chave da API ZapCar (Authorization: Bearer — zc_live_... produção, zc_test_... teste)',
+];
+
 // Asaas (17/09/2026, pedido José/Jean: "vamos integrar api do assas pra
 // puxar tudo de lá") — cobrança de cliente de venda parcelada (entrada +
 // parcelas), já em uso de verdade lá; importa/sincroniza pro financeiro do
@@ -209,6 +218,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Falha no teste: ' . ($resp['msg'] ?? 'a PlacaFIPE recusou a consulta — confira o token.');
                 } else {
                     $sucesso = 'PlacaFIPE respondeu: "' . ($resp['msg'] ?? 'ok') . '" — conexão funcionando.';
+                }
+            }
+        } elseif ($acao === 'salvar_zapcar') {
+            foreach (array_keys($camposZapcar) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da ZapCar salvas.';
+        } elseif ($acao === 'testar_zapcar') {
+            // GET /v1/servicos e /v1/saldo são grátis (não cobram) — testa
+            // a chave sem gastar saldo, diferente do teste da PlacaFIPE
+            // (que exige placa real porque a busca em si é paga lá).
+            if (!zapcarConfigured()) {
+                $erro = 'Configure e salve a chave da ZapCar antes de testar.';
+            } else {
+                $catalogo = zapcarServicos();
+                if ($catalogo === null) {
+                    $erro = 'Falha no teste: a ZapCar não respondeu, ou a chave é inválida.';
+                } else {
+                    $saldo = zapcarSaldo();
+                    $qtdServicos = count($catalogo['servicos'] ?? (is_array($catalogo) ? $catalogo : []));
+                    $sucesso = "ZapCar respondeu: {$qtdServicos} serviço(s) no catálogo"
+                        . ($saldo !== null ? ', saldo atual R$ ' . number_format($saldo, 2, ',', '.') : '')
+                        . ' — conexão funcionando.';
                 }
             }
         } elseif ($acao === 'salvar_asaas') {
@@ -757,6 +789,38 @@ unset($f);
         <label>Placa real pra testar (consome 1 requisição do plano)</label>
         <input type="text" name="placa_teste" placeholder="ABC1D23" style="text-transform:uppercase;max-width:180px">
         <button type="submit" <?= getConfig('placafipe_token') ? '' : 'disabled' ?>>Testar conexão</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🚓 ZapCar — consulta veicular por placa</h2>
+    <p><small>Adicionado 22/09/2026 — restrições, débitos, sinistro, leilão e gravame pela placa oficial
+       (api.zapcarconsulta.com.br), usada no card "🔎 Consulta veicular (ZapCar)" em
+       <code>admin/oportunidade.php</code>. 1ª versão: só o serviço "Consulta Simples" (o mais barato do
+       catálogo) — cada consulta é paga e desconta do saldo da conta ZapCar. Chave gerada no Portal do Cliente
+       ZapCar → API → Chaves.</small></p>
+    <p>
+        Status:
+        <span class="badge <?= getConfig('zapcar_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= getConfig('zapcar_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_zapcar">
+        <?php foreach ($camposZapcar as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
+                   placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar</button>
+    </form>
+    <form method="post" style="margin-top:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_zapcar">
+        <button type="submit" <?= getConfig('zapcar_api_key') ? '' : 'disabled' ?>>Testar conexão</button>
+        <small style="color:var(--texto-fraco)">Só lê o catálogo e o saldo — não gasta nada.</small>
     </form>
 </div>
 
