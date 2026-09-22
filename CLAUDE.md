@@ -1902,6 +1902,35 @@ segue no schema sem uso novo, não removida sem ganho real),
   removido usando a lista do tipo certo — + `php -l` + `tests/smoke.php`
   limpos + migração idempotente rodada 2x contra o banco de
   desenvolvimento real (2ª rodada mostra "já existia", sem erro).
+  **Duplo clique criava 2 vistorias do mesmo veículo** (22/09/2026, achado
+  real de produção via screenshot — 2 vistorias "Honda ADV 2022"
+  idênticas, mesmo avaliador, criadas 5 minutos uma da outra; confirmado
+  com o usuário: "duplicado") — `criarAvaliacao()` nunca tinha nenhuma
+  trava contra reenvio do form "+ Nova vistoria de recebimento"
+  (`admin/oportunidade.php`/`admin/venda.php`): duplo clique, F5 depois de
+  já ter submetido, ou o botão simplesmente não dando feedback rápido o
+  bastante — qualquer um desses cenários criava outra linha idêntica sem
+  nenhum aviso. Corrigido em `criarAvaliacao()`: antes de inserir, checa
+  se já existe uma vistoria **ativa** (`status IN ('pendente',
+  'em_andamento')`) do mesmo tipo pra esse veículo/negociação — se sim,
+  reaproveita o id dela em vez de criar outra (idempotente, o caller
+  sempre redireciona pro id retornado, então nem percebe diferença);
+  nunca bloqueia uma vistoria genuinamente NOVA depois de uma já
+  concluída (ex: 2ª inspeção numa devolução de veículo). Pra limpar as
+  duplicatas que já existiam: `excluirAvaliacao()` (novo) + botão "🗑️
+  Excluir esta vistoria (duplicata)" em `admin/avaliacao.php`, restrito a
+  `super_admin` (mesma trava de `excluirConversaWhatsapp()`), com
+  `confirm()` em JS antes de submeter — ação sem volta, apaga a vistoria e
+  seus itens/fotos (nunca mexe na cópia já aprovada pro catálogo de
+  vendas, são registros independentes) e **bloqueia** se a vistoria já tem
+  `termo_status` preenchido (termo de entrega já gerado/enviado/assinado —
+  nesse ponto já é documento que saiu do sistema pro cliente, não é mais
+  "limpar rascunho"). Testado: 6 asserções em banco isolado (2ª chamada
+  com os mesmos parâmetros reaproveita a mesma vistoria, nunca cria
+  outra; depois de concluída, uma chamada nova cria vistoria
+  genuinamente nova; `excluirAvaliacao()` remove a vistoria e seus itens;
+  bloqueia exclusão de vistoria com `termo_status` já preenchido) +
+  `php -l` + `tests/smoke.php` limpos.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

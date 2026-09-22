@@ -154,6 +154,25 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
         throw new InvalidArgumentException("Tipo de veículo inválido: {$tipoVeiculo}");
     }
     $db = getDB();
+
+    // 22/09/2026, achado real: duplo clique/reenvio do form de "Nova
+    // vistoria" criava 2 linhas pro mesmo veículo (nenhuma trava contra
+    // reenvio existia) — se já existe uma vistoria ATIVA (pendente/em
+    // andamento) do mesmo tipo pra esse veículo/negociação, reaproveita
+    // ela em vez de criar outra. Nunca bloqueia uma vistoria genuinamente
+    // NOVA depois de uma já concluída (ex: 2ª inspeção numa devolução).
+    $stmtExistente = $db->prepare("
+        SELECT id FROM veiculo_avaliacoes
+        WHERE oportunidade_id = ? AND tipo = ? AND status IN ('pendente', 'em_andamento')"
+        . ($tipo === 'venda' ? " AND venda_id = ?" : "") . "
+        ORDER BY id DESC LIMIT 1
+    ");
+    $stmtExistente->execute($tipo === 'venda' ? [$oportunidadeId, $tipo, $vendaId] : [$oportunidadeId, $tipo]);
+    $existenteId = $stmtExistente->fetchColumn();
+    if ($existenteId) {
+        return (int)$existenteId;
+    }
+
     $db->beginTransaction();
     try {
         $db->prepare("
@@ -415,6 +434,38 @@ function salvarFotoAvaliacao(int $avaliacaoId, array $arquivo, string $legenda):
 function excluirFotoAvaliacao(int $fotoId): void {
     $db = getDB();
     $db->prepare("DELETE FROM veiculo_avaliacao_fotos WHERE id = ?")->execute([$fotoId]);
+}
+
+/**
+ * Exclui uma vistoria inteira (itens + fotos) — 22/09/2026, limpeza de
+ * duplicata (duplo clique criando 2 vistorias do mesmo veículo, ver
+ * criarAvaliacao()); só super_admin, ação sem volta (mesmo espírito de
+ * excluirConversaWhatsapp()). Nunca mexe na cópia já aprovada pro
+ * catálogo de vendas — são registros independentes (mesma disciplina de
+ * excluirFotoAvaliacao, que já não mexe nisso). Bloqueia se já existe
+ * termo de entrega gerado/enviado/assinado — nesse ponto já é documento
+ * que saiu do sistema pro cliente, não é mais "limpar rascunho".
+ */
+function excluirAvaliacao(int $avaliacaoId): array {
+    $db = getDB();
+    $av = buscarAvaliacao($avaliacaoId);
+    if (!$av) {
+        return ['ok' => false, 'erro' => 'Vistoria não encontrada.'];
+    }
+    if (!empty($av['termo_status'])) {
+        return ['ok' => false, 'erro' => 'Essa vistoria já tem termo de entrega gerado/enviado — não pode ser excluída.'];
+    }
+    $db->beginTransaction();
+    try {
+        $db->prepare("DELETE FROM veiculo_avaliacao_itens WHERE avaliacao_id = ?")->execute([$avaliacaoId]);
+        $db->prepare("DELETE FROM veiculo_avaliacao_fotos WHERE avaliacao_id = ?")->execute([$avaliacaoId]);
+        $db->prepare("DELETE FROM veiculo_avaliacoes WHERE id = ?")->execute([$avaliacaoId]);
+        $db->commit();
+        return ['ok' => true, 'erro' => null];
+    } catch (Throwable $e) {
+        $db->rollBack();
+        return ['ok' => false, 'erro' => $e->getMessage()];
+    }
 }
 
 /**

@@ -80,6 +80,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'gerar_termo' && $podeEditarChecklist) {
             $resultado = gerarEEnviarTermoAvaliacao($id);
             if ($resultado['ok']) { $sucesso = 'Termo gerado e enviado pra assinatura.'; } else { $erro = $resultado['erro']; }
+        } elseif ($acao === 'excluir_avaliacao' && $perfil === 'super_admin') {
+            $resultado = excluirAvaliacao($id);
+            if ($resultado['ok']) {
+                header('Location: /admin/avaliacoes.php');
+                exit;
+            }
+            $erro = $resultado['erro'];
         } else {
             $erro = 'Ação não permitida.';
         }
@@ -157,6 +164,13 @@ function avTermoStatusLabel(string $status): string {
 
     <p><strong>Status:</strong> <?= avStatusLabel($av['status']) ?>
         <?php if ($av['concluida_em']): ?><small>— concluída em <?= date('d/m/Y H:i', strtotime($av['concluida_em'])) ?></small><?php endif; ?></p>
+    <?php if ($perfil === 'super_admin' && empty($av['termo_status'])): ?>
+        <form method="post" onsubmit="return confirm('Excluir esta vistoria inteira (itens e fotos)? Ação sem volta — use só pra limpar duplicata criada por engano.');" style="margin-top:10px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="excluir_avaliacao">
+            <button type="submit" class="perigo">🗑️ Excluir esta vistoria (duplicata)</button>
+        </form>
+    <?php endif; ?>
 </div>
 
 <div class="card">
