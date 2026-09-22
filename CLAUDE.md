@@ -1500,6 +1500,30 @@ segue no schema sem uso novo, não removida sem ganho real),
   oportunidade com marca/modelo/ano vazios recebe os 3 campos preenchidos
   certos após a busca; oportunidade com esses campos JÁ preenchidos
   mantém os valores originais intocados mesmo depois da mesma busca.
+- **Débitos do veículo (IPVA/licenciamento/multas)** (22/09/2026, "campo
+  de preencher - debitos do veilucos como ipva linciamento e multoas") —
+  confirmado com o usuário (2 perguntas diretas): 3 campos numéricos
+  separados (`oportunidades.debito_ipva`/`debito_licenciamento`/
+  `debito_multas`, `REAL`, sem `DEFAULT` de propósito — regra #3, `NULL`
+  até o consultor confirmar com o vendedor, nunca chutado), não um único
+  campo de texto livre — dá pra somar/ver total de cara; e ficam no card
+  "Dados do veículo" de `admin/oportunidade.php` (funil de compra), não no
+  checklist de vistoria nem na Frota. Diferente de `encargos_texto`/
+  `ipva_responsavel_texto`/`multas_texto` (já existiam, texto livre pro
+  Quadro-Resumo do contrato — "quem é responsável por isso DEPOIS da
+  entrega") — os 3 campos novos são o valor do débito JÁ existente no
+  veículo NA HORA da negociação, informação diferente, nunca confundir os
+  dois. Mesmo `<form>`/ação `atualizar_veiculo` de sempre — 3 inputs
+  numéricos novos + um total calculado só em JS (nunca grava nada sozinho,
+  é só pro consultor ver o somatório de cara sem somar de cabeça), mesmo
+  padrão de `<script>` sempre renderizado (nunca dentro de um
+  `<?php if (...) ?>` condicional — lição já documentada no bug real do
+  cálculo de saldo que ficava escondido dentro do `if (getConfig('placafipe_token'))`).
+  Testado: função isolada confirmando os 3 valores salvam certos e que
+  deixar em branco grava `NULL` (nunca `0`) + migração testada
+  isoladamente contra um banco simulando produção antes da mudança
+  (colunas removidas e recriadas via `migrar.php`, idempotente numa 2ª
+  rodada) + `php -l` + `tests/smoke.php` limpos.
 - **Módulo cliente** — `admin/clientes.php` (lista/busca) +
   `admin/cliente_detalhe.php` (dados cadastrais + histórico de todas as
   oportunidades daquele telefone, incluindo veículo/placa e **data real de

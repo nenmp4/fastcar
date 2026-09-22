@@ -117,6 +117,15 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     veiculo_placa TEXT DEFAULT '',
     veiculo_renavam TEXT DEFAULT '',
     veiculo_chassi TEXT DEFAULT '',
+    -- Débitos do veículo no momento da negociação de compra (22/09/2026,
+    -- "campo de preencher - debitos do veilucos como ipva linciamento e
+    -- multoas") — 3 campos numéricos separados (não 1 texto livre,
+    -- confirmado com o usuário) pra dar pra somar/mostrar total. Sem
+    -- DEFAULT de propósito (regra #3) — NULL até o consultor confirmar
+    -- com o vendedor, nunca chutado.
+    debito_ipva REAL,
+    debito_licenciamento REAL,
+    debito_multas REAL,
     banco_financiamento TEXT DEFAULT '',
     valor_parcela REAL,
     parcelas_restantes INTEGER,

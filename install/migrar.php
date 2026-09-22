@@ -194,6 +194,14 @@ $migracoes = [
     // fatou" — marca o consultor ausente HOJE (data, some sozinho no dia
     // seguinte por comparação, sem precisar desmarcar manualmente).
     'usuarios.faltou_em' => "ALTER TABLE usuarios ADD COLUMN faltou_em DATE DEFAULT NULL",
+
+    // 22/09/2026, "campo de preencher - debitos do veilucos como ipva
+    // linciamento e multoas" — 3 campos numéricos separados no card
+    // "Dados do veículo" da oportunidade de compra, sem DEFAULT de
+    // propósito (regra #3, nunca chutado).
+    'oportunidades.debito_ipva' => "ALTER TABLE oportunidades ADD COLUMN debito_ipva REAL",
+    'oportunidades.debito_licenciamento' => "ALTER TABLE oportunidades ADD COLUMN debito_licenciamento REAL",
+    'oportunidades.debito_multas' => "ALTER TABLE oportunidades ADD COLUMN debito_multas REAL",
 ];
 
 foreach ($migracoes as $nome => $sql) {

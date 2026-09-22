@@ -49,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, veiculo_placa = ?,
                         veiculo_renavam = ?, veiculo_chassi = ?, banco_financiamento = ?,
                         valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
+                        debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?,
                         updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -63,6 +64,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
                     $_POST['parcelas_atraso'] !== '' ? (int)$_POST['parcelas_atraso'] : 0,
                     $_POST['valor_pretendido'] !== '' ? (float)$_POST['valor_pretendido'] : null,
+                    ($_POST['debito_ipva'] ?? '') !== '' ? (float)$_POST['debito_ipva'] : null,
+                    ($_POST['debito_licenciamento'] ?? '') !== '' ? (float)$_POST['debito_licenciamento'] : null,
+                    ($_POST['debito_multas'] ?? '') !== '' ? (float)$_POST['debito_multas'] : null,
                     $id,
                 ]);
                 // Só um sinal visual pro consultor — nunca sobrescreve o que
@@ -478,6 +482,23 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="number" name="parcelas_atraso" value="<?= e((string)($op['parcelas_atraso'] ?? 0)) ?>">
                 <label>Valor pretendido pelo cliente (R$)</label>
                 <input type="number" step="0.01" name="valor_pretendido" value="<?= e((string)($op['valor_pretendido'] ?? '')) ?>">
+            </div>
+        </div>
+
+        <h4 style="margin-top:16px">💰 Débitos do veículo</h4>
+        <p><small>Preenche o consultor, confirmado com o vendedor — ajuda a avaliar o valor a oferecer. Deixe em
+           branco enquanto não confirmado, nunca chuta um valor.</small></p>
+        <div class="grid-2">
+            <div>
+                <label>IPVA em aberto (R$)</label>
+                <input type="number" step="0.01" name="debito_ipva" id="debito_ipva" value="<?= e((string)($op['debito_ipva'] ?? '')) ?>">
+                <label>Licenciamento em aberto (R$)</label>
+                <input type="number" step="0.01" name="debito_licenciamento" id="debito_licenciamento" value="<?= e((string)($op['debito_licenciamento'] ?? '')) ?>">
+            </div>
+            <div>
+                <label>Multas em aberto (R$)</label>
+                <input type="number" step="0.01" name="debito_multas" id="debito_multas" value="<?= e((string)($op['debito_multas'] ?? '')) ?>">
+                <p id="debitos-total" style="font-size:13px;color:var(--texto-fraco);margin-top:8px"></p>
             </div>
         </div>
         <button type="submit">Salvar dados do veículo</button>
@@ -994,6 +1015,37 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     campoSaldo.addEventListener('input', function () { esconder(dicaSaldo); recalcularTudo(); });
 
     recalcularTudo(); // cobre os 2 campos já vindos preenchidos do servidor
+})();
+</script>
+<script>
+(function () {
+    // Total dos débitos do veículo (22/09/2026, "campo de preencher -
+    // debitos do veilucos como ipva linciamento e multoas") — só um
+    // somatório informativo pro consultor ver o total de cara, sem
+    // precisar somar na cabeça; nunca grava nada sozinho, os 3 campos
+    // continuam salvos separados.
+    var campoIpva = document.getElementById('debito_ipva');
+    var campoLicenciamento = document.getElementById('debito_licenciamento');
+    var campoMultas = document.getElementById('debito_multas');
+    var totalEl = document.getElementById('debitos-total');
+    if (!campoIpva || !campoLicenciamento || !campoMultas || !totalEl) return;
+
+    function recalcularTotal() {
+        var soma = [campoIpva, campoLicenciamento, campoMultas].reduce(function (acc, campo) {
+            var v = parseFloat(campo.value);
+            return acc + (isNaN(v) ? 0 : v);
+        }, 0);
+        if (soma > 0) {
+            totalEl.textContent = 'Total: R$ ' + soma.toFixed(2).replace('.', ',');
+        } else {
+            totalEl.textContent = '';
+        }
+    }
+
+    [campoIpva, campoLicenciamento, campoMultas].forEach(function (campo) {
+        campo.addEventListener('input', recalcularTotal);
+    });
+    recalcularTotal();
 })();
 </script>
 
