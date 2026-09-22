@@ -67,7 +67,7 @@ require_once __DIR__ . '/veiculo_avaliacoes_pdf.php';
 // dois, só o texto ficou neutro o bastante pra fazer sentido nos dois
 // casos (a `item` (chave) nunca mudou, então nenhuma avaliação já criada
 // precisa de migração).
-const VEICULO_AVALIACAO_ITENS_PADRAO = [
+const VEICULO_AVALIACAO_ITENS_CARRO = [
     'avarias'    => 'Avarias (lataria/carenagem/pintura/amassados/riscos)',
     'motor'      => 'Motor',
     'cambio'     => 'Câmbio',
@@ -76,21 +76,65 @@ const VEICULO_AVALIACAO_ITENS_PADRAO = [
     'estofado'   => 'Banco/estofado',
 ];
 
+// 22/09/2026, "avaliação tem ter opção de moto carro", confirmado com o
+// usuário: checklist DIFERENTE de verdade pro caso de moto (não só o
+// rótulo, que já tinha sido generalizado em 21/09) — corrente/freios/
+// pneus/elétrica são itens de moto sem equivalente direto no checklist de
+// carro; os itens que fazem sentido nos dois mantêm a MESMA chave/rótulo
+// do carro (avarias/motor/cambio/suspensao/vazamentos), pra
+// veiculoAvaliacaoRotuloItem() nunca precisar saber o tipo pra resolver o
+// texto de um item compartilhado.
+const VEICULO_AVALIACAO_ITENS_MOTO = [
+    'motor'      => 'Motor',
+    'cambio'     => 'Câmbio',
+    'corrente'   => 'Corrente/relação (transmissão)',
+    'freios'     => 'Freios (dianteiro/traseiro)',
+    'pneus'      => 'Pneus',
+    'suspensao'  => 'Suspensão (dianteira/traseira)',
+    'eletrica'   => 'Elétrica/painel',
+    'vazamentos' => 'Vazamentos (óleo/fluidos)',
+    'avarias'    => 'Avarias (carenagem/pintura/amassados/riscos)',
+];
+
+/** Lista de itens do checklist certa pro tipo de veículo — 'carro' é o fallback padrão (mesmo default da coluna). */
+function veiculoAvaliacaoItens(string $tipoVeiculo): array {
+    return $tipoVeiculo === 'moto' ? VEICULO_AVALIACAO_ITENS_MOTO : VEICULO_AVALIACAO_ITENS_CARRO;
+}
+
 /**
- * Garante que a avaliação tem uma linha pra CADA item de
- * VEICULO_AVALIACAO_ITENS_PADRAO — `INSERT OR IGNORE` (índice único
- * `(avaliacao_id, item)`, sempre idempotente) nunca duplica nem mexe num
- * item já preenchido. Chamada tanto na criação quanto toda vez que a
- * lista é lida — self-heal automático (mesmo espírito do wizard de
- * documentos, "etapa sempre derivada do banco"): se um item novo for
- * adicionado à lista padrão no futuro (como o "Câmbio" agora), uma
- * avaliação já criada antes disso ganha a linha faltante sozinha na
- * próxima vez que a tela for aberta, sem precisar de migração/script.
+ * Rótulo de um item, sem precisar saber o tipo de veículo — procura nos 2
+ * dicionários (itens compartilhados como "motor" têm o mesmo texto nos
+ * dois, então a ordem de busca nunca importa). Usado nos lugares que só
+ * têm a `item` (chave) em mãos, tipo o PDF do termo e a tela do
+ * avaliador, que já sabem qual avaliação estão mostrando mas não querem
+ * uma consulta extra só pra resolver 1 rótulo.
  */
-function garantirItensAvaliacao(int $avaliacaoId): void {
+function veiculoAvaliacaoRotuloItem(string $item): string {
+    return VEICULO_AVALIACAO_ITENS_CARRO[$item] ?? VEICULO_AVALIACAO_ITENS_MOTO[$item] ?? $item;
+}
+
+/**
+ * Garante que a avaliação tem uma linha pra CADA item do checklist do seu
+ * tipo de veículo — `INSERT OR IGNORE` (índice único `(avaliacao_id,
+ * item)`, sempre idempotente) nunca duplica nem mexe num item já
+ * preenchido. Chamada tanto na criação quanto toda vez que a lista é lida
+ * — self-heal automático (mesmo espírito do wizard de documentos, "etapa
+ * sempre derivada do banco"): se um item novo for adicionado à lista
+ * padrão no futuro, uma avaliação já criada antes disso ganha a linha
+ * faltante sozinha na próxima vez que a tela for aberta, sem precisar de
+ * migração/script. $tipoVeiculo opcional — se omitido, busca da própria
+ * avaliação (evita 2 idas ao banco quando quem chama já sabe o tipo, ex:
+ * logo após criarAvaliacao()).
+ */
+function garantirItensAvaliacao(int $avaliacaoId, ?string $tipoVeiculo = null): void {
     $db = getDB();
+    if ($tipoVeiculo === null) {
+        $stmtTipo = $db->prepare("SELECT tipo_veiculo FROM veiculo_avaliacoes WHERE id = ?");
+        $stmtTipo->execute([$avaliacaoId]);
+        $tipoVeiculo = (string)($stmtTipo->fetchColumn() ?: 'carro');
+    }
     $stmt = $db->prepare("INSERT OR IGNORE INTO veiculo_avaliacao_itens (avaliacao_id, item) VALUES (?, ?)");
-    foreach (array_keys(VEICULO_AVALIACAO_ITENS_PADRAO) as $item) {
+    foreach (array_keys(veiculoAvaliacaoItens($tipoVeiculo)) as $item) {
         $stmt->execute([$avaliacaoId, $item]);
     }
 }
@@ -102,20 +146,24 @@ function garantirItensAvaliacao(int $avaliacaoId): void {
  * sentido quando $tipo==='venda' (qual negociação/comprador está
  * recebendo o carro agora); nunca setado em avaliação de compra.
  */
-function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $avaliadorId, int $criadoPor): int {
+function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $avaliadorId, int $criadoPor, string $tipoVeiculo = 'carro'): int {
     if (!in_array($tipo, ['compra', 'venda'], true)) {
         throw new InvalidArgumentException("Tipo de avaliação inválido: {$tipo}");
+    }
+    if (!in_array($tipoVeiculo, ['carro', 'moto'], true)) {
+        throw new InvalidArgumentException("Tipo de veículo inválido: {$tipoVeiculo}");
     }
     $db = getDB();
     $db->beginTransaction();
     try {
         $db->prepare("
-            INSERT INTO veiculo_avaliacoes (oportunidade_id, venda_id, tipo, avaliador_id, status, created_by)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO veiculo_avaliacoes (oportunidade_id, venda_id, tipo, tipo_veiculo, avaliador_id, status, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ")->execute([
             $oportunidadeId,
             $tipo === 'venda' ? $vendaId : null,
             $tipo,
+            $tipoVeiculo,
             $avaliadorId,
             $avaliadorId ? 'em_andamento' : 'pendente',
             $criadoPor,
@@ -123,7 +171,7 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
         $avaliacaoId = (int)$db->lastInsertId();
         $db->commit();
 
-        garantirItensAvaliacao($avaliacaoId);
+        garantirItensAvaliacao($avaliacaoId, $tipoVeiculo);
         return $avaliacaoId;
     } catch (Throwable $e) {
         $db->rollBack();
@@ -152,15 +200,18 @@ function buscarAvaliacao(int $avaliacaoId): ?array {
 }
 
 function listarItensAvaliacao(int $avaliacaoId): array {
-    garantirItensAvaliacao($avaliacaoId); // self-heal — ver comentário da função
     $db = getDB();
+    $stmtTipo = $db->prepare("SELECT tipo_veiculo FROM veiculo_avaliacoes WHERE id = ?");
+    $stmtTipo->execute([$avaliacaoId]);
+    $tipoVeiculo = (string)($stmtTipo->fetchColumn() ?: 'carro');
+
+    garantirItensAvaliacao($avaliacaoId, $tipoVeiculo); // self-heal — ver comentário da função
     // ORDER BY item (nunca por id) — item novo self-healed entra com id
     // maior que os antigos, então "ORDER BY id" jogaria ele pro fim da
-    // lista em vez de aparecer na posição certa (ex: Câmbio logo depois de
-    // Motor); ordenar pela ordem declarada em VEICULO_AVALIACAO_ITENS_PADRAO
-    // mantém a posição certa sempre, independente de quando o item foi
-    // inserido de verdade.
-    $ordem = array_flip(array_keys(VEICULO_AVALIACAO_ITENS_PADRAO));
+    // lista em vez de aparecer na posição certa; ordenar pela ordem
+    // declarada na lista do TIPO DE VEÍCULO certo mantém a posição certa
+    // sempre, independente de quando o item foi inserido de verdade.
+    $ordem = array_flip(array_keys(veiculoAvaliacaoItens($tipoVeiculo)));
     $stmt = $db->prepare("SELECT * FROM veiculo_avaliacao_itens WHERE avaliacao_id = ?");
     $stmt->execute([$avaliacaoId]);
     $itens = $stmt->fetchAll();
@@ -272,7 +323,12 @@ function atualizarObservacoesGeraisAvaliacao(int $avaliacaoId, string $observaco
 }
 
 function atualizarItemAvaliacao(int $avaliacaoId, string $item, string $status, string $observacao): void {
-    if (!array_key_exists($item, VEICULO_AVALIACAO_ITENS_PADRAO)) return;
+    // Checa nos 2 dicionários (não precisa saber o tipo_veiculo da
+    // avaliação pra validar) — item que não existe em NENHUM dos dois é
+    // rejeitado aqui; um item que existe mas não foi semeado pra ESTA
+    // avaliação (tipo errado) nunca é alterado de verdade, porque o
+    // UPDATE abaixo exige uma linha existente em veiculo_avaliacao_itens.
+    if (!array_key_exists($item, VEICULO_AVALIACAO_ITENS_CARRO) && !array_key_exists($item, VEICULO_AVALIACAO_ITENS_MOTO)) return;
     if (!in_array($status, ['ok', 'problema', 'nao_verificado'], true)) return;
     $db = getDB();
     $db->prepare("

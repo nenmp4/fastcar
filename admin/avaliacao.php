@@ -146,6 +146,7 @@ function avTermoStatusLabel(string $status): string {
     ?>
     <div class="av-tipo-banner tipo-<?= $av['tipo'] ?>">
         <span class="av-tipo-titulo"><?= $av['tipo'] === 'venda' ? '🛒 VISTORIA DE VENDA — entrega ao comprador' : '🚗 VISTORIA DE COMPRA — recebimento do vendedor' ?></span>
+        &nbsp;&nbsp;<span class="badge badge-info"><?= $av['tipo_veiculo'] === 'moto' ? '🏍️ MOTO' : '🚗 CARRO' ?></span><br>
         <?= e($papelParte) ?>: <strong><?= e($nomeParte) ?></strong><br>
         <?php if ($av['tipo'] === 'venda'): ?>
             📄 O termo de entrega vai ser assinado por: <strong><?= e($nomeParte) ?></strong>
@@ -188,7 +189,7 @@ function avTermoStatusLabel(string $status): string {
         $obsAtual = $item['observacao'] ?? '';
     ?>
         <div class="av-item">
-            <div class="av-item-nome"><?= e(VEICULO_AVALIACAO_ITENS_PADRAO[$item['item']] ?? $item['item']) ?></div>
+            <div class="av-item-nome"><?= e(veiculoAvaliacaoRotuloItem($item['item'])) ?></div>
             <?php if ($podeEditarChecklist): ?>
                 <div class="av-status-btns">
                     <?php foreach (['ok' => '✅ OK', 'problema' => '⚠️ Problema', 'nao_verificado' => '❔ Não verificado'] as $statusOpcao => $rotulo): ?>

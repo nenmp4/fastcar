@@ -1179,4 +1179,23 @@ try {
     echo "❌ veiculo_avaliacoes: {$e->getMessage()}\n";
 }
 
+// 22/09/2026, "avaliação tem ter opção de moto carro" — checklist
+// diferente de verdade por tipo de veículo (ver includes/veiculo_avaliacoes.php).
+// Fica FORA de $migracoes de propósito (não antes do bloco acima, que cria
+// a própria tabela veiculo_avaliacoes) — numa instalação bem antiga, ainda
+// sem esse módulo, rodar o ALTER antes da tabela existir quebraria com
+// "no such table". Vistoria já criada antes desta mudança vira 'carro'
+// (mesmo default da coluna) — nunca reclassifica sozinho pra moto sem
+// confirmação humana.
+try {
+    $db->exec("ALTER TABLE veiculo_avaliacoes ADD COLUMN tipo_veiculo TEXT NOT NULL DEFAULT 'carro' CHECK (tipo_veiculo IN ('carro', 'moto'))");
+    echo "✅ veiculo_avaliacoes.tipo_veiculo: adicionada\n";
+} catch (Throwable $e) {
+    if (str_contains($e->getMessage(), 'duplicate column name')) {
+        echo "⏭️  veiculo_avaliacoes.tipo_veiculo: já existia\n";
+    } else {
+        echo "❌ veiculo_avaliacoes.tipo_veiculo: {$e->getMessage()}\n";
+    }
+}
+
 echo "\n🎉 Migração concluída.\n";

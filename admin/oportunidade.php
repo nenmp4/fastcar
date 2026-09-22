@@ -292,8 +292,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Checklist de vistoria (compra) — includes/veiculo_avaliacoes.php.
                 // Consultor responsável já pode escolher um avaliador na hora
                 // de criar (mesmo padrão "responsável" do resto do projeto).
+                // 22/09/2026, "avaliação tem ter opção de moto carro" —
+                // tipo de veículo escolhido aqui, checklist muda de verdade
+                // conforme a escolha; nunca derivado sozinho (oportunidades
+                // não guarda tipo de veículo hoje).
                 $novoAvaliadorId = (int)($_POST['avaliador_id'] ?? 0) ?: null;
-                $novaAvaliacaoId = criarAvaliacao($id, 'compra', null, $novoAvaliadorId, (int)$_SESSION['admin_id']);
+                $tipoVeiculoAvaliacao = ($_POST['tipo_veiculo'] ?? 'carro') === 'moto' ? 'moto' : 'carro';
+                $novaAvaliacaoId = criarAvaliacao($id, 'compra', null, $novoAvaliadorId, (int)$_SESSION['admin_id'], $tipoVeiculoAvaliacao);
                 header('Location: /admin/avaliacao.php?id=' . $novaAvaliacaoId);
                 exit;
             }
@@ -1051,6 +1056,9 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
 <div class="card">
     <h3>🔍 Checklist de vistoria do veículo</h3>
+    <?php if ($op['etapa'] === 'presencial' && !array_filter($avaliacoesVeiculo, fn($a) => $a['tipo'] === 'compra')): ?>
+        <div class="alerta-info">📢 Cliente já trouxe o veículo pra avaliação? Registre uma vistoria de recebimento abaixo antes de fechar o negócio.</div>
+    <?php endif; ?>
     <?php if ($avaliacoesVeiculo): ?>
         <table>
             <thead><tr><th>Tipo</th><th>Status</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
@@ -1073,6 +1081,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <form method="post" style="margin-top:10px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="criar_avaliacao">
+            <label>Tipo de veículo</label>
+            <select name="tipo_veiculo" required>
+                <option value="carro">🚗 Carro</option>
+                <option value="moto">🏍️ Moto</option>
+            </select>
             <label>Atribuir a (opcional)</label>
             <select name="avaliador_id">
                 <option value="">— não atribuído ainda —</option>

@@ -662,6 +662,14 @@ CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
     oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
     venda_id INTEGER REFERENCES vendas(id),
     tipo TEXT NOT NULL CHECK (tipo IN ('compra', 'venda')),
+    -- 22/09/2026, "avaliação tem ter opção de moto carro" — checklist
+    -- diferente de verdade por tipo de veículo (não só rótulo, que já
+    -- tinha sido generalizado em 21/09 pra cobrir os dois sem esse
+    -- campo). Escolhido pelo avaliador/consultor na hora de criar a
+    -- vistoria (não dá pra derivar sozinho, oportunidades/vendas não
+    -- guardam tipo de veículo hoje) — default 'carro' só pra instalação
+    -- nova (nunca chutado numa vistoria já criada, ver migração).
+    tipo_veiculo TEXT NOT NULL DEFAULT 'carro' CHECK (tipo_veiculo IN ('carro', 'moto')),
     -- Quem vai fazer a vistoria — atribuído por super_admin/supervisor ou
     -- pelo responsável do próprio negócio (consultor na compra, vendedor na
     -- venda); NULL até alguém atribuir. Perfil dedicado 'avaliador'

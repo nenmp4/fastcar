@@ -323,7 +323,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Vincule um veículo da frota a esta negociação antes de criar a vistoria de entrega.';
                 } else {
                     $novoAvaliadorId = (int)($_POST['avaliador_id'] ?? 0) ?: null;
-                    $novaAvaliacaoId = criarAvaliacao((int)$v['oportunidade_id'], 'venda', $id, $novoAvaliadorId, (int)$_SESSION['admin_id']);
+                    $tipoVeiculoAvaliacao = ($_POST['tipo_veiculo'] ?? 'carro') === 'moto' ? 'moto' : 'carro';
+                    $novaAvaliacaoId = criarAvaliacao((int)$v['oportunidade_id'], 'venda', $id, $novoAvaliadorId, (int)$_SESSION['admin_id'], $tipoVeiculoAvaliacao);
                     header('Location: /admin/avaliacao.php?id=' . $novaAvaliacaoId);
                     exit;
                 }
@@ -907,6 +908,11 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         <form method="post" style="margin-top:10px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="criar_avaliacao">
+            <label>Tipo de veículo</label>
+            <select name="tipo_veiculo" required>
+                <option value="carro">🚗 Carro</option>
+                <option value="moto">🏍️ Moto</option>
+            </select>
             <label>Atribuir a (opcional)</label>
             <select name="avaliador_id">
                 <option value="">— não atribuído ainda —</option>

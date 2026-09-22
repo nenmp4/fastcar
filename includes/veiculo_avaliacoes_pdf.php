@@ -44,7 +44,7 @@ function gerarPdfTermoAvaliacao(array $av, array $itens): string {
     $pdf->Ln(3);
     _pdfTituloClausula($pdf, 'CHECKLIST DE VISTORIA');
     foreach ($itens as $item) {
-        $rotulo = VEICULO_AVALIACAO_ITENS_PADRAO[$item['item']] ?? $item['item'];
+        $rotulo = veiculoAvaliacaoRotuloItem($item['item']);
         $linha = "• {$rotulo}: " . _avaliacaoStatusLabel($item['status']);
         if (($item['observacao'] ?? '') !== '') {
             $linha .= ' — ' . $item['observacao'];

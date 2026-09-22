@@ -1833,6 +1833,75 @@ segue no schema sem uso novo, não removida sem ganho real),
   `includes/veiculo_avaliacoes_pdf.php` (termo de entrega em PDF) lê o
   rótulo pela mesma constante, sem cópia duplicada em nenhum outro
   arquivo — o ajuste vale pra tela do avaliador E pro PDF junto.
+  **Checklist DIFERENTE de verdade por tipo de veículo + etapa "Presencial"
+  reaproveitada como "Em avaliação"** (22/09/2026, "temos problema na
+  compra da moto e do carro precisamos fazer a avaliação antes de comprar
+  cliente trouxe a moto precisamos mandar etapa para avaliação - avaliação
+  tem ter opção de moto carro") — o ajuste de 21/09 (acima) só tinha
+  generalizado o TEXTO dos rótulos pra cobrir moto e carro com o mesmo
+  checklist; agora o pedido é por um checklist realmente diferente.
+  Confirmado com o usuário via perguntas diretas antes de mexer no funil
+  (evitar reconstruir `ETAPAS_ATIVAS`/dashboard/fila à toa): "mandar etapa
+  pra avaliação" e "Presencial" (bloco 7, que já cobre "agenda reunião,
+  avalia veículo, confirma condições, executa compra") são o MESMO
+  momento — nenhuma etapa nova foi criada no funil, só o rótulo de
+  `'presencial'` (`etapaLabel()`, `includes/oportunidades.php`) ficou mais
+  explícito: "🔍 Em avaliação / Presencial" — propaga sozinho pra
+  dashboard/badges/nav/PDF (`_dashboardPdfEtapaTexto()` só tira o 1º
+  token, continua funcionando sem mudança). `admin/oportunidade.php`
+  ganhou um aviso (`alerta-info`) no card de vistoria quando a
+  oportunidade já está em `'presencial'` e ainda não existe nenhuma
+  avaliação `tipo='compra'` registrada — "Cliente já trouxe o veículo pra
+  avaliação? Registre uma vistoria de recebimento abaixo antes de
+  fechar" — nunca bloqueia o fechamento (regra #7 continua só sobre
+  documentos), só lembra.
+  **Checklist por tipo** — nova coluna `veiculo_avaliacoes.tipo_veiculo`
+  (`carro`/`moto`, `NOT NULL DEFAULT 'carro'`, escolhida pelo
+  avaliador/consultor na hora de criar a vistoria — não dá pra derivar
+  sozinho, nada em `oportunidades`/`vendas` guarda tipo de veículo hoje).
+  `VEICULO_AVALIACAO_ITENS_PADRAO` virou 2 constantes —
+  `VEICULO_AVALIACAO_ITENS_CARRO` (os 6 itens de sempre, intocados) e
+  `VEICULO_AVALIACAO_ITENS_MOTO` (novo: motor/câmbio/**corrente-relação**/
+  **freios**/**pneus**/suspensão/**elétrica-painel**/vazamentos/avarias —
+  os 3 em negrito só existem no checklist de moto; confirmado o conteúdo
+  direto com o usuário antes de codar, "pode deixa check list se for moto
+  e se for carro"). `veiculoAvaliacaoItens($tipoVeiculo)` escolhe a lista
+  certa; `garantirItensAvaliacao()`/`listarItensAvaliacao()` passaram a
+  resolver o `tipo_veiculo` da própria avaliação (parâmetro opcional, só
+  faz 1 SELECT a mais quando quem chama não já sabe o tipo) — mesmo
+  self-heal de sempre, agora por tipo. `veiculoAvaliacaoRotuloItem($item)`
+  (novo) resolve o rótulo de um item procurando nos 2 dicionários sem
+  precisar saber o tipo — itens compartilhados (motor/câmbio/suspensão/
+  vazamentos/avarias) têm o MESMO texto nos dois, então a ordem de busca
+  nunca importa; usado em `admin/avaliacao.php` e no PDF do termo
+  (`includes/veiculo_avaliacoes_pdf.php`), substituindo a constante única
+  de antes. `atualizarItemAvaliacao()` valida o item contra os 2
+  dicionários juntos (não precisa saber o tipo pra validar) — um item que
+  existe mas não foi semeado pra ESSA avaliação (tipo errado, ex: tentar
+  atualizar "corrente" numa vistoria de carro) nunca tem efeito de
+  verdade, porque o `UPDATE` exige a linha já existir em
+  `veiculo_avaliacao_itens`. Seletor "Tipo de veículo" (Carro/Moto,
+  obrigatório) novo no formulário de criar vistoria em
+  `admin/oportunidade.php` e `admin/venda.php`; banner da vistoria
+  (`admin/avaliacao.php`) e a fila (`admin/avaliacoes.php`) ganharam um
+  badge/ícone 🚗/🏍️ pra bater o olho no tipo sem abrir cada vistoria.
+  Migração (`install/migrar.php`) deliberadamente colocada DEPOIS do
+  bloco que cria a própria tabela `veiculo_avaliacoes` (não dentro do
+  array `$migracoes` de sempre, que roda mais cedo) — rodar o `ALTER
+  TABLE` antes da tabela existir quebraria com "no such table" numa
+  instalação bem antiga; vistoria já criada antes desta mudança vira
+  `'carro'` (mesmo default da coluna), nunca reclassificada sozinha pra
+  moto. Testado em banco isolado: avaliação criada com `tipo_veiculo='moto'`
+  semeia exatamente os itens de moto (inclusive `corrente`, nunca os de
+  carro); avaliação `'carro'` (padrão) semeia só os itens de carro, sem
+  nenhum item exclusivo de moto; `atualizarItemAvaliacao()` funciona pro
+  item de moto numa vistoria de moto, e confirmado NÃO ter efeito nenhum
+  tentando atualizar um item de moto numa vistoria de carro (a linha
+  simplesmente nunca existiu ali); `veiculoAvaliacaoRotuloItem()` resolve
+  certo item compartilhado e item exclusivo; self-heal repõe item
+  removido usando a lista do tipo certo — + `php -l` + `tests/smoke.php`
+  limpos + migração idempotente rodada 2x contra o banco de
+  desenvolvimento real (2ª rodada mostra "já existia", sem erro).
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

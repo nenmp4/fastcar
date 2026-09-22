@@ -30,7 +30,14 @@ function etapaLabel(string $etapa): string {
         'crm_preenchido'  => '📋 CRM preenchido',
         'atendimento'     => '📞 Atendimento',
         'negociacao'      => '🤝 Negociação',
-        'presencial'      => '🚗 Presencial',
+        // 22/09/2026, "precisamos fazer a avaliação antes de comprar...
+        // cliente trouxe a moto precisamos mandar etapa para avaliação" —
+        // reaproveita a mesma etapa "presencial" que já existia (bloco 7 do
+        // funil já cobre "agenda reunião, avalia veículo, confirma
+        // condições, executa compra"), só com rótulo mais explícito —
+        // confirmado com o usuário que é o MESMO momento, não uma etapa
+        // nova (evita mexer em ETAPAS_ATIVAS/dashboard/fila de leads).
+        'presencial'      => '🔍 Em avaliação / Presencial',
         'fechado'         => '✅ Pasta fechada',
         'sem_perfil'      => '⚪ Sem perfil de compra',
         'perdido'         => '❌ Perdido',
