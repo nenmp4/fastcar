@@ -1217,7 +1217,7 @@ try {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
             zapcar_id TEXT DEFAULT NULL,
-            servico TEXT NOT NULL DEFAULT 'consulta',
+            servico TEXT NOT NULL DEFAULT 'consulta-veicular',
             placa TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'processando' CHECK (status IN ('processando', 'concluido', 'erro')),
             tentativa INTEGER NOT NULL DEFAULT 1,

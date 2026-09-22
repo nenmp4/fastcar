@@ -10,9 +10,15 @@
  * acesso externo, mesma ressalva de toda integração nova deste projeto —
  * ver seção "A validar assim que subir em produção" do CLAUDE.md).
  *
- * Escopo desta 1ª versão, por pedido explícito ("por enquanto chamada
- * consulta simples"): só o serviço "Consulta Simples" (slug `consulta`,
- * o mais barato do catálogo). Os outros serviços (completa, veicular,
+ * Escopo desta versão: serviço "Consulta Veicular" (slug `consulta-veicular`,
+ * R$24,99 — proprietário, restrições, gravame e leilão pela placa).
+ * Trocado de "Consulta Simples" (slug `consulta`) em 22/09/2026, mesmo dia,
+ * pedido direto: "ver documentação consulta caiu 404 no link no resultado
+ * vamos mudar para puxar Consulta Veicular — Proprietário, restrições,
+ * gravame e leilão pela placa" (o link do PDF de uma Consulta Simples real
+ * deu 404 — ver zapcarBaixarPdf() abaixo, causa raiz era confiar num
+ * `pdf_url` cru devolvido pela API em vez de sempre buscar via
+ * GET /v1/consultas/{id}/pdf autenticado). Os outros serviços (completa,
  * gravame, RENAJUD, débitos, FIPE via ZapCar etc) e o webhook (a doc
  * confirma "preferir ao polling em volume", mas o portal do cliente
  * mostrava "Nenhum webhook cadastrado" no momento desta implementação)
@@ -135,14 +141,14 @@ function zapcarSaldo(): ?float {
     return (float)$body['saldo'];
 }
 
-/** Preço vigente do serviço "Consulta Simples" (slug `consulta`), lido do catálogo ao vivo — null se não achar/API fora do ar. */
-function zapcarPrecoConsultaSimples(): ?float {
+/** Preço vigente do serviço "Consulta Veicular" (slug `consulta-veicular`), lido do catálogo ao vivo — null se não achar/API fora do ar. */
+function zapcarPrecoConsultaVeicular(): ?float {
     $catalogo = zapcarServicos();
     $lista = $catalogo['servicos'] ?? $catalogo ?? [];
     if (!is_array($lista)) return null;
     foreach ($lista as $s) {
         $slug = (string)($s['slug'] ?? $s['servico'] ?? '');
-        if ($slug === 'consulta' || $slug === 'consulta-simples') {
+        if ($slug === 'consulta-veicular') {
             return isset($s['preco']) ? (float)$s['preco'] : null;
         }
     }
@@ -155,10 +161,10 @@ function zapcarLimparPlaca(string $placa): string {
     return preg_match('/^[A-Z]{3}\d[A-Z0-9]\d{2}$/', $limpa) ? $limpa : '';
 }
 
-/** POST /v1/consultas (servico=consulta). Debita, exceto 4xx/429 e replay de Idempotency-Key. */
-function zapcarCriarConsultaSimples(string $placa, string $idempotencyKey): array {
+/** POST /v1/consultas (servico=consulta-veicular). Debita, exceto 4xx/429 e replay de Idempotency-Key. */
+function zapcarCriarConsultaVeicular(string $placa, string $idempotencyKey): array {
     return zapcarRequest('POST', '/v1/consultas', [
-        'servico' => 'consulta',
+        'servico' => 'consulta-veicular',
         'placa' => $placa,
     ], $idempotencyKey);
 }
@@ -166,6 +172,59 @@ function zapcarCriarConsultaSimples(string $placa, string $idempotencyKey): arra
 /** GET /v1/consultas/{id} — status + resultado quando concluido. Grátis. */
 function zapcarBuscarConsultaRemota(string $zapcarId): array {
     return zapcarRequest('GET', '/v1/consultas/' . rawurlencode($zapcarId));
+}
+
+/**
+ * GET /v1/consultas/{id}/pdf — baixa o documento (PDF ou imagem) de uma
+ * consulta CONCLUÍDA, autenticado. 22/09/2026, achado real: o `pdf_url`
+ * que a API devolve dentro de GET /v1/consultas/{id} deu 404 quando
+ * clicado direto no navegador (provável URL que exige o header
+ * Authorization, que um <a href> comum nunca manda) — por isso o PDF
+ * SEMPRE é buscado por aqui, no servidor (com a chave), e o navegador só
+ * recebe os bytes já prontos via admin/zapcar_pdf.php, nunca o pdf_url
+ * cru da API. Regra #11 da doc: confiar no Content-Type da resposta, não
+ * em extensão (pode vir image/png/image/jpeg em vez de PDF de verdade).
+ * Antes de concluir, a API responde 400 PDF_NOT_READY (retryable) —
+ * nunca deveria acontecer aqui, já que só chamamos pra status='concluido'.
+ */
+function zapcarBaixarPdf(string $zapcarId): array {
+    $chave = zapcarApiKey();
+    if ($chave === '') {
+        return ['ok' => false, 'erro' => 'Chave da API ZapCar não configurada.'];
+    }
+    try {
+        $ch = curl_init(ZAPCAR_BASE_URL . '/v1/consultas/' . rawurlencode($zapcarId) . '/pdf');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $chave],
+        ]);
+        $raw = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $erroCurl = curl_error($ch);
+        curl_close($ch);
+    } catch (Throwable $e) {
+        return ['ok' => false, 'erro' => $e->getMessage()];
+    }
+
+    if ($raw === false) {
+        return ['ok' => false, 'erro' => $erroCurl ?: 'falha de conexão'];
+    }
+    $headerBruto = substr($raw, 0, $headerSize);
+    $corpo = substr($raw, $headerSize);
+
+    if ($status !== 200) {
+        $decodificado = json_decode($corpo, true);
+        return ['ok' => false, 'erro' => (string)($decodificado['erro'] ?? "HTTP {$status} ao buscar o PDF."), 'status' => $status];
+    }
+
+    $contentType = 'application/pdf';
+    if (preg_match('/^Content-Type:\s*(.+?)\s*$/mi', $headerBruto, $m)) {
+        $contentType = trim($m[1]);
+    }
+    return ['ok' => true, 'content_type' => $contentType, 'bytes' => $corpo];
 }
 
 /** Linha local (zapcar_consultas) por id, ou null. */
@@ -191,7 +250,7 @@ function zapcarUltimaConsultaDaOportunidade(int $oportunidadeId): ?array {
 }
 
 /**
- * Cria (paga) uma Consulta Simples pra placa informada e já grava o
+ * Cria (paga) uma Consulta Veicular pra placa informada e já grava o
  * resultado inicial localmente. Dedup: se já existe uma consulta
  * 'processando' pra essa MESMA placa+oportunidade, reaproveita o id em
  * vez de criar outra (evita cobrar 2x por duplo clique/reenvio — mesmo
@@ -201,7 +260,7 @@ function zapcarUltimaConsultaDaOportunidade(int $oportunidadeId): ?array {
  * local é removido: nunca deixa uma linha "processando" órfã que nunca
  * vai concluir porque nem chegou a nascer na ZapCar de verdade.
  */
-function zapcarIniciarConsultaSimples(int $oportunidadeId, string $placaBruta, int $usuarioId): array {
+function zapcarIniciarConsultaVeicular(int $oportunidadeId, string $placaBruta, int $usuarioId): array {
     if (!zapcarConfigured()) {
         return ['ok' => false, 'erro' => 'Chave da API ZapCar não configurada. Configure em Configurações → ZapCar.'];
     }
@@ -225,14 +284,14 @@ function zapcarIniciarConsultaSimples(int $oportunidadeId, string $placaBruta, i
 
     $db->prepare("
         INSERT INTO zapcar_consultas (oportunidade_id, servico, placa, status, tentativa, usuario_id, criado_em, atualizado_em)
-        VALUES (?, 'consulta', ?, 'processando', 1, ?, datetime('now','localtime'), datetime('now','localtime'))
+        VALUES (?, 'consulta-veicular', ?, 'processando', 1, ?, datetime('now','localtime'), datetime('now','localtime'))
     ")->execute([$oportunidadeId, $placa, $usuarioId]);
     $idLocal = (int)$db->lastInsertId();
 
     $idempotencyKey = 'fastcar-cons-' . $idLocal . '-t1';
     $db->prepare("UPDATE zapcar_consultas SET idempotency_key = ? WHERE id = ?")->execute([$idempotencyKey, $idLocal]);
 
-    [$status, $body] = zapcarCriarConsultaSimples($placa, $idempotencyKey);
+    [$status, $body] = zapcarCriarConsultaVeicular($placa, $idempotencyKey);
 
     if ($status === 201 || $status === 200) {
         $zapcarId = (string)($body['id'] ?? '');
@@ -338,13 +397,13 @@ function zapcarTriTexto($valor, string $simTexto, string $naoTexto): string {
 }
 
 /**
- * Monta um texto legível com TUDO que a Consulta Simples trouxe
+ * Monta um texto legível com TUDO que a Consulta Veicular trouxe
  * (situação, recall, sinistro, leilão, restrições, débitos, proprietário,
  * último licenciamento) — pensado pra ser lido de cima a baixo pelo
  * consultor na hora de negociar, sem precisar abrir o JSON cru.
  */
 function zapcarResumoTexto(array $veiculo): string {
-    $linhas = ['Consulta ZapCar (Consulta Simples) — ' . date('d/m/Y H:i') . ':'];
+    $linhas = ['Consulta ZapCar (Consulta Veicular) — ' . date('d/m/Y H:i') . ':'];
 
     $ident = trim(($veiculo['marca'] ?? '') . ' ' . ($veiculo['modelo'] ?? ''));
     if ($ident !== '') {
@@ -410,7 +469,7 @@ function zapcarResumoTexto(array $veiculo): string {
 }
 
 /**
- * Aplica o resultado de uma Consulta Simples CONCLUÍDA na própria
+ * Aplica o resultado de uma Consulta Veicular CONCLUÍDA na própria
  * oportunidade de compra — 22/09/2026, "vamos preencher tudo... para
  * consultor ter poder negociação". Duas disciplinas diferentes, de
  * propósito:

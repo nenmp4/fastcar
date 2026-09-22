@@ -61,10 +61,10 @@ $camposFipe = [
 ];
 
 // Consulta veicular ZapCar (22/09/2026, "vamos integrar essa api no
-// sistema em oportunidade compras") — restrições, débitos, sinistro,
-// leilão e gravame pela placa (ver includes/zapcar.php). 1ª versão só com
-// a "Consulta Simples" (por pedido: "por enquanto chamada consulta
-// simples"), usada no card do mesmo nome em admin/oportunidade.php.
+// sistema em oportunidade compras") — proprietário, restrições, gravame,
+// leilão e débitos pela placa (ver includes/zapcar.php). Serviço
+// "Consulta Veicular" (trocado de "Consulta Simples" no mesmo dia — link
+// do PDF dava 404), usado no card do mesmo nome em admin/oportunidade.php.
 $camposZapcar = [
     'zapcar_api_key' => 'Chave da API ZapCar (Authorization: Bearer — zc_live_... produção, zc_test_... teste)',
 ];
@@ -794,11 +794,10 @@ unset($f);
 
 <div class="card">
     <h2>🚓 ZapCar — consulta veicular por placa</h2>
-    <p><small>Adicionado 22/09/2026 — restrições, débitos, sinistro, leilão e gravame pela placa oficial
+    <p><small>Adicionado 22/09/2026 — proprietário, restrições, gravame e leilão pela placa oficial
        (api.zapcarconsulta.com.br), usada no card "🔎 Consulta veicular (ZapCar)" em
-       <code>admin/oportunidade.php</code>. 1ª versão: só o serviço "Consulta Simples" (o mais barato do
-       catálogo) — cada consulta é paga e desconta do saldo da conta ZapCar. Chave gerada no Portal do Cliente
-       ZapCar → API → Chaves.</small></p>
+       <code>admin/oportunidade.php</code>. Serviço "Consulta Veicular" — cada consulta é paga e desconta
+       do saldo da conta ZapCar. Chave gerada no Portal do Cliente ZapCar → API → Chaves.</small></p>
     <p>
         Status:
         <span class="badge <?= getConfig('zapcar_api_key') ? 'badge-ok' : 'badge-atraso' ?>">

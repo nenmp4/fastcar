@@ -1,6 +1,6 @@
 <?php
 /**
- * AJAX de apoio pra Consulta Simples ZapCar (includes/zapcar.php) em
+ * AJAX de apoio pra Consulta Veicular ZapCar (includes/zapcar.php) em
  * admin/oportunidade.php — cria a consulta (PAGA, POST, com CSRF) e
  * deixa o navegador repollar o status (grátis, GET) até concluir/errar.
  * Restrito a admin logado (mesma trava de toda tela do painel); criar
@@ -31,7 +31,7 @@ if ($acao === 'consultar') {
         echo json_encode(['ok' => false, 'erro' => 'Dados incompletos.']);
         exit;
     }
-    $resultado = zapcarIniciarConsultaSimples($oportunidadeId, $placa, (int)$_SESSION['admin_id']);
+    $resultado = zapcarIniciarConsultaVeicular($oportunidadeId, $placa, (int)$_SESSION['admin_id']);
     echo json_encode($resultado);
     exit;
 }

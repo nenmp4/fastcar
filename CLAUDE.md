@@ -1553,7 +1553,7 @@ segue no schema sem uso novo, não removida sem ganho real),
   oportunidade com marca/modelo/ano vazios recebe os 3 campos preenchidos
   certos após a busca; oportunidade com esses campos JÁ preenchidos
   mantém os valores originais intocados mesmo depois da mesma busca.
-- **Consulta veicular ZapCar (Consulta Simples)** (22/09/2026, "vamos
+- **Consulta veicular ZapCar (Consulta Veicular)** (22/09/2026, "vamos
   integrar essa api no sistema em oputunidade compras vamos usar por
   enquanto chamada consulta simples") — provedor DIFERENTE do PlacaFIPE
   acima (que só traz valor de tabela/dados básicos): a ZapCar
@@ -1682,6 +1682,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   assim) + `php -l` + `tests/smoke.php` limpos + migração (2 colunas
   `ALTER TABLE`) testada idempotente contra o banco de desenvolvimento
   real (2ª rodada mostra "já existia", dado existente preservado).
+  **Trocado de "Consulta Simples" pra "Consulta Veicular" + PDF corrigido**
+  (mesmo dia, "ver documentação consulta caiu 404 no link no resultado
+  vamos mudar para puxar Consulta Veicular — Proprietário, restrições,
+  gravame e leilão pela placa") — 2 achados no primeiro teste real contra
+  a API (chave configurada, catálogo/saldo já confirmados batendo). (1)
+  **Troca de serviço**: slug `consulta` (Consulta Simples, R$5,99) virou
+  `consulta-veicular` (Consulta Veicular, R$24,99) — `zapcarCriarConsultaSimples()`/
+  `zapcarIniciarConsultaSimples()`/`zapcarPrecoConsultaSimples()` renomeadas
+  pra `...ConsultaVeicular()`, `servico` gravado em `zapcar_consultas`
+  passou de `'consulta'` pra `'consulta-veicular'` (default da coluna
+  também atualizado em `schema.sql`/`migrar.php`, cosmético — o `INSERT`
+  sempre grava explícito, nunca dependeu do `DEFAULT`), texto do resumo
+  salvo na oportunidade (`zapcarResumoTexto()`) também passou a dizer
+  "Consulta Veicular". (2) **PDF dava 404**: causa raiz — o `pdf_url` que
+  `GET /v1/consultas/{id}` devolve provavelmente exige o header
+  `Authorization` pra funcionar, e um `<a href>` comum do navegador nunca
+  manda esse header; o widget confiava direto nesse link cru. Corrigido
+  nunca mais linkando o `pdf_url` da API: nova `zapcarBaixarPdf()`
+  (`includes/zapcar.php`) chama `GET /v1/consultas/{id}/pdf` autenticada
+  no SERVIDOR (com a chave) e devolve os bytes + `Content-Type` real do
+  header (regra #11 da doc — nunca assumir por extensão, o corpo pode vir
+  `image/png` em vez de PDF de verdade); `admin/zapcar_pdf.php` (novo,
+  mesmo padrão de `admin/ver_documento.php` — só admin logado, nunca link
+  direto pra fora) repassa esses bytes prontos pro navegador. O card em
+  `admin/oportunidade.php` agora sempre linka `/admin/zapcar_pdf.php?id_local=X`
+  (o proxy autenticado), nunca mais o `pdf_url` cru vindo da API. Testado:
+  4 asserções novas em `zapcarBaixarPdf()` contra fake server (sucesso
+  retorna bytes reais de PDF + `Content-Type` lido do header da resposta;
+  `PDF_NOT_READY`/404/sem-chave tratados como falha clara, nunca bytes
+  vazios silenciosos) + as 38 asserções anteriores da suíte reconfirmadas
+  passando com as funções renomeadas + `php -l` + `tests/smoke.php`
+  limpos. ⚠️ Ainda não confirmado contra o endpoint `/pdf` real (só a
+  troca de serviço em si, não o download do documento) — validar assim
+  que a próxima consulta de verdade concluir em produção.
   ⚠️ **Nunca confirmado contra a API real ainda** (sandbox de dev bloqueia
   acesso externo, mesma ressalva de toda integração nova deste projeto) —
   a implementação segue a doc/openapi colada pelo usuário, mas o formato
@@ -5794,30 +5828,40 @@ GitHub/npm), então o que segue foi construído seguindo documentação e
 testado com servidor fake local — nunca contra o serviço real:
 
 - **API ZapCar** (`includes/zapcar.php`, `admin/zapcar_ajax.php`,
-  22/09/2026) — construída a partir da doc oficial (openapi v1.1.0)
-  colada pelo usuário direto via Google Docs, nunca confirmada contra a
-  API real ainda. Testado só contra servidor fake local modelado
-  exatamente no formato da doc (ver bullet completo na seção de módulos,
-  "Consulta veicular ZapCar"). Pontos específicos a confirmar quando a
-  chave real (`zc_live_`/`zc_test_`) for colada em Configurações → ZapCar:
-  (1) nomes de campo dentro do bloco `veiculo` (`marca`/`modelo`/
-  `ano_modelo`/`cor`/`situacao`/`recall`/`sinistro`/`leilao`/
-  `restricoes[]`/`debitos[]`/`debitos_total_centavos`/`proprietario`) —
-  a doc documenta isso como "contrato estável", mas nunca visto numa
-  resposta real; (2) se `GET /v1/servicos` realmente devolve
-  `{"servicos": [...]}` (assumido) ou o array direto na raiz —
-  `zapcarServicos()`/`zapcarPrecoConsultaSimples()` já toleram os dois
-  formatos, mas nunca confirmado qual é o real; (3) tempo real de
-  processamento de uma Consulta Simples de verdade (a doc cita até ~2min
-  em placa "fria") — validar se o teto de ~6min de polling do navegador
-  (`admin/oportunidade.php`, `POLL_MAX_TENTATIVAS`) é suficiente na
-  prática; (4) se `erro_codigo` bate exatamente com a tabela da doc
-  (`QUERY_NOT_FOUND`, `PROVIDER_TIMEOUT` etc) — a tela mostra o texto cru
-  de `erro`/`erro_codigo` que vier, nunca traduz/reescreve, então qualquer
-  divergência aparece direto pro consultor sem quebrar nada, só fica menos
-  amigável até confirmar. Cadastro de webhook (preferido pela doc "ao
-  volume", mas fora de escopo nesta 1ª versão — "por enquanto chamada
-  consulta simples") fica pra quando/se for pedido depois.
+  `admin/zapcar_pdf.php`, 22/09/2026) — construída a partir da doc oficial
+  (openapi v1.1.0) colada pelo usuário direto via Google Docs. **✅ Auth +
+  catálogo + saldo confirmados reais em produção, 22/09/2026**
+  (Configurações → ZapCar → "Testar conexão": "ZapCar respondeu: 15
+  serviço(s) no catálogo, saldo atual R$ 50,00 — conexão funcionando") —
+  `GET /v1/servicos`/`GET /v1/saldo` com `Authorization: Bearer` batem
+  certo. **✅ Serviço trocado pra "Consulta Veicular"** (slug
+  `consulta-veicular`, era "Consulta Simples") depois que o link do PDF
+  de uma consulta real deu 404 — ver bullet completo na seção de módulos,
+  "Consulta veicular ZapCar", pro racional da troca e do fix. Pontos
+  ainda não confirmados: (1) nomes de campo dentro do bloco `veiculo`
+  (`marca`/`modelo`/`ano_modelo`/`cor`/`situacao`/`recall`/`sinistro`/
+  `leilao`/`restricoes[]`/`debitos[]`/`debitos_total_centavos`/
+  `proprietario`) — a doc documenta isso como "contrato estável", mas
+  nunca visto numa resposta real de `GET /v1/consultas/{id}`; (2) se
+  `GET /v1/servicos` realmente devolve `{"servicos": [...]}` — **✅
+  confirmado** ("15 serviço(s)" batendo com o formato assumido); (3)
+  tempo real de processamento de uma Consulta Veicular de verdade (a doc
+  cita até ~2min em placa "fria") — validar se o teto de ~6min de
+  polling do navegador (`admin/oportunidade.php`, `POLL_MAX_TENTATIVAS`)
+  é suficiente na prática; (4) se `erro_codigo` bate exatamente com a
+  tabela da doc (`QUERY_NOT_FOUND`, `PROVIDER_TIMEOUT` etc) — a tela
+  mostra o texto cru de `erro`/`erro_codigo` que vier, nunca traduz/
+  reescreve, então qualquer divergência aparece direto pro consultor sem
+  quebrar nada, só fica menos amigável até confirmar; (5) **novo**:
+  `GET /v1/consultas/{id}/pdf` — `zapcarBaixarPdf()` foi construída sem
+  nunca ter sido testada contra o endpoint real (o fix do 404 foi feito a
+  partir do raciocínio "o pdf_url cru provavelmente exige o header
+  Authorization que um `<a href>` não manda", nunca confirmado byte a
+  byte); validar assim que a próxima Consulta Veicular real concluir e o
+  botão "📄 Ver documento da consulta" (agora sempre via
+  `admin/zapcar_pdf.php`) for clicado em produção. Cadastro de webhook
+  (preferido pela doc "ao volume", mas fora de escopo nesta versão) fica
+  pra quando/se for pedido depois.
 - **API Asaas** (`includes/asaas.php`, `api/asaas_webhook.php`,
   `cron/asaas_sync.php`, 17/09/2026) — construída a partir da documentação
   pública da API v3 (docs.asaas.com), nunca confirmada contra uma

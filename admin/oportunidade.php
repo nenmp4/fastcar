@@ -986,9 +986,10 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 <?php if (zapcarConfigured()): ?>
 <script>
 (function () {
-    // Consulta veicular ZapCar (Consulta Simples) — 22/09/2026, "vamos
-    // integrar essa api no sistema em oportunidade compras... por enquanto
-    // chamada consulta simples". Cria (POST, cobra) via admin/zapcar_ajax.php
+    // Consulta veicular ZapCar (Consulta Veicular — proprietário,
+    // restrições, gravame e leilão pela placa) — 22/09/2026, trocado de
+    // "Consulta Simples" no mesmo dia (link do PDF dava 404). Cria (POST,
+    // cobra) via admin/zapcar_ajax.php
     // e o navegador repolla o status (GET, grátis) a cada 4s até concluir/
     // errar — nunca um cron/webhook nesta 1ª versão. Ao abrir a tela,
     // busca a última consulta já feita pra essa oportunidade (nunca cobra
@@ -1111,7 +1112,12 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         }
 
         if (data.pdf_url) {
-            html += '<p><a href="' + escapeHtml(data.pdf_url) + '" target="_blank" rel="noopener">📄 Ver documento da consulta</a></p>';
+            // 22/09/2026: nunca linka o pdf_url cru da API (deu 404 real no
+            // navegador — provável URL que exige o header Authorization, que
+            // um <a href> comum não manda) — sempre passa pelo proxy
+            // autenticado do backend (admin/zapcar_pdf.php).
+            html += '<p><a href="/admin/zapcar_pdf.php?id_local=' + encodeURIComponent(data.id_local)
+                + '" target="_blank" rel="noopener">📄 Ver documento da consulta</a></p>';
         }
 
         html += '<p><small style="color:var(--texto-fraco)">✅ Marca/modelo/placa/débitos (quando ainda vazios) e o resumo '
