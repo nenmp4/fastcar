@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // requireSuperAdmin(), então só outro super_admin consegue criar
             // mais um. Qualquer valor fora da lista cai pro padrão seguro.
             $perfilPost = (string)($_POST['perfil'] ?? '');
-            $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor', 'financeiro', 'super_admin'], true) ? $perfilPost : 'consultor';
+            $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor', 'financeiro', 'avaliador', 'super_admin'], true) ? $perfilPost : 'consultor';
             $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
 
             if (!$nome || !$email || strlen($senha) < 8) {
@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $perfil = 'super_admin';
                 } else {
                     $perfilPost = (string)($_POST['perfil'] ?? '');
-                    $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor', 'financeiro', 'super_admin'], true) ? $perfilPost : 'consultor';
+                    $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor', 'financeiro', 'avaliador', 'super_admin'], true) ? $perfilPost : 'consultor';
                 }
                 $bloqueado = !empty($_POST['bloqueado']);
 

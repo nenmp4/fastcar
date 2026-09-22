@@ -1661,6 +1661,34 @@ segue no schema sem uso novo, não removida sem ganho real),
   com "🔍 Vistorias" (gated por `podeAcessarAvaliacoes()`, mesmo padrão
   dos outros links de módulo) na topbar de `admin/index.php` E
   `admin/vendas.php`.
+  **Perfil "Avaliador" selecionado em Usuários nunca era salvo como
+  avaliador** (22/09/2026, achado real: "castrei avalista não apareceu no
+  sistema" → "então fiz cadastro do avalista não listou ele" → "nos
+  usurios") — a lista suspensa de `admin/usuarios.php` já tinha a opção
+  "Avaliador" desde a implementação original do módulo (`<option
+  value="avaliador">`), mas a whitelist do SERVIDOR que decide o perfil
+  de verdade — nas ações `criar` E `editar`, `in_array($perfilPost,
+  [...])` — nunca incluía `'avaliador'` na lista; qualquer valor fora
+  dela cai silenciosamente pro padrão seguro `'consultor'` (mesmo
+  mecanismo que existe pra nunca aceitar um valor arbitrário do POST).
+  Resultado: escolher "Avaliador" no formulário e salvar criava/editava
+  o usuário como `consultor` de verdade no banco, sem erro nenhum na
+  tela — por isso ele nunca aparecia em `admin/avaliacao.php` (o select
+  de "Atribuir avaliador" filtra estrito por `perfil === 'avaliador'`,
+  `includes/usuarios.php`), nem em lugar nenhum do módulo de vistoria.
+  Corrigido adicionando `'avaliador'` às 2 whitelists (criação e edição)
+  — mesma lista de perfis válidos nos 2 pontos, só que completa agora.
+  Usuário que já tinha sido "criado como avaliador" antes desse fix
+  precisa ser reaberto em Editar e salvo de novo (agora persiste certo);
+  nenhum backfill automático — não dá pra saber com certeza quem
+  pretendia ser avaliador vs. quem realmente escolheu consultor na tela.
+  Testado: função isolada replicando a whitelist corrigida (`'avaliador'`
+  passa direto, valor desconhecido continua caindo pro padrão seguro,
+  `'vendedor'` continua funcionando sem regressão) + `criarUsuario()`
+  ponta a ponta confirmando que o perfil persiste `'avaliador'` no banco
+  + confirmado que o novo usuário aparece no mesmo filtro
+  `perfil === 'avaliador'` que `admin/avaliacao.php` usa pro select de
+  atribuir avaliador + `php -l` + `tests/smoke.php` limpos.
   ⚠️ **Achado em passagem, não corrigido aqui** (fora do escopo deste
   módulo — sinalizado como tarefa separada): `zapsignCriarDocumentoEAssinatura()`
   (`includes/zapsign.php`) nunca manda `phone_country`/`phone_number` pra
