@@ -310,8 +310,8 @@ function avTermoStatusLabel(string $status): string {
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="upload_foto">
             <label>Foto ou vídeo (JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
-            <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" capture="environment" required>
-            <small>No tablet, isso já abre a opção de tirar a foto na hora com a câmera, ou escolher um arquivo já salvo.</small>
+            <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" required>
+            <small>Toque pra tirar a foto na hora com a câmera, ou escolher um arquivo já salvo.</small>
             <label>Legenda (opcional)</label>
             <input type="text" name="legenda" placeholder="Ex: Avaria no para-choque traseiro">
             <button type="submit" style="min-height:48px">📷 Adicionar</button>

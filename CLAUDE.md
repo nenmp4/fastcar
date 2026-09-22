@@ -1931,6 +1931,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   genuinamente nova; `excluirAvaliacao()` remove a vistoria e seus itens;
   bloqueia exclusão de vistoria com `termo_status` já preenchido) +
   `php -l` + `tests/smoke.php` limpos.
+  **Upload de foto não abria nada no iPhone** (22/09/2026, achado real:
+  "no ifhone estou apertando carregar arquivo nada da olhda nisso tipo no
+  pc pacere esta baixando") — bug conhecido do WebKit/Safari iOS: o
+  `<input type="file">` do card de fotos tinha `accept` com uma lista
+  específica de MIME (imagem+vídeo) **junto** com `capture="environment"`
+  (adicionado em 21/09/2026 como atalho pra câmera em tablet, só testado
+  via Playwright/Chromium com câmera fake — nunca contra Safari real, que
+  se comporta diferente) — essa combinação específica faz o Safari no
+  iPhone simplesmente não abrir seletor nenhum ao tocar, sem erro nem
+  feedback visual nenhum; no PC (Chrome) a mesma combinação funciona
+  normal, por isso o sintoma só aparecia no iPhone. Corrigido removendo o
+  `capture="environment"` — mantém só o `accept` com a lista de tipos,
+  restaurando o seletor nativo do iOS ("Tirar Foto ou Vídeo", "Biblioteca
+  de Fotos", "Procurar"), que cobre o mesmo caso de uso (câmera na hora OU
+  arquivo já salvo) sem travar. Dica de texto ao lado do campo ajustada
+  pra não prometer mais um atalho direto pra câmera que deixou de existir.
+  `php -l` + `tests/smoke.php` limpos — mudança só de atributo HTML, sem
+  jeito de testar Safari real neste sandbox; validar no próprio iPhone do
+  usuário assim que o deploy aplicar.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
