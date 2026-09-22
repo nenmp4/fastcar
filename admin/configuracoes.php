@@ -285,6 +285,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sucesso = 'Nada pra redistribuir — nenhum consultor está acima do teto de ' . filaLeadsMaxAtivas() . ' leads ativas, ou não há consultor disponível abaixo do teto pra receber.';
             }
+        } elseif ($acao === 'equalizar_fila') {
+            $movidas = equalizarFilaLeads((int)($_SESSION['admin_id'] ?? 0));
+            if ($movidas) {
+                $sucesso = count($movidas) . ' oportunidade(s) equalizada(s) entre os disponíveis: ';
+                $partes = [];
+                foreach ($movidas as $m) {
+                    $partes[] = "#{$m['oportunidade_id']} ({$m['cliente_nome']}) de {$m['de']} para {$m['para']}";
+                }
+                $sucesso .= implode('; ', $partes) . '.';
+            } else {
+                $sucesso = 'Nada pra equalizar — a carga de leads ainda não tocadas já está parelha entre os consultores disponíveis (ou tem menos de 2 disponível agora).';
+            }
         } elseif ($acao === 'salvar_deploy') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
             if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
@@ -901,6 +913,18 @@ unset($f);
        blocos 2 a 4, antes do consultor começar a atender de verdade) de quem está acima do teto pra quem está
        disponível e abaixo do teto, e também atribui as que estão sem responsável nenhum (ninguém estava disponível
        quando entraram). Nunca mexe em oportunidade que já está em Atendimento ou depois.</small></p>
+
+    <form method="post" class="inline" style="margin-top:8px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="equalizar_fila">
+        <button type="submit">⚖️ Equalizar entre disponíveis</button>
+    </form>
+    <p><small>Diferente do botão acima (que só mexe em quem está acima do teto): calcula a média real de leads
+       ainda não tocadas entre os consultores <strong>disponíveis agora</strong> e puxa de quem tem mais pra quem
+       tem menos até ficar parelho — útil quando entra gente nova no time e ninguém está tecnicamente acima do
+       teto pra disparar a redistribuição normal. Só mexe em quem está 🟢 disponível (nunca tira fila de quem
+       está offline, nunca dá lead novo pra quem não está disponível), e nunca em oportunidade já em Atendimento
+       ou depois.</small></p>
     <?php endif; ?>
 </div>
 

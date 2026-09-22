@@ -310,6 +310,113 @@ function redistribuirFilaLeads(int $executadoPor): array {
     return $movidas;
 }
 
+/**
+ * Equaliza leads AINDA NÃO TOCADAS (FILA_LEADS_ETAPAS_NAO_TOCADAS) entre os
+ * consultores DISPONÍVEIS agora — diferente de redistribuirFilaLeads(), que
+ * só move quem está acima do teto configurável; esta função nunca olha pro
+ * teto, sempre calcula a média real de carga entre quem está disponível e
+ * puxa de quem tem mais pra quem tem menos até ficar parelho (mesmo que
+ * ninguém esteja "acima do limite"). 22/09/2026, achado real: consultor novo
+ * entrando no time com o teto alto (100) não recebia nada da redistribuição
+ * normal, porque ninguém estava de fato acima desse teto — "redistribuir"
+ * nesse caso significa dividir o que já existe igualmente, não só socorrer
+ * quem estourou um limite.
+ *
+ * Só considera consultor `disponivel=1` (doador E receptor) — nunca tira
+ * fila de quem está offline sem ele saber, e nunca dá lead novo pra quem não
+ * está disponível pra atender agora. Nunca mexe em oportunidade que já saiu
+ * de FILA_LEADS_ETAPAS_NAO_TOCADAS (já em atendimento ou além) — mesma regra
+ * de redistribuirFilaLeads().
+ */
+function equalizarFilaLeads(int $executadoPor): array {
+    $db = getDB();
+
+    $consultores = $db->query("
+        SELECT id, nome FROM usuarios
+        WHERE perfil = 'consultor' AND bloqueado = 0 AND disponivel = 1
+        ORDER BY posicao_fila ASC, id ASC
+    ")->fetchAll();
+
+    if (count($consultores) < 2) return [];
+
+    $etapasPh = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
+    $stmtCarga = $db->prepare("
+        SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$etapasPh})
+    ");
+
+    $nomes = [];
+    $cargas = [];
+    foreach ($consultores as $c) {
+        $id = (int)$c['id'];
+        $nomes[$id] = $c['nome'];
+        $stmtCarga->execute(array_merge([$id], FILA_LEADS_ETAPAS_NAO_TOCADAS));
+        $cargas[$id] = (int)$stmtCarga->fetchColumn();
+    }
+
+    $stmtCandidata = $db->prepare("
+        SELECT o.id, o.etapa, c.nome AS cliente_nome
+        FROM oportunidades o
+        JOIN clientes c ON c.id = o.cliente_id
+        WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
+        ORDER BY o.created_at DESC
+        LIMIT 1
+    ");
+
+    // Algoritmo guloso: a cada passo, tira 1 lead de quem tem MAIS agora e dá
+    // pra quem tem MENOS agora, até a diferença ficar <= 1 (o mais parelho
+    // que dá, já que lead não divide ao meio) — bem diferente de um corte
+    // fixo tipo "só quem tá acima da média dá, só quem tá abaixo recebe",
+    // que deixava sobra por não continuar puxando de quem ainda tinha mais
+    // depois da 1ª rodada (achado no próprio teste isolado, antes do
+    // commit: 6/4/0 virava 4/4/2 com o corte fixo, em vez do 3/4/3 real).
+    $movidas = [];
+    $limiteIteracoes = array_sum($cargas) + 1; // trava de segurança, nunca deveria bater nisso
+    for ($i = 0; $i < $limiteIteracoes; $i++) {
+        $maiorCarga = max($cargas);
+        $menorCarga = min($cargas);
+        if ($maiorCarga - $menorCarga <= 1) break; // já parelho dentro do possível
+
+        $doadorId = array_search($maiorCarga, $cargas, true);
+        $receptorId = array_search($menorCarga, $cargas, true);
+        if ($doadorId === $receptorId) break; // nunca deveria acontecer aqui, defesa extra
+
+        $stmtCandidata->execute(array_merge([$doadorId], FILA_LEADS_ETAPAS_NAO_TOCADAS));
+        $oportunidade = $stmtCandidata->fetch();
+        if (!$oportunidade) break; // carga contada não bate com lead real disponível — para, nunca chuta
+
+        $db->beginTransaction();
+        try {
+            $db->prepare("UPDATE oportunidades SET responsavel_id = ? WHERE id = ?")
+               ->execute([$receptorId, $oportunidade['id']]);
+            $db->prepare("
+                INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                VALUES (?, ?, ?, ?, ?)
+            ")->execute([
+                $oportunidade['id'],
+                $oportunidade['etapa'],
+                $oportunidade['etapa'],
+                "Equalização automática da fila: de {$nomes[$doadorId]} para {$nomes[$receptorId]} (dividir carga entre disponíveis)",
+                $executadoPor,
+            ]);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        $cargas[$doadorId]--;
+        $cargas[$receptorId]++;
+        $movidas[] = [
+            'oportunidade_id' => $oportunidade['id'],
+            'cliente_nome' => $oportunidade['cliente_nome'],
+            'de' => $nomes[$doadorId],
+            'para' => $nomes[$receptorId],
+        ];
+    }
+
+    return $movidas;
+}
+
 /** Toggle de disponibilidade — o próprio usuário liga/desliga no admin. */
 function alternarDisponibilidade(int $usuarioId): bool {
     $db = getDB();

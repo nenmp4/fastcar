@@ -1120,6 +1120,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   oportunidades órfãs + 3 consultores + teto=11, 3×11=33 cabe exato):
   `redistribuirFilaLeads()` atribuiu as 33 igualmente, 11 pra cada, 0
   órfãs restantes.
+  **"Equalizar entre disponíveis" — botão novo, diferente de redistribuir**
+  (22/09/2026, achado real: "entrou consultor novo no sistema da para
+  redistribuir novos leads que outros ainda não trataram para dividir" →
+  usuário aumentou o teto pra 100 e clicou "Redistribuir fila agora", mas
+  "não foi nenhum lead pro novo consultor"). Causa: `redistribuirFilaLeads()`
+  só move lead de quem está **acima do teto** ou que está **sem
+  responsável nenhum** — com teto=100, ninguém estava acima, e não havia
+  órfã de verdade (todo mundo já tinha responsável); a função nunca foi
+  feita pra "tirar um pouco de cada um só porque entrou gente nova", só
+  pra corrigir excesso/órfã. O consultor novo (confirmado por screenshot
+  de `admin/usuarios.php`, já cadastrado como "Consultor" e já 🟢
+  disponível) simplesmente não se encaixava em nenhum dos 2 gatilhos.
+  Nova `equalizarFilaLeads()` (`includes/fila_leads.php`) resolve o caso
+  real: calcula a carga de leads ainda não tocadas
+  (`FILA_LEADS_ETAPAS_NAO_TOCADAS`) de cada consultor **disponível agora**
+  e, em vez de um corte fixo por média, roda um algoritmo guloso — a cada
+  passo tira 1 lead de quem tem MAIS no momento e dá pra quem tem MENOS no
+  momento, repete até a diferença ficar ≤1 (o mais parelho que dá, já que
+  lead não divide ao meio). Nunca olha pro teto (`filaLeadsMaxAtivas()`),
+  nunca mexe em quem está `disponivel=0` (nem como doador, nem como
+  receptor — não tira fila de quem está offline sem saber, não dá lead
+  novo pra quem não está atendendo agora), e nunca em oportunidade já em
+  `atendimento` ou além (mesma regra de sempre). Botão "⚖️ Equalizar entre
+  disponíveis" novo em Configurações, ao lado do "🔄 Redistribuir fila
+  agora" — os dois continuam existindo, resolvem problemas diferentes
+  (redistribuir = socorrer quem estourou o teto/pegar órfã; equalizar =
+  dividir o que já existe igualmente entre quem está trabalhando agora,
+  útil especificamente quando entra gente nova no time). **Bug real achado
+  no próprio teste isolado, antes do commit**: a 1ª versão usava um corte
+  fixo — só quem estava acima de `ceil(média)` dava, só quem estava abaixo
+  recebia — e não repetia a rodada depois da 1ª passada; cenário real
+  (Anderson=6, Dayane=4, Rafael=0 novo) terminava em 4/4/2 em vez do 3/4/3
+  que dá pra atingir de verdade, porque Dayane (que também estava acima do
+  "ideal" quando comparada ao Rafael) nunca chegava a doar por já estar
+  exatamente na meta. Reescrito pro algoritmo guloso (sempre olha quem tem
+  mais/menos NO MOMENTO, não um corte fixo calculado 1x no início) — mesmo
+  teste confirmou 3/4/3 depois da correção. Testado: função isolada (3
+  cenários — equaliza puxando de quem tem mais pra quem tem menos, nunca
+  toca quem está offline nem oportunidade em atendimento; rodar de novo já
+  equalizado não move nada, idempotente; com só 1 disponível não faz nada)
+  + HTTP ponta a ponta real (sessão primed como super_admin, POST com CSRF
+  válido pro botão novo) confirmando a mensagem de resumo certa e as
+  movimentações batendo exatamente com o esperado (Anderson 5→3, Gabriela
+  0→2, Dayane intocada em 3) + `php -l` + `tests/smoke.php` limpos.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
