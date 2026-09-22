@@ -62,12 +62,18 @@ $camposFipe = [
 
 // Consulta veicular ZapCar (22/09/2026, "vamos integrar essa api no
 // sistema em oportunidade compras") — proprietário, restrições, gravame,
-// leilão e débitos pela placa (ver includes/zapcar.php). Serviço
-// "Consulta Veicular" (trocado de "Consulta Simples" no mesmo dia — link
-// do PDF dava 404), usado no card do mesmo nome em admin/oportunidade.php.
+// leilão e débitos pela placa (ver includes/zapcar.php). Tipo de consulta
+// é configurável (mesmo dia, "da para deixar uma chave escolher tipo de
+// consulta api mais em configurações") — select abaixo populado ao vivo
+// pelo catálogo (GET /v1/servicos), salvo em config.zapcar_servico_slug.
 $camposZapcar = [
     'zapcar_api_key' => 'Chave da API ZapCar (Authorization: Bearer — zc_live_... produção, zc_test_... teste)',
 ];
+$zapcarCatalogo = zapcarConfigured() ? zapcarServicos() : null;
+$zapcarListaServicos = is_array($zapcarCatalogo) ? ($zapcarCatalogo['servicos'] ?? $zapcarCatalogo) : [];
+if (!is_array($zapcarListaServicos)) {
+    $zapcarListaServicos = [];
+}
 
 // Asaas (17/09/2026, pedido José/Jean: "vamos integrar api do assas pra
 // puxar tudo de lá") — cobrança de cliente de venda parcelada (entrada +
@@ -223,6 +229,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'salvar_zapcar') {
             foreach (array_keys($camposZapcar) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            // 22/09/2026, "da para deixar uma chave escolher tipo de
+            // consulta api mais em configurações" — slug validado só no
+            // formato (letras minúsculas/números/hífen), nunca contra o
+            // catálogo travado em memória no momento do POST (pode ter
+            // mudado desde o carregamento da tela) — um slug que não
+            // existir de verdade só vai dar erro claro na hora de criar a
+            // consulta, nunca trava o salvamento da config em si.
+            $servicoPost = trim((string)($_POST['zapcar_servico_slug'] ?? ''));
+            if ($servicoPost !== '' && preg_match('/^[a-z0-9-]+$/', $servicoPost)) {
+                setConfig('zapcar_servico_slug', $servicoPost);
             }
             $sucesso = 'Configurações da ZapCar salvas.';
         } elseif ($acao === 'testar_zapcar') {
@@ -796,7 +813,7 @@ unset($f);
     <h2>🚓 ZapCar — consulta veicular por placa</h2>
     <p><small>Adicionado 22/09/2026 — proprietário, restrições, gravame e leilão pela placa oficial
        (api.zapcarconsulta.com.br), usada no card "🔎 Consulta veicular (ZapCar)" em
-       <code>admin/oportunidade.php</code>. Serviço "Consulta Veicular" — cada consulta é paga e desconta
+       <code>admin/oportunidade.php</code>. Cada consulta é paga (conforme o tipo escolhido abaixo) e desconta
        do saldo da conta ZapCar. Chave gerada no Portal do Cliente ZapCar → API → Chaves.</small></p>
     <p>
         Status:
@@ -813,6 +830,27 @@ unset($f);
                    value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
+        <label for="zapcar_servico_slug">Tipo de consulta</label>
+        <?php if ($zapcarListaServicos): ?>
+            <select id="zapcar_servico_slug" name="zapcar_servico_slug">
+                <?php foreach ($zapcarListaServicos as $s):
+                    if (!is_array($s)) continue;
+                    $slug = (string)($s['slug'] ?? $s['servico'] ?? '');
+                    if ($slug === '') continue;
+                    $nome = (string)($s['nome'] ?? $s['descricao'] ?? $slug);
+                    $preco = isset($s['preco']) ? number_format((float)$s['preco'], 2, ',', '.') : null;
+                ?>
+                    <option value="<?= e($slug) ?>" <?= zapcarServicoAtivo() === $slug ? 'selected' : '' ?>>
+                        <?= e($nome) ?><?= $preco !== null ? ' — R$ ' . e($preco) : '' ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <small style="color:var(--texto-fraco)">Lido ao vivo do catálogo da ZapCar (GET /v1/servicos) — preço sempre o vigente na conta.</small>
+        <?php else: ?>
+            <input type="text" id="zapcar_servico_slug" name="zapcar_servico_slug"
+                   value="<?= e(zapcarServicoAtivo()) ?>" placeholder="consulta-veicular">
+            <small style="color:var(--texto-fraco)">Catálogo ainda não carregado (salve a chave acima e recarregue a página) — digite o slug do serviço manualmente por enquanto, ex: <code>consulta-veicular</code>.</small>
+        <?php endif; ?>
         <button type="submit">Salvar</button>
     </form>
     <form method="post" style="margin-top:12px">

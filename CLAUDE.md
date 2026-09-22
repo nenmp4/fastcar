@@ -1724,6 +1724,43 @@ segue no schema sem uso novo, não removida sem ganho real),
   quando a chave real (produção ou teste, `zc_live_`/`zc_test_`) for
   colada em Configurações e testada contra um caso real — ver seção "A
   validar assim que subir em produção" do CLAUDE.md.
+  **Tipo de consulta virou configurável em Configurações** (mesmo dia, "da
+  para deixar uma chave escolher tipo de consulta api mais em
+  configurações") — até aqui o serviço (`consulta-veicular`) estava
+  travado no código; agora `admin/configuracoes.php` mostra um `<select>`
+  populado ao vivo pelo catálogo (`GET /v1/servicos`, mesmo endpoint que já
+  lê preço — nunca uma lista fixa no código) com nome+preço de cada
+  serviço, salvo em `config.zapcar_servico_slug`. `zapcarServicoAtivo()`
+  (novo, `includes/zapcar.php`) lê esse valor com fallback pro padrão
+  (`consulta-veicular`, `ZAPCAR_SERVICO_PADRAO`) se nunca configurado.
+  Funções renomeadas de volta pra genéricas (`zapcarCriarConsultaVeicular()`
+  → `zapcarCriarConsulta(..., $servico)`, `zapcarIniciarConsultaVeicular()`
+  → `zapcarIniciarConsulta()`, `zapcarPrecoConsultaVeicular()` →
+  `zapcarPrecoServico($slug)`) — qualquer serviço do catálogo funciona sem
+  mudança de código, só a Consulta Veicular foi validada ponta a ponta até
+  aqui. **Dedup passou a considerar o serviço** (`zapcarIniciarConsulta()`)
+  — trocar o tipo de consulta em Configurações enquanto uma consulta do
+  tipo ANTIGO ainda está `'processando'` nunca reaproveita ela por engano
+  pra um serviço diferente (a query de dedup ganhou `AND servico = ?`).
+  `zapcarResumoTexto()`/`zapcarAplicarNaOportunidade()` ganharam parâmetro
+  opcional `$servicoNome` (default `'Consulta Veicular'`, retrocompatível)
+  — o cabeçalho do resumo salvo na oportunidade passou a dizer o nome do
+  serviço que gerou aquela consulta específica, não mais fixo.
+  `zapcarFormatarRespostaAjax()` ganhou `servico`/`servico_nome` no JSON
+  pro JS. Card em `admin/oportunidade.php` (título, texto do botão com o
+  preço vigente) e o card de Configurações mostram o nome/preço do serviço
+  escolhido, lidos ao vivo — nada mais hardcoded "Consulta Veicular" na
+  tela. Testado: nova seção 16 da suíte isolada contra o fake server local
+  (sem config nenhuma cai no padrão; `zapcarNomeServico()` lê o catálogo
+  certo e cai no próprio slug se desconhecido; trocar o serviço ativo muda
+  o que é mandado no corpo do `POST /v1/consultas`, conferido byte a byte
+  no request capturado pelo fake server; consulta `'processando'` de um
+  serviço NUNCA é reaproveitada por uma criação de serviço diferente pra
+  mesma placa, mas o dedup dentro do MESMO serviço continua funcionando —
+  regressão confirmada; `zapcarResumoTexto()`/`zapcarFormatarRespostaAjax()`
+  refletem o nome do serviço certo) + `php -l` + `tests/smoke.php` limpos.
+  Nenhuma migração de schema precisou (`zapcar_consultas.servico` já era
+  `TEXT` livre, sem `CHECK` restringindo valores).
 - **Débitos do veículo (IPVA/licenciamento/multas)** (22/09/2026, "campo
   de preencher - debitos do veilucos como ipva linciamento e multoas") —
   confirmado com o usuário (2 perguntas diretas): 3 campos numéricos

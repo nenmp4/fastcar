@@ -30,6 +30,13 @@ $erro = '';
 $sucesso = '';
 $marcaFeedback = null; // resultado de fipeValidarMarca() após salvar dados do veículo
 
+// Tipo de consulta ZapCar é configurável (22/09/2026, "da para deixar uma
+// chave escolher tipo de consulta api mais em configurações") — nome/preço
+// exibidos no card sempre refletem o que está escolhido em Configurações,
+// nunca hardcoded "Consulta Veicular".
+$zapcarServicoNomeAtivo = zapcarConfigured() ? zapcarNomeServico(zapcarServicoAtivo()) : '';
+$zapcarPrecoAtivo = zapcarConfigured() ? zapcarPrecoServico(zapcarServicoAtivo()) : null;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
@@ -522,17 +529,18 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
 <?php if (zapcarConfigured()): ?>
 <div class="card" id="zapcar-card">
-    <h3>🔎 Consulta veicular (ZapCar)</h3>
+    <h3>🔎 Consulta veicular (ZapCar) — <?= e($zapcarServicoNomeAtivo) ?></h3>
     <p><small>22/09/2026 — consulta paga (desconta do saldo da conta ZapCar): restrições, débitos, sinistro, leilão
        e gravame pela placa oficial, direto na base. Ajuda a avaliar o veículo antes de fechar a compra — nunca
-       preenche valor/decisão de compra sozinho, é só informação pra você revisar.</small></p>
+       preenche valor/decisão de compra sozinho, é só informação pra você revisar. Tipo de consulta configurável
+       em Configurações → ZapCar.</small></p>
     <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <div>
             <label style="font-size:12px">Placa</label>
             <input type="text" id="zapcar-placa" style="width:120px;text-transform:uppercase" maxlength="8"
                    value="<?= e($op['veiculo_placa'] ?? '') ?>" placeholder="ABC1D23">
         </div>
-        <button type="button" id="zapcar-consultar-btn" style="margin:0;padding:8px 14px;font-size:13px;white-space:nowrap">Consultar (paga)</button>
+        <button type="button" id="zapcar-consultar-btn" style="margin:0;padding:8px 14px;font-size:13px;white-space:nowrap">Consultar<?= $zapcarPrecoAtivo !== null ? ' (R$ ' . e(number_format($zapcarPrecoAtivo, 2, ',', '.')) . ')' : ' (paga)' ?></button>
     </div>
     <div id="zapcar-resultado" style="margin-top:10px;font-size:13px"></div>
 </div>
@@ -986,10 +994,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 <?php if (zapcarConfigured()): ?>
 <script>
 (function () {
-    // Consulta veicular ZapCar (Consulta Veicular — proprietário,
-    // restrições, gravame e leilão pela placa) — 22/09/2026, trocado de
-    // "Consulta Simples" no mesmo dia (link do PDF dava 404). Cria (POST,
-    // cobra) via admin/zapcar_ajax.php
+    // Consulta veicular ZapCar — proprietário, restrições, gravame e
+    // leilão pela placa. Tipo de consulta configurável em Configurações →
+    // ZapCar (zapcarServicoAtivo(), includes/zapcar.php), então o texto do
+    // cabeçalho/botão já vem certo do PHP acima — esse JS nunca hardcoda
+    // qual serviço está ativo. Cria (POST, cobra) via admin/zapcar_ajax.php
     // e o navegador repolla o status (GET, grátis) a cada 4s até concluir/
     // errar — nunca um cron/webhook nesta 1ª versão. Ao abrir a tela,
     // busca a última consulta já feita pra essa oportunidade (nunca cobra

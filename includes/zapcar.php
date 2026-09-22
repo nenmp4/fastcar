@@ -10,19 +10,33 @@
  * acesso externo, mesma ressalva de toda integração nova deste projeto —
  * ver seção "A validar assim que subir em produção" do CLAUDE.md).
  *
- * Escopo desta versão: serviço "Consulta Veicular" (slug `consulta-veicular`,
- * R$24,99 — proprietário, restrições, gravame e leilão pela placa).
- * Trocado de "Consulta Simples" (slug `consulta`) em 22/09/2026, mesmo dia,
- * pedido direto: "ver documentação consulta caiu 404 no link no resultado
- * vamos mudar para puxar Consulta Veicular — Proprietário, restrições,
- * gravame e leilão pela placa" (o link do PDF de uma Consulta Simples real
- * deu 404 — ver zapcarBaixarPdf() abaixo, causa raiz era confiar num
- * `pdf_url` cru devolvido pela API em vez de sempre buscar via
- * GET /v1/consultas/{id}/pdf autenticado). Os outros serviços (completa,
- * gravame, RENAJUD, débitos, FIPE via ZapCar etc) e o webhook (a doc
- * confirma "preferir ao polling em volume", mas o portal do cliente
- * mostrava "Nenhum webhook cadastrado" no momento desta implementação)
- * ficam pra uma próxima rodada, sem código morto criado agora à toa.
+ * Escopo desta versão: serviço padrão "Consulta Veicular" (slug
+ * `consulta-veicular`, R$24,99 — proprietário, restrições, gravame e
+ * leilão pela placa), trocado de "Consulta Simples" (slug `consulta`) em
+ * 22/09/2026, mesmo dia, pedido direto: "ver documentação consulta caiu
+ * 404 no link no resultado vamos mudar para puxar Consulta Veicular —
+ * Proprietário, restrições, gravame e leilão pela placa" (o link do PDF
+ * de uma Consulta Simples real deu 404 — ver zapcarBaixarPdf() abaixo,
+ * causa raiz era confiar num `pdf_url` cru devolvido pela API em vez de
+ * sempre buscar via GET /v1/consultas/{id}/pdf autenticado).
+ *
+ * **Tipo de consulta agora é configurável** (22/09/2026, "da para deixar
+ * uma chave escolher tipo de consulta api mais em configurações") — em
+ * vez de travado só em "Consulta Veicular" no código, `admin/configuracoes.php`
+ * mostra um seletor com TODO serviço que aparecer no catálogo ao vivo
+ * (`GET /v1/servicos`, mesmo endpoint que já lê preço), salvo em
+ * `config.zapcar_servico_slug`; `zapcarServicoAtivo()` lê esse valor com
+ * fallback pro padrão (`consulta-veicular`) se nunca configurado. Qualquer
+ * serviço do catálogo funciona sem mudança de código (`zapcarCriarConsulta()`
+ * já manda o slug dinâmico no `POST /v1/consultas`) — só a Consulta Veicular
+ * foi testada de ponta a ponta até aqui, mas o mecanismo de criação/polling/
+ * aplicação na oportunidade é genérico por natureza, nunca hardcoded pro
+ * formato específico dela (`zapcarAplicarNaOportunidade()` só lê campos que
+ * PODEM não vir em serviços mais simples — tudo com fallback gracioso já
+ * existente pro tri-estado). O webhook (a doc confirma "preferir ao polling
+ * em volume", mas o portal do cliente mostrava "Nenhum webhook cadastrado"
+ * no momento desta implementação) fica pra uma próxima rodada, sem código
+ * morto criado agora à toa.
  *
  * Fluxo (assíncrono, regra de ouro #1 da doc): POST cria e debita ->
  * resultado só via GET com o id retornado. Aqui o "polling" é feito pelo
@@ -58,6 +72,9 @@ require_once __DIR__ . '/db.php';
 if (!defined('ZAPCAR_BASE_URL')) {
     define('ZAPCAR_BASE_URL', 'https://api.zapcarconsulta.com.br');
 }
+if (!defined('ZAPCAR_SERVICO_PADRAO')) {
+    define('ZAPCAR_SERVICO_PADRAO', 'consulta-veicular');
+}
 
 function zapcarApiKey(): string {
     return trim((string)(getConfig('zapcar_api_key') ?? ''));
@@ -65,6 +82,28 @@ function zapcarApiKey(): string {
 
 function zapcarConfigured(): bool {
     return zapcarApiKey() !== '';
+}
+
+/** Slug do serviço escolhido em Configurações (config.zapcar_servico_slug) — fallback pro padrão se nunca configurado. */
+function zapcarServicoAtivo(): string {
+    $slug = trim((string)(getConfig('zapcar_servico_slug') ?? ''));
+    return $slug !== '' ? $slug : ZAPCAR_SERVICO_PADRAO;
+}
+
+/** Nome legível de um serviço, lido do catálogo ao vivo (zapcarServicos()) — cai no próprio slug se não achar/catálogo indisponível. */
+function zapcarNomeServico(string $slug): string {
+    $catalogo = zapcarServicos();
+    $lista = $catalogo['servicos'] ?? $catalogo ?? [];
+    if (is_array($lista)) {
+        foreach ($lista as $s) {
+            if (!is_array($s)) continue;
+            $slugAtual = (string)($s['slug'] ?? $s['servico'] ?? '');
+            if ($slugAtual === $slug) {
+                return (string)($s['nome'] ?? $s['descricao'] ?? $slug);
+            }
+        }
+    }
+    return $slug;
 }
 
 /**
@@ -141,14 +180,15 @@ function zapcarSaldo(): ?float {
     return (float)$body['saldo'];
 }
 
-/** Preço vigente do serviço "Consulta Veicular" (slug `consulta-veicular`), lido do catálogo ao vivo — null se não achar/API fora do ar. */
-function zapcarPrecoConsultaVeicular(): ?float {
+/** Preço vigente de um serviço (slug), lido do catálogo ao vivo — null se não achar/API fora do ar. */
+function zapcarPrecoServico(string $slug): ?float {
     $catalogo = zapcarServicos();
     $lista = $catalogo['servicos'] ?? $catalogo ?? [];
     if (!is_array($lista)) return null;
     foreach ($lista as $s) {
-        $slug = (string)($s['slug'] ?? $s['servico'] ?? '');
-        if ($slug === 'consulta-veicular') {
+        if (!is_array($s)) continue;
+        $slugAtual = (string)($s['slug'] ?? $s['servico'] ?? '');
+        if ($slugAtual === $slug) {
             return isset($s['preco']) ? (float)$s['preco'] : null;
         }
     }
@@ -161,10 +201,10 @@ function zapcarLimparPlaca(string $placa): string {
     return preg_match('/^[A-Z]{3}\d[A-Z0-9]\d{2}$/', $limpa) ? $limpa : '';
 }
 
-/** POST /v1/consultas (servico=consulta-veicular). Debita, exceto 4xx/429 e replay de Idempotency-Key. */
-function zapcarCriarConsultaVeicular(string $placa, string $idempotencyKey): array {
+/** POST /v1/consultas (servico dinâmico, ver zapcarServicoAtivo()). Debita, exceto 4xx/429 e replay de Idempotency-Key. */
+function zapcarCriarConsulta(string $placa, string $idempotencyKey, string $servico): array {
     return zapcarRequest('POST', '/v1/consultas', [
-        'servico' => 'consulta-veicular',
+        'servico' => $servico,
         'placa' => $placa,
     ], $idempotencyKey);
 }
@@ -250,17 +290,21 @@ function zapcarUltimaConsultaDaOportunidade(int $oportunidadeId): ?array {
 }
 
 /**
- * Cria (paga) uma Consulta Veicular pra placa informada e já grava o
+ * Cria (paga) uma consulta pra placa informada — serviço é sempre o
+ * escolhido em Configurações (zapcarServicoAtivo()) — e já grava o
  * resultado inicial localmente. Dedup: se já existe uma consulta
- * 'processando' pra essa MESMA placa+oportunidade, reaproveita o id em
- * vez de criar outra (evita cobrar 2x por duplo clique/reenvio — mesmo
- * padrão já usado em criarAvaliacao(), includes/veiculo_avaliacoes.php).
+ * 'processando' pra essa MESMA placa+oportunidade+serviço, reaproveita o
+ * id em vez de criar outra (evita cobrar 2x por duplo clique/reenvio —
+ * mesmo padrão já usado em criarAvaliacao(), includes/veiculo_avaliacoes.php).
+ * O dedup inclui o serviço de propósito: trocar o tipo de consulta em
+ * Configurações enquanto uma consulta do tipo ANTIGO ainda está
+ * 'processando' nunca reaproveita ela por engano pra um serviço diferente.
  *
  * Se a criação falhar (nunca cobra — 4xx/429/erro de rede), o rascunho
  * local é removido: nunca deixa uma linha "processando" órfã que nunca
  * vai concluir porque nem chegou a nascer na ZapCar de verdade.
  */
-function zapcarIniciarConsultaVeicular(int $oportunidadeId, string $placaBruta, int $usuarioId): array {
+function zapcarIniciarConsulta(int $oportunidadeId, string $placaBruta, int $usuarioId): array {
     if (!zapcarConfigured()) {
         return ['ok' => false, 'erro' => 'Chave da API ZapCar não configurada. Configure em Configurações → ZapCar.'];
     }
@@ -268,15 +312,16 @@ function zapcarIniciarConsultaVeicular(int $oportunidadeId, string $placaBruta, 
     if ($placa === '') {
         return ['ok' => false, 'erro' => 'Placa inválida.'];
     }
+    $servico = zapcarServicoAtivo();
 
     $db = getDB();
 
     $stmt = $db->prepare("
         SELECT id FROM zapcar_consultas
-        WHERE oportunidade_id = ? AND placa = ? AND status = 'processando'
+        WHERE oportunidade_id = ? AND placa = ? AND servico = ? AND status = 'processando'
         ORDER BY id DESC LIMIT 1
     ");
-    $stmt->execute([$oportunidadeId, $placa]);
+    $stmt->execute([$oportunidadeId, $placa, $servico]);
     $existenteId = $stmt->fetchColumn();
     if ($existenteId) {
         return ['ok' => true, 'id_local' => (int)$existenteId, 'reaproveitada' => true];
@@ -284,14 +329,14 @@ function zapcarIniciarConsultaVeicular(int $oportunidadeId, string $placaBruta, 
 
     $db->prepare("
         INSERT INTO zapcar_consultas (oportunidade_id, servico, placa, status, tentativa, usuario_id, criado_em, atualizado_em)
-        VALUES (?, 'consulta-veicular', ?, 'processando', 1, ?, datetime('now','localtime'), datetime('now','localtime'))
-    ")->execute([$oportunidadeId, $placa, $usuarioId]);
+        VALUES (?, ?, ?, 'processando', 1, ?, datetime('now','localtime'), datetime('now','localtime'))
+    ")->execute([$oportunidadeId, $servico, $placa, $usuarioId]);
     $idLocal = (int)$db->lastInsertId();
 
     $idempotencyKey = 'fastcar-cons-' . $idLocal . '-t1';
     $db->prepare("UPDATE zapcar_consultas SET idempotency_key = ? WHERE id = ?")->execute([$idempotencyKey, $idLocal]);
 
-    [$status, $body] = zapcarCriarConsultaVeicular($placa, $idempotencyKey);
+    [$status, $body] = zapcarCriarConsulta($placa, $idempotencyKey, $servico);
 
     if ($status === 201 || $status === 200) {
         $zapcarId = (string)($body['id'] ?? '');
@@ -364,7 +409,7 @@ function zapcarAtualizarStatusLocal(int $idLocal): ?array {
         // não pode derrubar a atualização do status que já foi salva acima.
         if (isset($body['veiculo']) && is_array($body['veiculo'])) {
             try {
-                zapcarAplicarNaOportunidade((int)$row['oportunidade_id'], $body['veiculo']);
+                zapcarAplicarNaOportunidade((int)$row['oportunidade_id'], $body['veiculo'], zapcarNomeServico((string)$row['servico']));
             } catch (Throwable $e) {
                 // segue sem aplicar — a consulta em si já está salva e
                 // visível no card, só não propagou pros campos/resumo.
@@ -397,13 +442,15 @@ function zapcarTriTexto($valor, string $simTexto, string $naoTexto): string {
 }
 
 /**
- * Monta um texto legível com TUDO que a Consulta Veicular trouxe
- * (situação, recall, sinistro, leilão, restrições, débitos, proprietário,
- * último licenciamento) — pensado pra ser lido de cima a baixo pelo
- * consultor na hora de negociar, sem precisar abrir o JSON cru.
+ * Monta um texto legível com TUDO que a consulta trouxe (situação, recall,
+ * sinistro, leilão, restrições, débitos, proprietário, último
+ * licenciamento) — pensado pra ser lido de cima a baixo pelo consultor na
+ * hora de negociar, sem precisar abrir o JSON cru. $servicoNome é só pro
+ * cabeçalho (qual tipo de consulta gerou isso — o tipo é configurável em
+ * Configurações, ver zapcarServicoAtivo()).
  */
-function zapcarResumoTexto(array $veiculo): string {
-    $linhas = ['Consulta ZapCar (Consulta Veicular) — ' . date('d/m/Y H:i') . ':'];
+function zapcarResumoTexto(array $veiculo, string $servicoNome = 'Consulta Veicular'): string {
+    $linhas = ['Consulta ZapCar (' . $servicoNome . ') — ' . date('d/m/Y H:i') . ':'];
 
     $ident = trim(($veiculo['marca'] ?? '') . ' ' . ($veiculo['modelo'] ?? ''));
     if ($ident !== '') {
@@ -482,7 +529,7 @@ function zapcarResumoTexto(array $veiculo): string {
  *    "confirmado" por humano; o histórico completo de toda consulta já
  *    feita continua intacto em `zapcar_consultas`, nunca é perdido.
  */
-function zapcarAplicarNaOportunidade(int $oportunidadeId, array $veiculo): void {
+function zapcarAplicarNaOportunidade(int $oportunidadeId, array $veiculo, string $servicoNome = 'Consulta Veicular'): void {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_renavam, veiculo_chassi,
@@ -528,7 +575,7 @@ function zapcarAplicarNaOportunidade(int $oportunidadeId, array $veiculo): void 
     }
 
     $sets[] = "zapcar_resumo_texto = ?";
-    $params[] = zapcarResumoTexto($veiculo);
+    $params[] = zapcarResumoTexto($veiculo, $servicoNome);
     $sets[] = "zapcar_consultado_em = datetime('now','localtime')";
 
     $params[] = $oportunidadeId;
@@ -545,6 +592,8 @@ function zapcarFormatarRespostaAjax(?array $row): array {
         'id_local' => (int)$row['id'],
         'status' => $row['status'],
         'placa' => $row['placa'],
+        'servico' => $row['servico'],
+        'servico_nome' => zapcarNomeServico((string)$row['servico']),
         'valor_cobrado' => $row['valor_cobrado'] !== null ? (float)$row['valor_cobrado'] : null,
         'veiculo' => $row['veiculo_json'] ? json_decode($row['veiculo_json'], true) : null,
         'nao_verificado' => $row['nao_verificado_json'] ? (json_decode($row['nao_verificado_json'], true) ?: []) : [],

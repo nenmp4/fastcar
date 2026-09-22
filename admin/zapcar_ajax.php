@@ -31,7 +31,7 @@ if ($acao === 'consultar') {
         echo json_encode(['ok' => false, 'erro' => 'Dados incompletos.']);
         exit;
     }
-    $resultado = zapcarIniciarConsultaVeicular($oportunidadeId, $placa, (int)$_SESSION['admin_id']);
+    $resultado = zapcarIniciarConsulta($oportunidadeId, $placa, (int)$_SESSION['admin_id']);
     echo json_encode($resultado);
     exit;
 }
