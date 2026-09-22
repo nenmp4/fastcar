@@ -508,6 +508,16 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         </div>
         <button type="submit">Salvar dados do veículo</button>
     </form>
+
+    <?php if (!empty($op['zapcar_resumo_texto'])): ?>
+        <div style="margin-top:16px;background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:12px">
+            <strong style="font-size:13px">🚓 Resumo da consulta ZapCar</strong>
+            <?php if (!empty($op['zapcar_consultado_em'])): ?>
+                <span style="font-size:12px;color:var(--texto-fraco)"> — consultado em <?= e(date('d/m/Y H:i', strtotime($op['zapcar_consultado_em']))) ?></span>
+            <?php endif; ?>
+            <pre style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;margin:8px 0 0"><?= e($op['zapcar_resumo_texto']) ?></pre>
+        </div>
+    <?php endif; ?>
 </div>
 
 <?php if (zapcarConfigured()): ?>
@@ -1103,6 +1113,10 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         if (data.pdf_url) {
             html += '<p><a href="' + escapeHtml(data.pdf_url) + '" target="_blank" rel="noopener">📄 Ver documento da consulta</a></p>';
         }
+
+        html += '<p><small style="color:var(--texto-fraco)">✅ Marca/modelo/placa/débitos (quando ainda vazios) e o resumo '
+            + 'no card "Dados do veículo" foram atualizados automaticamente — '
+            + '<a href="javascript:location.reload()">recarregue a página</a> pra ver refletido nos campos.</small></p>';
 
         resultado.innerHTML = html;
     }

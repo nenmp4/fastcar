@@ -300,6 +300,17 @@ function zapcarAtualizarStatusLocal(int $idLocal): ?array {
             (string)($body['pdf_url'] ?? ''),
             $idLocal,
         ]);
+        // 22/09/2026, "vamos preencher tudo... oportunidade para consultor
+        // ter poder negociação" — best-effort (nunca lança): uma falha aqui
+        // não pode derrubar a atualização do status que já foi salva acima.
+        if (isset($body['veiculo']) && is_array($body['veiculo'])) {
+            try {
+                zapcarAplicarNaOportunidade((int)$row['oportunidade_id'], $body['veiculo']);
+            } catch (Throwable $e) {
+                // segue sem aplicar — a consulta em si já está salva e
+                // visível no card, só não propagou pros campos/resumo.
+            }
+        }
     } elseif ($statusRemoto === 'erro') {
         $db->prepare("
             UPDATE zapcar_consultas
@@ -317,6 +328,152 @@ function zapcarAtualizarStatusLocal(int $idLocal): ?array {
     // ignorar campo desconhecido, não travar em cima de formato inesperado).
 
     return zapcarBuscarConsultaLocal($idLocal);
+}
+
+/** true/false/null -> texto (mesmo tri-estado da tela: nunca "nada consta" pra null). */
+function zapcarTriTexto($valor, string $simTexto, string $naoTexto): string {
+    if ($valor === true) return $simTexto;
+    if ($valor === false) return $naoTexto;
+    return 'não verificado';
+}
+
+/**
+ * Monta um texto legível com TUDO que a Consulta Simples trouxe
+ * (situação, recall, sinistro, leilão, restrições, débitos, proprietário,
+ * último licenciamento) — pensado pra ser lido de cima a baixo pelo
+ * consultor na hora de negociar, sem precisar abrir o JSON cru.
+ */
+function zapcarResumoTexto(array $veiculo): string {
+    $linhas = ['Consulta ZapCar (Consulta Simples) — ' . date('d/m/Y H:i') . ':'];
+
+    $ident = trim(($veiculo['marca'] ?? '') . ' ' . ($veiculo['modelo'] ?? ''));
+    if ($ident !== '') {
+        $linhas[] = '- Veículo: ' . $ident
+            . (!empty($veiculo['ano_modelo']) ? ' (' . $veiculo['ano_modelo'] . ')' : '')
+            . (!empty($veiculo['cor']) ? ', cor ' . $veiculo['cor'] : '')
+            . (!empty($veiculo['combustivel']) ? ', ' . $veiculo['combustivel'] : '');
+    }
+    if (!empty($veiculo['categoria']) || !empty($veiculo['especie'])) {
+        $linhas[] = '- Categoria/espécie: ' . trim(($veiculo['categoria'] ?? '') . ' / ' . ($veiculo['especie'] ?? ''), ' /');
+    }
+    if (!empty($veiculo['municipio']) || !empty($veiculo['uf'])) {
+        $linhas[] = '- Município/UF de registro: ' . trim(($veiculo['municipio'] ?? '') . '/' . ($veiculo['uf'] ?? ''), '/');
+    }
+    $linhas[] = '- Situação: ' . (($veiculo['situacao'] ?? '') ?: 'não informada')
+        . (($veiculo['baixado'] ?? null) === true ? ' — 🚫 BAIXADO' : '');
+    $linhas[] = '- Recall: ' . zapcarTriTexto($veiculo['recall'] ?? null, 'SIM', 'não consta');
+    $linhas[] = '- Sinistro: ' . zapcarTriTexto($veiculo['sinistro'] ?? null, 'SIM', 'não consta');
+
+    if (isset($veiculo['leilao']) && is_array($veiculo['leilao'])) {
+        $l = $veiculo['leilao'];
+        $linhas[] = '- Leilão: ' . zapcarTriTexto(
+            $l['consta'] ?? null,
+            ($l['ocorrencias'] ?? 0) . ' ocorrência(s), ' . ($l['fotos'] ?? 0) . ' foto(s)',
+            'não consta'
+        );
+    } else {
+        $linhas[] = '- Leilão: não verificado';
+    }
+
+    $restricoes = is_array($veiculo['restricoes'] ?? null) ? $veiculo['restricoes'] : [];
+    if ($restricoes) {
+        $linhas[] = '- Restrições:';
+        foreach ($restricoes as $r) {
+            if (!is_array($r)) continue;
+            $status = zapcarTriTexto($r['ativa'] ?? null, 'ATIVA' . (!empty($r['descricao']) ? ' — ' . $r['descricao'] : ''), 'inativa');
+            $linhas[] = '  · ' . ($r['tipo'] ?? '?') . ': ' . $status;
+        }
+    }
+
+    $debitos = is_array($veiculo['debitos'] ?? null) ? $veiculo['debitos'] : [];
+    if ($debitos) {
+        $linhas[] = '- Débitos:';
+        foreach ($debitos as $d) {
+            if (!is_array($d)) continue;
+            $valorTxt = (($d['valor_informado'] ?? null) === false)
+                ? 'valor não informado'
+                : 'R$ ' . number_format(((float)($d['valor_centavos'] ?? 0)) / 100, 2, ',', '.');
+            $linhas[] = '  · ' . ($d['tipo'] ?? 'OUTRO') . (!empty($d['descricao']) ? ' (' . $d['descricao'] . ')' : '') . ': ' . $valorTxt;
+        }
+        $linhas[] = '  Total: R$ ' . number_format(((float)($veiculo['debitos_total_centavos'] ?? 0)) / 100, 2, ',', '.');
+    }
+
+    if (!empty($veiculo['proprietario']['nome'])) {
+        $linhas[] = '- Proprietário no CRLV: ' . $veiculo['proprietario']['nome']
+            . (!empty($veiculo['proprietario']['documento']) ? ' — ' . $veiculo['proprietario']['documento'] : '');
+    }
+    if (!empty($veiculo['ultimo_licenciamento'])) {
+        $linhas[] = '- Último licenciamento: ' . $veiculo['ultimo_licenciamento'];
+    }
+
+    return implode("\n", $linhas);
+}
+
+/**
+ * Aplica o resultado de uma Consulta Simples CONCLUÍDA na própria
+ * oportunidade de compra — 22/09/2026, "vamos preencher tudo... para
+ * consultor ter poder negociação". Duas disciplinas diferentes, de
+ * propósito:
+ *  - Campos de identificação (marca/modelo/ano/placa/renavam/chassi) e os
+ *    3 débitos (IPVA/licenciamento/multas, somados por tipo) são
+ *    FILL-IF-EMPTY — nunca sobrescrevem o que o consultor já confirmou
+ *    com o vendedor (regra do resto do projeto).
+ *  - `zapcar_resumo_texto`/`zapcar_consultado_em` sempre SOBRESCREVEM —
+ *    é sempre o retrato mais recente da fonte oficial, não um dado
+ *    "confirmado" por humano; o histórico completo de toda consulta já
+ *    feita continua intacto em `zapcar_consultas`, nunca é perdido.
+ */
+function zapcarAplicarNaOportunidade(int $oportunidadeId, array $veiculo): void {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_renavam, veiculo_chassi,
+               debito_ipva, debito_licenciamento, debito_multas
+        FROM oportunidades WHERE id = ?
+    ");
+    $stmt->execute([$oportunidadeId]);
+    $atual = $stmt->fetch();
+    if (!$atual) return;
+
+    $sets = [];
+    $params = [];
+
+    $mapaIdentificacao = [
+        'veiculo_marca'   => $veiculo['marca'] ?? null,
+        'veiculo_modelo'  => $veiculo['modelo'] ?? null,
+        'veiculo_ano'     => $veiculo['ano_modelo'] ?? ($veiculo['ano_fabricacao'] ?? null),
+        'veiculo_placa'   => $veiculo['placa'] ?? null,
+        'veiculo_renavam' => $veiculo['renavam'] ?? null,
+        'veiculo_chassi'  => $veiculo['chassi'] ?? null,
+    ];
+    foreach ($mapaIdentificacao as $coluna => $valor) {
+        if ($valor !== null && $valor !== '' && empty($atual[$coluna])) {
+            $sets[] = "{$coluna} = ?";
+            $params[] = (string)$valor;
+        }
+    }
+
+    $somaPorTipo = ['IPVA' => 0.0, 'LICENCIAMENTO' => 0.0, 'MULTA' => 0.0];
+    foreach ((is_array($veiculo['debitos'] ?? null) ? $veiculo['debitos'] : []) as $d) {
+        if (!is_array($d)) continue;
+        $tipo = strtoupper((string)($d['tipo'] ?? ''));
+        if (isset($somaPorTipo[$tipo]) && ($d['valor_informado'] ?? null) === true && isset($d['valor_centavos'])) {
+            $somaPorTipo[$tipo] += ((float)$d['valor_centavos']) / 100;
+        }
+    }
+    $mapaDebito = ['debito_ipva' => 'IPVA', 'debito_licenciamento' => 'LICENCIAMENTO', 'debito_multas' => 'MULTA'];
+    foreach ($mapaDebito as $coluna => $tipo) {
+        if ($somaPorTipo[$tipo] > 0 && $atual[$coluna] === null) {
+            $sets[] = "{$coluna} = ?";
+            $params[] = $somaPorTipo[$tipo];
+        }
+    }
+
+    $sets[] = "zapcar_resumo_texto = ?";
+    $params[] = zapcarResumoTexto($veiculo);
+    $sets[] = "zapcar_consultado_em = datetime('now','localtime')";
+
+    $params[] = $oportunidadeId;
+    $db->prepare("UPDATE oportunidades SET " . implode(', ', $sets) . " WHERE id = ?")->execute($params);
 }
 
 /** Formata uma linha local pra resposta AJAX (JSON decodificado, campos previsíveis pro JS). */

@@ -126,6 +126,18 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     debito_ipva REAL,
     debito_licenciamento REAL,
     debito_multas REAL,
+    -- Resumo automático da consulta ZapCar (22/09/2026, "vamos preencher
+    -- tudo... oportunidade para consultor ter poder negociação") — texto
+    -- legível com situação/recall/sinistro/leilão/restrições/proprietário/
+    -- débitos, gravado sozinho por zapcarAplicarNaOportunidade()
+    -- (includes/zapcar.php) toda vez que uma Consulta Simples CONCLUI —
+    -- sempre SOBRESCREVE (nunca fill-if-empty, é sempre o retrato mais
+    -- recente da fonte oficial, diferente dos campos de identificação/
+    -- débito abaixo, que são fill-if-empty pra nunca sobrescrever o que o
+    -- consultor já confirmou com o vendedor). Histórico completo de toda
+    -- consulta já feita continua em zapcar_consultas, nunca perdido.
+    zapcar_resumo_texto TEXT DEFAULT '',
+    zapcar_consultado_em DATETIME,
     banco_financiamento TEXT DEFAULT '',
     valor_parcela REAL,
     parcelas_restantes INTEGER,

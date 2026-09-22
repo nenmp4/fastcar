@@ -1637,6 +1637,51 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmada sem deixar linha órfã no banco, nos dois casos; sem chave
   configurada confirmado nunca tenta a rede) + `php -l` + `tests/smoke.php`
   limpos.
+  **Resultado propagado sozinho pra oportunidade, "pro consultor ter poder
+  de negociação"** (mesmo dia, pergunta direta "ja vai salvar dados nosso
+  crm?" → confirmado "vamos salvar todos infornçãoes" → "vamos preencher
+  tudo... oportunidade para consultor ter poder negociação") — até aqui o
+  resultado só ficava visível dentro do próprio card ZapCar; agora
+  `zapcarAtualizarStatusLocal()` chama `zapcarAplicarNaOportunidade()`
+  (`includes/zapcar.php`, best-effort, nunca derruba a gravação do status
+  se falhar) no exato momento em que a consulta **conclui** de verdade.
+  Duas disciplinas diferentes, de propósito: (1) os campos que já
+  existiam (`veiculo_marca`/`modelo`/`ano`/`placa`/`renavam`/`chassi` e os
+  3 débitos `debito_ipva`/`licenciamento`/`multas`, somando por tipo os
+  itens de `veiculo.debitos[]` com `valor_informado=true` — item sem
+  valor informado nunca é somado, fica de fora do total, regra #3) são
+  **fill-if-empty**, mesma disciplina do resto do projeto — nunca
+  sobrescreve o que o consultor já confirmou com o vendedor, nem numa
+  consulta repetida depois; (2) 2 colunas novas,
+  `oportunidades.zapcar_resumo_texto`/`zapcar_consultado_em`, **sempre
+  sobrescrevem** — é sempre o retrato mais recente da fonte oficial
+  (situação/baixado, recall, sinistro, leilão, cada restrição por tipo
+  com status ativa/inativa/não verificado, cada débito com valor ou "valor
+  não informado", proprietário, último licenciamento — TUDO que a
+  Consulta Simples traz, não só o que virou coluna própria), nunca um
+  dado "confirmado" por humano; o histórico completo de toda consulta já
+  feita continua intacto em `zapcar_consultas`, nunca é perdido mesmo
+  quando um campo fica travado por já ter sido confirmado. Renderizado
+  como bloco de texto legível (`<pre>`) direto no card "Dados do veículo"
+  de `admin/oportunidade.php` — visível pro consultor sem precisar rolar
+  até o card da ZapCar — com a data/hora da última consulta ao lado do
+  título. Widget da ZapCar avisa, ao concluir, que os campos vazios e o
+  resumo foram atualizados sozinhos, com link pra recarregar a página (a
+  aplicação roda no servidor durante o polling, os `<input>` da tela não
+  atualizam sozinhos via JS). Testado: 15 asserções novas (marca/modelo/
+  placa aplicados quando vazios; `debito_ipva` somado certo a partir de
+  `debitos[]`; débito sem valor informado nunca vira número chutado;
+  campo sem nenhum item correspondente continua `NULL`; resumo contém
+  identificação/alerta de sinistro/restrição ativa por tipo/aviso de
+  "valor não informado"; `zapcar_consultado_em` preenchido; e o par de
+  asserções que prova a disciplina dupla — chamando
+  `zapcarAplicarNaOportunidade()` de novo com dado DIFERENTE depois de
+  marca/débito já terem sido "confirmados manualmente": os campos
+  travados continuam intocados, mas `zapcar_resumo_texto`/
+  `zapcar_consultado_em` avançam pra refletir a consulta nova mesmo
+  assim) + `php -l` + `tests/smoke.php` limpos + migração (2 colunas
+  `ALTER TABLE`) testada idempotente contra o banco de desenvolvimento
+  real (2ª rodada mostra "já existia", dado existente preservado).
   ⚠️ **Nunca confirmado contra a API real ainda** (sandbox de dev bloqueia
   acesso externo, mesma ressalva de toda integração nova deste projeto) —
   a implementação segue a doc/openapi colada pelo usuário, mas o formato

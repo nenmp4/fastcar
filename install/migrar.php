@@ -209,6 +209,14 @@ $migracoes = [
     // contra reatribuir em silêncio uma oportunidade cujo cliente já
     // recebeu o nome+WhatsApp do consultor anterior. Ver includes/fila_leads.php.
     'oportunidades.consultor_tel_enviado_em' => "ALTER TABLE oportunidades ADD COLUMN consultor_tel_enviado_em DATETIME",
+
+    // 22/09/2026, "vamos preencher tudo... oportunidade para consultor ter
+    // poder negociação" — resumo automático da Consulta Simples ZapCar
+    // (situação/recall/sinistro/leilão/restrições/proprietário/débitos),
+    // gravado sozinho toda vez que uma consulta conclui — ver
+    // includes/zapcar.php::zapcarAplicarNaOportunidade().
+    'oportunidades.zapcar_resumo_texto' => "ALTER TABLE oportunidades ADD COLUMN zapcar_resumo_texto TEXT DEFAULT ''",
+    'oportunidades.zapcar_consultado_em' => "ALTER TABLE oportunidades ADD COLUMN zapcar_consultado_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {
