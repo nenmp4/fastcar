@@ -1950,6 +1950,23 @@ segue no schema sem uso novo, não removida sem ganho real),
   `php -l` + `tests/smoke.php` limpos — mudança só de atributo HTML, sem
   jeito de testar Safari real neste sandbox; validar no próprio iPhone do
   usuário assim que o deploy aplicar.
+  **Continuava não selecionando no Safari/iPhone 17 mesmo sem o `capture`**
+  (22/09/2026, achado real: "não está selecionando o arquivo no safary
+  ifhone 17") — a lista de MIME específicos
+  (`image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm`)
+  continuava no `accept` mesmo depois de tirar o `capture`, e esse padrão
+  também é conhecido por se comportar mal no Safari iOS (Biblioteca de
+  Fotos abrindo vazia/travada, dependendo da combinação de tipos de
+  imagem+vídeo juntos). Trocado pros coringas `accept="image/*,video/*"`
+  — muito mais testado/compatível entre navegadores (Safari incluso) que
+  uma lista extensa de tipos específicos. Validação de verdade continua
+  100% no servidor (`salvarFotoAvaliacao()`,
+  `includes/veiculo_avaliacoes.php`, via `mime_content_type()` contra
+  `VEICULO_MIDIA_MIME_PERMITIDOS`) — o `accept` é só filtro/dica do
+  navegador, nunca a barreira real, então simplificar não abre brecha
+  nenhuma pra tipo de arquivo indevido. `php -l` + `tests/smoke.php`
+  limpos — mesma ressalva de sempre, sem jeito de testar Safari real
+  neste sandbox; validar no iPhone do usuário assim que o deploy aplicar.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
