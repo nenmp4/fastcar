@@ -3269,6 +3269,30 @@ segue no schema sem uso novo, não removida sem ganho real),
   "Soluções Financeiras" como subtítulo) chegou colada direto na conversa
   em 13/09/2026, sem dar pra salvar os pixels exatos; falta reenviar como
   arquivo de verdade.
+  **Banner próprio de "Instalar app"** (22/09/2026, "não aparece popup para
+  instalar app no mobile") — até então o único mecanismo era o mini-infobar
+  AUTOMÁTICO do navegador, que depende de heurísticas de engajamento
+  variáveis do Chrome/Android (pode nunca disparar sozinho) e simplesmente
+  **não existe no Safari/iOS** (a Apple nunca ofereceu `beforeinstallprompt`
+  — instalar lá é sempre manual, Compartilhar → Adicionar à Tela de Início,
+  sem like nenhum jeito de disparar isso via JS). `admin/_pwa_register.php`
+  (único lugar incluído nas 34 páginas do admin, editado 1x) ganhou um
+  banner fixo no rodapé cobrindo os 2 casos: no Android/Chrome, captura
+  `beforeinstallprompt` (`preventDefault()` + guarda o evento) e mostra um
+  botão "Instalar" que chama `deferredPrompt.prompt()` só quando clicado —
+  o próprio clique do usuário já conta como sinal de engajamento, menos
+  dependente da heurística automática do navegador; no iOS (detectado por
+  `userAgent`), mostra instrução manual fixa ("toque em Compartilhar e
+  depois em Adicionar à Tela de Início") com botão "Entendi" pra fechar.
+  Nunca aparece se já estiver rodando em modo standalone (app já instalado,
+  `matchMedia('(display-mode: standalone)')`/`navigator.standalone`) nem se
+  o usuário já dispensou antes (`localStorage`, best-effort — nunca crítico,
+  cada dispositivo/navegador tem o próprio estado). Testado via Playwright
+  com 2 User-Agents reais (iPhone Safari e Android Chrome) contra o script
+  isolado: caminho iOS mostra o texto certo e "Entendi" remove o banner sem
+  erro de JS; caminho Android, disparando um `beforeinstallprompt`
+  sintético, mostra o botão "Instalar" sem erro de JS — os 2 sem nenhuma
+  exceção no console. `php -l` + `tests/smoke.php` limpos.
 - **Smoke test** — `tests/smoke.php` (rodar antes de todo commit: `php
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os
