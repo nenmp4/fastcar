@@ -202,6 +202,13 @@ $migracoes = [
     'oportunidades.debito_ipva' => "ALTER TABLE oportunidades ADD COLUMN debito_ipva REAL",
     'oportunidades.debito_licenciamento' => "ALTER TABLE oportunidades ADD COLUMN debito_licenciamento REAL",
     'oportunidades.debito_multas' => "ALTER TABLE oportunidades ADD COLUMN debito_multas REAL",
+
+    // 22/09/2026, "está aparecendo mesma oportunidade para outros
+    // consultores" / "da para corrigir que duplicou" — trava a fila
+    // (equalizarFilaLeads/redistribuirFilaLeads/marcarConsultorFaltou)
+    // contra reatribuir em silêncio uma oportunidade cujo cliente já
+    // recebeu o nome+WhatsApp do consultor anterior. Ver includes/fila_leads.php.
+    'oportunidades.consultor_tel_enviado_em' => "ALTER TABLE oportunidades ADD COLUMN consultor_tel_enviado_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {

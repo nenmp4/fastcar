@@ -387,6 +387,15 @@ function enviarTelefoneConsultorAoCliente(int $oportunidadeId): void {
              . "Se quiser chamar antes, o WhatsApp dele(a) é: {$op['consultor_whatsapp']}";
         if (!zapiEnviarTexto($op['cliente_telefone'], $msg)) return;
 
+        // 22/09/2026, "está aparecendo mesma oportunidade para outros
+        // consultores" — a partir daqui o cliente já sabe o nome/WhatsApp
+        // DESTE consultor; travar a oportunidade contra reatribuição
+        // automática silenciosa da fila (equalizarFilaLeads()/
+        // redistribuirFilaLeads()/marcarConsultorFaltou()), que senão
+        // trocava o responsavel_id sem o cliente nunca ficar sabendo.
+        $db->prepare("UPDATE oportunidades SET consultor_tel_enviado_em = datetime('now','localtime') WHERE id = ?")
+           ->execute([$oportunidadeId]);
+
         $telNorm = normalizarTelefone($op['cliente_telefone']);
         $stmtC = $db->prepare("SELECT id FROM clientes WHERE telefone = ?");
         $stmtC->execute([$telNorm]);

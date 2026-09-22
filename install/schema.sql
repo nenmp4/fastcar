@@ -135,6 +135,16 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     urgencia TEXT DEFAULT '',          -- percepção da IA: precisa vender rápido ou pode esperar (texto livre, nunca inventado)
     temperatura_lead TEXT DEFAULT '' CHECK (temperatura_lead IN ('', 'frio', 'morno', 'quente')),
     aceita_ligacao_consultor INTEGER,  -- NULL = ainda não perguntado; 1/0 = cliente topou/recusou receber ligação
+    -- 22/09/2026, "está aparecendo mesma oportunidade para outros
+    -- consultores" / "da para corrigir que duplicou" — achado real: a fila
+    -- (equalizarFilaLeads/redistribuirFilaLeads/marcarConsultorFaltou)
+    -- reatribuía responsavel_id em silêncio mesmo numa oportunidade cujo
+    -- cliente já tinha recebido o nome+WhatsApp do consultor ANTERIOR via
+    -- enviarTelefoneConsultorAoCliente() — cliente ficava com o contato de
+    -- 1 consultor enquanto o sistema já tinha passado o lead pra outro.
+    -- NULL = nunca enviado; preenchido = trava essa oportunidade contra
+    -- reatribuição automática silenciosa (ver includes/fila_leads.php).
+    consultor_tel_enviado_em DATETIME,
 
     -- Dados do financiamento pro contrato-mestre de compra
     -- (includes/contratos.php) — nunca preenchidos automaticamente, o

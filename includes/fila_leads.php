@@ -158,8 +158,15 @@ const FILA_LEADS_ETAPAS_NAO_TOCADAS = ['whatsapp', 'qualificacao_ia', 'crm_preen
  *
  * Nunca mexe em oportunidade que o consultor já começou a trabalhar
  * (etapa='atendimento' em diante) — só adota/redistribui o que ainda está
- * "na fila" de verdade. Retorna um resumo (quantas movidas/atribuídas, de
- * quem pra quem) pro admin ver o que aconteceu.
+ * "na fila" de verdade. Fase 1 também nunca mexe numa oportunidade cujo
+ * cliente já recebeu o nome+WhatsApp do consultor atual via
+ * enviarTelefoneConsultorAoCliente() (22/09/2026, "está aparecendo mesma
+ * oportunidade para outros consultores" — reatribuir em silêncio depois
+ * disso deixava o cliente com o contato de um consultor enquanto o
+ * responsável de verdade já era outro); fase 2 nunca precisa dessa trava,
+ * órfã (responsavel_id NULL) nunca teve telefone de consultor mandado.
+ * Retorna um resumo (quantas movidas/atribuídas, de quem pra quem) pro
+ * admin ver o que aconteceu.
  */
 function redistribuirFilaLeads(int $executadoPor): array {
     $db = getDB();
@@ -194,6 +201,7 @@ function redistribuirFilaLeads(int $executadoPor): array {
                 FROM oportunidades o
                 JOIN clientes c ON c.id = o.cliente_id
                 WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
+                  AND o.consultor_tel_enviado_em IS NULL
                 ORDER BY o.created_at DESC
                 LIMIT ?
             ");
@@ -340,8 +348,13 @@ function equalizarFilaLeads(int $executadoPor): array {
     if (count($consultores) < 2) return [];
 
     $etapasPh = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
+    // Conta só o que é de fato MOVÍVEL (nunca uma oportunidade já travada
+    // por consultor_tel_enviado_em, ver comentário no topo da função) —
+    // senão a carga contada aqui destoa do que stmtCandidata consegue achar
+    // de verdade mais abaixo, disparando o "break" defensivo cedo demais.
     $stmtCarga = $db->prepare("
-        SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$etapasPh})
+        SELECT COUNT(*) FROM oportunidades
+        WHERE responsavel_id = ? AND etapa IN ({$etapasPh}) AND consultor_tel_enviado_em IS NULL
     ");
 
     $nomes = [];
@@ -358,6 +371,7 @@ function equalizarFilaLeads(int $executadoPor): array {
         FROM oportunidades o
         JOIN clientes c ON c.id = o.cliente_id
         WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
+          AND o.consultor_tel_enviado_em IS NULL
         ORDER BY o.created_at DESC
         LIMIT 1
     ");
@@ -549,6 +563,7 @@ function marcarConsultorFaltou(int $usuarioId, int $executadoPor): array {
             FROM oportunidades o
             JOIN clientes c ON c.id = o.cliente_id
             WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
+              AND o.consultor_tel_enviado_em IS NULL
             ORDER BY o.created_at DESC
         ");
         $stmt->execute(array_merge([$usuarioId], FILA_LEADS_ETAPAS_NAO_TOCADAS));

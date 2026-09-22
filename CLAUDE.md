@@ -1214,6 +1214,59 @@ segue no schema sem uso novo, não removida sem ganho real),
   ANTES dessa mudança (coluna removida e recriada via `migrar.php`,
   idempotente numa 2ª rodada, preservando dado existente) + `php -l` +
   `tests/smoke.php` limpos.
+  **Reatribuição automática deixava o cliente com contato de consultor
+  errado** (22/09/2026, "está aparecendo mesma oportunidade para outros
+  consultores" / "da para corrigir que duplicou") — achado real: consultora
+  nova (Gabriela) entrou no time, `equalizarFilaLeads()` foi rodado pra
+  dividir a carga, e uma oportunidade específica (#335) que já tinha
+  passado pelo fluxo normal — cliente confirmou `aceita_ligacao_consultor=1`
+  e recebeu, via `enviarTelefoneConsultorAoCliente()`, uma mensagem de
+  WhatsApp com nome+número PESSOAL do consultor até então responsável
+  (Anderson) — foi realocada em silêncio pra Gabriela pela equalização
+  automática, porque `etapa='crm_preenchido'` está dentro de
+  `FILA_LEADS_ETAPAS_NAO_TOCADAS` (a lista de etapas "ainda não tocadas"
+  que `equalizarFilaLeads()`/`redistribuirFilaLeads()`/
+  `marcarConsultorFaltou()` sempre mexem à vontade) — só que "tocada" nesse
+  caso já tinha acontecido de um jeito que a fila não enxergava: a IA já
+  tinha entregue o contato de um consultor específico pro cliente, uma ação
+  que não tem como ser desfeita/reenviada sem risco (mandar 2ª mensagem
+  contradizendo a 1ª, ou reabrir risco de flood — ver incidentes de
+  bloqueio de número já documentados neste arquivo). Resultado: cliente
+  ficou de posse do WhatsApp pessoal do Anderson, mas o sistema já
+  considerava a Gabriela responsável — o funil "duplicava" o atendimento
+  na prática (2 consultores potencialmente envolvidos no mesmo lead, cada
+  um achando que é o dono). Corrigido com uma trava nova, nunca uma
+  mensagem de correção pro cliente (decisão consciente: menos arriscado
+  travar a reatribuição do que mandar mais uma mensagem automática) —
+  coluna `oportunidades.consultor_tel_enviado_em` (nullable, preenchida só
+  dentro de `enviarTelefoneConsultorAoCliente()`, só depois do
+  `zapiEnviarTexto()` confirmar sucesso de verdade — nunca marca em envio
+  que falhou) e as 3 queries que decidem quais oportunidades "ainda não
+  tocadas" podem ser realocadas
+  (`redistribuirFilaLeads()` fase 1, `equalizarFilaLeads()`,
+  `marcarConsultorFaltou()`) ganharam `AND consultor_tel_enviado_em IS
+  NULL` — uma oportunidade cujo cliente já sabe o nome/telefone de um
+  consultor específico fica travada contra reatribuição automática
+  silenciosa pra sempre (só reatribuição MANUAL, direto na tela pelo
+  super_admin, continua livre — é decisão humana explícita, fora do
+  escopo desse bug). `equalizarFilaLeads()` também teve a própria contagem
+  de carga (`$stmtCarga`) ajustada pra já excluir as travadas do cálculo —
+  sem isso, a carga contada destoava do que a query de candidata
+  conseguia achar de verdade, disparando o `break` defensivo da função
+  cedo demais (motivo: o algoritmo guloso originalmente assume "carga
+  contada = candidata real disponível", e um lead travado conta pra carga
+  mas nunca aparece como candidato movível). Fase 2 de
+  `redistribuirFilaLeads()` (adoção de órfãs, `responsavel_id IS NULL`)
+  nunca precisou da mesma trava — uma órfã nunca teve consultor nenhum
+  pra ter o telefone mandado. Testado em banco isolado: oportunidade com
+  `consultor_tel_enviado_em` preenchido nunca é movida pela equalização
+  mesmo com desequilíbrio real de carga entre os 2 consultores (outras
+  oportunidades livres do mesmo consultor sobrecarregado equalizam
+  normalmente, só a travada fica intocada) + `enviarTelefoneConsultorAoCliente()`
+  confirmado NUNCA marcando a coluna quando o envio pro Z-API falha (sem
+  credencial configurada, no teste) — só marca em sucesso real de envio +
+  migração idempotente (coluna nova, roda 2x sem erro) + `php -l` +
+  `tests/smoke.php` limpos.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
