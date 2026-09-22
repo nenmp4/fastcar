@@ -34,6 +34,7 @@ CRON_LINES=$(cat <<EOF
 0 6 * * * $PHP_BIN $BASE_DIR/cron/leads_sem_resposta.php >> $BASE_DIR/storage/logs/leads_sem_resposta.log 2>&1 $MARK
 */30 * * * * $PHP_BIN $BASE_DIR/cron/zapsign_sync.php >> $BASE_DIR/storage/logs/zapsign_sync.log 2>&1 $MARK
 */30 * * * * $PHP_BIN $BASE_DIR/cron/asaas_sync.php >> $BASE_DIR/storage/logs/asaas_sync.log 2>&1 $MARK
+*/5 * * * * $PHP_BIN $BASE_DIR/cron/fila_horario_expediente.php >> $BASE_DIR/storage/logs/fila_horario_expediente.log 2>&1 $MARK
 30 19 * * * $PHP_BIN $BASE_DIR/cron/resumo_produtividade.php >> $BASE_DIR/storage/logs/resumo_produtividade.log 2>&1 $MARK
 0 5 * * * $PHP_BIN $BASE_DIR/cron/lancamentos_fixos.php >> $BASE_DIR/storage/logs/lancamentos_fixos.log 2>&1 $MARK
 0 8 * * * $PHP_BIN $BASE_DIR/cron/financeiro_relatorio_mensal.php >> $BASE_DIR/storage/logs/financeiro_relatorio.log 2>&1 $MARK

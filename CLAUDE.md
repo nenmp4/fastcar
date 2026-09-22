@@ -1164,6 +1164,56 @@ segue no schema sem uso novo, não removida sem ganho real),
   válido pro botão novo) confirmando a mensagem de resumo certa e as
   movimentações batendo exatamente com o esperado (Anderson 5→3, Gabriela
   0→2, Dayane intocada em 3) + `php -l` + `tests/smoke.php` limpos.
+  **Horário de expediente automático da fila + marcar consultor ausente**
+  (22/09/2026, sequência de pedidos: "Colocar usuarios para ficar off line
+  as 19:20 leads para não receber hoje faltou um consulltor" → confirmado
+  via pergunta direta que é regra PERMANENTE todo dia, não um toggle
+  manual único de hoje ("Quero que vire padrão todo dia") → "online 10
+  horas da manha" (horário de abertura) → "coloca opção para marca faltou
+  redistribuir leads que fatou"). Duas peças, uma cron e uma sob demanda:
+  (1) `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`), rodada
+  pelo `cron/fila_horario_expediente.php` novo (a cada 5min, registrado em
+  `install/setup_crontab.sh`) — liga `disponivel=1` de todo consultor não
+  bloqueado às 10:00 (configurável, `config.fila_horario_abertura`) e
+  desliga todo mundo às 19:20 (configurável,
+  `config.fila_horario_fechamento`), mesmo padrão de dedup-por-dia já
+  usado em `cron/resumo_produtividade.php`
+  (`config.fila_expediente_abriu_{data}`/`_fechou_{data}`) — cada evento
+  dispara só 1x por dia, idempotente rodando o cron quantas vezes for
+  preciso. (2) `marcarConsultorFaltou()`/`desmarcarConsultorFaltou()`
+  (mesmo arquivo) — nova coluna `usuarios.faltou_em DATE` (auto-expira
+  sozinha comparando contra a data de hoje, sem precisar de nenhuma
+  limpeza/cron pra "zerar" o dia seguinte). Marcar falta: força
+  `disponivel=0` na hora (nunca espera o fechamento) e redistribui IMEDIATAMENTE
+  as oportunidades ainda não tocadas do ausente
+  (`FILA_LEADS_ETAPAS_NAO_TOCADAS`, nunca `atendimento` ou além) pros
+  outros consultores disponíveis, sempre pro que está com menos carga no
+  momento — mesmo algoritmo guloso um-por-um do `equalizarFilaLeads()`
+  acima, mas escopado só às leads do ausente (não uma equalização geral).
+  Sem nenhum outro consultor disponível no momento, marca a falta mas não
+  move nada (fica pendente, sem crash) — nunca força atribuição em quem
+  está offline. A ligação automática das 10:00 NUNCA liga de volta quem
+  está marcado `faltou_em`=hoje (só volta a ser candidato normal no dia
+  seguinte); o desligamento das 19:20 desliga todo mundo igual, inclusive
+  quem já estava desligado por falta (no-op nesse caso). UI em
+  `admin/configuracoes.php`: 2 campos `type="time"` + botão "Salvar
+  horário" no card da fila; coluna nova "Falta hoje" na tabela de
+  consultores com botão "❌ Marcar falta"/"↩️ Desfazer falta" por linha
+  (com `confirm()` em JS antes de marcar, já que redistribui na hora) e
+  badge "🤒 faltou hoje" no status quando marcado. Testado: função isolada
+  (8 cenários — horário configurável com fallback pro padrão 10:00/19:20;
+  abertura liga todo mundo exceto quem faltou hoje; dedup por dia impede
+  reabertura mesmo desligando manualmente depois; fechamento desliga todo
+  mundo inclusive quem faltou, com seu próprio dedup independente do de
+  abertura; marcar falta redistribui as não-tocadas espalhadas entre
+  receptores por menor carga, nunca toca `atendimento` nem quem está
+  offline, grava histórico certo; desmarcar falta limpa a flag mas nunca
+  desfaz a redistribuição já feita; rejeita marcar falta de quem não é
+  consultor; sem nenhum receptor disponível marca a falta mas não move
+  nada) + migração testada isoladamente contra um banco simulando produção
+  ANTES dessa mudança (coluna removida e recriada via `migrar.php`,
+  idempotente numa 2ª rodada, preservando dado existente) + `php -l` +
+  `tests/smoke.php` limpos.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
@@ -5054,6 +5104,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | `cron/zapsign_sync.php` | a cada 30 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook da ZapSign não chegue) — frequência menor que o antigo `assinafy_sync.php` (que era a cada 1 min): assinatura eletrônica não é tão sensível a atraso de minutos quanto lead esfriando |
 | — | | **`install/diagnosticar_leads_mudos.php` (não é cron, script CLI de diagnóstico só-leitura)** — 21/09/2026, achado real: print de `admin/index.php?etapa=whatsapp` mostrando dezenas de leads "(sem nome)" parados em `etapa='whatsapp'`, todos criados na mesma janela de minutos em 20/09/2026 — à primeira vista parecia o mesmo padrão do incidente de flood antigo (`install/limpar_leads_invalidos.php`), mas os telefones eram válidos (formato real, não IDs de evento de 15 dígitos), diferente do flood. Investigado com o usuário: causa real confirmada foi uma campanha/followup de reengajamento manual disparada pra leads antigos ("foi followup"), que gerou uma leva de respostas reais de clientes voltando ao mesmo tempo — não é bug. `install/diagnosticar_leads_mudos.php` (novo, só leitura, nunca apaga/altera nada) separa dentro de `etapa='whatsapp'` quem já respondeu pelo menos 1 mensagem real (segue o funil normal) de quem está genuinamente mudo desde a entrada (só esses caem no fechamento automático do `cron/leads_sem_resposta.php` acima, 7 dias de silêncio) — lista os mudos com quantos dias cada um já está parado. Testado antes contra banco isolado simulando os 3 cenários (respondeu / mudo há 10 dias / mudo há 1 dia / oportunidade em outra etapa) — contagem e filtro batendo certo nos 4 casos. |
 | `cron/asaas_sync.php` | a cada 30 min | **18/09/2026, achado real: "tenho que sicornizar assas manual as cobranças de parcela dos carros"** — o script já existia no código desde 17/09/2026, mas nunca tinha sido cadastrado em `install/setup_crontab.sh` (arquivo que a própria cabeça do script declara como "fonte de verdade dos horários", mas ficou desatualizado — `resumo_produtividade.php`, linha abaixo, tinha o mesmo problema, também corrigido agora), então nunca rodou sozinho na VPS; e mesmo rodando, só resincronizava STATUS de cobrança já importada, nunca trazia cobrança NOVA criada direto no painel do Asaas — só o clique manual em "Importar cobranças" (`admin/financeiro-asaas.php`) fazia isso. Corrigido em 2 frentes: (1) `cron/asaas_sync.php` passou a chamar `asaasImportarCobrancas()` (mesma função do botão manual, dedup por `asaas_payment_id`, importa novas E atualiza status de todas numa passada) antes de `asaasSincronizarPendentes()` (mantido, mais barato pro caso comum de só status mudando); (2) linha nova em `install/setup_crontab.sh`, junto com a linha de `resumo_produtividade.php` que também estava faltando lá. Testado em banco isolado contra servidor Asaas fake local: 1 cobrança nova (`pay_novo123`, `PENDING`) + 1 já existente (`pay_existente456`, `pendente` no banco) — rodar o cron importa a nova (`status='pendente'`) e atualiza a existente pro status real vindo da API (`RECEIVED`→`pago`, `data_pagamento` preenchida), rodando de novo mostra "0 nova(s)" (dedup funcionando, não duplica). |
+| `cron/fila_horario_expediente.php` | a cada 5 min | Liga/desliga a fila de leads sozinha nos horários configurados (padrão 10:00/19:20) — 22/09/2026, "Colocar usuarios para ficar off line as 19:20 ... online 10 horas da manha", confirmado como regra permanente todo dia. Ver `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`, bullet completo na seção da fila de leads) — dedup por dia, nunca liga de volta quem está marcado `faltou_em`=hoje. |
 | `cron/lancamentos_fixos.php` | 1x/dia (5h) | Gera automaticamente a próxima ocorrência mensal de toda despesa marcada como "Fixa" (`natureza='fixa'`) no financeiro — 19/09/2026, "todas despesas fixas pode lançar todo mês automático". Ver `finGerarDespesasFixasDoMes()` (`includes/financeiro.php`, bullet completo na seção "Módulo financeiro") — idempotente, agrupa em cadeias via `recorrencia_origem_id`, copia o valor mais recente da série, e marcar o último lançamento como 'Cancelado' interrompe a série. |
 | `cron/financeiro_relatorio_mensal.php` | 1x/dia (8h) | Envio Automático Mensal do DRE Gerencial — 19/09/2026, "essa parte é legal" (mostrando o Envio Automático Mensal do JurídicoSaaS). Decide sozinho se hoje é o dia configurado (`config.financeiro_relatorio_dia`); manda o DRE do mês anterior por WhatsApp (instância DEDICADA do financeiro) e/ou e-mail (anexo de verdade) pros usuários marcados + e-mails/WhatsApp extras + o e-mail do contador (`config.contador_email`, sempre incluído). Ver bullet completo na seção "Módulo financeiro" acima. |
 | `cron/resumo_produtividade.php` | 1x/dia, 19h30 | Resumo diário de produtividade pro WhatsApp pessoal de quem tem `perfil=supervisor` (15/09/2026, pedido José/Jean: "envia notificação de produção para números de notificação, supervisores acompanhar a produtividade"). Reaproveita exatamente `dashboardSuperAdmin()` (`includes/dashboard.php`, mesmas métricas de visão geral da empresa já usadas no dashboard — ativas/atrasadas/novas hoje/novas na semana/fechadas no mês/taxa de conversão), sem duplicar query nenhuma. Confirmado com o usuário (3 perguntas diretas): frequência = resumo diário automático (não sob demanda); destinatários = telefone (`usuarios.whatsapp`) de quem já tem `perfil=supervisor` cadastrado (não um campo novo de config com números avulsos); conteúdo = visão geral da empresa (não quebrado por consultor). Dedup por dia via `config.resumo_prod_enviado_{data}` — só marca como enviado se pelo menos 1 supervisor recebeu de verdade (`zapiEnviarTexto()` retornou sucesso), senão tenta de novo na próxima rodada do cron em vez de desistir o dia inteiro por causa de uma falha temporária da Z-API. Sem nenhum supervisor com `whatsapp` cadastrado, não manda nada (nunca quebra o cron). Testado ponta a ponta com banco isolado + servidor Z-API fake: 1 supervisor com WhatsApp recebe o resumo certo (métricas batendo com os dados semeados), 1 supervisor sem WhatsApp corretamente ignorado, rodando o cron de novo no mesmo dia o dedup bloqueia reenvio, e cenário sem nenhum supervisor cadastrado não dispara chamada nenhuma pra Z-API. |

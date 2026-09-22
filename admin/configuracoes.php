@@ -297,6 +297,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sucesso = 'Nada pra equalizar — a carga de leads ainda não tocadas já está parelha entre os consultores disponíveis (ou tem menos de 2 disponível agora).';
             }
+        } elseif ($acao === 'salvar_horario_fila') {
+            $abertura = trim((string)($_POST['fila_horario_abertura'] ?? ''));
+            $fechamento = trim((string)($_POST['fila_horario_fechamento'] ?? ''));
+            if (!preg_match('/^\d{2}:\d{2}$/', $abertura) || !preg_match('/^\d{2}:\d{2}$/', $fechamento)) {
+                $erro = 'Horário inválido — use o formato HH:MM.';
+            } else {
+                setConfig('fila_horario_abertura', $abertura);
+                setConfig('fila_horario_fechamento', $fechamento);
+                $sucesso = "Horário da fila salvo: liga às {$abertura}, desliga às {$fechamento}, todo dia.";
+            }
+        } elseif ($acao === 'marcar_falta') {
+            $resultado = marcarConsultorFaltou((int)($_POST['usuario_id'] ?? 0), (int)($_SESSION['admin_id'] ?? 0));
+            if (!$resultado['ok']) {
+                $erro = $resultado['motivo'];
+            } elseif ($resultado['movidas']) {
+                $sucesso = "{$resultado['ausente_nome']} marcado como ausente hoje. " . count($resultado['movidas']) . ' lead(s) redistribuída(s): ';
+                $partes = [];
+                foreach ($resultado['movidas'] as $m) {
+                    $partes[] = "#{$m['oportunidade_id']} ({$m['cliente_nome']}) para {$m['para']}";
+                }
+                $sucesso .= implode('; ', $partes) . '.';
+            } else {
+                $sucesso = "{$resultado['ausente_nome']} marcado como ausente hoje. Sem leads não-tocadas pra redistribuir (ou nenhum outro consultor disponível agora).";
+            }
+        } elseif ($acao === 'desmarcar_falta') {
+            desmarcarConsultorFaltou((int)($_POST['usuario_id'] ?? 0));
+            $sucesso = 'Falta desmarcada — o consultor volta a ser candidato normal na fila.';
         } elseif ($acao === 'salvar_deploy') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
             if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
@@ -856,20 +883,36 @@ unset($f);
            que "consultores × teto" atual) é normal — não precisa de deploy, só salvar aqui.</small>
     </form>
 
+    <form method="post" class="inline" style="margin-bottom:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_horario_fila">
+        <label>Liga às</label>
+        <input type="time" name="fila_horario_abertura" value="<?= e(filaHorarioAbertura()) ?>" style="width:110px;display:inline-block">
+        <label>Desliga às</label>
+        <input type="time" name="fila_horario_fechamento" value="<?= e(filaHorarioFechamento()) ?>" style="width:110px;display:inline-block">
+        <button type="submit" style="margin-top:0">Salvar horário</button>
+        <small style="display:block;color:#666">Todo dia, automático: liga "Disponível" de todo consultor na abertura
+           (exceto quem foi marcado ausente hoje) e desliga todo mundo no fechamento. Roda via cron a cada poucos
+           minutos (<code>cron/fila_horario_expediente.php</code>) — não precisa de ninguém clicando nada.</small>
+    </form>
+
     <?php if (!$fila): ?>
         <p><small>Nenhum consultor cadastrado ainda.</small></p>
     <?php endif; ?>
 
     <table class="tabela-oportunidades">
         <thead>
-            <tr><th>Nome</th><th>Status</th><th>Leads ativas</th><th>Último lead recebido</th><th>Plantão fim de expediente</th></tr>
+            <tr><th>Nome</th><th>Status</th><th>Leads ativas</th><th>Último lead recebido</th><th>Plantão fim de expediente</th><th>Falta hoje</th></tr>
         </thead>
         <tbody>
         <?php foreach ($fila as $f): ?>
+            <?php $faltouHoje = $f['faltou_em'] === date('Y-m-d'); ?>
             <tr>
                 <td><?= e($f['nome']) ?> <span class="badge"><?= e($f['perfil']) ?></span></td>
                 <td>
-                    <?php if ($f['plantao_fim_expediente']): ?>
+                    <?php if ($faltouHoje): ?>
+                        <span class="badge badge-atraso">🤒 faltou hoje</span>
+                    <?php elseif ($f['plantao_fim_expediente']): ?>
                         <span class="badge">🌙 só plantão</span>
                     <?php elseif ($f['disponivel']): ?>
                         <span class="badge badge-ok">🟢 disponível</span>
@@ -895,6 +938,16 @@ unset($f);
                         <input type="hidden" name="ativo" value="<?= $f['plantao_fim_expediente'] ? '0' : '1' ?>">
                         <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
                             <?= $f['plantao_fim_expediente'] ? 'Remover plantão' : 'Marcar como plantão' ?>
+                        </button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" class="inline" onsubmit="<?= $faltouHoje ? '' : "return confirm('Marcar {$f['nome']} como ausente hoje? As leads dele(a) ainda não tocadas vão ser redistribuídas pros consultores disponíveis agora mesmo.')" ?>">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="<?= $faltouHoje ? 'desmarcar_falta' : 'marcar_falta' ?>">
+                        <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
+                            <?= $faltouHoje ? '↩️ Desfazer falta' : '❌ Marcar falta' ?>
                         </button>
                     </form>
                 </td>

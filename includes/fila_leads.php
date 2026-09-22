@@ -439,9 +439,160 @@ function definirPlantaoFimExpediente(int $usuarioId, bool $ativo): void {
 function listarFilaConsultores(): array {
     $db = getDB();
     return $db->query("
-        SELECT id, nome, perfil, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em
+        SELECT id, nome, perfil, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, faltou_em
         FROM usuarios
         WHERE perfil = 'consultor' AND bloqueado = 0
         ORDER BY nome
     ")->fetchAll();
+}
+
+/**
+ * Horário de expediente da fila (22/09/2026, "colocar usuarios para ficar
+ * off line as 19:20... online 10 horas da manha... quero que vire padrão
+ * todo dia") — padrão 10:00/19:20 se nunca configurado, formato "HH:MM".
+ */
+function filaHorarioAbertura(): string {
+    $v = getConfig('fila_horario_abertura');
+    return ($v && preg_match('/^\d{2}:\d{2}$/', $v)) ? $v : '10:00';
+}
+function filaHorarioFechamento(): string {
+    $v = getConfig('fila_horario_fechamento');
+    return ($v && preg_match('/^\d{2}:\d{2}$/', $v)) ? $v : '19:20';
+}
+
+/**
+ * Roda no cron (cron/fila_horario_expediente.php), várias vezes ao dia.
+ * Às 10:00 (configurável), liga `disponivel=1` de todo consultor não
+ * bloqueado — EXCETO quem está marcado `faltou_em` = hoje (regra #22/09,
+ * "coloca opção para marca faltou... redistribuir leads que fatou": quem
+ * faltou não deve ser ligado de volta sozinho no meio do dia só porque
+ * bateu o horário de abertura). Às 19:20 (configurável), desliga todo
+ * mundo — mesmo quem faltou (já estava desligado, fica desligado, no-op).
+ * Dedup por dia via `config.fila_expediente_abriu_{data}`/`_fechou_{data}`
+ * — cada evento dispara só 1x por dia, mesmo rodando o cron a cada poucos
+ * minutos; roda de novo no mesmo dia depois de já ter disparado não faz
+ * nada (idempotente). Nunca mexe em `plantao_fim_expediente` (conceito
+ * independente) — desligar todo mundo às 19:20 naturalmente deixa o
+ * fallback de plantão assumir os leads que chegarem depois, já que
+ * `proximoDaFila()` só cai pro plantão quando ninguém normal está
+ * disponível.
+ */
+function aplicarHorarioExpedienteFila(): array {
+    $db = getDB();
+    $hoje = date('Y-m-d');
+    $agora = date('H:i');
+    $resultado = ['abriu' => false, 'fechou' => false, 'afetados' => 0];
+
+    if ($agora >= filaHorarioAbertura() && !getConfig("fila_expediente_abriu_{$hoje}")) {
+        $stmt = $db->prepare("
+            UPDATE usuarios SET disponivel = 1
+            WHERE perfil = 'consultor' AND bloqueado = 0
+              AND (faltou_em IS NULL OR faltou_em != ?)
+        ");
+        $stmt->execute([$hoje]);
+        setConfig("fila_expediente_abriu_{$hoje}", '1');
+        $resultado['abriu'] = true;
+        $resultado['afetados'] = $stmt->rowCount();
+    }
+
+    if ($agora >= filaHorarioFechamento() && !getConfig("fila_expediente_fechou_{$hoje}")) {
+        $db->exec("UPDATE usuarios SET disponivel = 0 WHERE perfil = 'consultor' AND bloqueado = 0");
+        setConfig("fila_expediente_fechou_{$hoje}", '1');
+        $resultado['fechou'] = true;
+    }
+
+    return $resultado;
+}
+
+/**
+ * Marca o consultor como ausente HOJE e redistribui na hora as
+ * oportunidades ainda não tocadas dele (FILA_LEADS_ETAPAS_NAO_TOCADAS)
+ * pros outros consultores disponíveis — sempre pro que está com menos
+ * carga no momento, um por um (mesmo espírito de equalizarFilaLeads()).
+ * Força `disponivel=0` na hora (nunca espera o horário de fechamento) —
+ * quem faltou não deve continuar candidato a receber lead novo enquanto
+ * o dia corre. Nunca mexe em oportunidade já em atendimento ou além.
+ */
+function marcarConsultorFaltou(int $usuarioId, int $executadoPor): array {
+    $db = getDB();
+    $hoje = date('Y-m-d');
+
+    $stmt = $db->prepare("SELECT nome FROM usuarios WHERE id = ? AND perfil = 'consultor'");
+    $stmt->execute([$usuarioId]);
+    $ausente = $stmt->fetch();
+    if (!$ausente) {
+        return ['ok' => false, 'motivo' => 'Usuário não encontrado ou não é consultor.', 'movidas' => []];
+    }
+
+    $db->prepare("UPDATE usuarios SET faltou_em = ?, disponivel = 0 WHERE id = ?")
+       ->execute([$hoje, $usuarioId]);
+
+    $receptores = $db->query("
+        SELECT id, nome FROM usuarios
+        WHERE perfil = 'consultor' AND bloqueado = 0 AND disponivel = 1 AND id != {$usuarioId}
+        ORDER BY posicao_fila ASC, id ASC
+    ")->fetchAll();
+
+    $etapasPh = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
+    $movidas = [];
+
+    if ($receptores) {
+        $cargas = [];
+        $stmtCarga = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$etapasPh})");
+        foreach ($receptores as $r) {
+            $stmtCarga->execute(array_merge([(int)$r['id']], FILA_LEADS_ETAPAS_NAO_TOCADAS));
+            $cargas[(int)$r['id']] = (int)$stmtCarga->fetchColumn();
+        }
+
+        $stmt = $db->prepare("
+            SELECT o.id, o.etapa, c.nome AS cliente_nome
+            FROM oportunidades o
+            JOIN clientes c ON c.id = o.cliente_id
+            WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
+            ORDER BY o.created_at DESC
+        ");
+        $stmt->execute(array_merge([$usuarioId], FILA_LEADS_ETAPAS_NAO_TOCADAS));
+        $candidatas = $stmt->fetchAll();
+
+        foreach ($candidatas as $oportunidade) {
+            usort($receptores, fn($a, $b) => $cargas[(int)$a['id']] <=> $cargas[(int)$b['id']]);
+            $receptor = $receptores[0];
+            $receptorId = (int)$receptor['id'];
+
+            $db->beginTransaction();
+            try {
+                $db->prepare("UPDATE oportunidades SET responsavel_id = ? WHERE id = ?")
+                   ->execute([$receptorId, $oportunidade['id']]);
+                $db->prepare("
+                    INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                    VALUES (?, ?, ?, ?, ?)
+                ")->execute([
+                    $oportunidade['id'],
+                    $oportunidade['etapa'],
+                    $oportunidade['etapa'],
+                    "Redistribuído automaticamente: {$ausente['nome']} marcado como ausente hoje, lead passou pra {$receptor['nome']}",
+                    $executadoPor,
+                ]);
+                $db->commit();
+            } catch (Throwable $e) {
+                $db->rollBack();
+                throw $e;
+            }
+
+            $cargas[$receptorId]++;
+            $movidas[] = [
+                'oportunidade_id' => $oportunidade['id'],
+                'cliente_nome' => $oportunidade['cliente_nome'],
+                'para' => $receptor['nome'],
+            ];
+        }
+    }
+
+    return ['ok' => true, 'motivo' => '', 'ausente_nome' => $ausente['nome'], 'movidas' => $movidas];
+}
+
+/** Desfaz a marcação de falta (engano, ou consultor voltou no mesmo dia) — nunca desfaz a redistribuição já feita. */
+function desmarcarConsultorFaltou(int $usuarioId): void {
+    $db = getDB();
+    $db->prepare("UPDATE usuarios SET faltou_em = NULL WHERE id = ?")->execute([$usuarioId]);
 }

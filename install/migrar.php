@@ -189,6 +189,11 @@ $migracoes = [
     // 19/09/2026, wizard de documentos do comprador ("segue mesmo rito do
     // compras") — mesmo mecanismo de oportunidades.documentos_confirmados_em.
     'vendas.documentos_confirmados_em' => "ALTER TABLE vendas ADD COLUMN documentos_confirmados_em DATETIME",
+
+    // 22/09/2026, "coloca opção para marca faltou redistribuir leads que
+    // fatou" — marca o consultor ausente HOJE (data, some sozinho no dia
+    // seguinte por comparação, sem precisar desmarcar manualmente).
+    'usuarios.faltou_em' => "ALTER TABLE usuarios ADD COLUMN faltou_em DATE DEFAULT NULL",
 ];
 
 foreach ($migracoes as $nome => $sql) {

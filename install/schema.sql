@@ -384,6 +384,17 @@ CREATE TABLE IF NOT EXISTS usuarios (
     ultimo_lead_recebido_em DATETIME,
     posicao_fila INTEGER DEFAULT 0,
 
+    -- 22/09/2026, "coloca opção para marca faltou redistribuir leads que
+    -- fatou" — marca o consultor ausente HOJE (data, não booleano — some
+    -- sozinho no dia seguinte por comparação de data, sem precisar de ação
+    -- manual pra "desmarcar" amanhã). Marcar falta força disponivel=0 na
+    -- hora e redistribui as oportunidades ainda não tocadas dele pros
+    -- outros disponíveis (marcarConsultorFaltou(),
+    -- includes/fila_leads.php); o cron diário de horário de expediente
+    -- (aplicarHorarioExpedienteFila()) também nunca liga de volta quem
+    -- está marcado faltou_em = hoje no horário de abertura.
+    faltou_em DATE DEFAULT NULL,
+
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 
