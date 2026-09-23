@@ -9,9 +9,12 @@
  *   fotos): o avaliador ATRIBUÍDO a esta avaliação, ou super_admin. Nunca
  *   supervisor (mesma regra geral do projeto: supervisor só acompanha) nem
  *   outro avaliador que não seja o atribuído.
- * - ATRIBUIR avaliador: super_admin/supervisor sempre, ou o responsável do
- *   próprio negócio (consultor na compra, vendedor na venda) — confirmado
- *   com o usuário.
+ * - ATRIBUIR avaliador: super_admin/supervisor sempre; do lado da COMPRA,
+ *   QUALQUER consultor (não só o responsável daquela oportunidade —
+ *   23/09/2026, "permita qualquer consultor atribuir uma avaliação até
+ *   super admin", confirmado direto que é só pro lado de compra); do lado
+ *   da VENDA continua só o vendedor responsável daquela negociação
+ *   específica (usuário confirmou manter como estava, "lado da compra").
  * - APROVAR foto pro catálogo de vendas: super_admin ou vendedor (é uma
  *   decisão de vendas, não de vistoria em si) — "as fotos que colher tem
  *   que vendedor aprovar para ia usar".
@@ -33,9 +36,12 @@ if (!$av) {
 $souAvaliadorAtribuido = $perfil === 'avaliador' && (int)$av['avaliador_id'] === $meuId;
 $podeEditarChecklist = $perfil === 'super_admin' || $souAvaliadorAtribuido;
 
-$souResponsavelDoNegocio = ($av['tipo'] === 'compra' && $perfil === 'consultor' && (int)$av['oportunidade_responsavel_id'] === $meuId)
-    || ($av['tipo'] === 'venda' && $perfil === 'vendedor' && (int)$av['venda_responsavel_id'] === $meuId);
-$podeAtribuir = perfilVeTudo() || $souResponsavelDoNegocio;
+// Compra: QUALQUER consultor atribui (não só o responsável daquela
+// oportunidade). Venda: continua só o vendedor responsável daquela
+// negociação específica — usuário confirmou manter como estava.
+$souConsultorNaCompra = $av['tipo'] === 'compra' && $perfil === 'consultor';
+$souResponsavelDaVenda = $av['tipo'] === 'venda' && $perfil === 'vendedor' && (int)$av['venda_responsavel_id'] === $meuId;
+$podeAtribuir = perfilVeTudo() || $souConsultorNaCompra || $souResponsavelDaVenda;
 
 $podeAprovarFoto = $perfil === 'super_admin' || $perfil === 'vendedor';
 

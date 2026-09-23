@@ -1882,6 +1882,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   (não é só esconder o formulário). Criar uma avaliação já com avaliador
   escolhido pula direto pra `status='em_andamento'` (sem passar por
   'pendente'); desatribuir volta pra 'pendente'.
+  **Lado da COMPRA liberado pra QUALQUER consultor atribuir avaliador**
+  (23/09/2026, "permita qualquer consultor atribuir uma avaliação até
+  super admin") — reverte parte da decisão original acima só pro lado de
+  compra: confirmado direto com o usuário que é só a vistoria do "veículo
+  que chega" (compra), o lado de venda continua como estava (só o vendedor
+  responsável daquela negociação específica, usuário confirmou manter).
+  `admin/avaliacao.php`: `$souResponsavelDoNegocio` virou 2 variáveis
+  separadas — `$souConsultorNaCompra` (`tipo==='compra' && perfil==='consultor'`,
+  sem checar mais `oportunidade_responsavel_id`) e `$souResponsavelDaVenda`
+  (intocada, continua exigindo `venda_responsavel_id === $meuId`) —
+  `$podeAtribuir = perfilVeTudo() || $souConsultorNaCompra || $souResponsavelDaVenda`.
+  Coerente com o resto da tela `admin/oportunidade.php`, que já não tinha
+  NENHUMA trava de "só o responsável" pra outras ações (incluindo criar a
+  própria avaliação com avaliador já escolhido na hora, `criar_avaliacao`)
+  — só bloqueava supervisor; esse ajuste só alinha `admin/avaliacao.php`
+  (reatribuir depois de criada) com o padrão que o resto do módulo já
+  tinha. Testado ponta a ponta via HTTP real (sessão primed direto por
+  perfil, sem 2FA): consultor SEM ser o responsável da oportunidade
+  atribui avaliador na vistoria de compra com sucesso, confirmado no banco
+  (`avaliador_id` gravado, `status` vira `em_andamento`); vendedor SEM ser
+  o responsável da negociação tenta atribuir na vistoria de venda e é
+  silenciosamente ignorado (POST cai fora de todo o `if/elseif`, banco
+  intocado — `avaliador_id` continua `NULL`, `status` continua `pendente`)
+  — confirma que o lado de venda não regrediu; vendedor responsável
+  continua atribuindo normalmente (regressão) + `php -l` + `tests/smoke.php`
+  limpos. Nenhuma mudança de schema.
   **Fotos numa galeria PRÓPRIA, separada do catálogo de vendas** (confirmado:
   "Separada, recomendado", reforçado depois: "as fotos que colher tem que
   vendedor aprovar para ia usar pois evitar fotos desnecessário") —
