@@ -22,6 +22,17 @@ pre, code { overflow-x: auto; max-width: 100%; }
 .topbar-toggle { display: none; }
 .tabela-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+/* 23/09/2026 — bug real de produção: mobile.js sempre injeta .topbar-menu
+   (clone de "Olá, X" + todos os links + Sair) no fim do <body>, em toda
+   largura de tela. Só a media query ≤900px dava display/posição pra ele;
+   em desktop ficava sem NENHUMA regra, então sobrava como texto solto no
+   rodapé da página (visível/selecionável — o que o usuário via como
+   "Olá, José" duplicado, e antes disso confundido com "badges" ao
+   selecionar sem querer uma palavra ali). Escondido por padrão aqui,
+   fora de qualquer media query — a query ≤900px já cuida de mostrar via
+   body.menu-aberto. */
+.topbar-menu { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
 }

@@ -4459,13 +4459,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   "Fast**Car**" já saía como um bloco visual único e contínuo, sem gap nem
   fundo colorido nenhum — nunca existiu `badge`/pill separando as 2
   metades nesta base de código (confirmado lendo `style.css`, sem regra
-  nenhuma de background pra `.login-box h2 b`). Hipótese mais provável é
-  cache de navegador do usuário numa versão antiga do CSS (sugerido hard
-  refresh); a mudança de verdade pedida (subtítulo "Solutions") foi feita
-  de qualquer forma, sem depender de confirmar essa hipótese. Testado via
-  Playwright em desktop (1000px) e mobile (375px, contra `mobile.css` já
-  integrado): wordmark+subtítulo renderizam certo nos dois tamanhos, zero
-  estouro horizontal no celular + `php -l` + `tests/smoke.php` limpos.
+  nenhuma de background pra `.login-box h2 b`). Hipótese registrada aqui
+  na hora foi cache de navegador — **errada**, causa real achada e
+  corrigida no bullet seguinte ("`.topbar-menu` vazando pro rodapé da
+  página em desktop"). A mudança de verdade pedida (subtítulo "Solutions")
+  segue válida de qualquer forma. Testado via Playwright em desktop
+  (1000px) e mobile (375px, contra `mobile.css` já integrado):
+  wordmark+subtítulo renderizam certo nos dois tamanhos, zero estouro
+  horizontal no celular + `php -l` + `tests/smoke.php` limpos.
+  **Bug real: `.topbar-menu` vazando como texto solto no rodapé da página
+  em desktop** (23/09/2026, achado com um screenshot direto de produção —
+  `admin/index.php`, "tá aparecendo ola jose em baixo" — mostrando "Olá,
+  José" e "Sair" duplicados, com destaque azul de seleção de texto, presos
+  no canto inferior esquerdo da tela por cima da barra de tarefas do
+  Windows; a mesma classe de bug explica retroativamente o "2 badges"
+  investigado acima, reportado antes deste achado — provável seleção
+  acidental de uma palavra dentro desse mesmo bloco vazado). Causa raiz:
+  `mobile.js::montarMenu()` sempre injeta `.topbar-menu` (clone de "Olá,
+  {nome}" + todo link da topbar + "Sair") no fim do `<body>`, em QUALQUER
+  largura de tela — só a `@media (max-width:900px)` de `mobile.css` dava
+  `display`/posição pra esse elemento; fora dela (desktop, a maioria dos
+  acessos via notebook/PC) `.topbar-menu` não tinha NENHUMA regra, então
+  sobrava como bloco solto no fim da página — visível e selecionável,
+  exatamente o que apareceu no screenshot. Corrigido com
+  `.topbar-menu { display: none; }` na seção "Global" de `mobile.css`
+  (fora de qualquer media query) — a query ≤900px já cuida de mostrar via
+  `body.menu-aberto`. Testado via Playwright contra sessão real (super_admin):
+  desktop 1920px confirma `.topbar-menu` com `display:none`/tamanho zero
+  (nada mais solto no rodapé, screenshot conferido limpo); mobile 375px
+  confirma que o menu continua fechado por padrão e abre certo (`display:
+  flex`, "Olá"/"Sair" presentes) ao clicar no ☰, sem regressão no
+  hambúrguer + `php -l` + `tests/smoke.php` limpos.
 - **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da
