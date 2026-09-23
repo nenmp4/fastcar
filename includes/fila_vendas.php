@@ -40,19 +40,28 @@ function contarVendasAtivas(int $usuarioId): int {
  * atribuirResponsavelAutomatico() (fila_leads.php), só filtrando
  * perfil='vendedor' e usando contarVendasAtivas(). Retorna null se não
  * tiver ninguém disponível nem plantão configurado.
+ *
+ * Mesmo BEGIN IMMEDIATE de atribuirResponsavelAutomatico() (23/09/2026,
+ * achado real do lado de compra — "leads caindo do Anderson pra Dayane",
+ * ver comentário completo lá): escolha (proximoDaFilaVendas()) e reserva
+ * precisam ser atômicas, senão uma rajada de leads de venda quase
+ * simultâneos pode escolher o mesmo vendedor 2x antes de qualquer um
+ * reservar a vez, quebrando a alternância — aplicado aqui por consistência/
+ * defesa em profundidade, mesmo risco de concorrência, mesma classe de bug.
  */
 function atribuirVendedorAutomatico(): ?int {
-    $usuarioId = proximoDaFilaVendas(disponivelOnly: true);
-    if ($usuarioId === null) {
-        $usuarioId = proximoDaFilaVendas(disponivelOnly: false, apenasPlantao: true);
-    }
-    if ($usuarioId === null) {
-        return null;
-    }
-
     $db = getDB();
-    $db->beginTransaction();
+    $db->exec('BEGIN IMMEDIATE');
     try {
+        $usuarioId = proximoDaFilaVendas(disponivelOnly: true);
+        if ($usuarioId === null) {
+            $usuarioId = proximoDaFilaVendas(disponivelOnly: false, apenasPlantao: true);
+        }
+        if ($usuarioId === null) {
+            $db->exec('COMMIT');
+            return null;
+        }
+
         // Contador monotônico compartilhado com a fila de compra
         // (usuarios.posicao_fila) seria incorreto aqui — um vendedor não
         // compete pelo mesmo rodízio de leads de compra, então a posição
@@ -65,9 +74,9 @@ function atribuirVendedorAutomatico(): ?int {
         $db->prepare("
             UPDATE usuarios SET posicao_fila = ?, ultimo_lead_recebido_em = datetime('now','localtime') WHERE id = ?
         ")->execute([$proximaPosicao, $usuarioId]);
-        $db->commit();
+        $db->exec('COMMIT');
     } catch (Throwable $e) {
-        $db->rollBack();
+        $db->exec('ROLLBACK');
         throw $e;
     }
 

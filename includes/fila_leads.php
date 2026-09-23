@@ -57,19 +57,42 @@ function contarOportunidadesAtivas(int $usuarioId): int {
  * ultimo_lead_recebido_em). Retorna null se não tiver ninguém disponível
  * nem plantão configurado — quem chama decide o que fazer (deixar sem
  * responsável, igual hoje).
+ *
+ * 23/09/2026, achado real ("os leads Está caindo leads do Anderson pra mim
+ * Dayane") — a ESCOLHA do candidato (proximoDaFila()) rodava fora de
+ * qualquer transação, ANTES do lock de escrita da reserva abaixo. Numa
+ * rajada de leads chegando quase juntos (2+ mensagens processadas em
+ * paralelo por workers diferentes do PHP-FPM — ex: logo depois da abertura
+ * automática das 10:00, exatamente o horário visto no card de Configurações,
+ * "Último lead recebido" do Anderson e da Dayane a 2 minutos de distância),
+ * dois leads podiam LER o mesmo "próximo da vez" (nenhum dos dois tinha
+ * commitado a posição ainda) antes de qualquer um escrever — o 2º só
+ * reservava a vez DEPOIS que o 1º já tinha committado, e como
+ * `posicao_fila` só é lido de novo na hora de calcular MAX+1, o 2º acabava
+ * empurrando a MESMA pessoa pra frente de novo em vez de pegar o próximo de
+ * verdade. Resultado: sequências de vários leads seguidos indo pra UMA
+ * pessoa só em vez de alternar — não um desequilíbrio permanente (por isso
+ * o total ficou parecido, 61×63 no caso real), mas quebra a alternância que
+ * o rodízio promete. Corrigido envolvendo escolha+reserva inteiras num
+ * `BEGIN IMMEDIATE` (lock de escrita exclusivo JÁ na abertura da transação,
+ * diferente do `BEGIN` padrão do PDO que só pede o lock no primeiro
+ * `UPDATE`) — uma 2ª chamada concorrente fica esperando (respeitando o
+ * `busy_timeout`, `includes/db.php`) até a 1ª terminar de vez, e só então
+ * lê `posicao_fila` já atualizada, pegando o candidato certo.
  */
 function atribuirResponsavelAutomatico(): ?int {
-    $usuarioId = proximoDaFila(disponivelOnly: true);
-    if ($usuarioId === null) {
-        $usuarioId = proximoDaFila(disponivelOnly: false, apenasPlantao: true);
-    }
-    if ($usuarioId === null) {
-        return null;
-    }
-
     $db = getDB();
-    $db->beginTransaction();
+    $db->exec('BEGIN IMMEDIATE');
     try {
+        $usuarioId = proximoDaFila(disponivelOnly: true);
+        if ($usuarioId === null) {
+            $usuarioId = proximoDaFila(disponivelOnly: false, apenasPlantao: true);
+        }
+        if ($usuarioId === null) {
+            $db->exec('COMMIT');
+            return null;
+        }
+
         // Contador monotônico, não timestamp: 2 leads no mesmo segundo não
         // podem empatar e cair sempre na mesma pessoa (bug real pego em
         // teste — SQLite datetime('now') só tem granularidade de segundo).
@@ -79,9 +102,9 @@ function atribuirResponsavelAutomatico(): ?int {
         $db->prepare("
             UPDATE usuarios SET posicao_fila = ?, ultimo_lead_recebido_em = datetime('now','localtime') WHERE id = ?
         ")->execute([$proximaPosicao, $usuarioId]);
-        $db->commit();
+        $db->exec('COMMIT');
     } catch (Throwable $e) {
-        $db->rollBack();
+        $db->exec('ROLLBACK');
         throw $e;
     }
 

@@ -1267,6 +1267,48 @@ segue no schema sem uso novo, não removida sem ganho real),
   credencial configurada, no teste) — só marca em sucesso real de envio +
   migração idempotente (coluna nova, roda 2x sem erro) + `php -l` +
   `tests/smoke.php` limpos.
+  **Corrida real no rodízio fazia lead "pular" de um consultor pra outro em
+  rajada** (23/09/2026, achado real reportado direto pela Dayane: "os leads
+  Está caindo leads do Anderson pra mim Dayane") — investigado com o
+  usuário antes de mexer em código: print de Configurações → Fila mostrava
+  Anderson e Dayane com carga bem parecida (61×63 leads ativas, teto=70,
+  os dois 🟢 disponíveis) e "Último lead recebido" a só 2 minutos de
+  distância um do outro (10:02/10:04, bem em cima do horário de abertura
+  automática das 10:00) — descartou de cara ser o teto ou disponibilidade
+  (tudo normal), apontando pra uma rajada de leads processados quase
+  juntos logo após a abertura. Causa raiz real, achada lendo
+  `atribuirResponsavelAutomatico()`: a ESCOLHA de quem é o próximo
+  (`proximoDaFila()`) rodava FORA de qualquer transação, só a RESERVA da
+  vez (o `UPDATE posicao_fila`) é que tinha lock — então 2 leads chegando
+  quase juntos (webhook processando 2 mensagens em paralelo, workers
+  diferentes do PHP-FPM) podiam LER o mesmo "próximo da vez" antes de
+  qualquer um dos dois escrever, e o 2º só reservava a vez DEPOIS que o 1º
+  já tinha committado — resultado: os dois iam pro MESMO consultor em vez
+  de alternar. Não é um desequilíbrio permanente (por isso o total ficava
+  parecido, 61×63) — é uma quebra pontual da alternância bem na hora da
+  rajada, exatamente o que gera a sensação de "os leads só caem pra mim"
+  quando acontece 2-3 vezes seguidas justo quando alguém está de olho.
+  Corrigido envolvendo escolha+reserva inteiras num único `BEGIN IMMEDIATE`
+  (lock de escrita exclusivo já na ABERTURA da transação, diferente do
+  `BEGIN` padrão do PDO que só pede o lock no primeiro `UPDATE`) — uma 2ª
+  chamada concorrente fica esperando (respeitando o `busy_timeout=15000`
+  já configurado em `includes/db.php`) até a 1ª terminar de vez, e só
+  então lê `posicao_fila` já atualizada, pegando o candidato certo.
+  Aplicado nos dois arquivos de rodízio — `atribuirResponsavelAutomatico()`
+  (`includes/fila_leads.php`, compra) e `atribuirVendedorAutomatico()`
+  (`includes/fila_vendas.php`, vendas) — mesma classe de bug, mesmo
+  raciocínio, por consistência/defesa em profundidade (nunca confirmado em
+  produção pro lado de vendas ainda, mas o código era idêntico). Testado
+  com concorrência REAL (2 processos OS de verdade, sincronizados por
+  arquivo-gatilho pra maximizar a sobreposição, só 2 consultores tied no
+  rodízio, teto alto): reproduzido o padrão ANTIGO isoladamente (função
+  auxiliar de teste replicando exatamente a sequência pré-fix, sem lock) —
+  10 de 20 rodadas deram pick duplicado (as 2 chamadas concorrentes
+  escolhendo a MESMA pessoa em vez de alternar), confirmando o bug de
+  verdade sob concorrência real; a mesma bateria de 20 rodadas contra a
+  função REAL já corrigida deu 0 duplicados — sempre alternou entre os 2
+  consultores, não importa quem venceu a corrida pelo lock — + `php -l` +
+  `tests/smoke.php` limpos. Nenhuma mudança de schema.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
