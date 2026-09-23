@@ -72,6 +72,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
             $erro = $e->getMessage();
         }
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'excluir_veiculo') {
+    // 23/09/2026, "permita super admin excuir veiculo veio duas bianca que
+    // veio do outro sistema" — ver excluirVeiculoFrota() (includes/oportunidades.php)
+    // pros guards (nunca apaga com venda ativa/concluída, dinheiro já pago,
+    // contrato assinado ou termo de vistoria já enviado).
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        $opIdExcluir = (int)$_POST['oportunidade_id'];
+        $r = excluirVeiculoFrota($opIdExcluir);
+        if ($r['ok']) {
+            auditoriaRegistrar('veiculo_excluido', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $opIdExcluir);
+            $sucesso = 'Veículo excluído da frota.';
+        } else {
+            $erro = $r['erro'];
+        }
+    }
 }
 
 $consultoresParaCompra = array_values(array_filter(
@@ -374,12 +391,12 @@ function lerCrlvManual() {
             <tr>
                 <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th>
                 <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
-                <th>Contrato compra</th><th>Financiamento</th><th>Fotos/vídeos</th><th>Venda</th><th></th>
+                <th>Contrato compra</th><th>Financiamento</th><th>Fotos/vídeos</th><th>Venda</th><th></th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="11"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="12"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <?php
@@ -447,6 +464,14 @@ function lerCrlvManual() {
                     <?php endif; ?>
                 </td>
                 <td><a href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
+                <td>
+                    <form method="post" class="inline" onsubmit="return confirm('Excluir este veículo da frota? Ação sem volta — nunca funciona se já tiver venda/contrato assinado/dinheiro pago vinculado.');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="excluir_veiculo">
+                        <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
+                        <button type="submit" style="margin-top:0;padding:5px 8px;font-size:12px;background:#dc2626" title="Excluir veículo da frota">🗑️</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>

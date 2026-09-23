@@ -237,6 +237,100 @@ function criarVeiculoManualFrota(
 }
 
 /**
+ * Exclui um veículo da Frota (uma linha de `oportunidades` com
+ * etapa='fechado') — 23/09/2026, "permita super admin excuir veiculo veio
+ * duas bianca que veio do outro sistema": achado real (screenshot de
+ * admin/veiculos.php) mostrando 2 cadastros duplicados pra mesma
+ * "Bianca Pereira Da Silva" (mesma placa/chassi, telefones diferentes),
+ * provável duplicata da importação do CRM antigo (install/importar_crm_antigo.php)
+ * — um deles com negociação de venda ativa (não pode sumir), o outro sem
+ * nenhum negócio de revenda ainda (candidato real a exclusão).
+ *
+ * Restrito ao super_admin (checado em admin/veiculos.php). Nunca apaga
+ * `clientes` (mesma disciplina de excluirConversaWhatsapp()/
+ * excluirAvaliacao() — o cadastro do cliente é dado independente do
+ * veículo). Bloqueia (nunca força) quando existe risco real de perder
+ * negócio/dinheiro/documento já confirmado:
+ *  - venda ativa ou já concluída (etapa != 'cancelada') pro mesmo veículo
+ *  - qualquer fin_lancamentos JÁ PAGO ligado à oportunidade ou a qualquer
+ *    venda dela (mesmo uma venda cancelada — regra de "devolução de
+ *    veículo" do financeiro nunca mexe em lançamento já pago)
+ *  - contrato de compra ou venda já ASSINADO (documento legal de verdade)
+ *  - vistoria (veiculo_avaliacoes) com termo de entrega já gerado/enviado/
+ *    assinado (mesmo guard de excluirAvaliacao())
+ */
+function excluirVeiculoFrota(int $oportunidadeId): array {
+    $db = getDB();
+
+    $stmt = $db->prepare("SELECT id FROM oportunidades WHERE id = ?");
+    $stmt->execute([$oportunidadeId]);
+    if (!$stmt->fetch()) {
+        return ['ok' => false, 'erro' => 'Veículo não encontrado.'];
+    }
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE oportunidade_id = ? AND etapa != 'cancelada'");
+    $stmt->execute([$oportunidadeId]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        return ['ok' => false, 'erro' => 'Esse veículo tem uma negociação de venda ativa ou já concluída — não pode ser excluído.'];
+    }
+
+    $stmt = $db->prepare("
+        SELECT COUNT(*) FROM fin_lancamentos
+        WHERE status = 'pago' AND (oportunidade_id = ? OR venda_id IN (SELECT id FROM vendas WHERE oportunidade_id = ?))
+    ");
+    $stmt->execute([$oportunidadeId, $oportunidadeId]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        return ['ok' => false, 'erro' => 'Esse veículo tem lançamento financeiro já pago vinculado — não pode ser excluído.'];
+    }
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM contratos WHERE oportunidade_id = ? AND status = 'assinado'");
+    $stmt->execute([$oportunidadeId]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        return ['ok' => false, 'erro' => 'Esse veículo tem contrato assinado (compra ou venda) — não pode ser excluído.'];
+    }
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM veiculo_avaliacoes WHERE oportunidade_id = ? AND termo_status != ''");
+    $stmt->execute([$oportunidadeId]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        return ['ok' => false, 'erro' => 'Esse veículo tem termo de vistoria já gerado/enviado — não pode ser excluído.'];
+    }
+
+    $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE fin_asaas_clientes SET venda_id = NULL WHERE venda_id IN (SELECT id FROM vendas WHERE oportunidade_id = ?)")
+           ->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM venda_historico WHERE venda_id IN (SELECT id FROM vendas WHERE oportunidade_id = ?)")
+           ->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM venda_documentos WHERE venda_id IN (SELECT id FROM vendas WHERE oportunidade_id = ?)")
+           ->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM fin_lancamentos WHERE venda_id IN (SELECT id FROM vendas WHERE oportunidade_id = ?)")
+           ->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM vendas WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+
+        $db->prepare("DELETE FROM veiculo_avaliacao_itens WHERE avaliacao_id IN (SELECT id FROM veiculo_avaliacoes WHERE oportunidade_id = ?)")
+           ->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM veiculo_avaliacao_fotos WHERE avaliacao_id IN (SELECT id FROM veiculo_avaliacoes WHERE oportunidade_id = ?)")
+           ->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM veiculo_avaliacoes WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+
+        $db->prepare("DELETE FROM veiculo_midias_revenda WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM zapcar_consultas WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM fin_lancamentos WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM contratos WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM oportunidade_documentos WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM oportunidade_pendencias_pos_venda WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM oportunidade_historico WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("DELETE FROM oportunidades WHERE id = ?")->execute([$oportunidadeId]);
+
+        $db->commit();
+        return ['ok' => true, 'erro' => null];
+    } catch (Throwable $e) {
+        $db->rollBack();
+        return ['ok' => false, 'erro' => $e->getMessage()];
+    }
+}
+
+/**
  * Busca nome/foto de perfil do WhatsApp (zapiBuscarContato()) e preenche
  * no cliente — fill-if-empty pro nome (nunca sobrescreve o que já tinha,
  * mesma regra do resto do projeto), sempre grava foto_perfil_url mesmo

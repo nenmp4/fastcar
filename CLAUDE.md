@@ -2349,6 +2349,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   veículo certo, clicar "Marcar quitado" atualiza a linha na hora (badge
   vira "✅ quitado" com a data, botão vira "↩️ Desfazer"), screenshot
   conferido visualmente.
+  **Excluir veículo duplicado** (23/09/2026, "permita super admin excuir
+  veiculo veio duas bianca que veio do outro sistema") — achado real via
+  screenshot: 2 cadastros duplicados pra "Bianca Pereira Da Silva" (mesma
+  placa `FVS4F96`/chassi `9C2KC2500LR070243`, telefones diferentes),
+  provável duplicata da importação do CRM antigo
+  (`install/importar_crm_antigo.php`) — um deles com negociação de venda
+  ativa ("🤝 Negociação", não pode sumir), o outro sem nenhum negócio de
+  revenda ainda ("💰 Vender", candidato real a exclusão). Nova
+  `excluirVeiculoFrota()` (`includes/oportunidades.php`) — nunca apaga
+  `clientes` (mesma disciplina de `excluirConversaWhatsapp()`/
+  `excluirAvaliacao()`, o cadastro do cliente é dado independente do
+  veículo), bloqueia (nunca força) quando existe risco real de perder
+  negócio/dinheiro/documento: venda ativa ou já concluída (`etapa !=
+  'cancelada'`) vinculada, qualquer `fin_lancamentos` já **pago** ligado à
+  oportunidade OU a qualquer venda dela (mesmo uma venda **cancelada** —
+  regra de "devolução de veículo" do financeiro nunca mexe em lançamento
+  já pago, ver bullet do módulo financeiro), contrato de compra ou venda
+  já **assinado** (documento legal de verdade), ou vistoria
+  (`veiculo_avaliacoes`) com termo de entrega já gerado/enviado/assinado
+  (mesmo guard de `excluirAvaliacao()`). Passando pelos guards, cascade
+  completo numa transação só — `venda_historico`/`venda_documentos`/
+  `fin_lancamentos` (por `venda_id`)/`vendas`,
+  `veiculo_avaliacao_itens`/`_fotos`/`veiculo_avaliacoes`,
+  `veiculo_midias_revenda`, `zapcar_consultas`, `fin_lancamentos` (por
+  `oportunidade_id`), `contratos`, `oportunidade_documentos`/
+  `_pendencias_pos_venda`/`_historico`, e por fim `oportunidades` —
+  nenhuma FK enforcement no SQLite deste projeto (confirmado, `PRAGMA
+  foreign_keys` nunca ligado em `includes/db.php`/`install/schema.sql`),
+  então a ordem de exclusão é 100% manual, sem cascade automático do
+  banco pra contar. Botão 🗑️ novo na última coluna da tabela, restrito ao
+  `super_admin` (mesma trava da página inteira), com `confirm()` em JS
+  antes de submeter. Evento novo `veiculo_excluido` em
+  `includes/auditoria.php`. Testado: 14 asserções em banco isolado
+  reproduzindo o cenário EXATO reportado (2 "Bianca" com mesma
+  placa/chassi — a com venda ativa bloqueada com o banco intocado, a
+  livre excluída com cascade limpo e o cadastro dos 2 clientes
+  preservado) + os 4 guards individuais isolados (venda cancelada com
+  lançamento já pago, contrato de compra assinado, termo de vistoria já
+  enviado, id inexistente) + cascade de vistoria/mídias de revenda
+  confirmado limpo numa exclusão bem-sucedida — e ponta a ponta via HTTP
+  real (sessão primed, sem passar pelo 2FA): botão renderiza na tela, POST
+  real exclui de verdade, linha some do banco, evento de auditoria gravado
+  certo (`usuario_nome`/`alvo_tipo`/`alvo_id`) + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 - **Módulo de vendas (revenda de veículo da frota)** — `includes/vendas.php` +
   `admin/vendas.php` (pipeline) + `admin/venda.php` (negociação individual),
   15/09/2026, pedido direto do José/Jean ("você colocar galera para fazer o
