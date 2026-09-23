@@ -75,8 +75,8 @@ function finGerarExtratoPdf(PDO $db, string $de, string $ate): FPDF {
     $pdf->Cell(0, 7, _pdfTexto('FASTCAR SOLUTIONS'), 0, 1, 'C');
     $pdf->SetFont('Helvetica', '', 8);
     $pdf->Cell(0, 6, _pdfTexto('EXTRATO FINANCEIRO COMPLETO'), 0, 1, 'C');
-    $pdf->SetFillColor(201, 168, 76); // dourado
-    $pdf->Rect(0, 20, 297, 1.2, 'F');
+    $pdf->SetFillColor(47, 111, 237); // azul da marca (#2f6fed) — padronizado com o
+    $pdf->Rect(0, 20, 297, 1.2, 'F');   // resto dos PDFs/e-mails, 23/09/2026 (era dourado)
     $pdf->SetTextColor(0, 0, 0);
     $pdf->SetY(26);
 
@@ -145,7 +145,7 @@ function finGerarExtratoPdf(PDO $db, string $de, string $ate): FPDF {
     }
 
     $pdf->Ln(6);
-    $pdf->SetDrawColor(201, 168, 76);
+    $pdf->SetDrawColor(47, 111, 237); // azul da marca, padronizado 23/09/2026 (era dourado)
     $pdf->SetLineWidth(0.3);
     $pdf->Line(15, $pdf->GetY(), 282, $pdf->GetY());
     $pdf->SetDrawColor(0, 0, 0);

@@ -69,8 +69,8 @@ function gerarRelatorioDashboardPdf(PDO $db, string $where, array $params, strin
     $pdf->Cell(0, 7, _pdfTexto('FASTCAR SOLUTIONS'), 0, 1, 'C');
     $pdf->SetFont('Helvetica', '', 8);
     $pdf->Cell(0, 6, _pdfTexto('RELATÓRIO DE OPORTUNIDADES'), 0, 1, 'C');
-    $pdf->SetFillColor(201, 168, 76); // dourado
-    $pdf->Rect(0, 20, 297, 1.2, 'F');
+    $pdf->SetFillColor(47, 111, 237); // azul da marca (#2f6fed) — padronizado com o
+    $pdf->Rect(0, 20, 297, 1.2, 'F');   // resto dos PDFs/e-mails, 23/09/2026 (era dourado)
     $pdf->SetTextColor(0, 0, 0);
     $pdf->SetY(26);
 

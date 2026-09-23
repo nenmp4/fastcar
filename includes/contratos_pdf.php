@@ -57,10 +57,38 @@ function _pdfCabecalho(FPDF $pdf, string $subtitulo = 'CONTRATO-MESTRE DE COMPRA
     $pdf->Cell(0, 8, _pdfTexto('FASTCAR SOLUTIONS'), 0, 1, 'C');
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->Cell(0, 6, _pdfTexto($subtitulo), 0, 1, 'C');
-    $pdf->SetFillColor(201, 168, 76); // dourado
-    $pdf->Rect(0, 24, 210, 1.2, 'F');
+    $pdf->SetFillColor(47, 111, 237); // azul da marca (#2f6fed) — mesma cor do
+    $pdf->Rect(0, 24, 210, 1.2, 'F');   // botão/rodapé dos e-mails (includes/email_templates.php),
+    $pdf->SetTextColor(0, 0, 0);        // trocado do dourado original pra padronizar (23/09/2026,
+    $pdf->SetY(30);                     // "esse precisa padronizaz deixe logo e as cores o template")
+}
+
+/**
+ * Rodapé com o endereço real da sede, em faixa clara com borda azul no
+ * topo — mesmo padrão visual do rodapé dos e-mails transacionais
+ * (includes/email_templates.php::emailLayout()), 23/09/2026, pedido de
+ * padronização. Antes era só texto cinza solto, sem nenhuma faixa;
+ * compartilhado entre compra e venda (eram 2 cópias idênticas).
+ */
+function _pdfRodapeEndereco(FPDF $pdf): void {
+    $pdf->Ln(8);
+    if ($pdf->GetY() > 265) { // sem espaço pra faixa (18mm) antes da margem inferior — nunca corta no meio
+        $pdf->AddPage();
+    }
+    $y = $pdf->GetY();
+    $pdf->SetFillColor(244, 244, 247); // cinza-claro, igual ao fundo do rodapé do e-mail (#f4f4f7)
+    $pdf->Rect(20, $y, 170, 18, 'F');
+    $pdf->SetFillColor(47, 111, 237); // borda azul no topo da faixa, igual ao border-top do e-mail
+    $pdf->Rect(20, $y, 170, 0.8, 'F');
+    $pdf->SetY($y + 3);
+    $pdf->SetFont('Helvetica', 'B', 8);
+    $pdf->SetTextColor(21, 23, 34); // navy, igual ao <strong style="color:#151722"> do rodapé do e-mail
+    $pdf->Cell(0, 4, _pdfTexto('FASTCAR SOLUTIONS — CNPJ 66.934.500/0001-09'), 0, 1, 'C');
+    $pdf->SetFont('Helvetica', '', 7.5);
+    $pdf->SetTextColor(107, 114, 128); // cinza, igual ao #6b7280 do rodapé do e-mail
+    $pdf->Cell(0, 4, _pdfTexto('Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices'), 0, 1, 'C');
+    $pdf->Cell(0, 4, _pdfTexto('Alphaville Conde II, Barueri/SP — CEP 06473-073'), 0, 1, 'C');
     $pdf->SetTextColor(0, 0, 0);
-    $pdf->SetY(30);
 }
 
 function _pdfTituloClausula(FPDF $pdf, string $titulo): void {
@@ -263,13 +291,7 @@ function gerarPdfContratoCompra(array $c): string {
     // 13/09/2026, endereço correto confirmado por ele (o modelo original
     // trazia um endereço genérico de Santana de Parnaíba/SP, corrigido em
     // todo o contrato — abertura, cidade da assinatura e foro).
-    $pdf->Ln(10);
-    $pdf->SetFont('Helvetica', '', 7.5);
-    $pdf->SetTextColor(120, 120, 120);
-    $pdf->Cell(0, 4, _pdfTexto('FASTCAR SOLUTIONS — CNPJ 66.934.500/0001-09'), 0, 1, 'C');
-    $pdf->Cell(0, 4, _pdfTexto('Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices'), 0, 1, 'C');
-    $pdf->Cell(0, 4, _pdfTexto('Alphaville Conde II, Barueri/SP — CEP 06473-073'), 0, 1, 'C');
-    $pdf->SetTextColor(0, 0, 0);
+    _pdfRodapeEndereco($pdf);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_compra_') . '.pdf';
     $pdf->Output('F', $caminho);
@@ -507,13 +529,7 @@ function gerarPdfContratoVenda(array $c): string {
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
 
-    $pdf->Ln(10);
-    $pdf->SetFont('Helvetica', '', 7.5);
-    $pdf->SetTextColor(120, 120, 120);
-    $pdf->Cell(0, 4, _pdfTexto('FASTCAR SOLUTIONS — CNPJ 66.934.500/0001-09'), 0, 1, 'C');
-    $pdf->Cell(0, 4, _pdfTexto('Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices'), 0, 1, 'C');
-    $pdf->Cell(0, 4, _pdfTexto('Alphaville Conde II, Barueri/SP — CEP 06473-073'), 0, 1, 'C');
-    $pdf->SetTextColor(0, 0, 0);
+    _pdfRodapeEndereco($pdf);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_venda_') . '.pdf';
     $pdf->Output('F', $caminho);

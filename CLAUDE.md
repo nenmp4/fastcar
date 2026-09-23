@@ -3357,6 +3357,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   logo de teste real (PNG com transparência) confirmando que entra sem
   erro, e os casos "sem logo" e "logo corrompida" confirmados gerando o
   PDF normalmente do mesmo jeito.
+  **Acento dourado trocado por azul + rodapé virou faixa, padronizando com
+  os e-mails** (23/09/2026, "preciso arrumar os temaplades dos contratos
+  deixar padrão... usa mesmo padrão de emails" — mandei um mockup
+  antes/depois comparando o cabeçalho/rodapé do contrato com o
+  `emailLayout()` real de `includes/email_templates.php`, aprovado com
+  "pode implementar, gostei da proposta" + "deixe logo e as cores o
+  template"): `_pdfCabecalho()` (compartilhada por TODOS os PDFs do
+  projeto — contrato de compra/venda, DRE, extrato financeiro, relatório
+  do dashboard, termo de vistoria) trocou a barra de acento dourada
+  (`#c9a84c`) pela azul da marca `#2f6fed` — a mesma cor do botão e da
+  borda do rodapé nos e-mails. Nova `_pdfRodapeEndereco()`
+  (`includes/contratos_pdf.php`) substitui o texto cinza solto do rodapé
+  (repetido idêntico nos contratos de compra E venda, agora 1 função só)
+  por uma faixa clara (`#f4f4f7`) com borda azul no topo e "FASTCAR
+  SOLUTIONS" em negrito navy — mesmo padrão visual do rodapé do e-mail
+  (fundo cinza-claro + `border-top:3px solid #2f6fed` +
+  `<strong style="color:#151722">`). `dashboard_pdf.php`/
+  `financeiro_extrato.php` desenham o próprio cabeçalho (não reaproveitam
+  `_pdfCabecalho()`, são paisagem — ver bullets próprios) e tinham cópias
+  independentes do mesmo dourado (barra do cabeçalho + linha separadora no
+  extrato) — trocadas pro mesmo azul, por consistência (o pedido de
+  "padronizar" valia pra todo o material impresso, não só contrato).
+  Testado: PDF real gerado com o código de verdade do projeto (não um
+  mockup) e os content streams decodificados (`gzuncompress`) confirmam
+  os operadores `rg` certos — `0.184 0.435 0.929` (azul, cabeçalho e
+  faixa do rodapé), `0.957 0.957 0.969` (fundo claro da faixa), `0.082
+  0.090 0.133` (navy do cabeçalho) — e nenhum resquício do dourado
+  (`0.788 0.659 0.298`) sobrando em nenhum dos 3 arquivos + `php -l` +
+  `tests/smoke.php` limpos. Sem mudança de schema/lógica de negócio, só
+  cor/layout.
   Assinatura eletrônica via **ZapSign** (`includes/zapsign.php`, webhook
   `api/zapsign_webhook.php` + fallback de polling `cron/zapsign_sync.php` —
   substituiu a Assinafy em 13/09/2026, pedido do José/Jean).
