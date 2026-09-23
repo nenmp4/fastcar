@@ -51,6 +51,8 @@ $temLogo = is_file(__DIR__ . '/../public/assets/logo.png');
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dados da Empresa — Financeiro Fastcar</title>
 <link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
+<link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
+<script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>

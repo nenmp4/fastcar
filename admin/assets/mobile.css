@@ -1,0 +1,177 @@
+/* ==========================================================================
+   Fastcar CRM — camada responsiva / UX mobile  (assets/mobile.css)
+   --------------------------------------------------------------------------
+   Carregar SEMPRE depois de style.css:
+     <link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= filemtime(...) ?>">
+     <script src="/admin/assets/mobile.js?v=..." defer></script>
+   Nada aqui muda o desktop (>900px), exceto acessibilidade de foco e
+   prefers-reduced-motion. Auditoria de 23/09/2026 a 375px encontrou:
+   - topbar com padding-right:256px → menu virava coluna de 1 palavra e
+     ocupava a primeira tela inteira (e grudava no scroll, sticky);
+   - 31 tabelas .tabela-oportunidades estourando a largura (até 1270px em
+     veiculos.php, 1010px em financeiro-lancamentos.php);
+   - ~900 inputs com fonte 14px (iOS dá zoom automático ao focar < 16px);
+   - centenas de alvos de toque < 36px de altura.
+   ========================================================================== */
+
+/* ── Global (todas as larguras) ─────────────────────────────────────────── */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+img, video { max-width: 100%; }
+pre, code { overflow-x: auto; max-width: 100%; }
+:focus-visible { outline: 3px solid var(--azul-vivo); outline-offset: 2px; }
+.topbar-toggle { display: none; }
+.tabela-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ── Topbar vira menu hambúrguer até 900px ──────────────────────────────── */
+@media (max-width: 900px) {
+    .topbar {
+        flex-wrap: nowrap;
+        min-height: 60px;
+        padding: 8px 110px 8px 12px;          /* reserva: sino (40) + badge Z-API (compacto) */
+        padding-top: max(8px, env(safe-area-inset-top));
+    }
+    .topbar strong { font-size: 16px; margin-right: 0; white-space: nowrap; }
+    .topbar-logo { width: 36px; height: 36px; }
+    .topbar > span { display: none; }                  /* "Olá, fulano" vai para dentro do menu */
+    .topbar > a { display: none; }
+    .topbar > a.topbar-voltar {                         /* "← Voltar" continua visível */
+        display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; order: -1;
+    }
+
+    .topbar-toggle {
+        display: inline-flex; align-items: center; justify-content: center;
+        margin: 0 0 0 auto; padding: 0;
+        width: 44px; height: 44px; flex-shrink: 0;
+        background: rgba(255,255,255,.10); color: #fff;
+        border: 0; border-radius: 12px; box-shadow: none;
+        font-size: 22px; line-height: 1;
+    }
+    .topbar-toggle:hover { filter: none; box-shadow: none; background: rgba(255,255,255,.18); }
+
+    /* Gaveta: aparece abaixo da topbar, rolável, com alvos de 48px */
+    .topbar-menu {
+        position: fixed; left: 0; right: 0; top: var(--topbar-h, 60px); bottom: 0;
+        z-index: 950; overflow-y: auto; overscroll-behavior: contain;
+        background: var(--navy); padding: 8px 12px calc(16px + env(safe-area-inset-bottom));
+        display: none; flex-direction: column; gap: 2px;
+        box-shadow: 0 12px 30px rgba(0,0,0,.35);
+    }
+    body.menu-aberto .topbar-menu { display: flex; }
+    body.menu-aberto { overflow: hidden; }            /* trava o scroll do fundo */
+    .topbar-menu .topbar-menu-ola { color: #94a3b8; font-size: 13px; padding: 8px 12px 12px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 6px; }
+    .topbar-menu a {
+        display: flex; align-items: center; gap: 10px;
+        min-height: 48px; padding: 0 14px; border-radius: 10px;
+        color: #e2e8f0; font-size: 16px; text-decoration: none;
+    }
+    .topbar-menu a:hover, .topbar-menu a:active { background: rgba(255,255,255,.08); }
+    .topbar-menu a.atual { background: var(--azul); color: #fff; }
+    .topbar-menu a.topbar-sair { margin-top: 8px; border-top: 1px solid rgba(255,255,255,.08); border-radius: 0 0 10px 10px; color: #fca5a5; }
+
+    /* Z-API: só o indicador (bolinha/emoji), texto vai pro title */
+    .zapi-status-badge { top: 14px; right: 60px; width: 36px; height: 32px; padding: 0; justify-content: center; overflow: hidden; }
+    #zapi-status-texto { display: inline-block; width: 1.3em; overflow: hidden; white-space: nowrap; }   /* só o 🟢/🔴 */
+    .notif-sino { top: 10px; right: 12px; width: 40px; height: 40px; }
+    .notif-toasts { left: 12px; right: 12px; top: 70px; max-width: none; }
+
+    main { padding: 16px; }
+}
+
+/* ── Celular (até 700px) ─────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+    main { padding: 12px 12px calc(24px + env(safe-area-inset-bottom)); overflow-wrap: break-word; }
+    h1 { font-size: 21px; } h2 { font-size: 18px; }
+
+    /* Abas de etapa: uma linha rolável com snap, sem quebrar em 4 linhas */
+    .etapas-nav {
+        flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity; scrollbar-width: none;
+        padding: 10px 12px; gap: 8px;
+    }
+    .etapas-nav::-webkit-scrollbar { display: none; }
+    .etapas-nav a { flex-shrink: 0; white-space: nowrap; scroll-snap-align: start; min-height: 40px; display: inline-flex; align-items: center; }
+
+    /* Cards / KPIs */
+    .card { padding: 16px; border-radius: 12px; margin-bottom: 12px; }
+    .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat-card { padding: 14px; }
+    .stat-card .valor { font-size: 22px; overflow-wrap: anywhere; }
+    .stat-card .rotulo { font-size: 11px; }
+    .grid-2, [style*="grid-template-columns"] { grid-template-columns: 1fr !important; gap: 14px; }
+
+    /* Funil */
+    .funil-linha { gap: 8px; font-size: 12.5px; }
+    .funil-linha .etapa-nome { width: 108px; }
+
+    /* Formulários: 16px evita o zoom automático do iOS; alvos de 44px */
+    input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; min-height: 44px; }
+    textarea { min-height: 96px; }
+    input[type="checkbox"], input[type="radio"] { width: 22px !important; height: 22px; }
+    input[style*="max-width"], select[style*="max-width"], div[style*="max-width"] { max-width: 100% !important; }
+    button { min-height: 44px; }
+    button.btn-texto { min-height: 40px; padding: 8px 4px; }
+    a.btn, a.btn-primary { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+    main form[style*="display:flex"], main form[style*="display: flex"],
+    main div[style*="display:flex"], main div[style*="display: flex"] { flex-wrap: wrap; }
+    main form[style*="display:flex"] > *, main form[style*="display: flex"] > * { flex: 1 1 100%; }
+
+    /* Modal <dialog> ocupa a tela, rola por dentro */
+    dialog.modal-lancamento { width: 100vw; max-width: 100vw; max-height: 100dvh; height: 100dvh; margin: 0; border-radius: 0; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
+
+    /* Paginação */
+    .paginacao { flex-wrap: wrap; justify-content: center; text-align: center; }
+    .paginacao span:first-child, .paginacao span:last-child { min-width: 0; }
+    .paginacao a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 10px; }
+
+    /* Chat */
+    .msg { max-width: 86%; font-size: 14px; }
+
+    /* Login */
+    .login-box { margin: 40px 16px; padding: 24px 20px; }
+
+    /* ── Tabelas viram cards (mobile.js põe data-label em cada <td>) ───────
+       Opt-out: <table class="... sem-cards"> mantém rolagem horizontal. */
+    table.tabela-cards, table.tabela-cards tbody, table.tabela-cards tr, table.tabela-cards td { display: block; width: 100%; }
+    table.tabela-cards { background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
+    table.tabela-cards thead { display: none; }        /* rótulos vêm do data-label */
+    table.tabela-cards tr {
+        background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px;
+        box-shadow: var(--sombra); margin-bottom: 10px; padding: 6px 14px;
+    }
+    table.tabela-cards tr.linha-quente { border-left: 4px solid var(--laranja); background: var(--laranja-bg); }
+    table.tabela-cards tr.linha-atrasada { border-left: 4px solid var(--vermelho); }
+    table.tabela-cards td {
+        display: flex; gap: 12px; justify-content: space-between; align-items: flex-start;
+        padding: 9px 0 !important; border-bottom: 1px dashed var(--borda) !important;
+        text-align: right !important; white-space: normal !important; font-size: 14px; min-width: 0;
+    }
+    table.tabela-cards td:last-child { border-bottom: 0 !important; }
+    table.tabela-cards td::before {
+        content: attr(data-label); flex: 0 0 38%; text-align: left;
+        font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-fraco); padding-top: 2px;
+    }
+    table.tabela-cards td { flex-wrap: wrap; }          /* conteúdo largo desce p/ linha de baixo do rótulo */
+    table.tabela-cards td > * { min-width: 0; max-width: 100%; }
+    table.tabela-cards td > :only-child:not(:empty) { margin-left: auto; }
+    /* coluna-título (mobile.js marca a 1ª com texto: nome/descrição) vira cabeçalho do card */
+    table.tabela-cards td.td-titulo { font-size: 15.5px; font-weight: 700; text-align: left !important; justify-content: flex-start; row-gap: 4px; }
+    table.tabela-cards td.td-titulo::before { display: none; }
+    /* célula sem rótulo (ações, colspan de "nenhum registro") ocupa a linha toda */
+    table.tabela-cards td[data-label=""], table.tabela-cards td[colspan] { justify-content: flex-start; text-align: left !important; flex-wrap: wrap; }
+    table.tabela-cards td[data-label=""]::before, table.tabela-cards td[colspan]::before { display: none; }
+    table.tabela-cards td.td-acoes { gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
+    table.tabela-cards td.td-acoes a, table.tabela-cards td.td-acoes button { min-height: 40px; display: inline-flex; align-items: center; }
+    table.tabela-cards td input, table.tabela-cards td select { max-width: 60%; }
+    table.tabela-cards tr:hover { background: var(--superficie); }
+    table.tabela-cards tr.linha-quente:hover { background: var(--laranja-bg); }
+}
+
+/* ── Tablet em retrato: vistoria e tabelas com mais respiro ─────────────── */
+@media (min-width: 701px) and (max-width: 1024px) {
+    main { padding: 20px; }
+    .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

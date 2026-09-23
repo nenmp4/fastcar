@@ -88,6 +88,8 @@ $voltarPara = match ($usuario['perfil']) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meu perfil — Fastcar</title>
 <link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
+<link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
+<script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 <style>
 .perfil-avatar-linha { display: flex; align-items: center; gap: 18px; margin-bottom: 8px; }
 .perfil-avatar, .perfil-avatar-placeholder { width: 88px; height: 88px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }

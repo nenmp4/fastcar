@@ -83,6 +83,99 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
 
 ---
 
+## Regras de UX mobile (obrigatórias em toda tela nova ou alterada)
+
+23/09/2026 — camada responsiva adicionada ao admin inteiro
+(`admin/assets/mobile.css` + `admin/assets/mobile.js`, carregados
+**depois** de `style.css` em toda página cheia — mesmo padrão de sempre
+do projeto, sem framework/build step, só CSS+JS estáticos). Ver bullet
+"Camada responsiva do admin (mobile)" na seção de módulos pra
+histórico/teste; esta seção aqui é a referência viva de regras a seguir
+em qualquer tela nova ou alterada daqui pra frente.
+
+- `admin/assets/style.css` continua o design system (tokens em `:root`:
+  `--azul`, `--navy`, `--borda`, `--raio`, `--sombra`...) — **sempre use os
+  tokens**, nunca cor hex solta. `admin/assets/mobile.css` é só a camada
+  responsiva por cima, nunca redefine tokens.
+- Header compartilhado de toda página cheia carrega os 2 arquivos, nessa
+  ordem, logo depois de `style.css`:
+  ```php
+  <link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
+  <script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
+  ```
+
+**Breakpoints**: ≤ 700px celular, 701–1024px tablet, ≤ 900px a topbar vira
+hambúrguer (`admin/assets/mobile.js::montarMenu()`).
+
+1. **Zero rolagem horizontal da página** a 360px. Conteúdo largo rola
+   dentro do próprio container (`.tabela-scroll`), nunca o `body`.
+2. **Tabelas**: sempre com `<thead><th>`. No celular o `mobile.js`
+   transforma em cards usando o texto do `<th>` como rótulo (idempotente,
+   observa mutação do DOM — funciona também em conteúdo trazido por AJAX).
+   Regras:
+   - 1ª coluna com texto = título do card (nome/descrição). Coloque o dado
+     mais importante primeiro.
+   - Coluna de ações: `<th>Ações</th>` ou `<th></th>` → vira rodapé do
+     card sem rótulo.
+   - Tabela que precisa continuar tabela (matriz, relatório comparativo):
+     `class="... sem-cards"` → rolagem horizontal em vez de virar card.
+   - Rótulo customizado: `<td data-label="Valor">` (o JS não sobrescreve
+     um `data-label` já presente).
+3. **Alvos de toque ≥ 44×44px** (48px na vistoria, `admin/avaliacao.php`,
+   já documentada como "uso em tablet/celular, em pé"). Link de texto em
+   linha de tabela: use `button.btn-texto`/`a.btn`, nunca um link de 13px
+   solto.
+4. **Inputs com fonte ≥ 16px no celular** (senão o iOS dá zoom ao focar).
+   Use o `type` certo: `tel`, `email`, `number` + `inputmode="decimal"`
+   para valor em R$, `date`.
+5. **Sem largura fixa em px inline** (`style="width:420px"`). Use
+   `max-width` + `width:100%`, `grid-template-columns:
+   repeat(auto-fit,minmax(160px,1fr))` ou `.grid-2` (já colapsa pra 1
+   coluna no celular).
+6. **Nada de `position:fixed` novo no canto superior direito** — é onde
+   ficam o sino (`admin/_notify.php`, `.notif-sino`) e o badge Z-API
+   (`admin/_zapi_status.php`, `.zapi-status-badge`). A topbar reserva
+   `padding-right` pra eles (256px desktop, 110px mobile) — qualquer
+   elemento fixo novo nesse canto vai colidir.
+7. **Modais** (`<dialog>`, ex: `dialog.modal-lancamento` de
+   `admin/financeiro-lancamentos.php`): no celular ocupam a tela inteira e
+   rolam por dentro; botão de fechar sempre visível no topo.
+8. **Ações destrutivas** (excluir, encerrar) nunca coladas na ação
+   principal; cor `.perigo` + `confirm()` — mesma disciplina já usada em
+   `excluirConversaWhatsapp()`/`excluirAvaliacao()`/`excluirVeiculoFrota()`.
+9. **`env(safe-area-inset-*)`** em qualquer barra fixa no rodapé/topo
+   (iPhone com notch) — já aplicado na gaveta do menu hambúrguer e no
+   `<main>` no celular.
+10. **Texto**: mínimo 13px no celular, `overflow-wrap:break-word` em
+    células com e-mail/URL/telefone.
+
+**Como verificar antes de dar deploy:**
+1. Abrir a tela no DevTools em 360×740 e 390×844 (768×1024 pra vistoria).
+2. Rodar `admin/tools/auditoria-mobile.js` no console (logado) — abre cada
+   tela num iframe de 375px e lista estouro horizontal, alvo de toque
+   pequeno e input com fonte < 16px por tela; meta é `estouro=false` em
+   todas. **Nunca inclui URL de ação com efeito colateral** (excluir,
+   importar, sincronizar, logout) na lista de telas — só GET de
+   listagem/detalhe.
+3. Conferir manualmente: menu hambúrguer abre/fecha (e fecha com Esc),
+   abas `.etapas-nav` rolam na horizontal com snap, tabela vira card com
+   rótulos certos, badge Z-API e sino não cobrem nada.
+4. Desktop (≥ 1180px) precisa ficar **idêntico** ao anterior —
+   `mobile.css` só age dentro de media queries, nunca deve vazar pro
+   desktop.
+
+**Não fazer:**
+- Não adicionar framework CSS/JS nem CDN novo.
+- Não reescrever `style.css` pra "mobile-first" de uma vez — correção
+  mobile vai em `mobile.css`, por componente, mesmo espírito de "nunca
+  fazer refactor amplo sem pedido" do resto do projeto.
+- Não usar `!important` fora de `mobile.css` (lá é só pra vencer
+  `style=""` inline legado que ainda sobra em várias telas antigas).
+- Não abrir via GET URLs com efeito colateral (importar, sincronizar
+  Asaas, excluir) ao testar — nem manualmente nem no script de auditoria.
+
+---
+
 ## Schema do banco
 
 Ver `install/schema.sql` — criado automaticamente por `includes/db.php::getDB()`
@@ -5674,6 +5767,60 @@ segue no schema sem uso novo, não removida sem ganho real),
   importados de uma rodada anterior, cortada pelo mesmo travamento de
   banco), incluindo "GABRIEL PATRICK DA SILVA / 3191493545 (6
   documento(s))" — 0 erros no dry-run completo.
+- **Camada responsiva do admin (mobile)** (23/09/2026, "precisamos arrumar
+  o ux" — depois do badge de status da Z-API mostrar visualmente como o
+  admin não tinha NENHUMA camada mobile de verdade até então) — pacote
+  completo entregue já pronto pelo usuário (`admin/assets/mobile.css` +
+  `admin/assets/mobile.js` + `admin/tools/auditoria-mobile.js`,
+  construído contra o código real do projeto — confirmado pelos próprios
+  comentários do CSS citando achados reais de uma auditoria a 375px:
+  "31 tabelas `.tabela-oportunidades` estourando a largura (até 1270px em
+  `veiculos.php`)", "~900 inputs com fonte 14px", "topbar com
+  padding-right:256px [...] grudava no scroll, sticky" — este último
+  referenciando direto a correção de `position:sticky` da topbar feita
+  mais cedo no mesmo dia, ver bullet "Topbar virou `position:sticky`"
+  acima). Eu integrei: copiei os 3 arquivos pro repo e inseri
+  `<link>`+`<script>` de `mobile.css`/`mobile.js` logo depois de
+  `style.css` nas 33 páginas que já carregam o design system (mesmo
+  padrão de bulk-insert já usado nesta sessão pro sino/badge — script
+  Python fazendo o `sed` estrutural em vez de editar 1 por 1). Ver a
+  seção "Regras de UX mobile" acima (nova, logo depois de "Regras de
+  negócio") pra regras completas a seguir daqui pra frente em qualquer
+  tela nova/alterada — resumo do mecanismo: `mobile.js` monta um menu
+  hambúrguer clonando os `<a>` filhos diretos da `.topbar` (preserva
+  "← Voltar"/"← Vistorias" etc na barra, via regex `/^←|voltar/i`, o resto
+  vai pra gaveta) e transforma toda `<table>` com `<thead><th>` em cards
+  no celular (usa o texto do `<th>` como rótulo de cada `<td>`, idempotente
+  e reage a conteúdo trazido depois via `MutationObserver`) —
+  `class="sem-cards"` opta por rolagem horizontal em vez de virar card,
+  pra tabela que precisa continuar tabela (matriz/comparativo).
+  `admin/tools/auditoria-mobile.js` é só um script de console (cola no
+  DevTools logado) que abre cada tela num iframe de 375px e reporta
+  estouro horizontal/alvo de toque pequeno/input com fonte < 16px — nunca
+  inclui URL de ação com efeito colateral na lista de telas testadas.
+  Testado ponta a ponta com Playwright (banco isolado, 3 perfis — super_admin/
+  consultor com o toggle "Disponível" no topbar/financeiro —, 15
+  oportunidades semeadas com nome longo pra forçar quebra de texto) em
+  viewport 375×800: **zero estouro horizontal** nas 5 telas mais
+  variadas do projeto (`admin/index.php` com KPIs+funil+tabela,
+  `admin/oportunidade.php` com "← Voltar"+formulários,
+  `admin/financeiro-lancamentos.php` com tabela+modal,
+  `admin/veiculos.php` — o pior caso do audit original, 1270px antes —,
+  `admin/whatsapp_inbox.php`); menu hambúrguer confirmado abrindo/
+  fechando E fechando com Esc; tabela de `admin/index.php` confirmada
+  virando `table.tabela-cards` de verdade (badge de "🔥 Quente" e borda
+  laranja da `.linha-quente` preservados no card); modal de "Novo
+  lançamento" confirmado ocupando a tela cheia com X visível; **desktop
+  (1400px) confirmado 100% idêntico** — hambúrguer com `display:none`,
+  layout/nav/tabela normal, nenhum vazamento de `mobile.css` pra fora das
+  media queries. Zero erro de JS no console nos 2 viewports (só um 404 de
+  `favicon.png` pré-existente, sem relação — placeholder de logo que
+  ainda não foi reenviado como arquivo de verdade, já documentado). `php
+  -l` + `tests/smoke.php` limpos nas 33 páginas editadas. ⚠️ Não testado
+  ainda em iPhone/Android reais nem em `admin/avaliacao.php` (vistoria,
+  tablet) — validar quando possível; `auditoria-mobile.js` fica disponível
+  pra rodar contra QUALQUER tela do sistema em produção, não só as 5
+  testadas aqui.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

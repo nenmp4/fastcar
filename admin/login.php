@@ -199,6 +199,8 @@ $etapa = $pendente ? (!empty($pendente['aguardando_canal']) ? 'canal' : 'codigo'
 <title>Login — Fastcar CRM</title>
 <link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
 <link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
+<link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
+<script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 </head>
 <body class="pagina-login">
 <div class="login-box">
