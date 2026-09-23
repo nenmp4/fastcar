@@ -5816,11 +5816,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   media queries. Zero erro de JS no console nos 2 viewports (só um 404 de
   `favicon.png` pré-existente, sem relação — placeholder de logo que
   ainda não foi reenviado como arquivo de verdade, já documentado). `php
-  -l` + `tests/smoke.php` limpos nas 33 páginas editadas. ⚠️ Não testado
-  ainda em iPhone/Android reais nem em `admin/avaliacao.php` (vistoria,
-  tablet) — validar quando possível; `auditoria-mobile.js` fica disponível
-  pra rodar contra QUALQUER tela do sistema em produção, não só as 5
-  testadas aqui.
+  -l` + `tests/smoke.php` limpos nas 33 páginas editadas.
+  **`admin/avaliacao.php`/`admin/avaliacoes.php` confirmados na sequência**
+  (mesmo dia, rodada extra de teste depois que a skill `ux-mobile-php` —
+  criada a partir deste mesmo trabalho — foi adicionada à conta): banco
+  isolado com um avaliador de verdade atribuído, checklist com item "OK" e
+  item "Problema" preenchidos (pra conferir os 2 estados visuais). A
+  375px o checklist (já era otimizado pra tablet desde 21/09/2026,
+  ver bullet "Otimização pra tablet" na seção de vistoria) renderiza os 3
+  botões de status em coluna cheia, sem estourar; a 768×1024 (tablet em
+  pé, o uso real do avaliador em campo) os 3 botões ficam lado a lado com
+  a observação ao lado — layout genuinamente melhor nessa largura, sem
+  nenhum conflito entre o CSS próprio da vistoria (`.av-*`, já existia) e
+  as regras genéricas de `mobile.css`. Botões de status confirmados
+  medindo 44-48px de altura (bate com a regra "48px na vistoria" já
+  documentada). `admin/avaliacoes.php` (fila) confirmada virando card
+  certo, com o pill `🚗 COMPRA` da vistoria preservado. Zero estouro
+  horizontal nos 2 viewports, zero erro de JS novo. ⚠️ Ainda não testado
+  em iPhone/Android físicos de verdade — validar quando possível;
+  `auditoria-mobile.js` fica disponível pra rodar contra QUALQUER tela do
+  sistema em produção, não só as 7 já testadas aqui.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
