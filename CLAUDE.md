@@ -4463,6 +4463,28 @@ segue no schema sem uso novo, não removida sem ganho real),
   seguidos dentro de 60s geraram só 1 chamada real ao fake Z-API
   (conferido no log do fake server) + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
+  **Topbar virou `position:sticky`** (mesmo dia, achado real via
+  screenshot logo depois do badge acima: "precisamos arrumar o ux") — o
+  sino de notificação e o badge de status da Z-API (`position:fixed`,
+  sempre no topo do VIEWPORT) ficavam boiando sozinhos, sem nenhuma
+  relação visual com a topbar, assim que a página rolava — a topbar em si
+  era `static`, saía de tela com o resto do conteúdo; numa tabela longa
+  (ex: `admin/index.php` com muitos leads) o badge acabava flutuando por
+  cima das linhas da tabela no meio da tela, parecendo bug em vez de UI
+  intencional. Corrigido com `.topbar { position: sticky; top: 0; z-index:
+  900; }` (`admin/assets/style.css`) — abaixo dos elementos fixos
+  (`z-index: 1000`) mas acima do conteúdo normal da página; sem nenhum
+  ancestral com `overflow` que quebrasse o `sticky` (checado antes de
+  aplicar). Com a topbar grudada no topo, ela e os elementos fixos sempre
+  coincidem visualmente — nunca mais boia sozinho por cima do conteúdo,
+  em nenhuma página. Testado via Playwright (banco isolado, 30
+  oportunidades semeadas só pra garantir que a página tivesse altura
+  suficiente pra rolar, sessão de super_admin primed): screenshot no topo
+  e rolado 900px confirmam a topbar grudada no topo dos dois jeitos,
+  badge/sino sempre alinhados com ela, sem sobrepor nenhuma linha da
+  tabela — antes da correção esse mesmo teste mostraria o badge flutuando
+  isolado em cima da tabela na versão rolada. Sem mudança de schema/PHP,
+  só CSS.
 - **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
   (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
   afiado"): cruza o que a IA decidiu na qualificação com o resultado real
