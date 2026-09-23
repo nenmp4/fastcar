@@ -367,8 +367,15 @@ body.pagina-login {
     box-shadow: 0 20px 45px rgba(10,18,41,.25);
     border: 1px solid var(--borda);
 }
-.login-box h2 { display: flex; align-items: center; gap: 12px; font-size: 23px; margin-bottom: 18px; }
+.login-box h2 { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .login-logo { width: 44px; height: 44px; border-radius: 11px; object-fit: cover; box-shadow: 0 2px 8px rgba(10,18,41,.18); }
+/* Subtítulo "Solutions" — 23/09/2026, "Fastcar em linha fina Solutions",
+   mesmo padrão já usado no cabeçalho do wizard público
+   (public/documentos.php, ".marca .subtitulo": "Soluções Financeiras")
+   — linha fina, versalete, cor apagada, embaixo do nome. */
+.login-wordmark { display: flex; flex-direction: column; line-height: 1.15; }
+.login-wordmark-nome { font-size: 23px; font-weight: 700; } /* .b já herda cor/peso de ".login-box h2 b" abaixo */
+.login-wordmark-sub { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--texto-suave); margin-top: 2px; }
 
 /* ── Dashboard por perfil: cards de KPI + funil ─────────────────────── */
 .stat-grid {

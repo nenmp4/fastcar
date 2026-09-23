@@ -4446,6 +4446,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   referência depois disso) removida de `admin/assets/style.css`. Testado:
   `php -l` limpo em todos os arquivos editados, `tests/smoke.php` sem
   avisos.
+  **Subtítulo "Solutions" na tela de login** (23/09/2026, "Palavra Fastcar
+  - é Junto - Fastcar em linha fina Solutions", junto de um screenshot
+  mostrando "Fast" e "Car" aparentemente como 2 badges azuis separados) —
+  `admin/login.php`: `<h2>` ganhou `<span class="login-wordmark">`
+  envolvendo nome+subtítulo numa coluna, ao lado da logo; mesmo padrão
+  visual já usado no cabeçalho do wizard público
+  (`public/documentos.php`, `.marca .subtitulo` — "Soluções Financeiras"):
+  linha fina, versalete, `letter-spacing` aberto, cor apagada, embaixo do
+  nome. Investigado o "2 badges" do screenshot antes de mexer: renderizando
+  o `login.php` real deste repo (Playwright, sem nenhuma mudança ainda),
+  "Fast**Car**" já saía como um bloco visual único e contínuo, sem gap nem
+  fundo colorido nenhum — nunca existiu `badge`/pill separando as 2
+  metades nesta base de código (confirmado lendo `style.css`, sem regra
+  nenhuma de background pra `.login-box h2 b`). Hipótese mais provável é
+  cache de navegador do usuário numa versão antiga do CSS (sugerido hard
+  refresh); a mudança de verdade pedida (subtítulo "Solutions") foi feita
+  de qualquer forma, sem depender de confirmar essa hipótese. Testado via
+  Playwright em desktop (1000px) e mobile (375px, contra `mobile.css` já
+  integrado): wordmark+subtítulo renderizam certo nos dois tamanhos, zero
+  estouro horizontal no celular + `php -l` + `tests/smoke.php` limpos.
 - **Saúde do sistema** — `admin/saude.php`, mesmo padrão do JurídicoSaaS
   (checks agrupados ok/warn/error/info, banner de resumo), remapeado pros
   subsistemas reais do Fastcar: banco, servidor, Z-API (status real da

@@ -204,7 +204,13 @@ $etapa = $pendente ? (!empty($pendente['aguardando_canal']) ? 'canal' : 'codigo'
 </head>
 <body class="pagina-login">
 <div class="login-box">
-    <h2><img class="login-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></h2>
+    <h2>
+        <img class="login-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'">
+        <span class="login-wordmark">
+            <span class="login-wordmark-nome">Fast<b>Car</b></span>
+            <span class="login-wordmark-sub">Solutions</span>
+        </span>
+    </h2>
     <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
     <?php if ($aviso): ?><div class="alerta-sucesso"><?= e($aviso) ?></div><?php endif; ?>
 
