@@ -5623,6 +5623,89 @@ segue no schema sem uso novo, não removida sem ganho real),
   fantasma mais; screenshot da tabela de Colaboradores (a mesma tela do
   print original) conferido visualmente mostrando "Editar Inativar" como
   texto limpo, sem caixa nenhuma ao redor.
+  **Comissão automática do consultor por faixa de % da FIPE (só compra)**
+  (23/09/2026, pedido direto: "Precisamos fazer lançamentos da comissões
+  do consultores automaticos no financeiro - após assinatura do contrato
+  de comprar - se consultor fechar ate 20 da fipe 1,5 porcento se ele
+  fechar ate 25 ou mais 1 porcento - joga la dasbord comições pagas oas
+  consutores") — antes desta mudança, comissão era SEMPRE lançamento
+  manual avulso (decisão de 17/09/2026, "comissão é lançado manual", ver
+  bullet "Periodicidade de pagamento" acima) — essa regra só mudou aqui,
+  e só pro lado de COMPRA. Confirmado via 3 perguntas diretas antes de
+  codar, dado envolver dinheiro real gerado sozinho: (1) o percentual
+  incide sobre o VALOR PAGO ao vendedor (`valor_final`), não sobre a
+  FIPE; (2) só 2 faixas de verdade — quanto o valor pago representa da
+  FIPE (`valor_final / valor_fipe_referencia × 100`): até 20% dela = 1,5%
+  de comissão, acima de 20% = 1% (quanto MENOR a fração da FIPE que a
+  Fastcar pagou, melhor o negócio, maior a comissão — o "25" do pedido
+  original era só um exemplo de "acima de 20", não uma 3ª faixa); (3) o
+  lançamento nasce já `status='pago'`, mesmo espírito de
+  `finRegistrarDespesaCompraFechada()` (gatilho automático, sem passo
+  extra de confirmação). Comissão de VENDEDOR (revenda) fica de fora —
+  usuário confirmou que ainda não tem percentual definido pra esse lado
+  ("do vendedo eu ainda não porcentagens ainda").
+  Nova `finRegistrarComissaoCompraFechada()` (`includes/financeiro.php`),
+  chamada de dentro de `mudarEtapa()` (`includes/oportunidades.php`) na
+  mesma transição pra `'fechado'` que já chama
+  `finRegistrarDespesaCompraFechada()` — mesmo padrão best-effort (nunca
+  trava o fechamento) e idempotente por `oportunidade_id`+`origem`
+  (`'comissao_compra'`, novo valor na CHECK de `fin_lancamentos.origem`,
+  mesma técnica de reconstrução de tabela das migrações anteriores).
+  Reaproveita a categoria "Comissão de consultor/vendedor" (🤝) que já
+  existia seedada desde a 1ª versão do módulo, nunca usada até agora.
+  Nunca gera nada (regra #3, nunca chuta) quando falta o que precisa:
+  sem `valor_fipe_referencia` preenchido na oportunidade (nem toda compra
+  passa pela busca de FIPE), ou sem o consultor (`fechado_por`) ter um
+  colaborador ATIVO cadastrado em `fin_colaboradores` (`usuario_id`) —
+  sem colaborador não tem em quem lançar, fica pra manual à parte, como
+  já era antes desta função existir. Card novo "🤝 Comissões pagas aos
+  consultores" no dashboard (`admin/financeiro.php`, mesmo período do
+  filtro `?mes=`) + tabela nova "🤝 Comissões por consultor (compra)"
+  logo abaixo, quebrando o total por colaborador (nome, quantas compras
+  fechadas, total recebido) — cada linha linka pro extrato completo.
+  `admin/financeiro-lancamentos.php` ganhou filtro `?origem=` (whitelist
+  explícita) pros cards linkarem direto pra lista filtrada, e o badge
+  "🤝 comissão automática (compra)" na descrição de cada lançamento desse
+  tipo. Testado: função isolada em banco isolado — 15%/40% da FIPE geram
+  1,5%/1% certos (R$150/R$200 pra valores de R$10.000/R$20.000); sem
+  `valor_fipe_referencia` não gera nada; consultor sem colaborador
+  cadastrado não gera nada (mas a despesa normal de fechamento continua
+  gerando, sem regressão); rechamar a função direto no mesmo
+  `oportunidade_id` não duplica (idempotência) — + HTTP real confirmando
+  o card do dashboard e a tabela por consultor renderizando os totais
+  certos (R$350 somando os 2 consultores/compras semeados) + migração
+  testada contra schema anterior (CHECK reconstruída preservando dado
+  existente, idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php`
+  limpos.
+  **Financeiro pode cancelar QUALQUER lançamento, inclusive Asaas e os
+  automáticos** (mesmo dia, pedido direto: "o financeiro precisa ter
+  poder de cancelar qualquer operação para evitar qualquer divergencia
+  para contabilidade") — antes, `excluir` (apaga a linha de vez) e
+  `marcar_pago` já tinham `AND origem != 'asaas'` (cobrança do Asaas é
+  read-only, fonte de verdade é lá), e não existia NENHUM jeito de mexer
+  no status de um lançamento automático (comissão, despesa de fechamento
+  de compra, despesa fixa recorrente, parcelamento de venda) além de
+  excluir — o que perde o registro por completo, ruim pra rastreabilidade
+  contábil. Ação nova `cancelar` (`admin/financeiro-lancamentos.php`) —
+  diferente de excluir, NUNCA apaga a linha, só marca
+  `status='cancelado'` (valor já aceito pela CHECK de sempre) e acrescenta
+  uma nota em `observacoes` com data/hora + motivo opcional (`prompt()`
+  em JS, cancelar o prompt cancela a ação) — funciona em QUALQUER
+  `origem`, sem exceção nenhuma, inclusive `asaas` e `comissao_compra`
+  recém-criada acima. Evento novo `lancamento_cancelado` em
+  `includes/auditoria.php` (usuário, valor, origem, motivo) — rastro
+  completo de quem cancelou o quê e por quê, sem precisar confiar só na
+  nota em `observacoes`. Botão "🚫 Cancelar" na última coluna da tabela,
+  visível em toda linha que ainda não está cancelada (inclusive nas linhas
+  Asaas, que até então só tinham "👁️ via Asaas" sem nenhuma ação
+  possível). Testado: cancelar um lançamento `origem='fechamento_compra'`
+  e um `origem='asaas'` via HTTP real — os dois funcionam, nunca apagam a
+  linha, `observacoes` grava a nota certa, evento de auditoria gravado
+  com o motivo; card/tabela de comissões por consultor do bullet acima
+  conferidos refletindo a queda no total assim que uma comissão é
+  cancelada (R$350→R$150, contagem de compras 2→1) — confirma que
+  `status != 'cancelado'` já filtra certo nas duas agregações novas +
+  `php -l` + `tests/smoke.php` limpos.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

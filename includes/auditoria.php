@@ -89,6 +89,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'cliente_dado_editado' => '✏️ Dado sensível de cliente editado',
         'perfil_proprio_editado' => '🙋 Usuário editou o próprio perfil',
         'avatar_atualizado' => '🖼️ Avatar atualizado',
+        'lancamento_cancelado' => '🚫 Lançamento financeiro cancelado',
         default => $evento,
     };
 }

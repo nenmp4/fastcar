@@ -35,6 +35,34 @@ $totalDespesasFixas = finSoma($db, 'despesa', $inicioMes, $fimMes, 'fixa');
 $totalDespesasVariaveis = finSoma($db, 'despesa', $inicioMes, $fimMes, 'variavel');
 $saldo = $totalReceitas - $totalDespesas;
 
+// 23/09/2026, "joga la dasbord comições pagas oas consutores" — total das
+// comissões automáticas de compra (finRegistrarComissaoCompraFechada())
+// pagas dentro do período selecionado, mesmo critério de data
+// (data_pagamento/vencimento) de finSoma().
+$stmtComissoes = $db->prepare("
+    SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
+    WHERE origem = 'comissao_compra' AND status != 'cancelado'
+      AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
+");
+$stmtComissoes->execute([$inicioMes, $fimMes]);
+$totalComissoesConsultores = (float)$stmtComissoes->fetchColumn();
+
+// 23/09/2026, "mostrar listagem de consultores valores recebido" — quebra
+// do total acima por consultor (fin_colaboradores.funcionario_id), mais
+// recebido primeiro. LEFT JOIN pra nunca esconder uma comissão cujo
+// colaborador tenha sido excluído/desvinculado depois de gerada.
+$comissoesPorConsultor = $db->prepare("
+    SELECT fc.nome AS consultor_nome, COUNT(*) AS qtd, SUM(l.valor) AS total
+    FROM fin_lancamentos l
+    LEFT JOIN fin_colaboradores fc ON fc.id = l.funcionario_id
+    WHERE l.origem = 'comissao_compra' AND l.status != 'cancelado'
+      AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
+    GROUP BY l.funcionario_id
+    ORDER BY total DESC
+");
+$comissoesPorConsultor->execute([$inicioMes, $fimMes]);
+$comissoesPorConsultor = $comissoesPorConsultor->fetchAll(PDO::FETCH_ASSOC);
+
 $hoje = date('Y-m-d');
 $contasVencer7 = $db->prepare("
     SELECT l.*, c.nome as categoria_nome, c.icone
@@ -117,6 +145,10 @@ $asaasPendenteImportar = asaasConfigured();
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">⏰ Contas atrasadas</div>
     <div style="font-size:1.6rem;font-weight:800"><?= $contasAtrasadas ?></div>
   </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?origem=comissao_compra&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #0891b2">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">🤝 Comissões pagas aos consultores</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#0891b2">R$ <?= number_format($totalComissoesConsultores, 2, ',', '.') ?></div>
+  </a>
 </div>
 
 <div class="card">
@@ -137,6 +169,27 @@ $asaasPendenteImportar = asaasConfigured();
       <?php endforeach; ?>
       </tbody>
     </table>
+  <?php endif; ?>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">🤝 Comissões por consultor (compra) — <?= date('m/Y', strtotime($inicioMes)) ?></h2>
+  <?php if (!$comissoesPorConsultor): ?>
+    <p style="color:var(--muted);font-size:.85rem">Nenhuma comissão automática de compra neste período.</p>
+  <?php else: ?>
+    <table class="tabela-oportunidades">
+      <thead><tr><th>Consultor</th><th>Compras fechadas</th><th>Total recebido</th></tr></thead>
+      <tbody>
+      <?php foreach ($comissoesPorConsultor as $c): ?>
+        <tr>
+          <td><?= e($c['consultor_nome'] ?: '(colaborador removido)') ?></td>
+          <td><?= (int)$c['qtd'] ?></td>
+          <td style="font-weight:700;color:#0891b2">R$ <?= number_format((float)$c['total'], 2, ',', '.') ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <p style="margin-top:.75rem"><a href="/admin/financeiro-lancamentos.php?origem=comissao_compra&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>">Ver todos os lançamentos de comissão →</a></p>
   <?php endif; ?>
 </div>
 

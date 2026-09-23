@@ -227,6 +227,86 @@ function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal
 }
 
 /**
+ * Comissão AUTOMÁTICA do consultor ao fechar uma COMPRA — 23/09/2026,
+ * pedido direto: "fazer lançamentos da comissões do consultores
+ * automaticos no financeiro - após assinatura do contrato de comprar -
+ * se consultor fechar ate 20 da fipe 1,5 porcento se ele fechar ate 25
+ * ou mais 1 porcento". Confirmado via 3 perguntas diretas antes de
+ * implementar: (1) o percentual incide sobre o VALOR PAGO ao vendedor
+ * (valor_final), não sobre a FIPE em si; (2) só 2 faixas de verdade —
+ * quanto o valor pago representa da FIPE (valor_final /
+ * valor_fipe_referencia × 100): até 20% dela = 1,5% de comissão; acima
+ * de 20% = 1% (quanto MENOR a fração da FIPE que a Fastcar pagou, melhor
+ * o negócio, maior a comissão — o "25" do pedido original era só um
+ * exemplo de "acima de 20", não uma 3ª faixa); (3) o lançamento nasce já
+ * `status='pago'`, mesmo espírito de finRegistrarDespesaCompraFechada()
+ * logo acima (gatilho automático, sem passo extra de confirmação).
+ *
+ * Comissão de VENDEDOR (revenda) fica de fora de propósito — o próprio
+ * usuário confirmou que ainda não tem percentual definido pra esse lado
+ * ("do vendedo eu ainda não porcentagens ainda"); nada implementado
+ * ainda pra vendas, só compra.
+ *
+ * Chamada de dentro de mudarEtapa() (includes/oportunidades.php), junto
+ * de finRegistrarDespesaCompraFechada() na mesma transição pra 'fechado'.
+ * Best-effort (nunca lança, nunca trava o fechamento) e idempotente por
+ * oportunidade_id+origem, mesmo padrão das outras funções deste arquivo.
+ *
+ * Nunca gera nada (regra #3, nunca chuta valor) quando falta o que
+ * precisa pro cálculo: sem valor_fipe_referencia preenchido na
+ * oportunidade (nem toda compra passa pela busca de FIPE), ou sem
+ * `$fechadoPor` tendo um colaborador ATIVO cadastrado em
+ * fin_colaboradores (usuario_id) — sem colaborador não tem em quem
+ * lançar a comissão, e criar um colaborador sozinho não é decisão do
+ * sistema tomar. Nesses casos fica pra lançamento manual à parte, igual
+ * já acontecia antes desta função existir.
+ */
+function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFinal, ?int $fechadoPor): void {
+    try {
+        if ($valorFinal <= 0 || !$fechadoPor) return;
+        $db = getDB();
+
+        $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE oportunidade_id = ? AND origem = 'comissao_compra'");
+        $existe->execute([$oportunidadeId]);
+        if ($existe->fetchColumn()) return;
+
+        $stmt = $db->prepare("
+            SELECT o.valor_fipe_referencia, o.veiculo_marca, o.veiculo_modelo, cl.nome AS cliente_nome
+            FROM oportunidades o JOIN clientes cl ON cl.id = o.cliente_id
+            WHERE o.id = ?
+        ");
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op || (float)($op['valor_fipe_referencia'] ?? 0) <= 0) return;
+
+        $stmtColab = $db->prepare("SELECT id FROM fin_colaboradores WHERE usuario_id = ? AND status = 'ativo'");
+        $stmtColab->execute([$fechadoPor]);
+        $colaboradorId = $stmtColab->fetchColumn();
+        if (!$colaboradorId) return;
+
+        $percentualFipe = ($valorFinal / (float)$op['valor_fipe_referencia']) * 100;
+        $taxa = $percentualFipe <= 20 ? 1.5 : 1.0;
+        $valorComissao = round($valorFinal * $taxa / 100, 2);
+        if ($valorComissao <= 0) return;
+
+        $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Comissão de consultor/vendedor'")->fetchColumn();
+        $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) ?: 'veículo';
+        $descricao = sprintf(
+            'Comissão de compra — %s — %s (oportunidade #%d) — %.1f%% do valor pago (fechou a %.1f%% da FIPE)',
+            $veiculo, $op['cliente_nome'], $oportunidadeId, $taxa, $percentualFipe
+        );
+
+        $db->prepare("
+            INSERT INTO fin_lancamentos
+                (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, oportunidade_id, funcionario_id, origem, created_by)
+            VALUES ('despesa', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, ?, 'comissao_compra', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $oportunidadeId, $colaboradorId, $fechadoPor]);
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar o fechamento da oportunidade
+    }
+}
+
+/**
  * Receita AUTOMÁTICA (entrada + parcelas) quando o contrato de VENDA é
  * assinado — 19/09/2026, pedido direto ("você faz mesma coinsa com venda
  * assinou contrato gera receita"), espelhando o mesmo gatilho automático

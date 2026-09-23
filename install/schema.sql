@@ -847,14 +847,21 @@ CREATE TABLE IF NOT EXISTS fin_colaboradores (
     tipo_vinculo TEXT DEFAULT 'clt',
     salario_base REAL DEFAULT NULL,
     -- 'mensal'/'quinzenal' — 17/09/2026, "Os consultores eles ganha o fixo
-    -- cada 15 dias mais comissão". Comissão em si NUNCA é gerada daqui —
-    -- é sempre lançamento manual avulso (confirmado com o usuário:
-    -- "comissão é lançado manual"), este campo é só o fixo/salário_base.
-    -- Ainda não existe cron gerando o lançamento quinzenal sozinho — o
-    -- usuário confirmou que isso fica pra configurar depois
-    -- ("pagamento vai rodar no cron cada 15 dias podemos configurar
-    -- depois isso"); por enquanto é só um dado do colaborador, usado pra
-    -- saber a periodicidade na hora de lançar manualmente.
+    -- cada 15 dias mais comissão". Na época, comissão nunca era gerada
+    -- daqui (sempre lançamento manual avulso, "comissão é lançado
+    -- manual") — isso mudou em 23/09/2026 SÓ pro lado de COMPRA: ver
+    -- finRegistrarComissaoCompraFechada() (includes/financeiro.php),
+    -- automática por faixa de % da FIPE ao fechar uma compra, exige um
+    -- colaborador ATIVO aqui vinculado ao usuário (usuario_id) pra
+    -- lançar. Comissão de VENDEDOR (revenda) continua manual — usuário
+    -- confirmou que ainda não tem percentual definido pra esse lado. Este
+    -- campo (`periodicidade_pagamento`) é só o fixo/salário_base, nunca a
+    -- comissão em si. Ainda não existe cron gerando o lançamento
+    -- quinzenal do FIXO sozinho — o usuário confirmou que isso fica pra
+    -- configurar depois ("pagamento vai rodar no cron cada 15 dias
+    -- podemos configurar depois isso"); por enquanto é só um dado do
+    -- colaborador, usado pra saber a periodicidade na hora de lançar
+    -- manualmente.
     periodicidade_pagamento TEXT DEFAULT 'mensal',
     usuario_id INTEGER DEFAULT NULL REFERENCES usuarios(id),
     status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
@@ -902,8 +909,11 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
     -- compra, 19/09/2026) / 'recorrencia_fixa' (despesa fixa gerada
     -- automaticamente pro mês seguinte por cron/lancamentos_fixos.php,
     -- 19/09/2026, "todas despesas fixas pode lançar todo mês automático")
+    -- / 'comissao_compra' (comissão automática do consultor ao fechar uma
+    -- compra, 23/09/2026, faixa por % da FIPE — ver
+    -- finRegistrarComissaoCompraFechada(), includes/financeiro.php)
     -- — ver nota (5) acima.
-    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa')),
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa','comissao_compra')),
     asaas_payment_id TEXT DEFAULT NULL,
     asaas_customer_id TEXT DEFAULT NULL,
     created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),

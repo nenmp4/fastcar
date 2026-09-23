@@ -584,6 +584,9 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
         // 19/09/2026, pedido direto: conciliar negociação com financeiro —
         // "quando compra veiculo sai do caixa" — ver finRegistrarDespesaCompraFechada().
         finRegistrarDespesaCompraFechada($oportunidadeId, (float)$op['valor_ofertado'], $responsavelId);
+        // 23/09/2026, pedido direto: comissão automática do consultor por
+        // faixa de % da FIPE — ver finRegistrarComissaoCompraFechada().
+        finRegistrarComissaoCompraFechada($oportunidadeId, (float)$op['valor_ofertado'], $responsavelId);
     }
 
     return true;

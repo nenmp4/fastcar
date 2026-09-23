@@ -90,6 +90,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($_POST['id'] ?? 0);
             $db->prepare("DELETE FROM fin_lancamentos WHERE id=? AND origem != 'asaas'")->execute([$id]);
             $sucesso = 'Lançamento excluído.';
+        } elseif ($acao === 'cancelar') {
+            // 23/09/2026, pedido direto: "o financeiro precisa ter poder de
+            // cancelar qualquer operação para evitar qualquer divergencia
+            // para contabilidade" — diferente de "excluir" (apaga a linha
+            // de vez, hoje bloqueado pra origem='asaas') e de "marcar_pago",
+            // cancelar SEMPRE funciona, em QUALQUER origem (manual, Asaas,
+            // comissão automática, despesa de fechamento, parcelamento,
+            // despesa fixa recorrente) — nunca apaga o registro, só marca
+            // status='cancelado' (mesmo valor já aceito pela CHECK de
+            // sempre), preservando o rastro pra auditoria/contabilidade em
+            // vez de sumir com a linha. Nunca reescreve nenhum outro campo
+            // — inclusive de um lançamento Asaas, que continua intocado em
+            // tudo que não seja o status.
+            $id = (int)($_POST['id'] ?? 0);
+            $motivo = clean((string)($_POST['motivo_cancelamento'] ?? ''));
+            $linha = $db->prepare("SELECT descricao, valor, origem, observacoes FROM fin_lancamentos WHERE id = ?");
+            $linha->execute([$id]);
+            $linha = $linha->fetch(PDO::FETCH_ASSOC);
+            if (!$linha) {
+                $erro = 'Lançamento não encontrado.';
+            } else {
+                $nota = '[Cancelado manualmente pelo financeiro em ' . date('d/m/Y H:i') . ($motivo ? " — motivo: {$motivo}" : '') . ']';
+                $obsNova = trim(($linha['observacoes'] ?: '') . "\n" . $nota);
+                $db->prepare("UPDATE fin_lancamentos SET status='cancelado', observacoes=?, updated_at=datetime('now','localtime') WHERE id=?")
+                   ->execute([$obsNova, $id]);
+                auditoriaRegistrar(
+                    'lancamento_cancelado',
+                    (int)($_SESSION['admin_id'] ?? 0),
+                    (string)($_SESSION['admin_nome'] ?? ''),
+                    'fin_lancamentos',
+                    $id,
+                    sprintf('%s (R$ %s, origem: %s)%s', $linha['descricao'], number_format((float)$linha['valor'], 2, ',', '.'), $linha['origem'], $motivo ? " — {$motivo}" : '')
+                );
+                $sucesso = 'Lançamento cancelado.';
+            }
         } elseif ($acao === 'classificar') {
             // 19/09/2026, "aqui muda as cores - provalmente as receitas que
             // entraram sem cliente deve se pagamento de entrada da compra
@@ -161,6 +196,11 @@ $somenteLeituraLancamento = ($editando['origem'] ?? '') === 'asaas';
 $fTipo = (string)($_GET['tipo'] ?? '');
 $fStatus = (string)($_GET['status'] ?? '');
 $fNatureza = in_array($_GET['natureza'] ?? '', ['fixa', 'variavel'], true) ? $_GET['natureza'] : '';
+// 23/09/2026, card novo "Comissões pagas aos consultores" no dashboard
+// financeiro (admin/financeiro.php) — filtra a listagem pela origem do
+// lançamento, mesmo padrão de $fNatureza (whitelist explícita, nunca o
+// valor cru do GET direto no SQL).
+$fOrigem = in_array($_GET['origem'] ?? '', ['comissao_compra'], true) ? $_GET['origem'] : '';
 $fTodos = !empty($_GET['todos_periodos']);
 $fDe = (string)($_GET['de'] ?? date('Y-m-01'));
 $fAte = (string)($_GET['ate'] ?? date('Y-m-t'));
@@ -183,6 +223,7 @@ if (!$fTodos) {
 if ($fTipo) { $where[] = 'l.tipo=?'; $params[] = $fTipo; }
 if ($fStatus) { $where[] = 'l.status=?'; $params[] = $fStatus; }
 if ($fNatureza) { $where[] = 'l.natureza=?'; $params[] = $fNatureza; }
+if ($fOrigem) { $where[] = 'l.origem=?'; $params[] = $fOrigem; }
 if ($fStatus === 'atrasado' && $fAtraso) {
     $where[] = "l.data_vencimento IS NOT NULL AND " . ($fAtraso === 1 ? "{$diasAtrasoExpr} BETWEEN 1 AND 30" : ($fAtraso === 2 ? "{$diasAtrasoExpr} BETWEEN 31 AND 60" : "{$diasAtrasoExpr} >= 61"));
 }
@@ -228,7 +269,7 @@ $statusLabels = [
     'atrasado' => ['Atrasado', '#991b1b', '#fef2f2'],
     'cancelado' => ['Cancelado', '#475569', '#f1f5f9'],
 ];
-$origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelamento', 'asaas' => '🔄 Asaas', 'fechamento_compra' => '🚗 fechamento de compra', 'recorrencia_fixa' => '🔁 despesa fixa (automática)'];
+$origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelamento', 'asaas' => '🔄 Asaas', 'fechamento_compra' => '🚗 fechamento de compra', 'recorrencia_fixa' => '🔁 despesa fixa (automática)', 'comissao_compra' => '🤝 comissão automática (compra)'];
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -399,6 +440,7 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <div><label>Status</label><select name="status"><option value="">Todos</option><?php foreach ($statusLabels as $k => [$lbl,,]): ?><option value="<?= $k ?>" <?= $fStatus === $k ? 'selected' : '' ?>><?= $lbl ?></option><?php endforeach; ?></select></div>
     <div><label>Natureza</label><select name="natureza"><option value="">Todas</option><option value="fixa" <?= $fNatureza === 'fixa' ? 'selected' : '' ?>>Fixa</option><option value="variavel" <?= $fNatureza === 'variavel' ? 'selected' : '' ?>>Variável</option></select></div>
     <?php if ($fAtraso): ?><input type="hidden" name="atraso" value="<?= (int)$fAtraso ?>"><?php endif; ?>
+    <?php if ($fOrigem): ?><input type="hidden" name="origem" value="<?= e($fOrigem) ?>"><?php endif; ?>
     <button type="submit" style="width:auto">Filtrar</button>
   </form>
 </div>
@@ -463,6 +505,15 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
           <?php else: ?>
             <a href="?action=edit&id=<?= (int)$l['id'] ?>" title="Ver detalhes">👁️ via Asaas</a>
           <?php endif; ?>
+          <?php if ($l['status'] !== 'cancelado'): ?>
+            <form method="POST" style="display:inline" onsubmit="return fcConfirmarCancelamento(this)">
+              <?= csrfField() ?>
+              <input type="hidden" name="acao" value="cancelar">
+              <input type="hidden" name="id" value="<?= (int)$l['id'] ?>">
+              <input type="hidden" name="motivo_cancelamento" value="">
+              <button type="submit" class="btn-texto perigo" title="Cancelar (nunca apaga — sempre fica registrado, mesmo lançamento automático/Asaas)">🚫 Cancelar</button>
+            </form>
+          <?php endif; ?>
           <?php if ($semVinculo && $l['tipo'] === 'receita'): ?>
             <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="entrada"><button type="submit" class="btn-texto" style="color:#c2410c" title="Classificar como entrada da venda">🏷️ Entrada</button></form>
             <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="parcela">
@@ -475,6 +526,19 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     </tbody>
   </table>
 </div>
+
+<script>
+// 23/09/2026 — cancelar (nunca exclui, sempre fica no histórico) funciona
+// pra QUALQUER lançamento, inclusive origem='asaas' e os automáticos
+// (comissão, fechamento de compra, etc). Pede um motivo opcional só pra
+// deixar rastro melhor pra contabilidade; cancelar o prompt cancela a ação.
+function fcConfirmarCancelamento(form) {
+    var motivo = prompt('Cancelar este lançamento (fica registrado, nunca some).\nMotivo (opcional):', '');
+    if (motivo === null) return false;
+    form.motivo_cancelamento.value = motivo;
+    return true;
+}
+</script>
 
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
