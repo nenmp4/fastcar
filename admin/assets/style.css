@@ -357,8 +357,42 @@ a.btn-primary:hover { filter: brightness(1.08); }
 body.pagina-login {
     background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 45%, var(--fundo) 45%);
     min-height: 100vh;
+    position: relative;
+    overflow: hidden; /* nunca deixa o efeito de velocidade abrir scroll horizontal */
+}
+/* Efeito de "velocidade" — 23/09/2026, "coloca efeito de tipo velocida
+   deu fundo umapista andando rapido" / "da movimento nessa tela": riscos
+   de luz varrendo a tela horizontalmente, tema carro/velocidade da marca.
+   Puro CSS (`repeating-linear-gradient` vertical + `background-position`
+   animado), sem lib/CDN novo (regra do projeto) — período do padrão é
+   200px, então animar `background-position-x` de 0 até -200px fecha o
+   loop sem nenhuma emenda visível. Desativado automaticamente por quem
+   prefere menos movimento — guard global `prefers-reduced-motion` já
+   existe em `mobile.css` (`*,*::before,*::after{animation:none!important}`),
+   carregado depois deste arquivo em toda página, cobre esta também. */
+body.pagina-login::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: repeating-linear-gradient(
+        90deg,
+        transparent 0, transparent 150px,
+        rgba(255,255,255,.09) 150px, rgba(255,255,255,.09) 154px,
+        transparent 154px, transparent 190px,
+        rgba(91,145,255,.16) 190px, rgba(91,145,255,.16) 196px,
+        transparent 196px, transparent 200px
+    );
+    animation: fc-velocidade 2.6s linear infinite;
+}
+@keyframes fc-velocidade {
+    from { background-position-x: 0; }
+    to { background-position-x: -200px; }
 }
 .login-box {
+    position: relative;
+    z-index: 1;
     max-width: 380px;
     margin: 90px auto;
     background: var(--superficie);
