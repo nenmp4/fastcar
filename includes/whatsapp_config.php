@@ -22,6 +22,67 @@ function zapiBaseUrl(): string {
 }
 
 /**
+ * Status (conectado/desconectado) da instância Z-API PRINCIPAL (compra/
+ * leads), com cache curto — 23/09/2026, "tem como colocar status da
+ * instancia topo zpi conectado em destaque ai eu não preciso ir no saude
+ * ver": badge no topbar (admin/_zapi_status.php) pra ver de relance sem
+ * abrir admin/saude.php. `admin/saude.php` continua com seu próprio check
+ * ao vivo (curl_multi junto de todos os outros, sem cache) — é a página de
+ * diagnóstico completo, nunca precisou de cache; esta função é só pro
+ * badge leve, que roda em praticamente toda página do admin.
+ *
+ * Cache de 60s em `config.zapi_status_cache` (mesmo padrão
+ * "timestamp|json" de sempre, ex: cotacaoUsdBrl()/PlacaFIPE) — sem isso,
+ * cada carregamento de página (e o polling do badge) bateria na Z-API de
+ * novo, sem necessidade: status de conexão não muda segundo a segundo.
+ * `$forcar` ignora o cache (usado só se um dia precisar de refresh manual;
+ * nenhum caller força hoje).
+ */
+function zapiStatusPrincipalCache(bool $forcar = false): array {
+    $inst = getConfig('zapi_instance_id') ?: '';
+    $tok = getConfig('zapi_token') ?: '';
+    if (!$inst || !$tok) {
+        return ['estado' => 'nao_configurado', 'verificado_em' => null];
+    }
+
+    $cacheRaw = getConfig('zapi_status_cache');
+    if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
+        [$ts, $json] = explode('|', $cacheRaw, 2);
+        if ((time() - (int)$ts) < 60) {
+            $d = json_decode($json, true);
+            if (is_array($d) && isset($d['estado'])) return $d;
+        }
+    }
+
+    $cli = getConfig('zapi_client_token') ?: '';
+    $headers = ['Content-Type: application/json'];
+    if ($cli) $headers[] = 'client-token: ' . $cli;
+
+    $resultado = ['estado' => 'erro', 'verificado_em' => time()];
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/status");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 4,
+        CURLOPT_CONNECTTIMEOUT => 3,
+    ]);
+    $resp = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if (!$err && $code === 200) {
+        $d = json_decode((string)$resp, true);
+        if (is_array($d)) {
+            $resultado = ['estado' => !empty($d['connected']) ? 'conectado' : 'desconectado', 'verificado_em' => time()];
+        }
+    }
+
+    setConfig('zapi_status_cache', time() . '|' . json_encode($resultado));
+    return $resultado;
+}
+
+/**
  * Credenciais da instância Z-API DEDICADA de vendas (17/09/2026, módulo de
  * vendas ganhando funil de entrada pelo WhatsApp próprio — pedido
  * José/Jean: "vamos adcionar instancia só para vendas"). Config separada

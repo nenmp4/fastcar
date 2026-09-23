@@ -49,13 +49,14 @@ a:hover { text-decoration: underline; }
     align-items: center;
     gap: 6px;
     /* padding-right reserva espaço pro sino de notificação (position:fixed,
-       top:14px;right:20px;width:40px, z-index:1000 — includes/_notify.php),
-       que fica por cima de QUALQUER conteúdo naquele canto. Sem essa
-       reserva, o link "Sair" (sempre o último, empurrado pro fim pelo
-       margin-left:auto do <span> anterior) ficava embaixo do sino — bug
-       real achado em produção: o clique era capturado pelo sino, "Sair"
-       não funcionava. */
-    padding: 12px 76px 12px 24px;
+       top:14px;right:20px;width:40px, z-index:1000 — includes/_notify.php)
+       E pro badge de status da Z-API (position:fixed, top:18px;right:68px
+       — admin/_zapi_status.php, 23/09/2026), que ficam por cima de
+       QUALQUER conteúdo naquele canto. Sem essa reserva, o link "Sair"
+       (sempre o último, empurrado pro fim pelo margin-left:auto do <span>
+       anterior) ficava embaixo do sino — bug real achado em produção: o
+       clique era capturado pelo sino, "Sair" não funcionava. */
+    padding: 12px 256px 12px 24px;
     background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
     color: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.15);
@@ -443,6 +444,30 @@ a.stat-card:hover { border-left-color: var(--azul-escuro); }
     text-align: center;
     border: 2px solid var(--navy);
 }
+
+/* ── Badge de status da Z-API (principal) — admin/_zapi_status.php ────── */
+.zapi-status-badge {
+    position: fixed;
+    top: 18px;
+    right: 68px;
+    z-index: 1000;
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.12);
+    color: #e2e8f0;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background .15s;
+}
+a.zapi-status-badge:hover { background: rgba(255,255,255,.22); text-decoration: none; color: #fff; }
+.zapi-status-ok { background: rgba(34,197,94,.22); }
+.zapi-status-off { background: rgba(239,68,68,.28); }
+.zapi-status-warn { background: rgba(234,179,8,.24); }
 
 .notif-toasts {
     position: fixed;

@@ -929,5 +929,6 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
+<?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

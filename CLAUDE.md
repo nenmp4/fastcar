@@ -4429,6 +4429,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   corretamente filtrada pela mesma lógica de `admin/saude.php` (contração
   por `str_contains`), confirmando que o check passaria a mostrar
   "⚠️ N encontrado(s)" em vez de ficar preso no "ℹ️ Info" pra sempre.
+  **Badge de status da Z-API no topbar** (23/09/2026, "tem como colocar
+  status da instancia topo zpi conectado em destaque ai eu não preciso ir
+  no saude ver") — até então a única forma de ver se a instância principal
+  estava conectada era abrindo `admin/saude.php` inteira (restrita ao
+  super_admin). Nova `zapiStatusPrincipalCache()`
+  (`includes/whatsapp_config.php`) consulta `GET /instances/{id}/token/
+  {token}/status` com cache de 60s em `config.zapi_status_cache` (mesmo
+  padrão `"timestamp|json"` de sempre) — nunca bate na Z-API a cada
+  carregamento de página, só 1x por minuto mesmo com várias abas/usuários
+  pedindo ao mesmo tempo. `admin/zapi_status_ajax.php` (novo) serve esse
+  status como JSON pro badge; `admin/_zapi_status.php` (novo, mesmo padrão
+  `position:fixed` do sino de notificação — `admin/_notify.php`) renderiza
+  já com o valor em cache no 1º carregamento e atualiza sozinho via
+  `fetch()` a cada 45s (só com a aba em foco, mesma economia do sino),
+  incluído nas mesmas ~32 páginas que já incluem `_notify.php`. 4 estados:
+  🟢 conectado / 🔴 desconectado / 🟡 erro ao verificar / ⚪ não
+  configurado. Clicável (leva pra `admin/saude.php`) só pro `super_admin`
+  — outros perfis veem o badge estático sem link, já que `saude.php` é
+  `requireSuperAdmin()`, nunca `perfilVeTudo()`. Só a instância PRINCIPAL
+  (compra/leads) nesta 1ª versão — as dedicadas de vendas/financeiro
+  ficam de fora, mesmo espírito de escopo enxuto já documentado várias
+  vezes no projeto; sinalizar se a equipe quiser os 3 badges depois.
+  `admin/assets/style.css`: `padding-right` do topbar subiu de 76px pra
+  256px pra reservar espaço pro badge fixo, ao lado do sino — mesmo
+  cuidado documentado no bug real de "Sair" ficando escondido atrás do
+  sino (17/09/2026, ver bullet "Rebrand visual do admin"). Testado ponta
+  a ponta via HTTP real (2 sessões primed, super_admin e consultor,
+  contra fake Z-API local): super_admin recebe `<a>` linkando pra Saúde,
+  consultor recebe `<div>` sem link; os 4 estados confirmados (chamada
+  direta da função e via AJAX real: conectado/desconectado/erro/não
+  configurado); cache confirmado segurando — 2 carregamentos de página
+  seguidos dentro de 60s geraram só 1 chamada real ao fake Z-API
+  (conferido no log do fake server) + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
 - **Qualidade da IA** — `admin/qualidade_ia.php` + `includes/qualidade_ia.php`
   (13/09/2026, pedido do José/Jean — "conforme vai atendendo vai ficando
   afiado"): cruza o que a IA decidiu na qualificação com o resultado real
