@@ -997,3 +997,27 @@ CREATE TABLE IF NOT EXISTS zapcar_consultas (
 );
 CREATE INDEX IF NOT EXISTS idx_zapcar_consultas_oportunidade ON zapcar_consultas(oportunidade_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_zapcar_consultas_zapcar_id ON zapcar_consultas(zapcar_id) WHERE zapcar_id IS NOT NULL;
+
+-- Patrimônio da empresa (24/09/2026, "Coloção empresa para cadastrar
+-- patrimônio da empresa imobiliária informática e outros") — bens fixos
+-- (imóvel, informática, mobiliário, outros), NUNCA confundir com a Frota
+-- (`oportunidades`, veículo pra revenda) nem com `fin_lancamentos`
+-- (fluxo de caixa do período) — ver includes/patrimonio.php. Cadastrar um
+-- item nunca gera lançamento financeiro sozinho (decisão confirmada com o
+-- usuário, 1ª versão). valor_aquisicao/data_aquisicao nullable de
+-- propósito (regra #3, nunca chuta valor de item sem nota/valor conhecido).
+CREATE TABLE IF NOT EXISTS patrimonio_itens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    categoria TEXT NOT NULL DEFAULT 'outros' CHECK (categoria IN ('imovel','informatica','mobiliario','outros')),
+    nome TEXT NOT NULL,
+    valor_aquisicao REAL DEFAULT NULL,
+    data_aquisicao TEXT DEFAULT NULL,
+    local_responsavel TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','vendido','baixado')),
+    observacoes TEXT DEFAULT '',
+    created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_patrimonio_categoria ON patrimonio_itens(categoria);
+CREATE INDEX IF NOT EXISTS idx_patrimonio_status ON patrimonio_itens(status);

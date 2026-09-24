@@ -1401,4 +1401,29 @@ try {
     echo "❌ usuarios_reset_senha: {$e->getMessage()}\n";
 }
 
+// 24/09/2026, "Coloção empresa para cadastrar patrimônio da empresa
+// imobiliária informática e outros" — includes/patrimonio.php.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS patrimonio_itens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            categoria TEXT NOT NULL DEFAULT 'outros' CHECK (categoria IN ('imovel','informatica','mobiliario','outros')),
+            nome TEXT NOT NULL,
+            valor_aquisicao REAL DEFAULT NULL,
+            data_aquisicao TEXT DEFAULT NULL,
+            local_responsavel TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','vendido','baixado')),
+            observacoes TEXT DEFAULT '',
+            created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_patrimonio_categoria ON patrimonio_itens(categoria)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_patrimonio_status ON patrimonio_itens(status)");
+    echo "✅ patrimonio_itens: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ patrimonio_itens: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

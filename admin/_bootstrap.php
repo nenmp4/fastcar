@@ -41,6 +41,7 @@ require_once __DIR__ . '/../includes/auditoria.php';
 require_once __DIR__ . '/../includes/avatar.php';
 require_once __DIR__ . '/../includes/veiculo_avaliacoes.php';
 require_once __DIR__ . '/../includes/zapcar.php';
+require_once __DIR__ . '/../includes/patrimonio.php';
 
 requireAdmin();
 

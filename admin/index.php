@@ -269,6 +269,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php endif; ?>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
         <a href="/admin/veiculos.php">🚗 Veículos</a>
+        <a href="/admin/patrimonio.php">📦 Patrimônio</a>
         <a href="/admin/usuarios.php">👤 Usuários</a>
         <a href="/admin/auditoria.php">🕵️ Auditoria</a>
         <a href="/admin/backup.php">💾 Backup</a>

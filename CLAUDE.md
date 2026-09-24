@@ -4145,6 +4145,41 @@ segue no schema sem uso novo, não removida sem ganho real),
   resolver o caso "sou o único super_admin e esqueci a minha". Testado em
   banco isolado: senha antiga para de bater depois do reset, nova bate,
   e-mail inexistente é rejeitado com mensagem clara.
+- **Patrimônio da empresa (`admin/patrimonio.php` + `includes/patrimonio.php`)**
+  (24/09/2026, "Coloção empresa para cadastrar patrimônio da empresa
+  imobiliária informática e outros") — cadastro de bens fixos da Fastcar
+  (imóvel/informática/mobiliário/outros), **diferente** da Frota
+  (`admin/veiculos.php`, veículo comprado como estoque pra revenda) e do
+  Financeiro/DRE (receita/despesa do período, não patrimônio) — os três
+  nunca se cruzam. Confirmado com o usuário via 3 perguntas diretas antes
+  de codar: (1) acesso restrito a **super_admin**, mesma trava de Frota/
+  Backup/Configurações; (2) versão "básica" — categoria, nome/descrição,
+  valor de aquisição, data de compra, local/responsável, status (ativo/
+  vendido/baixado) — sem depreciação, anexo de documento ou número de
+  etiqueta nesta 1ª versão, ficam como possível próxima iteração se a
+  equipe sentir falta; (3) cadastrar um item **nunca gera lançamento
+  financeiro sozinho** — fica sempre separado do fluxo de caixa, lançar a
+  despesa da compra continua manual em Financeiro → Lançamentos, como
+  qualquer outra. Nova tabela `patrimonio_itens` — `valor_aquisicao`/
+  `data_aquisicao` nullable de propósito (regra #3, item antigo sem nota/
+  valor conhecido fica pendente, nunca um número chutado) —
+  `patrimonioValorTotalAtivo()` soma só quem tem valor cadastrado, nunca
+  conta item vendido/baixado. Tela com cards de resumo (valor total ativo
+  + contagem por categoria), filtro por categoria/status/busca livre,
+  modal de criar/editar (mesmo padrão `<dialog>` já usado em Financeiro →
+  Lançamentos) e exclusão com `confirm()`. Link "📦 Patrimônio" no topbar
+  de `admin/index.php`, no mesmo bloco super_admin de Veículos/Usuários.
+  Testado: 11 asserções de função em banco isolado (item sem valor fica
+  `NULL` nunca `0` chutado; soma de ativos exclui item sem valor E item
+  vendido/baixado; contagem por categoria só conta ativo; filtro por
+  categoria e busca livre; edição preserva campos; exclusão remove de
+  verdade) + HTTP ponta a ponta real (super_admin abre a tela 200,
+  consultor bloqueado com 403 tanto no GET quanto num POST forjado de
+  exclusão com CSRF roubado — nunca confia só em esconder o formulário na
+  tela; criar via POST real persiste com parsing de valor decimal com
+  vírgula certo — R$3.500,50; editar via POST muda status e persiste;
+  excluir via POST remove só a linha certa, conferido direto na tabela) +
+  `php -l` + `tests/smoke.php` limpos.
 - **Autoedição do próprio perfil (`admin/meu_perfil.php`)** (21/09/2026,
   pedido direto: "Permita os usuários do sistema editar perfis deles trocar
   número e-mail nome fazer upload de avatar") — tela nova, disponível pra
