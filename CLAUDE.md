@@ -3877,6 +3877,35 @@ segue no schema sem uso novo, não removida sem ganho real),
   relatório como superado explicando qual é o mais recente, e o banco
   confirma exatamente 1 venda pro veículo (nunca a antiga por engano) +
   `php -l` + `tests/smoke.php` limpos.
+  **Crashava com "database is locked" no meio de um lote grande em
+  produção** (mesmo dia, rodado pela 1ª vez de verdade — print real
+  mostrando 23 vendas importadas com sucesso, várias falhas graciosas
+  ("Veículo não está disponível pra venda", esperado — ver bullet acima
+  sobre contrato mais recente), e no meio do lote
+  `SQLSTATE[HY000]: General error: 5 database is locked` matando o
+  script — nada depois disso foi processado). Causa: contenção real de
+  escrita concorrente no banco de produção (webhook/admin/cron gravando
+  ao mesmo tempo, mesmo incidente já documentado várias vezes neste
+  arquivo) — dentro de `zapsignImportarContratoVendaComoNegociacaoManual()`
+  só a chamada de `criarVenda()` tinha try/catch (pra pegar a
+  `RuntimeException` de negócio "veículo indisponível"); as escritas
+  seguintes (`UPDATE vendas`, `INSERT venda_historico`/`contratos`) não
+  tinham nenhuma proteção, e como `PDOException` também é
+  `RuntimeException` em PHP, uma exceção de LOCK ali propagava sem ser
+  pega, matando o script inteiro — perdendo TODOS os documentos
+  restantes, não só o que falhou. Corrigido envolvendo cada documento
+  (nos 2 loops — leitura/relatório e `--confirmar`) em `try/catch(Throwable)`
+  próprio: 1 exceção qualquer vira 1 falha registrada no relatório, nunca
+  mais derruba o lote inteiro; mensagem final lembra que o script é
+  idempotente e sugere rodar de novo pra pegar quem falhou por contenção
+  passageira. Testado reproduzindo a contenção REAL (não simulada): 2ª
+  conexão segurando `BEGIN IMMEDIATE` por 25s (mais que os 15s do
+  `busy_timeout`) enquanto `--confirmar` tentava escrever — ANTES do fix
+  esse cenário exato derrubaria o script (já visto em produção); DEPOIS,
+  capturou a exceção graciosamente, terminou com exit code 0 (nunca
+  crash), e rodar `--confirmar` de novo sem a trava importou normalmente
+  — confirma a recuperação idempotente + `php -l` + `tests/smoke.php`
+  limpos.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

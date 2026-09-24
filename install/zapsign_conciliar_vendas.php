@@ -106,71 +106,82 @@ $jaImportados = 0;
 
 $totalDocs = count($documentos);
 $i = 0;
+$errosLeitura = 0;
 foreach ($documentos as $doc) {
     $i++;
     $nomeDoc = (string)($doc['name'] ?? '(sem nome)');
-    $token = (string)($doc['token'] ?? '');
-    if ($token === '') continue;
+    // Mesmo raciocínio do loop de --confirmar abaixo: 1 exceção não tratada
+    // (ex: "database is locked" numa contenção real de escrita concorrente
+    // no banco de produção) nunca pode derrubar o script inteiro no meio da
+    // LEITURA — perderia a visibilidade de TODOS os documentos seguintes,
+    // não só do que falhou. Idempotente: rodar de novo resolve sozinho.
+    try {
+        $token = (string)($doc['token'] ?? '');
+        if ($token === '') continue;
 
-    $existe = $db->prepare('SELECT id FROM contratos WHERE zapsign_doc_token = ?');
-    $existe->execute([$token]);
-    if ($existe->fetchColumn()) {
-        $jaImportados++;
-        echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — já importado, pulando\n";
-        continue;
-    }
-
-    $sig = zapsignExtrairSignatario($doc);
-    $telNorm = $sig['telefone'] ? normalizarTelefone($sig['telefone']) : '';
-    if ($telNorm) {
-        $stmtCli = $db->prepare('SELECT 1 FROM clientes WHERE telefone = ?');
-        $stmtCli->execute([$telNorm]);
-        if ($stmtCli->fetchColumn()) {
-            // Telefone bate com cliente já cadastrado — mesmo critério de
-            // admin/zapsign_importar.php, fica de fora daqui de propósito
-            // (pode ter mais de 1 veículo, precisa revisão humana lá).
-            $comCliente++;
-            echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — telefone já é cliente cadastrado, fora do escopo\n";
+        $existe = $db->prepare('SELECT id FROM contratos WHERE zapsign_doc_token = ?');
+        $existe->execute([$token]);
+        if ($existe->fetchColumn()) {
+            $jaImportados++;
+            echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — já importado, pulando\n";
             continue;
         }
+
+        $sig = zapsignExtrairSignatario($doc);
+        $telNorm = $sig['telefone'] ? normalizarTelefone($sig['telefone']) : '';
+        if ($telNorm) {
+            $stmtCli = $db->prepare('SELECT 1 FROM clientes WHERE telefone = ?');
+            $stmtCli->execute([$telNorm]);
+            if ($stmtCli->fetchColumn()) {
+                // Telefone bate com cliente já cadastrado — mesmo critério de
+                // admin/zapsign_importar.php, fica de fora daqui de propósito
+                // (pode ter mais de 1 veículo, precisa revisão humana lá).
+                $comCliente++;
+                echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — telefone já é cliente cadastrado, fora do escopo\n";
+                continue;
+            }
+        }
+
+        echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — baixando PDF e lendo com IA...";
+        $veiculo = zapsignExtrairVeiculoContrato($token);
+        $oportunidadeId = $veiculo['placa'] ? zapsignEncontrarVeiculoPorPlaca($veiculo['placa']) : null;
+        echo $oportunidadeId ? " placa {$veiculo['placa']} encontrada\n" : " sem placa identificada no estoque\n";
+
+        if (!$oportunidadeId) {
+            $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo];
+            continue;
+        }
+
+        // Data REAL da assinatura — nunca "hoje" (pedido explícito: "salvar
+        // sempre na data do contrato real não como data de hoje"). Prioriza o
+        // que a ZapSign marcar como data de assinatura do signatário (mais
+        // preciso — nunca confirmado contra a API real, ver "A validar" no
+        // CLAUDE.md), cai pra `created_at`/`last_update_at` do documento em
+        // si (a data em que o CONTRATO existiu na ZapSign, quase sempre bem
+        // próxima da assinatura de verdade num fluxo de "gera e já assina").
+        // Sem NENHUMA data confiável, nunca chuta "hoje" sozinho — fica de
+        // fora, pro admin resolver manual em admin/zapsign_importar.php
+        // (regra #3: sem dado confiável, nunca inventa).
+        $dataAssinatura = (string)(
+            $doc['signers'][0]['signed_at'] ?? $doc['created_at'] ?? $doc['last_update_at'] ?? ''
+        );
+        if ($dataAssinatura === '') {
+            $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo, 'motivo' => 'sem_data'];
+            continue;
+        }
+
+        $stmtOp = $db->prepare("SELECT veiculo_marca, veiculo_modelo, veiculo_placa FROM oportunidades WHERE id = ?");
+        $stmtOp->execute([$oportunidadeId]);
+        $op = $stmtOp->fetch(PDO::FETCH_ASSOC);
+
+        $candidatas[] = [
+            'doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo, 'data_assinatura' => $dataAssinatura,
+            'oportunidade_id' => $oportunidadeId, 'oportunidade' => $op,
+        ];
+    } catch (Throwable $e) {
+        $errosLeitura++;
+        echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — ⚠️  erro inesperado, pulando: {$e->getMessage()}\n";
     }
-
-    echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — baixando PDF e lendo com IA...";
-    $veiculo = zapsignExtrairVeiculoContrato($token);
-    $oportunidadeId = $veiculo['placa'] ? zapsignEncontrarVeiculoPorPlaca($veiculo['placa']) : null;
-    echo $oportunidadeId ? " placa {$veiculo['placa']} encontrada\n" : " sem placa identificada no estoque\n";
-
-    if (!$oportunidadeId) {
-        $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo];
-        continue;
-    }
-
-    // Data REAL da assinatura — nunca "hoje" (pedido explícito: "salvar
-    // sempre na data do contrato real não como data de hoje"). Prioriza o
-    // que a ZapSign marcar como data de assinatura do signatário (mais
-    // preciso — nunca confirmado contra a API real, ver "A validar" no
-    // CLAUDE.md), cai pra `created_at`/`last_update_at` do documento em
-    // si (a data em que o CONTRATO existiu na ZapSign, quase sempre bem
-    // próxima da assinatura de verdade num fluxo de "gera e já assina").
-    // Sem NENHUMA data confiável, nunca chuta "hoje" sozinho — fica de
-    // fora, pro admin resolver manual em admin/zapsign_importar.php
-    // (regra #3: sem dado confiável, nunca inventa).
-    $dataAssinatura = (string)(
-        $doc['signers'][0]['signed_at'] ?? $doc['created_at'] ?? $doc['last_update_at'] ?? ''
-    );
-    if ($dataAssinatura === '') {
-        $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo, 'motivo' => 'sem_data'];
-        continue;
-    }
-
-    $stmtOp = $db->prepare("SELECT veiculo_marca, veiculo_modelo, veiculo_placa FROM oportunidades WHERE id = ?");
-    $stmtOp->execute([$oportunidadeId]);
-    $op = $stmtOp->fetch(PDO::FETCH_ASSOC);
-
-    $candidatas[] = [
-        'doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo, 'data_assinatura' => $dataAssinatura,
-        'oportunidade_id' => $oportunidadeId, 'oportunidade' => $op,
-    ];
 }
 
 // Um mesmo veículo pode ter MAIS de 1 contrato de venda na ZapSign (ex:
@@ -209,7 +220,8 @@ if ($superados) {
     ));
 }
 
-echo "Total na ZapSign: " . count($documentos) . " | já importados: {$jaImportados} | telefone bate com cliente (fora do escopo, resolve em admin/zapsign_importar.php): {$comCliente}\n\n";
+echo "Total na ZapSign: " . count($documentos) . " | já importados: {$jaImportados} | telefone bate com cliente (fora do escopo, resolve em admin/zapsign_importar.php): {$comCliente}"
+    . ($errosLeitura ? " | erro inesperado (nunca chegou a ser lido, rode de novo): {$errosLeitura}" : '') . "\n\n";
 
 if ($superados) {
     echo "🔁 " . count($superados) . " documento(s) superado(s) por um contrato MAIS RECENTE pro mesmo veículo — nunca importado automaticamente, nunca decide sozinho se é duplicata ou devolução+revenda genuína:\n\n";
@@ -293,11 +305,28 @@ foreach ($candidatas as $c) {
     $dadosComprador = $c['veiculo'];
     if ($c['sig']['cpf']) $dadosComprador['comprador_cpf'] = $c['sig']['cpf'];
 
-    $r = zapsignImportarContratoVendaComoNegociacaoManual(
-        (string)$doc['token'], $c['oportunidade_id'],
-        $c['sig']['nome'] ?: 'Comprador (ZapSign)', $c['sig']['telefone'],
-        $precoVenda, $dataAssinatura, /* $criadoPor */ 0, $dadosComprador
-    );
+    // Achado real em produção (24/09/2026): "database is locked" (contenção
+    // real de escrita — webhook/admin/cron gravando ao mesmo tempo, mesmo
+    // incidente já documentado várias vezes no CLAUDE.md) derrubou o
+    // processo INTEIRO no meio de um --confirmar longo, porque só a chamada
+    // interna de criarVenda() (dentro de zapsignImportarContratoVendaComoNegociacaoManual())
+    // tinha try/catch — as escritas seguintes (UPDATE vendas, INSERT
+    // venda_historico/contratos) não tinham, e uma exceção não capturada aí
+    // matava o script, perdendo o processamento de TODOS os documentos
+    // seguintes na lista, não só o que falhou. Nunca mais: qualquer
+    // Throwable na importação de 1 documento vira falha registrada, nunca
+    // derruba o lote — o script é idempotente (checa zapsign_doc_token já
+    // importado antes de qualquer coisa), então rodar --confirmar de novo
+    // depois resolve sozinho o que falhou por contenção passageira.
+    try {
+        $r = zapsignImportarContratoVendaComoNegociacaoManual(
+            (string)$doc['token'], $c['oportunidade_id'],
+            $c['sig']['nome'] ?: 'Comprador (ZapSign)', $c['sig']['telefone'],
+            $precoVenda, $dataAssinatura, /* $criadoPor */ 0, $dadosComprador
+        );
+    } catch (Throwable $e) {
+        $r = ['ok' => false, 'erro' => 'exceção não tratada: ' . $e->getMessage()];
+    }
     if ($r['ok']) {
         $importadas++;
         echo "  ✅ venda #{$r['venda_id']} importada — \"{$doc['name']}\"\n";
@@ -308,6 +337,11 @@ foreach ($candidatas as $c) {
 }
 
 echo "\n✅ {$importadas} venda(s) importada(s)" . ($falhas ? ", {$falhas} falharam" : '') . ".\n";
+if ($falhas) {
+    echo "Rode o script de novo (--confirmar) daqui a pouco — é idempotente, resolve\n";
+    echo "sozinho quem já foi importado e tenta de novo só quem falhou (útil pra falha\n";
+    echo "passageira de contenção do banco, \"database is locked\").\n";
+}
 if ($importadas) {
     echo "\nAgora roda o backfill financeiro pra gerar a receita/comissão dessas vendas:\n";
     echo "  php install/gerar_lancamentos_vendas_retroativos.php\n";
