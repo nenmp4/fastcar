@@ -1896,6 +1896,45 @@ segue no schema sem uso novo, não removida sem ganho real),
   refletem o nome do serviço certo) + `php -l` + `tests/smoke.php` limpos.
   Nenhuma migração de schema precisou (`zapcar_consultas.servico` já era
   `TEXT` livre, sem `CHECK` restringindo valores).
+  **Valor de débito suspeito, 24/09/2026** — usuário, vendo a oportunidade
+  #349 real (Yamaha Crosser Z ABS 2024, placa RYZ9D29), desconfiou do
+  débito de licenciamento exibido ("eu acho que valor tá puxando errado
+  deve ser 1,493,7"), reforçado por "só suspeito ultimo foi 2025" — o
+  campo `ultimo_licenciamento` da mesma consulta mostra 2025 (em dia), o
+  que soa incoerente com um débito de licenciamento de R$14.937,00.
+  Investigado o código antes de mexer em qualquer coisa: `zapcarResumoTexto()`/
+  `zapcarAplicarNaOportunidade()` (`includes/zapcar.php`) sempre dividem
+  `valor_centavos` por 100, de forma consistente entre o item individual
+  E o total (`debitos_total_centavos`) — não é bug de formatação/exibição
+  daqui, o valor só sai R$14.937,00 se o `valor_centavos` que a própria
+  API da ZapCar devolveu já veio como `1493700` (não `149370`, que daria
+  o R$1.493,70 que o usuário suspeita ser o certo). Sem acesso a
+  produção deste sandbox (banco real só existe na VPS) pra confirmar qual
+  dos dois valores a API realmente mandou. Novo
+  `install/zapcar_diagnosticar_debito.php` (CLI, só leitura, nunca
+  altera nada) — roda na VPS via SSH (`php install/zapcar_diagnosticar_debito.php
+  --oportunidade=349`, ou `--placa=RYZ9D29`) e imprime lado a lado o
+  bloco `veiculo` normalizado (o que a aplicação usa) E o `dados` cru
+  (`zapcar_consultas.dados_json`, espelho da fonte sem NENHUMA
+  normalização nossa, já salvo desde a consulta original — regra #8 da
+  doc da ZapCar) pra separar 3 hipóteses: (a) a fonte oficial reporta
+  mesmo um débito grande sob "licenciamento" (ex: acumulado de anos
+  anteriores, mesmo com o ÚLTIMO em dia) — não seria bug nenhum daqui;
+  (b) a própria ZapCar normalizou errado (o `dados` cru mostra um valor
+  ~10x menor que o `veiculo.debitos[].valor_centavos` normalizado) — bug
+  do provedor, não do nosso código, nada a corrigir aqui além de reportar
+  pra eles; (c) outra coisa visível só olhando o `dados_json` bruto.
+  Comparar com o Portal do Cliente da ZapCar pra essa mesma placa é o
+  jeito mais rápido de confirmar contra a fonte, sem nem precisar rodar o
+  script. Testado em banco isolado, seedando exatamente esse cenário
+  (`veiculo.debitos[].valor_centavos=1493700` vs um `dados` cru hipotético
+  com `149370`) — script roda e imprime os dois lados corretamente,
+  confirma que a soma dos itens bate com o total gravado (então não é
+  erro de soma/agregação do nosso lado) + `php -l` + `tests/smoke.php`
+  limpos. ⚠️ Ainda não rodado em produção — pendente o usuário rodar via
+  SSH (ou conferir direto no Portal do Cliente ZapCar) pra confirmar qual
+  das 3 hipóteses é a real antes de decidir se precisa de correção de
+  código ou só reportar pra ZapCar.
 - **Débitos do veículo (IPVA/licenciamento/multas)** (22/09/2026, "campo
   de preencher - debitos do veilucos como ipva linciamento e multoas") —
   confirmado com o usuário (2 perguntas diretas): 3 campos numéricos
