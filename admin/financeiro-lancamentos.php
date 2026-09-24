@@ -200,7 +200,7 @@ $fNatureza = in_array($_GET['natureza'] ?? '', ['fixa', 'variavel'], true) ? $_G
 // financeiro (admin/financeiro.php) — filtra a listagem pela origem do
 // lançamento, mesmo padrão de $fNatureza (whitelist explícita, nunca o
 // valor cru do GET direto no SQL).
-$fOrigem = in_array($_GET['origem'] ?? '', ['comissao_compra'], true) ? $_GET['origem'] : '';
+$fOrigem = in_array($_GET['origem'] ?? '', ['comissao_compra', 'comissao_venda'], true) ? $_GET['origem'] : '';
 $fTodos = !empty($_GET['todos_periodos']);
 $fDe = (string)($_GET['de'] ?? date('Y-m-01'));
 $fAte = (string)($_GET['ate'] ?? date('Y-m-t'));
@@ -269,7 +269,7 @@ $statusLabels = [
     'atrasado' => ['Atrasado', '#991b1b', '#fef2f2'],
     'cancelado' => ['Cancelado', '#475569', '#f1f5f9'],
 ];
-$origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelamento', 'asaas' => '🔄 Asaas', 'fechamento_compra' => '🚗 fechamento de compra', 'recorrencia_fixa' => '🔁 despesa fixa (automática)', 'comissao_compra' => '🤝 comissão automática (compra)'];
+$origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelamento', 'asaas' => '🔄 Asaas', 'fechamento_compra' => '🚗 fechamento de compra', 'recorrencia_fixa' => '🔁 despesa fixa (automática)', 'comissao_compra' => '🤝 comissão automática (compra)', 'comissao_venda' => '🤝 comissão automática (venda)'];
 ?>
 <!doctype html>
 <html lang="pt-br">

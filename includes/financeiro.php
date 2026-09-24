@@ -476,6 +476,79 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
 }
 
 /**
+ * Comissão AUTOMÁTICA do vendedor ao fechar uma VENDA — 24/09/2026,
+ * pedido direto: "na venda pagamos 5 por cento do valor da entrada".
+ * Espelha finRegistrarComissaoCompraFechada() (compra), mas SEM faixas —
+ * taxa fixa de 5% sobre `valor_pago_contratacao` (a "entrada" da venda,
+ * mesmo campo que `finGerarReceitaVendaAssinatura()` logo acima já usa) —
+ * o pedido só mencionou a entrada, nunca as parcelas do saldo financiado,
+ * então a comissão nunca incide sobre elas.
+ *
+ * Chamada de dentro de `mudarEtapaVenda()` (`includes/vendas.php`), na
+ * mesma transição pra `'vendido'` que já chama
+ * `finGerarReceitaVendaAssinatura()`. NUNCA confia no parâmetro
+ * `$responsavelId` de `mudarEtapaVenda()` pra saber quem é o vendedor —
+ * o gatilho real em produção (`zapsignSincronizarContrato()`, quando a
+ * ZapSign confirma a assinatura) chama `mudarEtapaVenda(..., null, ...)`
+ * — o vendedor de verdade é sempre lido de `vendas.responsavel_id`.
+ *
+ * Best-effort e idempotente por `venda_id`+`origem`, mesmo padrão de
+ * sempre. Nunca gera sem `valor_pago_contratacao > 0`, nem sem o
+ * vendedor responsável ter um colaborador ATIVO cadastrado em
+ * `fin_colaboradores` — mesmas 2 travas do lado de compra, nunca chuta
+ * (regra #3).
+ */
+function finRegistrarComissaoVendaFechada(int $vendaId): void {
+    try {
+        $db = getDB();
+
+        $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE venda_id = ? AND origem = 'comissao_venda'");
+        $existe->execute([$vendaId]);
+        if ($existe->fetchColumn()) return;
+
+        $stmt = $db->prepare("
+            SELECT v.responsavel_id, v.valor_pago_contratacao, v.comprador_nome,
+                   o.veiculo_marca, o.veiculo_modelo
+            FROM vendas v
+            LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+            WHERE v.id = ?
+        ");
+        $stmt->execute([$vendaId]);
+        $v = $stmt->fetch();
+        if (!$v) return;
+
+        $valorEntrada = (float)($v['valor_pago_contratacao'] ?? 0);
+        if ($valorEntrada <= 0) return;
+
+        $vendedorId = $v['responsavel_id'] ? (int)$v['responsavel_id'] : null;
+        if (!$vendedorId) return;
+
+        $stmtColab = $db->prepare("SELECT id FROM fin_colaboradores WHERE usuario_id = ? AND status = 'ativo'");
+        $stmtColab->execute([$vendedorId]);
+        $colaboradorId = $stmtColab->fetchColumn();
+        if (!$colaboradorId) return;
+
+        $valorComissao = round($valorEntrada * 5 / 100, 2);
+        if ($valorComissao <= 0) return;
+
+        $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Comissão de consultor/vendedor'")->fetchColumn();
+        $veiculo = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'veículo';
+        $descricao = sprintf(
+            'Comissão de venda — %s — comprador %s (venda #%d) — 5%% da entrada (R$ %s)',
+            $veiculo, $v['comprador_nome'] ?: '—', $vendaId, number_format($valorEntrada, 2, ',', '.')
+        );
+
+        $db->prepare("
+            INSERT INTO fin_lancamentos
+                (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, venda_id, funcionario_id, origem, created_by)
+            VALUES ('despesa', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, ?, 'comissao_venda', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $vendaId, $colaboradorId, $vendedorId]);
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a transição de etapa da venda
+    }
+}
+
+/**
  * Gera automaticamente a próxima ocorrência mensal de toda despesa FIXA
  * (`natureza='fixa'`) que ainda não tenha um lançamento pro mês corrente —
  * 19/09/2026, pedido direto: "todas despesas fixas pode lançar todo mês

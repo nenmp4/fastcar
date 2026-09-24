@@ -911,9 +911,12 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
     -- 19/09/2026, "todas despesas fixas pode lançar todo mês automático")
     -- / 'comissao_compra' (comissão automática do consultor ao fechar uma
     -- compra, 23/09/2026, faixa por % da FIPE — ver
-    -- finRegistrarComissaoCompraFechada(), includes/financeiro.php)
+    -- finRegistrarComissaoCompraFechada(), includes/financeiro.php) /
+    -- 'comissao_venda' (comissão automática do vendedor ao fechar uma
+    -- venda, 24/09/2026, 5% fixo do valor da entrada — ver
+    -- finRegistrarComissaoVendaFechada(), includes/financeiro.php)
     -- — ver nota (5) acima.
-    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa','comissao_compra')),
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa','comissao_compra','comissao_venda')),
     asaas_payment_id TEXT DEFAULT NULL,
     asaas_customer_id TEXT DEFAULT NULL,
     created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),

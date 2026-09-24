@@ -5750,6 +5750,56 @@ segue no schema sem uso novo, não removida sem ganho real),
   `?periodo=999` (fora da whitelist) cai no mês corrente sem quebrar,
   totais/tabela por consultor refletem certo o intervalo filtrado + `php
   -l` + `tests/smoke.php` limpos.
+  **Comissão automática do vendedor por 5% da entrada (só venda)**
+  (24/09/2026, pedido direto: "na venda pagamos 5 por cento do valor da
+  entrada") — completa a lacuna deixada em aberto na comissão de compra
+  acima ("do vendedo eu ainda não porcentagens ainda"), agora com o
+  percentual confirmado: espelha `finRegistrarComissaoCompraFechada()`
+  (compra), mas **sem faixas** — taxa fixa de 5% sobre
+  `vendas.valor_pago_contratacao` (a entrada da venda, mesmo campo que
+  `finGerarReceitaVendaAssinatura()` já usa pra gerar a receita), nunca
+  sobre as parcelas do saldo financiado — o pedido só mencionou a
+  entrada. Nova `finRegistrarComissaoVendaFechada()`
+  (`includes/financeiro.php`), chamada de dentro de `mudarEtapaVenda()`
+  (`includes/vendas.php`) na mesma transição pra `'vendido'` que já chama
+  `finGerarReceitaVendaAssinatura()`. **Achado importante investigando
+  antes de codar**: o gatilho REAL em produção pra essa transição
+  (`zapsignSincronizarContrato()`, `includes/contratos.php`, disparado
+  quando a ZapSign confirma a assinatura do comprador) sempre chama
+  `mudarEtapaVenda($vendaId, 'vendido', null, ...)` — ou seja,
+  `$responsavelId` é SEMPRE `null` no caminho real, nunca o vendedor de
+  verdade; a função nunca confia nesse parâmetro, sempre lê
+  `vendas.responsavel_id` direto do banco. Mesmo padrão best-effort (nunca
+  trava a transição de etapa) e idempotente por `venda_id`+`origem`
+  (`'comissao_venda'`, novo valor na CHECK de `fin_lancamentos.origem`,
+  mesma técnica de reconstrução de tabela das migrações anteriores).
+  Reaproveita a mesma categoria "Comissão de consultor/vendedor" (🤝) já
+  usada pelo lado de compra. Nunca gera nada (regra #3) sem
+  `valor_pago_contratacao > 0`, nem sem o vendedor responsável ter um
+  colaborador ATIVO cadastrado em `fin_colaboradores` (`usuario_id`) —
+  mesmas 2 travas do lado de compra, fica pra lançamento manual à parte
+  nesses casos. Card novo "🤝 Comissões pagas aos vendedores" no dashboard
+  (`admin/financeiro.php`, mesmo período do filtro `?mes=`/`?periodo=`) +
+  tabela "🤝 Comissões por vendedor (venda)" logo abaixo, mesmo layout da
+  de compra (nome, vendas fechadas, total recebido), cor laranja
+  (`#ea580c`) pra diferenciar visualmente da de compra (ciano). `origem`
+  novo entrou na mesma whitelist `?origem=` e no mesmo mapa de badges
+  (`'comissão automática (venda)'`) de `admin/financeiro-lancamentos.php`
+  que a comissão de compra já usava — nenhuma mudança extra precisou lá.
+  Testado: função isolada em banco isolado — 5% de R$10.000/R$12.000 gera
+  R$500/R$600 certos; entrada zero nunca gera; venda sem `responsavel_id`
+  (simulando `mudarEtapaVenda(..., null, ...)`, o caminho real) nunca gera;
+  vendedor sem colaborador ativo cadastrado nunca gera; rechamar a função
+  no mesmo `venda_id` não duplica (idempotência); **chamada real via
+  `mudarEtapaVenda($vendaId, 'vendido', null, ...)`** (não a função
+  isolada — o cenário exato do webhook ZapSign) confirmada gerando a
+  comissão certa mesmo com `$responsavelId=null`, lendo o vendedor do
+  banco — + HTTP real confirmando o card do dashboard (R$500,00) e a
+  tabela por vendedor renderizando certo, e `?origem=comissao_venda` em
+  `financeiro-lancamentos.php` filtrando e rotulando certo + migração
+  testada contra schema anterior (CHECK reconstruída preservando dado
+  existente, incluindo uma linha `comissao_compra` já gravada, idempotente
+  numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

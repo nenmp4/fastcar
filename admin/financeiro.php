@@ -76,6 +76,29 @@ $comissoesPorConsultor = $db->prepare("
 $comissoesPorConsultor->execute([$inicioMes, $fimMes]);
 $comissoesPorConsultor = $comissoesPorConsultor->fetchAll(PDO::FETCH_ASSOC);
 
+// 24/09/2026, "na venda pagamos 5 por cento do valor da entrada" — mesmo
+// par de queries acima, espelhado pro lado de VENDA
+// (finRegistrarComissaoVendaFechada()).
+$stmtComissoesVenda = $db->prepare("
+    SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
+    WHERE origem = 'comissao_venda' AND status != 'cancelado'
+      AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
+");
+$stmtComissoesVenda->execute([$inicioMes, $fimMes]);
+$totalComissoesVendedores = (float)$stmtComissoesVenda->fetchColumn();
+
+$comissoesPorVendedor = $db->prepare("
+    SELECT fc.nome AS vendedor_nome, COUNT(*) AS qtd, SUM(l.valor) AS total
+    FROM fin_lancamentos l
+    LEFT JOIN fin_colaboradores fc ON fc.id = l.funcionario_id
+    WHERE l.origem = 'comissao_venda' AND l.status != 'cancelado'
+      AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
+    GROUP BY l.funcionario_id
+    ORDER BY total DESC
+");
+$comissoesPorVendedor->execute([$inicioMes, $fimMes]);
+$comissoesPorVendedor = $comissoesPorVendedor->fetchAll(PDO::FETCH_ASSOC);
+
 $hoje = date('Y-m-d');
 $contasVencer7 = $db->prepare("
     SELECT l.*, c.nome as categoria_nome, c.icone
@@ -174,6 +197,10 @@ $asaasPendenteImportar = asaasConfigured();
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">🤝 Comissões pagas aos consultores</div>
     <div style="font-size:1.6rem;font-weight:800;color:#0891b2">R$ <?= number_format($totalComissoesConsultores, 2, ',', '.') ?></div>
   </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?origem=comissao_venda&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #ea580c">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">🤝 Comissões pagas aos vendedores</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#ea580c">R$ <?= number_format($totalComissoesVendedores, 2, ',', '.') ?></div>
+  </a>
 </div>
 
 <div class="card">
@@ -215,6 +242,27 @@ $asaasPendenteImportar = asaasConfigured();
       </tbody>
     </table>
     <p style="margin-top:.75rem"><a href="/admin/financeiro-lancamentos.php?origem=comissao_compra&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>">Ver todos os lançamentos de comissão →</a></p>
+  <?php endif; ?>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">🤝 Comissões por vendedor (venda) — <?= $fPeriodo ? "últimos {$fPeriodo} dias" : date('m/Y', strtotime($inicioMes)) ?></h2>
+  <?php if (!$comissoesPorVendedor): ?>
+    <p style="color:var(--muted);font-size:.85rem">Nenhuma comissão automática de venda neste período.</p>
+  <?php else: ?>
+    <table class="tabela-oportunidades">
+      <thead><tr><th>Vendedor</th><th>Vendas fechadas</th><th>Total recebido</th></tr></thead>
+      <tbody>
+      <?php foreach ($comissoesPorVendedor as $c): ?>
+        <tr>
+          <td><?= e($c['vendedor_nome'] ?: '(colaborador removido)') ?></td>
+          <td><?= (int)$c['qtd'] ?></td>
+          <td style="font-weight:700;color:#ea580c">R$ <?= number_format((float)$c['total'], 2, ',', '.') ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <p style="margin-top:.75rem"><a href="/admin/financeiro-lancamentos.php?origem=comissao_venda&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>">Ver todos os lançamentos de comissão →</a></p>
   <?php endif; ?>
 </div>
 
