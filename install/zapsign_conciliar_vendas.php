@@ -66,6 +66,13 @@ require_once __DIR__ . '/../includes/zapsign_importar.php';
 $confirmar = in_array('--confirmar', $argv, true);
 $db = getDB();
 
+// Sem isso, PHP-CLI bufferiza a saída e o terminal fica em silêncio total
+// até o script inteiro terminar — pra uma conta com muitos contratos
+// (cada um custa 1 download de PDF + 1 chamada de IA, minutos ao todo),
+// parecia travado sem nenhum sinal de vida. Progresso ao vivo abaixo.
+if (function_exists('ob_implicit_flush')) ob_implicit_flush(true);
+@ob_end_flush();
+
 if (!getConfig('zapsign_api_token')) {
     die("❌ Token da API ZapSign não configurado (Configurações → ZapSign) — nada a fazer.\n");
 }
@@ -74,6 +81,7 @@ if (!getConfig('gemini_api_key')) {
     echo "    todo documento vai cair em \"placa não identificada\". Configure em Configurações → IA.\n\n";
 }
 
+echo "🔎 Listando documentos na ZapSign...\n";
 $resLista = zapsignListarTodosDocumentos();
 $documentos = $resLista['itens'];
 if (!$resLista['ok']) {
@@ -84,13 +92,18 @@ if (!$documentos) {
     echo "✅ Nenhum documento na conta ZapSign — nada a fazer.\n";
     exit(0);
 }
+echo count($documentos) . " documento(s) encontrado(s) — processando um por um (baixa PDF + lê com IA, pode demorar alguns segundos por documento):\n\n";
 
 $candidatas = [];
 $semPlaca = [];
 $comCliente = 0;
 $jaImportados = 0;
 
+$totalDocs = count($documentos);
+$i = 0;
 foreach ($documentos as $doc) {
+    $i++;
+    $nomeDoc = (string)($doc['name'] ?? '(sem nome)');
     $token = (string)($doc['token'] ?? '');
     if ($token === '') continue;
 
@@ -98,6 +111,7 @@ foreach ($documentos as $doc) {
     $existe->execute([$token]);
     if ($existe->fetchColumn()) {
         $jaImportados++;
+        echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — já importado, pulando\n";
         continue;
     }
 
@@ -111,12 +125,15 @@ foreach ($documentos as $doc) {
             // admin/zapsign_importar.php, fica de fora daqui de propósito
             // (pode ter mais de 1 veículo, precisa revisão humana lá).
             $comCliente++;
+            echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — telefone já é cliente cadastrado, fora do escopo\n";
             continue;
         }
     }
 
+    echo "  [{$i}/{$totalDocs}] \"{$nomeDoc}\" — baixando PDF e lendo com IA...";
     $veiculo = zapsignExtrairVeiculoContrato($token);
     $oportunidadeId = $veiculo['placa'] ? zapsignEncontrarVeiculoPorPlaca($veiculo['placa']) : null;
+    echo $oportunidadeId ? " placa {$veiculo['placa']} encontrada\n" : " sem placa identificada no estoque\n";
 
     if (!$oportunidadeId) {
         $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo];

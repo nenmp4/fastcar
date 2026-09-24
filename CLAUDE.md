@@ -3838,6 +3838,18 @@ segue no schema sem uso novo, não removida sem ganho real),
   (mesma classe do gotcha do `-r`/`auto_prepend_file` já documentado nesta
   sessão — os dois são sobre `auto_prepend_file` não se propagar sozinho
   pra fora do processo PHP que o recebeu na linha de comando).
+  **Parecia travado rodando em produção via SSH** (mesmo dia, "demora assim
+  mesmo" — usuário rodou numa conta com vários contratos e o terminal
+  ficou minutos em silêncio total) — causa: o script só imprimia o
+  relatório DEPOIS de terminar de processar TODOS os documentos (cada um
+  com download de PDF + chamada de IA), e PHP-CLI bufferiza `echo` por
+  padrão, então nem os `echo` que já existiam apareciam em tempo real.
+  Corrigido com `ob_implicit_flush(true)` logo no início + uma linha
+  `[N/total] "nome" — <status>` impressa a cada documento processado, em
+  tempo real — nenhuma mudança de lógica, só visibilidade. Testado em
+  banco isolado: progresso aparece linha a linha nos 4 documentos
+  simulados, relatório final e todas as verificações continuam idênticas
+  a antes + `php -l` + `tests/smoke.php` limpos.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em
