@@ -5797,9 +5797,51 @@ segue no schema sem uso novo, não removida sem ganho real),
   corretamente fora da lista): dry-run lista certo as 2 candidatas e
   calcula a comissão certa antes de aplicar; `--confirmar` gera as 2
   despesas + a 1 comissão; rodar de novo confirma "nada a fazer"
-  (idempotente) + `php -l` + `tests/smoke.php` limpos. ⚠️ Ainda não rodado
-  em produção — falta rodar via SSH (dry-run primeiro pra conferir a
-  lista real, depois `--confirmar`).
+  (idempotente) + `php -l` + `tests/smoke.php` limpos. **✅ Rodado em
+  produção, 24/09/2026** — dry-run listou ~41 oportunidades fechadas sem
+  lançamento (a maioria sem FIPE cadastrada, 2 gerariam comissão também),
+  `--confirmar` aplicou.
+  **Bug real achado logo depois de rodar — datas todas "hoje"** (mesmo
+  dia, print do dashboard financeiro mostrando "Despesas do mês
+  R$400.890,48" e "Saldo do mês -R$213.001,96", usuário: "tem certza que
+  68 reais" → "vamos organizar isso"): a 1ª versão do backfill chamava
+  `finRegistrarDespesaCompraFechada()`/`finRegistrarComissaoCompraFechada()`
+  sem passar nenhuma data, e as duas sempre gravavam
+  `data_vencimento`/`data_pagamento = date('now','localtime')` — certo
+  pro gatilho real (`mudarEtapa()`, onde `data_compra` já É "hoje" no
+  mesmo instante), mas errado pro backfill: as ~41 despesas retroativas
+  (negócios reais de julho/agosto/começo de setembro) nasceram TODAS
+  datadas de hoje, inflando "Despesas do mês"/"Saldo do mês" do mês
+  corrente com meses de gasto acumulado de uma vez. Corrigido em 3
+  frentes: (1) as duas funções ganharam parâmetro opcional
+  `?string $dataCompra = null` (`includes/financeiro.php`) — `null` cai
+  no comportamento de sempre (`date('now','localtime')`, o gatilho real
+  via `mudarEtapa()` nunca precisa passar nada), só usado explícito por
+  quem grava retroativo; (2)
+  `install/gerar_lancamentos_fechados_retroativos.php` passou a passar
+  `oportunidades.data_compra` de cada candidata nas duas chamadas — nunca
+  mais data um negócio antigo como se fosse de hoje numa futura
+  importação histórica; (3) novo
+  `install/corrigir_datas_lancamentos_fechamento.php` (CLI, dry-run por
+  padrão, `--confirmar` pra aplicar) corrige os lançamentos JÁ gerados
+  com data errada — sempre pra `oportunidades.data_compra` real (regra
+  #3, nunca chuta), seguro rodar em QUALQUER lançamento
+  `fechamento_compra`/`comissao_compra` (não só os do backfill): um
+  lançamento gerado pelo caminho normal já nasce com as datas batendo
+  (mesma transação, mesmo instante), então rodar nele é sempre um no-op —
+  só os desalinhados de verdade são tocados, idempotente. Testado em
+  banco isolado: 3 cenários (oportunidade fechada há tempos, comissão
+  gerada SEM `$dataCompra` — reproduz o bug, data = hoje; oportunidade
+  fechada há tempos, gerada COM `$dataCompra` — data = a real, não hoje;
+  fechamento normal via `mudarEtapa()` sem passar nada — continua usando
+  hoje, sem regressão) + script de correção rodado contra esse mesmo
+  banco: dry-run lista certo só os 2 lançamentos desalinhados (da
+  oportunidade "bugada"), nunca os já corretos; `--confirmar` corrige as
+  datas certas (conferido linha a linha); rodar de novo confirma "nada a
+  fazer" (idempotente) + `php -l` + `tests/smoke.php` limpos. ⚠️ Ainda
+  não rodado em produção — os ~41 lançamentos já gerados pelo backfill
+  seguem com a data errada até `corrigir_datas_lancamentos_fechamento.php
+  --confirmar` ser executado via SSH.
   **Filtro "últimos 30/60/90 dias" no dashboard** (mesmo dia, "teria que
   ter fitro 30 60 90 no financeiro dabord") — até então só dava pra ver
   por mês fechado (`?mes=AAAA-MM`); `admin/financeiro.php` ganhou

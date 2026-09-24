@@ -25,6 +25,17 @@
  * (fechado_por) tiver colaborador ATIVO cadastrado — sem isso, mesma
  * regra de sempre (nunca chuta), fica de fora do relatório de "geraria".
  *
+ * Data do lançamento — 24/09/2026, achado real: a 1ª versão deste script
+ * chamava as funções sem passar `$dataCompra`, então TODA despesa/comissão
+ * retroativa nascia datada de "hoje" (o dia em que o script rodou), não
+ * do dia real do fechamento — distorcia "Despesas do mês"/"Saldo do mês"
+ * no dashboard financeiro (dezenas de negócios de meses atrás somados de
+ * uma vez no mês corrente). Corrigido passando `oportunidades.data_compra`
+ * explícito pras duas funções, que agora aceitam esse parâmetro opcional
+ * (ver `includes/financeiro.php`) — só o gatilho automático via
+ * `mudarEtapa()` continua sem passar nada (lá `data_compra` já É "hoje"
+ * no momento da chamada, então dá no mesmo).
+ *
  * Uso:
  *   php install/gerar_lancamentos_fechados_retroativos.php              — só lista (dry-run)
  *   php install/gerar_lancamentos_fechados_retroativos.php --confirmar  — aplica de verdade
@@ -93,8 +104,9 @@ if (!$confirmar) {
 
 $despesas = 0;
 foreach ($candidatos as $c) {
-    finRegistrarDespesaCompraFechada((int)$c['id'], (float)$c['valor_final'], $c['fechado_por'] ? (int)$c['fechado_por'] : null);
-    finRegistrarComissaoCompraFechada((int)$c['id'], (float)$c['valor_final'], $c['fechado_por'] ? (int)$c['fechado_por'] : null);
+    $dataCompra = $c['data_compra'] ? substr((string)$c['data_compra'], 0, 10) : null;
+    finRegistrarDespesaCompraFechada((int)$c['id'], (float)$c['valor_final'], $c['fechado_por'] ? (int)$c['fechado_por'] : null, $dataCompra);
+    finRegistrarComissaoCompraFechada((int)$c['id'], (float)$c['valor_final'], $c['fechado_por'] ? (int)$c['fechado_por'] : null, $dataCompra);
     $despesas++;
 }
 

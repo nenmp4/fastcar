@@ -193,8 +193,20 @@ function finGerarPlanoParcelamentoVenda(
  * zapsignSincronizarContrato() quando o status vira 'assinado') — então
  * "só depois do contrato assinado" já é garantido pelo ponto de gatilho
  * escolhido, sem checagem extra aqui.
+ *
+ * `$dataCompra` (novo, 24/09/2026) — a data real do fechamento
+ * (`oportunidades.data_compra`), usada como `data_vencimento`/
+ * `data_pagamento` do lançamento. Opcional/`null` de propósito: o
+ * gatilho real (`mudarEtapa()`) nunca precisa passar nada, já que
+ * `data_compra` É "hoje" no exato momento em que essa função é chamada
+ * ali — omitir cai no comportamento de sempre (`date('now','localtime')`).
+ * Só passa explícito quem grava RETROATIVO
+ * (`install/gerar_lancamentos_fechados_retroativos.php`), pra nunca
+ * datar um negócio de meses atrás como se tivesse acontecido hoje —
+ * achado real, "Despesas do mês"/"Saldo do mês" ficaram distorcidos
+ * depois de rodar o backfill sem isso (ver bullet no CLAUDE.md).
  */
-function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal, ?int $criadoPor): void {
+function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal, ?int $criadoPor, ?string $dataCompra = null): void {
     try {
         if ($valorFinal <= 0) return;
         $db = getDB();
@@ -215,12 +227,13 @@ function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal
         $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Compra de veículo (pagamento ao vendedor)'")->fetchColumn();
         $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) ?: 'veículo';
         $descricao = "Compra de {$veiculo} — {$op['cliente_nome']} (oportunidade #{$oportunidadeId})";
+        $data = $dataCompra ?: date('Y-m-d');
 
         $db->prepare("
             INSERT INTO fin_lancamentos
                 (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, oportunidade_id, origem, created_by)
-            VALUES ('despesa', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, 'fechamento_compra', ?)
-        ")->execute([$categoriaId ?: null, $descricao, $valorFinal, $oportunidadeId, $criadoPor]);
+            VALUES ('despesa', ?, ?, ?, ?, ?, 'pago', ?, 'fechamento_compra', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorFinal, $data, $data, $oportunidadeId, $criadoPor]);
     } catch (Throwable $e) {
         // best-effort — nunca pode travar o fechamento da oportunidade
     }
@@ -260,8 +273,14 @@ function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal
  * lançar a comissão, e criar um colaborador sozinho não é decisão do
  * sistema tomar. Nesses casos fica pra lançamento manual à parte, igual
  * já acontecia antes desta função existir.
+ *
+ * `$dataCompra` (novo, 24/09/2026) — mesmo racional de
+ * `finRegistrarDespesaCompraFechada()` logo acima: opcional, `null` cai
+ * em `date('now','localtime')` (gatilho real via `mudarEtapa()`), só
+ * passado explícito pelo backfill retroativo pra nunca datar comissão de
+ * negócio antigo como se fosse de hoje.
  */
-function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFinal, ?int $fechadoPor): void {
+function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFinal, ?int $fechadoPor, ?string $dataCompra = null): void {
     try {
         if ($valorFinal <= 0 || !$fechadoPor) return;
         $db = getDB();
@@ -296,11 +315,12 @@ function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFina
             $veiculo, $op['cliente_nome'], $oportunidadeId, $taxa, $percentualFipe
         );
 
+        $data = $dataCompra ?: date('Y-m-d');
         $db->prepare("
             INSERT INTO fin_lancamentos
                 (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, oportunidade_id, funcionario_id, origem, created_by)
-            VALUES ('despesa', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, ?, 'comissao_compra', ?)
-        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $oportunidadeId, $colaboradorId, $fechadoPor]);
+            VALUES ('despesa', ?, ?, ?, ?, ?, 'pago', ?, ?, 'comissao_compra', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $data, $data, $oportunidadeId, $colaboradorId, $fechadoPor]);
     } catch (Throwable $e) {
         // best-effort — nunca pode travar o fechamento da oportunidade
     }
