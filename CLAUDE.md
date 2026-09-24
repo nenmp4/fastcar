@@ -3850,6 +3850,33 @@ segue no schema sem uso novo, não removida sem ganho real),
   banco isolado: progresso aparece linha a linha nos 4 documentos
   simulados, relatório final e todas as verificações continuam idênticas
   a antes + `php -l` + `tests/smoke.php` limpos.
+  **Importava o contrato ANTIGO em vez do mais recente, pra veículo com
+  mais de 1 contrato** (mesmo dia, pergunta direta: "se veiculo tiver
+  mais 2 contratos?" → "buscar sempre mais atual" → "pois tem
+  possbilidade de retonar ao estoque" — cenário real: carro vendido,
+  devolvido, volta pra frota disponível, vendido de novo pra outro
+  comprador; os 2 contratos ficam na ZapSign com a MESMA placa) — a
+  ordem que a API devolve os documentos não é garantida cronológica, e
+  antes desse fix o script podia importar automaticamente o contrato do
+  comprador que DEVOLVEU o carro só por aparecer primeiro na paginação,
+  deixando o contrato da venda de verdade/atual pro bucket de revisão
+  manual — o oposto do esperado. Corrigido agrupando as candidatas por
+  veículo (`oportunidade_id`) depois de ler todas as placas: quando 2+
+  documentos apontam pro mesmo veículo, mantém só o de `data_assinatura`
+  mais recente (`strtotime()`, nunca comparação de string cru — formato
+  de data nunca confirmado contra a API real) como candidata automática;
+  o(s) mais antigo(s) fica listado num bucket novo (🔁) explicando que
+  existe um contrato mais recente pro mesmo veículo — pode ser rascunho/
+  duplicata (só o recente importa mesmo) ou devolução+revenda genuína que
+  merece registro histórico próprio, mas essa decisão continua sempre
+  humana (regra #3), resolve em `admin/zapsign_importar.php` se for o
+  caso. Testado ponta a ponta em banco isolado + servidor ZapSign+Gemini
+  fake local: 2 documentos com a MESMA placa (contrato de fevereiro pro
+  "Comprador Antigo Devolveu" + contrato de junho pro "Comprador Novo")
+  — só o de junho vira candidata e é importado, o de fevereiro aparece no
+  relatório como superado explicando qual é o mais recente, e o banco
+  confirma exatamente 1 venda pro veículo (nunca a antiga por engano) +
+  `php -l` + `tests/smoke.php` limpos.
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

@@ -25,6 +25,11 @@
  * (`zapsignEncontrarVeiculoPorPlaca()`) — sem placa legível, placa que não
  * bate com nada no estoque, ou (não deveria acontecer, mas defensivo) mais
  * de 1 candidato, fica listado à parte, nunca decidido sozinho (regra #3).
+ * Veículo com MAIS de 1 contrato de venda na ZapSign (ex: devolução +
+ * revenda) importa só o de assinatura MAIS RECENTE automaticamente — os
+ * mais antigos pro mesmo veículo ficam de fora, listados à parte pra
+ * revisão manual (pode ser rascunho/duplicata, ou venda anterior genuína
+ * que merece registro próprio — decisão sempre humana).
  *
  * Reaproveita `zapsignImportarContratoVendaComoNegociacaoManual()`
  * (`includes/zapsign_importar.php`, já existia, estendida nesta mesma
@@ -168,7 +173,56 @@ foreach ($documentos as $doc) {
     ];
 }
 
+// Um mesmo veículo pode ter MAIS de 1 contrato de venda na ZapSign (ex:
+// devolução + revenda pra outro comprador — ver bullet "Devolução de
+// veículo já vendido" no CLAUDE.md) — 24/09/2026, pergunta direta do
+// usuário: "se veiculo tiver mais 2 contratos?" → "buscar sempre mais
+// atual". A ordem que a ZapSign devolve os documentos não é garantida
+// ser cronológica, então NUNCA importa só o primeiro que aparecer na
+// lista — agrupa por veículo e mantém só o de `data_assinatura` mais
+// recente como candidata automática; o(s) outro(s) (contrato mais antigo
+// pra esse mesmo veículo) fica de fora do automático, listado à parte —
+// pode ser rascunho/duplicata (só esse mais recente importa) ou pode ser
+// uma venda anterior genuína (devolução+revenda) que merece registro
+// próprio, mas isso é decisão humana, o script nunca assume sozinho
+// (regra #3) — resolve manual em admin/zapsign_importar.php se for o
+// caso de registrar as duas.
+$porVeiculo = [];
+foreach ($candidatas as $idx => $c) $porVeiculo[$c['oportunidade_id']][] = $idx;
+
+$superados = [];
+foreach ($porVeiculo as $idxs) {
+    if (count($idxs) < 2) continue;
+    // strtotime() em vez de comparar string cru — o formato de signed_at/
+    // created_at nunca foi confirmado contra a API real, pode variar
+    // (com ou sem hora, fuso etc); strtotime() lida com isso, comparação
+    // de string cru não seria confiável nesse cenário.
+    usort($idxs, fn($a, $b) => strtotime($candidatas[$b]['data_assinatura']) <=> strtotime($candidatas[$a]['data_assinatura']));
+    foreach (array_slice($idxs, 1) as $idxAntigo) {
+        $superados[] = $candidatas[$idxAntigo] + ['mais_recente' => $candidatas[$idxs[0]]];
+    }
+}
+if ($superados) {
+    $tokensSuperados = array_map(fn($s) => $s['doc']['token'], $superados);
+    $candidatas = array_values(array_filter(
+        $candidatas, fn($c) => !in_array($c['doc']['token'], $tokensSuperados, true)
+    ));
+}
+
 echo "Total na ZapSign: " . count($documentos) . " | já importados: {$jaImportados} | telefone bate com cliente (fora do escopo, resolve em admin/zapsign_importar.php): {$comCliente}\n\n";
+
+if ($superados) {
+    echo "🔁 " . count($superados) . " documento(s) superado(s) por um contrato MAIS RECENTE pro mesmo veículo — nunca importado automaticamente, nunca decide sozinho se é duplicata ou devolução+revenda genuína:\n\n";
+    foreach ($superados as $s) {
+        printf(
+            "  \"%s\" (assinado %s) — veículo #%d, placa %s → existe contrato mais recente: \"%s\" (assinado %s)\n",
+            $s['doc']['name'] ?? '(sem nome)', substr($s['data_assinatura'], 0, 10),
+            $s['oportunidade_id'], $s['oportunidade']['veiculo_placa'] ?? '—',
+            $s['mais_recente']['doc']['name'] ?? '(sem nome)', substr($s['mais_recente']['data_assinatura'], 0, 10)
+        );
+    }
+    echo "\n";
+}
 
 if ($semPlaca) {
     echo "❓ " . count($semPlaca) . " documento(s) sem placa identificável no estoque OU sem data de assinatura confiável — precisam resolver manual em admin/zapsign_importar.php:\n\n";
