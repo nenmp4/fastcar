@@ -116,6 +116,13 @@ function finListarLancamentosVenda(int $vendaId): array {
  * (null) cai no mesmo $categoriaId de sempre — o formulário manual em
  * admin/venda.php nunca passa esse parâmetro, continua se comportando
  * exatamente como antes.
+ *
+ * $dataEntrada (novo, 24/09/2026) — mesmo racional de $dataCompra em
+ * finRegistrarDespesaCompraFechada(): opcional, null cai em date('Y-m-d')
+ * (comportamento de sempre, botão manual e gatilho automático em tempo
+ * real). Só passado explícito por quem grava venda RETROATIVA
+ * (install/gerar_lancamentos_vendas_retroativos.php), pra nunca datar a
+ * entrada de uma venda de meses atrás como se fosse hoje.
  */
 function finGerarPlanoParcelamentoVenda(
     int $vendaId,
@@ -126,7 +133,8 @@ function finGerarPlanoParcelamentoVenda(
     ?int $categoriaId,
     string $nomeCompradorManual,
     int $criadoPor,
-    ?int $categoriaEntradaId = null
+    ?int $categoriaEntradaId = null,
+    ?string $dataEntrada = null
 ): array {
     if (finContarLancamentosVenda($vendaId) > 0) {
         return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros gerados — não é possível gerar de novo.'];
@@ -149,7 +157,7 @@ function finGerarPlanoParcelamentoVenda(
 
         $criadas = 0;
         if ($valorEntrada > 0) {
-            $ins->execute([$categoriaEntradaId ?? $categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
+            $ins->execute([$categoriaEntradaId ?? $categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, $dataEntrada ?: date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
             $criadas++;
         }
         for ($i = 1; $i <= $numParcelas; $i++) {
@@ -371,6 +379,17 @@ function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFina
  * por qualquer motivo, cai inteiro pro caminho 100% local
  * (`finGerarPlanoParcelamentoVenda()`, entrada+parcelas juntas) — nunca
  * trava a venda por causa da integração externa.
+ *
+ * $dataVenda (novo, 24/09/2026) — mesmo racional de $dataCompra no lado de
+ * compra: opcional, null cai no comportamento de sempre (data de hoje,
+ * gatilho em tempo real via mudarEtapaVenda()). Passado explícito só por
+ * quem grava venda RETROATIVA (install/gerar_lancamentos_vendas_retroativos.php)
+ * — quando presente, NUNCA tenta Asaas (regra #3 aplicada aqui: uma venda
+ * histórica de meses atrás nunca deve gerar cobrança real/link de
+ * pagamento vivo pro comprador, mesmo risco já evitado do lado de compra
+ * não recriar automação "isso está acontecendo agora"), vai direto pro
+ * caminho 100% local com a data real da venda na entrada e a 1ª parcela
+ * calculada a partir dela (não de "hoje").
  */
 /**
  * Cancela os lançamentos FUTUROS (ainda 'pendente') de uma venda que caiu —
@@ -425,7 +444,7 @@ function finCancelarLancamentosPendentesVenda(int $vendaId): array {
     }
 }
 
-function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
+function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $dataVenda = null): void {
     try {
         if (finContarLancamentosVenda($vendaId) > 0) return;
 
@@ -448,13 +467,19 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
         if ($restante <= 0 || $numParcelas < 1) return;
 
         $valorParcela = round($restante / $numParcelas, 2);
-        $primeiraParcela = date('Y-m-d', strtotime('first day of next month'));
+        $primeiraParcela = $dataVenda
+            ? date('Y-m-d', strtotime('first day of next month', strtotime($dataVenda)))
+            : date('Y-m-d', strtotime('first day of next month'));
         $categoriaParcelaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Venda de veículo — parcela'")->fetchColumn();
         $categoriaEntradaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Venda de veículo — entrada'")->fetchColumn();
         $veiculo = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'veículo';
 
+        // $dataVenda presente = chamada RETROATIVA — nunca tenta Asaas (uma
+        // venda de meses atrás não pode gerar cobrança real/link de
+        // pagamento vivo agora, mesmo raciocínio de nunca recriar automação
+        // "isso está acontecendo agora" pra dado histórico).
         $criadoViaAsaas = false;
-        if (asaasConfigured()) {
+        if (!$dataVenda && asaasConfigured()) {
             $asaasCustomerId = asaasCriarClienteSeNecessario(
                 (string)($v['comprador_nome'] ?? ''), (string)($v['comprador_cpf'] ?? ''),
                 (string)($v['comprador_telefone'] ?? ''), (string)($v['comprador_email'] ?? '')
@@ -484,11 +509,27 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
         } else {
             // Fallback 100% local — entrada + parcelas juntas, via a função já
             // existente/testada (mesma que o botão manual usa).
-            finGerarPlanoParcelamentoVenda(
+            $r = finGerarPlanoParcelamentoVenda(
                 $vendaId, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela,
                 $categoriaParcelaId ?: null, (string)($v['comprador_nome'] ?? ''), (int)$criadoPor,
-                $categoriaEntradaId ?: null
+                $categoriaEntradaId ?: null, $dataVenda
             );
+            // Retroativo: a entrada de uma venda já concluída há tempos já
+            // foi recebida de verdade (mesmo racional de
+            // finRegistrarDespesaCompraFechada() nascer 'pago') — o
+            // fallback local sempre cria como 'pendente' (comportamento
+            // certo pro botão manual/gatilho em tempo real, onde ainda não
+            // se sabe se o dinheiro já entrou). As parcelas seguem
+            // 'pendente' — status individual de cada uma no passado é
+            // incerto sem registro de pagamento real (regra #3, nunca
+            // chuta), fica pro financeiro marcar manualmente as que já
+            // sabe que foram pagas.
+            if ($dataVenda && $valorEntrada > 0 && ($r['ok'] ?? false)) {
+                $db->prepare("
+                    UPDATE fin_lancamentos SET status = 'pago', data_pagamento = ?
+                    WHERE venda_id = ? AND parcela_numero = 0 AND origem = 'parcelamento_venda'
+                ")->execute([$dataVenda, $vendaId]);
+            }
         }
     } catch (Throwable $e) {
         // best-effort — nunca pode travar a transição de etapa da venda
@@ -517,8 +558,14 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor): void {
  * vendedor responsável ter um colaborador ATIVO cadastrado em
  * `fin_colaboradores` — mesmas 2 travas do lado de compra, nunca chuta
  * (regra #3).
+ *
+ * $dataVenda (novo, 24/09/2026) — mesmo racional de $dataCompra em
+ * finRegistrarComissaoCompraFechada(): opcional, null cai em
+ * date('now','localtime') (gatilho em tempo real via mudarEtapaVenda()).
+ * Passado explícito só por install/gerar_lancamentos_vendas_retroativos.php,
+ * pra nunca datar comissão de venda antiga como se fosse de hoje.
  */
-function finRegistrarComissaoVendaFechada(int $vendaId): void {
+function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = null): void {
     try {
         $db = getDB();
 
@@ -558,11 +605,12 @@ function finRegistrarComissaoVendaFechada(int $vendaId): void {
             $veiculo, $v['comprador_nome'] ?: '—', $vendaId, number_format($valorEntrada, 2, ',', '.')
         );
 
+        $data = $dataVenda ?: date('Y-m-d');
         $db->prepare("
             INSERT INTO fin_lancamentos
                 (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, venda_id, funcionario_id, origem, created_by)
-            VALUES ('despesa', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, ?, 'comissao_venda', ?)
-        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $vendaId, $colaboradorId, $vendedorId]);
+            VALUES ('despesa', ?, ?, ?, ?, ?, 'pago', ?, ?, 'comissao_venda', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $data, $data, $vendaId, $colaboradorId, $vendedorId]);
     } catch (Throwable $e) {
         // best-effort — nunca pode travar a transição de etapa da venda
     }

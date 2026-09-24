@@ -5908,6 +5908,54 @@ segue no schema sem uso novo, não removida sem ganho real),
   testada contra schema anterior (CHECK reconstruída preservando dado
   existente, incluindo uma linha `comissao_compra` já gravada, idempotente
   numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos.
+  **Backfill retroativo de receita/comissão pra vendas já `'vendido'`
+  antes dessas 2 funções existirem** (24/09/2026, pedido direto:
+  "precisamos agora buscar as receitas dos contratos de vendas", mesma
+  investigação do lado de compra que já tinha achado o mesmo buraco —
+  negociações de venda importadas via `zapsignImportarContratoVendaComoNegociacaoManual()`
+  (que de propósito nunca chama `mudarEtapaVenda()`, ver bullet "Importar
+  contratos antigos da ZapSign") ou fechadas antes de
+  `finGerarReceitaVendaAssinatura()`/`finRegistrarComissaoVendaFechada()`
+  existirem nunca geraram lançamento nenhum). As 2 funções
+  (`includes/financeiro.php`) ganharam parâmetro opcional
+  `?string $dataVenda = null` — `null` cai no comportamento de sempre
+  (gatilho em tempo real via `mudarEtapaVenda()`, tenta Asaas primeiro,
+  data de hoje); presente (retroativo) **nunca tenta Asaas** (mesmo
+  raciocínio já aplicado do lado de compra: uma venda de meses atrás não
+  pode gerar cobrança real/link de pagamento vivo agora, nunca recriar
+  automação "isso está acontecendo agora" pra dado histórico), vai direto
+  pro caminho 100% local com a data real da venda na entrada e a 1ª
+  parcela calculada a partir dela, nunca de "hoje".
+  `finGerarPlanoParcelamentoVenda()` ganhou `?string $dataEntrada = null`
+  pra isso (omitido = `date('Y-m-d')`, mesmo comportamento de sempre pro
+  botão manual/gatilho real). Entrada retroativa nasce `'pago'` (mesmo
+  espírito de `finRegistrarDespesaCompraFechada()`: é o evento único que
+  sabemos ter acontecido, a venda já está `'vendido'` com
+  `valor_pago_contratacao` preenchido); parcelas nascem `'pendente'` com
+  vencimento real — status individual de cada parcela no passado é
+  incerto sem registro de pagamento real (regra #3, nunca chuta), fica
+  pro financeiro marcar manualmente as que já sabe que foram pagas.
+  Novo `install/gerar_lancamentos_vendas_retroativos.php` (CLI, dry-run
+  por padrão, `--confirmar` pra aplicar) acha `vendas.etapa='vendido'`
+  com `preco_venda > 0` sem NENHUM lançamento ainda (mesmo critério de
+  `finContarLancamentosVenda()` — nunca reaproveita venda que já tem
+  lançamento manual) e chama as mesmas 2 funções de produção — idempotente,
+  nunca duplica. Relatório do dry-run sempre mostra placa/marca/modelo de
+  cada venda (pedido de acompanhamento na mesma conversa, "conciliar com
+  veículos") — dá pra cruzar direto com a coluna "Venda" de
+  `admin/veiculos.php` sem precisar abrir cada negociação uma por uma.
+  Testado em banco isolado, 5 cenários: venda parcelada com vendedor
+  tendo colaborador ativo (gera receita — entrada `pago` na data real,
+  parcelas `pendente` com vencimento mensal certo a partir da data real,
+  nunca de hoje — E comissão `pago` na data real); venda à vista (saldo
+  restante ≤ 0, nunca gera receita, só comissão se tiver entrada); venda
+  com vendedor sem colaborador ativo (gera receita mas nunca comissão);
+  venda que já tinha lançamento manual antes (nunca é tocada, continua
+  com a mesma 1 linha); negociação ainda em `'negociacao'` (nunca vira
+  candidata); rodar `--confirmar` 2x confirma idempotência ("nada a
+  fazer" na 2ª) + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema (`fin_lancamentos.origem` já aceitava `'comissao_venda'` desde o
+  bullet acima). ⚠️ Ainda não rodado em produção.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
