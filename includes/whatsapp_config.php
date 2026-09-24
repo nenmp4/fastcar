@@ -83,6 +83,80 @@ function zapiStatusPrincipalCache(bool $forcar = false): array {
 }
 
 /**
+ * Mesmo mecanismo de zapiStatusPrincipalCache(), mas pra instância
+ * FALLBACK (zapiCredenciaisFallback()) — cache próprio
+ * (`config.zapi_status_fallback_cache`), nunca compartilha o cache da
+ * principal (são 2 instâncias/credenciais diferentes).
+ */
+function zapiStatusFallbackCache(bool $forcar = false): array {
+    [$inst, $tok, $cli] = zapiCredenciaisFallback();
+    if (!$inst || !$tok) {
+        return ['estado' => 'nao_configurado', 'verificado_em' => null];
+    }
+
+    $cacheRaw = getConfig('zapi_status_fallback_cache');
+    if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
+        [$ts, $json] = explode('|', $cacheRaw, 2);
+        if ((time() - (int)$ts) < 60) {
+            $d = json_decode($json, true);
+            if (is_array($d) && isset($d['estado'])) return $d;
+        }
+    }
+
+    $headers = ['Content-Type: application/json'];
+    if ($cli) $headers[] = 'client-token: ' . $cli;
+
+    $resultado = ['estado' => 'erro', 'verificado_em' => time()];
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/status");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 4,
+        CURLOPT_CONNECTTIMEOUT => 3,
+    ]);
+    $resp = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if (!$err && $code === 200) {
+        $d = json_decode((string)$resp, true);
+        if (is_array($d)) {
+            $resultado = ['estado' => !empty($d['connected']) ? 'conectado' : 'desconectado', 'verificado_em' => time()];
+        }
+    }
+
+    setConfig('zapi_status_fallback_cache', time() . '|' . json_encode($resultado));
+    return $resultado;
+}
+
+/**
+ * 24/09/2026, achado real — "Conectou o reserva lá na zpi mais no painel
+ * a bolinha ficar vermelha deveria mudar para zpi reserva Conectado": o
+ * badge do topbar (admin/_zapi_status.php) só olhava a instância
+ * PRINCIPAL — reconectar a FALLBACK nunca mudava o vermelho, mesmo sendo
+ * ela quem está de fato atendendo o WhatsApp enquanto a principal está
+ * fora (banida/desconectada). Combina os dois: principal conectada
+ * continua sendo o estado "normal" de sempre; principal fora + fallback
+ * conectada vira um estado PRÓPRIO (`reserva_conectado`, nunca
+ * `conectado` — precisa continuar visualmente diferente, é operação de
+ * emergência, não o normal); sem nenhuma das duas conectada, mantém o
+ * estado real da principal (desconectado/erro/não configurado) — nunca
+ * mascara o problema de verdade só porque a fallback também está fora.
+ */
+function zapiStatusOperacionalCache(bool $forcar = false): array {
+    $principal = zapiStatusPrincipalCache($forcar);
+    if ($principal['estado'] === 'conectado') return $principal;
+
+    $fallback = zapiStatusFallbackCache($forcar);
+    if ($fallback['estado'] === 'conectado') {
+        return ['estado' => 'reserva_conectado', 'verificado_em' => $fallback['verificado_em']];
+    }
+
+    return $principal;
+}
+
+/**
  * Credenciais da instância Z-API DEDICADA de vendas (17/09/2026, módulo de
  * vendas ganhando funil de entrada pelo WhatsApp próprio — pedido
  * José/Jean: "vamos adcionar instancia só para vendas"). Config separada

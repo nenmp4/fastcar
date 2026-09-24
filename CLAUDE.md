@@ -4368,6 +4368,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   fake: fallback assume quando a principal falha, log gravado, alerta
   disparado pros números configurados, dedup bloqueando reenvio numa 2ª
   falha em seguida, indicador de Saúde lendo o log certo.
+  **Badge do topbar não refletia a fallback reconectada** (24/09/2026,
+  achado real: "Conectou o reserva lá na zpi mais no painel a bolinha
+  ficar vermelha deveria mudar para zpi reserva Conectado") — o badge
+  (`admin/_zapi_status.php`) e o endpoint de polling
+  (`admin/zapi_status_ajax.php`), criados em 23/09/2026 pro status da Z-API
+  no topbar, só consultavam `zapiStatusPrincipalCache()` (a instância
+  PRINCIPAL) — reconectar o número reserva no painel da Z-API nunca mudava
+  o vermelho, mesmo sendo ele quem está de fato atendendo o WhatsApp
+  enquanto a principal está fora (banida/desconectada). Nova
+  `zapiStatusFallbackCache()` (`includes/whatsapp_config.php`, mesmo
+  mecanismo de cache de 60s da principal, chave própria em `config`) +
+  `zapiStatusOperacionalCache()`: principal conectada continua sendo o
+  estado normal de sempre ("conectado", verde); principal fora + fallback
+  conectada vira um estado PRÓPRIO ("reserva_conectado", amarelo — nunca
+  verde, é operação de emergência, precisa continuar visualmente diferente
+  do normal); sem nenhuma das duas conectada, mantém o estado real da
+  principal (desconectado/erro/não configurado) — nunca mascara o problema
+  de verdade só porque a fallback também está fora. Badge e endpoint de
+  polling trocados pra usar a função combinada; JS ganhou o rótulo novo
+  "🟡 Z-API (reserva) conectado". Testado: 5 cenários em banco isolado
+  contra servidor Z-API fake local (sem nenhuma credencial → não
+  configurado; só principal configurada e desconectada → desconectado;
+  principal desconectada + fallback conectada → `reserva_conectado`; as
+  duas desconectadas/com erro → continua desconectado, nunca mascara;
+  principal conectada → sempre "conectado" normal, nem chega a consultar a
+  fallback) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 - **Recuperação de leads perdidos no bloqueio de WhatsApp**
   (`includes/recuperacao_leads.php` + `cron/recuperacao_leads.php`,
   19-20/09/2026, achado real: "estamos deste ontem tav bloqueado wahatsApp
