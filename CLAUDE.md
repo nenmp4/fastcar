@@ -3773,6 +3773,71 @@ segue no schema sem uso novo, não removida sem ganho real),
   "vendido" certos; confirmado via HTTP real, não só chamada direta de
   função, que nenhum lançamento financeiro aparece depois do fluxo
   completo).
+  **Conciliação em lote via CLI, lendo a placa automaticamente** (24/09/2026,
+  pedido direto: "mais facil agente rodar script puxando pelo zapsign puxa
+  placa vicula o client puxa os dados docliente contrato fa[z] viculo depois
+  agente faz o financeiro") — até aqui, resolver documento "sem match" na
+  ZapSign exigia abrir `admin/zapsign_importar.php` e escolher o veículo
+  certo num `<select>` um por um; `install/zapsign_conciliar_vendas.php`
+  (novo, mesmo padrão dry-run/`--confirmar` de todo script de backfill desta
+  sessão) faz isso em lote — a diferença real é ler a PLACA automaticamente
+  do PDF via IA. Nova `zapsignExtrairVeiculoContrato()`
+  (`includes/zapsign_importar.php`, Gemini multimodal — mesmo mecanismo já
+  usado em `includes/extracao_documentos.php`) baixa o PDF assinado e
+  extrai placa/marca/modelo/valor de venda; `zapsignEncontrarVeiculoPorPlaca()`
+  só considera candidata segura quando a placa bate com EXATAMENTE 1 veículo
+  disponível na frota — sem placa legível, sem match no estoque, ou (mais de
+  1 candidato, não deveria acontecer, placa é única) qualquer ambiguidade
+  fica listada à parte pra resolver manual, nunca decide sozinho (regra #3).
+  Mesmo critério de escopo de `admin/zapsign_importar.php`: telefone do
+  signatário batendo com cliente já cadastrado fica de fora (pode ter mais
+  de 1 veículo, regra #1, precisa de revisão humana lá).
+  **Reforçado 2x no mesmo dia, pedidos de acompanhamento diretos**:
+  (1) "tem preencher ficha completa do cliente salvar contrato no drive" —
+  `zapsignExtrairVeiculoContrato()` estendida (mesma chamada Gemini, sem
+  duplicar requisição) pra também ler RG/CPF/endereço/e-mail/nacionalidade/
+  estado civil/profissão do COMPRADOR direto do corpo do contrato (Quadro de
+  Qualificação das Partes, o mesmo texto que `includes/contratos_pdf.php`
+  gera na hora de criar o contrato original) — nunca disponível no metadado
+  de assinatura da ZapSign, que só dá nome/telefone/CPF via
+  `zapsignExtrairSignatario()`. `zapsignImportarContratoVendaComoNegociacaoManual()`
+  ganhou parâmetro opcional `$dadosComprador` pra gravar tudo isso em
+  `vendas.comprador_*`; CPF prioriza o do metadado de assinatura (signatário
+  confirmou na hora de assinar, mais confiável) quando existe, só cai pro
+  lido no corpo do contrato se a ZapSign não trouxer nenhum. Salvar o PDF no
+  Drive/local já era feito por essa mesma função desde que foi criada
+  (`salvarArquivoGeradoComoDocumento()`, nenhuma mudança precisou nela) — só
+  não tinha sido comunicado que já cobria essa ponta, confirmado no teste
+  (bytes do PDF salvo conferidos idênticos ao baixado da ZapSign).
+  (2) "salvar sempre na data do contrato real não como data de hoje" — o
+  script nunca mais cai num fallback silencioso pra "hoje": calcula a data
+  (prioriza `signers[0].signed_at` se a ZapSign trouxer — nunca confirmado
+  contra a API real, mesma ressalva de todo campo ZapSign não validado —,
+  cai pra `created_at`/`last_update_at` do documento) ANTES de decidir se é
+  candidata segura; documento sem NENHUMA data confiável cai no mesmo bucket
+  de "resolver manual", nunca importado com data chutada. Dry-run mostra a
+  data de cada candidata explicitamente no relatório, pro admin conferir
+  antes de rodar `--confirmar`.
+  `install/gerar_lancamentos_vendas_retroativos.php` (já existia, ver bullet
+  do módulo financeiro) continua sendo o passo SEGUINTE, deliberadamente
+  separado — "depois agente faz o financeiro" — pra gerar receita/comissão
+  dessas vendas recém-importadas usando a data real de cada uma.
+  Testado ponta a ponta em banco isolado + servidor ZapSign+Gemini fake
+  local (mesmo processo, 2 rotas): 4 documentos simulados — venda com placa
+  batendo (importa com ficha completa do comprador + data real do contrato
+  + PDF salvo local conferido byte a byte contra o baixado da ZapSign),
+  telefone já cliente cadastrado (nunca importado, fica no bucket certo),
+  sem placa legível (fica no bucket "resolver manual"), já importado antes
+  (nunca reprocessado) — idempotência confirmada rodando `--confirmar` 2x
+  seguidas, e o veículo fica indisponível pra nova venda logo depois de
+  importado. **Achado no próprio processo de teste, não no código do
+  projeto**: `system('php script.php')` dentro de um script PHP spawna um
+  processo NOVO que não herda `-d auto_prepend_file` do processo pai —
+  precisa passar a flag de novo dentro do comando do `system()`, senão o
+  processo filho tenta a URL real de produção em vez do fake server local
+  (mesma classe do gotcha do `-r`/`auto_prepend_file` já documentado nesta
+  sessão — os dois são sobre `auto_prepend_file` não se propagar sozinho
+  pra fora do processo PHP que o recebeu na linha de comando).
 - **Identidade visual (logo/favicon/ícones PWA)** — `includes/marca.php`
   (13/09/2026, pedido do José/Jean depois de ver o wizard "bem feio" e
   pedir "coloca em Configurações pra subir logo, favicon e ícone PWA" em

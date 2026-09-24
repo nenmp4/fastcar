@@ -44,6 +44,7 @@ require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/oportunidades.php'; // criarVeiculoManualFrota()
 require_once __DIR__ . '/vendas.php'; // criarVenda()/veiculoDisponivelParaVenda()
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()
+require_once __DIR__ . '/gemini.php'; // zapsignExtrairVeiculoContrato()
 
 /**
  * Importa 1 documento da ZapSign como veículo cadastrado manualmente na
@@ -159,7 +160,8 @@ function zapsignImportarContratoVendaComoNegociacaoManual(
     string $compradorTelefone,
     ?float $precoVenda,
     string $dataAssinatura, // 'Y-m-d H:i:s' ou '' (usa hoje)
-    int $criadoPor
+    int $criadoPor,
+    array $dadosComprador = [] // ficha completa lida do contrato — ver zapsignExtrairVeiculoContrato()
 ): array {
     $db = getDB();
 
@@ -179,9 +181,19 @@ function zapsignImportarContratoVendaComoNegociacaoManual(
     $dataVenda = $dataAssinatura ? substr($dataAssinatura, 0, 10) : date('Y-m-d');
     $db->prepare("
         UPDATE vendas SET comprador_nome = ?, comprador_telefone = ?, preco_venda = ?,
+               comprador_cpf = ?, comprador_rg = ?, comprador_endereco = ?, comprador_email = ?,
+               comprador_nacionalidade = COALESCE(NULLIF(?, ''), comprador_nacionalidade),
+               comprador_estado_civil = ?, comprador_profissao = ?,
                etapa = 'vendido', data_venda = ?, updated_at = datetime('now','localtime')
         WHERE id = ?
-    ")->execute([clean($compradorNome), $telNorm, $precoVenda, $dataVenda, $vendaId]);
+    ")->execute([
+        clean($compradorNome), $telNorm, $precoVenda,
+        $dadosComprador['comprador_cpf'] ?? '', $dadosComprador['comprador_rg'] ?? '',
+        $dadosComprador['comprador_endereco'] ?? '', $dadosComprador['comprador_email'] ?? '',
+        $dadosComprador['comprador_nacionalidade'] ?? '',
+        $dadosComprador['comprador_estado_civil'] ?? '', $dadosComprador['comprador_profissao'] ?? '',
+        $dataVenda, $vendaId,
+    ]);
 
     $db->prepare("
         INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
@@ -224,4 +236,121 @@ function zapsignImportarContratoVendaComoNegociacaoManual(
     ]);
 
     return ['ok' => true, 'erro' => null, 'venda_id' => $vendaId];
+}
+
+/**
+ * Lê o PDF assinado de um contrato da ZapSign e tenta extrair a PLACA (+
+ * marca/modelo/valor de venda) do veículo E a ficha completa do
+ * COMPRADOR (RG/CPF/endereço/e-mail/nacionalidade/estado civil/profissão)
+ * — 24/09/2026, pedido direto: "agente rodar script puxando pelo zapsign
+ * puxa placa vicula o client puxa os dados do cliente... depois agente
+ * faz o financeiro", reforçado no mesmo dia: "tem preencher ficha completa
+ * do cliente". `zapsignExtrairSignatario()` (`includes/zapsign.php`) já dá
+ * nome/telefone/cpf a partir do metadado do SIGNATÁRIO na ZapSign — esta
+ * função complementa lendo o CORPO do contrato (Quadro de Qualificação das
+ * Partes, mesmo texto que `includes/contratos_pdf.php` gera na hora de
+ * criar o contrato original), de onde vem o resto (RG/endereço/e-mail/
+ * nacionalidade/estado civil/profissão) que o metadado de assinatura
+ * nunca carrega. Reaproveita o mesmo mecanismo multimodal já usado em
+ * `includes/extracao_documentos.php` (Gemini `inlineData`, lê PDF
+ * nativamente sem OCR), mas é uma função PRÓPRIA — o contrato de venda não
+ * é nenhum dos 4 tipos de `EXTRACAO_DOCUMENTO_CAMPOS` (aqueles são
+ * documentos que o CLIENTE sobe no wizard; isto é o PRÓPRIO contrato
+ * assinado, texto corrido, não um documento oficial com campos fixos) —
+ * nunca reaproveitado ali pra não confundir os dois fluxos.
+ *
+ * Regra #3 aplicada aqui também: nunca inventa — campo não encontrado no
+ * texto do contrato volta como string vazia, nunca chutado. Sem chave
+ * Gemini configurada, ou PDF que não baixou (link temporário expirado),
+ * retorna tudo vazio — nunca lança, quem chama trata como "sem dado
+ * suficiente, precisa resolver manual".
+ *
+ * @return array{placa:string, marca:string, modelo:string, valor_venda:string,
+ *               comprador_rg:string, comprador_cpf:string, comprador_endereco:string,
+ *               comprador_email:string, comprador_nacionalidade:string,
+ *               comprador_estado_civil:string, comprador_profissao:string}
+ */
+function zapsignExtrairVeiculoContrato(string $docToken): array {
+    $vazio = [
+        'placa' => '', 'marca' => '', 'modelo' => '', 'valor_venda' => '',
+        'comprador_rg' => '', 'comprador_cpf' => '', 'comprador_endereco' => '',
+        'comprador_email' => '', 'comprador_nacionalidade' => '',
+        'comprador_estado_civil' => '', 'comprador_profissao' => '',
+    ];
+
+    $geminiKey = getConfig('gemini_api_key') ?: '';
+    if (!$geminiKey) return $vazio;
+
+    $conteudo = zapsignBaixarAssinado($docToken);
+    if (!$conteudo) return $vazio;
+
+    $prompt = <<<PROMPT
+Você vai ler um contrato de venda de veículo (documento assinado eletronicamente). Extraia SOMENTE o que estiver escrito claramente no texto — NUNCA invente ou deduza um dado que não apareça explicitamente. Se um campo não estiver no documento, deixe a string vazia "".
+
+Responda SOMENTE em JSON, neste formato exato:
+{"placa": "...", "marca": "...", "modelo": "...", "valor_venda": "...", "comprador_rg": "...", "comprador_cpf": "...", "comprador_endereco": "...", "comprador_email": "...", "comprador_nacionalidade": "...", "comprador_estado_civil": "...", "comprador_profissao": "..."}
+
+- "placa": a placa do veículo objeto da venda (formato brasileiro, ex: ABC1234 ou ABC1D23), sem hífen/espaço.
+- "marca" e "modelo": marca e modelo do veículo, se aparecerem.
+- "valor_venda": o valor total da venda em reais, só os números (ex: "15000.00"), sem "R$" nem pontuação de milhar.
+- Os campos "comprador_*" são sobre a pessoa que está COMPRANDO o veículo (a parte contrária à FASTCAR no contrato, normalmente identificada no início como "COMPRADOR(A)" ou na qualificação das partes) — nunca confunda com o vendedor original nem com a FASTCAR:
+  - "comprador_rg": número do RG.
+  - "comprador_cpf": só os números do CPF.
+  - "comprador_endereco": endereço completo como está escrito (rua, número, bairro, cidade, UF, CEP).
+  - "comprador_email": e-mail, se aparecer.
+  - "comprador_nacionalidade": ex: "brasileiro(a)".
+  - "comprador_estado_civil": ex: "solteiro(a)", "casado(a)".
+  - "comprador_profissao": profissão declarada.
+PROMPT;
+
+    $resposta = geminiCallComMidia(
+        $prompt, 'application/pdf', base64_encode($conteudo),
+        $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 700, 0.1
+    );
+    if ($resposta === '') return $vazio;
+
+    $limpo = preg_replace('/```(?:json)?/i', '', $resposta);
+    preg_match('/\{[\s\S]*\}/', $limpo, $m);
+    $dados = json_decode(trim($m[0] ?? ''), true);
+    if (!is_array($dados)) return $vazio;
+
+    return [
+        'placa'       => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($dados['placa'] ?? ''))),
+        'marca'       => trim((string)($dados['marca'] ?? '')),
+        'modelo'      => trim((string)($dados['modelo'] ?? '')),
+        'valor_venda' => trim((string)($dados['valor_venda'] ?? '')),
+        'comprador_rg'            => trim((string)($dados['comprador_rg'] ?? '')),
+        'comprador_cpf'           => preg_replace('/\D/', '', (string)($dados['comprador_cpf'] ?? '')),
+        'comprador_endereco'      => trim((string)($dados['comprador_endereco'] ?? '')),
+        'comprador_email'         => trim((string)($dados['comprador_email'] ?? '')),
+        'comprador_nacionalidade' => trim((string)($dados['comprador_nacionalidade'] ?? '')),
+        'comprador_estado_civil'  => trim((string)($dados['comprador_estado_civil'] ?? '')),
+        'comprador_profissao'     => trim((string)($dados['comprador_profissao'] ?? '')),
+    ];
+}
+
+/**
+ * Acha, na FROTA (oportunidades.etapa='fechado'), o veículo com essa placa
+ * — só retorna quando existe EXATAMENTE 1 correspondência E esse veículo
+ * está disponível pra venda (`veiculoDisponivelParaVenda()`, nunca um que
+ * já tem negociação ativa/concluída). Placa vazia, sem match, ou mais de 1
+ * match (não deveria acontecer — placa é única — mas defensivo) sempre
+ * retorna `null`, nunca "chuta" o candidato mais provável (regra #3).
+ */
+function zapsignEncontrarVeiculoPorPlaca(string $placa): ?int {
+    $placaNorm = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
+    if ($placaNorm === '') return null;
+
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT id FROM oportunidades
+        WHERE etapa = 'fechado'
+          AND UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) = ?
+    ");
+    $stmt->execute([$placaNorm]);
+    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (count($ids) !== 1) return null;
+    $oportunidadeId = (int)$ids[0];
+    return veiculoDisponivelParaVenda($oportunidadeId) ? $oportunidadeId : null;
 }

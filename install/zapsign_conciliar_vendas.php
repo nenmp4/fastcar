@@ -1,0 +1,243 @@
+<?php
+/**
+ * Concilia contratos de VENDA (revenda) que já existem na conta ZapSign
+ * mas nunca passaram por este sistema — 24/09/2026, pedido direto:
+ * "mais facil agente rodar script puxando pelo zapsign puxa placa vicula
+ * o client puxa os dados do cliente contrato fa[z] viculo depois agente
+ * faz o financeiro". Mesma ideia de `admin/zapsign_importar.php`, mas
+ * em LOTE via linha de comando em vez de clicar documento por documento —
+ * a diferença real que este script adiciona é a leitura automática da
+ * PLACA no PDF do contrato (via IA, `zapsignExtrairVeiculoContrato()`)
+ * pra já sugerir qual veículo da frota é o certo, em vez do admin ter que
+ * abrir o PDF e procurar na lista manualmente.
+ *
+ * Escopo: só documentos "sem match" (telefone do signatário NÃO bate com
+ * nenhum `clientes` já cadastrado) — mesmo critério de
+ * `admin/zapsign_importar.php`. Documento cujo telefone bate com cliente
+ * existente fica de fora (mesmo motivo de lá: um cliente pode ter mais de
+ * 1 veículo, regra #1, não dá pra saber qual sem revisão humana) — segue
+ * aparecendo só na tela pra resolver manualmente lá.
+ *
+ * Placa é a única coisa que decide o vínculo — nunca nome/telefone do
+ * comprador (esses só preenchem o CADASTRO da venda depois de já saber
+ * qual veículo é). Só considera candidata segura quando a placa lida bate
+ * com EXATAMENTE 1 veículo disponível na frota
+ * (`zapsignEncontrarVeiculoPorPlaca()`) — sem placa legível, placa que não
+ * bate com nada no estoque, ou (não deveria acontecer, mas defensivo) mais
+ * de 1 candidato, fica listado à parte, nunca decidido sozinho (regra #3).
+ *
+ * Reaproveita `zapsignImportarContratoVendaComoNegociacaoManual()`
+ * (`includes/zapsign_importar.php`, já existia, estendida nesta mesma
+ * mudança) — mesma disciplina de sempre (nunca chama `mudarEtapaVenda()`,
+ * pra nunca gerar lançamento financeiro FALSO com data de hoje pra uma
+ * venda histórica). Ela já faz sozinha as 2 outras pontas pedidas junto
+ * ("tem preencher ficha completa do cliente salvar contrato no drive"):
+ * (1) salva o PDF assinado no MESMO destino Drive/local já usado pro resto
+ * dos documentos do cliente original (`salvarArquivoGeradoComoDocumento()`,
+ * nenhuma mudança nela); (2) grava a ficha completa do comprador
+ * (CPF/RG/endereço/e-mail/nacionalidade/estado civil/profissão) lida do
+ * corpo do contrato via `zapsignExtrairVeiculoContrato()` — CPF prioriza o
+ * metadado de assinatura da própria ZapSign (mais confiável, confirmado
+ * pelo signatário na hora de assinar) quando disponível, só cai pro lido
+ * no texto se a ZapSign não trouxer nenhum.
+ *
+ * "depois agente faz o financeiro" — depois de importar aqui, roda
+ * `install/gerar_lancamentos_vendas_retroativos.php` (já existe) pra
+ * gerar a receita/comissão dessas vendas recém-importadas, usando a data
+ * REAL de cada uma — é um passo SEPARADO de propósito, nunca disparado
+ * automaticamente por este script (mesma razão de sempre: nunca misturar
+ * "importar o negócio" com "decidir o financeiro dele" na mesma operação
+ * sem revisão no meio).
+ *
+ * Uso:
+ *   php install/zapsign_conciliar_vendas.php              — só lista (dry-run)
+ *   php install/zapsign_conciliar_vendas.php --confirmar  — aplica de verdade
+ */
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    die("Este script só roda via linha de comando (CLI).\n");
+}
+
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/security.php';
+require_once __DIR__ . '/../includes/zapsign_importar.php';
+
+$confirmar = in_array('--confirmar', $argv, true);
+$db = getDB();
+
+if (!getConfig('zapsign_api_token')) {
+    die("❌ Token da API ZapSign não configurado (Configurações → ZapSign) — nada a fazer.\n");
+}
+if (!getConfig('gemini_api_key')) {
+    echo "⚠️  Sem chave Gemini configurada — a leitura automática de placa no PDF não vai funcionar,\n";
+    echo "    todo documento vai cair em \"placa não identificada\". Configure em Configurações → IA.\n\n";
+}
+
+$resLista = zapsignListarTodosDocumentos();
+$documentos = $resLista['itens'];
+if (!$resLista['ok']) {
+    echo "⚠️  Falha listando documentos da ZapSign: {$resLista['erro']}";
+    echo $documentos ? " (mostrando os " . count($documentos) . " já obtidos antes da falha)\n" : "\n";
+}
+if (!$documentos) {
+    echo "✅ Nenhum documento na conta ZapSign — nada a fazer.\n";
+    exit(0);
+}
+
+$candidatas = [];
+$semPlaca = [];
+$comCliente = 0;
+$jaImportados = 0;
+
+foreach ($documentos as $doc) {
+    $token = (string)($doc['token'] ?? '');
+    if ($token === '') continue;
+
+    $existe = $db->prepare('SELECT id FROM contratos WHERE zapsign_doc_token = ?');
+    $existe->execute([$token]);
+    if ($existe->fetchColumn()) {
+        $jaImportados++;
+        continue;
+    }
+
+    $sig = zapsignExtrairSignatario($doc);
+    $telNorm = $sig['telefone'] ? normalizarTelefone($sig['telefone']) : '';
+    if ($telNorm) {
+        $stmtCli = $db->prepare('SELECT 1 FROM clientes WHERE telefone = ?');
+        $stmtCli->execute([$telNorm]);
+        if ($stmtCli->fetchColumn()) {
+            // Telefone bate com cliente já cadastrado — mesmo critério de
+            // admin/zapsign_importar.php, fica de fora daqui de propósito
+            // (pode ter mais de 1 veículo, precisa revisão humana lá).
+            $comCliente++;
+            continue;
+        }
+    }
+
+    $veiculo = zapsignExtrairVeiculoContrato($token);
+    $oportunidadeId = $veiculo['placa'] ? zapsignEncontrarVeiculoPorPlaca($veiculo['placa']) : null;
+
+    if (!$oportunidadeId) {
+        $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo];
+        continue;
+    }
+
+    // Data REAL da assinatura — nunca "hoje" (pedido explícito: "salvar
+    // sempre na data do contrato real não como data de hoje"). Prioriza o
+    // que a ZapSign marcar como data de assinatura do signatário (mais
+    // preciso — nunca confirmado contra a API real, ver "A validar" no
+    // CLAUDE.md), cai pra `created_at`/`last_update_at` do documento em
+    // si (a data em que o CONTRATO existiu na ZapSign, quase sempre bem
+    // próxima da assinatura de verdade num fluxo de "gera e já assina").
+    // Sem NENHUMA data confiável, nunca chuta "hoje" sozinho — fica de
+    // fora, pro admin resolver manual em admin/zapsign_importar.php
+    // (regra #3: sem dado confiável, nunca inventa).
+    $dataAssinatura = (string)(
+        $doc['signers'][0]['signed_at'] ?? $doc['created_at'] ?? $doc['last_update_at'] ?? ''
+    );
+    if ($dataAssinatura === '') {
+        $semPlaca[] = ['doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo, 'motivo' => 'sem_data'];
+        continue;
+    }
+
+    $stmtOp = $db->prepare("SELECT veiculo_marca, veiculo_modelo, veiculo_placa FROM oportunidades WHERE id = ?");
+    $stmtOp->execute([$oportunidadeId]);
+    $op = $stmtOp->fetch(PDO::FETCH_ASSOC);
+
+    $candidatas[] = [
+        'doc' => $doc, 'sig' => $sig, 'veiculo' => $veiculo, 'data_assinatura' => $dataAssinatura,
+        'oportunidade_id' => $oportunidadeId, 'oportunidade' => $op,
+    ];
+}
+
+echo "Total na ZapSign: " . count($documentos) . " | já importados: {$jaImportados} | telefone bate com cliente (fora do escopo, resolve em admin/zapsign_importar.php): {$comCliente}\n\n";
+
+if ($semPlaca) {
+    echo "❓ " . count($semPlaca) . " documento(s) sem placa identificável no estoque OU sem data de assinatura confiável — precisam resolver manual em admin/zapsign_importar.php:\n\n";
+    foreach ($semPlaca as $item) {
+        if (($item['motivo'] ?? '') === 'sem_data') {
+            $motivo = 'nenhuma data de assinatura/criação encontrada no documento — nunca importa sozinho com a data de hoje';
+        } else {
+            $motivo = $item['veiculo']['placa'] ? "placa lida \"{$item['veiculo']['placa']}\" não bate com nenhum veículo disponível na frota" : 'nenhuma placa identificada no PDF';
+        }
+        printf(
+            "  \"%s\" — %s (%s)\n    → %s\n",
+            $item['doc']['name'] ?? '(sem nome)', $item['sig']['nome'] ?: 'sem nome identificado',
+            $item['sig']['telefone'] ?: 'sem telefone', $motivo
+        );
+    }
+    echo "\n";
+}
+
+if (!$candidatas) {
+    echo "✅ Nenhuma venda com placa identificada e disponível no estoque — nada a importar agora.\n";
+    exit(0);
+}
+
+echo count($candidatas) . " venda(s) com placa identificada e casando com veículo disponível na frota:\n\n";
+foreach ($candidatas as $c) {
+    $veic = trim(($c['oportunidade']['veiculo_marca'] ?? '') . ' ' . ($c['oportunidade']['veiculo_modelo'] ?? '')) ?: 'veículo';
+    $cpf = $c['sig']['cpf'] ?: $c['veiculo']['comprador_cpf'];
+    printf(
+        "  \"%s\" | comprador %s (%s)%s | veículo #%d: %s — placa %s | valor lido: %s | data real do contrato: %s\n",
+        $c['doc']['name'] ?? '(sem nome)', $c['sig']['nome'] ?: 'sem nome identificado',
+        $c['sig']['telefone'] ?: 'sem telefone', $cpf ? ", CPF {$cpf}" : '',
+        $c['oportunidade_id'], $veic,
+        $c['oportunidade']['veiculo_placa'] ?? '—', $c['veiculo']['valor_venda'] ?: '(não lido)',
+        substr($c['data_assinatura'], 0, 10)
+    );
+    $ficha = array_filter([
+        'RG' => $c['veiculo']['comprador_rg'], 'endereço' => $c['veiculo']['comprador_endereco'],
+        'e-mail' => $c['veiculo']['comprador_email'], 'nacionalidade' => $c['veiculo']['comprador_nacionalidade'],
+        'estado civil' => $c['veiculo']['comprador_estado_civil'], 'profissão' => $c['veiculo']['comprador_profissao'],
+    ]);
+    if ($ficha) {
+        $partes = [];
+        foreach ($ficha as $rotulo => $valor) $partes[] = "{$rotulo}: {$valor}";
+        echo "    ficha lida do contrato → " . implode(' | ', $partes) . "\n";
+    } else {
+        echo "    ficha do comprador → nenhum campo extra lido do contrato (sem chave Gemini, ou contrato não detalha)\n";
+    }
+}
+
+if (!$confirmar) {
+    echo "\n(dry-run — rode com --confirmar pra importar de verdade)\n";
+    exit(0);
+}
+
+$importadas = 0;
+$falhas = 0;
+foreach ($candidatas as $c) {
+    $doc = $c['doc'];
+    // Mesma data já mostrada e validada no relatório acima — nunca recalcula
+    // aqui (e nunca cai pra "hoje": `$c['data_assinatura']` já garantido
+    // não-vazio por construção, candidata sem data nunca chega em $candidatas).
+    $dataAssinatura = $c['data_assinatura'];
+    $precoVenda = $c['veiculo']['valor_venda'] !== '' ? (float)$c['veiculo']['valor_venda'] : null;
+
+    // CPF: prioriza o do metadado de assinatura da ZapSign (signatário
+    // confirmou os dados na hora de assinar, mais confiável), cai pro lido
+    // no corpo do contrato só se a ZapSign não trouxe nenhum.
+    $dadosComprador = $c['veiculo'];
+    if ($c['sig']['cpf']) $dadosComprador['comprador_cpf'] = $c['sig']['cpf'];
+
+    $r = zapsignImportarContratoVendaComoNegociacaoManual(
+        (string)$doc['token'], $c['oportunidade_id'],
+        $c['sig']['nome'] ?: 'Comprador (ZapSign)', $c['sig']['telefone'],
+        $precoVenda, $dataAssinatura, /* $criadoPor */ 0, $dadosComprador
+    );
+    if ($r['ok']) {
+        $importadas++;
+        echo "  ✅ venda #{$r['venda_id']} importada — \"{$doc['name']}\"\n";
+    } else {
+        $falhas++;
+        echo "  ❌ falhou \"{$doc['name']}\": {$r['erro']}\n";
+    }
+}
+
+echo "\n✅ {$importadas} venda(s) importada(s)" . ($falhas ? ", {$falhas} falharam" : '') . ".\n";
+if ($importadas) {
+    echo "\nAgora roda o backfill financeiro pra gerar a receita/comissão dessas vendas:\n";
+    echo "  php install/gerar_lancamentos_vendas_retroativos.php\n";
+}
