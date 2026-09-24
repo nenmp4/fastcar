@@ -1382,4 +1382,23 @@ try {
     echo "❌ zapcar_consultas: {$e->getMessage()}\n";
 }
 
+// 24/09/2026, "Coloca recuperar a senha e enviar link para e-mail" —
+// includes/recuperar_senha.php.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS usuarios_reset_senha (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+            token_hash TEXT NOT NULL UNIQUE,
+            expira_em DATETIME NOT NULL,
+            usado_em DATETIME,
+            criado_em DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_reset_senha_usuario ON usuarios_reset_senha(usuario_id)");
+    echo "✅ usuarios_reset_senha: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ usuarios_reset_senha: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -448,6 +448,26 @@ CREATE TABLE IF NOT EXISTS usuarios_dispositivos_confiaveis (
 );
 CREATE INDEX IF NOT EXISTS idx_dispositivos_confiaveis_usuario ON usuarios_dispositivos_confiaveis(usuario_id);
 
+-- "Esqueci minha senha" (24/09/2026, "Coloca recuperar a senha e enviar
+-- link para e-mail") — link de recuperação por e-mail, sempre por e-mail
+-- (nunca WhatsApp — número pessoal do consultor não é canal de recuperação
+-- de conta, diferente do 2FA que já tem WhatsApp cadastrado como 2º
+-- fator). token_hash nunca guarda o token cru (mesma disciplina de
+-- usuarios_dispositivos_confiaveis/2FA) — o valor cru só existe no link
+-- mandado por e-mail. usado_em marca uso único: token já consumido nunca
+-- funciona de novo, mesmo dentro da validade. expira_em fixo em 1h desde a
+-- criação (includes/recuperar_senha.php), sem sliding window — link de
+-- e-mail é bem mais curto-lived que "confiar no dispositivo".
+CREATE TABLE IF NOT EXISTS usuarios_reset_senha (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    expira_em DATETIME NOT NULL,
+    usado_em DATETIME,
+    criado_em DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_reset_senha_usuario ON usuarios_reset_senha(usuario_id);
+
 -- Contratos gerados e enviados pra assinatura eletrônica (Assinafy) — mesmo
 -- padrão do JurídicoSaaS (includes/assinafy.php). 1:N com oportunidades
 -- porque pode gerar de novo (reenvio, correção) — histórico fica todo aqui.

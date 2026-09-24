@@ -4251,6 +4251,56 @@ segue no schema sem uso novo, não removida sem ganho real),
   FORJADO/inexistente no banco não pula nada, confirmado voltando pra
   tela de escolher canal normalmente (a checagem é sempre contra o hash
   no banco, nunca confia cegamente no valor do cookie).
+- **"Esqueci minha senha" — link de recuperação por e-mail** (24/09/2026,
+  "Coloca recuperar a senha e enviar link para e-mail") — nova tabela
+  `usuarios_reset_senha` (`token_hash` único, uso único via `usado_em`,
+  expira em 1h) + `includes/recuperar_senha.php`:
+  `recuperarSenhaSolicitar()` nunca lança e nunca revela se um e-mail tem
+  conta cadastrada — `admin/esqueci_senha.php` mostra a MESMA mensagem de
+  sucesso pra e-mail existente, inexistente ou em cooldown, mesma
+  disciplina de `autenticar()` (`includes/usuarios.php`, "nunca revela
+  qual dos dois"). Token só é gravado no banco DEPOIS do e-mail sair com
+  sucesso — mesma ordem de `login2faEnviarCodigo()`
+  (`includes/login_2fa.php`): se o envio falhar (Gmail não configurado,
+  etc), nunca fica um token válido "órfão" que ninguém recebeu, só pra
+  expirar sozinho depois de 1h à toa. Cooldown de 60s por usuário
+  (`config.resetsenha_enviado_{id}`, mesmo padrão `2fa_enviado_{id}`)
+  contra spam de link pro e-mail de outra pessoa.
+  `admin/redefinir_senha.php` (`?token=`) revalida o token de novo no
+  POST — nunca confia só na validação do GET (2 abas abertas com o mesmo
+  link, token que expira ou é consumido entre abrir a tela e enviar o
+  formulário) —, exige senha com pelo menos 8 caracteres e confirmação
+  batendo (mesmo mínimo já usado em `admin/usuarios.php`), e ao trocar a
+  senha com sucesso invalida TODOS os cookies de "dispositivo confiável"
+  desse usuário (`login2faInvalidarDispositivosConfiaveis()`, novo em
+  `includes/login_2fa.php`) — defesa em profundidade: se a senha vazou, um
+  cookie que já pulava o 2FA no navegador de quem vazou não pode continuar
+  valendo depois da troca. As 2 páginas são standalone, mesma estrutura de
+  `admin/login.php` (sem `admin/_bootstrap.php` — sessão de admin ainda
+  não existe nesse ponto); link "Esqueci minha senha" adicionado logo
+  abaixo do formulário de login. Auditoria: evento novo
+  `recuperacao_senha_solicitada` + reaproveita `usuario_senha_redefinida`
+  já existente (com detalhe "via link de recuperação por e-mail
+  (autoatendimento)", distinguindo do reset feito manualmente pelo
+  super_admin em `admin/usuarios.php`). `tests/smoke.php`: guard
+  `admin-pagina-sem-pwa` ganhou as 2 páginas novas na mesma exceção de
+  `login.php` — página pré-sessão, sem sentido ter sino de notificação nem
+  registro de PWA. Testado ponta a ponta: 21 asserções em banco isolado
+  contra fake OAuth+Gmail local (e-mail inexistente nunca dispara envio;
+  e-mail real manda e cria exatamente 1 token; cooldown bloqueia reenvio
+  imediato sem criar um 2º token; token forjado/vazio/expirado/já usado
+  sempre rejeitado; login com a senha antiga para de funcionar e com a
+  nova passa a funcionar; dispositivo confiável válido antes do reset e
+  invalidado depois; os 2 eventos de auditoria gravados) + fluxo HTTP real
+  via curl (CSRF, mensagem genérica idêntica pra e-mail existente/
+  inexistente, token forjado mostra "link inválido", mismatch de senha
+  rejeitado, senha curta rejeitada, sucesso muda a senha de verdade —
+  confirmado pelo próprio 2FA aceitando a senha nova no login em seguida
+  —, reusar o mesmo token depois do sucesso mostra "link inválido" de
+  novo) + `php -l` + `tests/smoke.php` limpos. Sem confirmação ainda
+  contra e-mail real de produção — mesma ressalva de sempre pro Gmail API
+  (delegação em todo o domínio já validada em produção pros outros
+  e-mails transacionais do projeto, esse reaproveita a mesma credencial).
 - **Módulo de auditoria (versão enxuta)** (20/09/2026, "temos ter modulo
   auditoria igual do jutidicosass" → "vai atrapalhar a operação?" →
   confirmado "sim" pra ir com a versão enxuta). `includes/auditoria.php`

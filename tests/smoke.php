@@ -220,7 +220,7 @@ foreach (['includes/oportunidades.php', 'admin/oportunidade.php', 'public/docume
 // head_scripts nas landing pages do JurídicoSaaS: página com <head> próprio
 // que não passa pelo snippet compartilhado).
 $semPwa = [];
-$parciais = ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', '_notify.php', 'login.php'];
+$parciais = ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', '_notify.php', 'login.php', 'esqueci_senha.php', 'redefinir_senha.php'];
 foreach (glob($root . '/admin/*.php') as $f) {
     $rel = str_replace($root . '/', '', $f);
     $base = basename($f);

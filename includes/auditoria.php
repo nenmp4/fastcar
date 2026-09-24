@@ -84,6 +84,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'usuario_bloqueado' => '🚫 Usuário bloqueado',
         'usuario_desbloqueado' => '✅ Usuário desbloqueado',
         'usuario_senha_redefinida' => '🔑 Senha redefinida',
+        'recuperacao_senha_solicitada' => '✉️ Link de recuperação de senha enviado',
         'conversa_excluida' => '🗑️ Conversa WhatsApp excluída',
         'veiculo_excluido' => '🗑️ Veículo excluído da frota',
         'cliente_dado_editado' => '✏️ Dado sensível de cliente editado',

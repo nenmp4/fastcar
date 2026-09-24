@@ -224,6 +224,7 @@ $etapa = $pendente ? (!empty($pendente['aguardando_canal']) ? 'canal' : 'codigo'
             <input type="password" id="senha" name="senha" required>
             <button type="submit">Entrar</button>
         </form>
+        <p style="margin-top:16px;text-align:center"><a href="/admin/esqueci_senha.php">Esqueci minha senha</a></p>
 
     <?php elseif ($etapa === 'canal'): ?>
         <p>Olá, <?= e($pendente['nome']) ?>! Por onde você quer receber o código de verificação?</p>

@@ -222,3 +222,15 @@ function login2faVerificarDispositivoConfiavel(int $usuarioId, string $tokenBrut
         return null;
     }
 }
+
+/**
+ * 24/09/2026 — chamada por admin/redefinir_senha.php ao concluir uma
+ * recuperação de senha por e-mail: se a senha vazou, um cookie de
+ * "dispositivo confiável" que já pulava o 2FA no navegador do atacante
+ * não pode continuar valendo depois da troca — defesa em profundidade,
+ * nunca deixa a recuperação de senha por si só reabrir a mesma brecha que
+ * a troca de senha deveria fechar.
+ */
+function login2faInvalidarDispositivosConfiaveis(int $usuarioId): void {
+    getDB()->prepare("DELETE FROM usuarios_dispositivos_confiaveis WHERE usuario_id = ?")->execute([$usuarioId]);
+}
