@@ -1931,10 +1931,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   com `149370`) — script roda e imprime os dois lados corretamente,
   confirma que a soma dos itens bate com o total gravado (então não é
   erro de soma/agregação do nosso lado) + `php -l` + `tests/smoke.php`
-  limpos. ⚠️ Ainda não rodado em produção — pendente o usuário rodar via
-  SSH (ou conferir direto no Portal do Cliente ZapCar) pra confirmar qual
-  das 3 hipóteses é a real antes de decidir se precisa de correção de
-  código ou só reportar pra ZapCar.
+  limpos. **Suspeita CONFIRMADA, mesmo dia — hipótese (b)**: usuário
+  baixou o PDF oficial da própria ZapCar pra essa consulta
+  (`admin/zapcar_pdf.php?id_local=3`, confirma de brinde que o endpoint
+  `/v1/consultas/{id}/pdf` funciona de verdade em produção — item (5) da
+  seção "A validar" abaixo pode sair da lista) e o documento mostra
+  **"DÉBITOS LICENCIAMENTO: R$ 149,37"** — não R$14.937,00. Bate
+  exatamente com a suspeita original do usuário ("deve ser 1,493,7") na
+  ordem de grandeza, só que o fator real é 100x (149,37 × 100 =
+  14.937,00), não 10x. Como `zapcarResumoTexto()`/
+  `zapcarAplicarNaOportunidade()` só dividem `valor_centavos` por 100 de
+  forma consistente (confirmado lendo o código, nenhuma multiplicação
+  espúria em lugar nenhum), a causa raiz só pode estar no lado da API: o
+  endpoint JSON (`GET /v1/consultas/{id}`, usado por
+  `zapcarAtualizarStatusLocal()`) devolveu `valor_centavos` 100x maior do
+  que o valor real que o próprio gerador de PDF da ZapCar usa — bug do
+  provedor, não do nosso código. Usuário reportou em seguida "eu acho que
+  arrumaram" — sinal de que o provedor já corrigiu o valor do lado deles
+  (não confirmado ainda se uma consulta NOVA pra essa mesma placa sairia
+  certa agora, só que o PDF mais recente já bate). **Ação pendente,
+  ainda não feita**: o valor errado (R$14.937,00) já foi aplicado via
+  fill-if-empty em `oportunidades.debito_licenciamento` da oportunidade
+  #349 quando a consulta concluiu — fill-if-empty nunca sobrescreve
+  sozinho, então esse campo específico precisa de correção MANUAL direto
+  na tela (`admin/oportunidade.php`, card "Dados do veículo") pro valor
+  certo (R$149,37), já que uma consulta nova (mesmo corrigida do lado da
+  ZapCar) não vai tocar nesse campo de novo automaticamente. Nenhuma
+  mudança de código feita — o bug era 100% do provedor, não daqui; o
+  script `install/zapcar_diagnosticar_debito.php` fica no repo como
+  ferramenta reutilizável pra qualquer suspeita parecida no futuro
+  (compara `veiculo` normalizado x `dados` cru direto no banco, sem
+  precisar baixar PDF).
 - **Débitos do veículo (IPVA/licenciamento/multas)** (22/09/2026, "campo
   de preencher - debitos do veilucos como ipva linciamento e multoas") —
   confirmado com o usuário (2 perguntas diretas): 3 campos numéricos
@@ -6517,16 +6544,28 @@ testado com servidor fake local — nunca contra o serviço real:
   tabela da doc (`QUERY_NOT_FOUND`, `PROVIDER_TIMEOUT` etc) — a tela
   mostra o texto cru de `erro`/`erro_codigo` que vier, nunca traduz/
   reescreve, então qualquer divergência aparece direto pro consultor sem
-  quebrar nada, só fica menos amigável até confirmar; (5) **novo**:
-  `GET /v1/consultas/{id}/pdf` — `zapcarBaixarPdf()` foi construída sem
-  nunca ter sido testada contra o endpoint real (o fix do 404 foi feito a
-  partir do raciocínio "o pdf_url cru provavelmente exige o header
-  Authorization que um `<a href>` não manda", nunca confirmado byte a
-  byte); validar assim que a próxima Consulta Veicular real concluir e o
-  botão "📄 Ver documento da consulta" (agora sempre via
-  `admin/zapcar_pdf.php`) for clicado em produção. Cadastro de webhook
-  (preferido pela doc "ao volume", mas fora de escopo nesta versão) fica
-  pra quando/se for pedido depois.
+  quebrar nada, só fica menos amigável até confirmar; (5) **✅ confirmado
+  em produção, 24/09/2026** — `GET /v1/consultas/{id}/pdf` funciona de
+  verdade: usuário baixou o PDF de uma consulta real
+  (`admin/zapcar_pdf.php?id_local=3`) sem erro, `zapcarBaixarPdf()`
+  autenticada no servidor bate certo. **Achado real nesse mesmo PDF,
+  ver bullet "Valor de débito suspeito" na seção de módulos**: o PDF
+  mostrou "DÉBITOS LICENCIAMENTO: R$ 149,37", enquanto o resumo salvo na
+  oportunidade (via `GET /v1/consultas/{id}` normal, o endpoint JSON)
+  mostrava R$14.937,00 — 100x maior. `zapcarResumoTexto()`/
+  `zapcarAplicarNaOportunidade()` conferidos e corretos (dividem
+  `valor_centavos` por 100 de forma consistente); a causa é o endpoint
+  JSON da ZapCar tendo devolvido um `valor_centavos` 100x maior do que o
+  próprio gerador de PDF deles usa — bug do provedor especificamente no
+  endpoint JSON, não no PDF nem no nosso código. Usuário sinalizou "eu
+  acho que arrumaram" (suspeita de que a ZapCar já corrigiu do lado
+  deles) — ainda não confirmado se uma Consulta Veicular NOVA pra essa
+  placa sairia certa agora; o valor errado que já ficou gravado em
+  `oportunidades.debito_licenciamento` da oportunidade #349 (via
+  fill-if-empty) segue precisando de correção manual, já que
+  fill-if-empty nunca reescreve sozinho. Cadastro de webhook (preferido
+  pela doc "ao volume", mas fora de escopo nesta versão) fica pra
+  quando/se for pedido depois.
 - **API Asaas** (`includes/asaas.php`, `api/asaas_webhook.php`,
   `cron/asaas_sync.php`, 17/09/2026) — construída a partir da documentação
   pública da API v3 (docs.asaas.com), nunca confirmada contra uma
