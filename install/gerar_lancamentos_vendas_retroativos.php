@@ -45,6 +45,23 @@
  * definido — mesma regra de `finGerarReceitaVendaAssinatura()`, fica pro
  * lançamento manual nesses casos.
  *
+ * ⚠️ Checagem de duplicidade com Asaas (24/09/2026, achado real do
+ * usuário: "parece que receitas está todas no assas") — o critério de
+ * "sem lançamento nenhum" olha `fin_lancamentos.venda_id`, mas cobrança
+ * importada do Asaas (`asaasImportarCobrancas()`, `includes/asaas.php`)
+ * só ganha `venda_id` quando alguém VINCULA manualmente o cliente Asaas à
+ * venda (`admin/financeiro-asaas.php`, nunca automático — regra #3); uma
+ * venda cujo comprador já tem cobrança real no Asaas mas ainda NUNCA foi
+ * vinculada apareceria como "sem lançamento nenhum" pra este script, e
+ * gerar a receita local por cima **duplicaria** o valor (uma vez no
+ * Asaas, outra vez aqui). Corrigido cruzando telefone/CPF do comprador
+ * contra `fin_asaas_clientes` (`venda_id IS NULL`, ainda não vinculado) —
+ * candidata com match possível NUNCA é processada automaticamente (nem no
+ * `--confirmar`), fica só listada à parte com instrução pra vincular
+ * primeiro em Financeiro → Asaas; casamento por telefone/CPF nunca é
+ * garantia 100% (poderia ser coincidência), então a decisão de vincular
+ * ou não continua sempre humana.
+ *
  * Uso:
  *   php install/gerar_lancamentos_vendas_retroativos.php              — só lista (dry-run)
  *   php install/gerar_lancamentos_vendas_retroativos.php --confirmar  — aplica de verdade
@@ -56,6 +73,7 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/financeiro.php';
 
 $confirmar = in_array('--confirmar', $argv, true);
@@ -63,7 +81,7 @@ $db = getDB();
 
 $candidatas = $db->query("
     SELECT v.id, v.preco_venda, v.valor_pago_contratacao, v.prazo_quitacao_meses,
-           v.data_venda, v.responsavel_id, v.comprador_nome,
+           v.data_venda, v.responsavel_id, v.comprador_nome, v.comprador_telefone, v.comprador_cpf,
            o.veiculo_marca, o.veiculo_modelo, o.veiculo_placa,
            fc.id AS colaborador_id
     FROM vendas v
@@ -80,7 +98,62 @@ if (!$candidatas) {
     exit(0);
 }
 
-echo count($candidatas) . " venda(s) 'vendido' sem nenhum lançamento financeiro:\n\n";
+// Clientes Asaas com cobrança real já importada, mas AINDA sem venda_id
+// vinculado — casar por telefone/CPF pra nunca gerar receita local em cima
+// de uma cobrança que já existe (duplicidade), ver comentário no topo.
+$asaasNaoVinculados = $db->query("
+    SELECT fac.id, fac.asaas_id, fac.nome, fac.telefone, fac.cpf_cnpj,
+           (SELECT COUNT(*) FROM fin_lancamentos l WHERE l.asaas_customer_id = fac.asaas_id) AS qtd_cobrancas,
+           (SELECT COALESCE(SUM(valor), 0) FROM fin_lancamentos l WHERE l.asaas_customer_id = fac.asaas_id) AS total_cobrancas
+    FROM fin_asaas_clientes fac
+    WHERE fac.venda_id IS NULL
+")->fetchAll(PDO::FETCH_ASSOC);
+$asaasPorTelefone = [];
+$asaasPorCpf = [];
+foreach ($asaasNaoVinculados as $a) {
+    if ($a['qtd_cobrancas'] < 1) continue; // sem cobrança nenhuma ainda, não é risco de duplicidade
+    $tel = normalizarTelefone((string)$a['telefone']);
+    if ($tel !== '') $asaasPorTelefone[$tel] = $a;
+    $cpf = preg_replace('/\D/', '', (string)$a['cpf_cnpj']);
+    if ($cpf !== '') $asaasPorCpf[$cpf] = $a;
+}
+
+$seguras = [];
+$duplicidade = [];
+foreach ($candidatas as $c) {
+    $tel = normalizarTelefone((string)($c['comprador_telefone'] ?? ''));
+    $cpf = preg_replace('/\D/', '', (string)($c['comprador_cpf'] ?? ''));
+    $match = ($tel !== '' && isset($asaasPorTelefone[$tel])) ? $asaasPorTelefone[$tel]
+        : (($cpf !== '' && isset($asaasPorCpf[$cpf])) ? $asaasPorCpf[$cpf] : null);
+    if ($match) {
+        $c['_asaas_match'] = $match;
+        $duplicidade[] = $c;
+    } else {
+        $seguras[] = $c;
+    }
+}
+
+if ($duplicidade) {
+    echo "⚠️  " . count($duplicidade) . " venda(s) com possível receita JÁ existente no Asaas (comprador bate por telefone/CPF com um cliente Asaas que já tem cobrança, mas nunca foi vinculado a essa venda) — NUNCA processadas por este script, pra não duplicar:\n\n";
+    foreach ($duplicidade as $c) {
+        $veiculo = trim(($c['veiculo_marca'] ?? '') . ' ' . ($c['veiculo_modelo'] ?? '')) ?: 'veículo';
+        $m = $c['_asaas_match'];
+        printf(
+            "  #%d | %s | placa %s | comprador %s\n    → cliente Asaas \"%s\" (id %s) já tem %d cobrança(s) somando R$ %s, sem vínculo com essa venda.\n    → Resolve em Financeiro → Asaas: vincula esse cliente a esta venda (nunca automático aqui).\n",
+            $c['id'], $veiculo, $c['veiculo_placa'] ?: '—', $c['comprador_nome'] ?: '—',
+            $m['nome'] ?: '—', $m['asaas_id'], (int)$m['qtd_cobrancas'], number_format((float)$m['total_cobrancas'], 2, ',', '.')
+        );
+    }
+    echo "\n";
+}
+
+$candidatas = $seguras;
+if (!$candidatas) {
+    echo "✅ Nenhuma venda sobrando pra gerar retroativo (as únicas pendentes já têm match no Asaas, acima) — nada a fazer aqui, resolve o vínculo primeiro.\n";
+    exit(0);
+}
+
+echo count($candidatas) . " venda(s) 'vendido' sem nenhum lançamento financeiro e sem match no Asaas:\n\n";
 $geraiamReceita = 0;
 $geraiamComissao = 0;
 foreach ($candidatas as $c) {

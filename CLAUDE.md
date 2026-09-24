@@ -5955,7 +5955,47 @@ segue no schema sem uso novo, não removida sem ganho real),
   candidata); rodar `--confirmar` 2x confirma idempotência ("nada a
   fazer" na 2ª) + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema (`fin_lancamentos.origem` já aceitava `'comissao_venda'` desde o
-  bullet acima). ⚠️ Ainda não rodado em produção.
+  bullet acima).
+  **Bug real achado pelo usuário logo em seguida — podia DUPLICAR receita
+  já existente no Asaas** (mesmo dia, "parece que receitas está todas no
+  assas") — o critério de "venda sem nenhum lançamento" olha
+  `fin_lancamentos.venda_id`, mas cobrança importada do Asaas
+  (`asaasImportarCobrancas()`, `includes/asaas.php`) só ganha `venda_id`
+  quando alguém VINCULA manualmente o cliente Asaas à venda
+  (`admin/financeiro-asaas.php`, nunca automático — regra #3); uma venda
+  cujo comprador já tinha cobrança real no Asaas mas nunca foi vinculada
+  aparecia como "sem lançamento nenhum" pro script e ia gerar receita
+  LOCAL por cima — contando o mesmo dinheiro 2x. Corrigido cruzando
+  telefone/CPF do comprador (`vendas.comprador_telefone`/`comprador_cpf`)
+  contra `fin_asaas_clientes` (`venda_id IS NULL`, mas já com pelo menos 1
+  cobrança registrada — `fin_lancamentos.asaas_customer_id`) — candidata
+  com match possível **nunca** é processada automaticamente (nem no
+  `--confirmar`), fica listada à parte no relatório com instrução pra
+  vincular primeiro em Financeiro → Asaas; casamento por telefone/CPF
+  nunca é garantia 100% (podia ser coincidência), então a decisão de
+  vincular ou não continua sempre humana, mesmo espírito de "sistema
+  nunca aplica o candidato óbvio sozinho" já usado no widget de FIPE por
+  placa.
+  **Achado lateral no processo de teste, não do código do projeto**:
+  `auto_prepend_file` (usado pra apontar o banco de teste isolado pra
+  fora do banco real, mesmo padrão de todo teste isolado documentado
+  neste arquivo) é **silenciosamente ignorado pelo PHP quando o script
+  roda via `php -r 'código inline'`** — só funciona de verdade rodando um
+  arquivo (`php script.php`); PHP não tem "script principal" no modo
+  `-r`, então não há onde prependar. Vários comandos de debug `-r` usados
+  nesta sessão específica escreveram sem perceber no banco de
+  desenvolvimento local (`database/fastcar.db`, gitignorado, artefato
+  puramente local deste sandbox — sem nenhuma relação com produção, que
+  vive só na VPS), mascarando o resultado real dos testes por um tempo
+  até o achado ser isolado e corrigido. Banco local limpo (deletado —
+  `getDB()` recria vazio sozinho na próxima vez que qualquer script tocar
+  nele) e toda a suíte de teste refeita só com scripts em arquivo,
+  confirmando de verdade os 4 cenários (match Asaas com cobrança real
+  fica de fora / comprador sem nenhum match gera normal / match no Asaas
+  mas sem cobrança nenhuma ainda gera normal, não é risco / rodar
+  `--confirmar` 2x é idempotente, mostra só o aviso de Asaas de novo)
+  batendo exatamente com o esperado + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
