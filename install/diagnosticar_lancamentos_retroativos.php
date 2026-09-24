@@ -14,6 +14,21 @@
  * quantas de TODAS as oportunidades 'fechado' do sistema (não só do CRM
  * antigo) já têm o lançamento retroativo (`fechamento_compra`) gerado.
  *
+ * 24/09/2026, 2ª rodada da mesma dúvida — o usuário mandou print de
+ * `admin/veiculos.php` mostrando "20 veículo(s) importado(s) do CRM antigo
+ * com documento incompleto estão escondidos desta listagem" (46 visíveis +
+ * 20 escondidos = 66, batendo com "Fechadas (66)" do dashboard). Achado
+ * revisando o código: esse "esconder da Frota" é um filtro visual PRÓPRIO
+ * de `admin/veiculos.php` ($condIncompletoImportAntigo), TOTALMENTE
+ * separado do backfill financeiro — o script de lançamento retroativo
+ * (`gerar_lancamentos_fechados_retroativos.php`) nunca olha documento
+ * nenhum, só `etapa='fechado' AND valor_final > 0`. Então o backfill
+ * cobre os 66 (ou quantos desses tiverem valor_final), não só os 46
+ * visíveis na Frota — os 20 "incompletos" (documento faltando) já
+ * receberam despesa/comissão igual aos outros, se tinham valor_final.
+ * Ganhou o mesmo `$condIncompletoImportAntigo` de `admin/veiculos.php`
+ * pra cruzar com a despesa e confirmar isso na hora.
+ *
  * Uso:
  *   php install/diagnosticar_lancamentos_retroativos.php
  */
@@ -76,3 +91,44 @@ if ($fechadoSemDespesaAinda > 0) {
     echo "\n⚠️  Ainda existem {$fechadoSemDespesaAinda} oportunidade(s) 'fechado' sem despesa lançada —\n";
     echo "    rode 'php install/gerar_lancamentos_fechados_retroativos.php' (dry-run) pra ver quais.\n";
 }
+
+// --- 4. Cruza com o MESMO filtro de "incompleto" que admin/veiculos.php usa
+// pra esconder da Frota — confirma se o backfill já tocou os 20 escondidos.
+$condIncompletoImportAntigo = "(
+    EXISTS (SELECT 1 FROM oportunidade_historico oh WHERE oh.oportunidade_id = o.id AND oh.observacao LIKE 'Importado do CRM antigo%')
+    AND (
+        (SELECT COUNT(*) FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.obrigatorio = 1) = 0
+        OR (SELECT COUNT(*) FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.obrigatorio = 1
+                AND ((od.arquivo_url IS NOT NULL AND od.arquivo_url != '') OR (od.drive_file_id IS NOT NULL AND od.drive_file_id != '')))
+           < (SELECT COUNT(*) FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.obrigatorio = 1)
+    )
+)";
+
+$totalIncompletos = (int)$db->query("SELECT COUNT(*) FROM oportunidades o WHERE o.etapa = 'fechado' AND {$condIncompletoImportAntigo}")->fetchColumn();
+$incompletosComValor = (int)$db->query("SELECT COUNT(*) FROM oportunidades o WHERE o.etapa = 'fechado' AND {$condIncompletoImportAntigo} AND o.valor_final IS NOT NULL AND o.valor_final > 0")->fetchColumn();
+$incompletosComDespesa = (int)$db->query("
+    SELECT COUNT(*) FROM oportunidades o
+    WHERE o.etapa = 'fechado' AND {$condIncompletoImportAntigo}
+      AND EXISTS (SELECT 1 FROM fin_lancamentos l WHERE l.oportunidade_id = o.id AND l.origem = 'fechamento_compra')
+")->fetchColumn();
+$incompletosComValorSemDespesa = (int)$db->query("
+    SELECT COUNT(*) FROM oportunidades o
+    WHERE o.etapa = 'fechado' AND {$condIncompletoImportAntigo}
+      AND o.valor_final IS NOT NULL AND o.valor_final > 0
+      AND NOT EXISTS (SELECT 1 FROM fin_lancamentos l WHERE l.oportunidade_id = o.id AND l.origem = 'fechamento_compra')
+")->fetchColumn();
+$completosVisiveisFrota = $totalFechado - $totalIncompletos;
+
+echo "\n=== 'Incompletos' (mesmo filtro que admin/veiculos.php usa pra esconder da Frota) ===\n";
+echo "Total 'fechado' COM documento incompleto (escondidos da Frota): {$totalIncompletos}\n";
+echo "Total 'fechado' SEM esse problema (aparecem na Frota, os '46'): {$completosVisiveisFrota}\n";
+echo "  dos incompletos, com valor_final > 0 (elegíveis pro backfill mesmo assim): {$incompletosComValor}\n";
+echo "  dos incompletos, JÁ com despesa lançada (backfill já pegou, documento nunca importou pra isso): {$incompletosComDespesa}\n";
+echo "  dos incompletos, com valor mas AINDA sem despesa: {$incompletosComValorSemDespesa}\n";
+
+echo "\n=== Resposta direta ===\n";
+echo "O backfill (gerar_lancamentos_fechados_retroativos.php) NUNCA filtra por documento —\n";
+echo "só etapa='fechado'+valor_final>0. Ele cobre os {$totalFechado} fechados no total\n";
+echo "(inclusive os {$totalIncompletos} escondidos da Frota por documento faltando), não só\n";
+echo "os {$completosVisiveisFrota} visíveis. \"Documento incompleto\" e \"despesa lançada\" são\n";
+echo "coisas independentes — um pode ter documento faltando e já ter sido pago de verdade.\n";
