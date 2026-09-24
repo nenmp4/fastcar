@@ -13,10 +13,23 @@ requireAcessoFinanceiro();
 $db = getDB();
 finRecalcularAtrasados();
 
-$mesRef = (string)($_GET['mes'] ?? date('Y-m'));
-if (!preg_match('/^\d{4}-\d{2}$/', $mesRef)) $mesRef = date('Y-m');
-$inicioMes = $mesRef . '-01';
-$fimMes = date('Y-m-t', strtotime($inicioMes));
+// 24/09/2026, "teria que ter fitro 30 60 90 no financeiro dabord" — atalhos
+// pros últimos N dias (hoje pra trás), em vez de só o mês fechado do
+// seletor de mês. `?periodo=30|60|90` tem prioridade sobre `?mes=` quando
+// os dois vierem juntos (nunca deveria acontecer na prática, os links são
+// mutuamente exclusivos, mas evita ambiguidade se alguém montar a URL na
+// mão). Sem nenhum dos dois, cai no mês corrente de sempre.
+$fPeriodo = in_array((int)($_GET['periodo'] ?? 0), [30, 60, 90], true) ? (int)$_GET['periodo'] : 0;
+if ($fPeriodo) {
+    $mesRef = '';
+    $fimMes = date('Y-m-d');
+    $inicioMes = date('Y-m-d', strtotime("-{$fPeriodo} days"));
+} else {
+    $mesRef = (string)($_GET['mes'] ?? date('Y-m'));
+    if (!preg_match('/^\d{4}-\d{2}$/', $mesRef)) $mesRef = date('Y-m');
+    $inicioMes = $mesRef . '-01';
+    $fimMes = date('Y-m-t', strtotime($inicioMes));
+}
 
 function finSoma(PDO $db, string $tipo, string $inicio, string $fim, ?string $natureza = null): float {
     $sql = "SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
@@ -115,10 +128,22 @@ $asaasPendenteImportar = asaasConfigured();
 <div class="alerta-info">ℹ️ Integração com Asaas ainda não configurada — <a href="/admin/configuracoes.php">configure a chave da API</a> pra importar clientes/cobranças de lá.</div>
 <?php endif; ?>
 
-<form method="GET" class="card" style="margin-bottom:1.5rem">
-  <label style="font-weight:600;margin-right:.5rem">Período:</label>
-  <input type="month" name="mes" value="<?= e($mesRef) ?>" onchange="this.form.submit()">
-</form>
+<div class="card" style="margin-bottom:1.5rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:center">
+  <form method="GET" style="display:flex;align-items:center;gap:.5rem">
+    <label style="font-weight:600">Período:</label>
+    <input type="month" name="mes" value="<?= e($mesRef) ?>" onchange="this.form.submit()">
+  </form>
+  <div style="display:flex;gap:.5rem">
+    <?php foreach ([30, 60, 90] as $dias): ?>
+      <a class="btn<?= $fPeriodo === $dias ? '-primary' : '' ?>" style="width:auto"
+         href="/admin/financeiro.php?periodo=<?= $dias ?>">Últimos <?= $dias ?> dias</a>
+    <?php endforeach; ?>
+  </div>
+  <span style="color:var(--muted);font-size:.85rem">
+    Mostrando: <?= date('d/m/Y', strtotime($inicioMes)) ?> até <?= date('d/m/Y', strtotime($fimMes)) ?>
+    <?php if ($fPeriodo): ?> — <a href="/admin/financeiro.php">voltar pro mês corrente</a><?php endif; ?>
+  </span>
+</div>
 
 <div class="grid-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem">
   <a class="card" href="/admin/financeiro-lancamentos.php?tipo=receita&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #16a34a">
@@ -173,7 +198,7 @@ $asaasPendenteImportar = asaasConfigured();
 </div>
 
 <div class="card">
-  <h2 style="margin-bottom:1rem">🤝 Comissões por consultor (compra) — <?= date('m/Y', strtotime($inicioMes)) ?></h2>
+  <h2 style="margin-bottom:1rem">🤝 Comissões por consultor (compra) — <?= $fPeriodo ? "últimos {$fPeriodo} dias" : date('m/Y', strtotime($inicioMes)) ?></h2>
   <?php if (!$comissoesPorConsultor): ?>
     <p style="color:var(--muted);font-size:.85rem">Nenhuma comissão automática de compra neste período.</p>
   <?php else: ?>

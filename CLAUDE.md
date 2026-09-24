@@ -5706,6 +5706,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   cancelada (R$350→R$150, contagem de compras 2→1) — confirma que
   `status != 'cancelado'` já filtra certo nas duas agregações novas +
   `php -l` + `tests/smoke.php` limpos.
+  **Backfill retroativo de despesa/comissão pra compra já fechada antes
+  dessas funções existirem** (24/09/2026, achado real via screenshot da
+  aba "✅ Fechadas" mostrando negócios reais — Bianca, Pierre Jameson,
+  Maria Aparecida, Gabriel Patrick etc., a maioria vinda da importação do
+  CRM antigo — seguido de "teria que refletir no finaneiro"): como
+  `finRegistrarDespesaCompraFechada()`/`finRegistrarComissaoCompraFechada()`
+  só disparam DE DENTRO de `mudarEtapa()` na transição pra `'fechado'`,
+  qualquer oportunidade que nasceu ou foi importada JÁ fechada
+  (`install/importar_crm_antigo.php`, `criarVeiculoManualFrota()` — nenhum
+  dos dois passa por `mudarEtapa()` de propósito) nunca gerou nenhum
+  lançamento financeiro. Novo `install/gerar_lancamentos_fechados_retroativos.php`
+  (CLI, dry-run por padrão, `--confirmar` pra aplicar, mesmo molde de
+  `install/asaas_categorizar_importados.php`) — encontra toda oportunidade
+  `etapa='fechado'` com `valor_final>0` sem lançamento `'fechamento_compra'`
+  ainda e chama as MESMAS 2 funções de produção (idempotentes, já
+  testadas) — nunca duplica se rodado mais de uma vez, nem se uma dessas
+  oportunidades já tivesse sido pega por um fechamento normal. Relatório
+  do dry-run já avisa, por oportunidade, se a comissão também seria gerada
+  (precisa de `valor_fipe_referencia` preenchida + colaborador ativo) ou
+  não, e por quê. Testado em banco isolado reproduzindo o cenário real (3
+  oportunidades fechadas: 1 sem FIPE — só despesa —, 1 com FIPE exatamente
+  em 20% — despesa + comissão 1,5% —, 1 que JÁ tinha despesa lançada —
+  corretamente fora da lista): dry-run lista certo as 2 candidatas e
+  calcula a comissão certa antes de aplicar; `--confirmar` gera as 2
+  despesas + a 1 comissão; rodar de novo confirma "nada a fazer"
+  (idempotente) + `php -l` + `tests/smoke.php` limpos. ⚠️ Ainda não rodado
+  em produção — falta rodar via SSH (dry-run primeiro pra conferir a
+  lista real, depois `--confirmar`).
+  **Filtro "últimos 30/60/90 dias" no dashboard** (mesmo dia, "teria que
+  ter fitro 30 60 90 no financeiro dabord") — até então só dava pra ver
+  por mês fechado (`?mes=AAAA-MM`); `admin/financeiro.php` ganhou
+  `?periodo=30|60|90` (whitelist explícita), prioridade sobre `?mes=`
+  quando os dois vierem juntos, recalculando `$inicioMes`/`$fimMes` como
+  "hoje menos N dias até hoje" em vez do mês inteiro — todo o resto da
+  página (cards de receita/despesa/comissão, tabela por consultor, links
+  pra `financeiro-lancamentos.php`) já lia essas 2 variáveis, então nenhum
+  outro lugar precisou mudar. 3 botões novos ao lado do seletor de mês +
+  texto "Mostrando: DD/MM/AAAA até DD/MM/AAAA" sempre visível (só assim
+  pra saber o intervalo real quando não é mais "um mês fechado") + link
+  "voltar pro mês corrente" quando um período estiver ativo. Testado via
+  HTTP real: os 3 períodos calculam o intervalo certo a partir de hoje,
+  `?periodo=999` (fora da whitelist) cai no mês corrente sem quebrar,
+  totais/tabela por consultor refletem certo o intervalo filtrado + `php
+  -l` + `tests/smoke.php` limpos.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
