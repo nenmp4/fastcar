@@ -6455,14 +6455,22 @@ testado com servidor fake local — nunca contra o serviço real:
   certo. **✅ Serviço trocado pra "Consulta Veicular"** (slug
   `consulta-veicular`, era "Consulta Simples") depois que o link do PDF
   de uma consulta real deu 404 — ver bullet completo na seção de módulos,
-  "Consulta veicular ZapCar", pro racional da troca e do fix. Pontos
-  ainda não confirmados: (1) nomes de campo dentro do bloco `veiculo`
-  (`marca`/`modelo`/`ano_modelo`/`cor`/`situacao`/`recall`/`sinistro`/
-  `leilao`/`restricoes[]`/`debitos[]`/`debitos_total_centavos`/
-  `proprietario`) — a doc documenta isso como "contrato estável", mas
-  nunca visto numa resposta real de `GET /v1/consultas/{id}`; (2) se
-  `GET /v1/servicos` realmente devolve `{"servicos": [...]}` — **✅
-  confirmado** ("15 serviço(s)" batendo com o formato assumido); (3)
+  "Consulta veicular ZapCar", pro racional da troca e do fix. **(1) ✅
+  confirmado em produção, 23/09/2026** (screenshot da oportunidade #349 —
+  consulta real de placa `RYZ9D29`, YAMAHA CROSSER Z ABS 2024 — mostrando
+  o resumo já aplicado na oportunidade E o card da consulta em si
+  renderizando certo): os nomes de campo dentro do bloco `veiculo`
+  (`marca`/`modelo`/`ano_modelo`(2024)/`cor`(VERMELHA)/
+  `situacao`(EM CIRCULAÇÃO)/`recall`/`sinistro`/`leilao`/`restricoes[]`
+  — `FINANCEIRA: ATIVA — BANCO PAN S A`, `RENAJUD`/`ADMINISTRATIVA`/
+  `ROUBO_FURTO` inativas — /`debitos[]` — `LICENCIAMENTO: R$ 14.937,00`,
+  total batendo — /`proprietario`(NELSON DA SILVA + CPF)) batem
+  exatamente com o assumido em `zapcarAplicarNaOportunidade()`/
+  `zapcarResumoTexto()` (`includes/zapcar.php`) — nenhum campo veio
+  vazio/undefined, o tri-estado (recall/sinistro/leilão "não consta")
+  também renderizou certo. (2) se `GET /v1/servicos` realmente devolve
+  `{"servicos": [...]}` — **✅ confirmado** ("15 serviço(s)" batendo com
+  o formato assumido); (3)
   tempo real de processamento de uma Consulta Veicular de verdade (a doc
   cita até ~2min em placa "fria") — validar se o teto de ~6min de
   polling do navegador (`admin/oportunidade.php`, `POLL_MAX_TENTATIVAS`)
