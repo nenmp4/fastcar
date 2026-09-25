@@ -47,6 +47,17 @@ $camposZapiFallback = [
     'zapi_fallback_client_token' => 'Client-Token (fallback)',
 ];
 
+// WhatsApp Cloud API (Meta oficial) — 25/09/2026, "os dois vamos usar api
+// oficial" (principal E fallback banidos de novo). Fase 1: só canal
+// PRINCIPAL, ver includes/whatsapp_oficial.php. Nunca troca sozinho — só
+// quando `whatsapp_provider_principal` for explicitamente setado pra
+// 'oficial' abaixo (testado e confirmado primeiro).
+$camposWhatsappOficial = [
+    'whatsapp_oficial_phone_number_id' => 'Phone Number ID',
+    'whatsapp_oficial_access_token'    => 'Token de acesso (temporário ou permanente)',
+    'whatsapp_oficial_verify_token'    => 'Verify Token (você inventa, cola igual no painel da Meta)',
+];
+
 $camposIA = [
     'gemini_api_key' => 'Chave da API Gemini (principal)',
     'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
@@ -176,6 +187,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Falha ao enviar — confira as credenciais da instância fallback e se ela está conectada.';
                 }
             }
+        } elseif ($acao === 'salvar_whatsapp_oficial') {
+            foreach (array_keys($camposWhatsappOficial) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da API oficial (Meta) salvas.';
+        } elseif ($acao === 'testar_whatsapp_oficial') {
+            try {
+                $confirmado = oficialTestarConexao();
+                $sucesso = "Meta respondeu: {$confirmado} — conexão funcionando.";
+            } catch (Throwable $e) {
+                $erro = 'Falha ao testar: ' . $e->getMessage();
+            }
+        } elseif ($acao === 'salvar_provider_principal') {
+            $provider = (string)($_POST['whatsapp_provider_principal'] ?? 'zapi');
+            setConfig('whatsapp_provider_principal', in_array($provider, ['zapi', 'oficial'], true) ? $provider : 'zapi');
+            $sucesso = 'Canal principal agora usa: ' . (getConfig('whatsapp_provider_principal') === 'oficial' ? 'API oficial (Meta)' : 'Z-API');
         } elseif ($acao === 'salvar_ia') {
             foreach (array_keys($camposIA) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -435,6 +462,13 @@ foreach (array_keys($camposZapiFallback) as $chave) {
     $valoresFallback[$chave] = getConfig($chave) ?? '';
 }
 $configuradoZapiFallback = $valoresFallback['zapi_fallback_instance_id'] && $valoresFallback['zapi_fallback_token'];
+$valoresOficial = [];
+foreach (array_keys($camposWhatsappOficial) as $chave) {
+    $valoresOficial[$chave] = getConfig($chave) ?? '';
+}
+$configuradoOficial = $valoresOficial['whatsapp_oficial_phone_number_id'] && $valoresOficial['whatsapp_oficial_access_token'];
+$providerPrincipalAtual = getConfig('whatsapp_provider_principal') ?: 'zapi';
+$urlWebhookOficial = (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'sistema.fastcar.solutions') . '/chatbot-whatsapp/webhook/whatsapp_oficial.php';
 $fila = listarFilaConsultores();
 foreach ($fila as &$f) {
     $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
@@ -653,6 +687,69 @@ unset($f);
         <?php if (!$configuradoZapiFallback): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
         <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🟢 WhatsApp Cloud API (Meta oficial)</h2>
+    <p><small>25/09/2026, depois dos dois números Z-API (principal e fallback) serem bloqueados de novo —
+       migração do canal PRINCIPAL de entrada de lead pra API oficial da Meta, que não sofre banimento por
+       padrão de mensagem do jeito que a Z-API (protocolo não oficial) sofre.</small></p>
+    <p><small>⚠️ <strong>Fase 1</strong>: só texto, só o canal principal (compra/qualificação de lead) —
+       vendas/financeiro continuam na Z-API normal. Fora da <strong>janela de 24h</strong> desde a última
+       mensagem do cliente, só é permitido mandar modelo pré-aprovado pelo Meta (não implementado ainda) —
+       mensagem de texto livre continua funcionando normal dentro da janela, que é o caso da qualificação por
+       IA.</small></p>
+
+    <p>
+        Status API oficial:
+        <span class="badge <?= $configuradoOficial ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoOficial ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_whatsapp_oficial">
+        <?php foreach ($camposWhatsappOficial as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="<?= $chave === 'whatsapp_oficial_verify_token' ? 'text' : 'password' ?>" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresOficial[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresOficial[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>URL do webhook — cola no painel do Meta (App → WhatsApp → Configuration → Webhook), junto com o
+       Verify Token salvo acima:</small></p>
+    <p><code style="word-break:break-all"><?= e($urlWebhookOficial) ?></code></p>
+
+    <hr>
+    <p><small>Teste só de LEITURA (confirma o número verificado, nunca gasta nada nem manda mensagem).</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_whatsapp_oficial">
+        <button type="submit" <?= $configuradoOficial ? '' : 'disabled' ?>>Testar conexão</button>
+        <?php if (!$configuradoOficial): ?>
+            <p><small>Preencha e salve o Phone Number ID e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+
+    <hr>
+    <p><small><strong>Canal que o funil de compra usa pra mandar/receber mensagem agora</strong> — só muda
+       depois de testar a conexão acima com sucesso; nunca troca sozinho.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_provider_principal">
+        <label>
+            <input type="radio" name="whatsapp_provider_principal" value="zapi" <?= $providerPrincipalAtual === 'zapi' ? 'checked' : '' ?>>
+            Z-API (padrão de sempre)
+        </label>
+        <label>
+            <input type="radio" name="whatsapp_provider_principal" value="oficial" <?= $providerPrincipalAtual === 'oficial' ? 'checked' : '' ?> <?= $configuradoOficial ? '' : 'disabled' ?>>
+            API oficial (Meta) — canal principal
+        </label>
+        <button type="submit">Salvar</button>
     </form>
 </div>
 

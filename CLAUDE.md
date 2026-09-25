@@ -4180,6 +4180,118 @@ segue no schema sem uso novo, não removida sem ganho real),
   vírgula certo — R$3.500,50; editar via POST muda status e persiste;
   excluir via POST remove só a linha certa, conferido direto na tabela) +
   `php -l` + `tests/smoke.php` limpos.
+- **WhatsApp Cloud API (Meta oficial) — canal principal, Fase 1** (25/09/2026,
+  "os dois vamos usar api oficial") — depois dos DOIS números Z-API
+  (principal e fallback) serem bloqueados de novo no mesmo incidente (ver
+  bullet "1 instância Z-API só + WhatsApp Box" e o "Incidente real de
+  produção — flood de mensagens duplicadas" mais abaixo), decisão de
+  migrar o canal PRINCIPAL (bloco 2/3 do funil — entrada de lead,
+  qualificação por IA) pra API oficial da Meta, que não sofre banimento por
+  padrão de mensagem do jeito que a Z-API (protocolo não oficial, WhatsApp
+  Web/multi-device) sofre. **Escopo Fase 1, confirmado com o usuário antes
+  de codar**: só texto, só canal principal — vendas/financeiro/fallback
+  continuam Z-API normal (não banidos nesse incidente, fora de escopo);
+  mídia recebida, múltiplas instâncias na Cloud API e envio de documento/
+  imagem pelo WhatsApp Box ficam pra Fase 2 (a Cloud API exige upload
+  prévio via `/media` pra mandar mídia, nunca base64 direto no corpo como
+  a Z-API aceitava — mecanismo bem diferente, escopo maior).
+  **Regra crítica, avisada ao usuário ANTES de implementar** (diferente da
+  Z-API): só é permitido mandar mensagem de texto LIVRE pra um número que
+  escreveu pra gente nas últimas 24h — fora da janela, só "template"
+  pré-aprovado pelo Meta (texto fixo com variáveis `{{1}}`, aprovação
+  prévia). Isso **não afeta** a qualificação de lead em si (cliente manda
+  "oi", IA responde na hora — sempre dentro da janela), mas afeta
+  notificações internas já existentes no projeto (aviso de lead
+  qualificado/atraso/resumo diário pro WhatsApp PESSOAL do consultor/
+  supervisor, `cron/recuperacao_leads.php`) — essas continuam Z-API
+  (fora do escopo do banimento, número diferente do canal principal) até
+  decisão futura de virarem template ou outro canal.
+  `includes/whatsapp_oficial.php` (novo) — `oficialEnviarTexto()` (`POST
+  /{phone_number_id}/messages`, Bearer token, nunca lança, reporta o erro
+  real da Meta em `oficialUltimoErro()` — inclusive o código `131047`
+  específico de "fora da janela de 24h"); `oficialTestarConexao()` (`GET
+  /{phone_number_id}`, só leitura, sem custo); `oficialAdaptarPayloadParaZapi()`
+  — peça central da integração: traduz 1 payload de webhook da Cloud API
+  (`entry[].changes[].value`) pro MESMO formato que `processarMensagemZapi()`
+  (`chatbot-whatsapp/includes/mensagens.php`) já processa —
+  `messageId`/`phone`/`fromMe`/`isGroup`/`text.message` — reaproveitando
+  100% da lógica de dedup/qualificação por IA já testada em produção, sem
+  duplicar nada; retorna `null` pra payload de `statuses` (confirmação de
+  entrega/leitura, sem `messages[]`) — a Cloud API já separa isso
+  estruturalmente em campos diferentes, nunca precisa da heurística que a
+  Z-API precisou (`tipoMidia()==='desconhecido'`, ver incidente de flood
+  de 15/09/2026 — aqui é só checar se `messages[]` existe). Mídia
+  (Fase 2): o adaptador já preserva `mediaId`/`mimeType` no formato
+  esperado, mas sem campo de URL (a Cloud API nunca entrega URL direta
+  pra mídia recebida, só um ID que exige 2 chamadas autenticadas — resolve
+  ID→URL temporária, depois baixa) — `extrairUrlMidia()` não acha nada e
+  loga o diagnóstico, mesmo caminho já existente pra Z-API quando o campo
+  de URL não bate.
+  `chatbot-whatsapp/webhook/whatsapp_oficial.php` (novo) — endpoint
+  **separado** do webhook Z-API (`whatsapp.php`), nunca a mesma URL
+  (formato de payload totalmente diferente). GET faz o handshake de
+  verificação que a Meta exige 1x ao salvar a URL no App Dashboard
+  (`hub_verify_token` conferido com `hash_equals()` contra
+  `config.whatsapp_oficial_verify_token`, responde o `hub_challenge` cru
+  se bater, 403 se não); POST processa mensagem de verdade, com o mesmo
+  padrão de log/try-catch do webhook Z-API
+  (`storage/logs/whatsapp_oficial_webhook_*.log`).
+  `zapiEnviarTexto()` (`includes/whatsapp_config.php`) ganhou despacho
+  automático — quando chamada **sem** `$instanciaOverride` (canal
+  principal) e `config.whatsapp_provider_principal==='oficial'`, roteia
+  direto pra `oficialEnviarTexto()` em vez de tentar Z-API — nenhum dos
+  ~40 call sites existentes precisou mudar, só troca o transporte por
+  baixo; chamada **com** `$instanciaOverride` (vendas/financeiro) nunca é
+  afetada, sempre Z-API. Card novo "🟢 WhatsApp Cloud API (Meta oficial)"
+  em `admin/configuracoes.php` — Phone Number ID/token/Verify Token, URL
+  do webhook pronta pra copiar e colar no painel do Meta, teste de
+  conexão (só leitura, nunca gasta nada) e um toggle explícito Z-API↔oficial
+  pro canal principal — **nunca troca sozinho**, só depois do usuário
+  testar a conexão com sucesso.
+  Testado: 16 asserções de função contra servidor Graph API fake local
+  (envio com sucesso grava `null` em `oficialUltimoErro()`; envio fora da
+  janela de 24h retorna `false` com o código `131047` real reportado;
+  teste de conexão sucesso e token inválido — propaga o erro real da
+  Meta; adaptador de payload — texto normal, `button`/`interactive`,
+  status-only retorna `null`, mídia preserva `mediaId` sem nunca inventar
+  `url`) + 5 asserções de regressão no despacho de `zapiEnviarTexto()`
+  (provider padrão `'zapi'` NUNCA chama o fake server da Meta mesmo com
+  credencial oficial configurada; `provider='oficial'` sem override
+  chama; `provider='oficial'` **com** override — vendas/financeiro —
+  nunca afetado, confirma que a migração não vaza pros outros canais) +
+  webhook HTTP ponta a ponta real via `php -S` (handshake GET com token
+  certo devolve o challenge, token errado devolve 403; POST de mensagem
+  de texto real cria cliente+oportunidade+mensagem na MESMA tabela
+  `whatsapp_mensagens` que a Z-API já usa — WhatsApp Box, dedup, tudo
+  funciona igual sem nenhuma mudança; reenviar o mesmo `messageId`
+  confirmado NÃO duplicando a mensagem; payload de status/entrega
+  processado sem crash, `ignored:not_a_message`) + `php -l` +
+  `tests/smoke.php` limpos.
+  ⚠️ **Nunca confirmado contra a API real ainda** — sem Phone Number
+  ID/token de verdade nesta sessão (usuário configurando o Business
+  Manager do lado do Meta em paralelo, já com conta ativa usada pra
+  anúncio) — validar assim que as credenciais reais forem coladas em
+  Configurações: testar conexão, handshake do webhook no painel do Meta,
+  e uma mensagem real de ponta a ponta antes de virar o toggle pra
+  `'oficial'` em produção.
+- **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
+  bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
+  scripts dry-run/`--confirmar` (mesmo padrão de sempre):
+  `install/encerrar_leads_parados_whatsapp.php` (fecha em lote leads
+  parados em `etapa='whatsapp'` sem esperar os 7 dias do cron automático,
+  reaproveita `marcarPerdida()` — ✅ rodado em produção, 62 encerrados) +
+  `install/reabrir_lead.php` (reabre 1 lead específico marcado
+  `perdido`/`sem_perfil` por telefone — não existe botão pra isso na tela,
+  o card "Mudar etapa" some nessas etapas — ✅ usado pra reabrir a Bárbara).
+  `install/cadastrar_cliente_manual.php` (array `$DADOS` editável, cadastro
+  manual de cliente que fechou no CRM antigo mas não apareceu no export
+  CSV) + `install/corrigir_cliente_elida_op38.php` (one-off com trava de
+  segurança por CPF — achou que a Élida já tinha entrado pelo WhatsApp
+  normal sob nome errado, "Thiago Luiz", com a oportunidade marcada
+  `perdido` por engano; corrigiu nome/etapa/veículo/financiamento direto,
+  sem duplicar cliente). Todos testados em sandbox isolado reproduzindo o
+  cenário real antes de rodar em produção, `php -l` + `tests/smoke.php`
+  limpos.
 - **Autoedição do próprio perfil (`admin/meu_perfil.php`)** (21/09/2026,
   pedido direto: "Permita os usuários do sistema editar perfis deles trocar
   número e-mail nome fazer upload de avatar") — tela nova, disponível pra

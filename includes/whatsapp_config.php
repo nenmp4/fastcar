@@ -9,6 +9,7 @@
 
 define('BASE_PATH', dirname(__DIR__));
 require_once BASE_PATH . '/includes/db.php';
+require_once BASE_PATH . '/includes/whatsapp_oficial.php';
 
 define('BOT_DEBUG', false);
 
@@ -234,9 +235,22 @@ function zapiCredenciaisFallback(): array {
  * mensagem de saída (resposta da IA, notificação, reengajamento) só
  * porque a instância principal deu erro passageiro. Sem fallback
  * configurado, comportamento idêntico a antes (só falha mesmo).
+ *
+ * 25/09/2026 — quando o canal PRINCIPAL está migrado pra API oficial
+ * (config.whatsapp_provider_principal='oficial', ver includes/whatsapp_oficial.php)
+ * e a chamada é pra instância principal (sem $instanciaOverride), despacha
+ * direto pra oficialEnviarTexto() em vez de tentar Z-API — nenhum dos
+ * ~40 call sites existentes precisou mudar, só troca o transporte por
+ * baixo. vendas/financeiro continuam Z-API normal (fora do escopo desta
+ * migração, ainda não banidos).
  */
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
+
+    if ($usandoPrincipal && oficialEhProviderPrincipal()) {
+        return oficialEnviarTexto($phone, $msg);
+    }
+
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
         _chatbot_getConfig('zapi_instance_id'),
         _chatbot_getConfig('zapi_token'),
