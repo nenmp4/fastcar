@@ -40,6 +40,25 @@ function e(string $str): string {
     return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
 }
 
+// Converte valor digitado em formulário pra float, corrigindo o hábito
+// brasileiro de digitar separador de milhar com ponto num campo
+// type="number" (que só entende ponto como decimal) — "1.380" digitado pra
+// dizer "mil e trezentos e oitenta" vira 1.38 com (float) direto. Ponto
+// seguido de EXATAMENTE 3 dígitos e nada depois é quase certamente milhar
+// (ninguém digita centavos com 3 casas num campo step="0.01" de verdade);
+// vírgula é sempre decimal, cobre reaproveitamento futuro em campo type="text".
+function valorMonetario(?string $bruto): ?float {
+    if ($bruto === null) return null;
+    $s = trim($bruto);
+    if ($s === '') return null;
+    if (strpos($s, ',') !== false) {
+        $s = str_replace(',', '.', str_replace('.', '', $s));
+    } elseif (preg_match('/^\d{1,3}(\.\d{3})+$/', $s)) {
+        $s = str_replace('.', '', $s);
+    }
+    return (float)$s;
+}
+
 function requireAdmin(): void {
     startSecureSession();
     if (empty($_SESSION['admin_id'])) {

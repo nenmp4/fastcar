@@ -67,13 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['veiculo_renavam'] ?? '')),
                     clean((string)($_POST['veiculo_chassi'] ?? '')),
                     clean((string)($_POST['banco_financiamento'] ?? '')),
-                    $_POST['valor_parcela'] !== '' ? (float)$_POST['valor_parcela'] : null,
+                    valorMonetario($_POST['valor_parcela'] ?? null),
                     $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
                     $_POST['parcelas_atraso'] !== '' ? (int)$_POST['parcelas_atraso'] : 0,
-                    $_POST['valor_pretendido'] !== '' ? (float)$_POST['valor_pretendido'] : null,
-                    ($_POST['debito_ipva'] ?? '') !== '' ? (float)$_POST['debito_ipva'] : null,
-                    ($_POST['debito_licenciamento'] ?? '') !== '' ? (float)$_POST['debito_licenciamento'] : null,
-                    ($_POST['debito_multas'] ?? '') !== '' ? (float)$_POST['debito_multas'] : null,
+                    valorMonetario($_POST['valor_pretendido'] ?? null),
+                    valorMonetario($_POST['debito_ipva'] ?? null),
+                    valorMonetario($_POST['debito_licenciamento'] ?? null),
+                    valorMonetario($_POST['debito_multas'] ?? null),
                     $id,
                 ]);
                 // Só um sinal visual pro consultor — nunca sobrescreve o que
@@ -94,10 +94,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
-                    $_POST['valor_fipe_referencia'] !== '' ? (float)$_POST['valor_fipe_referencia'] : null,
-                    $_POST['valor_ofertado'] !== '' ? (float)$_POST['valor_ofertado'] : null,
+                    valorMonetario($_POST['valor_fipe_referencia'] ?? null),
+                    valorMonetario($_POST['valor_ofertado'] ?? null),
                     clean((string)($_POST['contrato_financiamento_numero'] ?? '')),
-                    $_POST['saldo_financiamento_atual'] !== '' ? (float)$_POST['saldo_financiamento_atual'] : null,
+                    valorMonetario($_POST['saldo_financiamento_atual'] ?? null),
                     clean((string)($_POST['terceiro_quitacao'] ?? '')),
                     clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),

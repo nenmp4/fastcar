@@ -6639,6 +6639,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   em iPhone/Android físicos de verdade — validar quando possível;
   `auditoria-mobile.js` fica disponível pra rodar contra QUALQUER tela do
   sistema em produção, não só as 7 já testadas aqui.
+- **Valor monetário com ponto de milhar virava errado ao salvar** (25/09/2026,
+  achado via vídeo do usuário — "questão de pontução": campo "Valor da
+  parcela (R$)" em `admin/oportunidade.php` mostrando R$1,38 pra uma parcela
+  que devia ser R$1.380) — os 8 campos de dinheiro dessa tela
+  (`valor_parcela`/`valor_pretendido`/`debito_ipva`/`_licenciamento`/
+  `_multas`/`valor_fipe_referencia`/`valor_ofertado`/
+  `saldo_financiamento_atual`) são `type="number"` (mantido de propósito,
+  regra de UX mobile do projeto exige esse `type`+`inputmode` pro teclado
+  numérico do celular — trocar pra `text` quebraria isso em 8 campos sem
+  pedido real), mas `(float)` direto num valor digitado como `"1.380"`
+  (hábito brasileiro de separador de milhar) sempre vira `1.38` — ponto É
+  decimal em float, nunca separador de milhar; não é bug do navegador, é do
+  cast puro em PHP. Nova `valorMonetario()` (`includes/security.php`, ao
+  lado de `clean()`/`e()`, reutilizável pro projeto inteiro) — vírgula, se
+  presente, é sempre decimal (ponto antes vira milhar); sem vírgula, ponto
+  seguido de EXATAMENTE 3 dígitos e nada depois (`"1.380"`, `"12.500"`,
+  `"1.234.567"`) é tratado como separador de milhar, porque ninguém digita
+  centavos com 3 casas num campo `step="0.01"` de verdade — `"1.38"` (2
+  casas, decimal genuíno) nunca é confundido, sem falso positivo. Os 8
+  pontos de `admin/oportunidade.php` trocaram `$_POST['x'] !== '' ?
+  (float)$_POST['x'] : null` por `valorMonetario($_POST['x'] ?? null)` —
+  mesmo comportamento pra vazio/ausente (`null`), só o parsing de milhar
+  corrigido. Testado: 11 casos isolados de `valorMonetario()` (inclusive
+  `"1.38"` sem falso positivo e vazio→`null`) + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema. ⚠️ Outras telas com o
+  mesmo `type="number"` pra R$ (`admin/venda.php`,
+  `admin/financeiro-lancamentos.php`, `admin/patrimonio.php` etc.)
+  provavelmente têm o mesmo bug latente — fora do escopo desta correção
+  (só a tela que o usuário mostrou no vídeo); aplicar o mesmo helper lá
+  se/quando confirmado.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
