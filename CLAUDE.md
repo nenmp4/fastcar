@@ -3323,6 +3323,24 @@ segue no schema sem uso novo, não removida sem ganho real),
   vinculadas certas; vendedor consegue chamar `veiculo_crlv_ajax.php` sem
   mais cair em 302 depois do fix do allowlist) + `php -l` +
   `tests/smoke.php` limpos. Sem migração de schema.
+  **Resumo ANTES de registrar de verdade** (26/09/2026, pergunta direta
+  "antes de registrar a venda tem o resumo?" — resposta honesta foi não,
+  o resumo existente só aparecia DEPOIS do POST). O `<form>` continua
+  único (mesma decisão de sempre, "1 formulário só, registra tudo no
+  final"), só ganhou um gate client-side: campos de preenchimento em
+  `#vp-step-1`, botão final virou "👁️ Revisar antes de registrar" (nunca
+  submete — roda `form.reportValidity()` primeiro e monta em JS puro um
+  resumo legível de tudo já digitado — veículo/comprador/condições/cada
+  parte da entrada com total somado/bem de troca/parcelamento — em
+  `#vp-step-2`, sem chamada ao servidor). Só ali aparecem os botões reais
+  "✅ Confirmar e registrar" (`type=submit`, mesma requisição de sempre,
+  nenhuma mudança no backend) e "← Voltar e editar" (reabre o form1 com
+  os valores intactos). Testado com Playwright ponta a ponta: revisar
+  mostra os 6 blocos certos (total da entrada somado certo); voltar e
+  editar preserva os campos; revisar de novo + confirmar gera exatamente
+  1 venda (nunca duplica por ter revisado/voltado antes), com entrada em
+  partes/bem de troca batendo exatamente com o digitado. `php -l` +
+  `tests/smoke.php` limpos. Sem mudança de schema/backend.
   **Aba "📆 Todas as parcelas"** (26/09/2026, pedido direto logo depois de
   registrar a 1ª venda pelo modal novo: "registei a venda vamos ter
   listagens de todas vendas - todos parcelamentos ?") — fecha o item que

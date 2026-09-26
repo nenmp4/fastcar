@@ -307,6 +307,8 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="vender_promissoria">
 
+        <div id="vp-step-1">
+
         <h3 style="margin-top:1.2rem">🚗 Veículo</h3>
         <label>
             <input type="checkbox" name="cadastrar_veiculo_novo" id="vp-check-novo" value="1"
@@ -474,8 +476,22 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
         </div>
 
         <div style="display:flex;gap:10px;margin-top:1.4rem">
-            <button type="submit" class="btn-primary">✅ Registrar venda</button>
+            <button type="button" class="btn-primary" onclick="vpRevisar()">👁️ Revisar antes de registrar</button>
             <button type="button" onclick="document.getElementById('modal-promissoria').close()">Cancelar</button>
+        </div>
+
+        </div>
+
+        <div id="vp-step-2" style="display:none">
+            <h3 style="margin-top:1.2rem">📋 Confira antes de registrar</h3>
+            <p><small>Nada foi salvo ainda — só grava no banco depois de clicar em "Confirmar e registrar" abaixo.
+               Pra corrigir algo, volte e edite.</small></p>
+            <div id="vp-resumo-conteudo" style="background:var(--fundo-suave, #f4f6fb);border-radius:10px;padding:14px 16px;font-size:.92rem"></div>
+            <div style="display:flex;gap:10px;margin-top:1.2rem">
+                <button type="submit" class="btn-primary">✅ Confirmar e registrar</button>
+                <button type="button" onclick="vpVoltarEditar()">← Voltar e editar</button>
+                <button type="button" onclick="document.getElementById('modal-promissoria').close()">Cancelar</button>
+            </div>
         </div>
     </form>
 </dialog>
@@ -515,6 +531,101 @@ function vpLerCrlv() {
             status.textContent = '✅ Preenchido! Confira antes de registrar.';
         })
         .catch(function (err) { btn.disabled = false; status.textContent = '⚠️ Erro ao ler o CRLV.'; console.error(err); });
+}
+
+function vpFmtMoeda(v) {
+    var n = parseFloat(String(v || '').replace(',', '.'));
+    if (isNaN(n) || n === 0) return null;
+    return 'R$ ' + n.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d)(?=,))/g, '.');
+}
+function vpEsc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+function vpFmtData(v) {
+    if (!v) return null;
+    var p = v.split('-');
+    return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : v;
+}
+function vpVal(name) {
+    var el = document.querySelector('#form-vender-promissoria [name="' + name + '"]');
+    return el ? el.value.trim() : '';
+}
+
+function vpRevisar() {
+    var form = document.getElementById('form-vender-promissoria');
+    if (!form.reportValidity()) return; // validação nativa (campos *) já avisa o que falta
+
+    var linhas = [];
+
+    // Veículo
+    if (document.getElementById('vp-check-novo').checked) {
+        var partesVeiculo = [vpVal('veiculo_marca'), vpVal('veiculo_modelo'), vpVal('veiculo_ano')].filter(Boolean).join(' ');
+        linhas.push('<p><strong>🚗 Veículo (novo cadastro):</strong> ' + vpEsc(partesVeiculo || '(sem marca/modelo informados)') +
+            (vpVal('veiculo_placa') ? ' — placa ' + vpEsc(vpVal('veiculo_placa')) : '') + '</p>');
+        linhas.push('<p><strong>Vendedor/origem:</strong> ' + vpEsc(vpVal('vendedor_nome')) + ' — ' + vpEsc(vpVal('vendedor_telefone')) + '</p>');
+    } else {
+        var sel = document.getElementById('vp-select-veiculo');
+        var texto = sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].text : '';
+        linhas.push('<p><strong>🚗 Veículo (da frota):</strong> ' + vpEsc(texto || '(nenhum selecionado)') + '</p>');
+    }
+
+    // Comprador
+    linhas.push('<p><strong>🙋 Comprador:</strong> ' + vpEsc(vpVal('comprador_nome')) + ' — ' + vpEsc(vpVal('comprador_telefone')) +
+        (vpVal('comprador_cpf') ? ' — CPF ' + vpEsc(vpVal('comprador_cpf')) : '') + '</p>');
+
+    // Condições
+    var condicoes = [];
+    if (vpFmtMoeda(vpVal('preco_venda'))) condicoes.push('Preço: ' + vpFmtMoeda(vpVal('preco_venda')));
+    if (vpVal('forma_pagamento')) condicoes.push('Forma: ' + vpEsc(vpVal('forma_pagamento')));
+    if (vpFmtMoeda(vpVal('saldo_preco_devido'))) condicoes.push('Saldo devido: ' + vpFmtMoeda(vpVal('saldo_preco_devido')));
+    if (vpVal('prazo_quitacao_meses')) condicoes.push('Prazo: ' + vpEsc(vpVal('prazo_quitacao_meses')) + ' meses');
+    if (condicoes.length) linhas.push('<p><strong>📋 Condições:</strong> ' + condicoes.join(' · ') + '</p>');
+
+    // Entrada em partes
+    var totalEntrada = 0, partesTexto = [];
+    document.querySelectorAll('.vp-parte-linha').forEach(function (linha) {
+        var valorEl = linha.querySelector('[name="parte_valor[]"]');
+        var dataEl = linha.querySelector('[name="parte_data[]"]');
+        var v = parseFloat(String(valorEl.value || '').replace(',', '.'));
+        if (!v) return;
+        totalEntrada += v;
+        var d = vpFmtData(dataEl.value);
+        partesTexto.push(vpFmtMoeda(v) + (d ? ' em ' + d : ''));
+    });
+    if (partesTexto.length) {
+        linhas.push('<p><strong>💰 Entrada via PIX (' + partesTexto.length + ' parte' + (partesTexto.length > 1 ? 's' : '') + '):</strong> ' +
+            partesTexto.join(', ') + ' — total ' + vpFmtMoeda(totalEntrada) + '</p>');
+    } else {
+        linhas.push('<p><strong>💰 Entrada via PIX:</strong> nenhuma informada</p>');
+    }
+
+    // Bem de troca
+    if (document.getElementById('vp-bem-troca-check').checked) {
+        var tipoBem = document.getElementById('vp-bem-troca-tipo').value === 'veiculo' ? 'Veículo' : 'Outro bem';
+        var descBem = [tipoBem + ':', vpVal('bem_troca_nome')].filter(Boolean).join(' ');
+        var valorBem = vpFmtMoeda(vpVal('bem_troca_valor'));
+        linhas.push('<p><strong>🔁 Bem recebido na entrada:</strong> ' + vpEsc(descBem) + (valorBem ? ' — ' + valorBem : '') + '</p>');
+    }
+
+    // Parcelamento do saldo
+    var qtdParc = vpVal('parcelamento_qtd_parcelas');
+    var valorParc = vpFmtMoeda(vpVal('parcelamento_valor_parcela'));
+    if (qtdParc && valorParc) {
+        var primeiraData = vpFmtData(vpVal('parcelamento_primeira_parcela_data'));
+        linhas.push('<p><strong>📆 Parcelamento do saldo:</strong> ' + vpEsc(qtdParc) + 'x de ' + valorParc +
+            (primeiraData ? ', 1ª parcela em ' + primeiraData : '') + '</p>');
+    }
+
+    document.getElementById('vp-resumo-conteudo').innerHTML = linhas.join('');
+    document.getElementById('vp-step-1').style.display = 'none';
+    document.getElementById('vp-step-2').style.display = '';
+}
+
+function vpVoltarEditar() {
+    document.getElementById('vp-step-2').style.display = 'none';
+    document.getElementById('vp-step-1').style.display = '';
 }
 
 function vpAdicionarParteEntrada() {
