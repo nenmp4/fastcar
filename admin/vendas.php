@@ -152,6 +152,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
     <a href="/admin/vendas_inbox.php">💬 WhatsApp Vendas</a>
+    <a href="/admin/promissorias.php">💳 Promissórias</a>
     <?php if (perfilVeTudo()): ?><a href="/admin/veiculos.php">🚗 Veículos</a><?php endif; ?>
     <a href="/admin/avaliacoes.php">🔍 Vistorias</a>
     <a href="/admin/meu_perfil.php">🙋 Meu perfil</a>

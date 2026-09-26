@@ -3180,6 +3180,48 @@ segue no schema sem uso novo, não removida sem ganho real),
   venda individual, `finListarLancamentosVenda()`), e uma tela de resumo
   pós-cadastro estilo o modal "Venda registrada" com link do sistema
   antigo.
+  **Dashboard financeiro dedicado (`admin/promissorias.php`)** (26/09/2026,
+  "Monta desbord de venda dentro do módulo promissória para lançar
+  automaticamente no financeiro") — confirmado via AskUserQuestion antes de
+  codar: (1) as partes da entrada continuam gerando 1 lançamento único
+  somado (nunca virou N lançamentos por data — `finGerarReceitaVendaAssinatura()`
+  intocada); (2) tela **nova** dedicada, não uma extensão de
+  `admin/vendas.php`; (3) lista **TODAS** as vendas, não só as
+  parceladas/com entrada em partes. Lista toda venda (mesmo filtro
+  Minhas/Todas de `admin/vendas.php`) com o retrato financeiro ao lado —
+  total já pago/pendente/atrasado, lido de `fin_lancamentos` via nova
+  `finResumoLancamentosVenda()` (`includes/financeiro.php`, só agrega o que
+  `finListarLancamentosVenda()` já traz, nenhum cálculo duplicado) — e
+  mostra a entrada em partes/bem de troca quando existir (dado já
+  persistido pela feature de "venda promissória" do mesmo dia, ver bullet
+  acima). Receita/comissão **já são geradas sozinhas** no momento em que a
+  venda vira `'vendido'` de verdade
+  (`finGerarReceitaVendaAssinatura()`/`finRegistrarComissaoVendaFechada()`,
+  chamadas de dentro de `mudarEtapaVenda()` — nenhuma mudança nesse
+  gatilho, essa parte já era automática desde 19-24/09/2026); este
+  dashboard é só a camada de **visibilidade** + um botão de recuperação
+  "💳 Gerar no financeiro" que só aparece numa venda `'vendido'` com ZERO
+  lançamentos ainda (ex: importada da ZapSign antes dessas funções
+  existirem, ou uma falha silenciosa best-effort na hora da assinatura) —
+  chama as MESMAS 2 funções de produção, nunca duplicadas, sempre datadas
+  por `vendas.data_venda` (nunca "hoje", mesmo racional do
+  `install/gerar_lancamentos_vendas_retroativos.php` já existente) — nunca
+  reinventa a automação, só oferece o mesmo caminho manualmente pra quem
+  ficou de fora dela. Acesso via `requireAcessoVendas()` (super_admin/
+  supervisor/vendedor), mesmo guard de POST bloqueando `supervisor` (só
+  acompanha) do resto do módulo de vendas; página adicionada ao allowlist
+  central do perfil `vendedor` em `admin/_bootstrap.php` + link "💳
+  Promissórias" na topbar de `admin/vendas.php`. Testado: 13 asserções de
+  função em banco isolado (venda `'vendido'` sem lançamento tem resumo
+  zerado; clicar "gerar" cria os lançamentos certos com data REAL — não
+  hoje —, entrada retroativa nasce paga, comissão calculada certa 5% da
+  entrada; rodar de novo não duplica, idempotente; parcela vencida
+  marcada `'atrasado'` por `finRecalcularAtrasados()` soma certo no
+  resumo) + HTTP ponta a ponta real com sessão primed (GET mostra a venda
+  + botão de recuperação; POST gera os lançamentos e o botão desaparece
+  na recarga seguinte; supervisor vê a tela normal — 200 — mas recebe 403
+  tentando POSTar) + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

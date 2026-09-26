@@ -96,6 +96,29 @@ function finListarLancamentosVenda(int $vendaId): array {
 }
 
 /**
+ * Resumo financeiro de uma venda (26/09/2026, `admin/promissorias.php`) —
+ * total já pago, total ainda pendente/atrasado e quantos lançamentos tem no
+ * total, direto de `fin_lancamentos` (nunca reinventa cálculo, só agrega o
+ * que `finListarLancamentosVenda()` já traz). `cancelado` nunca entra em
+ * nenhuma soma — mesma disciplina do resto do financeiro.
+ */
+function finResumoLancamentosVenda(int $vendaId): array {
+    $lancamentos = finListarLancamentosVenda($vendaId);
+    $resumo = ['qtd' => 0, 'total_pago' => 0.0, 'total_pendente' => 0.0, 'atrasados' => 0];
+    foreach ($lancamentos as $l) {
+        if ($l['status'] === 'cancelado') continue;
+        $resumo['qtd']++;
+        if ($l['status'] === 'pago') {
+            $resumo['total_pago'] += (float)$l['valor'];
+        } else {
+            $resumo['total_pendente'] += (float)$l['valor'];
+            if ($l['status'] === 'atrasado') $resumo['atrasados']++;
+        }
+    }
+    return $resumo;
+}
+
+/**
  * Gera o plano de parcelamento LOCAL (entrada + N parcelas mensais) de uma
  * venda — Fastcar vende veículo da frota financiado (entrada + parcelas)
  * pro comprador, pedido explícito ("fastcar vende veiculo parcelado entrada
