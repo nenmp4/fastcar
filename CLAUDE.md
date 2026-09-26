@@ -3349,6 +3349,44 @@ segue no schema sem uso novo, não removida sem ganho real),
   do comprador filtra certo; aba "Todas as vendas" continua funcionando
   sem regressão + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema.
+  **Cláusula de retirada extrajudicial do veículo após 60 dias de
+  inadimplência (só VENDA)** (26/09/2026, pedido direto: "no contrato de
+  de venda tem anexo com autorização de retirado veiculo após 60 dias de
+  vencimentos ?") — resposta era não: a Cláusula 12ª (Inadimplemento do
+  COMPRADOR), item 12.3, dizia o CONTRÁRIO — descumprimento do comprador
+  nunca autorizava, por si só, retomada física coercitiva sem base
+  jurídica/processo adequado. Confirmado com o usuário via
+  AskUserQuestion antes de tocar em prosa jurídica já aprovada (mesma
+  disciplina de sempre pro texto fixo do contrato) — usuário confirmou
+  "Sim, adicionar agora". Novo item **12.4** em
+  `clausulasContratoVenda()` (`includes/contratos_pdf.php`): havendo
+  saldo de preço devido pago em parcelas (Quadro-Resumo) e a parcela
+  ficando mais de 60 (sessenta) dias corridos em atraso sem ser sanada,
+  a FASTCAR fica autorizada a retirar o veículo extrajudicialmente
+  (diretamente ou por preposto identificado, sem violência/arrombamento/
+  constrangimento), mediante prévia notificação por escrito com 10 dias
+  de antecedência pra regularização — persistindo o atraso depois desse
+  prazo, a retirada não exige nova notificação; nunca exclui a cobrança
+  do saldo remanescente/encargos, e o comprador pode reaver o veículo
+  regularizando o débito enquanto ainda estiver com a FASTCAR e não
+  revendido a terceiro. O item 12.3 ganhou a ressalva "fora da hipótese
+  prevista no item 12.4 abaixo" pra não contradizer a cláusula nova.
+  **Implementado como cláusula dentro do MESMO contrato assinado, não um
+  documento/anexo separado** — os "Anexo II/III/etc" já citados no texto
+  do contrato sempre foram só referência textual, nunca documentos
+  gerados de fato pelo sistema (confirmado grepando o arquivo antes de
+  decidir), então uma cláusula no corpo principal (assinada junto via
+  ZapSign) cumpre o mesmo objetivo sem precisar de um fluxo novo de
+  documento/assinatura separado. 60 dias fica fixo no texto da cláusula
+  (o número exato que o usuário pediu, regra #3 — nunca um valor
+  chutado), sem campo novo no Quadro-Resumo — não é variável por
+  negociação como `prazo_quitacao_meses`, é regra fixa do contrato de
+  venda. Testado: PDF real gerado ponta a ponta via
+  `gerarPdfContratoVenda()` e decodificado (content streams via
+  `gzuncompress`) confirmando a presença de "60 (sessenta) dias",
+  "AUTORIZA", "12.4", "retirada", "extrajudicial", "preposto",
+  "notifica", "10 (dez) dias" e "reaver o ve[ículo]" no texto renderizado
+  + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
