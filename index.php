@@ -36,6 +36,7 @@ $anoAtual = date('Y');
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="facebook-domain-verification" content="gy5w7l1u7vqmw515gd6x6vifl42isu" />
 <title>Fastcar Solutions — Compra de veículos financiados</title>
 <meta name="description" content="A Fastcar compra seu carro, moto, caminhão, caminhonete ou jet ski ainda financiado — assumimos o financiamento e fazemos uma proposta justa pelo seu veículo. Fale com a gente pelo WhatsApp.">
 <meta name="robots" content="index, follow">
