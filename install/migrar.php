@@ -1426,4 +1426,54 @@ try {
     echo "❌ patrimonio_itens: {$e->getMessage()}\n";
 }
 
+// 26/09/2026, "Jean quer em módulos promissórias vendas" — réplica do
+// fluxo de venda do sistema antigo (fastcar.site): bem recebido como
+// parte da entrada (veículo ou outro bem) + termos do parcelamento do
+// saldo persistidos na própria venda, pra citar no Quadro-Resumo do
+// contrato. Ver includes/vendas.php.
+foreach ([
+    ['bem_troca_recebido', "ALTER TABLE vendas ADD COLUMN bem_troca_recebido INTEGER NOT NULL DEFAULT 0"],
+    ['bem_troca_tipo', "ALTER TABLE vendas ADD COLUMN bem_troca_tipo TEXT DEFAULT ''"],
+    ['bem_troca_nome', "ALTER TABLE vendas ADD COLUMN bem_troca_nome TEXT DEFAULT ''"],
+    ['bem_troca_valor', 'ALTER TABLE vendas ADD COLUMN bem_troca_valor REAL'],
+    ['bem_troca_modelo_ano', "ALTER TABLE vendas ADD COLUMN bem_troca_modelo_ano TEXT DEFAULT ''"],
+    ['bem_troca_ano_fabricacao', "ALTER TABLE vendas ADD COLUMN bem_troca_ano_fabricacao TEXT DEFAULT ''"],
+    ['bem_troca_cor', "ALTER TABLE vendas ADD COLUMN bem_troca_cor TEXT DEFAULT ''"],
+    ['bem_troca_placa', "ALTER TABLE vendas ADD COLUMN bem_troca_placa TEXT DEFAULT ''"],
+    ['bem_troca_chassi', "ALTER TABLE vendas ADD COLUMN bem_troca_chassi TEXT DEFAULT ''"],
+    ['bem_troca_renavam', "ALTER TABLE vendas ADD COLUMN bem_troca_renavam TEXT DEFAULT ''"],
+    ['parcelamento_valor_parcela', 'ALTER TABLE vendas ADD COLUMN parcelamento_valor_parcela REAL'],
+    ['parcelamento_qtd_parcelas', 'ALTER TABLE vendas ADD COLUMN parcelamento_qtd_parcelas INTEGER'],
+    ['parcelamento_primeira_parcela_data', 'ALTER TABLE vendas ADD COLUMN parcelamento_primeira_parcela_data DATE'],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'vendas', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ vendas.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ vendas.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  vendas.{$coluna}: já existia\n";
+    }
+}
+
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS venda_entrada_partes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            venda_id INTEGER NOT NULL REFERENCES vendas(id),
+            parte_numero INTEGER NOT NULL,
+            valor REAL NOT NULL,
+            data_prevista DATE,
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            UNIQUE(venda_id, parte_numero)
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_venda_entrada_partes_venda ON venda_entrada_partes(venda_id)");
+    echo "✅ venda_entrada_partes: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ venda_entrada_partes: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

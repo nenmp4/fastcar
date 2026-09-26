@@ -96,9 +96,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $sucesso = 'Dados do comprador atualizados.';
             } elseif ($acao === 'atualizar_condicoes') {
+                // valor_pago_contratacao NUNCA é escrito aqui — desde
+                // 26/09/2026 é sempre a soma das partes da entrada
+                // (ação salvar_entrada_partes, ver includes/vendas.php),
+                // pra não ter 2 formulários competindo pelo mesmo campo.
                 $db->prepare("
                     UPDATE vendas
-                    SET km_entrega = ?, preco_venda = ?, valor_pago_contratacao = ?, forma_pagamento = ?,
+                    SET km_entrega = ?, preco_venda = ?, forma_pagamento = ?,
                         saldo_preco_devido = ?, prazo_quitacao_meses = ?, data_limite_quitacao = ?,
                         prestacao_contas_texto = ?, seguro_texto = ?, ipva_responsavel_texto = ?, multas_texto = ?,
                         rastreador_texto = ?, prazo_transferencia_dias = ?, penalidade_atraso_texto = ?,
@@ -106,10 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     WHERE id = ?
                 ")->execute([
                     $_POST['km_entrega'] !== '' ? (int)$_POST['km_entrega'] : null,
-                    $_POST['preco_venda'] !== '' ? (float)$_POST['preco_venda'] : null,
-                    $_POST['valor_pago_contratacao'] !== '' ? (float)$_POST['valor_pago_contratacao'] : null,
+                    valorMonetario((string)($_POST['preco_venda'] ?? '')),
                     clean((string)($_POST['forma_pagamento'] ?? '')),
-                    $_POST['saldo_preco_devido'] !== '' ? (float)$_POST['saldo_preco_devido'] : null,
+                    valorMonetario((string)($_POST['saldo_preco_devido'] ?? '')),
                     $_POST['prazo_quitacao_meses'] !== '' ? min(24, (int)$_POST['prazo_quitacao_meses']) : 24,
                     $_POST['data_limite_quitacao'] !== '' ? (string)$_POST['data_limite_quitacao'] : null,
                     clean((string)($_POST['prestacao_contas_texto'] ?? '')),
@@ -122,6 +125,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $id,
                 ]);
                 $sucesso = 'Condições da venda atualizadas.';
+            } elseif ($acao === 'salvar_entrada_partes') {
+                // Réplica do sistema antigo (26/09/2026, "Jean quer em
+                // módulos promissórias vendas") — entrada paga em várias
+                // partes via PIX, cada uma com valor/data próprios. Sempre
+                // recalcula vendas.valor_pago_contratacao como a soma —
+                // ver includes/vendas.php::salvarEntradaPartesVenda().
+                $partesPost = [];
+                $valoresPost = $_POST['parte_valor'] ?? [];
+                $datasPost = $_POST['parte_data'] ?? [];
+                foreach ((array)$valoresPost as $i => $valorBruto) {
+                    $valor = valorMonetario((string)$valorBruto);
+                    if ($valor === null || $valor <= 0) continue;
+                    $partesPost[] = ['valor' => $valor, 'data_prevista' => (string)($datasPost[$i] ?? '') ?: null];
+                }
+                $totalPartes = salvarEntradaPartesVenda($id, $partesPost);
+                $sucesso = 'Entrada atualizada — total de ' . count($partesPost) . ' parte(s), somando ' . number_format($totalPartes, 2, ',', '.') . '.';
+            } elseif ($acao === 'salvar_bem_troca') {
+                salvarBemTrocaVenda($id, [
+                    'recebido' => !empty($_POST['bem_troca_recebido']),
+                    'tipo' => (string)($_POST['bem_troca_tipo'] ?? ''),
+                    'nome' => (string)($_POST['bem_troca_nome'] ?? ''),
+                    'valor' => valorMonetario((string)($_POST['bem_troca_valor'] ?? '')),
+                    'modelo_ano' => (string)($_POST['bem_troca_modelo_ano'] ?? ''),
+                    'ano_fabricacao' => (string)($_POST['bem_troca_ano_fabricacao'] ?? ''),
+                    'cor' => (string)($_POST['bem_troca_cor'] ?? ''),
+                    'placa' => (string)($_POST['bem_troca_placa'] ?? ''),
+                    'chassi' => (string)($_POST['bem_troca_chassi'] ?? ''),
+                    'renavam' => (string)($_POST['bem_troca_renavam'] ?? ''),
+                ]);
+                $sucesso = 'Bem recebido como parte da entrada atualizado.';
             } elseif ($acao === 'gerar_parcelamento') {
                 // Fastcar vende veículo da frota financiado pro comprador —
                 // entrada + parcelas (pedido José/Jean, 17/09/2026). Cobra
@@ -145,6 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $r = asaasGerarCobrancaParceladaVenda($id, $asaasCustomerId, $valorParcela, $numParcelas, $primeiraParcela, "Venda #{$id} — " . trim((string)$v['veiculo_marca'] . ' ' . $v['veiculo_modelo']));
                         if ($r['ok']) {
+                            salvarParcelamentoTermosVenda($id, $valorParcela, $numParcelas, $primeiraParcela);
                             $sucesso = "Cobrança parcelada criada no Asaas — {$r['criadas']} parcela(s).";
                         } else {
                             $erro = 'Falha ao gerar cobrança no Asaas: ' . $r['erro'];
@@ -153,6 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $r = finGerarPlanoParcelamentoVenda($id, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela, null, (string)$v['comprador_nome'], (int)$_SESSION['admin_id']);
                     if ($r['ok']) {
+                        salvarParcelamentoTermosVenda($id, $valorParcela, $numParcelas, $primeiraParcela);
                         $sucesso = "Plano de parcelamento gerado no financeiro — {$r['criadas']} lançamento(s).";
                     } else {
                         $erro = $r['erro'];
@@ -354,6 +389,7 @@ $contratos = $stmtContratos->fetchAll();
 $usuarios = listarUsuarios();
 $avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
 $avaliacoesVeiculo = $v['oportunidade_id'] ? listarAvaliacoesDoVeiculo((int)$v['oportunidade_id']) : [];
+$entradaPartes = listarEntradaPartesVenda($id);
 $atrasada = $v['proxima_acao_em'] && $v['proxima_acao_em'] < date('Y-m-d H:i:s');
 $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     ? round((float)$v['preco_venda'] / (float)$v['valor_fipe_referencia'] * 100, 2) : null;
@@ -647,6 +683,102 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php endif; ?>
 
 <div class="card">
+    <h3>💰 Entrada — pago via PIX (em partes)</h3>
+    <p><small>Réplica do fluxo do sistema antigo: a entrada pode ser paga em mais de uma parte, cada uma com valor e
+       data próprios. O total das partes abaixo é sempre o "Valor pago pelo comprador na contratação" do Quadro-Resumo
+       — nunca digitado direto, sempre a soma daqui.</small></p>
+    <form method="post" id="form-entrada-partes">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_entrada_partes">
+        <div id="entrada-partes-linhas">
+            <?php if (!$entradaPartes): $entradaPartes = [['valor' => '', 'data_prevista' => '']]; endif; ?>
+            <?php foreach ($entradaPartes as $i => $parte): ?>
+                <div class="grid-2 entrada-parte-linha" style="align-items:end">
+                    <div>
+                        <label>Valor da <?= $i + 1 ?>ª parte no PIX (R$)</label>
+                        <input type="number" step="0.01" inputmode="decimal" name="parte_valor[]" value="<?= e((string)($parte['valor'] ?? '')) ?>">
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:end">
+                        <div style="flex:1">
+                            <label>Data da <?= $i + 1 ?>ª parte no PIX</label>
+                            <input type="date" name="parte_data[]" value="<?= e($parte['data_prevista'] ?? '') ?>">
+                        </div>
+                        <button type="button" class="btn-texto perigo" onclick="this.closest('.entrada-parte-linha').remove()" style="margin-bottom:2px">🗑️ remover</button>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <button type="button" class="secundario" onclick="adicionarParteEntrada()">➕ Adicionar outra parte no PIX</button>
+        <button type="submit">Salvar entrada</button>
+    </form>
+    <p><strong>Total da entrada: R$ <?= number_format((float)($v['valor_pago_contratacao'] ?? 0), 2, ',', '.') ?></strong></p>
+</div>
+<script>
+function adicionarParteEntrada() {
+    const wrap = document.getElementById('entrada-partes-linhas');
+    const n = wrap.querySelectorAll('.entrada-parte-linha').length + 1;
+    const div = document.createElement('div');
+    div.className = 'grid-2 entrada-parte-linha';
+    div.style.alignItems = 'end';
+    div.innerHTML = `
+        <div>
+            <label>Valor da ${n}ª parte no PIX (R$)</label>
+            <input type="number" step="0.01" inputmode="decimal" name="parte_valor[]" value="">
+        </div>
+        <div style="display:flex;gap:8px;align-items:end">
+            <div style="flex:1">
+                <label>Data da ${n}ª parte no PIX</label>
+                <input type="date" name="parte_data[]" value="">
+            </div>
+            <button type="button" class="btn-texto perigo" onclick="this.closest('.entrada-parte-linha').remove()" style="margin-bottom:2px">🗑️ remover</button>
+        </div>`;
+    wrap.appendChild(div);
+}
+</script>
+
+<div class="card">
+    <h3>🔁 Bem recebido como parte da entrada</h3>
+    <p><small>Veículo ou outro bem que o comprador entregou como parte do pagamento — entra no Quadro-Resumo do
+       contrato, mas nunca soma na entrada em dinheiro acima (o valor do bem não gera receita/lançamento financeiro,
+       é um ativo, não caixa; registrar no <a href="/admin/patrimonio.php">Patrimônio</a> continua sempre manual).</small></p>
+    <form method="post" id="form-bem-troca">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_bem_troca">
+        <label><input type="checkbox" name="bem_troca_recebido" value="1" id="bem-troca-check" <?= $v['bem_troca_recebido'] ? 'checked' : '' ?> onchange="document.getElementById('bem-troca-campos').style.display = this.checked ? '' : 'none'"> Recebemos um bem como parte da entrada</label>
+        <div id="bem-troca-campos" style="<?= $v['bem_troca_recebido'] ? '' : 'display:none' ?>;margin-top:10px">
+            <label>Tipo</label>
+            <select name="bem_troca_tipo" id="bem-troca-tipo" onchange="document.getElementById('bem-troca-veiculo').style.display = this.value === 'veiculo' ? '' : 'none'">
+                <option value="outro" <?= $v['bem_troca_tipo'] === 'outro' ? 'selected' : '' ?>>Outro bem</option>
+                <option value="veiculo" <?= $v['bem_troca_tipo'] === 'veiculo' ? 'selected' : '' ?>>Veículo</option>
+            </select>
+            <label>Descrição do bem</label>
+            <input type="text" name="bem_troca_nome" value="<?= e($v['bem_troca_nome'] ?? '') ?>" placeholder="Ex: Moto Honda CG 160, ou nome do bem">
+            <label>Valor atribuído ao bem (R$)</label>
+            <input type="number" step="0.01" inputmode="decimal" name="bem_troca_valor" value="<?= e((string)($v['bem_troca_valor'] ?? '')) ?>">
+            <div id="bem-troca-veiculo" class="grid-2" style="<?= $v['bem_troca_tipo'] === 'veiculo' ? '' : 'display:none' ?>">
+                <div>
+                    <label>Modelo/ano</label>
+                    <input type="text" name="bem_troca_modelo_ano" value="<?= e($v['bem_troca_modelo_ano'] ?? '') ?>">
+                    <label>Ano de fabricação</label>
+                    <input type="text" name="bem_troca_ano_fabricacao" value="<?= e($v['bem_troca_ano_fabricacao'] ?? '') ?>">
+                    <label>Cor</label>
+                    <input type="text" name="bem_troca_cor" value="<?= e($v['bem_troca_cor'] ?? '') ?>">
+                </div>
+                <div>
+                    <label>Placa</label>
+                    <input type="text" name="bem_troca_placa" value="<?= e($v['bem_troca_placa'] ?? '') ?>">
+                    <label>Chassi</label>
+                    <input type="text" name="bem_troca_chassi" value="<?= e($v['bem_troca_chassi'] ?? '') ?>">
+                    <label>Renavam</label>
+                    <input type="text" name="bem_troca_renavam" value="<?= e($v['bem_troca_renavam'] ?? '') ?>">
+                </div>
+            </div>
+        </div>
+        <button type="submit">Salvar bem recebido</button>
+    </form>
+</div>
+
+<div class="card">
     <h3>📝 Condições da venda</h3>
     <p><small>Alimentam o Quadro-Resumo do contrato-mestre de venda — mesma disciplina do lado de compra: o consultor
        confirma com o comprador antes de gerar, nunca preenchido sozinho pelo sistema.</small></p>
@@ -659,8 +791,8 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <input type="number" name="km_entrega" value="<?= e((string)($v['km_entrega'] ?? '')) ?>">
                 <label>Preço ajustado (R$)</label>
                 <input type="number" step="0.01" name="preco_venda" value="<?= e((string)($v['preco_venda'] ?? '')) ?>">
-                <label>Valor pago pelo comprador na contratação (R$)</label>
-                <input type="number" step="0.01" name="valor_pago_contratacao" value="<?= e((string)($v['valor_pago_contratacao'] ?? '')) ?>">
+                <label>Valor pago pelo comprador na contratação (R$) — soma das partes do PIX acima, somente leitura</label>
+                <input type="number" step="0.01" value="<?= e((string)($v['valor_pago_contratacao'] ?? '')) ?>" disabled>
                 <label>Forma de pagamento</label>
                 <input type="text" name="forma_pagamento" value="<?= e($v['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas...">
                 <label>Saldo de preço devido pelo comprador (R$) — deixe em branco se inexistente</label>

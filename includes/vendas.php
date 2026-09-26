@@ -309,6 +309,111 @@ function vincularVeiculoVenda(int $vendaId, int $oportunidadeId): bool {
     return true;
 }
 
+/**
+ * Partes da entrada pagas via PIX, cada uma com valor e data próprios
+ * (26/09/2026, réplica do sistema antigo — "Valor 1ª parte no PIX"/"Data
+ * 1ª parte no PIX", quantas partes o vendedor precisar). Substitui a
+ * lista inteira a cada salvamento (mesmo padrão de "recalcula tudo junto"
+ * já usado em outras telas de formulário do projeto — não é histórico
+ * incremental, é o estado atual da negociação enquanto ela não foi
+ * fechada) e sempre recalcula vendas.valor_pago_contratacao como a SOMA
+ * das partes — esse campo é o que finGerarReceitaVendaAssinatura() usa
+ * pra gerar a receita real, então precisa refletir só dinheiro de
+ * verdade (nunca o valor do bem de troca, ver salvarBemTrocaVenda()).
+ * $partes: lista de ['valor' => float, 'data_prevista' => 'AAAA-MM-DD'|null].
+ */
+function salvarEntradaPartesVenda(int $vendaId, array $partes): float {
+    $db = getDB();
+    $db->beginTransaction();
+    try {
+        $db->prepare("DELETE FROM venda_entrada_partes WHERE venda_id = ?")->execute([$vendaId]);
+        $numero = 0;
+        $total = 0.0;
+        $stmt = $db->prepare("INSERT INTO venda_entrada_partes (venda_id, parte_numero, valor, data_prevista) VALUES (?, ?, ?, ?)");
+        foreach ($partes as $p) {
+            $valor = (float)($p['valor'] ?? 0);
+            if ($valor <= 0) continue;
+            $numero++;
+            $stmt->execute([$vendaId, $numero, $valor, $p['data_prevista'] ?: null]);
+            $total += $valor;
+        }
+        $db->prepare("UPDATE vendas SET valor_pago_contratacao = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$total, $vendaId]);
+        $db->commit();
+        return $total;
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
+function listarEntradaPartesVenda(int $vendaId): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT * FROM venda_entrada_partes WHERE venda_id = ? ORDER BY parte_numero");
+    $stmt->execute([$vendaId]);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Bem recebido como parte do pagamento da entrada — veículo ou outro bem
+ * (26/09/2026, réplica do sistema antigo: "Receber bem como parte do
+ * pagamento da entrada"). bem_troca_valor entra no Quadro-Resumo do
+ * contrato (includes/contratos_pdf.php), mas NUNCA em
+ * vendas.valor_pago_contratacao — não é dinheiro recebido, é um ativo;
+ * contá-lo como receita em finGerarReceitaVendaAssinatura() geraria
+ * lançamento financeiro falso. Registrar o bem no patrimônio da empresa
+ * (admin/patrimonio.php) continua sempre manual/separado, nunca automático.
+ */
+function salvarBemTrocaVenda(int $vendaId, array $dados): void {
+    $db = getDB();
+    $recebido = !empty($dados['recebido']);
+    if (!$recebido) {
+        $db->prepare("
+            UPDATE vendas SET bem_troca_recebido = 0, bem_troca_tipo = '', bem_troca_nome = '',
+                bem_troca_valor = NULL, bem_troca_modelo_ano = '', bem_troca_ano_fabricacao = '',
+                bem_troca_cor = '', bem_troca_placa = '', bem_troca_chassi = '', bem_troca_renavam = '',
+                updated_at = datetime('now','localtime')
+            WHERE id = ?
+        ")->execute([$vendaId]);
+        return;
+    }
+    $tipo = ($dados['tipo'] ?? '') === 'veiculo' ? 'veiculo' : 'outro';
+    $db->prepare("
+        UPDATE vendas SET bem_troca_recebido = 1, bem_troca_tipo = ?, bem_troca_nome = ?, bem_troca_valor = ?,
+            bem_troca_modelo_ano = ?, bem_troca_ano_fabricacao = ?, bem_troca_cor = ?,
+            bem_troca_placa = ?, bem_troca_chassi = ?, bem_troca_renavam = ?,
+            updated_at = datetime('now','localtime')
+        WHERE id = ?
+    ")->execute([
+        $tipo,
+        trim((string)($dados['nome'] ?? '')),
+        isset($dados['valor']) && $dados['valor'] !== '' ? (float)$dados['valor'] : null,
+        $tipo === 'veiculo' ? trim((string)($dados['modelo_ano'] ?? '')) : '',
+        $tipo === 'veiculo' ? trim((string)($dados['ano_fabricacao'] ?? '')) : '',
+        $tipo === 'veiculo' ? trim((string)($dados['cor'] ?? '')) : '',
+        $tipo === 'veiculo' ? trim((string)($dados['placa'] ?? '')) : '',
+        $tipo === 'veiculo' ? trim((string)($dados['chassi'] ?? '')) : '',
+        $tipo === 'veiculo' ? trim((string)($dados['renavam'] ?? '')) : '',
+        $vendaId,
+    ]);
+}
+
+/**
+ * Persiste os termos do parcelamento do saldo remanescente na própria
+ * venda (26/09/2026) — antes só existiam de passagem no POST de
+ * "gerar_parcelamento" (admin/venda.php), nunca gravados; sem isso não
+ * dava pra citar "financiado em Nx de R$Y, vencendo dia Z" no Quadro-
+ * Resumo do contrato depois de gerado.
+ */
+function salvarParcelamentoTermosVenda(int $vendaId, float $valorParcela, int $qtdParcelas, string $primeiraParcelaData): void {
+    $db = getDB();
+    $db->prepare("
+        UPDATE vendas SET parcelamento_valor_parcela = ?, parcelamento_qtd_parcelas = ?,
+            parcelamento_primeira_parcela_data = ?, updated_at = datetime('now','localtime')
+        WHERE id = ?
+    ")->execute([$valorParcela, $qtdParcelas, $primeiraParcelaData, $vendaId]);
+}
+
 // Fotos/vídeos são upload deliberado do vendedor (nunca reaproveita foto
 // antiga da conversa de COMPRA — pode estar desatualizada, carro pode ter
 // sido reformado/lavado/rodado km desde então; regra #3 do CLAUDE.md

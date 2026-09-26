@@ -643,6 +643,35 @@ CREATE TABLE IF NOT EXISTS vendas (
     prazo_transferencia_dias INTEGER,
     penalidade_atraso_texto TEXT DEFAULT '',
 
+    -- Bem recebido como parte do pagamento da entrada (26/09/2026, "Jean
+    -- quer em módulos promissórias vendas" — réplica do fluxo do sistema
+    -- antigo, fastcar.site: "Receber bem como parte do pagamento da
+    -- entrada", veículo OU outro bem). bem_troca_valor entra no Quadro-
+    -- Resumo/contrato, mas NUNCA em valor_pago_contratacao (que só soma
+    -- dinheiro de verdade recebido via PIX — venda_entrada_partes abaixo
+    -- — pra não inflar a receita automática de finGerarReceitaVendaAssinatura()
+    -- com um ativo não-monetário; registrar o bem no patrimônio da empresa
+    -- continua manual, decisão separada, nunca automática).
+    bem_troca_recebido INTEGER NOT NULL DEFAULT 0,
+    bem_troca_tipo TEXT DEFAULT '' CHECK (bem_troca_tipo IN ('', 'veiculo', 'outro')),
+    bem_troca_nome TEXT DEFAULT '',        -- "usado como Marca no contrato"
+    bem_troca_valor REAL,
+    bem_troca_modelo_ano TEXT DEFAULT '',
+    bem_troca_ano_fabricacao TEXT DEFAULT '',
+    bem_troca_cor TEXT DEFAULT '',
+    bem_troca_placa TEXT DEFAULT '',
+    bem_troca_chassi TEXT DEFAULT '',
+    bem_troca_renavam TEXT DEFAULT '',
+
+    -- Termos do parcelamento do saldo remanescente, persistidos quando o
+    -- card "Financeiro — plano de parcelamento" gera de verdade (só pra
+    -- poder citar no Quadro-Resumo do contrato — "Saldo Remanescente:
+    -- financiado em Nx de R$Y, vencendo todo dia Z" — antes esses valores
+    -- só existiam de passagem no POST, nunca ficavam gravados na venda).
+    parcelamento_valor_parcela REAL,
+    parcelamento_qtd_parcelas INTEGER,
+    parcelamento_primeira_parcela_data DATE,
+
     data_venda DATE,                   -- quando etapa vira 'vendido'
 
     created_at DATETIME DEFAULT (datetime('now','localtime')),
@@ -656,6 +685,22 @@ CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em);
 -- uma negociação cancelada libera o veículo pra uma nova tentativa.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_ativa_por_veiculo
     ON vendas(oportunidade_id) WHERE etapa IN ('negociacao', 'contrato_enviado');
+
+-- Partes da entrada, pagas via PIX em datas diferentes (26/09/2026, réplica
+-- do sistema antigo — "Valor 1ª parte no PIX"/"Data 1ª parte no PIX" etc,
+-- quantas partes o vendedor precisar) — cada linha é 1 pagamento previsto;
+-- a soma delas é o que vendas.valor_pago_contratacao guarda (sempre
+-- recalculada junto, includes/vendas.php::salvarEntradaPartesVenda()).
+CREATE TABLE IF NOT EXISTS venda_entrada_partes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    venda_id INTEGER NOT NULL REFERENCES vendas(id),
+    parte_numero INTEGER NOT NULL,
+    valor REAL NOT NULL,
+    data_prevista DATE,
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    UNIQUE(venda_id, parte_numero)
+);
+CREATE INDEX IF NOT EXISTS idx_venda_entrada_partes_venda ON venda_entrada_partes(venda_id);
 
 -- Catálogo de fotos/vídeos de um veículo da frota, pra revenda (17/09/2026,
 -- pedido José/Jean: "ela precisa enviar fotos do veículos - vídeo") — vive

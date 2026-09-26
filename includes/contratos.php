@@ -326,6 +326,25 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         'rastreador_texto'              => $v['rastreador_texto'] ?: '',
         'prazo_transferencia_dias'      => $v['prazo_transferencia_dias'] !== null ? (int)$v['prazo_transferencia_dias'] : null,
         'penalidade_atraso_texto'       => $v['penalidade_atraso_texto'] ?: '',
+        // Entrada em partes via PIX + bem de troca + termos do
+        // parcelamento persistidos (26/09/2026, réplica do sistema antigo
+        // — ver includes/vendas.php). '_entrada_partes' nunca substitui
+        // valor_pago_contratacao (que já é a soma), só permite o Quadro-
+        // Resumo listar cada parte com sua própria data.
+        '_entrada_partes'               => listarEntradaPartesVenda((int)$v['id']),
+        'bem_troca_recebido'            => (bool)$v['bem_troca_recebido'],
+        'bem_troca_tipo'                => $v['bem_troca_tipo'] ?: '',
+        'bem_troca_nome'                => $v['bem_troca_nome'] ?: '',
+        'bem_troca_valor'               => $v['bem_troca_valor'] !== null ? (float)$v['bem_troca_valor'] : null,
+        'bem_troca_modelo_ano'          => $v['bem_troca_modelo_ano'] ?: '',
+        'bem_troca_ano_fabricacao'      => $v['bem_troca_ano_fabricacao'] ?: '',
+        'bem_troca_cor'                 => $v['bem_troca_cor'] ?: '',
+        'bem_troca_placa'               => $v['bem_troca_placa'] ?: '',
+        'bem_troca_chassi'              => $v['bem_troca_chassi'] ?: '',
+        'bem_troca_renavam'             => $v['bem_troca_renavam'] ?: '',
+        'parcelamento_valor_parcela'    => $v['parcelamento_valor_parcela'] !== null ? (float)$v['parcelamento_valor_parcela'] : null,
+        'parcelamento_qtd_parcelas'     => $v['parcelamento_qtd_parcelas'] !== null ? (int)$v['parcelamento_qtd_parcelas'] : null,
+        'parcelamento_primeira_parcela_data' => $v['parcelamento_primeira_parcela_data'] ? date('d/m/Y', strtotime($v['parcelamento_primeira_parcela_data'])) : '',
         'testemunha1_nome'              => getConfig('testemunha1_nome') ?: '',
         'testemunha1_cpf'               => getConfig('testemunha1_cpf') ?: '',
         'testemunha2_nome'              => getConfig('testemunha2_nome') ?: '',

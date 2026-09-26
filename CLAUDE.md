@@ -3089,6 +3089,97 @@ segue no schema sem uso novo, não removida sem ganho real),
   via `COUNT=1`) + lookup por tipo (`contrato_venda` achado, `cnh` nunca
   inserido retorna `null`, sem erro) + `php -l` + `tests/smoke.php`
   limpos.
+  **Entrada em partes via PIX + bem de troca + parcelamento persistido**
+  (26/09/2026, "Jean quer em módulos promissórias vendas todas listagens
+  vendas listagem da parcelas resulmo da venda") — o usuário mandou 16
+  screenshots de um sistema **completamente diferente e antigo**
+  (`fastcar.site`, mesma origem já usada antes pra importação de CSV via
+  `install/importar_crm_antigo.php`, aqui reaparecendo como referência de
+  UX de uma tela "Nova venda Parcelada (Promissória)" ainda no ar) —
+  mostrando entrada paga em várias partes via PIX (cada uma com valor e
+  data próprios, adiciona/remove livremente) e um "bem" (veículo ou outro)
+  recebido como parte do pagamento da entrada. Perguntado via
+  AskUserQuestion o escopo (só telas novas de listagem/relatório × réplica
+  completa do formulário antigo com mudança de schema × os dois) —
+  **usuário escolheu "Replicar o formulário completo do sistema antigo"**,
+  o maior escopo. Logo depois, mandou 1 screenshot do PDF do contrato
+  GERADO pelo sistema antigo — linguagem jurídica bem diferente
+  (CEDENTE/CESSIONÁRIA, Súmula 72 STJ, Decreto-Lei 911/1969, busca e
+  apreensão) do contrato de venda já aprovado pelo Jean neste projeto
+  (FASTCAR/COMPRADOR, "quitação futura", 20 cláusulas transcritas do
+  `.docx` real) — decisão tomada aqui, não confirmada explicitamente com o
+  usuário: só o **Quadro-Resumo** (dado estruturado, já editável por
+  natureza) ganhou os campos novos; as 20 cláusulas jurídicas fixas
+  (`clausulasContratoVenda()`) **nunca foram tocadas** — reescrever prosa
+  jurídica já aprovada sem pedido explícito é risco desproporcional ao
+  benefício, sinalizar ao usuário se ele quiser a linguagem do sistema
+  antigo replicada também no texto das cláusulas.
+  Nova tabela `venda_entrada_partes` (`venda_id`, `parte_numero`, `valor`,
+  `data_prevista`, `UNIQUE(venda_id, parte_numero)`) + 13 colunas novas em
+  `vendas`: `bem_troca_recebido`/`_tipo`/`_nome`/`_valor`/`_modelo_ano`/
+  `_ano_fabricacao`/`_cor`/`_placa`/`_chassi`/`_renavam`, e
+  `parcelamento_valor_parcela`/`_qtd_parcelas`/`_primeira_parcela_data`.
+  `includes/vendas.php` ganhou `salvarEntradaPartesVenda()` (substitui a
+  lista inteira a cada salvamento — não é histórico incremental, é o
+  estado atual da negociação enquanto ela não foi fechada — e SEMPRE
+  recalcula `vendas.valor_pago_contratacao` como a soma das partes válidas,
+  ignorando qualquer parte com valor ≤0; esse campo é o que
+  `finGerarReceitaVendaAssinatura()` usa pra gerar receita real quando a
+  venda assina, então precisa continuar refletindo só dinheiro de
+  verdade), `listarEntradaPartesVenda()`, `salvarBemTrocaVenda()` e
+  `salvarParcelamentoTermosVenda()` (persiste o que antes só existia de
+  passagem no POST de `gerar_parcelamento`, nunca gravado na própria
+  venda — sem isso não dava pra citar "financiado em Nx de R$Y, vencendo
+  dia Z" no Quadro-Resumo depois de gerado; chamada nos 2 caminhos —
+  Asaas e local — depois do parcelamento sair com sucesso).
+  **`bem_troca_valor` nunca soma em `valor_pago_contratacao`, de
+  propósito** — decisão de correção financeira tomada aqui, não
+  explicitamente confirmada com o usuário: é um ativo recebido (veículo
+  ou outro bem), nunca dinheiro em caixa; contá-lo junto geraria
+  lançamento de receita FALSO em `finGerarReceitaVendaAssinatura()`.
+  Registrar o bem no patrimônio da empresa (`admin/patrimonio.php`)
+  continua sempre manual/separado, nunca automático — sinalizar ao
+  usuário se ele preferir que o sistema sugira/crie esse registro
+  automaticamente.
+  `admin/venda.php`: o único campo "Valor pago pelo comprador na
+  contratação" virou **somente-leitura** (sempre a soma das partes, nunca
+  mais editável direto ali — `atualizar_condicoes` parou de escrever essa
+  coluna, pra nunca ter 2 formulários competindo pelo mesmo dado) + 2
+  cards novos antes de "Condições da venda": "💰 Entrada — pago via PIX
+  (em partes)" (linhas dinâmicas, adicionar/remover em JS puro, sem lib
+  nova, mesmo espírito "sem framework" do resto do projeto) e "🔁 Bem
+  recebido como parte da entrada" (checkbox liga/desliga um sub-formulário
+  com campos de veículo condicionais ao tipo escolhido). Ações novas
+  `salvar_entrada_partes`/`salvar_bem_troca` (POST), mesmo guard de
+  supervisor (só acompanha) do resto da tela.
+  `montarCamposContratoVenda()` (`includes/contratos.php`) ganhou
+  `_entrada_partes` (array via `listarEntradaPartesVenda()`) + os 13
+  campos novos; `gerarPdfContratoVenda()` (`includes/contratos_pdf.php`)
+  lista cada parte da entrada no Quadro-Resumo quando há mais de 1 (senão
+  a linha de total já basta), o bem de troca com identificação completa
+  quando é veículo, e o parcelamento do saldo quando já foi gerado.
+  Testado: 21 asserções de função em banco isolado (soma/substituição/
+  filtro de valor≤0 das partes da entrada; bem de troca tipo veículo vs.
+  "outro" — nunca grava placa/chassi/renavam pra tipo="outro" mesmo se
+  vierem no POST —, limpa TODOS os campos ao desmarcar "recebido";
+  parcelamento persistido; `montarCamposContratoVenda()` trazendo os
+  campos novos certos; PDF gerado de verdade, content streams
+  decodificados via `gzuncompress`, confirmando a descrição do bem e a
+  linha de parcelamento no texto renderizado) + migração testada em 2
+  frentes (fresh install via `schema.sql` já com as colunas — `migrar.php`
+  roda e reporta "já existia" em tudo; banco simulando produção ANTES da
+  mudança, `git show HEAD:install/schema.sql`, confirmando `ALTER TABLE`
+  aplicado com sucesso, dado pré-existente — `comprador_nome`/
+  `preco_venda` de uma venda já cadastrada — preservado intacto, colunas
+  novas com o default certo, idempotente rodando a migração 2x) + `php -l`
+  + `tests/smoke.php` limpos. ⚠️ **Fora do escopo desta rodada, a
+  confirmar com o usuário se ainda são pedidos separados** (a pergunta
+  original também mencionava, mas o AskUserQuestion só cobriu o
+  formulário de criação): um módulo dedicado de "Promissórias", uma
+  listagem cruzada de parcelas entre TODAS as vendas (hoje só existe por
+  venda individual, `finListarLancamentosVenda()`), e uma tela de resumo
+  pós-cadastro estilo o modal "Venda registrada" com link do sistema
+  antigo.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

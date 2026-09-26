@@ -476,8 +476,27 @@ function gerarPdfContratoVenda(array $c): string {
     _pdfLinhaResumo($pdf, 'Valor FIPE de referência', _fmtMoeda($c['valor_fipe_referencia']));
     _pdfLinhaResumo($pdf, 'Preço ajustado entre FASTCAR e COMPRADOR', _fmtMoeda($c['preco_venda']));
     _pdfLinhaResumo($pdf, 'Valor pago pelo COMPRADOR na contratação', _fmtMoeda($c['valor_pago_contratacao']));
+    // Réplica do sistema antigo (26/09/2026) — entrada pode vir em mais de
+    // 1 parte via PIX, cada uma com data própria; lista cada uma quando
+    // existir mais de 1, senão a linha acima já basta.
+    if (count($c['_entrada_partes'] ?? []) > 1) {
+        foreach ($c['_entrada_partes'] as $i => $parte) {
+            $dataParte = $parte['data_prevista'] ? date('d/m/Y', strtotime($parte['data_prevista'])) : 'sem data';
+            _pdfLinhaResumo($pdf, "  · Entrada, parte " . ($i + 1) . " (PIX)", _fmtMoeda($parte['valor']) . " — {$dataParte}");
+        }
+    }
+    if (!empty($c['bem_troca_recebido'])) {
+        $descBem = $c['bem_troca_nome'] ?: 'bem não identificado';
+        if ($c['bem_troca_tipo'] === 'veiculo') {
+            $descBem .= trim(" — {$c['bem_troca_modelo_ano']} {$c['bem_troca_ano_fabricacao']} {$c['bem_troca_cor']}, placa {$c['bem_troca_placa']}, chassi {$c['bem_troca_chassi']}, RENAVAM {$c['bem_troca_renavam']}");
+        }
+        _pdfLinhaResumo($pdf, 'Bem recebido como parte da entrada', $descBem . ' — valor atribuído: ' . _fmtMoeda($c['bem_troca_valor']));
+    }
     _pdfLinhaResumo($pdf, 'Forma de pagamento do COMPRADOR', $c['forma_pagamento']);
     _pdfLinhaResumo($pdf, 'Saldo de preço devido pelo COMPRADOR à FASTCAR', $c['saldo_preco_devido'] ? _fmtMoeda($c['saldo_preco_devido']) : 'inexistente');
+    if (!empty($c['parcelamento_qtd_parcelas']) && !empty($c['parcelamento_valor_parcela'])) {
+        _pdfLinhaResumo($pdf, 'Parcelamento do saldo remanescente', "{$c['parcelamento_qtd_parcelas']}x de " . _fmtMoeda($c['parcelamento_valor_parcela']) . ", 1ª parcela em {$c['parcelamento_primeira_parcela_data']}");
+    }
     _pdfLinhaResumo($pdf, 'Natureza do gravame/restrição', 'Alienação fiduciária em favor da instituição financeira indicada abaixo');
     _pdfLinhaResumo($pdf, 'Instituição financeira/credor vinculado', $c['banco_financiamento']);
     _pdfLinhaResumo($pdf, 'Contrato financeiro / referência', $c['contrato_financiamento_numero']);
