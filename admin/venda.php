@@ -417,6 +417,43 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
+<?php if (($_GET['criado'] ?? '') === '1'): ?>
+<?php
+    // Resumo pós-cadastro do modal "Vender na Promissória"
+    // (admin/vendas.php, 26/09/2026) — "gera resumo... já vem link pro
+    // cliente conferir dados, mesma coisa do antigo": mesma disciplina de
+    // sempre, nunca dispara o link sozinho, só deixa pronto pra copiar.
+    $tokenDocResumoPromissoria = $v['oportunidade_id'] ? getOuCriarTokenDocumentosVenda($id) : null;
+    $linkResumoPromissoria = $tokenDocResumoPromissoria
+        ? rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'], '/')
+            . '/public/documentos_venda.php?token=' . $tokenDocResumoPromissoria
+        : null;
+?>
+<div class="alerta-sucesso" style="padding:16px;border-radius:8px;margin-bottom:1rem">
+    <h3 style="margin:0 0 8px">✅ Venda registrada com sucesso!</h3>
+    <p style="margin:0 0 6px"><strong>Comprador:</strong> <?= e($v['comprador_nome'] ?: '—') ?> · <?= e($v['comprador_telefone'] ?: '—') ?></p>
+    <p style="margin:0 0 6px"><strong>Veículo:</strong> <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'] . ' ' . $v['veiculo_ano'])) ?: '—' ?></p>
+    <?php if ($v['preco_venda']): ?>
+        <p style="margin:0 0 6px"><strong>Preço de venda:</strong> R$ <?= number_format((float)$v['preco_venda'], 2, ',', '.') ?></p>
+    <?php endif; ?>
+    <?php if ($entradaPartes): ?>
+        <p style="margin:0 0 6px"><strong>Entrada:</strong> R$ <?= number_format((float)($v['valor_pago_contratacao'] ?? 0), 2, ',', '.') ?>
+           em <?= count($entradaPartes) ?> parte(s)</p>
+    <?php endif; ?>
+    <?php if ($v['bem_troca_recebido']): ?>
+        <p style="margin:0 0 6px"><strong>Bem recebido como parte da entrada:</strong> <?= e($v['bem_troca_nome'] ?: '—') ?><?= $v['bem_troca_valor'] ? ' (R$ ' . number_format((float)$v['bem_troca_valor'], 2, ',', '.') . ')' : '' ?></p>
+    <?php endif; ?>
+    <?php if ($linkResumoPromissoria): ?>
+        <p style="margin:10px 0 0">
+            <strong>Link pro comprador conferir os dados/documentos:</strong><br>
+            <code style="font-size:12px;word-break:break-all"><?= e($linkResumoPromissoria) ?></code>
+            <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($linkResumoPromissoria) ?>, this)'>📋 Copiar link</button>
+        </p>
+        <p style="margin:6px 0 0"><small>Ainda não foi enviado — copie e mande manualmente, ou use o botão "Enviar link por WhatsApp" no card "📎 Documentos do comprador" abaixo.</small></p>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
         <span class="badge"><?= e(etapaVendaLabel($v['etapa'])) ?></span>

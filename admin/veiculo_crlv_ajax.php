@@ -10,11 +10,18 @@
  * bloqueia usar dado de um documento errado (ex: CNH no lugar do CRLV).
  * Só lê e devolve os campos — nunca salva o arquivo como documento
  * oficial nem cria nada no banco, quem decide se os dados batem e
- * confirma é o super_admin cadastrando o veículo.
+ * confirma é quem está cadastrando o veículo.
+ *
+ * Guard relaxado de requireSuperAdmin() pra requireAcessoVendas() em
+ * 26/09/2026 — passou a ser usado também pelo modal "Vender na
+ * Promissória" (admin/vendas.php), acessível a vendedor/supervisor, não
+ * só super_admin (admin/veiculos.php). Segue só leitura, nunca escreve
+ * nada — não há dado sensível extra exposto além do que o próprio
+ * usuário está enviando no upload.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-requireSuperAdmin();
+requireAcessoVendas();
 
 header('Content-Type: application/json');
 

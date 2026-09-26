@@ -3259,6 +3259,70 @@ segue no schema sem uso novo, não removida sem ganho real),
   que um locator do Playwright baseado em texto fica obsoleto assim que o
   texto do botão muda, um artefato só do script de teste, não do código)
   + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  **"Vender na Promissória" — modal único que registra tudo numa passada
+  só** (26/09/2026, pedido direto: "Ficou tudo dentro veículo para
+  preencher as informações - ideias seria esse módulo dentro das vendas
+  Vender Na Promissória coloca dados básicos todo fluxo condições
+  parcelas gera resumo registra venda ja vem link pro cliente conferir
+  dados mesma coisa do antigo coloca estilo modal") — consolida num único
+  `<dialog>` de `admin/vendas.php` o que antes vivia espalhado em vários
+  cards separados de `admin/venda.php` (comprador, condições, entrada em
+  partes, bem de troca). Confirmado via AskUserQuestion antes de codar:
+  (1) botão novo em `admin/vendas.php` (não no botão "Vender" de
+  `admin/veiculos.php`); (2) 1 formulário só, registra tudo no final
+  (nunca steps salvando a cada etapa); (3) o link do wizard de documentos
+  **não** sai automático — continua um clique separado depois em
+  `admin/venda.php`, mesma decisão já confirmada pro botão "📋 Copiar
+  link" acima. `registrarVendaPromissoria()` (`includes/vendas.php`,
+  novo) nunca duplica lógica de negócio, só orquestra na ordem certa
+  `criarVenda()`/`salvarEntradaPartesVenda()`/`salvarBemTrocaVenda()`/
+  `salvarParcelamentoTermosVenda()`, todas já testadas — parcelamento do
+  saldo financiado (Asaas/local) fica de fora de propósito, tem lógica de
+  decisão própria (Asaas configurado? cliente já existe lá?) e continua
+  no card dedicado da negociação depois de registrar. **Bug real achado e
+  corrigido no próprio teste isolado, antes do commit**: a 1ª versão
+  chamava `vincularVeiculoVenda()` depois de `criarVenda()`, mas
+  `criarVenda(oportunidadeId, ...)` **já** cria a negociação com o
+  veículo vinculado (é o mesmo caminho de `admin/veiculos.php`, botão
+  "Vender") — `vincularVeiculoVenda()` é só pro OUTRO fluxo (lead de
+  WhatsApp sem veículo ainda, `oportunidade_id` NULL); chamada aqui em
+  cima de uma venda que a própria `criarVenda()` tinha acabado de criar,
+  a checagem de disponibilidade sempre dava falso negativo ("Veículo não
+  está disponível pra venda"). Corrigido removendo a chamada redundante.
+  **Segundo pedido, chegado no meio da implementação** ("seleciona
+  veiculo se não tiver subir clvr do veiclo novo"): checkbox "Veículo não
+  está na lista? Cadastrar um novo agora (lendo o CRLV)" dentro do próprio
+  modal — reaproveita `criarVeiculoManualFrota()` (mesma função de
+  `admin/veiculos.php`) e a leitura de CRLV por IA já existente
+  (`admin/veiculo_crlv_ajax.php`, fill-if-empty, nenhuma cópia nova do
+  prompt) sem duplicar nada; guard desse endpoint relaxado de
+  `requireSuperAdmin()` pra `requireAcessoVendas()` — é só leitura, nunca
+  escreve nada no banco, passou a ser usado também por vendedor/
+  supervisor dentro do modal de vendas, não só super_admin em Frota — +
+  `veiculo_crlv_ajax.php` adicionado ao allowlist central do perfil
+  `vendedor` em `admin/_bootstrap.php`. Frota vazia pré-marca o checkbox e
+  desabilita o select, sem travar o cadastro. `admin/venda.php` ganhou o
+  resumo pós-cadastro (`?criado=1`) — "mesma coisa do antigo": comprador,
+  veículo, preço, entrada total, bem de troca (quando houver) e o link do
+  wizard de documentos já pronto pra copiar (reaproveita `copiarTexto()`
+  já existente), sem disparar nada sozinho. Bloqueio de `supervisor` (só
+  acompanha) no POST, mesmo padrão do resto do módulo. Testado: 2
+  baterias de asserções de função em banco isolado
+  (`registrarVendaPromissoria()` com veículo já na frota — entrada em
+  partes+bem de troca+parcelamento persistidos certos, telefone
+  normalizado, veículo fica indisponível depois; validação de nome/
+  telefone obrigatórios sem deixar negociação órfã; veículo indisponível
+  lança `RuntimeException` certo; venda mínima sem partes/bem/
+  parcelamento nunca chuta valor — fica `NULL`; combinação com
+  `criarVeiculoManualFrota()` pro caminho "veículo novo") + HTTP ponta a
+  ponta real com sessão primed (GET mostra o botão+modal com o csrf
+  certo; POST registra a venda e redireciona pra `venda.php?criado=1` com
+  o resumo certo — comprador/veículo/preço/entrada/bem de troca/link —
+  conferido byte a byte na resposta; supervisor recebe 403 tentando
+  POSTar; caminho "cadastrar veículo novo" cria a oportunidade E a venda
+  vinculadas certas; vendedor consegue chamar `veiculo_crlv_ajax.php` sem
+  mais cair em 302 depois do fix do allowlist) + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

@@ -58,7 +58,10 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     // uma negociação específica).
     $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
         'avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
-        'promissorias.php', 'meu_perfil.php', 'logout.php'];
+        'promissorias.php', 'meu_perfil.php', 'logout.php',
+        // 26/09/2026 — leitura de CRLV por IA no modal "Vender na
+        // Promissória" (admin/vendas.php, "cadastrar veículo novo").
+        'veiculo_crlv_ajax.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;

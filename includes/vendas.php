@@ -414,6 +414,117 @@ function salvarParcelamentoTermosVenda(int $vendaId, float $valorParcela, int $q
     ")->execute([$valorParcela, $qtdParcelas, $primeiraParcelaData, $vendaId]);
 }
 
+/**
+ * "Vender na Promissória" (26/09/2026, pedido direto: "esse módulo dentro
+ * das vendas... coloca dados básicos todo fluxo condições parcelas gera
+ * resumo registra venda ja vem link pro cliente conferir dados mesma
+ * coisa do antigo coloca estilo modal") — consolida num único
+ * formulário/modal o que hoje vive espalhado em vários cards separados de
+ * admin/venda.php (comprador, condições, entrada em partes, bem de troca):
+ * registra a negociação inteira numa passada só, igual o sistema antigo
+ * fazia. Nunca duplica lógica — só orquestra, na ordem certa, as mesmas
+ * funções já testadas (criarVenda/vincularVeiculoVenda/
+ * salvarEntradaPartesVenda/salvarBemTrocaVenda/salvarParcelamentoTermosVenda).
+ *
+ * De propósito NÃO dispara o link de documentos automaticamente pro
+ * comprador (confirmado com o usuário) — isso continua um clique
+ * separado, feito depois em admin/venda.php (o link já sai pronto pra
+ * copiar assim que a negociação existe, só não é enviado sozinho).
+ *
+ * NÃO gera plano de parcelamento do saldo financiado (Asaas/local) — esse
+ * passo tem lógica própria de decisão (Asaas configurado? cliente já
+ * existe lá?) e continua no card dedicado de admin/venda.php, pra não
+ * duplicar essa complexidade aqui; só persiste os TERMOS quando já vierem
+ * preenchidos (mesma função de sempre), pra já aparecer no Quadro-Resumo
+ * do contrato se o vendedor already souber os números na hora do cadastro.
+ *
+ * $dados esperado (índices ausentes/vazios são tratados como "não
+ * informado", nunca um valor chutado — regra #3):
+ *   oportunidade_id (int, obrigatório)
+ *   comprador_nome, comprador_telefone (obrigatórios)
+ *   comprador_cpf, comprador_rg, comprador_email (opcionais)
+ *   preco_venda, forma_pagamento, saldo_preco_devido, prazo_quitacao_meses
+ *   entrada_partes (array de ['valor'=>float, 'data_prevista'=>?string])
+ *   bem_troca (array no formato de salvarBemTrocaVenda(), com 'recebido')
+ *   parcelamento (['valor_parcela'=>float,'qtd_parcelas'=>int,'primeira_parcela_data'=>string], opcional)
+ *
+ * Lança InvalidArgumentException (dado obrigatório faltando) ou
+ * RuntimeException (veículo indisponível, mesma checagem de criarVenda()).
+ */
+function registrarVendaPromissoria(array $dados, int $responsavelId): array {
+    $oportunidadeId = (int)($dados['oportunidade_id'] ?? 0);
+    $compradorNome = trim((string)($dados['comprador_nome'] ?? ''));
+    $compradorTelefoneNorm = normalizarTelefone((string)($dados['comprador_telefone'] ?? ''));
+
+    if (!$oportunidadeId) {
+        throw new InvalidArgumentException('Escolha um veículo da frota.');
+    }
+    if ($compradorNome === '') {
+        throw new InvalidArgumentException('Nome do comprador é obrigatório.');
+    }
+    if (!$compradorTelefoneNorm || strlen($compradorTelefoneNorm) < 12) {
+        throw new InvalidArgumentException('Telefone do comprador é obrigatório e precisa ser válido.');
+    }
+
+    // criarVenda() já cria a negociação COM o veículo vinculado (mesmo
+    // caminho de admin/veiculos.php, botão "Vender") — nunca chamar
+    // vincularVeiculoVenda() depois: essa função é só pro OUTRO fluxo
+    // (lead entrado pelo WhatsApp, oportunidade_id ainda NULL); chamá-la
+    // aqui checaria disponibilidade de novo contra uma venda que a
+    // própria criarVenda() já acabou de criar, sempre dando falso negativo.
+    // criarVenda() já valida disponibilidade e lança se não estiver
+    // (índice único parcial do schema é a rede de segurança final contra
+    // corrida, mesma disciplina do resto do módulo).
+    $vendaId = criarVenda($oportunidadeId, $responsavelId);
+
+    $db = getDB();
+    $prazoMeses = isset($dados['prazo_quitacao_meses']) && $dados['prazo_quitacao_meses'] !== null && $dados['prazo_quitacao_meses'] !== ''
+        ? min(24, max(1, (int)$dados['prazo_quitacao_meses'])) : 24;
+    $db->prepare("
+        UPDATE vendas
+        SET comprador_nome = ?, comprador_telefone = ?, comprador_cpf = ?, comprador_rg = ?, comprador_email = ?,
+            preco_venda = ?, forma_pagamento = ?, saldo_preco_devido = ?, prazo_quitacao_meses = ?,
+            updated_at = datetime('now','localtime')
+        WHERE id = ?
+    ")->execute([
+        clean($compradorNome),
+        $compradorTelefoneNorm,
+        clean((string)($dados['comprador_cpf'] ?? '')),
+        clean((string)($dados['comprador_rg'] ?? '')),
+        clean((string)($dados['comprador_email'] ?? '')),
+        isset($dados['preco_venda']) && $dados['preco_venda'] !== null ? (float)$dados['preco_venda'] : null,
+        clean((string)($dados['forma_pagamento'] ?? '')),
+        isset($dados['saldo_preco_devido']) && $dados['saldo_preco_devido'] !== null ? (float)$dados['saldo_preco_devido'] : null,
+        $prazoMeses,
+        $vendaId,
+    ]);
+
+    $totalEntrada = 0.0;
+    if (!empty($dados['entrada_partes'])) {
+        $totalEntrada = salvarEntradaPartesVenda($vendaId, $dados['entrada_partes']);
+    }
+
+    $bemTroca = null;
+    if (!empty($dados['bem_troca']) && !empty($dados['bem_troca']['recebido'])) {
+        salvarBemTrocaVenda($vendaId, $dados['bem_troca']);
+        $bemTroca = $dados['bem_troca'];
+    }
+
+    $parcelamento = null;
+    $p = $dados['parcelamento'] ?? null;
+    if ($p && (float)($p['valor_parcela'] ?? 0) > 0 && (int)($p['qtd_parcelas'] ?? 0) > 0 && !empty($p['primeira_parcela_data'])) {
+        salvarParcelamentoTermosVenda($vendaId, (float)$p['valor_parcela'], (int)$p['qtd_parcelas'], (string)$p['primeira_parcela_data']);
+        $parcelamento = $p;
+    }
+
+    return [
+        'venda_id' => $vendaId,
+        'total_entrada' => $totalEntrada,
+        'bem_troca' => $bemTroca,
+        'parcelamento' => $parcelamento,
+    ];
+}
+
 // Fotos/vídeos são upload deliberado do vendedor (nunca reaproveita foto
 // antiga da conversa de COMPRA — pode estar desatualizada, carro pode ter
 // sido reformado/lavado/rodado km desde então; regra #3 do CLAUDE.md
