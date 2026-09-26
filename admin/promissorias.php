@@ -67,38 +67,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $busca = trim((string)($_GET['q'] ?? ''));
-$where = 'WHERE 1=1';
-$params = [];
-if ($souDono) {
-    $where .= ' AND v.responsavel_id = ?';
-    $params[] = $meuId;
-}
-if ($busca !== '') {
-    $where .= ' AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)';
-    $like = '%' . $busca . '%';
-    array_push($params, $like, $like, $like, $like);
-}
+
+// "vamos ter listagens de todas vendas - todos parcelamentos ?" (26/09/2026)
+// — a listagem por venda (retrato financeiro resumido, sempre existiu)
+// convive agora com uma listagem CRUZADA de toda parcela/entrada de todo
+// parcelamento de venda, numa tela só (mesmo item já sinalizado como
+// pendente no CLAUDE.md: "listagem cruzada de parcelas entre TODAS as
+// vendas, hoje só existe por venda individual, finListarLancamentosVenda()").
+$verModo = ($_GET['ver'] ?? 'vendas') === 'parcelas' ? 'parcelas' : 'vendas';
+$statusValidos = ['pendente', 'pago', 'atrasado', 'cancelado'];
+$statusFiltro = in_array($_GET['status'] ?? '', $statusValidos, true) ? (string)$_GET['status'] : '';
 
 finRecalcularAtrasados();
 
-$stmtTotal = $db->prepare("SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$where}");
-$stmtTotal->execute($params);
-$totalFiltrado = (int)$stmtTotal->fetchColumn();
+if ($verModo === 'parcelas') {
+    // Só entrada/parcela de verdade (parcela_numero preenchido) — nunca
+    // mistura com comissão de venda ou outro lançamento tocado por
+    // venda_id que não é parcelamento propriamente dito.
+    $whereP = 'WHERE fl.venda_id IS NOT NULL AND fl.parcela_numero IS NOT NULL';
+    $paramsP = [];
+    if ($souDono) {
+        $whereP .= ' AND v.responsavel_id = ?';
+        $paramsP[] = $meuId;
+    }
+    if ($busca !== '') {
+        $whereP .= ' AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)';
+        $like = '%' . $busca . '%';
+        array_push($paramsP, $like, $like, $like, $like);
+    }
 
-$sql = "
-    SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
-           u.nome AS responsavel_nome
-    FROM vendas v
-    LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
-    LEFT JOIN usuarios u ON u.id = v.responsavel_id
-    {$where}
-    ORDER BY v.created_at DESC
-    LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
-$stmt = $db->prepare($sql);
-$stmt->execute($params);
-$vendas = $stmt->fetchAll();
+    // Contagem por status (mesmo filtro de dono/busca acima, sempre) —
+    // pras abas mostrarem o total certo independente do status escolhido.
+    $stmtContagem = $db->prepare("
+        SELECT fl.status, COUNT(*) AS qtd FROM fin_lancamentos fl
+        JOIN vendas v ON v.id = fl.venda_id
+        LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+        {$whereP}
+        GROUP BY fl.status
+    ");
+    $stmtContagem->execute($paramsP);
+    $contagemPorStatusParcela = array_column($stmtContagem->fetchAll(), 'qtd', 'status');
+
+    $whereFinal = $whereP;
+    $paramsFinal = $paramsP;
+    if ($statusFiltro !== '') {
+        $whereFinal .= ' AND fl.status = ?';
+        $paramsFinal[] = $statusFiltro;
+    }
+
+    $stmtTotal = $db->prepare("SELECT COUNT(*) FROM fin_lancamentos fl JOIN vendas v ON v.id = fl.venda_id LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$whereFinal}");
+    $stmtTotal->execute($paramsFinal);
+    $totalFiltrado = (int)$stmtTotal->fetchColumn();
+
+    $sql = "
+        SELECT fl.*, v.comprador_nome, v.comprador_telefone,
+               o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano
+        FROM fin_lancamentos fl
+        JOIN vendas v ON v.id = fl.venda_id
+        LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+        {$whereFinal}
+        ORDER BY (fl.data_vencimento IS NULL), fl.data_vencimento ASC, fl.id ASC
+        LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
+    $stmt = $db->prepare($sql);
+    $stmt->execute($paramsFinal);
+    $parcelas = $stmt->fetchAll();
+} else {
+    $where = 'WHERE 1=1';
+    $params = [];
+    if ($souDono) {
+        $where .= ' AND v.responsavel_id = ?';
+        $params[] = $meuId;
+    }
+    if ($busca !== '') {
+        $where .= ' AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)';
+        $like = '%' . $busca . '%';
+        array_push($params, $like, $like, $like, $like);
+    }
+
+    $stmtTotal = $db->prepare("SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$where}");
+    $stmtTotal->execute($params);
+    $totalFiltrado = (int)$stmtTotal->fetchColumn();
+
+    $sql = "
+        SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+               u.nome AS responsavel_nome
+        FROM vendas v
+        LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+        LEFT JOIN usuarios u ON u.id = v.responsavel_id
+        {$where}
+        ORDER BY v.created_at DESC
+        LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $vendas = $stmt->fetchAll();
+}
 
 function moedaPromissoria(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.'); }
+function rotuloParcelaPromissoria(array $l): string {
+    if ((int)$l['parcela_numero'] === 0) return 'Entrada';
+    return (int)$l['parcela_numero'] . ($l['parcela_total'] ? ' de ' . (int)$l['parcela_total'] : '');
+}
+function rotuloStatusParcelaPromissoria(string $status): string {
+    return match ($status) {
+        'pago' => '✅ pago',
+        'atrasado' => '⚠️ atrasado',
+        'cancelado' => '🚫 cancelado',
+        default => '⏳ pendente',
+    };
+}
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -130,14 +206,58 @@ function moedaPromissoria(float $v): string { return 'R$ ' . number_format($v, 2
 <?php if ($erro): ?><p class="alerta alerta-erro"><?= e($erro) ?></p><?php endif; ?>
 <?php if ($sucesso): ?><p class="alerta alerta-ok"><?= e($sucesso) ?></p><?php endif; ?>
 
+<nav class="etapas-nav">
+    <a href="?ver=vendas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $verModo === 'vendas' ? 'ativo' : '' ?>">📋 Todas as vendas</a>
+    <a href="?ver=parcelas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $verModo === 'parcelas' ? 'ativo' : '' ?>">📆 Todas as parcelas</a>
+</nav>
+
 <div class="card">
     <form method="get" style="display:flex;gap:8px;align-items:center">
+        <input type="hidden" name="ver" value="<?= e($verModo) ?>">
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por comprador, telefone ou veículo..." style="flex:1;margin:0">
         <button type="submit" style="margin:0">Buscar</button>
-        <?php if ($busca): ?><a href="/admin/promissorias.php">Limpar</a><?php endif; ?>
+        <?php if ($busca): ?><a href="?ver=<?= e($verModo) ?>">Limpar</a><?php endif; ?>
     </form>
 </div>
 
+<?php if ($verModo === 'parcelas'): ?>
+<div class="card">
+    <p style="margin:0 0 10px">
+        <a href="?ver=parcelas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $statusFiltro === '' ? 'ativo' : '' ?>">Todas (<?= array_sum($contagemPorStatusParcela) ?>)</a>
+        <?php foreach ($statusValidos as $st): ?>
+            &nbsp;·&nbsp;
+            <a href="?ver=parcelas&status=<?= $st ?><?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $statusFiltro === $st ? 'ativo' : '' ?>">
+                <?= e(rotuloStatusParcelaPromissoria($st)) ?> (<?= (int)($contagemPorStatusParcela[$st] ?? 0) ?>)
+            </a>
+        <?php endforeach; ?>
+    </p>
+    <table class="tabela-oportunidades">
+        <thead>
+            <tr>
+                <th>Comprador</th><th>Veículo</th><th>Parcela</th><th>Vencimento</th>
+                <th>Valor</th><th>Status</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php if (!$parcelas): ?>
+            <tr><td colspan="7">Nenhuma parcela <?= $busca || $statusFiltro ? 'encontrada' : 'ainda' ?>.</td></tr>
+        <?php endif; ?>
+        <?php foreach ($parcelas as $l): ?>
+            <tr>
+                <td><?= e($l['comprador_nome'] ?: '(sem nome ainda)') ?><br><small><?= e($l['comprador_telefone'] ?: '') ?></small></td>
+                <td><?= e(trim($l['veiculo_marca'] . ' ' . $l['veiculo_modelo'])) ?: '—' ?> <?= e((string)($l['veiculo_ano'] ?? '')) ?></td>
+                <td><?= e(rotuloParcelaPromissoria($l)) ?></td>
+                <td><?= $l['data_vencimento'] ? date('d/m/Y', strtotime($l['data_vencimento'])) : '—' ?></td>
+                <td><?= moedaPromissoria((float)$l['valor']) ?></td>
+                <td><span class="badge <?= $l['status'] === 'atrasado' ? 'badge-atraso' : '' ?>"><?= e(rotuloStatusParcelaPromissoria($l['status'])) ?></span></td>
+                <td><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">Abrir venda →</a></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php renderPaginacao($totalFiltrado); ?>
+</div>
+<?php else: ?>
 <div class="card">
     <table class="tabela-oportunidades">
         <thead>
@@ -205,6 +325,7 @@ function moedaPromissoria(float $v): string { return 'R$ ' . number_format($v, 2
     </table>
     <?php renderPaginacao($totalFiltrado); ?>
 </div>
+<?php endif; ?>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

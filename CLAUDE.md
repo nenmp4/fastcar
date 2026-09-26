@@ -3323,6 +3323,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   vinculadas certas; vendedor consegue chamar `veiculo_crlv_ajax.php` sem
   mais cair em 302 depois do fix do allowlist) + `php -l` +
   `tests/smoke.php` limpos. Sem migração de schema.
+  **Aba "📆 Todas as parcelas"** (26/09/2026, pedido direto logo depois de
+  registrar a 1ª venda pelo modal novo: "registei a venda vamos ter
+  listagens de todas vendas - todos parcelamentos ?") — fecha o item que
+  já estava sinalizado como pendente mais acima ("listagem cruzada de
+  parcelas entre TODAS as vendas, hoje só existe por venda individual").
+  A listagem por venda que já existia (retrato financeiro resumido) virou
+  a aba "📋 Todas as vendas"; a aba nova "📆 Todas as parcelas" lista toda
+  entrada/parcela de todo parcelamento numa tabela só — comprador,
+  veículo, qual parcela ("Entrada"/"N de M"), vencimento, valor, status,
+  link direto pra abrir a venda. Filtro sempre exige
+  `fl.parcela_numero IS NOT NULL` — nunca mistura com comissão de venda
+  ou qualquer outro lançamento tocado por `venda_id` que não seja
+  parcelamento de verdade. 4 abas de status (pendente/pago/atrasado/
+  cancelado, com contagem) + busca por comprador/telefone/veículo (mesmo
+  `$busca` da aba de vendas) + o mesmo filtro Minhas/Todas por
+  responsável — tudo preservado ao trocar de aba via querystring
+  (`?ver=vendas|parcelas`). Ordenado por vencimento mais próximo primeiro
+  (`NULL` por último). Testado ponta a ponta via HTTP real (sessão
+  primed): 2 vendas semeadas com 4 lançamentos de parcela (pago/pendente/
+  atrasado — recalculado sozinho por `finRecalcularAtrasados()` — /
+  cancelado) + 1 lançamento de comissão de venda — a listagem mostra
+  exatamente as 4 parcelas, nunca a comissão; abas de status com
+  contagem certa (1 cada); filtro por status isola certo; busca por nome
+  do comprador filtra certo; aba "Todas as vendas" continua funcionando
+  sem regressão + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
