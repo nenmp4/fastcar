@@ -605,12 +605,17 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php endif; ?>
 
     <p>
-        <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentosVenda ?: '(gerado ao clicar em enviar)') ?></code><br>
+        <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentosVenda ?: '(gerado ao clicar em enviar)') ?></code>
+        <?php if ($linkDocumentosVenda): ?>
+            <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($linkDocumentosVenda) ?>, this)'>📋 Copiar link</button>
+        <?php endif; ?>
+        <br>
         <form method="post" class="inline" style="display:inline-block;margin-top:8px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="enviar_link_documentos_venda">
             <button type="submit" style="margin-top:0">Enviar link por WhatsApp</button>
         </form>
+        <small style="display:block;color:var(--texto-fraco);margin-top:4px">Sem depender do WhatsApp automático — copie o link e mande manualmente se a instância estiver com problema.</small>
     </p>
 
     <table class="tabela-oportunidades">
@@ -862,6 +867,7 @@ function adicionarParteEntrada() {
                         <?php endif; ?>
                         <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
                             · <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
+                            <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋</button>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -1061,6 +1067,36 @@ function adicionarParteEntrada() {
 <?php endif; ?>
 
 </main>
+<script>
+// 26/09/2026, "permita copia link para enviar sem depender da instância
+// pois estamos com problemas" — mesmo padrão de admin/oportunidade.php:
+// botão "📋 Copiar link" ao lado de todo link que hoje só sai automático
+// pelo Z-API (wizard de documentos, assinatura do contrato), nunca depende
+// de nenhuma instância, sempre funciona pro consultor/vendedor mandar
+// manualmente pelo próprio WhatsApp se a instância estiver fora do ar.
+function copiarTexto(texto, btn) {
+    var original = btn.textContent;
+    function marcarCopiado() {
+        btn.textContent = '✅ Copiado!';
+        setTimeout(function () { btn.textContent = original; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(marcarCopiado).catch(function () { copiarTextoFallback(texto, marcarCopiado); });
+    } else {
+        copiarTextoFallback(texto, marcarCopiado);
+    }
+}
+function copiarTextoFallback(texto, callback) {
+    var ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); callback(); } catch (e) {}
+    document.body.removeChild(ta);
+}
+</script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>

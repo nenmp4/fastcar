@@ -356,8 +356,14 @@ $documentos = listarDocumentos($id);
 $stmtContratos = $db->prepare("SELECT * FROM contratos WHERE oportunidade_id = ? ORDER BY id DESC");
 $stmtContratos->execute([$id]);
 $contratos = $stmtContratos->fetchAll();
+// 26/09/2026, "permita copia link para enviar sem depender da instância" —
+// token gerado JÁ no carregamento da página (getOuCriarTokenDocumentos() é
+// idempotente, sempre retorna o mesmo token depois da 1ª vez), pra o link
+// nunca ficar bloqueado atrás de um clique em "enviar por WhatsApp" — sem
+// isso, copiar o link antes de clicar em enviar copiava um placeholder de
+// texto ("(gerado ao clicar em enviar)"), não uma URL de verdade.
 $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'], '/')
-    . '/public/documentos.php?token=' . ($op['documentos_token'] ?: '(gerado ao clicar em enviar)');
+    . '/public/documentos.php?token=' . getOuCriarTokenDocumentos($id);
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -646,6 +652,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                         <?php endif; ?>
                         <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
                             · <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
+                            <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋</button>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -674,12 +681,15 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
 
     <p>
-        <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentos) ?></code><br>
+        <code style="font-size:12px;word-break:break-all"><?= e($linkDocumentos) ?></code>
+        <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($linkDocumentos) ?>, this)'>📋 Copiar link</button>
+        <br>
         <form method="post" class="inline" style="display:inline-block;margin-top:8px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="enviar_link_documentos">
             <button type="submit" style="margin-top:0">Enviar link por WhatsApp</button>
         </form>
+        <small style="display:block;color:var(--texto-fraco);margin-top:4px">Sem depender do WhatsApp automático — copie o link e mande manualmente se a instância estiver com problema.</small>
     </p>
 
     <table class="tabela-oportunidades">
@@ -1352,6 +1362,36 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 </main>
+<script>
+// 26/09/2026, "permita copia link para enviar sem depender da instância
+// pois estamos com problemas" — botão "📋 Copiar link" ao lado de todo
+// link que hoje só sai automático pelo Z-API (wizard de documentos,
+// assinatura do contrato): nunca depende de nenhuma instância, sempre
+// funciona mesmo com a Z-API fora do ar, pro consultor mandar manualmente
+// pelo próprio WhatsApp. Mesmo padrão em admin/venda.php.
+function copiarTexto(texto, btn) {
+    var original = btn.textContent;
+    function marcarCopiado() {
+        btn.textContent = '✅ Copiado!';
+        setTimeout(function () { btn.textContent = original; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(marcarCopiado).catch(function () { copiarTextoFallback(texto, marcarCopiado); });
+    } else {
+        copiarTextoFallback(texto, marcarCopiado);
+    }
+}
+function copiarTextoFallback(texto, callback) {
+    var ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); callback(); } catch (e) {}
+    document.body.removeChild(ta);
+}
+</script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>

@@ -3222,6 +3222,43 @@ segue no schema sem uso novo, não removida sem ganho real),
   na recarga seguinte; supervisor vê a tela normal — 200 — mas recebe 403
   tentando POSTar) + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema.
+  **Botão "📋 Copiar link", independente da instância Z-API** (26/09/2026,
+  pedido direto: "Permita copia link para enviar sem depender da instância
+  pois estamos com problemas isso pode ser padrão para todos no sistema de
+  compra e vendas" — mesmo histórico real de bloqueio/instabilidade da
+  Z-API já documentado várias vezes neste arquivo). Aplicado nos 2 pontos
+  reais que geram link pro cliente em compra E venda: link do wizard de
+  documentos (`admin/oportunidade.php`/`admin/venda.php`, card "📎
+  Documentos") e link de assinatura do contrato (mesma tabela de
+  contratos nos 2 arquivos). `copiarTexto()`/`copiarTextoFallback()` (JS,
+  `navigator.clipboard.writeText()` com fallback via
+  `textarea`+`execCommand('copy')` pra navegador sem suporte/contexto
+  não-seguro) duplicada nos 2 arquivos — mesmo espírito de sempre do
+  projeto, sem `layout.php` compartilhado, sem lib nova — feedback visual
+  "✅ Copiado!" por 2s direto no botão clicado. Nunca depende de nenhuma
+  credencial/instância — o consultor/vendedor copia e manda manualmente
+  pelo próprio WhatsApp pessoal quando a automática está com problema.
+  **Bug real achado e corrigido no caminho**: `admin/oportunidade.php` só
+  gerava o token do link de documentos DENTRO da ação POST
+  `enviar_link_documentos` — antes do 1º clique em "enviar", o link
+  mostrado na tela (sempre visível, num `<code>`, desde antes desta
+  mudança) era um placeholder de TEXTO
+  (`.../documentos.php?token=(gerado ao clicar em enviar)`), nunca uma
+  URL válida — sem esse fix, o botão novo de copiar simplesmente copiaria
+  lixo antes do 1º envio, o oposto do que o pedido pedia (link
+  independente, sempre pronto). Corrigido chamando
+  `getOuCriarTokenDocumentos($id)` (idempotente, já genérica) direto no
+  carregamento da página, mesmo padrão que `admin/venda.php` já usava
+  (`getOuCriarTokenDocumentosVenda($id)`, esse lado nunca teve o mesmo
+  bug). Testado: função isolada confirmando que o link já é real (token
+  de verdade) desde o 1º carregamento da página, sem precisar clicar em
+  enviar antes + Playwright ponta a ponta (clique real no botão dispara o
+  clipboard, conteúdo copiado bate exatamente com a URL do link — mesmo
+  token que o envio automático usaria —, feedback visual "✅ Copiado!"
+  confirmado via `querySelector` fresco — achado no meio do próprio teste
+  que um locator do Playwright baseado em texto fica obsoleto assim que o
+  texto do botão muda, um artefato só do script de teste, não do código)
+  + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
