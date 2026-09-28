@@ -5633,6 +5633,62 @@ segue no schema sem uso novo, não removida sem ganho real),
   coluna (ALTER TABLE idempotente, mesmo padrão já usado em
   `debito_ipva`/`prazo_quitacao_meses`) + `php -l` + `tests/smoke.php`
   limpos.
+  **Filtro virou 2ª aba de abas, não `<select>`** (28/09/2026, feedback
+  direto: "O filtro não seria assim queria que ficasse separado uma aba de
+  carro e outra de moto") — o `<select>` da 1ª versão foi substituído por
+  uma 2ª `<nav class="etapas-nav">` (mesmo padrão visual/scroll horizontal
+  da nav de etapa, logo abaixo dela) com uma aba por tipo + "Todos os
+  tipos" + "❔ Sem tipo" (`tipo_veiculo IS NULL`), cada uma com contagem
+  própria (`$contagemPorTipo`, `GROUP BY` no escopo de etapa/dono/busca já
+  ativo — `$whereBase` capturado ANTES de aplicar o filtro de tipo, pra
+  contar os 2 filtros de forma independente). Trocar de aba de tipo nunca
+  reseta etapa/busca já selecionada, e vice-versa — as duas dimensões
+  combinam livremente. **Ferramenta de classificação em lote** (mesmo dia,
+  "separa eses leads" — usuário viu 166 leads reais caindo todos em "Sem
+  tipo", campo nunca tinha sido preenchido em massa) — botão rápido
+  🚗🏍️🚚🚙 direto na linha da tabela (`classificarTipoVeiculo()`,
+  `includes/oportunidades.php`, só grava `tipo_veiculo`, nunca mexe em
+  marca/modelo/placa) evita abrir cada oportunidade uma por uma; mesma
+  trava de dono/supervisor do resto da página. **Sugestão por
+  palavra-chave** (mesmo dia, "sera tem aguma api que ver modelo de carro
+  e moto" → confirmado via AskUserQuestion "Sim, sugestão por
+  palavra-chave do modelo (Recomendado)") — `sugerirTipoVeiculo(?$marca,
+  ?$modelo)` (`includes/oportunidades.php`) é heurística 100% local/grátis
+  (listas de marca/modelo conhecidas de moto/caminhão/carro, fallback pra
+  cilindrada solta tipo "160") que só DESTACA o botão mais provável
+  (borda azul) — nunca aplica sozinha, sempre espera o clique humano
+  (regra #3). **Classificação em massa via IA, com botão** (mesmo dia,
+  "vamos roda api do gemine para ja clasfica todas 130 amis rapido" →
+  "colca botão") — diferente da sugestão acima (só destaca, espera
+  clique), este botão "🤖 Classificar com IA (Gemini)" (só aparece com
+  `_sem_tipo > 0`, nunca pro supervisor) APLICA direto — pedido explícito
+  do usuário, escopo maior que o padrão "sugestão" do resto do projeto,
+  mas nunca chuta: o prompt do Gemini instrui a responder "desconhecido"
+  sem confiança real, e nesse caso (ou sem marca/modelo nenhum, que nem
+  chega a chamar a IA) a linha fica sem tipo, sinalizada pra revisão
+  manual. `admin/classificar_tipo_veiculo_ia_ajax.php` (novo) processa em
+  LOTES de 8 (nunca as ~130 de uma vez só numa request — estouraria o
+  timeout do Cloudflare/PHP) — tenta primeiro `sugerirTipoVeiculo()`
+  (grátis, instantânea, já resolve a maioria dos casos reais) e só cai pro
+  Gemini (`geminiCall()`, prompt pedindo JSON `{"tipo":"..."}`) pros que
+  sobrarem sem sinal, economizando chamada; JS em `admin/index.php` chama
+  o endpoint em loop até `restantes` zerar ou parar de cair (evita loop
+  infinito se alguma linha nunca resolver), mostrando progresso ao vivo e
+  recarregando a página no final com um resumo (quantos classificados,
+  quantos ficaram sem sinal, se a chave Gemini não estava configurada).
+  Mesma trava de carteira do resto da página (consultor só processa a
+  própria, nunca a de outro). Testado ponta a ponta via HTTP real contra
+  servidor Gemini fake local: heurística resolve sozinha sem gastar
+  chamada Gemini (Onix→carro, Crosser→moto — "Crosser" já está na lista
+  de palavras-chave); modelo fora das listas conhecidas cai pro Gemini e
+  aplica o tipo retornado; Gemini respondendo "desconhecido" (ou nenhuma
+  marca/modelo pra sequer perguntar) deixa a linha sem tipo, nunca chuta;
+  rodar de novo com `restantes` idêntico ao round anterior confirma que o
+  JS pararia o loop (nunca fica girando à toa); consultor rodando o
+  próprio classifica só a própria carteira, nunca toca lead de outro
+  consultor (conferido no banco); supervisor bloqueado com 403; CSRF
+  inválido bloqueado com 403 + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema (`tipo_veiculo` já existia).
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
