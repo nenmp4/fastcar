@@ -62,6 +62,27 @@ function etapaBadgeClasse(string $etapa): string {
 }
 
 /**
+ * 28/09/2026, "separa eses leads" — o filtro de tipo de veículo
+ * (oportunidades.tipo_veiculo) já existia, mas nenhum lead antigo tinha
+ * sido classificado ainda (campo manual, nunca inferido — regra #3), então
+ * filtrar por carro/moto/etc mostrava 0 resultados. Botão rápido de
+ * classificar em lote no dashboard (admin/index.php) chama isto — SÓ
+ * grava tipo_veiculo, nunca mexe em marca/modelo/placa/etc (diferente da
+ * ação `atualizar_veiculo` de admin/oportunidade.php, que sobrescreve o
+ * formulário inteiro — reaproveitar aquela pra um clique rápido apagaria
+ * os outros campos do veículo).
+ */
+function classificarTipoVeiculo(int $oportunidadeId, string $tipo): void {
+    $tiposValidos = ['carro', 'moto', 'caminhao', 'outro'];
+    if (!in_array($tipo, $tiposValidos, true)) {
+        throw new InvalidArgumentException('Tipo de veículo inválido.');
+    }
+    getDB()->prepare("
+        UPDATE oportunidades SET tipo_veiculo = ?, updated_at = datetime('now','localtime') WHERE id = ?
+    ")->execute([$tipo, $oportunidadeId]);
+}
+
+/**
  * Cria (ou reaproveita) o cliente por telefone e já abre a oportunidade na
  * etapa 'whatsapp' — regra #2: "salvar desde o primeiro contato", mesmo
  * antes de qualquer qualificação.

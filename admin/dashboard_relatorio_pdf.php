@@ -26,7 +26,8 @@ $filtroEspecial = (string)($_GET['filtro'] ?? '');
 $extraWhere = '';
 // 28/09/2026, mesmo filtro de tipo de veículo de admin/index.php — mantém
 // o PDF consistente com o que a tela está mostrando no momento do clique.
-$tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
+// 'sem_tipo' é o mesmo valor especial de lá (filtra IS NULL).
+$tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro', 'sem_tipo'];
 $tipoVeiculoFiltro = (string)($_GET['tipo_veiculo'] ?? '');
 if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
     $tipoVeiculoFiltro = '';
@@ -81,7 +82,9 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
-if ($tipoVeiculoFiltro !== '') {
+if ($tipoVeiculoFiltro === 'sem_tipo') {
+    $where .= " AND o.tipo_veiculo IS NULL";
+} elseif ($tipoVeiculoFiltro !== '') {
     $where .= " AND o.tipo_veiculo = ?";
     $params[] = $tipoVeiculoFiltro;
 }
@@ -99,7 +102,7 @@ $titulo = [
 };
 if ($busca !== '') $titulo .= ' — busca: "' . $busca . '"';
 if ($tipoVeiculoFiltro !== '') {
-    $tipoVeiculoRotulos = ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão', 'outro' => 'Outro'];
+    $tipoVeiculoRotulos = ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão', 'outro' => 'Outro', 'sem_tipo' => 'sem tipo definido'];
     $titulo .= ' — tipo: ' . ($tipoVeiculoRotulos[$tipoVeiculoFiltro] ?? $tipoVeiculoFiltro);
 }
 

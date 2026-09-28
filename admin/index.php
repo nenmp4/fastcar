@@ -17,6 +17,41 @@ $meuId = (int)$_SESSION['admin_id'];
 // empresa inteira (visão geral).
 $souDono = $perfil === 'consultor';
 
+// 28/09/2026, "separa eses leads" — botão rápido de classificar tipo de
+// veículo direto na linha da tabela (ver mais abaixo), pra não precisar
+// abrir cada oportunidade uma por uma só pra marcar carro/moto/etc.
+// Consultor só classifica lead da própria carteira (mesma trava de
+// $souDono do resto da página); supervisor nunca chega aqui (bloqueado
+// antes de qualquer form aparecer na tela, mas o guard do servidor é o
+// que importa de verdade, nunca só esconder o botão).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'classificar_tipo_veiculo') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera oportunidades.');
+    }
+    $idPost = (int)($_POST['id'] ?? 0);
+    $tipoPost = (string)($_POST['tipo'] ?? '');
+    try {
+        if ($souDono) {
+            $stmtDono = $db->prepare('SELECT responsavel_id FROM oportunidades WHERE id = ?');
+            $stmtDono->execute([$idPost]);
+            if ((int)$stmtDono->fetchColumn() !== $meuId) {
+                throw new RuntimeException('Essa oportunidade não é da sua carteira.');
+            }
+        }
+        classificarTipoVeiculo($idPost, $tipoPost);
+    } catch (Throwable $e) {
+        // best-effort — se falhar (id inválido, tipo inválido, não é dono),
+        // só não classifica; a lista recarrega igual, sem quebrar a página.
+    }
+    header('Location: /admin/index.php?' . http_build_query($_GET));
+    exit;
+}
+
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
 // 28/09/2026, "preciso de um filtro para separar se carro moto caminhão ou
@@ -24,7 +59,10 @@ $busca = trim((string)($_GET['q'] ?? ''));
 // manual escolhido pelo consultor, ver admin/oportunidade.php). Mesmo
 // padrão de $busca: combina com etapa/filtro especial, entra em todas as
 // queries de contagem da nav pra não desalinhar os números mostrados.
-$tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
+// 'sem_tipo' é valor especial (não existe de verdade em oportunidades.tipo_veiculo)
+// — filtra IS NULL em vez de comparar igual, pra achar quem ainda falta
+// classificar (ver bullet "separa eses leads", 28/09/2026).
+$tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro', 'sem_tipo'];
 $tipoVeiculoFiltro = (string)($_GET['tipo_veiculo'] ?? '');
 if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
     $tipoVeiculoFiltro = '';
@@ -130,7 +168,9 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
-if ($tipoVeiculoFiltro !== '') {
+if ($tipoVeiculoFiltro === 'sem_tipo') {
+    $where .= " AND o.tipo_veiculo IS NULL";
+} elseif ($tipoVeiculoFiltro !== '') {
     $where .= " AND o.tipo_veiculo = ?";
     $params[] = $tipoVeiculoFiltro;
 }
@@ -190,7 +230,9 @@ if ($busca !== '') {
     $sqlContagem .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsContagem, $like, $like, $like, $like, $like);
 }
-if ($tipoVeiculoFiltro !== '') {
+if ($tipoVeiculoFiltro === 'sem_tipo') {
+    $sqlContagem .= " AND o.tipo_veiculo IS NULL";
+} elseif ($tipoVeiculoFiltro !== '') {
     $sqlContagem .= " AND o.tipo_veiculo = ?";
     $paramsContagem[] = $tipoVeiculoFiltro;
 }
@@ -214,7 +256,9 @@ if ($busca !== '') {
     $sqlFechadas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsFechadas, $like, $like, $like, $like, $like);
 }
-if ($tipoVeiculoFiltro !== '') {
+if ($tipoVeiculoFiltro === 'sem_tipo') {
+    $sqlFechadas .= " AND o.tipo_veiculo IS NULL";
+} elseif ($tipoVeiculoFiltro !== '') {
     $sqlFechadas .= " AND o.tipo_veiculo = ?";
     $paramsFechadas[] = $tipoVeiculoFiltro;
 }
@@ -237,7 +281,9 @@ if ($busca !== '') {
     $sqlEncerradas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsEncerradas, $like, $like, $like, $like, $like);
 }
-if ($tipoVeiculoFiltro !== '') {
+if ($tipoVeiculoFiltro === 'sem_tipo') {
+    $sqlEncerradas .= " AND o.tipo_veiculo IS NULL";
+} elseif ($tipoVeiculoFiltro !== '') {
     $sqlEncerradas .= " AND o.tipo_veiculo = ?";
     $paramsEncerradas[] = $tipoVeiculoFiltro;
 }
@@ -451,6 +497,7 @@ if ($filtroEspecialLabel !== ''): ?>
             <option value="moto" <?= $tipoVeiculoFiltro === 'moto' ? 'selected' : '' ?>>🏍️ Moto</option>
             <option value="caminhao" <?= $tipoVeiculoFiltro === 'caminhao' ? 'selected' : '' ?>>🚚 Caminhão</option>
             <option value="outro" <?= $tipoVeiculoFiltro === 'outro' ? 'selected' : '' ?>>🚙 Outro</option>
+            <option value="sem_tipo" <?= $tipoVeiculoFiltro === 'sem_tipo' ? 'selected' : '' ?>>❔ Sem tipo definido</option>
         </select>
         <button type="submit">Buscar</button>
         <?php if ($busca !== '' || $tipoVeiculoFiltro !== ''):
@@ -517,7 +564,22 @@ if ($filtroEspecialLabel !== ''): ?>
                     <br><small>encerrado <?= date('d/m/Y', strtotime($op['updated_at'])) ?></small>
                 <?php endif; ?>
             </td>
-            <td><?= ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'][$op['tipo_veiculo'] ?? ''] ?? '' ?> <?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>
+            <td>
+                <?= ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'][$op['tipo_veiculo'] ?? ''] ?? '' ?> <?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?>
+                <?php if (empty($op['tipo_veiculo']) && $perfil !== 'supervisor'): ?>
+                    <br>
+                    <?php // 28/09/2026, "separa eses leads" — classificar rápido sem abrir a oportunidade, pra dar conta dos leads antigos sem tipo ainda. ?>
+                    <?php foreach (['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'] as $tv => $icone): ?>
+                    <form method="post" style="display:inline">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="classificar_tipo_veiculo">
+                        <input type="hidden" name="id" value="<?= (int)$op['id'] ?>">
+                        <input type="hidden" name="tipo" value="<?= $tv ?>">
+                        <button type="submit" class="btn-texto" style="padding:8px;font-size:18px;min-width:40px;min-height:40px" title="Marcar tipo: <?= $tv ?>"><?= $icone ?></button>
+                    </form>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </td>
             <td>
                 <span class="badge <?= e(etapaBadgeClasse($op['etapa'])) ?>"><?= e(etapaLabel($op['etapa'])) ?></span>
                 <?php if ($etapaBuscandoEncerradas && $op['motivo_perda']): ?>
