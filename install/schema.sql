@@ -131,6 +131,15 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     debito_ipva REAL,
     debito_licenciamento REAL,
     debito_multas REAL,
+    -- Observação livre sobre esses 3 débitos (28/09/2026, "temos aquele
+    -- problema... registrar no crm preenchido as informações... ou atraso e
+    -- valor mais ou menos") — a IA de qualificação agora pergunta isso pelo
+    -- WhatsApp; os 3 valores numéricos acima cobrem o valor aproximado, mas
+    -- "há quanto tempo está atrasado" ou qualquer contexto qualitativo
+    -- ("vai mandar foto do documento") não cabe em número, por isso um
+    -- campo de texto livre à parte — mesmo fill-if-empty dos outros, nunca
+    -- sobrescreve o que o consultor já anotou.
+    debitos_veiculo_obs TEXT DEFAULT '',
     -- Resumo automático da consulta ZapCar (22/09/2026, "vamos preencher
     -- tudo... oportunidade para consultor ter poder negociação") — texto
     -- legível com situação/recall/sinistro/leilão/restrições/proprietário/

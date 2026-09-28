@@ -59,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, veiculo_placa = ?,
                         veiculo_renavam = ?, veiculo_chassi = ?, tipo_veiculo = ?, banco_financiamento = ?,
                         valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
-                        debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?,
+                        debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?, debitos_veiculo_obs = ?,
                         updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -78,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     valorMonetario($_POST['debito_ipva'] ?? null),
                     valorMonetario($_POST['debito_licenciamento'] ?? null),
                     valorMonetario($_POST['debito_multas'] ?? null),
+                    clean((string)($_POST['debitos_veiculo_obs'] ?? '')),
                     $id,
                 ]);
                 // Só um sinal visual pro consultor — nunca sobrescreve o que
@@ -537,6 +538,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <p id="debitos-total" style="font-size:13px;color:var(--texto-fraco);margin-top:8px"></p>
             </div>
         </div>
+        <label>Observação sobre os débitos (atraso, contexto — a IA já pode ter preenchido isso pelo WhatsApp)</label>
+        <textarea name="debitos_veiculo_obs" rows="2" style="width:100%"><?= e($op['debitos_veiculo_obs'] ?? '') ?></textarea>
         <button type="submit">Salvar dados do veículo</button>
     </form>
 

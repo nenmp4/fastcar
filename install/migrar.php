@@ -203,6 +203,12 @@ $migracoes = [
     'oportunidades.debito_licenciamento' => "ALTER TABLE oportunidades ADD COLUMN debito_licenciamento REAL",
     'oportunidades.debito_multas' => "ALTER TABLE oportunidades ADD COLUMN debito_multas REAL",
 
+    // 28/09/2026 — a IA de qualificação passou a perguntar multa/IPVA/
+    // licenciamento pelo WhatsApp; os 3 valores numéricos acima cobrem o
+    // valor aproximado, mas "há quanto tempo está atrasado"/contexto
+    // qualitativo não cabe em número — texto livre à parte.
+    'oportunidades.debitos_veiculo_obs' => "ALTER TABLE oportunidades ADD COLUMN debitos_veiculo_obs TEXT DEFAULT ''",
+
     // 28/09/2026, "preciso de um filtro para separar se carro moto
     // caminhão ou outros" (funil de compra) — sempre escolhido
     // manualmente pelo consultor, sem DEFAULT de propósito (regra #3,

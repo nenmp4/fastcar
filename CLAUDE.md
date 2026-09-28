@@ -1609,6 +1609,45 @@ segue no schema sem uso novo, não removida sem ganho real),
   é a pasta antiga certa. Mudança de prompt (julgamento de IA) não
   testável contra servidor fake — validação real só na próxima conversa
   desse tipo.
+  **Pergunta multa/IPVA/licenciamento em aberto + placa como fallback**
+  (28/09/2026, pedido direto: "quando tiver fazendo as perguntas ao
+  cliente pergunte se tem multa e doc para pagar e qual valor e se o
+  cliente nao souber pedir o Documento do veiculo que nos puxamos" +
+  "ou atraso e valor mais menos") — novo item 4 no roteiro de perguntas
+  (`IA_QUALIFICACAO_PROMPT_SISTEMA`), entre financiamento e cidade/estado:
+  pergunta se o documento (licenciamento) está em dia e se tem multa/IPVA
+  em aberto, com valor APROXIMADO ("mais ou menos" já serve, regra #3
+  nunca chuta mas aceita estimativa dada pelo próprio cliente) e há quanto
+  tempo está atrasado; se o cliente não souber nem isso, pede a placa (ou
+  foto do documento/CRLV) — "com a placa a equipe consegue consultar isso
+  depois" (ZapCar/PlacaFIPE, já existentes). Nunca bloqueia
+  `qualificacao_completa` por causa disso — é dado a mais, mesmo espírito
+  não-insistente da foto do veículo. 3 colunas novas em `oportunidades`
+  (`debito_ipva`/`debito_licenciamento`/`debito_multas`, REAL, já
+  existiam desde 22/09/2026 pro preenchimento manual do consultor —
+  `IA_EXTRACAO_PROMPT` passou a extrair os mesmos 3 campos da conversa,
+  fill-if-empty igual o resto, e explicitamente usa `0` quando o cliente
+  confirma "tá tudo em dia" — nunca deixa `null` nesse caso, `null`
+  continua sendo só "ainda não perguntou/não respondeu") + `veiculo_placa`
+  (já existia, nunca era extraída da conversa até agora, mesma
+  disciplina fill-if-empty) + `debitos_veiculo_obs` (coluna nova, `TEXT
+  DEFAULT ''`, texto livre — "há quanto tempo atrasado"/contexto
+  qualitativo não cabe em número, forçar isso num campo REAL seria
+  inventar granularidade que não existe). Campo novo exposto e editável
+  no card "💰 Débitos do veículo" de `admin/oportunidade.php` (mesmo
+  `<form>`/ação `atualizar_veiculo` dos outros 3 valores), pro consultor
+  ver o que a IA já captou e corrigir se precisar. Testado: função
+  isolada (`iaAplicarDadosExtraidos()`) confirmando os 3 débitos + placa +
+  obs gravam certo na 1ª extração (inclusive `0` explícito pro
+  licenciamento "em dia" e `null` continuando `null` pro que nunca foi
+  perguntado), e que uma 2ª extração com valores DIFERENTES nunca
+  sobrescreve o que já tinha sido gravado (fill-if-empty preservado) +
+  migração testada contra schema anterior real (`git show HEAD`, coluna
+  ausente confirmada antes, `ALTER TABLE` aplicado com sucesso,
+  idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos.
+  Mudança de prompt (o roteiro em si, julgamento de IA) não é testável
+  contra servidor fake — validação real só na próxima conversa de
+  verdade.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)

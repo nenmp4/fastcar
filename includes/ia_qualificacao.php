@@ -58,9 +58,18 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
 2. Marca, modelo e ano do veículo
 3. Se ainda tem financiamento em aberto — banco, valor da parcela, quantas
    parcelas faltam, se tem alguma parcela atrasada
-4. Cidade/estado onde o cliente está
-5. Quanto o cliente gostaria de receber pelo veículo
-6. Se precisa resolver isso rápido ou pode aguardar um pouco (urgência)
+4. Se o documento do veículo (licenciamento) está em dia e se tem alguma
+   multa ou IPVA em aberto — se ela souber, pergunte o valor aproximado
+   ("mais ou menos" já serve, não precisa ser exato) de cada um e há quanto
+   tempo está atrasado. Se ela confirmar que "tá tudo em dia"/sem nada
+   pendente, tudo bem, é uma resposta válida também. Se ela NÃO souber
+   dizer se tem pendência, o valor ou o atraso, peça a placa do veículo
+   (ou, se for mais fácil pra ela, uma foto do documento/CRLV) — explica
+   rapidinho que com a placa a equipe consegue consultar isso depois, sem
+   ela precisar saber de cabeça.
+5. Cidade/estado onde o cliente está
+6. Quanto o cliente gostaria de receber pelo veículo
+7. Se precisa resolver isso rápido ou pode aguardar um pouco (urgência)
 
 Perto do final, já com as informações principais em mãos, peça uma foto do
 veículo de um jeito natural (ex: "manda uma fotinho dele pra eu dar uma
@@ -97,7 +106,9 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   com carros" ou algo parecido restringindo o tipo de veículo — se o cliente
   disser que é moto/caminhão/outro tipo, siga a qualificação normalmente,
   igual faria com um carro.
-- Nunca invente, arredonde ou deduza um valor que o cliente não disse.
+- Nunca invente, arredonde ou deduza um valor que o cliente não disse — isso
+  vale pro valor do veículo E pra qualquer valor de multa/IPVA/licenciamento
+  em aberto.
 - Nunca prometa valor de compra, prazo ou condição — quem decide isso é
   sempre um humano (o consultor), depois.
 - Se o cliente disser que o veículo já está quitado (sem financiamento em
@@ -131,11 +142,14 @@ explicitamente — nunca invente, deduza ou arredonde um valor não
 mencionado. Campo não informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null}
+{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null}
 
 - nome_cliente: o nome que a própria pessoa deu na conversa (nunca o que já estava salvo antes). null se ela não disse o nome ainda.
+- veiculo_placa: a placa do veículo, exatamente como o cliente escreveu (ex: "ABC1234" ou "ABC-1234"). null se não informou.
 - valor_parcela e valor_pretendido: número (sem "R$", sem separador de milhar; use ponto decimal). null se não informado.
 - parcelas_restantes e parcelas_atraso: número inteiro. Se o cliente disse "já está quitado", parcelas_restantes=0 e banco_financiamento pode ficar null.
+- debito_ipva, debito_licenciamento, debito_multas: valor em aberto de cada um (número, sem "R$", sem separador de milhar, ponto decimal — pode ser aproximado, o próprio cliente já avisou que não sabe exato). Preencha SOMENTE o que o cliente disse explicitamente — se ele confirmar "tá tudo em dia"/sem nada pendente naquele item específico, use 0 (zero), nunca deixe null quando ele já respondeu que não deve nada. null = ainda não perguntou/não respondeu, nunca um valor chutado.
+- debitos_veiculo_obs: texto curto livre só se o cliente deu algum contexto qualitativo sobre esses débitos que não cabe nos números acima — ex: "IPVA atrasado há uns 2 anos", "documento em dia, mas tem 1 multa que ele não sabe o valor", "vai mandar foto do documento". null se não houver nada relevante a registrar.
 - urgencia: texto curto livre resumindo o que a pessoa disse sobre pressa/prazo (ex: "precisa vender essa semana, atrasando parcela", "sem pressa, só pesquisando"). null se não deu pra saber ainda.
 - temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRECISANDO vender AGORA (não pergunte isso ao cliente, é uma leitura sua da conversa). O sinal MAIS FORTE é a situação financeira do financiamento, não só o tom: muitas parcelas em atraso e a pessoa parecendo sem outra opção pra resolver isso = "quente" (urgência real, dor financeira); parcelas em dia / financiamento tranquilo, sem sinal de aperto = "frio" (pode estar só pesquisando, sem pressa de fechar), mesmo que responda rápido e educadamente — isso INCLUI quem já pagou boa parte do financiamento e está com poucas parcelas restantes/saldo baixo, mesmo sem nenhum atraso (ajustado 16/09/2026, achado real: lead com só 4 parcelas restantes tinha saído "quente" errado — quem está perto de quitar sozinho tem MENOS motivo pra vender agora, não mais: pouca dívida restante pra Fastcar assumir, e o cliente não tem pressa nenhuma, já está quase lá). "morno" fica no meio (ex: 1-2 parcelas atrasadas; ou situação financeira ok — parcelas em dia, sem estar perto de quitar — mas já decidida a vender por outro motivo real como trocar de carro). Tom/engajamento na conversa (responde rápido, decidido, insiste em prosseguir) é sinal SECUNDÁRIO — desempata dentro da mesma faixa, nunca sozinho vira "quente" se as parcelas estão em dia. Preencha sempre que já houver conversa suficiente pra avaliar (mesmo sem saber ainda todos os dados do veículo), e reavalie se a situação de atraso mudar de figura.
 - aceita_ligacao_consultor: true se a pessoa confirmou que um consultor pode ligar, false se ela recusou/preferiu só texto, null se ainda não foi perguntado ou ela não respondeu isso.
@@ -287,9 +301,9 @@ function iaAplicarDadosExtraidos(int $oportunidadeId, array $dados): bool {
     $avancouDadoReal = false;
 
     $campos = [
-        'veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'banco_financiamento',
+        'veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'banco_financiamento',
         'valor_parcela', 'parcelas_restantes', 'parcelas_atraso', 'valor_pretendido',
-        'urgencia',
+        'urgencia', 'debito_ipva', 'debito_licenciamento', 'debito_multas', 'debitos_veiculo_obs',
     ];
     $sets = [];
     $params = [];
