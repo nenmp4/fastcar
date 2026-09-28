@@ -2633,6 +2633,83 @@ segue no schema sem uso novo, não removida sem ganho real),
   central dava 302 — chegando até a checagem de chave Gemini, não mais
   barrado por permissão) + `php -l` + `tests/smoke.php` limpos. Sem
   migração de schema.
+  **Catálogo de fotos pra revenda liberado pro avaliador + upload múltiplo
+  com legenda em lote** (28/09/2026, "Em adicionar foto do veículo erro
+  403 permita selecionar múltipla fotos depois cara coloca legenda para
+  ser mais rápido foto de iPhone e Android") — 2 achados/pedidos no mesmo
+  fluxo. (1) **403**: confirmado com o usuário via 2 perguntas diretas
+  (AskUserQuestion) que era o `avaliador` tentando adicionar foto em
+  Frota → Fotos/vídeos (`admin/veiculo_midias.php`), logo depois de
+  cadastrar o próprio veículo pela vistoria — essa tela sempre foi
+  `requireSuperAdmin()` só, sem contar que o avaliador agora cria veículo
+  sozinho (bullet acima, mesmo dia) e nunca tinha caminho nenhum pra
+  chegar no catálogo de vendas depois. Nova
+  `podeAcessarCatalogoRevenda()`/`requireAcessoCatalogoRevenda()`
+  (`includes/security.php`) = `podeAcessarVendas()` (super_admin/
+  supervisor/vendedor, já era) **+ avaliador** — mesmo raciocínio de
+  confiança já usado pro vendedor em `admin/venda.php`: é upload direto e
+  deliberado da própria pessoa, nunca decidido por IA/sistema, então dar
+  o mesmo nível de confiança ao avaliador não é um bypass — **diferente**
+  da galeria de vistoria (`veiculo_avaliacao_fotos`), que continua
+  exigindo aprovação explícita do vendedor antes de entrar no catálogo
+  (`aprovarFotoParaCatalogo()`, regra intocada). Aplicado em
+  `admin/veiculo_midias.php` e `admin/ver_midia_revenda.php` (servir a
+  mídia) + `veiculo_midias.php`/`ver_midia_revenda.php` adicionados à
+  allowlist central do avaliador em `admin/_bootstrap.php` — mesma classe
+  de bug já documentada 2x nesta sessão ("relaxar o guard dentro do
+  arquivo não basta sem atualizar o allowlist central"), desta vez
+  corrigido nos dois lugares de uma vez. Como o avaliador não tem
+  nenhuma outra porta de entrada até essa galeria (Frota é super_admin
+  only), card novo "🛒 Catálogo de fotos pra revenda" em
+  `admin/avaliacao.php` (logo abaixo da galeria própria da vistoria,
+  visível pra quem tem `podeAcessarCatalogoRevenda()`) linka direto pra
+  `veiculo_midias.php?id={oportunidade_id}` do mesmo veículo.
+  (2) **Múltiplas fotos + legenda em lote**: o formulário sempre foi 1
+  arquivo por envio, com o consultor tendo que voltar pra tela e repetir
+  o processo pra cada foto — lento em campo, tirando várias fotos em
+  sequência. Nova `salvarMidiasRevendaEmLote()` (`includes/vendas.php`)
+  reaproveita `salvarMidiaRevenda()` sem duplicar nenhuma validação — só
+  reindexa o array que `<input type="file" name="midias[]" multiple>`
+  produz (`$_FILES['midias']['name'][0..N]` etc) pro formato de arquivo
+  único que a função de baixo nível já espera, chamando 1x por arquivo;
+  1 legenda só, compartilhada entre TODOS os arquivos do lote (literal
+  "seleciona várias fotos, DEPOIS coloca legenda" — nunca 1 campo de
+  legenda por foto, que seria o oposto de "mais rápido"); 1 arquivo com
+  formato/tamanho inválido no meio do lote nunca aborta os outros —
+  cada erro fica listado por nome de arquivo, o resto salva normal.
+  Aplicado nos 2 pontos que usam esse catálogo — `admin/veiculo_midias.php`
+  (Frota/avaliador) e `admin/venda.php` (card "📸 Fotos e vídeos pra
+  revenda" do vendedor) — mesmo padrão nos dois, nenhuma duplicação de
+  lógica além do HTML do form.
+  **Foto de iPhone/Android** — os 2 formulários trocaram o `accept`
+  enumerado (`image/jpeg,image/png,image/webp,video/mp4,...`) pro
+  coringa `accept="image/*,video/*"`, mesma correção já validada e
+  documentada 2x nesta sessão pro checklist de vistoria (Safari iOS trava
+  o seletor de arquivo com listas de MIME específicas — "Continuava não
+  selecionando no Safari/iPhone 17 mesmo sem o capture") — esses 2
+  formulários de catálogo de revenda tinham ficado pra trás com o padrão
+  antigo até agora. Validação de verdade continua 100% no servidor
+  (`mime_content_type()` contra `VEICULO_MIDIA_MIME_PERMITIDOS`), o
+  `accept` é só dica/filtro do navegador, nunca a barreira real. Testado:
+  13 asserções de função em banco isolado (`salvarMidiasRevendaEmLote()`
+  com lote de 2 fotos válidas + 1 arquivo inválido no meio — salva as 2,
+  reporta o erro certo nomeando o arquivo que falhou, nunca aborta os
+  outros; legenda compartilhada aplicada nos 2; lote vazio não quebra;
+  `podeAcessarCatalogoRevenda()` — avaliador entra, consultor continua
+  bloqueado, vendedor/super_admin sem regressão) + HTTP ponta a ponta
+  real (avaliador não recebe mais 403 abrindo `veiculo_midias.php`,
+  consultor continua recebendo 403 de verdade tanto no GET quanto num
+  POST forjado — banco confirmado sem alteração —, form renderiza
+  `multiple`/`midias[]`, POST com 2 fotos no mesmo campo salva as 2 de
+  uma vez com a legenda certa, mensagem de resumo "2 de 2 arquivo(s)
+  adicionado(s)"; card novo em `admin/avaliacao.php` renderiza e linka
+  pro `oportunidade_id` certo) + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema. ⚠️ Fluxo real de seleção múltipla no Safari
+  iOS/Chrome Android (o navegador de verdade oferecendo "selecionar
+  várias fotos" na galeria nativa) não testado com dispositivo físico
+  nesta sessão — só a mecânica HTTP (múltiplos arquivos chegando no
+  mesmo campo `midias[]`) e o atributo `multiple` no HTML; validar no
+  próprio iPhone/Android assim que o deploy aplicar.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

@@ -53,11 +53,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$v['oportunidade_id']) {
                     $erro = 'Vincule um veículo da frota antes de adicionar fotos/vídeos.';
                 } else {
-                    $resultadoMidia = salvarMidiaRevenda((int)$v['oportunidade_id'], $_FILES['midia'] ?? [], (string)($_POST['legenda'] ?? ''));
-                    if ($resultadoMidia['ok']) {
-                        $sucesso = 'Mídia adicionada ao catálogo do veículo.';
+                    // 28/09/2026 — múltiplas fotos de uma vez + 1 legenda
+                    // compartilhada, mesma mudança de admin/veiculo_midias.php.
+                    $resultadoMidia = salvarMidiasRevendaEmLote((int)$v['oportunidade_id'], $_FILES['midias'] ?? [], (string)($_POST['legenda'] ?? ''));
+                    if ($resultadoMidia['ok_count'] > 0) {
+                        $sucesso = $resultadoMidia['ok_count'] . ' de ' . $resultadoMidia['total'] . ' arquivo(s) adicionado(s) ao catálogo.';
+                        if ($resultadoMidia['erros']) {
+                            $sucesso .= ' Falhou: ' . implode(' | ', $resultadoMidia['erros']);
+                        }
                     } else {
-                        $erro = $resultadoMidia['erro'];
+                        $erro = $resultadoMidia['erros'] ? implode(' | ', $resultadoMidia['erros']) : 'Nenhum arquivo enviado.';
                     }
                 }
             } elseif ($acao === 'excluir_midia_revenda') {
@@ -568,9 +573,9 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         <form method="post" enctype="multipart/form-data">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="upload_midia_revenda">
-            <label>Arquivo (foto JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
-            <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" required>
-            <label>Legenda (opcional)</label>
+            <label>Fotos/vídeos (pode selecionar vários de uma vez — foto até 10MB, vídeo até 50MB cada)</label>
+            <input type="file" name="midias[]" accept="image/*,video/*" multiple required>
+            <label>Legenda (opcional — aplicada a todas as fotos/vídeos selecionados acima)</label>
             <input type="text" name="legenda" placeholder="Ex: Lateral direita, km atual 42.000">
             <button type="submit">Adicionar ao catálogo</button>
         </form>

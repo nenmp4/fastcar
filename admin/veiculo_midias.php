@@ -12,11 +12,17 @@
  * `excluirMidiaRevenda()`), mesmo destino Drive/local, mesma mídia que a
  * IA de vendas manda sozinha pro comprador quando identifica interesse
  * (`includes/ia_qualificacao_vendas.php::enviarMidiaCatalogoParaComprador()`).
- * Mesma trava de `admin/veiculos.php` (super_admin).
+ *
+ * Guard relaxado em 28/09/2026 — achado real: avaliador batendo 403 tentando
+ * adicionar foto do veículo que acabou de cadastrar pela própria vistoria
+ * (`admin/avaliacoes.php`). Ver requireAcessoCatalogoRevenda()
+ * (`includes/security.php`) pro racional completo (mesmo nível de
+ * confiança que vendedor já tem em `admin/venda.php`, não a galeria de
+ * vistoria que exige aprovação).
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-requireSuperAdmin();
+requireAcessoCatalogoRevenda();
 
 $db = getDB();
 $id = (int)($_GET['id'] ?? 0);
@@ -44,11 +50,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         if ($acao === 'upload_midia_revenda') {
-            $resultado = salvarMidiaRevenda($id, $_FILES['midia'] ?? [], (string)($_POST['legenda'] ?? ''));
-            if ($resultado['ok']) {
-                $sucesso = 'Mídia adicionada ao catálogo do veículo.';
+            // 28/09/2026 — "permita selecionar múltipla fotos depois cara
+            // coloca legenda para ser mais rápido": 1 legenda só, aplicada
+            // a todas as fotos/vídeos selecionados nesse envio (nunca 1
+            // campo por arquivo — é exatamente o que deixaria mais lento).
+            $resultado = salvarMidiasRevendaEmLote($id, $_FILES['midias'] ?? [], (string)($_POST['legenda'] ?? ''));
+            if ($resultado['ok_count'] > 0) {
+                $sucesso = $resultado['ok_count'] . ' de ' . $resultado['total'] . ' arquivo(s) adicionado(s) ao catálogo.';
+                if ($resultado['erros']) {
+                    $sucesso .= ' Falhou: ' . implode(' | ', $resultado['erros']);
+                }
             } else {
-                $erro = $resultado['erro'];
+                $erro = $resultado['erros'] ? implode(' | ', $resultado['erros']) : 'Nenhum arquivo enviado.';
             }
         } elseif ($acao === 'excluir_midia_revenda') {
             excluirMidiaRevenda((int)($_POST['midia_id'] ?? 0));
@@ -122,10 +135,10 @@ $midias = listarMidiasRevenda($id);
     <form method="post" enctype="multipart/form-data">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="upload_midia_revenda">
-        <label>Arquivo (foto JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
-        <input type="file" name="midia" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" required>
-        <label>Legenda (opcional)</label>
-        <input type="text" name="legenda" placeholder="Ex: Lateral direita, km atual 42.000">
+        <label>Fotos/vídeos (pode selecionar vários de uma vez — foto até 10MB, vídeo até 50MB cada)</label>
+        <input type="file" name="midias[]" accept="image/*,video/*" multiple required>
+        <label>Legenda (opcional — aplicada a todas as fotos/vídeos selecionados acima)</label>
+        <input type="text" name="legenda" placeholder="Ex: Fotos da vistoria de entrada">
         <button type="submit">Adicionar ao catálogo</button>
     </form>
 </div>

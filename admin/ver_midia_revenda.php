@@ -2,14 +2,16 @@
 /**
  * Serve uma foto/vídeo do catálogo de revenda de um veículo — mesmo
  * padrão de admin/ver_midia_whatsapp.php, mas a trava aqui é
- * requireAcessoVendas() (não por responsavel_id de uma negociação
+ * requireAcessoCatalogoRevenda() (não por responsavel_id de uma negociação
  * específica): a mídia pertence ao VEÍCULO (compartilhada entre qualquer
  * tentativa de venda dele), não a um comprador/vendedor específico —
- * qualquer vendedor pode ver o catálogo de qualquer veículo disponível.
+ * qualquer vendedor/avaliador pode ver o catálogo de qualquer veículo
+ * disponível. 28/09/2026 — ampliada pra incluir avaliador, mesmo motivo de
+ * admin/veiculo_midias.php.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-requireAcessoVendas();
+requireAcessoCatalogoRevenda();
 
 $id = (int)($_GET['id'] ?? 0);
 $db = getDB();

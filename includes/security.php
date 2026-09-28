@@ -163,6 +163,31 @@ function requireAcessoAvaliacoes(): void {
 }
 
 /**
+ * Quem pode ver/adicionar mídia no CATÁLOGO de revenda do veículo
+ * (`veiculo_midias_revenda`, `admin/veiculo_midias.php`/`ver_midia_revenda.php`)
+ * — 28/09/2026, achado real: avaliador batendo 403 tentando adicionar foto
+ * do veículo em Frota → Fotos/vídeos, logo depois de cadastrar o veículo
+ * pela própria vistoria (`admin/avaliacoes.php`). Antes só super_admin
+ * acessava essa tela; agora inclui quem já podeAcessarVendas() (super_admin/
+ * supervisor/vendedor — mesmo time que já sobe foto direto sem aprovação
+ * nenhuma via `admin/venda.php`) e o `avaliador`, pelo mesmo raciocínio: é
+ * upload direto e deliberado da própria pessoa, mesmo nível de confiança
+ * que o vendedor já tem — não é o mesmo fluxo da galeria de vistoria
+ * (`veiculo_avaliacao_fotos`), que segue exigindo aprovação do vendedor
+ * antes de entrar aqui.
+ */
+function podeAcessarCatalogoRevenda(): bool {
+    return podeAcessarVendas() || ($_SESSION['admin_perfil'] ?? '') === 'avaliador';
+}
+
+function requireAcessoCatalogoRevenda(): void {
+    if (!podeAcessarCatalogoRevenda()) {
+        http_response_code(403);
+        exit('Acesso restrito ao catálogo de fotos/vídeos do veículo.');
+    }
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra

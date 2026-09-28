@@ -327,6 +327,16 @@ function avTermoStatusLabel(string $status): string {
     <?php endif; ?>
 </div>
 
+<?php if (podeAcessarCatalogoRevenda()): ?>
+<div class="card">
+    <h3>🛒 Catálogo de fotos pra revenda</h3>
+    <p><small>Fotos/vídeos gerais do veículo pra IA de vendas usar — diferente da galeria da vistoria acima
+       (que é sempre técnica/checklist e passa por aprovação). Útil pra já aproveitar a visita e fotografar o carro
+       pronto pra vender, sem precisar esperar um vendedor.</small></p>
+    <a href="/admin/veiculo_midias.php?id=<?= (int)$av['oportunidade_id'] ?>" class="btn btn-primary">📸 Adicionar fotos ao catálogo →</a>
+</div>
+<?php endif; ?>
+
 <?php if ($av['tipo'] === 'venda'): ?>
 <div class="card">
     <h3>📄 Termo de entrega e vistoria</h3>

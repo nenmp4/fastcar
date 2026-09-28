@@ -604,6 +604,52 @@ function salvarMidiaRevenda(int $oportunidadeId, array $arquivo, string $legenda
     return ['ok' => true, 'erro' => null];
 }
 
+/**
+ * Sobe VÁRIAS fotos/vídeos de uma vez, todos com a MESMA legenda —
+ * 28/09/2026, "permita selecionar múltipla fotos depois cara coloca
+ * legenda para ser mais rápido": antes só dava pra subir 1 arquivo por
+ * envio (voltar pra tela, escolher o próximo, digitar legenda de novo...),
+ * lento pra quem tira várias fotos do carro em sequência. Reaproveita
+ * salvarMidiaRevenda() sem duplicar NENHUMA validação — só reindexa o
+ * formato de array que `<input type="file" name="midias[]" multiple>`
+ * produz (`$_FILES['midias']['name'][0..N]`) pro formato de arquivo único
+ * que a função de baixo nível já espera, e chama 1x por arquivo. Nunca
+ * aborta no meio — 1 arquivo com formato/tamanho inválido não impede os
+ * outros de serem salvos, erro de cada um fica listado pro usuário
+ * corrigir só o que falhou.
+ */
+function salvarMidiasRevendaEmLote(int $oportunidadeId, array $arquivosMultiplos, string $legenda): array {
+    $nomes = $arquivosMultiplos['name'] ?? null;
+    if (!is_array($nomes) || !count($nomes)) {
+        return ['ok_count' => 0, 'total' => 0, 'erros' => ['Escolha pelo menos um arquivo.']];
+    }
+
+    $total = count($nomes);
+    $okCount = 0;
+    $erros = [];
+    for ($i = 0; $i < $total; $i++) {
+        $nomeArquivo = (string)($nomes[$i] ?? '');
+        if ($nomeArquivo === '' && ($arquivosMultiplos['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            continue; // slot vazio (navegador manda menos arquivos do que o esperado)
+        }
+        $arquivoUnico = [
+            'name' => $nomeArquivo,
+            'type' => $arquivosMultiplos['type'][$i] ?? '',
+            'tmp_name' => $arquivosMultiplos['tmp_name'][$i] ?? '',
+            'error' => $arquivosMultiplos['error'][$i] ?? UPLOAD_ERR_NO_FILE,
+            'size' => $arquivosMultiplos['size'][$i] ?? 0,
+        ];
+        $r = salvarMidiaRevenda($oportunidadeId, $arquivoUnico, $legenda);
+        if ($r['ok']) {
+            $okCount++;
+        } else {
+            $erros[] = ($nomeArquivo !== '' ? "{$nomeArquivo}: " : '') . $r['erro'];
+        }
+    }
+
+    return ['ok_count' => $okCount, 'total' => $total, 'erros' => $erros];
+}
+
 /** Apaga 1 mídia do catálogo (mesmo padrão de excluirConversaWhatsapp() — só a linha do banco, nunca tenta limpar o Drive). */
 function excluirMidiaRevenda(int $midiaId): void {
     $db = getDB();

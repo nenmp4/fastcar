@@ -101,7 +101,13 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // 28/09/2026 — leitura de CRLV por IA no modal "Nova vistoria"
         // (admin/avaliacoes.php, "cadastrar veículo novo"/CRLV como
         // fallback da busca por placa).
-        'veiculo_crlv_ajax.php'];
+        'veiculo_crlv_ajax.php',
+        // 28/09/2026 — catálogo de fotos/vídeos de revenda do veículo
+        // (admin/veiculo_midias.php), achado real: avaliador batendo 403
+        // tentando adicionar foto do veículo que acabou de cadastrar pela
+        // vistoria. Ver requireAcessoCatalogoRevenda() (includes/security.php)
+        // pro racional completo.
+        'veiculo_midias.php', 'ver_midia_revenda.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;
