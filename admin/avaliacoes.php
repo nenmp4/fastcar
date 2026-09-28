@@ -32,6 +32,29 @@ if (($_GET['ajax'] ?? '') === 'buscar') {
     exit;
 }
 
+// 28/09/2026, "registro de todas as vistoria no veículo, com data e tudo
+// — pois ele pode retornar fastcar" — histórico de vistorias POR PLACA,
+// cruzando TODAS as oportunidades que já tiveram essa placa (não só a
+// atual). Mesmo acesso aberto do endpoint acima.
+if (($_GET['ajax'] ?? '') === 'historico_placa') {
+    header('Content-Type: application/json; charset=utf-8');
+    $itens = listarVistoriasPorPlaca((string)($_GET['placa'] ?? ''));
+    echo json_encode(array_map(function ($v) {
+        return [
+            'id' => (int)$v['id'],
+            'tipo' => $v['tipo'],
+            'status' => $v['status'],
+            'data' => date('d/m/Y', strtotime($v['created_at'])),
+            'km' => $v['km_atual'],
+            'oportunidade_id' => (int)$v['oportunidade_id'],
+            'oportunidade_etapa' => $v['oportunidade_etapa'],
+            'cliente_nome' => $v['cliente_nome'],
+            'avaliador_nome' => $v['avaliador_nome'],
+        ];
+    }, $itens));
+    exit;
+}
+
 $erro = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -167,6 +190,7 @@ function avStatusBadge(string $status): string {
     <div id="av-resultados" style="margin-top:8px;max-height:220px;overflow-y:auto"></div>
 
     <div id="av-selecionado" class="alerta-sucesso" style="display:none;margin-top:10px"></div>
+    <div id="av-historico-selecionado" style="margin-top:8px"></div>
     </div>
 
     <div id="av-bloco-novo-toggle" style="margin-top:12px">
@@ -198,6 +222,7 @@ function avStatusBadge(string $status): string {
         <label>Placa</label>
         <input type="text" id="av-veiculo-placa" name="veiculo_placa" style="text-transform:uppercase" maxlength="8" placeholder="ABC1D23">
         <?php endif; ?>
+        <div id="av-historico-placa" style="margin-top:6px"></div>
 
         <div class="grid-2">
             <div>
@@ -259,7 +284,39 @@ function avStatusBadge(string $status): string {
         selecionadoEl.style.display = 'none';
         btnCriar.disabled = true;
         resultadosEl.innerHTML = '';
+        document.getElementById('av-historico-selecionado').innerHTML = '';
     };
+
+    // 28/09/2026, "registro de todas as vistoria no veículo com data e
+    // tudo, pois ele pode retornar fastcar" — mostra TODO o histórico de
+    // vistorias já feitas nesse veículo (por placa, cruzando qualquer
+    // oportunidade que já teve essa placa, não só a atual/selecionada) —
+    // pra nunca passar batido que o carro já esteve na Fastcar antes
+    // (comprado, revendido e devolvido, por exemplo).
+    function avMostrarHistoricoPlaca(placa, containerId) {
+        var container = document.getElementById(containerId);
+        placa = (placa || '').trim();
+        if (!placa || placa.length < 6) { container.innerHTML = ''; return; }
+        fetch('/admin/avaliacoes.php?ajax=historico_placa&placa=' + encodeURIComponent(placa), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (itens) {
+                if (!itens.length) { container.innerHTML = ''; return; }
+                var rotuloTipo = { compra: '🚗 Compra', venda: '🛒 Venda' };
+                var rotuloStatus = { concluida: '✅ Concluída', em_andamento: '🔧 Em andamento', pendente: '⏳ Pendente' };
+                var linhas = itens.map(function (v) {
+                    return '<div style="padding:6px 8px;border-bottom:1px solid var(--borda);font-size:12.5px">'
+                        + '<strong>' + v.data + '</strong> — ' + (rotuloTipo[v.tipo] || v.tipo) + ' — ' + (rotuloStatus[v.status] || v.status)
+                        + '<br><small style="color:var(--texto-fraco)">Cliente: ' + (v.cliente_nome || '—').replace(/</g, '&lt;')
+                        + (v.avaliador_nome ? ' · Avaliador: ' + v.avaliador_nome.replace(/</g, '&lt;') : '')
+                        + (v.km ? ' · KM: ' + v.km : '')
+                        + ' · <a href="/admin/avaliacao.php?id=' + v.id + '" target="_blank">ver vistoria →</a></small></div>';
+                }).join('');
+                container.innerHTML = '<div class="alerta-info" style="padding:8px;margin-top:6px">'
+                    + '<strong style="font-size:12.5px">🕘 Esse veículo JÁ passou pela Fastcar antes — ' + itens.length + ' vistoria(s) registrada(s):</strong>'
+                    + '<div style="max-height:160px;overflow-y:auto;margin-top:4px">' + linhas + '</div></div>';
+            })
+            .catch(function () { container.innerHTML = ''; });
+    }
 
     window.avBuscar = function () {
         avLimparSelecao();
@@ -298,6 +355,7 @@ function avStatusBadge(string $status): string {
         selecionadoEl.style.display = 'block';
         selecionadoEl.textContent = '✅ Selecionado: ' + c.label;
         btnCriar.disabled = false;
+        avMostrarHistoricoPlaca(c.placa, 'av-historico-selecionado');
     };
 
     // "Veículo não está na lista? Cadastrar um novo agora" — 28/09/2026,
@@ -351,6 +409,7 @@ function avStatusBadge(string $status): string {
     function avExecutarBuscaPlaca() {
         var placa = campoPlaca.value.trim();
         if (!placa) { if (fipeResultadoEl) fipeResultadoEl.textContent = '⚠️ Digite a placa primeiro.'; return; }
+        avMostrarHistoricoPlaca(placa, 'av-historico-placa');
         if (btnBuscarPlaca) btnBuscarPlaca.disabled = true;
         if (fipeResultadoEl) fipeResultadoEl.textContent = 'Buscando…';
         fetch('/admin/fipe_ajax.php?acao=buscar_placa&placa=' + encodeURIComponent(placa))
@@ -381,19 +440,27 @@ function avStatusBadge(string $status): string {
     }
 
     if (btnBuscarPlaca) btnBuscarPlaca.addEventListener('click', avExecutarBuscaPlaca);
+    // Histórico por placa nunca depende do token FIPE — checa direto no
+    // banco da Fastcar, então roda também ao sair do campo digitando a
+    // placa na mão (sem token configurado, o botão de FIPE nem existe).
+    campoPlaca.addEventListener('blur', function () { avMostrarHistoricoPlaca(campoPlaca.value, 'av-historico-placa'); });
 
     // Atalho do "Nenhum resultado" da busca normal — 28/09/2026, "avalista
     // digita placa, se não tiver cadastra um novo": pula direto pro
     // sub-formulário de cadastro já com a placa preenchida (nunca precisa
-    // digitar de novo) e já dispara a busca FIPE sozinha, se o token
-    // estiver configurado.
+    // digitar de novo), já checa o histórico dessa placa na Fastcar, e
+    // dispara a busca FIPE sozinha se o token estiver configurado.
     window.avUsarTermoComoVeiculoNovo = function () {
         var termo = termoEl.value.trim();
         checkboxNovo.checked = true;
         avAlternarVeiculoNovo();
         if (termo) {
             campoPlaca.value = termo.toUpperCase();
-            if (btnBuscarPlaca) avExecutarBuscaPlaca();
+            if (btnBuscarPlaca) {
+                avExecutarBuscaPlaca(); // já dispara o histórico por dentro
+            } else {
+                avMostrarHistoricoPlaca(campoPlaca.value, 'av-historico-placa');
+            }
         }
         blocoNovo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };

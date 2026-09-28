@@ -2537,6 +2537,47 @@ segue no schema sem uso novo, não removida sem ganho real),
   verdade nesta sessão (Playwright indisponível neste ambiente) — só
   render estático + validação de sintaxe JS; validar visualmente na
   próxima vez que Playwright estiver disponível ou direto em produção.
+  **Histórico de todas as vistorias do veículo, por placa — "pois ele pode
+  retornar fastcar"** (28/09/2026, "Para ser mais rápido / Registro de
+  todas as vistoria no veículo feito com data e tudo ... registro todo da
+  carro pois ele pode retornar fastcar") — `listarAvaliacoesDoVeiculo()`
+  (já existia, usada em `admin/oportunidade.php`/`admin/venda.php`) fica
+  escopada a **1 `oportunidade_id` só**; um mesmo carro físico pode ter
+  passado por mais de um ciclo (comprado, revendido, devolvido, comprado
+  de novo) — cada ciclo vira uma oportunidade NOVA, com id diferente —
+  então essa função sozinha nunca mostraria que o carro já esteve na
+  Fastcar antes. Nova `listarVistoriasPorPlaca(string $placa): array`
+  (`includes/veiculo_avaliacoes.php`) busca TODA vistoria (compra E
+  venda) de QUALQUER oportunidade que já teve aquela placa, normalizando
+  maiúsculo/hífen/espaço dos dois lados da comparação (nunca falha só por
+  formatação diferente — "ABC-1234" salvo antigo x "ABC1234" digitado
+  agora); exige pelo menos 6 caracteres normalizados, nunca dispara
+  query com termo genérico demais. Endpoint novo
+  `?ajax=historico_placa&placa=X` em `admin/avaliacoes.php`, mesmo acesso
+  aberto do `?ajax=buscar` já existente. No modal "Nova vistoria":
+  `avMostrarHistoricoPlaca()` (JS, função compartilhada) renderiza um
+  aviso "🕘 Esse veículo JÁ passou pela Fastcar antes — N vistoria(s)
+  registrada(s)" com data/tipo/status/cliente/avaliador de cada uma +
+  link "ver vistoria →" — disparado em 3 pontos: (1) ao SELECIONAR um
+  candidato da busca normal (`buscarCandidatosVistoria()` ganhou o campo
+  `placa` no JSON de retorno, só pra isso); (2) ao sair do campo de placa
+  no sub-formulário de "cadastrar veículo novo" (`blur`, nunca depende do
+  token FIPE — é consulta interna, sem custo); (3) dentro de
+  `avExecutarBuscaPlaca()` (o mesmo clique que já busca dados FIPE também
+  já mostra o histórico, sem esforço extra do avaliador — "pra ser mais
+  rápido"). Testado: função isolada (13 assertions — cenário EXATO do
+  pedido: mesma placa em 2 oportunidades diferentes, ~8 meses de
+  intervalo, confirma as 2 vistorias retornadas mais recente primeiro,
+  com `oportunidade_id` certo de cada uma; normalização de hífen/
+  maiúsculo/minúsculo; placa sem histórico retorna vazio; placa vazia/
+  curta demais nunca dispara query; `buscarCandidatosVistoria()` expõe o
+  campo `placa` novo) + HTTP ponta a ponta real (endpoint responde 200
+  com o JSON certo — data formatada `d/m/Y`, tipo/status/cliente
+  batendo —, placa sem histórico retorna array vazio) + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema. ⚠️ Mesma ressalva do
+  bullet acima — fluxo visual completo (clicar, ver o card de histórico
+  aparecer) não testado com navegador de verdade (Playwright indisponível
+  neste ambiente); validar assim que possível.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

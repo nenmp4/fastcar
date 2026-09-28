@@ -320,9 +320,46 @@ function buscarCandidatosVistoria(string $tipo, string $termo): array {
             'oportunidade_id' => (int)$l['oportunidade_id'],
             'venda_id' => $l['venda_id'] !== null ? (int)$l['venda_id'] : null,
             'label' => "{$veiculo}{$ano}{$placa} — {$pessoa} ({$l['pessoa_telefone']})",
+            'placa' => $l['veiculo_placa'] ?: '',
         ];
     }
     return $candidatos;
+}
+
+/**
+ * Histórico COMPLETO de vistorias de um veículo pela PLACA — 28/09/2026,
+ * "registro de todas as vistoria no veículo feito com data e tudo...
+ * pois ele pode retornar fastcar". Diferente de listarAvaliacoesDoVeiculo()
+ * (escopada a 1 `oportunidade_id` só): um mesmo carro físico pode ter
+ * passado por MAIS de uma negociação de compra ao longo do tempo (comprado,
+ * revendido, devolvido, comprado de novo — cada ciclo pode virar uma
+ * oportunidade NOVA, com id diferente) — essa função busca por TODAS as
+ * oportunidades que já tiveram essa placa, não só a atual, cruzando com
+ * `veiculo_avaliacoes` (compra E venda) pra nunca deixar passar batido que
+ * o carro já esteve na Fastcar antes.
+ *
+ * Normaliza a placa (maiúsculo, sem espaço/hífen) dos dois lados da
+ * comparação — nunca falha só por formatação diferente (ex: "ABC-1234"
+ * salvo antigo x "ABC1234" digitado agora).
+ */
+function listarVistoriasPorPlaca(string $placa): array {
+    $placaNorm = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $placa));
+    if ($placaNorm === '' || strlen($placaNorm) < 6) return [];
+
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT va.id, va.tipo, va.status, va.created_at, va.km_atual,
+               o.id AS oportunidade_id, o.etapa AS oportunidade_etapa,
+               c.nome AS cliente_nome, u.nome AS avaliador_nome
+        FROM veiculo_avaliacoes va
+        JOIN oportunidades o ON o.id = va.oportunidade_id
+        JOIN clientes c ON c.id = o.cliente_id
+        LEFT JOIN usuarios u ON u.id = va.avaliador_id
+        WHERE UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
+        ORDER BY va.created_at DESC, va.id DESC
+    ");
+    $stmt->execute([$placaNorm]);
+    return $stmt->fetchAll();
 }
 
 /** Fila de trabalho de um avaliador (ou de todas, pra super_admin/supervisor) — pendente/em_andamento primeiro. */
