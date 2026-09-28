@@ -7381,6 +7381,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   ler de novo preserva o editado mas continua preenchendo os outros;
   cadastro final com os dados da IA funciona e o veículo aparece certo na
   Frota).
+  **Aviso de duplicidade quando o telefone já tem oportunidade ativa**
+  (28/09/2026, achado real: cliente "José Bonifácio de Souza Nogueira"
+  (5511972254163) já tinha oportunidade #56 travada desde o WhatsApp em
+  `qualificacao_ia`, e o MESMO veículo foi cadastrado manualmente na Frota
+  pro mesmo telefone — oportunidade #125 —, sem ninguém saber da outra
+  pasta; confirmado com o usuário que era "mesmo carro, duplicado por
+  engano"). Confirmado via AskUserQuestion o jeito de prevenir: **"Sim,
+  avisar na tela na hora do cadastro (recomendado)"** — nunca bloquear
+  (regra #1 permite +1 veículo de verdade por cliente, decisão de
+  prosseguir é sempre humana). Nova
+  `buscarOportunidadeAtivaPorTelefone(string $telefone): ?array`
+  (`includes/oportunidades.php`) — checa se o telefone já tem oportunidade
+  em `ETAPAS_ATIVAS` antes de criar. `admin/veiculos.php`: o handler da
+  ação `cadastrar_manual` roda essa checagem antes de chamar
+  `criarVeiculoManualFrota()`; achando duplicidade e sem
+  `confirmar_duplicidade=1` no POST, mostra um aviso (nome/etapa/veículo
+  da oportunidade ativa + link pra abrir) e reexibe o formulário
+  pré-preenchido com os dados já digitados, trocando o texto do botão pra
+  "⚠️ Cadastrar mesmo assim" (que manda o campo hidden
+  `confirmar_duplicidade=1` de volta) — 2º clique sempre passa, nunca
+  trava de verdade. Testado ponta a ponta via HTTP real (sessão primed,
+  seed com oportunidade ativa pro telefone de teste): POST sem confirmar
+  mostra o aviso/botão/formulário pré-preenchido e não cria nada (banco
+  intocado); POST com `confirmar_duplicidade=1` cria a 2ª oportunidade
+  normalmente e redireciona pra `veiculo_midias.php` + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
   **Seletor de consultor responsável pela compra, em vez de digitar/sempre
   creditar quem tá logado** (17/09/2026, "em local do fomulario de
   cadastro do veiculo mais facil selecionar contultor qur comprou do que

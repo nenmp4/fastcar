@@ -20,6 +20,8 @@ $busca = trim((string)($_GET['busca'] ?? ''));
 $erro = '';
 
 $sucesso = '';
+$avisoDuplicidade = null;
+$formularioManualRepetir = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar_venda') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -51,25 +53,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
     } else {
-        try {
-            $valorPagoPost = trim((string)($_POST['valor_final'] ?? ''));
-            $r = criarVeiculoManualFrota(
-                (string)($_POST['vendedor_nome'] ?? ''),
-                (string)($_POST['vendedor_telefone'] ?? ''),
-                (string)($_POST['veiculo_marca'] ?? ''),
-                (string)($_POST['veiculo_modelo'] ?? ''),
-                (string)($_POST['veiculo_ano'] ?? ''),
-                (string)($_POST['veiculo_placa'] ?? ''),
-                (string)($_POST['veiculo_chassi'] ?? ''),
-                (string)($_POST['veiculo_renavam'] ?? ''),
-                $valorPagoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorPagoPost)) : null,
-                (int)$_SESSION['admin_id'],
-                !empty($_POST['responsavel_id']) ? (int)$_POST['responsavel_id'] : null
-            );
-            header('Location: /admin/veiculo_midias.php?id=' . $r['oportunidade_id'] . '&recem_cadastrado=1');
-            exit;
-        } catch (Throwable $e) {
-            $erro = $e->getMessage();
+        // 28/09/2026, achado real (José Bonifácio — veículo cadastrado
+        // manualmente pro mesmo telefone que já tinha lead ativo travado no
+        // WhatsApp, sem ninguém saber da outra pasta): antes de criar,
+        // avisa se esse telefone já tem oportunidade ativa — nunca bloqueia
+        // (regra #1 permite +1 veículo de verdade), só exige confirmação
+        // explícita quando não é a 1ª tentativa.
+        $duplicidadeAtiva = buscarOportunidadeAtivaPorTelefone((string)($_POST['vendedor_telefone'] ?? ''));
+        if ($duplicidadeAtiva && empty($_POST['confirmar_duplicidade'])) {
+            $avisoDuplicidade = $duplicidadeAtiva;
+            $formularioManualRepetir = $_POST;
+        } else {
+            try {
+                $valorPagoPost = trim((string)($_POST['valor_final'] ?? ''));
+                $r = criarVeiculoManualFrota(
+                    (string)($_POST['vendedor_nome'] ?? ''),
+                    (string)($_POST['vendedor_telefone'] ?? ''),
+                    (string)($_POST['veiculo_marca'] ?? ''),
+                    (string)($_POST['veiculo_modelo'] ?? ''),
+                    (string)($_POST['veiculo_ano'] ?? ''),
+                    (string)($_POST['veiculo_placa'] ?? ''),
+                    (string)($_POST['veiculo_chassi'] ?? ''),
+                    (string)($_POST['veiculo_renavam'] ?? ''),
+                    $valorPagoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorPagoPost)) : null,
+                    (int)$_SESSION['admin_id'],
+                    !empty($_POST['responsavel_id']) ? (int)$_POST['responsavel_id'] : null
+                );
+                header('Location: /admin/veiculo_midias.php?id=' . $r['oportunidade_id'] . '&recem_cadastrado=1');
+                exit;
+            } catch (Throwable $e) {
+                $erro = $e->getMessage();
+            }
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'excluir_veiculo') {
@@ -288,41 +302,53 @@ function mesesComAFastcar(?string $refPosse): int {
         <button type="button" onclick="lerCrlvManual()" style="margin-top:.4rem" id="mv-crlv-btn">📄 Ler CRLV com IA</button>
         <span id="mv-crlv-status" style="font-size:.8rem;color:var(--muted);margin-left:.5rem"></span>
     </div>
+    <?php if ($avisoDuplicidade): ?>
+        <div class="alerta-erro">
+            ⚠️ Esse telefone já tem uma oportunidade <strong>ativa</strong> —
+            #<?= (int)$avisoDuplicidade['id'] ?> (<?= e($avisoDuplicidade['nome'] ?: '(sem nome)') ?>,
+            etapa <?= e($avisoDuplicidade['etapa']) ?><?php if ($avisoDuplicidade['veiculo_marca'] || $avisoDuplicidade['veiculo_modelo']): ?>,
+            <?= e(trim($avisoDuplicidade['veiculo_marca'] . ' ' . $avisoDuplicidade['veiculo_modelo'])) ?><?php endif; ?>).
+            <a href="/admin/oportunidade.php?id=<?= (int)$avisoDuplicidade['id'] ?>" target="_blank">Abrir essa oportunidade →</a><br>
+            Confere se não é o mesmo veículo duplicado antes de continuar. Se for mesmo um 2º veículo diferente
+            desse cliente, pode cadastrar normalmente.
+        </div>
+    <?php endif; ?>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="cadastrar_manual">
+        <?php if ($avisoDuplicidade): ?><input type="hidden" name="confirmar_duplicidade" value="1"><?php endif; ?>
         <div class="grid-2">
             <div>
                 <label>Nome do vendedor/origem *</label>
-                <input type="text" name="vendedor_nome" required>
+                <input type="text" name="vendedor_nome" required value="<?= e((string)($formularioManualRepetir['vendedor_nome'] ?? '')) ?>">
                 <label>Telefone do vendedor/origem *</label>
-                <input type="text" name="vendedor_telefone" required placeholder="Ex: 31999998888">
+                <input type="text" name="vendedor_telefone" required placeholder="Ex: 31999998888" value="<?= e((string)($formularioManualRepetir['vendedor_telefone'] ?? '')) ?>">
                 <label>Valor pago (R$)</label>
-                <input type="text" name="valor_final" placeholder="0,00">
+                <input type="text" name="valor_final" placeholder="0,00" value="<?= e((string)($formularioManualRepetir['valor_final'] ?? '')) ?>">
                 <label>Consultor responsável pela compra</label>
                 <select name="responsavel_id">
                     <option value="">— Eu mesmo (<?= e($_SESSION['admin_nome'] ?? '') ?>) —</option>
                     <?php foreach ($consultoresParaCompra as $u): ?>
-                        <option value="<?= (int)$u['id'] ?>"><?= e($u['nome']) ?></option>
+                        <option value="<?= (int)$u['id'] ?>" <?= (string)($formularioManualRepetir['responsavel_id'] ?? '') === (string)$u['id'] ? 'selected' : '' ?>><?= e($u['nome']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div>
                 <label>Marca</label>
-                <input type="text" name="veiculo_marca" id="mv-marca">
+                <input type="text" name="veiculo_marca" id="mv-marca" value="<?= e((string)($formularioManualRepetir['veiculo_marca'] ?? '')) ?>">
                 <label>Modelo</label>
-                <input type="text" name="veiculo_modelo" id="mv-modelo">
+                <input type="text" name="veiculo_modelo" id="mv-modelo" value="<?= e((string)($formularioManualRepetir['veiculo_modelo'] ?? '')) ?>">
                 <label>Ano</label>
-                <input type="text" name="veiculo_ano" id="mv-ano" style="max-width:120px">
+                <input type="text" name="veiculo_ano" id="mv-ano" style="max-width:120px" value="<?= e((string)($formularioManualRepetir['veiculo_ano'] ?? '')) ?>">
                 <label>Placa</label>
-                <input type="text" name="veiculo_placa" id="mv-placa" style="max-width:160px">
+                <input type="text" name="veiculo_placa" id="mv-placa" style="max-width:160px" value="<?= e((string)($formularioManualRepetir['veiculo_placa'] ?? '')) ?>">
                 <label>Chassi</label>
-                <input type="text" name="veiculo_chassi" id="mv-chassi">
+                <input type="text" name="veiculo_chassi" id="mv-chassi" value="<?= e((string)($formularioManualRepetir['veiculo_chassi'] ?? '')) ?>">
                 <label>RENAVAM</label>
-                <input type="text" name="veiculo_renavam" id="mv-renavam">
+                <input type="text" name="veiculo_renavam" id="mv-renavam" value="<?= e((string)($formularioManualRepetir['veiculo_renavam'] ?? '')) ?>">
             </div>
         </div>
-        <button type="submit">Cadastrar e adicionar fotos/vídeos →</button>
+        <button type="submit"><?= $avisoDuplicidade ? '⚠️ Cadastrar mesmo assim' : 'Cadastrar e adicionar fotos/vídeos →' ?></button>
     </form>
 </div>
 

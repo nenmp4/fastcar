@@ -302,6 +302,33 @@ function gerarTelefonePlaceholderVeiculoRecuperado(): string {
     throw new RuntimeException('Não consegui gerar um telefone placeholder único — tente de novo.');
 }
 
+/**
+ * Checa se um telefone já tem oportunidade ATIVA aberta — usado por
+ * criarVeiculoManualFrota() (via admin/veiculos.php) pra AVISAR antes de
+ * criar um 2º registro pro mesmo telefone (achado real, 28/09/2026: José
+ * Bonifácio já tinha oportunidade #56 travada em qualificacao_ia desde o
+ * WhatsApp quando um veículo foi cadastrado manualmente na Frota pro mesmo
+ * telefone — #125 — criando 2 "ativas" pro mesmo cliente sem ninguém saber
+ * da outra; confirmado depois que era o MESMO carro duplicado por engano).
+ * Nunca bloqueia sozinho (regra #1 permite +1 veículo de verdade por
+ * cliente) — só avisa, decisão de prosseguir é sempre humana.
+ */
+function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
+    $telNorm = normalizarTelefone($telefone);
+    if (!$telNorm) return null;
+    $db = getDB();
+    $etapasAtivasPlaceholder = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+    $stmt = $db->prepare("
+        SELECT o.id, o.etapa, o.veiculo_marca, o.veiculo_modelo, c.nome
+        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE c.telefone = ? AND o.etapa IN ({$etapasAtivasPlaceholder})
+        ORDER BY o.id DESC LIMIT 1
+    ");
+    $stmt->execute([$telNorm, ...ETAPAS_ATIVAS]);
+    $r = $stmt->fetch();
+    return $r ?: null;
+}
+
 function criarVeiculoManualFrota(
     string $vendedorNome,
     string $vendedorTelefone,
