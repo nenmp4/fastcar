@@ -84,80 +84,6 @@ function zapiStatusPrincipalCache(bool $forcar = false): array {
 }
 
 /**
- * Mesmo mecanismo de zapiStatusPrincipalCache(), mas pra instância
- * FALLBACK (zapiCredenciaisFallback()) — cache próprio
- * (`config.zapi_status_fallback_cache`), nunca compartilha o cache da
- * principal (são 2 instâncias/credenciais diferentes).
- */
-function zapiStatusFallbackCache(bool $forcar = false): array {
-    [$inst, $tok, $cli] = zapiCredenciaisFallback();
-    if (!$inst || !$tok) {
-        return ['estado' => 'nao_configurado', 'verificado_em' => null];
-    }
-
-    $cacheRaw = getConfig('zapi_status_fallback_cache');
-    if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
-        [$ts, $json] = explode('|', $cacheRaw, 2);
-        if ((time() - (int)$ts) < 60) {
-            $d = json_decode($json, true);
-            if (is_array($d) && isset($d['estado'])) return $d;
-        }
-    }
-
-    $headers = ['Content-Type: application/json'];
-    if ($cli) $headers[] = 'client-token: ' . $cli;
-
-    $resultado = ['estado' => 'erro', 'verificado_em' => time()];
-    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/status");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => 4,
-        CURLOPT_CONNECTTIMEOUT => 3,
-    ]);
-    $resp = curl_exec($ch);
-    $err = curl_error($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if (!$err && $code === 200) {
-        $d = json_decode((string)$resp, true);
-        if (is_array($d)) {
-            $resultado = ['estado' => !empty($d['connected']) ? 'conectado' : 'desconectado', 'verificado_em' => time()];
-        }
-    }
-
-    setConfig('zapi_status_fallback_cache', time() . '|' . json_encode($resultado));
-    return $resultado;
-}
-
-/**
- * 24/09/2026, achado real — "Conectou o reserva lá na zpi mais no painel
- * a bolinha ficar vermelha deveria mudar para zpi reserva Conectado": o
- * badge do topbar (admin/_zapi_status.php) só olhava a instância
- * PRINCIPAL — reconectar a FALLBACK nunca mudava o vermelho, mesmo sendo
- * ela quem está de fato atendendo o WhatsApp enquanto a principal está
- * fora (banida/desconectada). Combina os dois: principal conectada
- * continua sendo o estado "normal" de sempre; principal fora + fallback
- * conectada vira um estado PRÓPRIO (`reserva_conectado`, nunca
- * `conectado` — precisa continuar visualmente diferente, é operação de
- * emergência, não o normal); sem nenhuma das duas conectada, mantém o
- * estado real da principal (desconectado/erro/não configurado) — nunca
- * mascara o problema de verdade só porque a fallback também está fora.
- */
-function zapiStatusOperacionalCache(bool $forcar = false): array {
-    $principal = zapiStatusPrincipalCache($forcar);
-    if ($principal['estado'] === 'conectado') return $principal;
-
-    $fallback = zapiStatusFallbackCache($forcar);
-    if ($fallback['estado'] === 'conectado') {
-        return ['estado' => 'reserva_conectado', 'verificado_em' => $fallback['verificado_em']];
-    }
-
-    return $principal;
-}
-
-/**
  * Credenciais da instância Z-API DEDICADA de vendas (17/09/2026, módulo de
  * vendas ganhando funil de entrada pelo WhatsApp próprio — pedido
  * José/Jean: "vamos adcionar instancia só para vendas"). Config separada
@@ -192,49 +118,16 @@ function zapiCredenciaisFinanceiro(): array {
 }
 
 /**
- * Credenciais da instância Z-API FALLBACK, só pra ENVIO (20/09/2026,
- * "quero clocar instancia fallback" — depois do incidente de bloqueio da
- * instância principal, 19-20/09/2026). Nunca recebe webhook nem é
- * roteada por zapiIdentificarInstancia() — é usada só como tentativa
- * automática de reenvio quando zapiEnviarTexto() pela instância PRINCIPAL
- * falha (erro/limite temporário), pra nunca perder uma mensagem de saída
- * (resposta da IA, notificação, reengajamento) por causa de instabilidade
- * pontual de uma instância só. ⚠️ Nunca ajuda contra um NÚMERO banido de
- * verdade pelo WhatsApp — nesse caso a mensagem sai por um número
- * DIFERENTE do que o cliente já conhece (sem jeito técnico de "herdar" a
- * conversa de um número banido, WhatsApp não permite isso de forma
- * nenhuma); é rede de segurança pra falha passageira de envio, não pra
- * bloqueio permanente do número principal.
- */
-function zapiCredenciaisFallback(): array {
-    return [
-        _chatbot_getConfig('zapi_fallback_instance_id'),
-        _chatbot_getConfig('zapi_fallback_token'),
-        _chatbot_getConfig('zapi_fallback_client_token'),
-    ];
-}
-
-/**
  * Envia mensagem de texto via Z-API. Mesma assinatura/lógica do
  * aaspNotificarWpp() do JurídicoSaaS (includes/aasp.php), renomeada pro
  * contexto deste projeto.
  *
  * $instanciaOverride (17/09/2026): [instance_id, token, client_token]
- * opcional — usado pra mandar pela instância DEDICADA de vendas em vez da
- * principal (zapiCredenciaisVendas()), sem duplicar a função inteira só
- * pra trocar de onde lê a credencial. Omitido (padrão) = instância
- * principal, igual sempre foi — nenhum dos ~40 call sites existentes
- * precisou mudar.
- */
-/**
- * 20/09/2026 — quando chamada pra instância PRINCIPAL (sem
- * $instanciaOverride, ou seja, nunca pra vendas/financeiro, que têm seus
- * próprios números e não faz sentido "socorrer" com o número de compra) e
- * o envio falha, tenta uma vez de novo pela instância FALLBACK
- * (zapiCredenciaisFallback()) antes de desistir — nunca perde uma
- * mensagem de saída (resposta da IA, notificação, reengajamento) só
- * porque a instância principal deu erro passageiro. Sem fallback
- * configurado, comportamento idêntico a antes (só falha mesmo).
+ * opcional — usado pra mandar pela instância DEDICADA de vendas/
+ * financeiro em vez da principal (zapiCredenciaisVendas()/
+ * zapiCredenciaisFinanceiro()), sem duplicar a função inteira só pra
+ * trocar de onde lê a credencial. Omitido (padrão) = instância principal,
+ * igual sempre foi — nenhum dos ~40 call sites existentes precisou mudar.
  *
  * 25/09/2026 — quando o canal PRINCIPAL está migrado pra API oficial
  * (config.whatsapp_provider_principal='oficial', ver includes/whatsapp_oficial.php)
@@ -243,6 +136,19 @@ function zapiCredenciaisFallback(): array {
  * ~40 call sites existentes precisou mudar, só troca o transporte por
  * baixo. vendas/financeiro continuam Z-API normal (fora do escopo desta
  * migração, ainda não banidos).
+ *
+ * 28/09/2026, "vamos remover fallback" — a instância FALLBACK (tentativa
+ * automática numa 2ª instância quando o envio pela principal falhava,
+ * existia desde 20/09/2026) foi removida por decisão direta, depois de
+ * revisar o próprio material oficial da Z-API sobre banimento/shadowban:
+ * a orientação deles é NUNCA reagir a uma falha de envio trocando de
+ * instância/reconectando — o certo é aguardar (shadowban é temporário,
+ * reconectar cedo demais pode piorar). Um fallback automático fazia
+ * exatamente o oposto disso a cada falha passageira, e na prática as duas
+ * instâncias (principal e fallback) acabaram banidas juntas em 25/09/2026
+ * — nenhuma evidência de que o mecanismo tenha ajudado de verdade, só
+ * mais uma instância pra gerenciar. A redundância real agora é a migração
+ * pro canal oficial da Meta (acima), não uma 2ª instância Z-API.
  */
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
@@ -261,74 +167,7 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
     $phone = normalizarTelefone($phone);
     if (strlen($phone) < 12) return false;
 
-    if (_zapiEnviarTextoBruto($phone, $msg, $inst, $tok, $ctok)) return true;
-
-    if ($usandoPrincipal) {
-        [$instFb, $tokFb, $ctokFb] = zapiCredenciaisFallback();
-        if ($instFb && $tokFb) {
-            $ok = _zapiEnviarTextoBruto($phone, $msg, $instFb, $tokFb, $ctokFb);
-            if ($ok) {
-                registrarUsoFallbackZapi($phone);
-                alertarUsoFallbackZapi($instFb, $tokFb, $ctokFb);
-            }
-            return $ok;
-        }
-    }
-    return false;
-}
-
-/**
- * Log de cada vez que o fallback foi realmente usado pra completar um
- * envio (20/09/2026, "como vou saber que instância estou operando") —
- * best-effort, nunca pode travar o envio que já deu certo.
- * admin/saude.php lê este arquivo pra mostrar um indicador visual.
- */
-function registrarUsoFallbackZapi(string $telefone): void {
-    try {
-        $dir = __DIR__ . '/../storage/logs';
-        @mkdir($dir, 0755, true);
-        @file_put_contents($dir . '/whatsapp_fallback_usado.log', '[' . date('Y-m-d H:i:s') . "] Fallback usado pra {$telefone}\n", FILE_APPEND);
-    } catch (Throwable $e) {
-        // log nunca pode travar o envio
-    }
-}
-
-/**
- * Avisa os números de notificação genérica (`notificacao_leads_whatsapp`,
- * mesma lista de `notificarNovoLeadWhatsapp()`) quando a instância
- * PRINCIPAL falha e o fallback precisou assumir — pra ficar sabendo na
- * hora, não só olhando o log/Saúde depois. Dedup de 1h
- * (`zapi_fallback_alerta_enviado`, mesmo padrão `alerta_atraso_{id}` de
- * cron/followup.php) pra nunca virar spam numa sequência de falhas
- * seguidas da principal. Manda pela própria instância FALLBACK — a única
- * confirmada funcionando nesse momento — via _zapiEnviarTextoBruto()
- * direto, nunca zapiEnviarTexto() de novo aqui (evita repetir uma
- * tentativa pela principal já fadada a falhar só pra mandar o aviso).
- */
-function alertarUsoFallbackZapi(string $instFb, string $tokFb, string $ctokFb): void {
-    try {
-        $guardKey = 'zapi_fallback_alerta_enviado';
-        $ultimo = getConfig($guardKey);
-        if ($ultimo && (time() - strtotime($ultimo)) < 3600) return;
-
-        $lista = _chatbot_getConfig('notificacao_leads_whatsapp');
-        $numeros = array_filter(array_map('trim', explode(',', $lista)));
-        if (!$numeros) return;
-
-        $msg = "⚠️ *Fastcar CRM — instância principal do WhatsApp falhou*\n\nO envio caiu automaticamente pra instância FALLBACK. Verifique a conexão da instância principal (Configurações → Z-API, ou admin/saude.php).";
-        $enviouAlgum = false;
-        foreach ($numeros as $numero) {
-            $tel = normalizarTelefone($numero);
-            if (strlen($tel) >= 12 && _zapiEnviarTextoBruto($tel, $msg, $instFb, $tokFb, $ctokFb)) {
-                $enviouAlgum = true;
-            }
-        }
-        if ($enviouAlgum) {
-            setConfig($guardKey, date('Y-m-d H:i:s'));
-        }
-    } catch (Throwable $e) {
-        // alerta nunca pode travar o envio principal
-    }
+    return _zapiEnviarTextoBruto($phone, $msg, $inst, $tok, $ctok);
 }
 
 function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string $tok, string $ctok): bool {

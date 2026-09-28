@@ -4857,6 +4857,41 @@ segue no schema sem uso novo, não removida sem ganho real),
   duas desconectadas/com erro → continua desconectado, nunca mascara;
   principal conectada → sempre "conectado" normal, nem chega a consultar a
   fallback) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  **Removida por completo, 28/09/2026** ("vamos remover fallback") — depois
+  de revisar o material oficial da própria Z-API sobre banimento/shadowban
+  (colado direto na conversa pelo usuário), a orientação deles é o oposto
+  do que esse mecanismo fazia: nunca reagir a uma falha de envio trocando
+  de instância/reconectando — o certo é aguardar (shadowban é temporário;
+  trocar de instância cedo demais pode até piorar). Na prática, as duas
+  instâncias (principal e fallback) acabaram banidas juntas em 25/09/2026
+  de qualquer forma — sem evidência de que o fallback automático tenha
+  ajudado, só mais uma instância/número pra gerenciar e mais um jeito de
+  mascarar um problema real (a principal banida) sem resolvê-lo. Removido
+  por inteiro: `zapiCredenciaisFallback()`, `zapiStatusFallbackCache()`,
+  `zapiStatusOperacionalCache()`, `registrarUsoFallbackZapi()`,
+  `alertarUsoFallbackZapi()` e a tentativa automática de reenvio dentro de
+  `zapiEnviarTexto()` (`includes/whatsapp_config.php`) — a função voltou a
+  ser: instância principal (ou `$instanciaOverride` de vendas/financeiro,
+  ou o canal oficial da Meta quando `whatsapp_provider_principal='oficial'`),
+  falhou, retorna `false`, ponto — mesmo padrão simples que vendas/
+  financeiro sempre tiveram, agora padronizado pros 3. Card "🆘 Instância
+  Z-API — Fallback" removido de `admin/configuracoes.php` (com os
+  handlers `salvar_zapi_fallback`/`testar_zapi_fallback`), indicador
+  "Instância fallback"/"Fallback usado (24h)" removido de
+  `admin/saude.php`, e o badge do topbar (`admin/_zapi_status.php` +
+  `admin/zapi_status_ajax.php`) voltou a chamar só
+  `zapiStatusPrincipalCache()` direto (estado `reserva_conectado`/rótulo
+  "🟡 Z-API (reserva) conectado" removidos do JS). Config antiga
+  (`zapi_fallback_instance_id`/`_token`/`_client_token`) fica órfã em
+  `config` sem uso novo, nunca apagada — mesma disciplina de sempre pra
+  chave de config sem ganho real em limpar (SQLite `config` é livre,
+  key/value, sem custo de manter). A redundância real pro canal principal
+  agora é a migração pro WhatsApp Cloud API oficial da Meta (ver bullet
+  próprio), não uma 2ª instância Z-API. Testado: `zapiEnviarTexto()`
+  contra servidor Z-API fake local respondendo falha (500) confirma
+  retorno `false` direto, sem nenhuma 2ª tentativa; confirmado que as 5
+  funções removidas não existem mais no runtime (`function_exists()`) +
+  `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 - **Recuperação de leads perdidos no bloqueio de WhatsApp**
   (`includes/recuperacao_leads.php` + `cron/recuperacao_leads.php`,
   19-20/09/2026, achado real: "estamos deste ontem tav bloqueado wahatsApp
