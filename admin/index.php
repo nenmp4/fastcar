@@ -19,6 +19,16 @@ $souDono = $perfil === 'consultor';
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
+// 28/09/2026, "preciso de um filtro para separar se carro moto caminhão ou
+// outros" — filtro por tipo de veículo (oportunidades.tipo_veiculo, campo
+// manual escolhido pelo consultor, ver admin/oportunidade.php). Mesmo
+// padrão de $busca: combina com etapa/filtro especial, entra em todas as
+// queries de contagem da nav pra não desalinhar os números mostrados.
+$tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
+$tipoVeiculoFiltro = (string)($_GET['tipo_veiculo'] ?? '');
+if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
+    $tipoVeiculoFiltro = '';
+}
 
 // 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
 // abri os leads" — os cards de KPI (Atrasadas/Leads novos hoje/na semana/
@@ -120,6 +130,10 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
+if ($tipoVeiculoFiltro !== '') {
+    $where .= " AND o.tipo_veiculo = ?";
+    $params[] = $tipoVeiculoFiltro;
+}
 
 $stmtTotalFiltrado = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
 $stmtTotalFiltrado->execute($params);
@@ -176,6 +190,10 @@ if ($busca !== '') {
     $sqlContagem .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsContagem, $like, $like, $like, $like, $like);
 }
+if ($tipoVeiculoFiltro !== '') {
+    $sqlContagem .= " AND o.tipo_veiculo = ?";
+    $paramsContagem[] = $tipoVeiculoFiltro;
+}
 $sqlContagem .= " GROUP BY o.etapa";
 $stmtContagem = $db->prepare($sqlContagem);
 $stmtContagem->execute($paramsContagem);
@@ -196,6 +214,10 @@ if ($busca !== '') {
     $sqlFechadas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsFechadas, $like, $like, $like, $like, $like);
 }
+if ($tipoVeiculoFiltro !== '') {
+    $sqlFechadas .= " AND o.tipo_veiculo = ?";
+    $paramsFechadas[] = $tipoVeiculoFiltro;
+}
 $stmtFechadas = $db->prepare($sqlFechadas);
 $stmtFechadas->execute($paramsFechadas);
 $totalFechadas = (int)$stmtFechadas->fetchColumn();
@@ -214,6 +236,10 @@ if ($souDono) {
 if ($busca !== '') {
     $sqlEncerradas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsEncerradas, $like, $like, $like, $like, $like);
+}
+if ($tipoVeiculoFiltro !== '') {
+    $sqlEncerradas .= " AND o.tipo_veiculo = ?";
+    $paramsEncerradas[] = $tipoVeiculoFiltro;
 }
 $stmtEncerradas = $db->prepare($sqlEncerradas);
 $stmtEncerradas->execute($paramsEncerradas);
@@ -280,9 +306,16 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <a href="/admin/logout.php">Sair</a>
 </header>
 
-<?php $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : ''; ?>
+<?php
+    $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : '';
+    $qsBusca .= $tipoVeiculoFiltro !== '' ? '&tipo_veiculo=' . urlencode($tipoVeiculoFiltro) : '';
+    // Mesma combinação (busca + tipo de veículo), sem o "?etapa=" na frente
+    // — usada nos links "Todas/Minhas" e "Limpar filtro" abaixo, que nunca
+    // têm etapa nenhuma selecionada.
+    $qsBuscaSemEtapa = ltrim($qsBusca, '&');
+?>
 <nav class="etapas-nav">
-    <a href="/admin/index.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' && $filtroEspecial === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
+    <a href="/admin/index.php<?= $qsBuscaSemEtapa !== '' ? '?' . $qsBuscaSemEtapa : '' ?>" class="<?= $etapaFiltro === '' && $filtroEspecial === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
     <?php foreach (ETAPAS_ATIVAS as $et): ?>
         <a href="/admin/index.php?etapa=<?= urlencode($et) . $qsBusca ?>" class="<?= $etapaFiltro === $et && $filtroEspecial === '' ? 'ativo' : '' ?>">
             <?= e(etapaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
@@ -310,7 +343,7 @@ $filtroEspecialLabel = [
 if ($filtroEspecialLabel !== ''): ?>
 <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;margin-bottom:14px">
     <span>🔎 Mostrando: <strong><?= e($filtroEspecialLabel) ?></strong></span>
-    <a href="/admin/index.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>">Limpar filtro</a>
+    <a href="/admin/index.php<?= $qsBuscaSemEtapa !== '' ? '?' . $qsBuscaSemEtapa : '' ?>">Limpar filtro</a>
 </div>
 <?php endif; ?>
 
@@ -412,19 +445,28 @@ if ($filtroEspecialLabel !== ''): ?>
             <input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>">
         <?php endif; ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por nome, telefone, marca, modelo ou placa...">
+        <select name="tipo_veiculo">
+            <option value="">— todos os tipos —</option>
+            <option value="carro" <?= $tipoVeiculoFiltro === 'carro' ? 'selected' : '' ?>>🚗 Carro</option>
+            <option value="moto" <?= $tipoVeiculoFiltro === 'moto' ? 'selected' : '' ?>>🏍️ Moto</option>
+            <option value="caminhao" <?= $tipoVeiculoFiltro === 'caminhao' ? 'selected' : '' ?>>🚚 Caminhão</option>
+            <option value="outro" <?= $tipoVeiculoFiltro === 'outro' ? 'selected' : '' ?>>🚙 Outro</option>
+        </select>
         <button type="submit">Buscar</button>
-        <?php if ($busca !== ''):
+        <?php if ($busca !== '' || $tipoVeiculoFiltro !== ''):
             $voltarQs = $filtroEspecial !== '' ? '?filtro=' . urlencode($filtroEspecial) : ($etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '');
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar</a><?php endif; ?>
     </form>
     <?php
         // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
         // exatamente o que a tabela abaixo está mostrando (mesmo filtro/
-        // etapa/busca), não só a página atual (sem LIMIT/OFFSET no PDF).
+        // etapa/busca/tipo de veículo), não só a página atual (sem
+        // LIMIT/OFFSET no PDF).
         $pdfQsPartes = [];
         if ($filtroEspecial !== '') $pdfQsPartes[] = 'filtro=' . urlencode($filtroEspecial);
         elseif ($etapaFiltro !== '') $pdfQsPartes[] = 'etapa=' . urlencode($etapaFiltro);
         if ($busca !== '') $pdfQsPartes[] = 'q=' . urlencode($busca);
+        if ($tipoVeiculoFiltro !== '') $pdfQsPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
         $pdfQs = $pdfQsPartes ? '?' . implode('&', $pdfQsPartes) : '';
     ?>
     <a class="btn" style="margin-top:10px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQs ?>" target="_blank">📄 Gerar PDF do relatório</a>
@@ -475,7 +517,7 @@ if ($filtroEspecialLabel !== ''): ?>
                     <br><small>encerrado <?= date('d/m/Y', strtotime($op['updated_at'])) ?></small>
                 <?php endif; ?>
             </td>
-            <td><?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>
+            <td><?= ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'][$op['tipo_veiculo'] ?? ''] ?? '' ?> <?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?></td>
             <td>
                 <span class="badge <?= e(etapaBadgeClasse($op['etapa'])) ?>"><?= e(etapaLabel($op['etapa'])) ?></span>
                 <?php if ($etapaBuscandoEncerradas && $op['motivo_perda']): ?>

@@ -51,10 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if ($acao === 'atualizar_veiculo') {
                 $marca = clean((string)($_POST['veiculo_marca'] ?? ''));
+                $tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
+                $tipoVeiculoPost = (string)($_POST['tipo_veiculo'] ?? '');
+                $tipoVeiculo = in_array($tipoVeiculoPost, $tiposVeiculoValidos, true) ? $tipoVeiculoPost : null;
                 $db->prepare("
                     UPDATE oportunidades
                     SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, veiculo_placa = ?,
-                        veiculo_renavam = ?, veiculo_chassi = ?, banco_financiamento = ?,
+                        veiculo_renavam = ?, veiculo_chassi = ?, tipo_veiculo = ?, banco_financiamento = ?,
                         valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
                         debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?,
                         updated_at = datetime('now','localtime')
@@ -66,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['veiculo_placa'] ?? '')),
                     clean((string)($_POST['veiculo_renavam'] ?? '')),
                     clean((string)($_POST['veiculo_chassi'] ?? '')),
+                    $tipoVeiculo,
                     clean((string)($_POST['banco_financiamento'] ?? '')),
                     valorMonetario($_POST['valor_parcela'] ?? null),
                     $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
@@ -454,7 +458,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                <?= $op['anuncio_origem'] ? ' · ' . e($op['anuncio_origem']) : '' ?></p>
         </div>
         <div>
+            <?php
+                $tipoVeiculoIcones = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'];
+            ?>
             <p><strong>Veículo:</strong>
+               <?= $tipoVeiculoIcones[$op['tipo_veiculo'] ?? ''] ?? '' ?>
                <?= e(trim(($op['veiculo_marca'] ?? '') . ' ' . $op['veiculo_modelo']) ?: 'não identificado ainda') ?>
                <?= e($op['veiculo_ano']) ?></p>
             <p><strong>Financiamento:</strong> <?= e($op['banco_financiamento'] ?: '—') ?>
@@ -476,6 +484,14 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <input type="hidden" name="acao" value="atualizar_veiculo">
         <div class="grid-2">
             <div>
+                <label>Tipo de veículo</label>
+                <select name="tipo_veiculo">
+                    <option value="">— pendente —</option>
+                    <option value="carro" <?= ($op['tipo_veiculo'] ?? '') === 'carro' ? 'selected' : '' ?>>🚗 Carro</option>
+                    <option value="moto" <?= ($op['tipo_veiculo'] ?? '') === 'moto' ? 'selected' : '' ?>>🏍️ Moto</option>
+                    <option value="caminhao" <?= ($op['tipo_veiculo'] ?? '') === 'caminhao' ? 'selected' : '' ?>>🚚 Caminhão</option>
+                    <option value="outro" <?= ($op['tipo_veiculo'] ?? '') === 'outro' ? 'selected' : '' ?>>🚙 Outro</option>
+                </select>
                 <label>Marca</label>
                 <input type="text" id="veiculo_marca" name="veiculo_marca" value="<?= e($op['veiculo_marca'] ?? '') ?>" placeholder="Ex: Toyota">
                 <label>Modelo</label>

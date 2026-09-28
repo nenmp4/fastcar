@@ -24,6 +24,13 @@ $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
 $filtroEspecial = (string)($_GET['filtro'] ?? '');
 $extraWhere = '';
+// 28/09/2026, mesmo filtro de tipo de veículo de admin/index.php — mantém
+// o PDF consistente com o que a tela está mostrando no momento do clique.
+$tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
+$tipoVeiculoFiltro = (string)($_GET['tipo_veiculo'] ?? '');
+if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
+    $tipoVeiculoFiltro = '';
+}
 
 switch ($filtroEspecial) {
     case 'hoje':
@@ -74,6 +81,10 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
+if ($tipoVeiculoFiltro !== '') {
+    $where .= " AND o.tipo_veiculo = ?";
+    $params[] = $tipoVeiculoFiltro;
+}
 
 $titulo = [
     'hoje' => 'Leads novos hoje', 'ontem' => 'Leads novos ontem',
@@ -87,6 +98,10 @@ $titulo = [
     default => etapaLabel($etapaFiltro),
 };
 if ($busca !== '') $titulo .= ' — busca: "' . $busca . '"';
+if ($tipoVeiculoFiltro !== '') {
+    $tipoVeiculoRotulos = ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão', 'outro' => 'Outro'];
+    $titulo .= ' — tipo: ' . ($tipoVeiculoRotulos[$tipoVeiculoFiltro] ?? $tipoVeiculoFiltro);
+}
 
 // 21/09/2026, "ideal gerar com detalhe trazer resumos das convesas" —
 // opt-in via ?detalhado=1 (link separado em admin/index.php), nunca o

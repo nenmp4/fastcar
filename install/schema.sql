@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     veiculo_placa TEXT DEFAULT '',
     veiculo_renavam TEXT DEFAULT '',
     veiculo_chassi TEXT DEFAULT '',
+    -- Tipo do veículo (28/09/2026, "preciso de um filtro para separar se
+    -- carro moto caminhão ou outros") — sempre escolhido manualmente pelo
+    -- consultor, nunca inferido de marca/modelo (regra #3, nunca chutar):
+    -- sem DEFAULT de propósito, fica NULL/pendente até alguém escolher.
+    tipo_veiculo TEXT CHECK (tipo_veiculo IS NULL OR tipo_veiculo IN ('carro','moto','caminhao','outro')),
     -- Débitos do veículo no momento da negociação de compra (22/09/2026,
     -- "campo de preencher - debitos do veilucos como ipva linciamento e
     -- multoas") — 3 campos numéricos separados (não 1 texto livre,

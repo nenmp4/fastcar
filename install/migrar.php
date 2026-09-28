@@ -203,6 +203,12 @@ $migracoes = [
     'oportunidades.debito_licenciamento' => "ALTER TABLE oportunidades ADD COLUMN debito_licenciamento REAL",
     'oportunidades.debito_multas' => "ALTER TABLE oportunidades ADD COLUMN debito_multas REAL",
 
+    // 28/09/2026, "preciso de um filtro para separar se carro moto
+    // caminhão ou outros" (funil de compra) — sempre escolhido
+    // manualmente pelo consultor, sem DEFAULT de propósito (regra #3,
+    // nunca chutado a partir de marca/modelo).
+    'oportunidades.tipo_veiculo' => "ALTER TABLE oportunidades ADD COLUMN tipo_veiculo TEXT",
+
     // 22/09/2026, "está aparecendo mesma oportunidade para outros
     // consultores" / "da para corrigir que duplicou" — trava a fila
     // (equalizarFilaLeads/redistribuirFilaLeads/marcarConsultorFaltou)

@@ -5169,6 +5169,33 @@ segue no schema sem uso novo, não removida sem ganho real),
   query real da listagem "hoje" agora batem exatamente em 5, nenhum dos
   perdidos/fechados/de-ontem contando + `php -l` + `tests/smoke.php`
   limpos.
+  **Filtro por tipo de veículo (carro/moto/caminhão/outro)** (28/09/2026,
+  pedido direto: "preciso de um filtro para separar se carro moto
+  caminhão ou outros") — confirmado com o usuário via 2 perguntas diretas
+  antes de codar: só no funil de compra (`admin/index.php`, não
+  Frota/Vendas) e sempre campo manual escolhido pelo consultor, nunca
+  inferido de marca/modelo (regra #3, nunca chutar). Coluna nova
+  `oportunidades.tipo_veiculo` (nullable, sem `DEFAULT` de propósito —
+  fica pendente até alguém escolher), `<select>` novo no card "Dados do
+  veículo" (`admin/oportunidade.php`), POST valida contra whitelist
+  explícita no servidor (nunca confia no valor cru do formulário — valor
+  forjado vira `NULL`, nunca grava lixo). `?tipo_veiculo=` novo em
+  `admin/index.php` combina com etapa/busca/filtro especial já
+  existentes, entra nas 4 queries de contagem da nav (Todas/etapas/
+  Fechadas/Encerradas) pra não desalinhar os números mostrados —
+  preservado automaticamente na paginação (`renderPaginacao()` já
+  espelha todo `$_GET`) e propagado pro relatório em PDF
+  (`admin/dashboard_relatorio_pdf.php`, mesma lógica de `$where`
+  duplicada de propósito, ganhou o filtro + o rótulo "— tipo: Moto" no
+  título). Ícone por tipo (🚗/🏍️/🚚/🚙) na coluna Veículo da tabela do
+  funil e no cabeçalho da oportunidade. Testado ponta a ponta via HTTP
+  real (sessão primed): filtro isola certo a oportunidade do tipo
+  escolhido, contador "Todas (N)" reflete o filtro, PDF gerado com o
+  título certo e só a linha certa, POST salva o tipo escolhido e rejeita
+  valor forjado (grava `NULL`) + migração testada contra schema sem a
+  coluna (ALTER TABLE idempotente, mesmo padrão já usado em
+  `debito_ipva`/`prazo_quitacao_meses`) + `php -l` + `tests/smoke.php`
+  limpos.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
