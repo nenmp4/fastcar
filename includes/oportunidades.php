@@ -83,6 +83,79 @@ function classificarTipoVeiculo(int $oportunidadeId, string $tipo): void {
 }
 
 /**
+ * 28/09/2026, "sem tipo não identifica quem carro moto e outros sera tem
+ * aguma api que ver modelo de carro e moto" — não existe API confiável
+ * genérica pra isso; a mais próxima que o projeto já tem (PlacaFIPE) só
+ * funciona por PLACA, que a maioria dos leads ainda não tem capturada
+ * nesse ponto do funil. Heurística LOCAL por palavra-chave de marca/
+ * modelo — NUNCA decide sozinha (regra #3): só sugere o botão mais
+ * provável na tela (admin/index.php) pra virar 1 clique de confirmação em
+ * vez de precisar pensar em cada um dos leads sem tipo; sem palavra
+ * reconhecida, retorna null (fica 100% manual, nunca força um chute).
+ * Lista deliberadamente NÃO-exaustiva, cobre os modelos/marcas mais
+ * comuns do mercado financiado brasileiro — ajustar se aparecer padrão
+ * novo recorrente nos leads reais.
+ */
+function sugerirTipoVeiculo(?string $marca, ?string $modelo): ?string {
+    $marca = trim((string)$marca);
+    $modelo = trim((string)$modelo);
+    $texto = mb_strtoupper($marca . ' ' . $modelo);
+    if (trim($texto) === '') {
+        return null;
+    }
+
+    // Marcas que só vendem moto no Brasil — sinal forte sozinho, sem
+    // precisar olhar o modelo (diferente de Honda/Suzuki, que vendem os
+    // dois — pra essas só o modelo decide, ver listas abaixo).
+    $marcasMoto = ['YAMAHA', 'KAWASAKI', 'DUCATI', 'TRIUMPH', 'HARLEY', 'DAFRA', 'SHINERAY', 'HAOJUE', 'KASINSKI', 'TRAXX', 'ROYAL ENFIELD'];
+    // Marcas que só vendem caminhão/van de carga no Brasil.
+    $marcasCaminhao = ['SCANIA', 'IVECO', 'DAF ', 'MAN '];
+
+    $modelosMoto = [
+        'CG', 'TITAN', 'FAN', 'BIZ', 'POP', 'BROS', 'XRE', 'CROSSER', 'TWISTER',
+        'CB', 'CBR', 'HORNET', 'FALCON', 'ADV', 'SH150', 'SH300', 'ELITE', 'LEAD',
+        'NMAX', 'FAZER', 'FACTOR', 'LANDER', 'TENERE', 'XTZ', 'YBR', 'MT-', 'FZ',
+        'R15', 'R3', 'BURGMAN', 'INTRUDER', 'GSX', 'GIXXER', 'BANDIT', 'KATANA',
+        'NINJA', 'VERSYS', 'COMET', 'METEOR', 'PULSAR', 'PCX', 'TRICITY',
+    ];
+    $modelosCaminhao = ['SPRINTER', 'DAILY', ' HR ', 'BONGO', 'ACCELO', 'ATEGO', 'ACTROS', 'CONSTELLATION', 'CARGO', 'WORKER', 'DELIVERY', 'AXOR', 'VUC'];
+    // Só usado como sinal POSITIVO de "carro" — nunca o fallback padrão de
+    // tudo que não bateu moto/caminhão (regra #3: sem sinal nenhum, fica
+    // sem sugestão, nunca chuta).
+    $modelosCarro = [
+        'ONIX', 'COROLLA', 'CIVIC', 'GOL', 'FIESTA', ' KA ', 'COMPASS', 'HB20',
+        'UNO', 'PALIO', 'VOYAGE', 'STRADA', 'SAVEIRO', 'HILUX', 'RANGER', 'S10',
+        'TORO', 'RENEGADE', 'DUSTER', 'KICKS', 'CRETA', 'TUCSON', 'SPORTAGE',
+        'CR-V', 'CRV', 'HR-V', 'HRV', 'FIT', 'CITY', 'VERSA', 'SENTRA', 'MARCH',
+        'LOGAN', 'SANDERO', 'ARGO', 'CRONOS', 'MOBI', ' UP ', 'POLO', 'VIRTUS',
+        'JETTA', 'T-CROSS', 'NIVUS', 'TIGUAN', 'AMAROK', 'SPIN', 'PRISMA',
+        'COBALT', 'TRACKER', 'EQUINOX', 'CAPTIVA', 'MERIVA', 'CORSA', 'CELTA',
+        'ASTRA', 'VECTRA', 'ECOSPORT', 'EDGE', 'FUSION', 'FOCUS', 'MONDEO',
+        'AIRCROSS', 'PICASSO', 'PARTNER', ' C3', ' C4', '208', '2008', '3008',
+        '408', '308', 'FLUENCE', 'CAPTUR', 'KWID', 'MEGANE', 'CLIO', 'ACCORD',
+        'YARIS', 'ETIOS', 'SW4', 'X1', 'X3', 'SERIE 3', 'A3', 'A4', 'Q3', 'Q5',
+        'GOLF', 'PASSAT',
+    ];
+
+    foreach ($marcasMoto as $m) { if (str_contains($texto, $m)) return 'moto'; }
+    foreach ($marcasCaminhao as $m) { if (str_contains($texto, $m)) return 'caminhao'; }
+    foreach ($modelosMoto as $m) { if (str_contains($texto, $m)) return 'moto'; }
+    foreach ($modelosCaminhao as $m) { if (str_contains($texto, $m)) return 'caminhao'; }
+    foreach ($modelosCarro as $m) { if (str_contains($texto, $m)) return 'carro'; }
+
+    // Modelo sozinho é só um número de cilindrada típica de moto brasileira
+    // (CG160/Fan160/Titan160/NMax160 etc, capturado pela qualificação por
+    // IA sem marca nenhuma junto — caso real visto em produção, "160
+    // 2024"). Sinal mais fraco que os de cima, mas nunca usado como nome
+    // de carro no Brasil, então ainda vale sugerir.
+    if (preg_match('/^(100|110|125|150|160|190|200|250|300)$/', mb_strtoupper($modelo))) {
+        return 'moto';
+    }
+
+    return null;
+}
+
+/**
  * Cria (ou reaproveita) o cliente por telefone e já abre a oportunidade na
  * etapa 'whatsapp' — regra #2: "salvar desde o primeiro contato", mesmo
  * antes de qualquer qualificação.

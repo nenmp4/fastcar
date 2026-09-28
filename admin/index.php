@@ -624,15 +624,26 @@ if ($filtroEspecialLabel !== ''): ?>
             <td>
                 <?= ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'][$op['tipo_veiculo'] ?? ''] ?? '' ?> <?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?>
                 <?php if (empty($op['tipo_veiculo']) && $perfil !== 'supervisor'): ?>
+                    <?php
+                        // 28/09/2026, "sera tem aguma api que ver modelo de
+                        // carro e moto" — sem API confiável pra isso; sugestão
+                        // LOCAL por palavra-chave (nunca aplica sozinha, regra
+                        // #3) destaca qual botão clicar em vez do consultor
+                        // ter que adivinhar modelo por modelo.
+                        $sugestao = sugerirTipoVeiculo($op['veiculo_marca'] ?? '', $op['veiculo_modelo'] ?? '');
+                    ?>
+                    <?php if ($sugestao): ?>
+                        <br><small style="color:var(--azul)">🔮 sugestão: <?= ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão'][$sugestao] ?></small>
+                    <?php endif; ?>
                     <br>
-                    <?php // 28/09/2026, "separa eses leads" — classificar rápido sem abrir a oportunidade, pra dar conta dos leads antigos sem tipo ainda. ?>
+                    <?php // "separa eses leads" — classificar rápido sem abrir a oportunidade, pra dar conta dos leads antigos sem tipo ainda. ?>
                     <?php foreach (['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'] as $tv => $icone): ?>
                     <form method="post" style="display:inline">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="classificar_tipo_veiculo">
                         <input type="hidden" name="id" value="<?= (int)$op['id'] ?>">
                         <input type="hidden" name="tipo" value="<?= $tv ?>">
-                        <button type="submit" class="btn-texto" style="padding:8px;font-size:18px;min-width:40px;min-height:40px" title="Marcar tipo: <?= $tv ?>"><?= $icone ?></button>
+                        <button type="submit" class="btn-texto" style="padding:8px;font-size:18px;min-width:40px;min-height:40px<?= $sugestao === $tv ? ';border:2px solid var(--azul);border-radius:8px;background:var(--azul-claro)' : '' ?>" title="Marcar tipo: <?= $tv ?><?= $sugestao === $tv ? ' (sugerido)' : '' ?>"><?= $icone ?></button>
                     </form>
                     <?php endforeach; ?>
                 <?php endif; ?>
