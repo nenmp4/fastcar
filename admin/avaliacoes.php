@@ -38,19 +38,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
     } elseif (($_POST['acao'] ?? '') === 'criar_vistoria_avaliador' && $souAvaliador) {
         $tipoNova = ($_POST['tipo'] ?? '') === 'venda' ? 'venda' : 'compra';
-        $oportunidadeIdNova = (int)($_POST['oportunidade_id'] ?? 0);
-        $vendaIdNova = $tipoNova === 'venda' ? (int)($_POST['venda_id'] ?? 0) : null;
         $tipoVeiculoNova = in_array($_POST['tipo_veiculo'] ?? '', ['carro', 'moto'], true) ? $_POST['tipo_veiculo'] : 'carro';
 
-        if ($oportunidadeIdNova <= 0 || ($tipoNova === 'venda' && !$vendaIdNova)) {
-            $erro = 'Selecione um veículo na busca antes de criar a vistoria.';
-        } else {
+        // 28/09/2026, "se não tiver veículo, cadastrar novo veículo, usa a
+        // api que puxa pela placa dados fipe, não zapcar" — mesmo caminho
+        // já usado em admin/vendas.php ("Vender na Promissória"), só que a
+        // busca de marca/modelo/ano é via placafipeConsultarPorPlaca()
+        // (admin/fipe_ajax.php) em vez de leitura de CRLV por IA — não
+        // gasta nenhuma consulta paga da ZapCar, só o dado gratuito/já
+        // cacheado da FIPE. Só faz sentido pra COMPRA (vistoria de venda
+        // exige um comprador+negociação já existente, não um veículo novo).
+        if (!empty($_POST['veiculo_novo']) && $tipoNova === 'compra') {
             try {
-                $novaId = criarAvaliacao($oportunidadeIdNova, $tipoNova, $vendaIdNova, $meuId, $meuId, $tipoVeiculoNova);
+                $novoVeiculo = criarVeiculoManualFrota(
+                    (string)($_POST['vendedor_nome'] ?? ''),
+                    (string)($_POST['vendedor_telefone'] ?? ''),
+                    (string)($_POST['veiculo_marca'] ?? ''),
+                    (string)($_POST['veiculo_modelo'] ?? ''),
+                    (string)($_POST['veiculo_ano'] ?? ''),
+                    (string)($_POST['veiculo_placa'] ?? ''),
+                    (string)($_POST['veiculo_chassi'] ?? ''),
+                    (string)($_POST['veiculo_renavam'] ?? ''),
+                    valorMonetario($_POST['veiculo_valor_final'] ?? null),
+                    $meuId
+                );
+                $novaId = criarAvaliacao((int)$novoVeiculo['oportunidade_id'], 'compra', null, $meuId, $meuId, $tipoVeiculoNova);
                 header('Location: /admin/avaliacao.php?id=' . $novaId);
                 exit;
             } catch (Throwable $e) {
-                $erro = 'Erro ao criar a vistoria: ' . $e->getMessage();
+                $erro = 'Erro ao cadastrar o veículo/vistoria: ' . $e->getMessage();
+            }
+        } else {
+            $oportunidadeIdNova = (int)($_POST['oportunidade_id'] ?? 0);
+            $vendaIdNova = $tipoNova === 'venda' ? (int)($_POST['venda_id'] ?? 0) : null;
+
+            if ($oportunidadeIdNova <= 0 || ($tipoNova === 'venda' && !$vendaIdNova)) {
+                $erro = 'Selecione um veículo na busca antes de criar a vistoria.';
+            } else {
+                try {
+                    $novaId = criarAvaliacao($oportunidadeIdNova, $tipoNova, $vendaIdNova, $meuId, $meuId, $tipoVeiculoNova);
+                    header('Location: /admin/avaliacao.php?id=' . $novaId);
+                    exit;
+                } catch (Throwable $e) {
+                    $erro = 'Erro ao criar a vistoria: ' . $e->getMessage();
+                }
             }
         }
     }
@@ -124,17 +155,81 @@ function avStatusBadge(string $status): string {
     <input type="hidden" name="venda_id" id="av-venda-id" value="">
 
     <label>Tipo de vistoria</label>
-    <select name="tipo" id="av-tipo-busca" onchange="avLimparSelecao(); avBuscar();">
+    <select name="tipo" id="av-tipo-busca" onchange="avLimparSelecao(); avBuscar(); avAtualizarVisibilidadeNovo();">
         <option value="compra">🚗 Compra (vendedor entregando o veículo)</option>
         <option value="venda">🛒 Venda (comprador recebendo o veículo)</option>
     </select>
 
+    <div id="av-busca-bloco">
     <label>Buscar veículo/pessoa</label>
     <input type="text" id="av-termo-busca" placeholder="Nome, telefone, placa, marca ou modelo..." autocomplete="off" oninput="avBuscar()">
 
     <div id="av-resultados" style="margin-top:8px;max-height:220px;overflow-y:auto"></div>
 
     <div id="av-selecionado" class="alerta-sucesso" style="display:none;margin-top:10px"></div>
+    </div>
+
+    <div id="av-bloco-novo-toggle" style="margin-top:12px">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400">
+        <input type="checkbox" id="av-veiculo-novo" name="veiculo_novo" value="1" onchange="avAlternarVeiculoNovo()">
+        Veículo não está na lista? Cadastrar um novo agora
+      </label>
+    </div>
+
+    <div id="av-bloco-novo" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--borda);border-radius:8px;background:var(--fundo)">
+        <p><small>O vendedor está com você agora e o veículo ainda não foi cadastrado por nenhum consultor? Registre aqui mesmo — a vistoria já nasce vinculada a ele.
+        <?= getConfig('placafipe_token') ? 'Buscar por placa preenche marca/modelo/ano sozinho (dado FIPE, gratuito), mas você pode corrigir antes de salvar.' : '' ?></small></p>
+
+        <label>Nome do vendedor</label>
+        <input type="text" id="av-vendedor-nome" name="vendedor_nome">
+        <label>Telefone do vendedor (com DDD)</label>
+        <input type="tel" id="av-vendedor-telefone" name="vendedor_telefone" placeholder="Ex: 31999998888">
+
+        <?php if (getConfig('placafipe_token')): ?>
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px">
+            <div style="flex:1">
+                <label>Placa</label>
+                <input type="text" id="av-veiculo-placa" name="veiculo_placa" style="width:100%;text-transform:uppercase" maxlength="8" placeholder="ABC1D23">
+            </div>
+            <button type="button" id="av-buscar-placa-btn" style="margin:0;padding:8px 14px;font-size:13px;white-space:nowrap">🔎 Buscar por placa (FIPE)</button>
+        </div>
+        <p id="av-fipe-resultado" style="font-size:12.5px;color:var(--texto-fraco);margin-top:4px"></p>
+        <?php else: ?>
+        <label>Placa</label>
+        <input type="text" id="av-veiculo-placa" name="veiculo_placa" style="text-transform:uppercase" maxlength="8" placeholder="ABC1D23">
+        <?php endif; ?>
+
+        <div class="grid-2">
+            <div>
+                <label>Marca</label>
+                <input type="text" id="av-veiculo-marca" name="veiculo_marca">
+            </div>
+            <div>
+                <label>Modelo</label>
+                <input type="text" id="av-veiculo-modelo" name="veiculo_modelo">
+            </div>
+        </div>
+        <div class="grid-2">
+            <div>
+                <label>Ano</label>
+                <input type="text" id="av-veiculo-ano" name="veiculo_ano">
+            </div>
+            <div>
+                <label>Valor pago (R$, se já souber)</label>
+                <input type="number" step="0.01" inputmode="decimal" name="veiculo_valor_final">
+            </div>
+        </div>
+        <div class="grid-2">
+            <div>
+                <label>Chassi</label>
+                <input type="text" name="veiculo_chassi">
+            </div>
+            <div>
+                <label>Renavam</label>
+                <input type="text" name="veiculo_renavam">
+            </div>
+        </div>
+    </div>
 
     <label>Tipo de veículo</label>
     <select name="tipo_veiculo" required>
@@ -196,6 +291,84 @@ function avStatusBadge(string $status): string {
         selecionadoEl.textContent = '✅ Selecionado: ' + c.label;
         btnCriar.disabled = false;
     };
+
+    // "Veículo não está na lista? Cadastrar um novo agora" — 28/09/2026,
+    // só faz sentido pra COMPRA (vistoria de venda precisa de um
+    // comprador/negociação já existente, não de um veículo novo).
+    var checkboxNovo = document.getElementById('av-veiculo-novo');
+    var blocoNovo = document.getElementById('av-bloco-novo');
+    var blocoNovoToggle = document.getElementById('av-bloco-novo-toggle');
+    var buscaBloco = document.getElementById('av-busca-bloco');
+    var campoVendedorNome = document.getElementById('av-vendedor-nome');
+    var campoVendedorTelefone = document.getElementById('av-vendedor-telefone');
+
+    window.avAtualizarVisibilidadeNovo = function () {
+        if (tipoEl.value === 'venda') {
+            blocoNovoToggle.style.display = 'none';
+            if (checkboxNovo.checked) { checkboxNovo.checked = false; avAlternarVeiculoNovo(); }
+        } else {
+            blocoNovoToggle.style.display = 'block';
+        }
+    };
+
+    window.avAlternarVeiculoNovo = function () {
+        var novo = checkboxNovo.checked;
+        if (novo) {
+            avLimparSelecao();
+            buscaBloco.style.display = 'none';
+            blocoNovo.style.display = 'block';
+            btnCriar.disabled = false;
+        } else {
+            buscaBloco.style.display = 'block';
+            blocoNovo.style.display = 'none';
+            btnCriar.disabled = true;
+        }
+        campoVendedorNome.required = novo;
+        campoVendedorTelefone.required = novo;
+    };
+
+    // Busca dados FIPE pela placa (includes/fipe.php::placafipeConsultarPorPlaca(),
+    // mesmo endpoint já usado em admin/oportunidade.php) — nunca a ZapCar
+    // (que é consulta paga de restrição/débito, sem relação com isso).
+    var btnBuscarPlaca = document.getElementById('av-buscar-placa-btn');
+    if (btnBuscarPlaca) {
+        var campoPlaca = document.getElementById('av-veiculo-placa');
+        var fipeResultadoEl = document.getElementById('av-fipe-resultado');
+        var campoMarca = document.getElementById('av-veiculo-marca');
+        var campoModelo = document.getElementById('av-veiculo-modelo');
+        var campoAno = document.getElementById('av-veiculo-ano');
+
+        btnBuscarPlaca.addEventListener('click', function () {
+            var placa = campoPlaca.value.trim();
+            if (!placa) { fipeResultadoEl.textContent = '⚠️ Digite a placa primeiro.'; return; }
+            btnBuscarPlaca.disabled = true;
+            fipeResultadoEl.textContent = 'Buscando…';
+            fetch('/admin/fipe_ajax.php?acao=buscar_placa&placa=' + encodeURIComponent(placa))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    btnBuscarPlaca.disabled = false;
+                    if (!data.ok) {
+                        fipeResultadoEl.textContent = '⚠️ ' + (data.msg || 'Não consegui buscar essa placa.');
+                        return;
+                    }
+                    var v = data.veiculo;
+                    var preenchido = false;
+                    // Fill-if-empty — nunca sobrescreve o que já foi digitado.
+                    if (v) {
+                        if (!campoMarca.value && v.marca) { campoMarca.value = v.marca; preenchido = true; }
+                        if (!campoModelo.value && v.modelo) { campoModelo.value = v.modelo; preenchido = true; }
+                        if (!campoAno.value && v.ano_modelo) { campoAno.value = v.ano_modelo; preenchido = true; }
+                    }
+                    fipeResultadoEl.textContent = preenchido
+                        ? '✅ Marca/modelo/ano preenchidos — confira antes de salvar.'
+                        : (v ? 'Veículo encontrado, mas os campos já estavam preenchidos.' : 'Nenhum dado encontrado pra essa placa.');
+                })
+                .catch(function () {
+                    btnBuscarPlaca.disabled = false;
+                    fipeResultadoEl.textContent = '⚠️ Erro ao buscar — tente de novo.';
+                });
+        });
+    }
 })();
 </script>
 <?php endif; ?>

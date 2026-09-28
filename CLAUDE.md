@@ -2456,6 +2456,54 @@ segue no schema sem uso novo, não removida sem ganho real),
   que o fluxo antigo de atribuição por consultor/vendedor continua
   funcionando sem regressão + `php -l` + `tests/smoke.php` limpos. Sem
   migração de schema.
+  **Cadastrar veículo novo direto no modal, com busca de dados pela placa
+  (PlacaFIPE, não ZapCar)** (28/09/2026, "No modal de nova avaliação se
+  não tiver veículo castrar novo veículo vamos usar aquela api que puxa
+  pela placa dados fipe nele não zapcar") — até então o modal só sabia
+  vincular a vistoria a um veículo/negócio JÁ cadastrado no sistema; sem
+  nenhum consultor/vendedor tendo registrado o veículo antes, o avaliador
+  ficava travado de novo, mesmo problema que o bullet acima resolveu só
+  parcialmente. Checkbox "Veículo não está na lista? Cadastrar um novo
+  agora" (só aparece/faz sentido com `tipo=compra` — some sozinho via JS
+  se o avaliador trocar pra `venda`, que sempre exige comprador/negociação
+  já existente) abre um sub-formulário — nome/telefone do vendedor,
+  placa+botão "🔎 Buscar por placa (FIPE)", marca/modelo/ano, valor pago
+  (opcional), chassi/renavam — e no submit chama a MESMA
+  `criarVeiculoManualFrota()` já usada em `admin/veiculos.php`/
+  `admin/vendas.php` (mesmo padrão: entra direto em `etapa='fechado'`,
+  nunca passa por `mudarEtapa()`, grava `oportunidade_historico` manual)
+  antes de `criarAvaliacao()` na oportunidade recém-criada. **Busca por
+  placa usa `placafipeConsultarPorPlaca()`/`admin/fipe_ajax.php`
+  (`?acao=buscar_placa`, endpoint já existente, reaproveitado sem nenhuma
+  mudança — mesmo usado no widget de FIPE de `admin/oportunidade.php`) —
+  de propósito NUNCA a ZapCar** (consulta paga de restrição/débito, sem
+  relação nenhuma com essa necessidade de só preencher marca/modelo/ano
+  de um veículo que ainda nem existe no sistema); preenche
+  **fill-if-empty** (nunca sobrescreve o que já foi digitado à mão),
+  mesma disciplina de sempre. Botão/seção de busca só aparece com
+  `config.placafipe_token` configurado — sem token, o card mostra só os
+  campos de texto pra preencher manualmente, nunca trava o cadastro.
+  Responsável (`responsavel_id`/`fechado_por`) da oportunidade cai
+  sozinho no próprio avaliador (mesmo comportamento padrão de
+  `criarVeiculoManualFrota()` sem `$responsavelId` explícito, igual ao
+  que `admin/vendas.php` já faz no caminho equivalente) — é ele quem está
+  registrando o veículo em campo, sem consultor por trás. Guard do
+  servidor (`$souAvaliador`, mesmo do bullet acima) cobre esse caminho
+  novo também — nenhuma checagem extra precisou, o branch inteiro já
+  estava dentro do `if` protegido. Testado: função isolada (sem marca/
+  modelo lança exceção; cadastro válido grava `etapa='fechado'`/
+  `valor_final`/marca/modelo/`responsavel_id`/`fechado_por` certos +
+  histórico; vistoria criada em cima do veículo novo já nasce
+  autoatribuída/`em_andamento`; 2º veículo do mesmo telefone reaproveita
+  o cliente mas cria oportunidade nova) + HTTP ponta a ponta real (sessão
+  primed por perfil): POST do avaliador com `veiculo_novo=1` cria
+  oportunidade+vistoria e redireciona certo, `valorMonetario()` confirma
+  parseando "35.000,00" pra `35000.0`; POST forjado do mesmo jeito por um
+  `consultor` não cria NADA no banco (guard funcionando, não só a UI);
+  `tipo=venda` com `veiculo_novo=1` também não cria nada — cai no
+  caminho normal, que exige busca/seleção — confirma que o atalho é
+  mesmo exclusivo de compra + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
