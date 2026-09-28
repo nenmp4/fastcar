@@ -168,6 +168,16 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
+// 28/09/2026, "queria que ficasse separado uma aba de carro e outra de
+// moto" — captura o WHERE/params ANTES de aplicar o filtro de tipo, pra
+// contar quantas oportunidades de CADA tipo existem dentro do mesmo
+// escopo (etapa/dono/busca) já selecionado — usado pra montar a 2ª nav de
+// abas (tipo de veículo) mais abaixo, com contador por aba tipo
+// "🏍️ Moto (12)". $where/$params seguem sendo usados normalmente daqui
+// pra baixo com o filtro de tipo aplicado, pra listagem/paginação de
+// verdade.
+$whereBase = $where;
+$paramsBase = $params;
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $where .= " AND o.tipo_veiculo IS NULL";
 } elseif ($tipoVeiculoFiltro !== '') {
@@ -178,6 +188,20 @@ if ($tipoVeiculoFiltro === 'sem_tipo') {
 $stmtTotalFiltrado = $db->prepare("SELECT COUNT(*) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
 $stmtTotalFiltrado->execute($params);
 $totalFiltrado = (int)$stmtTotalFiltrado->fetchColumn();
+
+// Contagem por tipo de veículo (nav de abas Carro/Moto/Caminhão/Outro/Sem
+// tipo, mais abaixo) — usa $whereBase (etapa/dono/busca do escopo atual,
+// SEM o filtro de tipo) pra sempre mostrar o total de CADA tipo dentro do
+// que já está selecionado, não só do tipo escolhido no momento.
+// COALESCE(...,'_sem_tipo') evita chave NULL no array_column (PHP não usa
+// NULL como chave de array).
+$stmtTipoContagem = $db->prepare("
+    SELECT COALESCE(o.tipo_veiculo, '_sem_tipo') AS tipo, COUNT(*) AS total
+    FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+    {$whereBase} GROUP BY tipo
+");
+$stmtTipoContagem->execute($paramsBase);
+$contagemPorTipo = array_column($stmtTipoContagem->fetchAll(), 'total', 'tipo');
 
 // 18/09/2026, pedido direto: "classifica os ledas quentes bem destacados
 // prioriza em com os primeiros" — lead quente (dor financeira real, urgência
@@ -375,6 +399,35 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     </a>
 </nav>
 
+<?php
+    // 28/09/2026, "queria que ficasse separado uma aba de carro e outra de
+    // moto" — 2ª nav de abas, mesmo padrão visual/scroll horizontal da nav
+    // de etapa acima, só que pro tipo de veículo. Trocar de aba de tipo
+    // NUNCA reseta a etapa/busca já selecionada, e vice-versa — as duas
+    // dimensões combinam livremente (ex: "Fechadas" + "Moto" mostra só
+    // moto já fechada). $qsSemTipo carrega etapa/filtro/busca, sem o
+    // próprio tipo_veiculo (cada link da nav já define o seu).
+    $qsSemTipoPartes = [];
+    if ($filtroEspecial !== '') $qsSemTipoPartes[] = 'filtro=' . urlencode($filtroEspecial);
+    elseif ($etapaFiltro !== '') $qsSemTipoPartes[] = 'etapa=' . urlencode($etapaFiltro);
+    if ($busca !== '') $qsSemTipoPartes[] = 'q=' . urlencode($busca);
+    $qsSemTipo = implode('&', $qsSemTipoPartes);
+    $tiposVeiculoRotulos = ['carro' => '🚗 Carro', 'moto' => '🏍️ Moto', 'caminhao' => '🚚 Caminhão', 'outro' => '🚙 Outro'];
+?>
+<nav class="etapas-nav">
+    <a href="/admin/index.php<?= $qsSemTipo !== '' ? '?' . $qsSemTipo : '' ?>" class="<?= $tipoVeiculoFiltro === '' ? 'ativo' : '' ?>">
+        Todos os tipos (<?= (int)array_sum($contagemPorTipo) ?>)
+    </a>
+    <?php foreach ($tiposVeiculoRotulos as $tv => $rotulo): ?>
+        <a href="/admin/index.php?tipo_veiculo=<?= $tv ?><?= $qsSemTipo !== '' ? '&' . $qsSemTipo : '' ?>" class="<?= $tipoVeiculoFiltro === $tv ? 'ativo' : '' ?>">
+            <?= $rotulo ?> (<?= (int)($contagemPorTipo[$tv] ?? 0) ?>)
+        </a>
+    <?php endforeach; ?>
+    <a href="/admin/index.php?tipo_veiculo=sem_tipo<?= $qsSemTipo !== '' ? '&' . $qsSemTipo : '' ?>" class="<?= $tipoVeiculoFiltro === 'sem_tipo' ? 'ativo' : '' ?>">
+        ❔ Sem tipo (<?= (int)($contagemPorTipo['_sem_tipo'] ?? 0) ?>)
+    </a>
+</nav>
+
 <main>
 
 <?php
@@ -490,19 +543,23 @@ if ($filtroEspecialLabel !== ''): ?>
         <?php elseif ($etapaFiltro !== ''): ?>
             <input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>">
         <?php endif; ?>
+        <?php // 28/09/2026, "queria que ficasse separado uma aba de carro e outra
+              // de moto" — o dropdown virou a nav de abas acima; aqui fica só
+              // um hidden pra buscar dentro da aba de tipo já selecionada
+              // sem perdê-la (senão submeter a busca resetaria pra "todos
+              // os tipos" sozinho). ?>
+        <?php if ($tipoVeiculoFiltro !== ''): ?>
+            <input type="hidden" name="tipo_veiculo" value="<?= e($tipoVeiculoFiltro) ?>">
+        <?php endif; ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por nome, telefone, marca, modelo ou placa...">
-        <select name="tipo_veiculo">
-            <option value="">— todos os tipos —</option>
-            <option value="carro" <?= $tipoVeiculoFiltro === 'carro' ? 'selected' : '' ?>>🚗 Carro</option>
-            <option value="moto" <?= $tipoVeiculoFiltro === 'moto' ? 'selected' : '' ?>>🏍️ Moto</option>
-            <option value="caminhao" <?= $tipoVeiculoFiltro === 'caminhao' ? 'selected' : '' ?>>🚚 Caminhão</option>
-            <option value="outro" <?= $tipoVeiculoFiltro === 'outro' ? 'selected' : '' ?>>🚙 Outro</option>
-            <option value="sem_tipo" <?= $tipoVeiculoFiltro === 'sem_tipo' ? 'selected' : '' ?>>❔ Sem tipo definido</option>
-        </select>
         <button type="submit">Buscar</button>
-        <?php if ($busca !== '' || $tipoVeiculoFiltro !== ''):
-            $voltarQs = $filtroEspecial !== '' ? '?filtro=' . urlencode($filtroEspecial) : ($etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '');
-        ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar</a><?php endif; ?>
+        <?php if ($busca !== ''):
+            $voltarQsPartes = [];
+            if ($filtroEspecial !== '') $voltarQsPartes[] = 'filtro=' . urlencode($filtroEspecial);
+            elseif ($etapaFiltro !== '') $voltarQsPartes[] = 'etapa=' . urlencode($etapaFiltro);
+            if ($tipoVeiculoFiltro !== '') $voltarQsPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
+            $voltarQs = $voltarQsPartes ? '?' . implode('&', $voltarQsPartes) : '';
+        ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar busca</a><?php endif; ?>
     </form>
     <?php
         // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
