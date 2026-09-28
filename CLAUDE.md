@@ -2578,6 +2578,61 @@ segue no schema sem uso novo, não removida sem ganho real),
   bullet acima — fluxo visual completo (clicar, ver o card de histórico
   aparecer) não testado com navegador de verdade (Playwright indisponível
   neste ambiente); validar assim que possível.
+  **CRLV como fallback da FIPE + vendedor/telefone opcionais pra veículo
+  recuperado** (28/09/2026, "Permita subir documento do carro para ler
+  informações caso api fipe não funcione — tem Campos não tem necessidade
+  carro de entrada cadastrar vendedor e telefone esse carro recuperado
+  pela fastcar — Pode ser opcional") — 2 pedaços no mesmo card
+  "cadastrar veículo novo":
+  (1) **Upload de CRLV** — botão "📄 Ler CRLV com IA" reaproveita o MESMO
+  `admin/veiculo_crlv_ajax.php` já usado em `admin/veiculos.php`/
+  `admin/vendas.php` (mesmo prompt de extração, mesma autochecagem de
+  tipo de documento — nunca aplica dado de um documento que não parece
+  ser CRLV) — nunca uma cópia nova. Preenche fill-if-empty
+  marca/modelo/ano/placa/chassi/renavam (mais campos que a busca por
+  placa da FIPE, que só devolve marca/modelo/ano) — ganhos de `id`
+  próprios nos campos de chassi/renavam do modal, que antes só tinham
+  `name`, sem jeito de o JS alcançar. Guard do endpoint relaxado de novo
+  (era `requireAcessoVendas()`, mesma técnica progressiva já usada
+  quando o mesmo endpoint passou a servir `admin/vendas.php`) pra também
+  aceitar `podeAcessarAvaliacoes()` — só leitura, nunca escreve nada, sem
+  dado sensível extra exposto. **Bug real achado no próprio teste HTTP,
+  antes do commit**: relaxar o guard DENTRO do arquivo não bastava — o
+  allowlist CENTRAL do perfil `avaliador` em `admin/_bootstrap.php`
+  (que roda ANTES de qualquer página específica) ainda não tinha
+  `veiculo_crlv_ajax.php` na lista, então o avaliador continuava
+  recebendo 302 (redirect pro próprio `avaliacoes.php`) mesmo com o
+  guard interno já corrigido — a mesma classe de bug já documentada uma
+  vez no módulo de vistoria ("silo do perfil vendedor não tinha as
+  páginas novas na allowlist"). Corrigido adicionando `veiculo_crlv_ajax.php`
+  à allowlist do `avaliador` também.
+  (2) **Vendedor/telefone viram opcionais** — confirmado "pode ser
+  opcional": um veículo que a Fastcar RECUPEROU (retomada, devolução sem
+  contato ativo, etc) pode não ter ninguém pra cadastrar como vendedor.
+  Removido o `required` dinâmico que o JS aplicava nesses 2 campos
+  (`avAlternarVeiculoNovo()`, campo por campo, existia desde a 1ª versão
+  do modal). Servidor: telefone vazio → nova
+  `gerarTelefonePlaceholderVeiculoRecuperado()` (`includes/oportunidades.php`,
+  ao lado de `criarVeiculoManualFrota()`) gera um telefone único com DDD
+  `00` (nunca existe de verdade no Brasil — placeholder reconhecível por
+  quem olhar o cadastro depois, nunca um número que PARECE real, regra
+  #3) + 9 dígitos aleatórios, com retry contra `clientes.telefone`
+  `UNIQUE` (nunca colide com um placeholder anterior); nome vazio → texto
+  padrão "Veículo recuperado pela Fastcar (sem vendedor identificado)".
+  Resto do fluxo (`criarVeiculoManualFrota()`, `criarAvaliacao()`) segue
+  idêntico, sem nenhuma mudança de comportamento pros 2 campos quando
+  preenchidos de verdade. Testado: função isolada (8 assertions —
+  placeholder sempre 11 dígitos com DDD `00`, normaliza pra 13 dígitos
+  certos; 20 gerações seguidas nunca colidem com um telefone já usado;
+  fluxo completo sem vendedor real funciona, nome/telefone do cliente
+  batem com o esperado; vistoria criada normalmente em cima do veículo
+  recuperado) + HTTP ponta a ponta real (POST sem `vendedor_nome`/
+  `vendedor_telefone` cria oportunidade+cliente com o nome/telefone
+  placeholder certos e redireciona normal; `admin/veiculo_crlv_ajax.php`
+  confirmado devolvendo 200 pro avaliador — antes do fix do allowlist
+  central dava 302 — chegando até a checagem de chave Gemini, não mais
+  barrado por permissão) + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

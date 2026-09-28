@@ -183,6 +183,31 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
  * pra manter a mesma disciplina de auditoria (regra #6) mesmo pulando
  * `mudarEtapa()`.
  */
+
+/**
+ * Gera um telefone PLACEHOLDER único pra `criarVeiculoManualFrota()`
+ * quando não existe vendedor de verdade pra registrar — 28/09/2026,
+ * "tem campos que não tem necessidade... carro recuperado pela fastcar",
+ * confirmado "pode ser opcional": um veículo que a Fastcar RECUPEROU
+ * (retomada, devolução sem contato ativo, etc) pode não ter ninguém pra
+ * cadastrar como vendedor/telefone, mas `clientes.telefone` é `UNIQUE` e
+ * `criarVeiculoManualFrota()` sempre exige um valor válido — inventar um
+ * número que PARECE real seria dado falso (regra #3); em vez disso usa o
+ * DDD `00` (nunca existe de verdade no Brasil, reconhecidamente
+ * placeholder pra quem olhar o cadastro depois) + 9 dígitos aleatórios,
+ * com retry contra a UNIQUE pra nunca colidir com um placeholder anterior.
+ */
+function gerarTelefonePlaceholderVeiculoRecuperado(): string {
+    $db = getDB();
+    for ($tentativa = 0; $tentativa < 5; $tentativa++) {
+        $candidato = '00' . str_pad((string)random_int(0, 999999999), 9, '0', STR_PAD_LEFT);
+        $stmt = $db->prepare('SELECT 1 FROM clientes WHERE telefone = ?');
+        $stmt->execute([normalizarTelefone($candidato)]);
+        if (!$stmt->fetch()) return $candidato;
+    }
+    throw new RuntimeException('Não consegui gerar um telefone placeholder único — tente de novo.');
+}
+
 function criarVeiculoManualFrota(
     string $vendedorNome,
     string $vendedorTelefone,

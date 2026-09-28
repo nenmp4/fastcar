@@ -15,13 +15,19 @@
  * Guard relaxado de requireSuperAdmin() pra requireAcessoVendas() em
  * 26/09/2026 — passou a ser usado também pelo modal "Vender na
  * Promissória" (admin/vendas.php), acessível a vendedor/supervisor, não
- * só super_admin (admin/veiculos.php). Segue só leitura, nunca escreve
- * nada — não há dado sensível extra exposto além do que o próprio
- * usuário está enviando no upload.
+ * só super_admin (admin/veiculos.php). Relaxado de novo em 28/09/2026
+ * ("permita subir documento do carro pra ler informações caso api fipe
+ * não funcione") pra também aceitar o módulo de avaliação/vistoria
+ * (admin/avaliacoes.php, perfil `avaliador`) — só leitura, nunca escreve
+ * nada, sem dado sensível extra exposto além do próprio upload do
+ * usuário, então acumular acesso de módulo em módulo é seguro.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-requireAcessoVendas();
+if (!podeAcessarVendas() && !podeAcessarAvaliacoes()) {
+    http_response_code(403);
+    exit('Acesso restrito.');
+}
 
 header('Content-Type: application/json');
 

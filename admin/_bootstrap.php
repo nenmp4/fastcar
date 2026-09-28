@@ -97,7 +97,11 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
 // técnica de allowlist central dos guards de `vendedor`/`financeiro` acima.
 if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
     $paginaAtualAval = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasAval = ['avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php', 'meu_perfil.php', 'logout.php'];
+    $permitidasAval = ['avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php', 'meu_perfil.php', 'logout.php',
+        // 28/09/2026 — leitura de CRLV por IA no modal "Nova vistoria"
+        // (admin/avaliacoes.php, "cadastrar veículo novo"/CRLV como
+        // fallback da busca por placa).
+        'veiculo_crlv_ajax.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

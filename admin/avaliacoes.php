@@ -73,9 +73,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // exige um comprador+negociação já existente, não um veículo novo).
         if (!empty($_POST['veiculo_novo']) && $tipoNova === 'compra') {
             try {
+                // "tem campos que não tem necessidade... carro recuperado
+                // pela fastcar", "pode ser opcional" — vendedor/telefone
+                // viram opcionais: sem telefone informado, gera um
+                // placeholder único (regra #1, clientes.telefone continua
+                // UNIQUE) e um nome padrão explicando a situação, nunca
+                // fingindo um contato real que não existe (regra #3).
+                $vendedorTelefonePost = trim((string)($_POST['vendedor_telefone'] ?? ''));
+                $vendedorNomePost = trim((string)($_POST['vendedor_nome'] ?? ''));
+                if ($vendedorTelefonePost === '') {
+                    $vendedorTelefonePost = gerarTelefonePlaceholderVeiculoRecuperado();
+                    if ($vendedorNomePost === '') {
+                        $vendedorNomePost = 'Veículo recuperado pela Fastcar (sem vendedor identificado)';
+                    }
+                }
                 $novoVeiculo = criarVeiculoManualFrota(
-                    (string)($_POST['vendedor_nome'] ?? ''),
-                    (string)($_POST['vendedor_telefone'] ?? ''),
+                    $vendedorNomePost,
+                    $vendedorTelefonePost,
                     (string)($_POST['veiculo_marca'] ?? ''),
                     (string)($_POST['veiculo_modelo'] ?? ''),
                     (string)($_POST['veiculo_ano'] ?? ''),
@@ -204,10 +218,18 @@ function avStatusBadge(string $status): string {
         <p><small>O vendedor está com você agora e o veículo ainda não foi cadastrado por nenhum consultor? Registre aqui mesmo — a vistoria já nasce vinculada a ele.
         <?= getConfig('placafipe_token') ? 'Buscar por placa preenche marca/modelo/ano sozinho (dado FIPE, gratuito), mas você pode corrigir antes de salvar.' : '' ?></small></p>
 
-        <label>Nome do vendedor</label>
+        <label>Nome do vendedor (opcional)</label>
         <input type="text" id="av-vendedor-nome" name="vendedor_nome">
-        <label>Telefone do vendedor (com DDD)</label>
+        <label>Telefone do vendedor com DDD (opcional)</label>
         <input type="tel" id="av-vendedor-telefone" name="vendedor_telefone" placeholder="Ex: 31999998888">
+        <small style="color:var(--texto-fraco)">Deixe os 2 em branco se for um veículo <strong>recuperado pela Fastcar</strong>, sem vendedor/contato pra registrar.</small>
+
+        <div style="margin-top:10px;padding:10px;border:1px dashed var(--borda);border-radius:6px">
+            <label style="margin-top:0">📄 A busca por placa não funcionou? Suba o CRLV (foto ou PDF)</label>
+            <input type="file" id="av-crlv-arquivo" accept="image/jpeg,image/png,image/webp,application/pdf">
+            <button type="button" id="av-crlv-btn" style="margin-top:.4rem">📄 Ler CRLV com IA</button>
+            <span id="av-crlv-status" style="font-size:12.5px;color:var(--texto-fraco);margin-left:.5rem"></span>
+        </div>
 
         <?php if (getConfig('placafipe_token')): ?>
         <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px">
@@ -247,11 +269,11 @@ function avStatusBadge(string $status): string {
         <div class="grid-2">
             <div>
                 <label>Chassi</label>
-                <input type="text" name="veiculo_chassi">
+                <input type="text" id="av-veiculo-chassi" name="veiculo_chassi">
             </div>
             <div>
                 <label>Renavam</label>
-                <input type="text" name="veiculo_renavam">
+                <input type="text" id="av-veiculo-renavam" name="veiculo_renavam">
             </div>
         </div>
     </div>
@@ -365,8 +387,11 @@ function avStatusBadge(string $status): string {
     var blocoNovo = document.getElementById('av-bloco-novo');
     var blocoNovoToggle = document.getElementById('av-bloco-novo-toggle');
     var buscaBloco = document.getElementById('av-busca-bloco');
-    var campoVendedorNome = document.getElementById('av-vendedor-nome');
-    var campoVendedorTelefone = document.getElementById('av-vendedor-telefone');
+    // 28/09/2026, "tem campos que não tem necessidade... carro recuperado
+    // pela fastcar", "pode ser opcional" — nome/telefone do vendedor NUNCA
+    // são required aqui (diferente do mesmo card em admin/vendas.php, que
+    // sempre tem um comprador de verdade do outro lado) — deixados em
+    // branco, o servidor gera um placeholder (gerarTelefonePlaceholderVeiculoRecuperado()).
 
     window.avAtualizarVisibilidadeNovo = function () {
         if (tipoEl.value === 'venda') {
@@ -389,8 +414,6 @@ function avStatusBadge(string $status): string {
             blocoNovo.style.display = 'none';
             btnCriar.disabled = true;
         }
-        campoVendedorNome.required = novo;
-        campoVendedorTelefone.required = novo;
     };
 
     // Busca dados FIPE pela placa (includes/fipe.php::placafipeConsultarPorPlaca(),
@@ -464,6 +487,51 @@ function avStatusBadge(string $status): string {
         }
         blocoNovo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
+
+    // 28/09/2026, "Permita subir documento do carro pra ler informações
+    // caso api fipe não funcione" — mesmo endpoint/prompt já usado em
+    // admin/vendas.php ("Vender na Promissória") e admin/veiculos.php,
+    // reaproveitado sem duplicar nada (admin/veiculo_crlv_ajax.php, guard
+    // relaxado pra também aceitar o perfil avaliador). Preenche
+    // marca/modelo/ano/placa/chassi/renavam fill-if-empty, e dispara o
+    // histórico por placa também (mesmo tratamento do botão de FIPE).
+    var btnCrlv = document.getElementById('av-crlv-btn');
+    if (btnCrlv) {
+        var inputCrlv = document.getElementById('av-crlv-arquivo');
+        var statusCrlv = document.getElementById('av-crlv-status');
+        var csrfTokenModal = document.querySelector('#form-vistoria [name="csrf_token"]').value;
+
+        btnCrlv.addEventListener('click', function () {
+            if (!inputCrlv.files.length) { statusCrlv.textContent = '⚠️ Escolha o arquivo do CRLV primeiro.'; return; }
+            statusCrlv.textContent = '🔄 Lendo CRLV...';
+            btnCrlv.disabled = true;
+
+            var fd = new FormData();
+            fd.append('crlv', inputCrlv.files[0]);
+            fd.append('csrf_token', csrfTokenModal);
+            fetch('/admin/veiculo_crlv_ajax.php', { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    btnCrlv.disabled = false;
+                    if (!d.ok) { statusCrlv.textContent = '⚠️ ' + d.erro; return; }
+                    var campos = {
+                        'av-veiculo-marca': d.veiculo_marca,
+                        'av-veiculo-modelo': d.veiculo_modelo,
+                        'av-veiculo-ano': d.veiculo_ano,
+                        'av-veiculo-placa': d.veiculo_placa,
+                        'av-veiculo-chassi': d.veiculo_chassi,
+                        'av-veiculo-renavam': d.veiculo_renavam,
+                    };
+                    Object.keys(campos).forEach(function (id) {
+                        var el = document.getElementById(id);
+                        if (el && !el.value && campos[id]) el.value = campos[id];
+                    });
+                    statusCrlv.textContent = '✅ Preenchido! Confira antes de criar a vistoria.';
+                    if (campoPlaca.value) avMostrarHistoricoPlaca(campoPlaca.value, 'av-historico-placa');
+                })
+                .catch(function () { btnCrlv.disabled = false; statusCrlv.textContent = '⚠️ Erro ao ler o CRLV.'; });
+        });
+    }
 })();
 </script>
 <?php endif; ?>
