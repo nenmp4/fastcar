@@ -132,16 +132,53 @@ $midias = listarMidiasRevenda($id);
     <?php else: ?>
         <p><small>Nenhuma foto/vídeo cadastrado ainda pra esse veículo.</small></p>
     <?php endif; ?>
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" id="mv-form-upload">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="upload_midia_revenda">
-        <label>Fotos/vídeos (pode selecionar vários de uma vez — foto até 10MB, vídeo até 50MB cada)</label>
-        <input type="file" name="midias[]" accept="image/*,video/*" multiple required>
+        <label>Fotos/vídeos (pode selecionar vários de uma vez — foto até 10MB, vídeo até 50MB cada, 80MB no total do envio)</label>
+        <input type="file" id="mv-input-midias" name="midias[]" accept="image/*,video/*" multiple required>
+        <small id="mv-tamanho-selecionado"></small>
         <label>Legenda (opcional — aplicada a todas as fotos/vídeos selecionados acima)</label>
         <input type="text" name="legenda" placeholder="Ex: Fotos da vistoria de entrada">
         <button type="submit">Adicionar ao catálogo</button>
     </form>
 </div>
+<script>
+// 28/09/2026 — avisa ANTES de enviar se o lote passar do teto do servidor
+// (VEICULO_MIDIA_MAX_BYTES_LOTE, 80MB) — evita mandar um lote grande
+// demais só pra ver um erro cru de "413" ou de conexão cortada; nunca
+// substitui a checagem do servidor, só melhora o feedback.
+(function () {
+    var TETO_MB = 80;
+    var input = document.getElementById('mv-input-midias');
+    var status = document.getElementById('mv-tamanho-selecionado');
+    var form = document.getElementById('mv-form-upload');
+    if (!input || !status || !form) return;
+
+    function somaMb() {
+        var total = 0;
+        for (var i = 0; i < input.files.length; i++) total += input.files[i].size;
+        return total / 1024 / 1024;
+    }
+
+    input.addEventListener('change', function () {
+        if (!input.files.length) { status.textContent = ''; return; }
+        var mb = somaMb();
+        status.textContent = input.files.length + ' arquivo(s) selecionado(s) — ' + mb.toFixed(1) + 'MB no total';
+        status.style.color = mb > TETO_MB ? '#c2410c' : '';
+        if (mb > TETO_MB) {
+            status.textContent += ' — passou do limite de ' + TETO_MB + 'MB, selecione menos arquivos';
+        }
+    });
+
+    form.addEventListener('submit', function (e) {
+        if (input.files.length && somaMb() > TETO_MB) {
+            e.preventDefault();
+            alert('Esse lote passa de ' + TETO_MB + 'MB no total. Selecione menos fotos/vídeos de uma vez (pode mandar em mais de um envio).');
+        }
+    });
+})();
+</script>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

@@ -2710,6 +2710,71 @@ segue no schema sem uso novo, não removida sem ganho real),
   nesta sessão — só a mecânica HTTP (múltiplos arquivos chegando no
   mesmo campo `midias[]`) e o atributo `multiple` no HTML; validar no
   próprio iPhone/Android assim que o deploy aplicar.
+  **"413 erro reques" logo depois de liberar seleção múltipla** (28/09/2026,
+  achado real em produção) — causa raiz: `nginx` da VPS nunca teve
+  `client_max_body_size` configurado (`install/SETUP_VPS.md` nunca
+  documentou essa diretiva desde o setup inicial), então o default de
+  **1MB do nginx** rejeitava CRU (antes mesmo do PHP rodar) qualquer
+  requisição maior — o que qualquer foto real de celular já estourava
+  sozinha, e ficou impossível de ignorar assim que "selecionar várias
+  fotos de uma vez" virou o normal. Investigando, achado um 2º problema
+  do mesmo tipo: o PHP-FPM padrão do Ubuntu vem com
+  `upload_max_filesize`/`post_max_size` pequenos (2M/8M) — menores que o
+  próprio `VEICULO_MIDIA_MAX_BYTES_FOTO`/`_VIDEO` (10MB/50MB) que o
+  código já permitia por arquivo há semanas, então documento/foto grande
+  provavelmente já vinha falhando silenciosamente ($_FILES truncado)
+  desde bem antes desta sessão — nunca pego porque todo teste deste
+  projeto sempre rodou contra o servidor embutido do PHP (`php -S`) ou
+  fake servers locais, nunca contra o nginx real de produção (mesma
+  ressalva "nunca confirmado contra API real" documentada várias vezes
+  aqui, dessa vez sobre a própria camada de infra, não uma API externa).
+  Corrigido em 3 frentes: (1) `admin/.user.ini` (novo, `upload_max_filesize
+  = 52M` / `post_max_size = 95M`) — PHP-FPM escaneia `.user.ini` em toda a
+  árvore de diretório, cobre `admin/` inteiro sem tocar no `php.ini`/pool
+  global, vai junto no git e aplica sozinho em qualquer deploy/VPS nova
+  (só espera o `user_ini.cache_ttl`, padrão 300s, ou um reload do
+  PHP-FPM); `public/.user.ini` igual, valores menores (15M/18M, suficiente
+  pro wizard de documentos, `UPLOAD_MAX_BYTES`=10MB). (2) `nginx` — única
+  peça que `.user.ini` NUNCA alcança (camada totalmente separada,
+  desconhece PHP): `install/SETUP_VPS.md` ganhou
+  `client_max_body_size 95M;` documentado no server block, mas isso
+  **precisa ser aplicado manualmente na VPS já em produção** (nginx nunca
+  lê `.user.ini`, e a VPS existente não recebe esse arquivo de config
+  automaticamente por deploy — só `git pull` do código). (3) **80MB de
+  teto pro LOTE inteiro** — nova `VEICULO_MIDIA_MAX_BYTES_LOTE`
+  (`includes/vendas.php`), somando `$_FILES['midias']['size']` ANTES de
+  tocar em qualquer arquivo dentro de `salvarMidiasRevendaEmLote()` —
+  devolve erro amigável ("Lote muito grande... envie até 80MB por vez")
+  em vez de deixar um lote sem limite algum estourar o teto do
+  nginx/PHP de qualquer forma; 95M no PHP/nginx dá margem (~15MB) acima
+  desse teto de negócio pra sempre sobrar espaço do lote passar pela
+  infra intacto e a mensagem AMIGÁVEL (não um 413 cru) ser quem trava.
+  **Teto de 95M escolhido, não maior**: esse projeto roda atrás da
+  Cloudflare (`install/SETUP_VPS.md`), que no plano Free/Pro tem um teto
+  RÍGIDO de 100MB por requisição, ignorando qualquer config de origin —
+  subir o nginx/PHP além disso não adiantaria nada, a Cloudflare
+  rejeitaria antes de a requisição sequer chegar na VPS. Aviso
+  pré-envio novo em JS (`admin/veiculo_midias.php` e `admin/venda.php`,
+  mesmo bloco replicado nos dois — soma `input.files[].size` no `change` e
+  bloqueia o `submit` com `alert()` se passar de 80MB) evita a maioria dos
+  casos reais de nem chegar a tentar um lote grande demais, sem substituir
+  a checagem do servidor. Testado: 2 asserções de função em banco isolado
+  (lote de 90MB declarado — `size` do `$_FILES` simulado, sem precisar de
+  arquivo real de 90MB de verdade — rejeitado com a mensagem certa
+  mencionando 90MB e o teto de 80MB, catálogo continua vazio; lote
+  pequeno de verdade continua salvando normal, sem regressão na checagem
+  nova) + JS validado com `node --check` nos 2 arquivos + `php -l` +
+  `tests/smoke.php` limpos. ⚠️ **Ação pendente, fora do alcance deste
+  ambiente de dev** (sem SSH pra essa VPS específica daqui): rodar na VPS
+  de produção via SSH — editar o server block real do nginx (provavelmente
+  `/etc/nginx/sites-available/fastcar` ou onde o certbot deixou, ver
+  histórico de 17/09/2026 de troca pra certbot puro) adicionando
+  `client_max_body_size 95M;` dentro do bloco `server {}` que atende
+  `sistema.fastcar.solutions`, depois `nginx -t && systemctl reload
+  nginx`. Enquanto isso não for feito na VPS, lotes/arquivos que passem
+  de 1MB (o default do nginx) continuam batendo 413 cru — os `.user.ini`
+  sozinhos (já no deploy) não resolvem isso, é a única peça 100%
+  manual desta correção.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

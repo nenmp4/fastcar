@@ -84,6 +84,20 @@ server {
     root /var/www/fastcar;
     index index.php;
 
+    # 28/09/2026 — achado real de produção: "413 Request Entity Too Large"
+    # ao subir foto de veículo/documento pelo celular. nginx sem esse
+    # client_max_body_size cai no default de 1MB — bem menor que qualquer
+    # foto real de iPhone/Android (fotos até 10MB, vídeo até 50MB no
+    # próprio código, ver VEICULO_MIDIA_MAX_BYTES_FOTO/_VIDEO em
+    # includes/vendas.php). O PHP (upload_max_filesize/post_max_size)
+    # já vem coberto sozinho via admin/.user.ini e public/.user.ini —
+    # esse client_max_body_size aqui é a ÚNICA peça que precisa de ajuste
+    # manual na VPS (nginx nunca lê .user.ini), então numa instância já no
+    # ar isso precisa ser aplicado à mão (nginx -t && systemctl reload nginx).
+    # 95M pra ficar abaixo do teto de 100MB por requisição da Cloudflare
+    # (plano Free/Pro, ver seção 6 abaixo) — subir mais não adiantaria.
+    client_max_body_size 95M;
+
     # Nunca serve os arquivos de dado/config diretamente — só via PHP
     location ~ ^/(database|storage|config)/ { deny all; }
 

@@ -570,15 +570,50 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         <p><small>Nenhuma foto/vídeo cadastrado ainda pra esse veículo.</small></p>
     <?php endif; ?>
     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data" id="vd-form-upload-midias">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="upload_midia_revenda">
-            <label>Fotos/vídeos (pode selecionar vários de uma vez — foto até 10MB, vídeo até 50MB cada)</label>
-            <input type="file" name="midias[]" accept="image/*,video/*" multiple required>
+            <label>Fotos/vídeos (pode selecionar vários de uma vez — foto até 10MB, vídeo até 50MB cada, 80MB no total do envio)</label>
+            <input type="file" id="vd-input-midias" name="midias[]" accept="image/*,video/*" multiple required>
+            <small id="vd-tamanho-selecionado"></small>
             <label>Legenda (opcional — aplicada a todas as fotos/vídeos selecionados acima)</label>
             <input type="text" name="legenda" placeholder="Ex: Lateral direita, km atual 42.000">
             <button type="submit">Adicionar ao catálogo</button>
         </form>
+        <script>
+        // 28/09/2026 — mesmo aviso pré-envio de admin/veiculo_midias.php,
+        // ver comentário lá pro racional completo (VEICULO_MIDIA_MAX_BYTES_LOTE).
+        (function () {
+            var TETO_MB = 80;
+            var input = document.getElementById('vd-input-midias');
+            var status = document.getElementById('vd-tamanho-selecionado');
+            var form = document.getElementById('vd-form-upload-midias');
+            if (!input || !status || !form) return;
+
+            function somaMb() {
+                var total = 0;
+                for (var i = 0; i < input.files.length; i++) total += input.files[i].size;
+                return total / 1024 / 1024;
+            }
+
+            input.addEventListener('change', function () {
+                if (!input.files.length) { status.textContent = ''; return; }
+                var mb = somaMb();
+                status.textContent = input.files.length + ' arquivo(s) selecionado(s) — ' + mb.toFixed(1) + 'MB no total';
+                status.style.color = mb > TETO_MB ? '#c2410c' : '';
+                if (mb > TETO_MB) {
+                    status.textContent += ' — passou do limite de ' + TETO_MB + 'MB, selecione menos arquivos';
+                }
+            });
+
+            form.addEventListener('submit', function (e) {
+                if (input.files.length && somaMb() > TETO_MB) {
+                    e.preventDefault();
+                    alert('Esse lote passa de ' + TETO_MB + 'MB no total. Selecione menos fotos/vídeos de uma vez (pode mandar em mais de um envio).');
+                }
+            });
+        })();
+        </script>
     <?php endif; ?>
 </div>
 <?php endif; ?>

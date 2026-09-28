@@ -533,6 +533,14 @@ function registrarVendaPromissoria(array $dados, int $responsavelId): array {
 // generoso que UPLOAD_MAX_BYTES (10MB, pensado pra documento/PDF).
 const VEICULO_MIDIA_MAX_BYTES_FOTO  = 10 * 1024 * 1024;  // 10MB
 const VEICULO_MIDIA_MAX_BYTES_VIDEO = 50 * 1024 * 1024;  // 50MB
+// 28/09/2026 — teto do LOTE inteiro (soma de todos os arquivos de 1 envio
+// com "múltiplas fotos"), achado real: "413 erro reques" depois de
+// liberar seleção múltipla sem nenhum limite de total. Fica abaixo do
+// post_max_size/client_max_body_size configurados (95M, ver admin/.user.ini
+// e install/SETUP_VPS.md) com margem — se o lote já vier maior que isso,
+// devolve erro amigável ANTES de gastar tempo salvando arquivo por
+// arquivo, em vez de deixar o nginx/PHP cortar a requisição crua.
+const VEICULO_MIDIA_MAX_BYTES_LOTE = 80 * 1024 * 1024;  // 80MB por envio
 const VEICULO_MIDIA_MIME_PERMITIDOS = [
     'image/jpeg' => ['foto', 'jpg'],
     'image/png'  => ['foto', 'png'],
@@ -622,6 +630,21 @@ function salvarMidiasRevendaEmLote(int $oportunidadeId, array $arquivosMultiplos
     $nomes = $arquivosMultiplos['name'] ?? null;
     if (!is_array($nomes) || !count($nomes)) {
         return ['ok_count' => 0, 'total' => 0, 'erros' => ['Escolha pelo menos um arquivo.']];
+    }
+
+    // 28/09/2026 — soma o lote inteiro ANTES de processar qualquer
+    // arquivo: um lote grande demais já teria sido cortado cru pelo
+    // nginx/PHP (413) antes de chegar aqui, mas isso protege o caso do
+    // meio-termo — passou pela infra, mas estoura o teto de negócio do
+    // projeto (VEICULO_MIDIA_MAX_BYTES_LOTE) — com um erro amigável em
+    // vez de deixar salvar um lote gigante sem controle nenhum.
+    $somaBytes = array_sum(array_map('intval', $arquivosMultiplos['size'] ?? []));
+    if ($somaBytes > VEICULO_MIDIA_MAX_BYTES_LOTE) {
+        return [
+            'ok_count' => 0,
+            'total' => count($nomes),
+            'erros' => ['Lote muito grande (' . round($somaBytes / 1024 / 1024) . 'MB) — envie até ' . (int)(VEICULO_MIDIA_MAX_BYTES_LOTE / 1024 / 1024) . 'MB por vez, em vários envios se precisar.'],
+        ];
     }
 
     $total = count($nomes);
