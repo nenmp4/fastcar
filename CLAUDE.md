@@ -7132,6 +7132,64 @@ segue no schema sem uso novo, não removida sem ganho real),
   `--confirmar` 2x é idempotente, mostra só o aviso de Asaas de novo)
   batendo exatamente com o esperado + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
+  **"database is locked" derrubando o site (Gateway timeout), 28/09/2026** —
+  achado real: usuário reportou "estava bem lento o sistema" seguido de
+  screenshot mostrando 504 do Cloudflare em `admin/index.php` ("Host
+  Error"), e depois de pedir pra checar o log via SSH, apareceu
+  `PHP Fatal error: Uncaught PDOException: SQLSTATE[HY000]: General error:
+  5 database is locked in /var/www/fastcar/includes/asaas.php:229`
+  repetido 4x desde 26/09/2026, sempre nos horários batendo com o cron de
+  30 em 30min. Causa raiz: `asaasImportarCobrancas()`
+  (`includes/asaas.php`, chamada por `cron/asaas_sync.php` a cada 30min E
+  pelo botão manual em `admin/financeiro-asaas.php`) fazia até ~100
+  escritas **individuais** por página de cobrança do Asaas — cada
+  INSERT/UPDATE auto-commitando sozinho, ou seja, disputando o lock de
+  escrita do SQLite ~100 vezes separadas por chamada, concorrendo direto
+  com webhook/admin gravando ao mesmo tempo numa VPS pequena (pendência
+  #1) — e sem NENHUM try/catch ao redor, uma trava virava PHP Fatal Error
+  cru matando o script no meio do lote. Corrigido agrupando cada página
+  inteira (até 100 registros) numa ÚNICA transação
+  (`beginTransaction()`/`commit()`) — reduz de ~100 disputas de lock por
+  página pra 1 só, bem mais rápido e bem menos chance de bater em
+  contenção real — envolvida em try/catch com `rollBack()` em caso de
+  falha, devolvendo `['ok'=>false,'erro'=>...]` gracioso em vez de crash
+  cru; próxima rodada do cron (idempotente, dedup por
+  `asaas_payment_id`) reprocessa do zero sem duplicar nada.
+  `asaasSincronizarPendentes()` (mesmo arquivo, também chamada pelo cron a
+  cada 30min) ganhou try/catch **por registro individual** — nunca uma
+  transação por cima da chamada de rede (`asaasRequest()` roda dentro do
+  próprio loop, prender o lock de escrita durante o round-trip da API
+  seria pior, não melhor) — uma trava pontual num registro nunca mais mata
+  o loop inteiro de até 100 pendências, só pula esse registro (a rodada
+  seguinte do cron tenta de novo) e segue pros outros. Testado: função
+  isolada confirmando o caminho normal sem regressão (2 cobranças
+  importadas certas, banco batendo) + contenção **real** reproduzida com
+  um lock de verdade segurado por outro processo (`BEGIN IMMEDIATE` +
+  escrita real, nunca simulado) — ANTES do fix, esse cenário exato
+  derrubaria o script com o mesmo Fatal Error visto em produção; DEPOIS, a
+  função captura a `PDOException`, dá rollback e devolve
+  `{ok:false,erro:"...database is locked"}` de forma limpa, confirmado via
+  assert contra o `SQLSTATE[HY000]` genuíno (não uma mensagem inventada) —
+  + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  **Achado no mesmo log, sem relação com a lentidão — "Permission denied"
+  recorrente em `api/webhook_deploy.php:62`** desde 26/09/2026 (warning,
+  nunca derruba nada, mas spamma o log a cada push): `install/aplicar_deploy.sh`
+  roda como **root** via crontab e cria `storage/logs/deploy_AAAA-MM.log`;
+  sem `umask` explícito, o arquivo nasce `644` dono `root`, e o webhook do
+  GitHub (PHP rodando como **www-data** via nginx) não consegue mais
+  escrever nesse MESMO arquivo depois — quem cria o log primeiro no mês
+  "tranca" o outro processo fora dele. Corrigido com `umask 002` logo no
+  topo do script (todo arquivo que ele criar já nasce `664`, escrita pro
+  grupo também) + `install/SETUP_VPS.md` ganhou `chmod g+s storage/logs`
+  documentado (setgid — todo arquivo novo criado ali, por root OU
+  www-data, já nasce com grupo `www-data`) — os dois juntos resolvem nos
+  dois sentidos possíveis de ordem de criação (root cria primeiro, ou
+  www-data cria primeiro). ⚠️ **Ação pendente na VPS via SSH** (fora do
+  alcance deste ambiente de dev): rodar `chmod g+s storage/logs` no
+  caminho real + corrigir a permissão do
+  `storage/logs/deploy_2026-09.log` que já está quebrado
+  (`chown :www-data` + `chmod 664` nesse arquivo específico), senão o
+  warning continua até a virada do mês que vem.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

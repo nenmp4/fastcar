@@ -21,6 +21,17 @@
 
 set -o pipefail # sem isso, "cmd | tee" sempre "sucede" (o status vira o do tee, não o da smoke.php) e a detecção de falha do smoke abaixo nunca dispararia
 
+# 28/09/2026, achado real de produção: "Permission denied" recorrente em
+# api/webhook_deploy.php ao tentar escrever no MESMO arquivo de log
+# (storage/logs/deploy_AAAA-MM.log) que este script já tinha criado antes.
+# Este script roda como root via crontab; sem umask explícito, o arquivo
+# nascia 644 dono root — o PHP do webhook (rodando como www-data via
+# nginx) não conseguia mais abrir pra escrita nele depois. umask 002 faz
+# todo arquivo criado por este script nascer 664 (dono+grupo com escrita),
+# então basta o grupo do arquivo ser www-data (garantido pelo setgid em
+# storage/logs/, ver install/SETUP_VPS.md) pra funcionar nos dois sentidos.
+umask 002
+
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$BASE_DIR" || exit 1
 PHP_BIN="$(command -v php)"

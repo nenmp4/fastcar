@@ -64,6 +64,24 @@ chmod -R 755 /var/www/fastcar
 chmod -R 775 /var/www/fastcar/database /var/www/fastcar/storage /var/www/fastcar/config
 ```
 
+`storage/logs/` é escrito tanto por `www-data` (PHP via nginx — a maioria
+dos logs) quanto por **root** (o script de deploy, `install/aplicar_deploy.sh`,
+que roda via crontab do root e escreve no MESMO arquivo mensal
+`deploy_AAAA-MM.log` que `api/webhook_deploy.php` também escreve). Sem o
+`setgid` abaixo, quem cria o arquivo primeiro no mês "trava" o outro fora
+dele com "Permission denied" (achado real de produção, 28/09/2026— ver
+`install/aplicar_deploy.sh`, que já seta `umask 002` do lado dele; falta
+só isso aqui do lado do diretório, uma vez):
+
+```bash
+chmod g+s /var/www/fastcar/storage/logs
+```
+
+Com o `setgid` ligado, todo arquivo novo criado ali — por root ou por
+www-data — já nasce com grupo `www-data`, e o `umask 002` do script garante
+que nasce com permissão de escrita pro grupo também. Os dois juntos
+resolvem nos dois sentidos possíveis de ordem de criação.
+
 Se a service account do Google Drive já existir, sobe o arquivo agora
 (nunca por upload web, sempre por aqui):
 

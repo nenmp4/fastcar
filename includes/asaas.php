@@ -205,34 +205,59 @@ function asaasImportarCobrancas(): array {
         $r = asaasRequest('GET', "/payments?limit=100&offset={$offset}");
         if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro'], 'novos' => $novos, 'atualizados' => $atualizados];
         $lista = $r['dados']['data'] ?? [];
-        foreach ($lista as $p) {
-            $asaasId = (string)($p['id'] ?? '');
-            if (!$asaasId) continue;
-            $valor = (float)($p['value'] ?? 0);
-            $vencimento = (string)($p['dueDate'] ?? '') ?: null;
-            $pagamento = (string)($p['paymentDate'] ?? $p['clientPaymentDate'] ?? '') ?: null;
-            $status = asaasStatusParaFin((string)($p['status'] ?? ''));
-            $descricao = (string)($p['description'] ?? '') ?: "Cobrança Asaas #{$asaasId}";
-            $forma = (string)($p['billingType'] ?? '');
-            $parcelaNum = isset($p['installmentNumber']) ? (int)$p['installmentNumber'] : null;
-            $parcelaTotal = isset($p['installmentCount']) ? (int)$p['installmentCount'] : null;
 
-            $custId = (string)($p['customer'] ?? '');
-            $buscarNomeCliente->execute([$custId]);
-            $cliCache = $buscarNomeCliente->fetch(PDO::FETCH_ASSOC) ?: [];
-            $nomeManual = (string)($cliCache['nome'] ?? '');
-            $clienteId = $cliCache['cliente_id'] ?? null;
-            $vendaId = $cliCache['venda_id'] ?? null;
+        // 28/09/2026, achado real de produção (Gateway timeout + PHP Fatal
+        // error "database is locked" recorrente, sempre batendo com o
+        // horário do cron/asaas_sync.php, a cada 30min): até então cada
+        // página de até 100 cobranças fazia até 100 escritas INDIVIDUAIS
+        // (cada INSERT/UPDATE auto-commitando sozinho = 1 disputa pelo lock
+        // de escrita do SQLite por linha), concorrendo direto com
+        // webhook/admin gravando ao mesmo tempo numa VPS pequena — e sem
+        // try/catch, uma trava virava PHP Fatal Error cru matando o cron no
+        // meio do lote. Agrupar a página inteira numa ÚNICA transação
+        // reduz de ~100 disputas de lock pra 1 por página (muito mais
+        // rápido e muito menos chance de bater em contenção real), e o
+        // try/catch garante que, se AINDA ASSIM travar, o cron desiste
+        // dessa página com rollback (nunca fica escrita pela metade) e
+        // devolve erro gracioso — nunca mais crash cru; próxima rodada do
+        // cron (idempotente, dedup por asaas_payment_id) reprocessa do
+        // zero sem duplicar nada.
+        try {
+            $db->beginTransaction();
+            foreach ($lista as $p) {
+                $asaasId = (string)($p['id'] ?? '');
+                if (!$asaasId) continue;
+                $valor = (float)($p['value'] ?? 0);
+                $vencimento = (string)($p['dueDate'] ?? '') ?: null;
+                $pagamento = (string)($p['paymentDate'] ?? $p['clientPaymentDate'] ?? '') ?: null;
+                $status = asaasStatusParaFin((string)($p['status'] ?? ''));
+                $descricao = (string)($p['description'] ?? '') ?: "Cobrança Asaas #{$asaasId}";
+                $forma = (string)($p['billingType'] ?? '');
+                $parcelaNum = isset($p['installmentNumber']) ? (int)$p['installmentNumber'] : null;
+                $parcelaTotal = isset($p['installmentCount']) ? (int)$p['installmentCount'] : null;
 
-            $existe->execute([$asaasId]);
-            if ($existe->fetch()) {
-                $update->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $parcelaNum, $parcelaTotal, $asaasId]);
-                $atualizados++;
-            } else {
-                $insert->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $nomeManual, $clienteId, $vendaId, $asaasId, $custId ?: null, $parcelaNum, $parcelaTotal, $categoriaPadraoId]);
-                $novos++;
+                $custId = (string)($p['customer'] ?? '');
+                $buscarNomeCliente->execute([$custId]);
+                $cliCache = $buscarNomeCliente->fetch(PDO::FETCH_ASSOC) ?: [];
+                $nomeManual = (string)($cliCache['nome'] ?? '');
+                $clienteId = $cliCache['cliente_id'] ?? null;
+                $vendaId = $cliCache['venda_id'] ?? null;
+
+                $existe->execute([$asaasId]);
+                if ($existe->fetch()) {
+                    $update->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $parcelaNum, $parcelaTotal, $asaasId]);
+                    $atualizados++;
+                } else {
+                    $insert->execute([$descricao, $valor, $vencimento, $pagamento, $status, $forma, $nomeManual, $clienteId, $vendaId, $asaasId, $custId ?: null, $parcelaNum, $parcelaTotal, $categoriaPadraoId]);
+                    $novos++;
+                }
             }
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            return ['ok' => false, 'erro' => 'Contenção no banco ao gravar: ' . $e->getMessage(), 'novos' => $novos, 'atualizados' => $atualizados];
         }
+
         $hasMore = !empty($r['dados']['hasMore']);
         $offset += 100;
     } while ($hasMore);
@@ -265,9 +290,21 @@ function asaasSincronizarPendentes(int $limite = 50): array {
         $p = $r['dados'];
         $status = asaasStatusParaFin((string)($p['status'] ?? ''));
         $pagamento = (string)($p['paymentDate'] ?? $p['clientPaymentDate'] ?? '') ?: null;
-        $db->prepare("UPDATE fin_lancamentos SET status=?, data_pagamento=?, updated_at=datetime('now','localtime') WHERE id=?")
-           ->execute([$status, $pagamento, $l['id']]);
-        $atualizados++;
+        // 28/09/2026 — mesmo achado do bullet de asaasImportarCobrancas():
+        // try/catch por registro (nunca uma transação envolvendo a chamada
+        // de rede acima, que só prenderia o lock de escrita por mais tempo
+        // ainda enquanto espera o round-trip da API) — uma trava pontual
+        // num registro nunca mais derruba o loop inteiro de até 100
+        // pendências com um Fatal Error cru; só pula esse registro (a
+        // próxima rodada do cron, 30min depois, tenta de novo) e segue pros
+        // outros.
+        try {
+            $db->prepare("UPDATE fin_lancamentos SET status=?, data_pagamento=?, updated_at=datetime('now','localtime') WHERE id=?")
+               ->execute([$status, $pagamento, $l['id']]);
+            $atualizados++;
+        } catch (Throwable $e) {
+            continue;
+        }
     }
     return ['ok' => true, 'atualizados' => $atualizados];
 }
