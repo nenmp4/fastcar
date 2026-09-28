@@ -271,7 +271,15 @@ function avStatusBadge(string $status): string {
                 .then(function (r) { return r.json(); })
                 .then(function (candidatos) {
                     if (!candidatos.length) {
-                        resultadosEl.innerHTML = '<p><small>Nenhum resultado — tente outro termo.</small></p>';
+                        // 28/09/2026, "avalista digita placa, se não tiver
+                        // cadastra um novo" — nenhum resultado (ex: placa
+                        // ainda não cadastrada por nenhum consultor) já
+                        // oferece o atalho direto pro cadastro novo, com o
+                        // termo digitado (a placa) já aproveitado, sem
+                        // precisar digitar de novo no sub-formulário.
+                        resultadosEl.innerHTML = tipoEl.value === 'compra'
+                            ? '<p><small>Nenhum resultado. <button type="button" class="btn-texto" onclick="avUsarTermoComoVeiculoNovo()" style="padding:0;color:var(--azul);text-decoration:underline;font-weight:600;font-size:12.5px">🚗 Cadastrar veículo novo com "' + termo.replace(/</g, '&lt;') + '"</button></small></p>'
+                            : '<p><small>Nenhum resultado — tente outro termo.</small></p>';
                         return;
                     }
                     resultadosEl.innerHTML = candidatos.map(function (c, i) {
@@ -329,46 +337,66 @@ function avStatusBadge(string $status): string {
 
     // Busca dados FIPE pela placa (includes/fipe.php::placafipeConsultarPorPlaca(),
     // mesmo endpoint já usado em admin/oportunidade.php) — nunca a ZapCar
-    // (que é consulta paga de restrição/débito, sem relação com isso).
+    // (que é consulta paga de restrição/débito, sem relação com isso). Os
+    // campos existem sempre no DOM (com ou sem token configurado) — só o
+    // botão de busca em si é condicional (admin/fipe_ajax.php exige o
+    // token de Configurações → FIPE pra funcionar de verdade).
+    var campoPlaca = document.getElementById('av-veiculo-placa');
+    var fipeResultadoEl = document.getElementById('av-fipe-resultado');
+    var campoMarca = document.getElementById('av-veiculo-marca');
+    var campoModelo = document.getElementById('av-veiculo-modelo');
+    var campoAno = document.getElementById('av-veiculo-ano');
     var btnBuscarPlaca = document.getElementById('av-buscar-placa-btn');
-    if (btnBuscarPlaca) {
-        var campoPlaca = document.getElementById('av-veiculo-placa');
-        var fipeResultadoEl = document.getElementById('av-fipe-resultado');
-        var campoMarca = document.getElementById('av-veiculo-marca');
-        var campoModelo = document.getElementById('av-veiculo-modelo');
-        var campoAno = document.getElementById('av-veiculo-ano');
 
-        btnBuscarPlaca.addEventListener('click', function () {
-            var placa = campoPlaca.value.trim();
-            if (!placa) { fipeResultadoEl.textContent = '⚠️ Digite a placa primeiro.'; return; }
-            btnBuscarPlaca.disabled = true;
-            fipeResultadoEl.textContent = 'Buscando…';
-            fetch('/admin/fipe_ajax.php?acao=buscar_placa&placa=' + encodeURIComponent(placa))
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    btnBuscarPlaca.disabled = false;
-                    if (!data.ok) {
-                        fipeResultadoEl.textContent = '⚠️ ' + (data.msg || 'Não consegui buscar essa placa.');
-                        return;
-                    }
-                    var v = data.veiculo;
-                    var preenchido = false;
-                    // Fill-if-empty — nunca sobrescreve o que já foi digitado.
-                    if (v) {
-                        if (!campoMarca.value && v.marca) { campoMarca.value = v.marca; preenchido = true; }
-                        if (!campoModelo.value && v.modelo) { campoModelo.value = v.modelo; preenchido = true; }
-                        if (!campoAno.value && v.ano_modelo) { campoAno.value = v.ano_modelo; preenchido = true; }
-                    }
-                    fipeResultadoEl.textContent = preenchido
-                        ? '✅ Marca/modelo/ano preenchidos — confira antes de salvar.'
-                        : (v ? 'Veículo encontrado, mas os campos já estavam preenchidos.' : 'Nenhum dado encontrado pra essa placa.');
-                })
-                .catch(function () {
-                    btnBuscarPlaca.disabled = false;
-                    fipeResultadoEl.textContent = '⚠️ Erro ao buscar — tente de novo.';
-                });
-        });
+    function avExecutarBuscaPlaca() {
+        var placa = campoPlaca.value.trim();
+        if (!placa) { if (fipeResultadoEl) fipeResultadoEl.textContent = '⚠️ Digite a placa primeiro.'; return; }
+        if (btnBuscarPlaca) btnBuscarPlaca.disabled = true;
+        if (fipeResultadoEl) fipeResultadoEl.textContent = 'Buscando…';
+        fetch('/admin/fipe_ajax.php?acao=buscar_placa&placa=' + encodeURIComponent(placa))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (btnBuscarPlaca) btnBuscarPlaca.disabled = false;
+                if (!fipeResultadoEl) return;
+                if (!data.ok) {
+                    fipeResultadoEl.textContent = '⚠️ ' + (data.msg || 'Não consegui buscar essa placa.');
+                    return;
+                }
+                var v = data.veiculo;
+                var preenchido = false;
+                // Fill-if-empty — nunca sobrescreve o que já foi digitado.
+                if (v) {
+                    if (!campoMarca.value && v.marca) { campoMarca.value = v.marca; preenchido = true; }
+                    if (!campoModelo.value && v.modelo) { campoModelo.value = v.modelo; preenchido = true; }
+                    if (!campoAno.value && v.ano_modelo) { campoAno.value = v.ano_modelo; preenchido = true; }
+                }
+                fipeResultadoEl.textContent = preenchido
+                    ? '✅ Marca/modelo/ano preenchidos — confira antes de salvar.'
+                    : (v ? 'Veículo encontrado, mas os campos já estavam preenchidos.' : 'Nenhum dado encontrado pra essa placa.');
+            })
+            .catch(function () {
+                if (btnBuscarPlaca) btnBuscarPlaca.disabled = false;
+                if (fipeResultadoEl) fipeResultadoEl.textContent = '⚠️ Erro ao buscar — tente de novo.';
+            });
     }
+
+    if (btnBuscarPlaca) btnBuscarPlaca.addEventListener('click', avExecutarBuscaPlaca);
+
+    // Atalho do "Nenhum resultado" da busca normal — 28/09/2026, "avalista
+    // digita placa, se não tiver cadastra um novo": pula direto pro
+    // sub-formulário de cadastro já com a placa preenchida (nunca precisa
+    // digitar de novo) e já dispara a busca FIPE sozinha, se o token
+    // estiver configurado.
+    window.avUsarTermoComoVeiculoNovo = function () {
+        var termo = termoEl.value.trim();
+        checkboxNovo.checked = true;
+        avAlternarVeiculoNovo();
+        if (termo) {
+            campoPlaca.value = termo.toUpperCase();
+            if (btnBuscarPlaca) avExecutarBuscaPlaca();
+        }
+        blocoNovo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
 })();
 </script>
 <?php endif; ?>

@@ -2504,6 +2504,39 @@ segue no schema sem uso novo, não removida sem ganho real),
   caminho normal, que exige busca/seleção — confirma que o atalho é
   mesmo exclusivo de compra + `php -l` + `tests/smoke.php` limpos. Sem
   migração de schema.
+  **Busca por placa vira atalho direto pro cadastro novo** (28/09/2026,
+  "Busca [...] avalista digita placa se não tiver cadastra um novo") —
+  antes disso a busca (nome/telefone/placa/marca/modelo) e o
+  sub-formulário de "cadastrar veículo novo" tinham campos de placa
+  INDEPENDENTES — o avaliador digitava a placa na busca, via "nenhum
+  resultado", e tinha que digitar a MESMA placa de novo no card de
+  cadastro pra rodar a busca FIPE. Corrigido: "Nenhum resultado" (só
+  quando `tipo=compra`, já que venda nunca tem esse atalho) virou um
+  botão "🚗 Cadastrar veículo novo com '{o que foi digitado}'" —
+  `avUsarTermoComoVeiculoNovo()` marca o checkbox, abre o sub-formulário,
+  copia o termo pro campo de placa (`toUpperCase()`) e já dispara a busca
+  FIPE sozinha (reaproveitando a mesma lógica do botão manual, extraída
+  pra `avExecutarBuscaPlaca()`, chamada tanto pelo clique no botão quanto
+  por este atalho) — nunca precisa digitar a placa 2 vezes. Lógica de
+  busca FIPE hoisted pra fora do `if (btnBuscarPlaca)` (os campos de
+  marca/modelo/ano/placa sempre existem no DOM, com ou sem
+  `config.placafipe_token` configurado — só o BOTÃO some sem token, então
+  as referências aos campos precisavam existir incondicionalmente pra
+  esse atalho funcionar mesmo sem o botão visível, preenchendo só a placa
+  manualmente nesse caso). Testado: JS extraído do `<script>` e validado
+  com `node --check` (sem erro de sintaxe) + render HTTP real em 2
+  cenários — sem `placafipe_token` configurado confirma ZERO `<button
+  id="av-buscar-placa-btn">` no HTML renderizado (só a referência de JS,
+  que resolve pra `null` e é tratada pelos guards `if (btnBuscarPlaca)`)
+  mas o campo de placa (`id="av-veiculo-placa"`) e a função
+  `avUsarTermoComoVeiculoNovo` sempre presentes; com o token configurado
+  (`setConfig('placafipe_token', ...)`), o botão aparece de verdade no
+  HTML + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  ⚠️ Fluxo de clique real (checkbox marcando sozinho, placa preenchida,
+  busca FIPE disparando visualmente) não testado com navegador de
+  verdade nesta sessão (Playwright indisponível neste ambiente) — só
+  render estático + validação de sintaxe JS; validar visualmente na
+  próxima vez que Playwright estiver disponível ou direto em produção.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
