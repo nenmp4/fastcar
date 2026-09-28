@@ -24,6 +24,7 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
     var contadorEl = document.getElementById('notif-contador');
     var toastsEl = document.getElementById('notif-toasts');
     var naoLidos = 0;
+    var ultimoLeadId = null; // id do lead mais recente entre os não lidos — pro clique no sino ir direto nele
 
     function tocarSom() {
         try {
@@ -79,6 +80,7 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
                         mostrarToast(msg, '/admin/oportunidade.php?id=' + n.id);
                     });
                     naoLidos += data.novos.length;
+                    ultimoLeadId = data.novos[data.novos.length - 1].id; // array vem ASC (mais antigo primeiro), então o último item é o mais recente
                     atualizarContador();
                 }
                 if (data.proximo_desde) {
@@ -90,9 +92,10 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
     }
 
     sino.addEventListener('click', function () {
+        var destino = naoLidos > 0 && ultimoLeadId ? '/admin/oportunidade.php?id=' + ultimoLeadId : '/admin/index.php';
         naoLidos = 0;
         atualizarContador();
-        window.location.href = '/admin/index.php';
+        window.location.href = destino;
     });
 
     checar();
