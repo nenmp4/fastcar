@@ -2402,6 +2402,60 @@ segue no schema sem uso novo, não removida sem ganho real),
   nenhuma pra tipo de arquivo indevido. `php -l` + `tests/smoke.php`
   limpos — mesma ressalva de sempre, sem jeito de testar Safari real
   neste sandbox; validar no iPhone do usuário assim que o deploy aplicar.
+  **Avaliador cria a própria vistoria, sem precisar de consultor atribuir
+  antes** (28/09/2026, "no avalista permita ele mesmo subir veiculo manual
+  ou subir carro ele mesmo sem precisar aguem atribuir mais funcação de
+  atruibuuir aos consultores continua") — até então o único jeito de uma
+  vistoria existir era um consultor/vendedor/super_admin/supervisor abrir
+  a oportunidade/venda e clicar "+ Nova vistoria de recebimento"
+  (`admin/oportunidade.php`/`admin/venda.php`) — o avaliador só entrava
+  DEPOIS, atribuído por outra pessoa; sem consultor disponível pra criar o
+  card, o avaliador ficava travado sem conseguir registrar nada mesmo com o
+  veículo/negócio já cadastrado no sistema. Confirmado com o usuário via
+  AskUserQuestion antes de codar, escopo **"Só criar a vistoria
+  (recomendado)"**: a oportunidade/venda de base já existe (cadastrada
+  normalmente pelo consultor/vendedor) — o avaliador só busca o negócio
+  certo e AUTOATRIBUI uma vistoria nova pra si mesmo, nunca cadastra
+  veículo/cliente/negociação do zero (isso continua exclusivo de
+  consultor/vendedor/super_admin, sem nenhuma mudança nesse caminho).
+  Nova `buscarCandidatosVistoria(string $tipo, string $termo): array`
+  (`includes/veiculo_avaliacoes.php`) — busca por nome/telefone/placa/
+  marca/modelo, `tipo='compra'` varre `oportunidades`+`clientes`
+  (excluindo `perdido`/`sem_perfil`), `tipo='venda'` varre
+  `vendas`+`oportunidades` (exige `oportunidade_id IS NOT NULL` — mesma
+  disciplina de sempre, vistoria de venda precisa do veículo já vinculado
+  à negociação), LIMIT 15, nunca decide sozinha qual é o candidato certo
+  (regra #3) — só lista, o avaliador escolhe. `admin/avaliacoes.php`
+  ganhou endpoint AJAX (`?ajax=buscar`) pra essa busca com debounce no JS,
+  e a ação POST `criar_vistoria_avaliador` (CSRF-checada, restrita a
+  `$souAvaliador`, nunca confia só em esconder o botão) que chama a MESMA
+  `criarAvaliacao()` de sempre (`$avaliadorId` e `$responsavelId` = o
+  próprio avaliador logado) — reaproveita 100% a idempotência/dedup já
+  existente (2º clique no mesmo veículo reaproveita a vistoria ativa em
+  vez de duplicar), redireciona pro detalhe da vistoria recém-criada.
+  **"faz tudo em modal fica melhor no celular"** — UI inteira em
+  `<dialog id="modal-vistoria" class="modal-lancamento">` (reaproveita a
+  MESMA classe CSS genérica já usada pelo modal de lançamento financeiro,
+  já com CSS de tela cheia no celular via `admin/assets/mobile.css`, sem
+  CSS novo nenhum) — botão "➕ Nova vistoria" abre o modal, campo de busca
+  com resultado ao vivo em cards clicáveis, campos ocultos preenchidos na
+  seleção, botão de confirmar só habilita depois de escolher um candidato.
+  Fluxo de atribuição por outra pessoa (consultor/vendedor/super_admin/
+  supervisor atribuindo um avaliador já existente numa vistoria já criada)
+  continua 100% intocado — as duas formas de começar uma vistoria convivem
+  sem conflito. Testado: função isolada (17 assertions — busca por nome/
+  telefone/placa/marca/modelo nos dois tipos, `venda_id` sempre `null` pra
+  compra e preenchido pra venda, `perdido`/`sem_perfil` excluídos, venda
+  sem `oportunidade_id` excluída, LIMIT respeitado) + HTTP ponta a ponta
+  real (sessão primed por perfil): botão só aparece pro avaliador; endpoint
+  AJAX devolve os candidatos certos; criar+autoatribuir funciona e
+  redireciona pro id certo; 2º clique no mesmo veículo reaproveita a
+  vistoria (idempotência); POST forjado de um `consultor` tentando essa
+  ação nova é rejeitado (403, banco confirmado sem alteração) — confirma
+  que o guard do servidor não depende só de esconder o botão na tela; e
+  que o fluxo antigo de atribuição por consultor/vendedor continua
+  funcionando sem regressão + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
@@ -4947,6 +5001,35 @@ segue no schema sem uso novo, não removida sem ganho real),
   dentro do conjunto, nunca fora, array vazio não quebra, lista com 1 item
   sempre retorna ele mesmo) + `RECUPERACAO_MSGS_REENGAJAMENTO` confirmada
   com 6 variações, todas distintas entre si.
+  **Disparo proativo restrito a horário comercial** (28/09/2026, "deixa
+  automação em horário comercial seria medida que ajudaria" → "Sim",
+  seguindo o item 8 do guia oficial de boas práticas da Z-API já revisado
+  nesta sessão: "defina horários adequados de funcionamento... evite
+  madrugada, horários de baixa interação") — nova
+  `automacaoDentroHorarioComercial()` (`includes/whatsapp_config.php`)
+  reaproveita as MESMAS chaves de config já usadas pela fila de leads
+  (`config.fila_horario_abertura`/`_fechamento`, padrão 10:00/19:20,
+  configurável em Configurações → Fila) pra decidir se um envio PROATIVO
+  deve sair agora. Aplicado só nos 2 pontos que mandam mensagem NOVA pro
+  CLIENTE por iniciativa própria (nunca uma resposta a quem escreveu, que
+  sempre sai a qualquer hora — é o cliente que iniciou o contato, e travar
+  isso perderia lead de verdade): o bloco 3 de `cron/followup.php`
+  (reengajamento de lead esfriando) e `cron/recuperacao_leads.php`
+  inteiro (mensagem pra gente que nunca virou lead aqui — o caso mais
+  sensível, número novo pra essa pessoa). Fora do horário, o cron
+  simplesmente não manda nada nesse trecho e sai sem consumir nenhum
+  guard de dedup — a próxima rodada dentro do horário tenta de novo
+  normalmente, ninguém é perdido, só adiado. **De propósito NÃO trava os
+  alertas INTERNOS pro consultor** (blocos 1/2 do mesmo `followup.php` —
+  atraso e lead quente parado): vão pra um punhado fixo de números
+  internos, comportamento bem diferente do "mensagem automática pra muito
+  destinatário externo distinto fora de hora" que o guia aponta como
+  risco, e o consultor pode querer saber de um atraso mesmo à noite.
+  Testado: lógica de janela isolada (8 horários de referência, incluindo
+  os limites exatos 10:00/19:20 — abertura inclusiva, fechamento
+  exclusivo) batendo com o esperado pro padrão 10:00-19:20 e pra config
+  customizada (08:00-22:00) + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema.
 - **Dashboard por perfil** — `admin/index.php` mostra cards diferentes pra
   cada perfil (`includes/dashboard.php`): consultor vê a própria carteira
   de atendimento (ativas/atrasadas/recebidas na semana/status da fila) E o

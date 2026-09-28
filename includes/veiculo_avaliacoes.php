@@ -257,6 +257,74 @@ function listarAvaliacoesDoVeiculo(int $oportunidadeId): array {
     return $stmt->fetchAll();
 }
 
+/**
+ * Busca veículo/negociação pra criar uma vistoria SELF-ATRIBUÍDA — 28/09/2026,
+ * "no avalista permita ele mesmo subir veiculo manual ou subir carro ele
+ * mesmo sem precisar aguem atribuir", confirmado via AskUserQuestion que é
+ * só "criar a vistoria" (o veículo/negociação já existe no sistema,
+ * cadastrado pelo consultor/vendedor como sempre — o avalista não cadastra
+ * negócio novo do zero, só acha o carro certo e já começa a vistoria sem
+ * depender de alguém atribuir por admin/oportunidade.php/admin/venda.php).
+ * Nunca decide sozinho qual é o candidato certo (regra #3) — sempre volta a
+ * lista inteira que bate com o termo, o avalista escolhe o certo na tela.
+ *
+ * `$tipo='compra'` busca em `oportunidades` (nunca `perdido`/`sem_perfil`
+ * — lead desqualificado não tem veículo físico pra vistoriar);
+ * `$tipo='venda'` busca em `vendas` só as que JÁ têm `oportunidade_id`
+ * vinculado (mesma exigência de `admin/venda.php`, card "Vincular veículo
+ * da frota" — sem isso não dá pra saber qual carro é).
+ */
+function buscarCandidatosVistoria(string $tipo, string $termo): array {
+    $db = getDB();
+    $termo = trim($termo);
+    if ($termo === '') return [];
+    $like = '%' . $termo . '%';
+
+    if ($tipo === 'venda') {
+        $stmt = $db->prepare("
+            SELECT v.id AS venda_id, v.oportunidade_id,
+                   o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+                   v.comprador_nome AS pessoa_nome, v.comprador_telefone AS pessoa_telefone
+            FROM vendas v
+            JOIN oportunidades o ON o.id = v.oportunidade_id
+            WHERE v.oportunidade_id IS NOT NULL
+              AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ?
+                   OR o.veiculo_placa LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)
+            ORDER BY v.created_at DESC
+            LIMIT 15
+        ");
+    } else {
+        $stmt = $db->prepare("
+            SELECT o.id AS oportunidade_id, NULL AS venda_id,
+                   o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+                   c.nome AS pessoa_nome, c.telefone AS pessoa_telefone
+            FROM oportunidades o
+            JOIN clientes c ON c.id = o.cliente_id
+            WHERE o.etapa NOT IN ('perdido', 'sem_perfil')
+              AND (c.nome LIKE ? OR c.telefone LIKE ?
+                   OR o.veiculo_placa LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)
+            ORDER BY o.created_at DESC
+            LIMIT 15
+        ");
+    }
+    $stmt->execute([$like, $like, $like, $like, $like]);
+    $linhas = $stmt->fetchAll();
+
+    $candidatos = [];
+    foreach ($linhas as $l) {
+        $veiculo = trim(($l['veiculo_marca'] ?: '') . ' ' . ($l['veiculo_modelo'] ?: '')) ?: 'Veículo sem marca/modelo';
+        $ano = $l['veiculo_ano'] ? ' ' . $l['veiculo_ano'] : '';
+        $placa = $l['veiculo_placa'] ? ' — ' . $l['veiculo_placa'] : '';
+        $pessoa = $l['pessoa_nome'] ?: 'Sem nome';
+        $candidatos[] = [
+            'oportunidade_id' => (int)$l['oportunidade_id'],
+            'venda_id' => $l['venda_id'] !== null ? (int)$l['venda_id'] : null,
+            'label' => "{$veiculo}{$ano}{$placa} — {$pessoa} ({$l['pessoa_telefone']})",
+        ];
+    }
+    return $candidatos;
+}
+
 /** Fila de trabalho de um avaliador (ou de todas, pra super_admin/supervisor) — pendente/em_andamento primeiro. */
 function listarAvaliacoesPendentes(?int $avaliadorId): array {
     $db = getDB();

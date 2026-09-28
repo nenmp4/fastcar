@@ -501,6 +501,36 @@ function variarMensagem(array $variantes): string {
     return $variantes[array_rand($variantes)];
 }
 
+/**
+ * Está dentro do horário comercial configurado (mesmas chaves
+ * `config.fila_horario_abertura`/`_fechamento` já usadas pra fila de leads
+ * — `includes/fila_leads.php::filaHorarioAbertura()`/`filaHorarioFechamento()`,
+ * padrão 10:00/19:20) — 28/09/2026, "deixa automação em horário comercial
+ * seria medida que ajudaria": reduz o padrão de disparo PROATIVO fora de
+ * horário que o próprio guia de boas práticas da Z-API aponta como fator
+ * de risco de banimento (item 8 do guia, "evite madrugada, horários de
+ * baixa interação"). Duplica a leitura das 2 chaves em vez de chamar
+ * `includes/fila_leads.php` direto — evita acoplar `whatsapp_config.php`
+ * (carregado por praticamente toda entrada do sistema) a um arquivo de
+ * fila que nem sempre está no caminho de include.
+ *
+ * Usado só pra decidir se um envio PROATIVO (reengajamento de lead
+ * esfriando, recuperação de lead perdido) deve sair AGORA — nunca pra
+ * bloquear resposta a mensagem que o cliente mandou (isso sempre
+ * responde, não importa a hora — é o cliente que iniciou o contato) nem
+ * pra silenciar alerta INTERNO pro consultor (poucos números fixos,
+ * comportamento diferente do "mensagem pra muito destinatário externo
+ * distinto" que o guia aponta como risco).
+ */
+function automacaoDentroHorarioComercial(): bool {
+    $agora = date('H:i');
+    $abertura = getConfig('fila_horario_abertura');
+    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '10:00';
+    $fechamento = getConfig('fila_horario_fechamento');
+    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '19:20';
+    return $agora >= $abertura && $agora < $fechamento;
+}
+
 /** Mesmo padrão de logDiagnosticoMidiaZapi() — grava o corpo cru quando
  *  nenhum nome de campo esperado bate, pra achar o formato real depois. */
 function _zapiLogDiagnosticoContato(string $phone, $detalhe): void {

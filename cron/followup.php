@@ -165,8 +165,22 @@ $esfriando = $db->query("
       AND o.responsavel_id IS NULL
 ")->fetchAll();
 
+// 28/09/2026, "deixa automação em horário comercial seria medida que
+// ajudaria" — checado uma vez fora do loop (mesma decisão vale pro lote
+// inteiro desta rodada). Só trava o reengajamento PROATIVO abaixo — nunca
+// os alertas internos pro consultor dos blocos 1/2 acima (poucos números
+// fixos, sem o mesmo risco de "disparo em massa pra externo fora de
+// hora"). Fora do horário, simplesmente não roda o bloco — nenhum guard é
+// consumido, então a próxima rodada do cron dentro do horário tenta de
+// novo normalmente, sem perder ninguém.
+$dentroHorario = automacaoDentroHorarioComercial();
+if (!$dentroHorario) {
+    log_followup('Fora do horário comercial — reengajamento adiado pra próxima rodada dentro do horário.');
+}
+
 $reengajados = 0;
 foreach ($esfriando as $op) {
+    if (!$dentroHorario) break;
     if (!$op['ultima_msg_in']) continue;
 
     $minutosParado = (time() - strtotime($op['ultima_msg_in'])) / 60;

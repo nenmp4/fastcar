@@ -47,6 +47,20 @@ if ($restantesAntes === 0) {
     exit;
 }
 
+// 28/09/2026, "deixa automação em horário comercial seria medida que
+// ajudaria" — este cron manda mensagem PROATIVA pra gente que nunca virou
+// lead aqui (o caso mais sensível de todos, número novo pra essa pessoa),
+// então é o que mais se beneficia de nunca disparar fora do horário
+// comercial. Nunca chama recuperacaoProcessarLote() fora da janela — os
+// telefones continuam "faltando" pra próxima rodada, nada é perdido, só
+// adiado.
+if (!automacaoDentroHorarioComercial()) {
+    log_recuperacao('Fora do horário comercial — lote adiado pra próxima rodada dentro do horário.');
+    flock($lockHandle, LOCK_UN);
+    fclose($lockHandle);
+    exit;
+}
+
 $resultado = recuperacaoProcessarLote(10, '2026-09-18');
 log_recuperacao("Processado(s): {$resultado['processados']} | Pulado(s): {$resultado['pulados']}");
 foreach ($resultado['detalhe'] as $d) {
