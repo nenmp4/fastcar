@@ -5659,36 +5659,47 @@ segue no schema sem uso novo, não removida sem ganho real),
   (borda azul) — nunca aplica sozinha, sempre espera o clique humano
   (regra #3). **Classificação em massa via IA, com botão** (mesmo dia,
   "vamos roda api do gemine para ja clasfica todas 130 amis rapido" →
-  "colca botão") — diferente da sugestão acima (só destaca, espera
-  clique), este botão "🤖 Classificar com IA (Gemini)" (só aparece com
-  `_sem_tipo > 0`, nunca pro supervisor) APLICA direto — pedido explícito
-  do usuário, escopo maior que o padrão "sugestão" do resto do projeto,
-  mas nunca chuta: o prompt do Gemini instrui a responder "desconhecido"
-  sem confiança real, e nesse caso (ou sem marca/modelo nenhum, que nem
-  chega a chamar a IA) a linha fica sem tipo, sinalizada pra revisão
-  manual. `admin/classificar_tipo_veiculo_ia_ajax.php` (novo) processa em
-  LOTES de 8 (nunca as ~130 de uma vez só numa request — estouraria o
-  timeout do Cloudflare/PHP) — tenta primeiro `sugerirTipoVeiculo()`
-  (grátis, instantânea, já resolve a maioria dos casos reais) e só cai pro
-  Gemini (`geminiCall()`, prompt pedindo JSON `{"tipo":"..."}`) pros que
-  sobrarem sem sinal, economizando chamada; JS em `admin/index.php` chama
-  o endpoint em loop até `restantes` zerar ou parar de cair (evita loop
-  infinito se alguma linha nunca resolver), mostrando progresso ao vivo e
-  recarregando a página no final com um resumo (quantos classificados,
-  quantos ficaram sem sinal, se a chave Gemini não estava configurada).
-  Mesma trava de carteira do resto da página (consultor só processa a
-  própria, nunca a de outro). Testado ponta a ponta via HTTP real contra
-  servidor Gemini fake local: heurística resolve sozinha sem gastar
-  chamada Gemini (Onix→carro, Crosser→moto — "Crosser" já está na lista
-  de palavras-chave); modelo fora das listas conhecidas cai pro Gemini e
-  aplica o tipo retornado; Gemini respondendo "desconhecido" (ou nenhuma
-  marca/modelo pra sequer perguntar) deixa a linha sem tipo, nunca chuta;
-  rodar de novo com `restantes` idêntico ao round anterior confirma que o
-  JS pararia o loop (nunca fica girando à toa); consultor rodando o
-  próprio classifica só a própria carteira, nunca toca lead de outro
-  consultor (conferido no banco); supervisor bloqueado com 403; CSRF
-  inválido bloqueado com 403 + `php -l` + `tests/smoke.php` limpos. Sem
-  migração de schema (`tipo_veiculo` já existia).
+  "colca botão") — 1ª versão foi um botão web
+  (`admin/classificar_tipo_veiculo_ia_ajax.php`, lotes de 8 via AJAX,
+  aplicando direto — diferente da sugestão acima, que só destaca e espera
+  clique). **2 bugs achados testando em produção** (print real: botão
+  rodou e mostrou "0 lead(s) classificado(s). 16 ficaram sem sinal
+  confiável" com "Classificando... 0 classificado(s), 354 restante(s)",
+  enquanto a aba "Sem tipo" mostrava 129): (1) o endpoint contava/buscava
+  `tipo_veiculo IS NULL` em TODA a base (inclusive fechado/perdido/
+  sem_perfil, daí os 354 não baterem com os 129 da aba, escopada só pra
+  etapa ativa); (2) sempre buscava `ORDER BY id LIMIT 8` do zero — se os 8
+  primeiros por id não tinham sinal confiável (nem heurística nem Gemini),
+  a PRÓXIMA chamada buscava os MESMOS 8 de novo (ainda `IS NULL`), o JS
+  via `restantes` igual ao round anterior e parava o loop cedo demais,
+  deixando o resto da base (as outras ~346) sem nem tentar. **"vamos
+  rodar pelo terminal ai pode remover esse botão gemini"** (mesmo dia) —
+  o usuário preferiu rodar via SSH em vez de corrigir o botão web: botão
+  + endpoint AJAX removidos por completo (`git rm`, nunca fica código
+  morto), substituídos por `install/classificar_tipo_veiculo_ia.php`
+  (CLI, mesmo padrão dry-run/`--confirmar` de todo script de backfill
+  deste projeto) — processa **toda** a base (`tipo_veiculo IS NULL`,
+  qualquer etapa, sem escopo de "aba ativa") numa passada só, sem lotes/
+  cursor (rodando via SSH não tem o timeout de request HTTP que forçava
+  os lotes de 8 no botão). Mesma lógica de sempre: tenta
+  `sugerirTipoVeiculo()` (grátis, instantânea) primeiro, só cai pro
+  Gemini (`geminiCall()`, prompt pedindo JSON `{"tipo":"..."}` ou
+  "desconhecido" sem confiança real, nunca chuta — regra #3) pros que
+  sobrarem sem sinal; idempotente (só olha `IS NULL`, rodar de novo só
+  reprocessa quem ficou sem sinal na rodada anterior); progresso em tempo
+  real via `ob_implicit_flush(true)` (mesma lição de
+  `install/zapsign_conciliar_vendas.php` — sem isso o terminal fica
+  minutos em silêncio até o fim). Testado em banco isolado + servidor
+  Gemini fake local: heurística resolve sozinha (Onix→carro); modelo fora
+  das listas conhecidas cai pro Gemini e aplica; "desconhecido" (ou sem
+  marca/modelo nenhum) fica sem tipo, nunca chuta; oportunidade JÁ
+  `etapa='fechado'` é processada igual (confirma que não tem o mesmo
+  problema de escopo do botão) — as 5 candidatas semeadas (2 heurística +
+  1 Gemini + 2 sem sinal) bateram exatamente com o esperado; dry-run
+  confirmado sem gravar nada; `--confirmar` aplica de verdade; rodar de
+  novo só reprocessa os 2 que ficaram sem sinal (idempotência) + `php -l`
+  + `tests/smoke.php` limpos. Sem migração de schema (`tipo_veiculo` já
+  existia).
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
