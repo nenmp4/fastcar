@@ -135,6 +135,78 @@ function oficialEnviarTexto(string $phone, string $msg): bool {
 }
 
 /**
+ * Envia imagem com legenda via Cloud API — POST /{phone_number_id}/messages,
+ * type=image, image={link, caption}. 29/09/2026, "pode deixar todos envios
+ * pelo whatsapp pela instância meta, dá uma revisão geral aí" — desbloqueia
+ * o fallback de zapiEnviarImagem() (includes/whatsapp_config.php) pra
+ * quando a instância Z-API DEDICADA de vendas/financeiro não está
+ * configurada ou falha (o caso real que quebrou: link do wizard de
+ * documentos com a logo, pela instância de vendas nunca configurada).
+ *
+ * SÓ funciona com URL PÚBLICA (http/https) — a Meta busca o arquivo
+ * sozinha a partir do `link`, nunca aceita base64/data URI direto (ao
+ * contrário da Z-API). Mídia que só existe como base64 (foto/vídeo do
+ * catálogo de revenda, anexo do WhatsApp Box) exigiria o fluxo de upload
+ * prévio via `/media` da Meta — fora do escopo desta rodada (Fase 2 já
+ * sinalizada no CLAUDE.md) — `oficialEnviarImagem()` recusa de propósito
+ * (nunca tenta mandar um data URI como se fosse link, regra #3: nunca
+ * prometer capacidade que não existe).
+ */
+function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda): bool {
+    [$phoneId, $token] = oficialCredenciais();
+    if (!$phoneId || !$token || !$phone || !$imagemUrl) {
+        _oficialSetUltimoErro('Sem Phone Number ID/token configurado, ou telefone/imagem vazio.');
+        return false;
+    }
+    if (!preg_match('#^https?://#i', $imagemUrl)) {
+        _oficialSetUltimoErro('Envio de imagem pelo Meta só aceita URL pública (http/https) — este arquivo não tem uma.');
+        return false;
+    }
+    $phoneNorm = normalizarTelefone($phone);
+    if (strlen($phoneNorm) < 12) {
+        _oficialSetUltimoErro('Telefone inválido.');
+        return false;
+    }
+
+    $body = [
+        'messaging_product' => 'whatsapp',
+        'to' => $phoneNorm,
+        'type' => 'image',
+        'image' => ['link' => $imagemUrl, 'caption' => $legenda],
+    ];
+
+    $ch = curl_init(oficialBaseUrl() . "/{$phoneId}/messages");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($resp === false) {
+        _oficialSetUltimoErro("Falha de conexão: {$curlErr}");
+        return false;
+    }
+    $json = json_decode($resp, true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($json['messages'][0]['id'])) {
+        _oficialSetUltimoErro(null);
+        return true;
+    }
+    $erroMsg = $json['error']['message'] ?? "HTTP {$httpCode}";
+    $erroCode = $json['error']['code'] ?? null;
+    _oficialSetUltimoErro("{$erroMsg}" . ($erroCode ? " (code {$erroCode})" : '') . " — resposta: " . substr($resp, 0, 500));
+    return false;
+}
+
+/**
  * Testa a conexão — GET /{phone_number_id} (leitura simples, sem custo/
  * efeito colateral, mesmo espírito de GoogleDrive::testarConexao()).
  * Retorna o display_phone_number confirmado pela Meta em sucesso, ou

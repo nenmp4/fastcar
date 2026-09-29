@@ -151,11 +151,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$telefoneTeste) {
                 $erro = 'Informe um telefone pra receber a mensagem de teste.';
             } else {
-                $ok = zapiEnviarTexto($telefoneTeste, '✅ Teste de conexão Z-API (vendas) — Fastcar CRM.', zapiCredenciaisVendas());
-                if ($ok) {
-                    $sucesso = 'Mensagem de teste (vendas) enviada com sucesso.';
+                // 29/09/2026 — chama direto o envio bruto Z-API (nunca
+                // zapiEnviarTexto(), que desde este dia cai pro Meta
+                // sozinho se a instância dedicada falhar/não estiver
+                // configurada): este botão testa ESSA instância
+                // especificamente, um fallback escondendo o problema
+                // faria o teste "passar" mesmo com a instância quebrada.
+                [$instV, $tokV, $ctokV] = zapiCredenciaisVendas();
+                if (!$instV || !$tokV) {
+                    $erro = 'Instância de vendas ainda não configurada — salve as credenciais antes de testar.';
                 } else {
-                    $erro = 'Falha ao enviar — confira as credenciais da instância de vendas e se ela está conectada.';
+                    $telNorm = normalizarTelefone($telefoneTeste);
+                    $ok = strlen($telNorm) >= 12 && _zapiEnviarTextoBruto($telNorm, '✅ Teste de conexão Z-API (vendas) — Fastcar CRM.', $instV, $tokV, $ctokV);
+                    if ($ok) {
+                        $sucesso = 'Mensagem de teste (vendas) enviada com sucesso.';
+                    } else {
+                        $erro = 'Falha ao enviar — confira as credenciais da instância de vendas e se ela está conectada.';
+                    }
                 }
             }
         } elseif ($acao === 'salvar_zapi_financeiro') {
@@ -168,11 +180,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$telefoneTeste) {
                 $erro = 'Informe um telefone pra receber a mensagem de teste.';
             } else {
-                $ok = zapiEnviarTexto($telefoneTeste, '✅ Teste de conexão Z-API (financeiro) — Fastcar CRM.', zapiCredenciaisFinanceiro());
-                if ($ok) {
-                    $sucesso = 'Mensagem de teste (financeiro) enviada com sucesso.';
+                // Mesmo motivo do teste de vendas acima — nunca passar
+                // pelo fallback Meta, senão o teste "passa" mesmo com a
+                // instância do financeiro quebrada.
+                [$instF, $tokF, $ctokF] = zapiCredenciaisFinanceiro();
+                if (!$instF || !$tokF) {
+                    $erro = 'Instância do financeiro ainda não configurada — salve as credenciais antes de testar.';
                 } else {
-                    $erro = 'Falha ao enviar — confira as credenciais da instância do financeiro e se ela está conectada.';
+                    $telNorm = normalizarTelefone($telefoneTeste);
+                    $ok = strlen($telNorm) >= 12 && _zapiEnviarTextoBruto($telNorm, '✅ Teste de conexão Z-API (financeiro) — Fastcar CRM.', $instF, $tokF, $ctokF);
+                    if ($ok) {
+                        $sucesso = 'Mensagem de teste (financeiro) enviada com sucesso.';
+                    } else {
+                        $erro = 'Falha ao enviar — confira as credenciais da instância do financeiro e se ela está conectada.';
+                    }
                 }
             }
         } elseif ($acao === 'salvar_whatsapp_oficial') {

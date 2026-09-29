@@ -8387,6 +8387,92 @@ segue no schema sem uso novo, não removida sem ganho real),
   recebe 403, `requireSuperAdmin()` funcionando) + `php -l` (todas as ~40
   páginas tocadas, incluindo as 34 do bulk-insert) + `tests/smoke.php`
   limpos. Sem migração de schema.
+- **Fallback automático Z-API dedicada → Meta oficial (vendas/financeiro)**
+  (29/09/2026, achado real via screenshot de `admin/venda.php?id=27` —
+  "Não deu pra enviar por WhatsApp (confira as credenciais da instância de
+  vendas em Configurações)" ao clicar "Enviar link por WhatsApp", enquanto
+  o badge do topbar mostrava "🟢 Meta (oficial) conectado" — pedido:
+  "Botão enviar pode deixar todos envios pelo whatsapp pela instancia
+  metada, revisão geral ai"). Confirmado via AskUserQuestion antes de
+  codar: (1) quando a instância DEDICADA (vendas/financeiro) não está
+  configurada ou falha ao mandar TEXTO, cai automaticamente pro canal
+  Meta oficial (mesmo número já usado pelo funil principal de compra,
+  migrado em 25/09/2026); (2) implementar envio de IMAGEM pelo Meta
+  também nesta rodada (não adiado pra uma "Fase 2" futura) — necessário
+  porque o link do wizard de documentos normalmente sai como imagem
+  (logo da Fastcar + legenda) quando a logo está configurada
+  (`marcaLogoConfigurada()`). Pergunta de acompanhamento direta do
+  usuário no meio da conversa ("audio da pra mandar") respondida sem
+  implementar nada: áudio NUNCA pode usar esse fallback —
+  `zapiEnviarAudio()` nem aceita parâmetro de instância override, e é
+  sempre base64 gravado no navegador (nunca uma URL pública), então o
+  envio por link da Meta não se aplica sem implementar o fluxo completo
+  de upload prévio (`POST /media`), fora de escopo aqui.
+  **Distinção importante de risco** (documentada direto no docblock novo
+  de `includes/whatsapp_config.php`): isso é DIFERENTE do mecanismo de
+  fallback Z-API→Z-API removido em 28/09/2026 (ver bullet "Instância
+  Z-API fallback (só envio)" — removido por seguir a orientação oficial
+  da própria Z-API de nunca trocar de instância reativamente numa falha,
+  já que isso pode piorar um shadowban). Aqui é troca de PROVEDOR (Z-API
+  → Meta), não de instância Z-API — Meta e Z-API são sistemas
+  completamente não relacionados, sem o mesmo risco de agravar bloqueio.
+  `zapiEnviarTexto()`/`zapiEnviarImagem()` (`includes/whatsapp_config.php`)
+  ganharam a mesma lógica nos dois: quando chamadas COM
+  `$instanciaOverride` (instância dedicada de vendas/financeiro — nunca
+  quando é a principal, que já tem seu próprio roteamento via
+  `oficialEhProviderPrincipal()`) e a tentativa pela Z-API dedicada falha
+  (sem credencial configurada OU o envio retorna erro), cai pra
+  `oficialEnviarTexto()`/`oficialEnviarImagem()` (`includes/whatsapp_oficial.php`)
+  se `oficialConfigured()`. `oficialEnviarImagem()` (nova função,
+  `includes/whatsapp_oficial.php`, mesmo padrão de
+  `oficialEnviarTexto()` — `POST /{phone_number_id}/messages`,
+  `type: image`, `image: {link, caption}`) **nunca aceita imagem em
+  base64/data URI** — a Cloud API da Meta só aceita `link` como URL
+  pública que ela mesma busca, nunca aceita o corpo da imagem direto no
+  payload (diferente da Z-API, que aceita os dois formatos); regra #3
+  do projeto (nunca inventar capacidade que não existe) aplicada aqui em
+  2 camadas de defesa: `zapiEnviarImagem()` só tenta o fallback quando
+  `preg_match('#^https?://#i', $imagemUrl)` bate, E `oficialEnviarImagem()`
+  revalida isso de novo por conta própria, então mesmo um chamador futuro
+  que esqueça de checar nunca manda um data URI pra Meta por engano.
+  **"Testar conexão" (vendas/financeiro) em `admin/configuracoes.php`
+  continua honesto** — os 2 handlers (`testar_zapi_vendas`/
+  `testar_zapi_financeiro`) pararam de chamar `zapiEnviarTexto()` (que
+  agora tem fallback) e passaram a chamar `_zapiEnviarTextoBruto()`
+  direto (a função de baixo nível, só Z-API, nunca tocada por essa
+  mudança) — sem isso, uma instância dedicada quebrada/desconfigurada
+  passaria no teste escondida atrás do fallback pro Meta, mascarando o
+  problema real de quem está configurando. Testado: 11 cenários em banco
+  isolado contra fake Z-API + fake Meta locais (texto: sem dedicada+sem
+  Meta→false sem chamada nenhuma; sem dedicada+Meta ok→fallback; dedicada
+  falha (500)+Meta ok→fallback só depois de tentar a dedicada 1x; dedicada
+  funciona→nunca chama Meta; canal PRINCIPAL sem override nunca cai pro
+  fallback vendas/financeiro, comportamento intocado; canal principal com
+  toggle=oficial continua indo direto pro Meta, sem regressão; imagem:
+  URL pública + dedicada vazia + Meta ok→fallback com payload
+  `link`+`caption` certos; imagem data URI + dedicada vazia→false, ZERO
+  chamada de rede, nunca tenta Meta com base64; imagem com dedicada
+  funcionando→só Z-API, nunca Meta; `oficialEnviarImagem()` isolada:
+  sucesso com URL, recusa data URI direto) + HTTP ponta a ponta real
+  contra o app server de verdade (sessão primed via `startSecureSession()`,
+  nunca sessão forjada): `testar_zapi_vendas` com a instância dedicada
+  quebrada reporta honestamente "Falha ao enviar — confira as credenciais
+  da instância de vendas..." (nunca um falso sucesso via Meta) — o único
+  hit ao Meta durante essa chamada foi o badge de status do topbar
+  (`GET /PHONE123?fields=display_phone_number`, endpoint de leitura,
+  nunca de envio, renderizado em toda página do admin, sem relação com a
+  lógica do teste); e o fluxo real do screenshot — `enviar_link_documentos_venda`
+  em `admin/venda.php` com a instância de vendas quebrada — confirmado
+  funcionando nos 2 formatos: sem logo configurada, sai como TEXTO via
+  Meta (`type:text`, mesmo link do wizard); com logo configurada, sai
+  como IMAGEM via Meta (`type:image`, `link` apontando pra logo +
+  `caption` com o link do wizard) — os dois casos mostrando "Link enviado
+  por WhatsApp." na tela, nunca mais o erro do screenshot original + `php
+  -l` nos 3 arquivos + `tests/smoke.php` limpo. Sem migração de schema.
+  `zapiEnviarVideo()`/`zapiEnviarDocumento()` NÃO ganharam esse fallback
+  nesta rodada — fora do escopo confirmado, seus chamadores atuais nunca
+  passam URL pública (sempre base64/formato que a Meta não aceitaria de
+  qualquer forma sem o fluxo de upload `/media`).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

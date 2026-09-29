@@ -165,6 +165,21 @@ function zapiCredenciaisFinanceiro(): array {
  * — nenhuma evidência de que o mecanismo tenha ajudado de verdade, só
  * mais uma instância pra gerenciar. A redundância real agora é a migração
  * pro canal oficial da Meta (acima), não uma 2ª instância Z-API.
+ *
+ * 29/09/2026, "pode deixar todos envios pelo whatsapp pela instância meta,
+ * dá uma revisão geral aí" — achado real: link do wizard de documentos de
+ * uma venda não saía ("confira as credenciais da instância de vendas")
+ * porque a instância Z-API DEDICADA de vendas nunca tinha sido configurada
+ * de verdade. Diferente do fallback Z-API→Z-API removido acima (mesmo
+ * provedor, mesmo risco de shadowban), cair pra um provedor DIFERENTE
+ * (Meta oficial) quando a instância dedicada (vendas/financeiro, nunca a
+ * principal — essa já vai pro Meta acima se for o caso) não está
+ * configurada ou falha ao enviar é seguro — nenhuma evidência de que troca
+ * de PROVEDOR carregue o mesmo risco de banimento que troca de instância
+ * Z-API carregava. `_zapiEnviarTextoBruto()` continua chamável direto (sem
+ * essa função) por quem precisa testar SÓ a instância dedicada de verdade,
+ * sem o fallback mascarar o resultado — ver os botões "Testar conexão" de
+ * vendas/financeiro em admin/configuracoes.php.
  */
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
@@ -178,12 +193,23 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
         _chatbot_getConfig('zapi_token'),
         _chatbot_getConfig('zapi_client_token'),
     ];
-    if (!$inst || !$tok || !$phone) return false;
 
-    $phone = normalizarTelefone($phone);
-    if (strlen($phone) < 12) return false;
+    if ($inst && $tok && $phone) {
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) >= 12 && _zapiEnviarTextoBruto($phoneNorm, $msg, $inst, $tok, $ctok)) {
+            return true;
+        }
+    }
 
-    return _zapiEnviarTextoBruto($phone, $msg, $inst, $tok, $ctok);
+    // Instância DEDICADA (vendas/financeiro) sem credencial configurada ou
+    // que falhou ao enviar: cai pro Meta oficial em vez de só reportar
+    // falha. Nunca se aplica à instância PRINCIPAL (já teria ido pro Meta
+    // acima, se fosse o caso — cair aqui de novo pra ela seria redundante,
+    // não errado, mas o guard evita a chamada dupla).
+    if (!$usandoPrincipal && oficialConfigured()) {
+        return oficialEnviarTexto($phone, $msg);
+    }
+    return false;
 }
 
 /**
@@ -252,33 +278,50 @@ function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string 
  * qualificação e no rodapé com endereço real do wizard) e, desde
  * 17/09/2026, pra IA de vendas mandar foto do catálogo de um veículo da
  * frota (`$instanciaOverride`, mesmo padrão de `zapiEnviarTexto()`).
+ *
+ * 29/09/2026, mesmo motivo/pedido de `zapiEnviarTexto()` acima — instância
+ * DEDICADA (vendas/financeiro) sem credencial ou que falha cai pro Meta
+ * oficial (`oficialEnviarImagem()`), MAS só quando `$imagemUrl` é uma URL
+ * pública de verdade (http/https) — a Meta busca o arquivo sozinha via
+ * `link`, nunca aceita base64/data URI. Catálogo de mídia da IA de vendas
+ * e anexo do WhatsApp Box sempre mandam data URI aqui, então nunca caem
+ * nesse fallback — continuam exigindo a instância dedicada configurada,
+ * mesmo espírito de nunca prometer capacidade que não existe (regra #3).
  */
 function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?array $instanciaOverride = null): bool {
+    $usandoPrincipal = $instanciaOverride === null;
+
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
         _chatbot_getConfig('zapi_instance_id'),
         _chatbot_getConfig('zapi_token'),
         _chatbot_getConfig('zapi_client_token'),
     ];
-    if (!$inst || !$tok || !$phone || !$imagemUrl) return false;
 
-    $phone = normalizarTelefone($phone);
-    if (strlen($phone) < 12) return false;
+    if ($inst && $tok && $phone && $imagemUrl) {
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) >= 12) {
+            $headers = ['Content-Type: application/json'];
+            if ($ctok) $headers[] = 'client-token: ' . $ctok;
 
-    $headers = ['Content-Type: application/json'];
-    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+            $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-image");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_POSTFIELDS => json_encode(['phone' => $phoneNorm, 'image' => $imagemUrl, 'caption' => $legenda]),
+                CURLOPT_TIMEOUT => 15,
+            ]);
+            curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code === 200) return true;
+        }
+    }
 
-    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-image");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'image' => $imagemUrl, 'caption' => $legenda]),
-        CURLOPT_TIMEOUT => 15,
-    ]);
-    curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return $code === 200;
+    if (!$usandoPrincipal && oficialConfigured() && preg_match('#^https?://#i', $imagemUrl)) {
+        return oficialEnviarImagem($phone, $imagemUrl, $legenda);
+    }
+    return false;
 }
 
 /**
