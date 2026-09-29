@@ -202,7 +202,8 @@ function blogRodape(?string $slugAtual = null): void {
         <strong>FASTCAR SOLUTIONS</strong> — CNPJ 66.934.500/0001-09<br>
         Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices<br>
         Alphaville Conde II, Barueri/SP — CEP 06473-073<br>
-        © <?= (int)$anoAtual ?> Fastcar Solutions. Todos os direitos reservados.
+        © <?= (int)$anoAtual ?> Fastcar Solutions. Todos os direitos reservados. —
+        <a href="/privacidade.php">Política de Privacidade</a>
     </footer>
 </div>
 <a class="flutuante" href="<?= htmlspecialchars(blogWhatsappLink(), ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener" aria-label="Falar no WhatsApp" title="Falar no WhatsApp">💬</a>
