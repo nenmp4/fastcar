@@ -816,6 +816,59 @@ function marcarPerdida(int $oportunidadeId, string $motivo, ?int $responsavelId 
 }
 
 /**
+ * Seleção em massa (29/09/2026, pedido direto: "permitir que selecione em
+ * massa os leads pra marcar... desistiu... negocio [pode] retornar") — marca
+ * várias oportunidades como perdidas numa passada só, mesmo motivo pra
+ * todas. Nunca "some" nada do sistema — igual marcarPerdida() de sempre, só
+ * encerra o funil; reabrir depois continua sendo ação manual normal, o
+ * negócio pode voltar. Reaproveita marcarPerdida()/mudarEtapa() pra cada id,
+ * nunca UPDATE em lote direto (regra #6) — cada oportunidade grava seu
+ * próprio histórico.
+ *
+ * Cada id é tratado independente (try/catch por item, nunca deixa 1 id
+ * ruim derrubar o lote inteiro): id inexistente, fora da carteira do
+ * consultor (quando $restringirDono é passado) ou já fora de ETAPAS_ATIVAS
+ * (já fechado/perdido/sem_perfil — nunca reprocessa, evitaria duplicar
+ * histórico à toa) contam como "ignorado", nunca erro.
+ *
+ * @param int[] $ids
+ * @return array{total:int, sucesso:int, ignorados:int}
+ */
+function marcarPerdidaEmMassa(array $ids, string $motivo, ?int $responsavelId = null, bool $semPerfil = false, ?int $restringirDono = null): array {
+    if (trim($motivo) === '') {
+        throw new InvalidArgumentException('Motivo de perda é obrigatório.');
+    }
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    $db = getDB();
+    $sucesso = 0;
+    $ignorados = 0;
+    foreach ($ids as $oportunidadeId) {
+        if ($oportunidadeId <= 0) {
+            $ignorados++;
+            continue;
+        }
+        $stmt = $db->prepare('SELECT etapa, responsavel_id FROM oportunidades WHERE id = ?');
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op || !in_array($op['etapa'], ETAPAS_ATIVAS, true)) {
+            $ignorados++;
+            continue;
+        }
+        if ($restringirDono !== null && (int)$op['responsavel_id'] !== $restringirDono) {
+            $ignorados++;
+            continue;
+        }
+        try {
+            marcarPerdida($oportunidadeId, $motivo, $responsavelId, $semPerfil);
+            $sucesso++;
+        } catch (Throwable $e) {
+            $ignorados++;
+        }
+    }
+    return ['total' => count($ids), 'sucesso' => $sucesso, 'ignorados' => $ignorados];
+}
+
+/**
  * "7 dias de silêncio" (21/09/2026, pedido direto depois de ver ~25 leads
  * sem nome que receberam reengajamento — cron/followup.php, bloco 3 — e
  * nunca responderam nada, ficando presos pra sempre em 'whatsapp'/

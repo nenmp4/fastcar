@@ -7639,6 +7639,55 @@ segue no schema sem uso novo, não removida sem ganho real),
   provavelmente têm o mesmo bug latente — fora do escopo desta correção
   (só a tela que o usuário mostrou no vídeo); aplicar o mesmo helper lá
   se/quando confirmado.
+- **Seleção em massa pra marcar perdido/cancelado** (29/09/2026, pedido
+  direto: "permitir que selecione em massa os leads pra marcar marcação
+  tudo de uma vez... desistiu... negocio [pode] retornar") — confirmado
+  via AskUserQuestion: (1) em `admin/index.php` (funil de compra) **e**
+  `admin/vendas.php` (pipeline de revenda); (2) a única ação em massa é
+  marcar como perdido/cancelado com motivo obrigatório (não um seletor
+  livre de qualquer etapa) — mesmo caminho de `marcarPerdida()`/
+  `mudarEtapaVenda(..., 'cancelada', ...)` de sempre, nunca apaga nada,
+  sempre pode reabrir depois se o negócio voltar.
+  `marcarPerdidaEmMassa()` (`includes/oportunidades.php`) e
+  `cancelarVendaEmMassa()` (`includes/vendas.php`) — mesmo padrão nos
+  dois: recebem array de ids + 1 motivo só (aplicado a todas), chamam
+  `marcarPerdida()`/`mudarEtapaVenda()` individualmente por id (regra #6,
+  nunca UPDATE em lote direto — cada oportunidade grava seu próprio
+  histórico), cada id tratado independente (try/catch por item, 1 id ruim
+  nunca derruba o lote). Um id conta como "ignorado" (nunca erro) quando:
+  não existe, já está fora de `ETAPAS_ATIVAS`/`ETAPAS_VENDA_ATIVAS`
+  (já fechado/perdido/sem_perfil/vendido/cancelado — nunca reprocessa,
+  evita duplicar histórico à toa) ou, se `$restringirDono` for passado
+  (consultor/vendedor logado, nunca super_admin/supervisor), não pertence
+  à carteira de quem está agindo — mesma trava de ownership já usada em
+  `classificarTipoVeiculo()` no mesmo arquivo.
+  UI: checkbox por linha (só aparece pra oportunidade/venda ainda ativa —
+  já encerrada nunca é selecionável) + checkbox "selecionar todas" no
+  cabeçalho + barra de ação (contador + campo de motivo + botão) que só
+  aparece com ≥1 selecionada. Os checkboxes/campo de motivo/botão de
+  submeter **nunca ficam dentro de uma `<form>`** — usam o atributo HTML
+  `form="form-bulk-marcar"`/`form="form-bulk-cancelar"` pra se associar a
+  um `<form>` vazio (só CSRF + `acao` hidden) declarado fora da
+  `<table>` — evita aninhar `<form>` dentro de `<form>` (inválido em
+  HTML5), já que `admin/index.php` já tem um `<form>` por linha pro botão
+  de classificar tipo de veículo dentro da própria célula da tabela.
+  Nunca aparece pro perfil `supervisor` (só acompanha) — nem o checkbox
+  nem a barra são renderizados, e o servidor bloqueia o POST com 403
+  mesmo assim (nunca confia só em esconder a UI). Banner de resultado
+  (`?bulk_sucesso=N&bulk_ignorados=M` ou `?bulk_erro=...`) no topo da
+  página depois do redirect. Testado: função isolada em banco isolado (2
+  cenários por lado — compra e venda — cobrindo dono restrito x sem
+  restrição, id de outro dono ignorado, id já encerrado ignorado, id
+  inexistente ignorado, motivo vazio lança exceção, ids vazio não lança
+  só devolve zerado, idempotência — rodar 2x sobre os mesmos ids não
+  marca de novo) + HTTP ponta a ponta real nos 2 arquivos (sessão primed
+  por perfil): consultor/vendedor vê checkboxes+barra e consegue marcar em
+  massa via POST real (própria oportunidade vira `perdido`/`cancelada`
+  com o motivo exato, a de outro dono e o id inexistente ficam ignorados,
+  confirmado direto no banco); supervisor não vê nem checkbox nem form no
+  HTML renderizado e um POST forjado com CSRF roubado da própria tela é
+  rejeitado com 403 sem alterar nada no banco + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

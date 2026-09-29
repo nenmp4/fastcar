@@ -191,6 +191,52 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
 }
 
 /**
+ * Seleção em massa (29/09/2026, mesmo pedido do lado de compra — ver
+ * marcarPerdidaEmMassa() em includes/oportunidades.php) — cancela várias
+ * negociações de venda numa passada só, mesmo motivo pra todas. Reaproveita
+ * mudarEtapaVenda() pra cada id (regra #6), nunca UPDATE em lote direto.
+ * Cada id tratado independente: id inexistente, fora da carteira do
+ * vendedor (quando $restringirDono é passado) ou já fora de
+ * ETAPAS_VENDA_ATIVAS conta como "ignorado", nunca derruba o lote.
+ *
+ * @param int[] $ids
+ * @return array{total:int, sucesso:int, ignorados:int}
+ */
+function cancelarVendaEmMassa(array $ids, string $motivo, ?int $responsavelId = null, ?int $restringirDono = null): array {
+    if (trim($motivo) === '') {
+        throw new InvalidArgumentException('Motivo do cancelamento é obrigatório.');
+    }
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    $db = getDB();
+    $sucesso = 0;
+    $ignorados = 0;
+    foreach ($ids as $vendaId) {
+        if ($vendaId <= 0) {
+            $ignorados++;
+            continue;
+        }
+        $stmt = $db->prepare('SELECT etapa, responsavel_id FROM vendas WHERE id = ?');
+        $stmt->execute([$vendaId]);
+        $v = $stmt->fetch();
+        if (!$v || !in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true)) {
+            $ignorados++;
+            continue;
+        }
+        if ($restringirDono !== null && (int)$v['responsavel_id'] !== $restringirDono) {
+            $ignorados++;
+            continue;
+        }
+        try {
+            mudarEtapaVenda($vendaId, 'cancelada', $responsavelId, $motivo);
+            $sucesso++;
+        } catch (Throwable $e) {
+            $ignorados++;
+        }
+    }
+    return ['total' => count($ids), 'sucesso' => $sucesso, 'ignorados' => $ignorados];
+}
+
+/**
  * Cria (ou reaproveita) o lead de VENDA por telefone e já abre a
  * negociação na etapa 'whatsapp' — espelha
  * includes/oportunidades.php::criarOuAbrirOportunidade() (regra #2:

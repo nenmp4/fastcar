@@ -121,6 +121,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
     }
 }
 
+// 29/09/2026, mesmo pedido do lado de compra (ver admin/index.php) —
+// seleção em massa na tabela, pra cancelar várias negociações de uma vez.
+// Reaproveita cancelarVendaEmMassa() (includes/vendas.php) — nunca apaga
+// nada, só encerra com motivo/histórico via mudarEtapaVenda(), mesma
+// disciplina de "cancelar" de sempre.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cancelar_venda_massa') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Ação não permitida — perfil de acompanhamento só consulta.');
+    }
+    $idsPost = array_map('intval', (array)($_POST['ids'] ?? []));
+    $motivoPost = clean((string)($_POST['motivo'] ?? ''));
+    $bulkQs = [];
+    if (!$idsPost) {
+        $bulkQs = ['bulk_erro' => 'Nenhuma negociação selecionada.'];
+    } elseif ($motivoPost === '') {
+        $bulkQs = ['bulk_erro' => 'Motivo é obrigatório.'];
+    } else {
+        try {
+            $r = cancelarVendaEmMassa($idsPost, $motivoPost, $meuId, $souDono ? $meuId : null);
+            $bulkQs = ['bulk_sucesso' => $r['sucesso'], 'bulk_ignorados' => $r['ignorados']];
+        } catch (Throwable $e) {
+            $bulkQs = ['bulk_erro' => $e->getMessage()];
+        }
+    }
+    $qs = $_GET;
+    unset($qs['bulk_sucesso'], $qs['bulk_ignorados'], $qs['bulk_erro']);
+    header('Location: /admin/vendas.php?' . http_build_query(array_merge($qs, $bulkQs)));
+    exit;
+}
+
 $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
@@ -274,6 +309,11 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 
 <main>
 <?php if ($erroPromissoria): ?><div class="alerta-erro"><?= e($erroPromissoria) ?></div><?php endif; ?>
+<?php if (isset($_GET['bulk_sucesso'])): ?>
+    <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> negociação(ões) cancelada(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
+<?php elseif (isset($_GET['bulk_erro'])): ?>
+    <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
+<?php endif; ?>
 
 <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
     <button type="button" class="btn-primary" style="width:auto" onclick="document.getElementById('modal-promissoria').showModal()">💳 Vender na Promissória</button>
@@ -698,17 +738,41 @@ document.getElementById('modal-promissoria').showModal();
     </form>
 </div>
 
+<?php
+// 29/09/2026, mesmo pedido do lado de compra — seleção em massa pra
+// cancelar várias negociações de uma vez. Nunca aparece pro supervisor
+// (só acompanha).
+$podeSelecionarEmMassa = $perfil !== 'supervisor';
+if ($podeSelecionarEmMassa):
+?>
+<form id="form-bulk-cancelar" method="post" onsubmit="return confirm('Cancelar as negociações selecionadas? Motivo fica gravado no histórico de cada uma; o veículo volta a ficar disponível pra uma nova venda.');">
+    <?= csrfField() ?>
+    <input type="hidden" name="acao" value="cancelar_venda_massa">
+</form>
+<div id="barra-bulk-cancelar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
+    <strong><span id="bulk-contagem">0</span> selecionada(s)</strong>
+    <input type="text" name="motivo" form="form-bulk-cancelar" id="bulk-motivo" required
+           placeholder="Motivo (obrigatório) — ex: desistiu, achou proposta baixa..."
+           style="flex:1;min-width:220px;margin:0">
+    <button type="submit" form="form-bulk-cancelar" class="perigo" style="margin:0">🚫 Cancelar selecionadas</button>
+    <button type="button" class="btn-texto" onclick="bulkLimparSelecao()">Limpar seleção</button>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <table class="tabela-oportunidades">
         <thead>
             <tr>
+                <?php if ($podeSelecionarEmMassa): ?>
+                <th><input type="checkbox" id="bulk-chk-todos" onchange="bulkToggleTodos(this)" title="Selecionar todas as visíveis"></th>
+                <?php endif; ?>
                 <th>Veículo</th><th>Comprador</th><th>Preço/interesse</th>
                 <th>Etapa</th><th>Responsável</th><th>Atualizado em</th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$vendas): ?>
-            <tr><td colspan="7">Nenhuma <?= $souDono ? 'venda sua' : 'venda' ?> <?= $busca ? 'encontrada' : ($etapaFiltro ? 'nessa etapa' : 'iniciada ainda') ?>.</td></tr>
+            <tr><td colspan="<?= $podeSelecionarEmMassa ? 8 : 7 ?>">Nenhuma <?= $souDono ? 'venda sua' : 'venda' ?> <?= $busca ? 'encontrada' : ($etapaFiltro ? 'nessa etapa' : 'iniciada ainda') ?>.</td></tr>
         <?php endif; ?>
         <?php foreach ($vendas as $v): ?>
             <?php
@@ -720,8 +784,16 @@ document.getElementById('modal-promissoria').showModal();
             // numa negociação já encerrada.
             $atrasada = in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true) && $v['proxima_acao_em'] && $v['proxima_acao_em'] < date('Y-m-d H:i:s');
             $quente = $v['temperatura_lead'] === 'quente';
+            $ativaParaSelecao = in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true);
             ?>
             <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
+                <?php if ($podeSelecionarEmMassa): ?>
+                <td data-label="">
+                    <?php if ($ativaParaSelecao): ?>
+                    <input type="checkbox" class="bulk-chk-lead" name="ids[]" value="<?= (int)$v['id'] ?>" form="form-bulk-cancelar" onchange="bulkAtualizar()">
+                    <?php endif; ?>
+                </td>
+                <?php endif; ?>
                 <td>
                     <?php if ($v['veiculo_marca'] || $v['veiculo_modelo']): ?>
                         <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
@@ -762,6 +834,25 @@ document.getElementById('modal-promissoria').showModal();
     <?php renderPaginacao($totalFiltrado); ?>
 </div>
 </main>
+<?php if ($podeSelecionarEmMassa): ?>
+<script>
+function bulkAtualizar() {
+    var checks = document.querySelectorAll('.bulk-chk-lead:checked');
+    document.getElementById('bulk-contagem').textContent = checks.length;
+    document.getElementById('barra-bulk-cancelar').style.display = checks.length > 0 ? 'flex' : 'none';
+}
+function bulkToggleTodos(master) {
+    document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = master.checked; });
+    bulkAtualizar();
+}
+function bulkLimparSelecao() {
+    document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = false; });
+    document.getElementById('bulk-chk-todos').checked = false;
+    document.getElementById('bulk-motivo').value = '';
+    bulkAtualizar();
+}
+</script>
+<?php endif; ?>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>

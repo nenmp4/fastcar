@@ -52,6 +52,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'classif
     exit;
 }
 
+// 29/09/2026, pedido direto: "permitir que selecione em massa os leads pra
+// marcar... desistiu... negocio [pode] retornar" — seleção em massa na
+// tabela, pra marcar várias oportunidades como perdidas de uma vez.
+// Reaproveita marcarPerdidaEmMassa() (includes/oportunidades.php) — nunca
+// apaga nada, só encerra o funil com motivo/histórico, mesma disciplina de
+// marcarPerdida() de sempre; reabrir depois continua manual normal.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'marcar_perdida_massa') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera oportunidades.');
+    }
+    $idsPost = array_map('intval', (array)($_POST['ids'] ?? []));
+    $motivoPost = clean((string)($_POST['motivo'] ?? ''));
+    $bulkQs = [];
+    if (!$idsPost) {
+        $bulkQs = ['bulk_erro' => 'Nenhuma oportunidade selecionada.'];
+    } elseif ($motivoPost === '') {
+        $bulkQs = ['bulk_erro' => 'Motivo é obrigatório.'];
+    } else {
+        try {
+            $r = marcarPerdidaEmMassa($idsPost, $motivoPost, $meuId, false, $souDono ? $meuId : null);
+            $bulkQs = ['bulk_sucesso' => $r['sucesso'], 'bulk_ignorados' => $r['ignorados']];
+        } catch (Throwable $e) {
+            $bulkQs = ['bulk_erro' => $e->getMessage()];
+        }
+    }
+    $qs = $_GET;
+    unset($qs['bulk_sucesso'], $qs['bulk_ignorados'], $qs['bulk_erro']);
+    header('Location: /admin/index.php?' . http_build_query(array_merge($qs, $bulkQs)));
+    exit;
+}
+
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
 // 28/09/2026, "preciso de um filtro para separar se carro moto caminhão ou
@@ -430,6 +466,12 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 
 <main>
 
+<?php if (isset($_GET['bulk_sucesso'])): ?>
+    <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> oportunidade(s) marcada(s) como perdida(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
+<?php elseif (isset($_GET['bulk_erro'])): ?>
+    <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
+<?php endif; ?>
+
 <?php
 // Rótulo de cada ?filtro= especial, pro banner "filtro ativo" abaixo —
 // mesmo texto usado no rótulo do card que originou o clique.
@@ -584,15 +626,43 @@ if ($filtroEspecialLabel !== ''): ?>
     <a class="btn" style="margin-top:10px;margin-left:8px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQsDetalhado ?>" target="_blank">📄💬 PDF detalhado (com resumo da IA)</a>
 </div>
 
+<?php
+// 29/09/2026, "permitir que selecione em massa os leads pra marcar... tudo
+// de uma vez" — seleção em massa via checkbox por linha; motivo/botão ficam
+// numa barra própria fora da <table> (nunca aninhando <form> dentro da
+// <table>, que já tem os <form> de classificar tipo de veículo por linha —
+// os controles do form-bulk-marcar se associam por atributo form="", sem
+// precisar estar dentro dele no HTML). Nunca aparece pro supervisor (só
+// acompanha, mesma trava do resto da tela).
+$podeSelecionarEmMassa = $perfil !== 'supervisor';
+if ($podeSelecionarEmMassa):
+?>
+<form id="form-bulk-marcar" method="post" onsubmit="return confirm('Marcar as oportunidades selecionadas como perdidas? Motivo fica gravado no histórico de cada uma, e dá pra reabrir depois se o negócio voltar.');">
+    <?= csrfField() ?>
+    <input type="hidden" name="acao" value="marcar_perdida_massa">
+</form>
+<div id="barra-bulk-marcar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
+    <strong><span id="bulk-contagem">0</span> selecionada(s)</strong>
+    <input type="text" name="motivo" form="form-bulk-marcar" id="bulk-motivo" required
+           placeholder="Motivo (obrigatório) — ex: desistiu, achou proposta baixa..."
+           style="flex:1;min-width:220px;margin:0">
+    <button type="submit" form="form-bulk-marcar" class="perigo" style="margin:0">🚫 Marcar como perdido</button>
+    <button type="button" class="btn-texto" onclick="bulkLimparSelecao()">Limpar seleção</button>
+</div>
+<?php endif; ?>
+
 <table class="tabela-oportunidades">
     <thead>
         <tr>
+            <?php if ($podeSelecionarEmMassa): ?>
+            <th><input type="checkbox" id="bulk-chk-todos" onchange="bulkToggleTodos(this)" title="Selecionar todas as visíveis"></th>
+            <?php endif; ?>
             <th>Cliente</th><th>Recebido em</th><th>Veículo</th><th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th></th>
         </tr>
     </thead>
     <tbody>
     <?php if (!$oportunidades): ?>
-        <tr><td colspan="7"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
+        <tr><td colspan="<?= $podeSelecionarEmMassa ? 8 : 7 ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php // "Atrasada" só faz sentido pra oportunidade ainda em aberto —
@@ -601,7 +671,15 @@ if ($filtroEspecialLabel !== ''): ?>
               // pendência de verdade pra destacar em vermelho aqui. ?>
         <?php $atrasada = in_array($op['etapa'], ETAPAS_ATIVAS, true) && $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
         <?php $quente = $op['temperatura_lead'] === 'quente'; ?>
+        <?php $ativaParaSelecao = in_array($op['etapa'], ETAPAS_ATIVAS, true); ?>
         <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
+            <?php if ($podeSelecionarEmMassa): ?>
+            <td data-label="">
+                <?php if ($ativaParaSelecao): ?>
+                <input type="checkbox" class="bulk-chk-lead" name="ids[]" value="<?= (int)$op['id'] ?>" form="form-bulk-marcar" onchange="bulkAtualizar()">
+                <?php endif; ?>
+            </td>
+            <?php endif; ?>
             <td>
                 <a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>"><?= e($op['cliente_nome'] ?: '(sem nome)') ?></a>
                 <?php if ($quente): ?>
@@ -672,6 +750,25 @@ if ($filtroEspecialLabel !== ''): ?>
 </table>
 <?php renderPaginacao($totalFiltrado); ?>
 </main>
+<?php if ($podeSelecionarEmMassa): ?>
+<script>
+function bulkAtualizar() {
+    var checks = document.querySelectorAll('.bulk-chk-lead:checked');
+    document.getElementById('bulk-contagem').textContent = checks.length;
+    document.getElementById('barra-bulk-marcar').style.display = checks.length > 0 ? 'flex' : 'none';
+}
+function bulkToggleTodos(master) {
+    document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = master.checked; });
+    bulkAtualizar();
+}
+function bulkLimparSelecao() {
+    document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = false; });
+    document.getElementById('bulk-chk-todos').checked = false;
+    document.getElementById('bulk-motivo').value = '';
+    bulkAtualizar();
+}
+</script>
+<?php endif; ?>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
