@@ -182,13 +182,18 @@ if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
 // 29/09/2026, "coloca fitro por super admin - puxar leads dos consultores"
 // — filtro por consultor específico, só faz sentido pra quem vê a empresa
 // inteira (super_admin/supervisor); consultor já vê só a própria carteira
-// via $souDono, nunca precisa desse filtro. Validado contra um consultor
-// de verdade (nunca aceita id forjado de outro perfil).
+// via $souDono, nunca precisa desse filtro. Validado contra um usuário
+// de verdade (nunca aceita id forjado). 29/09/2026, "Dayane era consultora
+// e virou super admin - so que ela quer no fitro os leads que era dela
+// antes" — o filtro é sobre oportunidades.responsavel_id, que não muda
+// quando o PERFIL do usuário muda depois; travar a validação em
+// perfil='consultor' escondia justamente quem mais precisava do filtro
+// (usuário promovido, com carteira antiga). Valida só que o id existe.
 $consultorFiltro = 0;
 if (!$souDono) {
     $consultorFiltroBruto = (int)($_GET['consultor'] ?? 0);
     if ($consultorFiltroBruto > 0) {
-        $stmtConsultorValido = $db->prepare("SELECT id FROM usuarios WHERE id = ? AND perfil = 'consultor'");
+        $stmtConsultorValido = $db->prepare('SELECT id FROM usuarios WHERE id = ?');
         $stmtConsultorValido->execute([$consultorFiltroBruto]);
         if ($stmtConsultorValido->fetchColumn()) {
             $consultorFiltro = $consultorFiltroBruto;
@@ -726,7 +731,21 @@ if ($filtroEspecialLabel !== ''): ?>
         // inteira. Formulário GET próprio (preserva etapa/busca/tipo já
         // selecionados via hidden), sempre visível acima da barra de ação
         // em massa — trocar de consultor nunca reseta os outros filtros.
-        $consultoresLista = array_filter(listarUsuarios(), fn($u) => $u['perfil'] === 'consultor');
+        //
+        // "Dayane era consultora e virou super admin - so que ela quer no
+        // fitro os leads que era dela antes" — este dropdown é sobre
+        // FILTRAR (oportunidades.responsavel_id), não sobre atribuir; inclui
+        // todo consultor atual (mesmo sem nenhum lead ainda) MAIS qualquer
+        // usuário que já teve oportunidade sob responsabilidade dele algum
+        // dia, seja qual for o perfil ATUAL — nunca escondido só porque foi
+        // promovido depois. Consulta própria (não listarUsuarios(), que só
+        // devolve o perfil de hoje).
+        $consultoresFiltro = $db->query(
+            "SELECT DISTINCT u.id, u.nome FROM usuarios u
+             WHERE u.perfil = 'consultor'
+                OR u.id IN (SELECT DISTINCT responsavel_id FROM oportunidades WHERE responsavel_id IS NOT NULL)
+             ORDER BY u.nome"
+        )->fetchAll();
     ?>
     <form method="get" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <?php if ($filtroEspecial !== ''): ?><input type="hidden" name="filtro" value="<?= e($filtroEspecial) ?>"><?php elseif ($etapaFiltro !== ''): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
@@ -735,7 +754,7 @@ if ($filtroEspecialLabel !== ''): ?>
         <label for="filtro-consultor" style="margin:0">Filtrar por consultor:</label>
         <select name="consultor" id="filtro-consultor" onchange="this.form.submit()">
             <option value="0">— Todos —</option>
-            <?php foreach ($consultoresLista as $c): ?>
+            <?php foreach ($consultoresFiltro as $c): ?>
                 <option value="<?= (int)$c['id'] ?>" <?= $consultorFiltro === (int)$c['id'] ? 'selected' : '' ?>><?= e($c['nome']) ?></option>
             <?php endforeach; ?>
         </select>
@@ -801,10 +820,18 @@ if ($podeSelecionarEmMassa):
         // consultores" — "puxar" (reatribuir em massa) só faz sentido pra
         // quem vê a empresa inteira; consultor já só marcaria a própria
         // carteira como perdida, nunca reatribuiria pra si mesmo em massa.
+        // Destino tem que ser um responsável VÁLIDO de verdade (mesma
+        // whitelist de reatribuirEmMassa(), includes/oportunidades.php:
+        // perfil IN ('consultor','super_admin') AND bloqueado=0) — lista
+        // DIFERENTE de $consultoresFiltro acima (aquela é sobre quem JÁ
+        // teve lead no passado, essa é sobre quem PODE receber um agora).
+        $consultoresDestino = $db->query(
+            "SELECT id, nome FROM usuarios WHERE perfil IN ('consultor', 'super_admin') AND bloqueado = 0 ORDER BY nome"
+        )->fetchAll();
     ?>
     <select name="novo_responsavel_id" form="form-bulk-marcar" id="bulk-novo-responsavel" style="margin:0">
         <option value="">— pra qual consultor? —</option>
-        <?php foreach ($consultoresLista as $c): ?>
+        <?php foreach ($consultoresDestino as $c): ?>
             <option value="<?= (int)$c['id'] ?>"><?= e($c['nome']) ?></option>
         <?php endforeach; ?>
     </select>

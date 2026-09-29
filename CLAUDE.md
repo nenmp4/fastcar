@@ -7926,6 +7926,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   próprio consultor confirmada NUNCA mostrando o select de "puxar" nem o
   filtro por consultor) + `php -l` + `tests/smoke.php` limpos. Sem
   migração de schema.
+  **Filtro escondia quem foi promovido depois de ter carteira** (mesmo dia,
+  achado real: "Dayane era consultora e virou super admin - so que ela
+  quer no fitro os leads que era dela antes") — a 1ª versão validava
+  `?consultor=id` E populava o `<select>` sempre restringindo a
+  `perfil='consultor'` — Dayane, promovida a `super_admin`, sumia dos dois
+  lugares mesmo tendo oportunidades reais em `responsavel_id` de quando
+  ainda era consultora; o filtro é sobre esse campo, que nunca muda
+  quando o PERFIL do usuário muda depois. Corrigido separando as 2
+  semânticas que `$consultoresLista` misturava sem querer: (1) o dropdown
+  "Filtrar por consultor" (`$consultoresFiltro`) passou a listar todo
+  `perfil='consultor'` atual (mesmo sem nenhum lead ainda, pra continuar
+  aparecendo como opção) **OU** qualquer usuário com pelo menos 1
+  `oportunidades.responsavel_id` histórico, não importa o perfil de hoje —
+  consulta própria (`SELECT DISTINCT ... WHERE perfil='consultor' OR id IN
+  (SELECT DISTINCT responsavel_id FROM oportunidades ...)`), não mais
+  `array_filter(listarUsuarios(), ...)`; validação do `?consultor=` também
+  perdeu a restrição de perfil (`SELECT id FROM usuarios WHERE id = ?`,
+  sem `AND perfil='consultor'`) — a query principal do funil já filtra por
+  `responsavel_id = X`, então validar só que o id existe já é suficiente e
+  correto. (2) o `<select>` de destino do "🔀 Puxar leads selecionados"
+  (`$consultoresDestino`) ficou **separado**, com a whitelist real de quem
+  PODE receber lead — a mesma de `reatribuirEmMassa()`
+  (`perfil IN ('consultor','super_admin') AND bloqueado=0`) — nunca mistura
+  as duas listas de novo (um super_admin sem nenhuma carteira histórica,
+  tipo o Jean, nunca deveria poluir o filtro de busca, mas continua válido
+  como destino de reatribuição). Testado: função isolada em banco isolado
+  reproduzindo o cenário exato (Dayane consultora com 2 oportunidades,
+  promovida a super_admin) — query antiga confirmada rejeitando o id dela
+  (prova do bug), query nova aceitando; ela aparece no dropdown de filtro
+  mesmo depois de virar super_admin, e as 2 oportunidades batem no
+  `responsavel_id`; caso extra confirmando que um super_admin sem
+  histórico nenhum (nunca foi consultor) fica de fora do filtro mas
+  continua valendo como destino de reatribuição + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 - **Impersonamento de usuário pelo super admin** (29/09/2026, "colocar
   inperviosnamento dos usurios pelo super admin") — confirmado via
   AskUserQuestion: (1) mecanismo = **sessão temporária** como o usuário
