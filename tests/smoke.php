@@ -287,6 +287,82 @@ if (!file_exists($dbPath)) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 4. PERFORMANCE (velocidade) — PRAGMAs de leitura + índices críticos
+// ─────────────────────────────────────────────────────────────
+echo "\n== 4. Performance (velocidade) ==\n";
+
+// PRAGMAs de leitura (includes/db.php::getDB()) — 29/09/2026, "melhora
+// desempenho velocidade do sistema". synchronous=NORMAL/cache_size/
+// temp_store=MEMORY nunca persistem no arquivo do banco (diferente de
+// journal_mode=WAL) — precisam ser reaplicados em TODA conexão. Se
+// sumirem daqui num refactor futuro, o banco volta a fazer fsync a cada
+// commit e ordenar em disco em vez de RAM, sem nenhum erro visível, só
+// mais lento — exatamente o tipo de regressão silenciosa que esse guard
+// existe pra pegar.
+$dbPhpPath = $root . '/includes/db.php';
+if (file_exists($dbPhpPath)) {
+    $conteudo = (string)file_get_contents($dbPhpPath);
+    $pragmasEsperados = [
+        'synchronous=NORMAL' => 'PRAGMA synchronous=NORMAL',
+        'cache_size'         => 'PRAGMA cache_size=',
+        'temp_store=MEMORY'  => 'PRAGMA temp_store=MEMORY',
+    ];
+    $faltandoPragma = [];
+    foreach ($pragmasEsperados as $nome => $trecho) {
+        if (!str_contains($conteudo, $trecho)) $faltandoPragma[] = $nome;
+    }
+    if ($faltandoPragma) {
+        falha('[db-sem-pragma-performance] includes/db.php sem PRAGMA de performance: ' . implode(', ', $faltandoPragma) . ' (getDB() precisa reaplicar em toda conexão, nunca persistem no arquivo do banco)');
+    } else {
+        ok('[db-sem-pragma-performance] limpo (synchronous/cache_size/temp_store presentes)');
+    }
+} else {
+    aviso('includes/db.php não encontrado — guard de PRAGMA pulado');
+}
+
+// Índices críticos que já causaram lenteza real (queries mais repetidas
+// do sistema) — 29/09/2026, "vamos melhora desempenho velocidade do
+// sistema". Cada índice precisa existir nos DOIS lugares: install/schema.sql
+// (fresh install) E install/migrar.php (produção já rodando, idempotente
+// via CREATE INDEX IF NOT EXISTS) — nunca só um dos dois, senão instalação
+// nova e banco de produção já existente divergem silenciosamente.
+$indicesEsperados = [
+    'idx_oportunidades_responsavel'  => 'carteira do consultor (WHERE responsavel_id=? AND etapa IN(...)), rodada em toda carga de admin/index.php pra quem não é super_admin/supervisor',
+    'idx_oportunidades_created'      => 'ordenação/filtro por data de entrada do lead (?filtro=hoje/ontem/semana, desempate de ORDER BY)',
+    'idx_oportunidades_tipo_veiculo' => 'aba de filtro por tipo de veículo em admin/index.php',
+    'idx_vendas_responsavel'         => 'mesma query de carteira, lado do pipeline de vendas',
+    'idx_fin_lancamentos_vencimento' => 'finRecalcularAtrasados() — roda em toda carga de admin/financeiro.php/financeiro-lancamentos.php/promissorias.php, full table scan sem esse índice',
+];
+foreach (['install/schema.sql', 'install/migrar.php'] as $arquivoIdx) {
+    $caminhoIdx = $root . '/' . $arquivoIdx;
+    if (!file_exists($caminhoIdx)) { aviso("{$arquivoIdx} não encontrado — guard de índices pulado"); continue; }
+    $conteudo = (string)file_get_contents($caminhoIdx);
+    $faltandoIdx = [];
+    foreach (array_keys($indicesEsperados) as $nomeIdx) {
+        if (!str_contains($conteudo, $nomeIdx)) $faltandoIdx[] = $nomeIdx;
+    }
+    if ($faltandoIdx) {
+        falha("[indices-criticos-ausentes] {$arquivoIdx} sem: " . implode(', ', $faltandoIdx));
+    } else {
+        ok("[indices-criticos-ausentes] {$arquivoIdx} limpo");
+    }
+}
+
+// Confirma que os índices existem de verdade no banco (não só no SQL) —
+// mesmo racional da seção 3 (colunas): útil se algum dia schema.sql for
+// editado sem rodar migrar.php contra um banco já existente. Reaproveita
+// a conexão $db já aberta na seção 3, se disponível.
+if (isset($db) && $db instanceof PDO) {
+    $idxReais = array_column($db->query("SELECT name FROM sqlite_master WHERE type='index'")->fetchAll(PDO::FETCH_ASSOC), 'name');
+    $faltandoNoBanco = array_diff(array_keys($indicesEsperados), $idxReais);
+    if ($faltandoNoBanco) {
+        falha('[indices-criticos-ausentes-no-banco] existem no SQL mas não no banco real (rodar php install/migrar.php): ' . implode(', ', $faltandoNoBanco));
+    } else {
+        ok('[indices-criticos-ausentes-no-banco] todos presentes no banco real');
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 echo "\n══════════════════════════════════\n";
 if ($falhas) {
     echo "❌ SMOKE FALHOU: {$falhas} falha(s), {$avisos} aviso(s) — NÃO commitar/deployar\n";

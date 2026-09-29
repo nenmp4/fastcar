@@ -7764,6 +7764,34 @@ segue no schema sem uso novo, não removida sem ganho real),
   + `php -l` + `tests/smoke.php` limpos. Sem mudança de comportamento
   visível — só velocidade de leitura/escrita, nada de lógica de negócio
   tocado.
+  **Guard de regressão + skill reutilizável** (mesmo dia, "faz uma skill
+  questão de velocidade - coloca no smoke velocidade") — 3 guards novos
+  na seção "4. Performance (velocidade)" de `tests/smoke.php`: (1) os 3
+  PRAGMAs de leitura continuam presentes em `includes/db.php`; (2) os 5
+  nomes de índice críticos continuam em `install/schema.sql` E
+  `install/migrar.php` (nunca só um dos dois, senão fresh install e
+  produção já rodando divergem); (3) os mesmos índices existem de
+  verdade no banco AO VIVO (`sqlite_master WHERE type='index'`), não só
+  no SQL-fonte. **O guard (3) achou um problema real no próprio banco de
+  dev local** assim que foi escrito — `install/migrar.php` nunca tinha
+  sido rodado contra ele depois da mudança anterior (só contra um banco
+  de teste isolado), então smoke falhou até rodar a migração de verdade
+  — prova de que o guard funciona antes mesmo de qualquer regressão
+  futura. Sanity-check adicional: removido temporariamente 1 PRAGMA de
+  `includes/db.php`, confirmado que o guard (1) falha com a mensagem
+  certa, restaurado e reconfirmado `git diff --stat` limpo + smoke verde
+  de novo. `.claude/skills/performance-php-sqlite/SKILL.md` (novo,
+  mesmo padrão/profundidade do `setup-vps` já existente no repo) —
+  runbook reutilizável em projeto-irmão (JurídicoSaaS ou qualquer futuro
+  com a mesma arquitetura `includes/db.php::getDB()`): como achar query
+  quente (ler o código, nunca adivinhar índice; `EXPLAIN QUERY PLAN` via
+  PHP já que `sqlite3` CLI não está disponível neste sandbox), os 3
+  PRAGMAs com o porquê de cada um, a disciplina de índice em 2 lugares +
+  testado contra schema pré-mudança, e — categoria à parte, sintoma
+  parecido mas causa/fix diferentes — escrita em lote sem transação
+  causando contenção de lock (`SQLSTATE[HY000] General error: 5`), não
+  resolvido com índice, ver bullet "database is locked" do módulo
+  financeiro pro caso real que originou essa parte do skill.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
