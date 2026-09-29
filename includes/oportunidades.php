@@ -869,6 +869,24 @@ function marcarPerdidaEmMassa(array $ids, string $motivo, ?int $responsavelId = 
 }
 
 /**
+ * Anotação livre editável direto na linha da tabela do funil
+ * (admin/index.php, 29/09/2026, "campo de observação manual para digitar
+ * consultor") — nunca é mudança de etapa (sem mudarEtapa()/histórico, mesmo
+ * espírito de "atualizar_proxima_acao" em admin/oportunidade.php, que já é
+ * UPDATE direto porque não é transição de estado). Quando a oportunidade já
+ * está encerrada com motivo (`perdido`/`sem_perfil`), a tela reaproveita
+ * `motivo_perda` em vez desse campo — confirmado com o usuário, "são a
+ * mesma coisa" — então essa função só é chamada enquanto a oportunidade
+ * ainda está ativa.
+ */
+function atualizarObservacaoManual(int $oportunidadeId, string $observacao): bool {
+    $db = getDB();
+    $stmt = $db->prepare("UPDATE oportunidades SET observacao_manual = ?, updated_at = datetime('now','localtime') WHERE id = ?");
+    $stmt->execute([clean($observacao), $oportunidadeId]);
+    return $stmt->rowCount() > 0;
+}
+
+/**
  * "7 dias de silêncio" (21/09/2026, pedido direto depois de ver ~25 leads
  * sem nome que receberam reengajamento — cron/followup.php, bloco 3 — e
  * nunca responderam nada, ficando presos pra sempre em 'whatsapp'/

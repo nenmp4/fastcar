@@ -1488,4 +1488,33 @@ try {
     echo "❌ venda_entrada_partes: {$e->getMessage()}\n";
 }
 
+// 29/09/2026, "campo de observação manual para digitar consultor" —
+// anotação livre editável direto na linha do funil (admin/index.php).
+if (!colunaExiste($db, 'oportunidades', 'observacao_manual')) {
+    try {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN observacao_manual TEXT DEFAULT ''");
+        echo "✅ oportunidades.observacao_manual: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ oportunidades.observacao_manual: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  oportunidades.observacao_manual: já existia\n";
+}
+
+// 29/09/2026, "melhora desempenho velocidade do sistema" — índices que
+// faltavam nas queries mais repetidas do sistema (ver comentários junto
+// das mesmas definições em install/schema.sql, pra ficarem em sync).
+// CREATE INDEX IF NOT EXISTS já é idempotente por natureza, sem precisar
+// de colunaExiste()/checagem prévia.
+try {
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_oportunidades_responsavel ON oportunidades(responsavel_id, etapa)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_oportunidades_created ON oportunidades(created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_oportunidades_tipo_veiculo ON oportunidades(tipo_veiculo)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_vendas_responsavel ON vendas(responsavel_id, etapa)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_vencimento ON fin_lancamentos(status, data_vencimento)");
+    echo "✅ índices de performance (oportunidades/vendas/fin_lancamentos): prontos\n";
+} catch (Throwable $e) {
+    echo "❌ índices de performance: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

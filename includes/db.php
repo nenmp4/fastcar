@@ -103,6 +103,18 @@ function getDB(): PDO {
         $db = new PDO('sqlite:' . DB_PATH);
         $db->exec('PRAGMA busy_timeout=15000');
         $db->exec('PRAGMA journal_mode=WAL');
+        // 29/09/2026, "melhora desempenho velocidade do sistema" — 3
+        // PRAGMAs de leitura por conexão (nunca persistem no arquivo do
+        // banco, sempre reaplicados aqui): synchronous=NORMAL é o padrão
+        // recomendado com WAL (já dá durabilidade contra crash, só reduz
+        // fsync a cada commit — diferente de FULL, que sincroniza no disco
+        // toda escrita); cache_size maior (20MB) evita reler do disco
+        // dentro da mesma request; temp_store=MEMORY tira a ordenação da
+        // query principal do funil (ORDER BY CASE temperatura_lead...) de
+        // um arquivo temporário em disco pra RAM.
+        $db->exec('PRAGMA synchronous=NORMAL');
+        $db->exec('PRAGMA cache_size=-20000');
+        $db->exec('PRAGMA temp_store=MEMORY');
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         if ($novo) {

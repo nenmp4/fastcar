@@ -88,6 +88,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'marcar_
     exit;
 }
 
+// 29/09/2026, "campo de observação manual para digitar consultor" —
+// anotação livre editável direto na linha da tabela, só enquanto a
+// oportunidade ainda está ativa (quando encerrada, a tela reaproveita
+// motivo_perda em vez de aceitar edição aqui — confirmado com o usuário).
+// Mesmo padrão de guard/dono/best-effort do classificar_tipo_veiculo acima.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'atualizar_observacao_manual') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera oportunidades.');
+    }
+    $idObsPost = (int)($_POST['id'] ?? 0);
+    $obsPost = (string)($_POST['observacao'] ?? '');
+    try {
+        if ($souDono) {
+            $stmtDonoObs = $db->prepare('SELECT responsavel_id, etapa FROM oportunidades WHERE id = ?');
+            $stmtDonoObs->execute([$idObsPost]);
+            $opDonoObs = $stmtDonoObs->fetch();
+            if (!$opDonoObs || (int)$opDonoObs['responsavel_id'] !== $meuId) {
+                throw new RuntimeException('Essa oportunidade não é da sua carteira.');
+            }
+        }
+        atualizarObservacaoManual($idObsPost, $obsPost);
+    } catch (Throwable $e) {
+        // best-effort — se falhar (id inválido, não é dono), só não salva;
+        // a lista recarrega igual, sem quebrar a página.
+    }
+    header('Location: /admin/index.php?' . http_build_query($_GET));
+    exit;
+}
+
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
 // 28/09/2026, "preciso de um filtro para separar se carro moto caminhão ou
@@ -657,12 +691,12 @@ if ($podeSelecionarEmMassa):
             <?php if ($podeSelecionarEmMassa): ?>
             <th><input type="checkbox" id="bulk-chk-todos" onchange="bulkToggleTodos(this)" title="Selecionar todas as visíveis"></th>
             <?php endif; ?>
-            <th>Cliente</th><th>Recebido em</th><th>Veículo</th><th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th></th>
+            <th>Cliente</th><th>Recebido em</th><th>Veículo</th><th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th>Observação</th><th></th>
         </tr>
     </thead>
     <tbody>
     <?php if (!$oportunidades): ?>
-        <tr><td colspan="<?= $podeSelecionarEmMassa ? 8 : 7 ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
+        <tr><td colspan="<?= $podeSelecionarEmMassa ? 9 : 8 ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php // "Atrasada" só faz sentido pra oportunidade ainda em aberto —
@@ -741,6 +775,25 @@ if ($podeSelecionarEmMassa):
                     <br><small><?= e($op['proxima_acao']) ?></small>
                 <?php else: ?>
                     <span class="sem-proxima-acao">sem próxima ação</span>
+                <?php endif; ?>
+            </td>
+            <td data-label="Observação">
+                <?php if ($ativaParaSelecao && $perfil !== 'supervisor'): ?>
+                    <?php // 29/09/2026, "campo de observação manual para digitar
+                          // consultor" — texto livre editável direto na linha,
+                          // só enquanto a oportunidade ainda está ativa. ?>
+                    <form method="post" style="display:flex;gap:4px;min-width:160px">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="atualizar_observacao_manual">
+                        <input type="hidden" name="id" value="<?= (int)$op['id'] ?>">
+                        <input type="text" name="observacao" value="<?= e($op['observacao_manual'] ?? '') ?>" placeholder="anotação..." style="flex:1;min-width:0;font-size:13px;padding:4px 6px">
+                        <button type="submit" class="btn-texto" style="padding:4px 8px" title="Salvar observação">💾</button>
+                    </form>
+                <?php else: ?>
+                    <?php // Encerrada (perdido/sem_perfil) — reaproveita motivo_perda
+                          // em vez de aceitar edição aqui, "são a mesma coisa"
+                          // (confirmado com o usuário). ?>
+                    <small><?= e($op['motivo_perda'] ?: ($op['observacao_manual'] ?? '') ?: '—') ?></small>
                 <?php endif; ?>
             </td>
             <td><a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">Abrir →</a></td>

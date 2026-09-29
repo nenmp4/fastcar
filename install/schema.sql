@@ -220,12 +220,28 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     data_compra DATE,
     fechado_por INTEGER REFERENCES usuarios(id),
 
+    -- Anotação livre do consultor, editável direto na linha do funil
+    -- (admin/index.php) — 29/09/2026, "campo de observação manual para
+    -- digitar consultor". Enquanto a oportunidade tá ativa, é texto livre
+    -- digitado por quem quiser; quando já encerrada (perdido/sem_perfil),
+    -- a tela reaproveita motivo_perda em vez desse campo (mesma
+    -- informação, não duplica edição) — ver atualizarObservacaoManual()
+    -- em includes/oportunidades.php.
+    observacao_manual TEXT DEFAULT '',
+
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_oportunidades_cliente ON oportunidades(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_oportunidades_etapa ON oportunidades(etapa);
 CREATE INDEX IF NOT EXISTS idx_oportunidades_proxima_acao ON oportunidades(proxima_acao_em);
+-- 29/09/2026, "melhora desempenho velocidade do sistema" — (responsavel_id,
+-- etapa) cobre a query mais repetida do sistema: "minha carteira" do
+-- consultor (WHERE etapa IN (...) AND responsavel_id=?), rodada em toda
+-- carga de admin/index.php pra quem não é super_admin/supervisor.
+CREATE INDEX IF NOT EXISTS idx_oportunidades_responsavel ON oportunidades(responsavel_id, etapa);
+CREATE INDEX IF NOT EXISTS idx_oportunidades_created ON oportunidades(created_at);
+CREATE INDEX IF NOT EXISTS idx_oportunidades_tipo_veiculo ON oportunidades(tipo_veiculo);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oportunidades_documentos_token
     ON oportunidades(documentos_token) WHERE documentos_token IS NOT NULL;
 
@@ -694,6 +710,7 @@ CREATE TABLE IF NOT EXISTS vendas (
 CREATE INDEX IF NOT EXISTS idx_vendas_oportunidade ON vendas(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_vendas_etapa ON vendas(etapa);
 CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em);
+CREATE INDEX IF NOT EXISTS idx_vendas_responsavel ON vendas(responsavel_id, etapa);
 -- Só 1 negociação ATIVA por veículo por vez (negociacao/contrato_enviado)
 -- — trava também no banco (índice único parcial), não só na aplicação;
 -- uma negociação cancelada libera o veículo pra uma nova tentativa.
@@ -1005,6 +1022,11 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
 CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_venda ON fin_lancamentos(venda_id);
 CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_oportunidade ON fin_lancamentos(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status);
+-- finRecalcularAtrasados() (includes/financeiro.php) roda em TODA carga de
+-- admin/financeiro.php/financeiro-lancamentos.php/promissorias.php
+-- (UPDATE ... WHERE status='pendente' AND data_vencimento < hoje) — sem
+-- índice, full table scan a cada visita dessas 3 telas.
+CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_vencimento ON fin_lancamentos(status, data_vencimento);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL;
 
 -- Cache/mapeamento dos clientes já cadastrados no Asaas (17/09/2026,

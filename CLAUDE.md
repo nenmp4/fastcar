@@ -7688,6 +7688,82 @@ segue no schema sem uso novo, não removida sem ganho real),
   HTML renderizado e um POST forjado com CSRF roubado da própria tela é
   rejeitado com 403 sem alterar nada no banco + `php -l` +
   `tests/smoke.php` limpos. Sem migração de schema.
+- **Observação manual na linha do funil** (29/09/2026, pedido direto:
+  "vamos adicionar um campo de observação manual para digitar consultor
+  digitar ou puxar lá daquele campo onde escreve e encerra oportunidade")
+  — confirmado com o usuário via 2 perguntas diretas antes de codar: (1)
+  campo aparece **direto na linha da tabela do funil** (`admin/index.php`),
+  nunca dentro do detalhe da oportunidade nem em `admin/vendas.php`; (2)
+  quando a oportunidade já está encerrada (`perdido`/`sem_perfil`), a
+  célula **reaproveita `motivo_perda`** em vez de aceitar edição ali —
+  "são a mesma coisa, puxa o motivo de quando fechou" — enquanto ativa,
+  texto livre editado por quem quiser. Coluna nova
+  `oportunidades.observacao_manual` (`TEXT DEFAULT ''`).
+  `atualizarObservacaoManual(int $oportunidadeId, string $observacao): bool`
+  (`includes/oportunidades.php`, logo após `marcarPerdidaEmMassa()`) —
+  `UPDATE` direto, nunca passa por `mudarEtapa()`/grava histórico (não é
+  transição de etapa, mesmo espírito de `atualizar_proxima_acao` em
+  `admin/oportunidade.php`, que já é UPDATE simples pra metadado que não
+  é etapa). Handler POST `atualizar_observacao_manual` em `admin/index.php`
+  segue o mesmo molde de `classificar_tipo_veiculo` (CSRF, bloqueio de
+  `supervisor` com 403, restrição de dono pra `consultor` via `$souDono`,
+  best-effort try/catch, redirect preservando querystring). Coluna nova
+  "Observação" na tabela: `<form form="...">` inline com input+botão 💾
+  quando `$ativaParaSelecao` (etapa em `ETAPAS_ATIVAS`) e perfil não é
+  supervisor; senão mostra `motivo_perda` (fallback pro próprio
+  `observacao_manual`, depois "—") em texto simples. Testado: função
+  isolada (grava, sobrescreve ao editar de novo — nunca fill-if-empty,
+  é anotação livre —, id inexistente retorna `false` sem lançar,
+  `clean()` aplicado contra HTML cru) + migração testada contra schema
+  ANTERIOR a esta mudança (`git show HEAD:install/schema.sql`, coluna
+  confirmada ausente antes — `ALTER TABLE` aplicado com sucesso,
+  idempotente numa 2ª rodada, dado pré-existente preservado) + HTTP ponta
+  a ponta real (sessão primed por perfil): aba padrão mostra o input
+  editável só pra oportunidade ativa; aba "❌ Encerradas" mostra
+  `motivo_perda` em texto simples, zero form de edição naquela célula;
+  POST real salva e o valor volta pré-preenchido no input ao recarregar;
+  POST forjado de um consultor tentando editar oportunidade de OUTRO
+  consultor é silenciosamente ignorado (banco confirmado intocado,
+  `observacao_manual` continua o valor original) + `php -l` +
+  `tests/smoke.php` limpos.
+- **Performance — PRAGMAs de leitura + índices que faltavam** (29/09/2026,
+  pedido direto: "vamos melhora desempenho velocidade do sistema") —
+  investigação direta no código (sem pedir mais detalhe ao usuário, já
+  dava pra agir com o que estava nas mãos): 3 PRAGMAs de conexão que nunca
+  persistem no arquivo do banco (diferente de `journal_mode`), sempre
+  reaplicados em `includes/db.php::getDB()` — `synchronous=NORMAL`
+  (padrão recomendado com WAL, já dá durabilidade contra crash só
+  reduzindo `fsync` a cada commit, diferente do `FULL` implícito por
+  default), `cache_size=-20000` (20MB de cache de página em vez do padrão
+  de ~2MB, evita reler do disco dentro da mesma request) e
+  `temp_store=MEMORY` (tira `ORDER BY`/b-tree temporário — ex: a query
+  principal do funil, que ordena por `CASE temperatura_lead...` — de um
+  arquivo temporário em disco pra RAM). E 5 índices novos em colunas
+  batidas sem suporte nenhum: `idx_oportunidades_responsavel
+  (responsavel_id, etapa)` — cobre a query mais repetida do sistema,
+  "minha carteira" do consultor, rodada em toda carga de
+  `admin/index.php` pra quem não é `super_admin`/`supervisor`;
+  `idx_oportunidades_created (created_at)` — usada no `ORDER BY`
+  desde a correção de desempate de 21/09/2026 e nos filtros `?filtro=hoje/
+  ontem/semana`; `idx_oportunidades_tipo_veiculo (tipo_veiculo)` — nova
+  aba de filtro por tipo de veículo (28/09/2026); `idx_vendas_responsavel
+  (responsavel_id, etapa)` — mesmo padrão do lado de vendas;
+  `idx_fin_lancamentos_vencimento (status, data_vencimento)` — cobre
+  `finRecalcularAtrasados()` (`includes/financeiro.php`), que roda em TODA
+  carga de `admin/financeiro.php`/`financeiro-lancamentos.php`/
+  `promissorias.php` (3 das telas mais usadas do módulo financeiro) fazendo
+  full table scan sem esse índice. Índices adicionados em
+  `install/schema.sql` (fresh install) e `install/migrar.php`
+  (`CREATE INDEX IF NOT EXISTS`, idempotente por natureza, sem precisar de
+  `colunaExiste()`). Testado: os 3 PRAGMAs + os 5 índices aplicados e
+  confirmados presentes rodando `install/migrar.php` contra um banco
+  simulando produção ANTES desta mudança (`git show HEAD:install/schema.sql`,
+  nenhum dos 5 índices/coluna existia), 2ª rodada confirmando idempotência
+  (`CREATE INDEX IF NOT EXISTS` nunca falha rodando de novo), dado
+  pré-existente (`oportunidades` com 1 linha semeada) preservado intacto
+  + `php -l` + `tests/smoke.php` limpos. Sem mudança de comportamento
+  visível — só velocidade de leitura/escrita, nada de lógica de negócio
+  tocado.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
