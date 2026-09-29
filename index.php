@@ -26,6 +26,11 @@
  * nunca inventados.
  */
 
+// Só pra reaproveitar META_APP_ID (constante única, evita duplicar o App
+// ID em 2 arquivos) — blog.php nunca dá require em db.php, então isso
+// não quebra o "nunca depende de banco" deste arquivo.
+require_once __DIR__ . '/includes/blog.php';
+
 $whatsappNumero = '5511958347764'; // Z-API "FastCar | JEAN", já é o canal oficial de entrada do funil
 $whatsappTexto = rawurlencode('Olá! Tenho um veículo financiado e quero saber mais sobre a compra pela Fastcar.');
 $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappTexto}";
@@ -50,6 +55,7 @@ $anoAtual = date('Y');
      marca, nunca transparente) — a logo do cabeçalho (public/assets/logo.png)
      é retangular/com fundo transparente, cortaria estranho no card de
      preview do WhatsApp, que espera algo próximo de quadrado. -->
+<meta property="fb:app_id" content="<?= META_APP_ID ?>">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Fastcar Solutions">
 <meta property="og:title" content="Fastcar Solutions — Compra de veículos financiados">

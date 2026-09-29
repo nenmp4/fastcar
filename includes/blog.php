@@ -22,6 +22,13 @@
 
 const BLOG_WHATSAPP_NUMERO = '5511958347764'; // mesmo canal oficial de entrada do funil (Z-API "FastCar | JEAN")
 
+// 29/09/2026 — App ID do app "Fastcar Bot" (Meta Business Manager,
+// portfólio "Fastcar Solutions"), usado no WhatsApp Cloud API (Fase 1,
+// ver CLAUDE.md). Meta pede a tag og:fb:app_id nas páginas públicas —
+// achado real testando privacidade.php/exclusao-dados.php no Depurador
+// de Compartilhamento ("Propriedades ausentes: fb:app_id").
+const META_APP_ID = '2357740111729782';
+
 const BLOG_ARTIGOS = [
     [
         'slug' => 'posso-vender-carro-financiado',
@@ -123,6 +130,7 @@ function blogAbrirPagina(string $titulo, string $descricao, string $caminhoCanon
 <meta name="author" content="Fastcar Solutions">
 <meta name="theme-color" content="#151722">
 <link rel="canonical" href="<?= htmlspecialchars($urlCanonica, ENT_QUOTES, 'UTF-8') ?>">
+<meta property="fb:app_id" content="<?= META_APP_ID ?>">
 <meta property="og:type" content="<?= $ehArtigo ? 'article' : 'website' ?>">
 <meta property="og:site_name" content="Fastcar Solutions">
 <meta property="og:title" content="<?= htmlspecialchars($titulo, ENT_QUOTES, 'UTF-8') ?>">
