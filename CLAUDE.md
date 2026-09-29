@@ -5015,6 +5015,42 @@ segue no schema sem uso novo, não removida sem ganho real),
   a migração pro número de produção real da Fastcar — antes de virar o
   toggle `whatsapp_provider_principal` pra `'oficial'` em produção,
   validar isso com o número real, não só o de teste da Meta.
+  **✅ App publicado com o número REAL de produção, 29/09/2026** — app
+  "Fastcar Bot" trocou de status pra "Publicado" no App Dashboard; a
+  partir de agora a Meta encaminha pro webhook
+  (`chatbot-whatsapp/webhook/whatsapp_oficial.php`) as mensagens reais de
+  quem escrever pro número **+55 11 9 3450-5474** (não mais o de teste
+  `+1 555 188-5709`). Credenciais reais de produção informadas:
+  Phone Number ID `1414968168356551`, WABA ID `2682351345571204`, mesmo
+  App ID `2357740111729782` — **diferentes** dos IDs do número de teste
+  documentados acima (`1405656782625189`/`1409572601297538`), nunca
+  confundir os dois pares. **403 no Depurador de Compartilhamento da Meta
+  resolvido** (bloqueava `privacidade.php`/`exclusao-dados.php`) — não era
+  o `robots.txt` (já liberava esses caminhos), era o **Bot Fight Mode da
+  Cloudflare** barrando o crawler da Meta na borda; corrigido com uma
+  Custom Rule (Security → WAF) fazendo "Skip" do Bot Fight Mode pro
+  User-Agent `facebookexternalhit`/`meta-externalagent` — ver detalhe
+  completo em `install/SETUP_VPS.md`. De quebra, `og:fb:app_id` (aviso
+  "propriedades ausentes" do Depurador) adicionado nas páginas públicas
+  via `META_APP_ID` (`includes/blog.php`).
+  ⚠️ **Ainda faltam 3 passos manuais, todos fora do alcance deste ambiente
+  de dev** antes de considerar a migração realmente pronta pra produção:
+  (1) **token permanente** — o token atual do App Dashboard expira; falta
+  criar um Usuário do Sistema no portfólio "Fastcar Solutions" com acesso
+  ao app+WABA e gerar um token com validade "Nunca", colando em
+  Configurações → 🟢 WhatsApp Cloud API (Meta oficial) em produção (essas
+  credenciais vivem na tabela `config` do banco de produção — não são
+  arquivo de código, não dá pra editar daqui, só pela tela do admin ou
+  direto no banco via SSH); (2) **verificação da empresa** pela Ingrid, no
+  Facebook dela + documento dela, pra garantir o nome "Fastcar Solutions"
+  e aumentar os limites de envio; (3) **aprovação do nome de exibição**
+  pela Meta (a notificação chega quando sair). Só depois desses 3 passos
+  — e de confirmar uma conversa real ponta a ponta com o número
+  `+55 11 9 3450-5474` (cliente mandando "oi" de verdade, conferindo no
+  log `storage/logs/whatsapp_oficial_webhook_*.log` que chegou e que a
+  IA respondeu certo) — faz sentido virar o toggle
+  `whatsapp_provider_principal` pra `'oficial'` de vez, substituindo a
+  Z-API como canal principal.
 - **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
   bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
   scripts dry-run/`--confirmar` (mesmo padrão de sempre):
