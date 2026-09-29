@@ -1,6 +1,7 @@
 User-agent: *
 Allow: /$
 Allow: /privacidade.php
+Allow: /exclusao-dados.php
 Allow: /blog/
 Allow: /public/assets/
 Allow: /admin/assets/img/icon-512.png

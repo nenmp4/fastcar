@@ -82,7 +82,7 @@ blogAbrirPagina(
         <p>Você pode, a qualquer momento, solicitar: confirmação e acesso aos seus dados; correção; anonimização, bloqueio ou eliminação; portabilidade; informação sobre compartilhamentos; e revogação do consentimento. Pra isso, escreva para <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a>.</p>
 
         <h2>9. Exclusão de dados</h2>
-        <p>Pra pedir a exclusão dos seus dados, envie um e-mail para <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a> com o assunto "Exclusão de dados", informando o número de telefone usado no atendimento. Responderemos em até 15 dias.</p>
+        <p>Pra pedir a exclusão dos seus dados, envie um e-mail para <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a> com o assunto "Exclusão de dados", informando o número de telefone usado no atendimento. Responderemos em até 15 dias. Veja o passo a passo completo em <a href="/exclusao-dados.php">Instruções de Exclusão de Dados</a>.</p>
 
         <h2>10. Alterações</h2>
         <p>Esta política pode ser atualizada. A versão vigente estará sempre disponível nesta página, com a data da última atualização.</p>
