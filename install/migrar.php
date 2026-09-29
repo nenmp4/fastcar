@@ -1604,4 +1604,19 @@ try {
     echo "❌ índice vendas.comprador_telefone: {$e->getMessage()}\n";
 }
 
+// 29/09/2026, mesma rodada — 2 índices de EXPRESSÃO em fin_lancamentos.
+// admin/financeiro-lancamentos.php (carregamento padrão, sem filtro na
+// URL) e admin/financeiro.php::finSoma() (4x por visita ao dashboard,
+// mais includes/financeiro_extrato.php/financeiro_dre.php) filtram por
+// COALESCE(...) — nenhum índice de coluna simples ajuda expressão
+// computada; confirmado via EXPLAIN QUERY PLAN (SCAN -> SEARCH) contra
+// banco de teste com 3000 linhas simuladas antes de aplicar aqui.
+try {
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lanc_data_efetiva ON fin_lancamentos(COALESCE(data_pagamento, data_vencimento, created_at))");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lanc_data_pgto_venc ON fin_lancamentos(COALESCE(data_pagamento, data_vencimento))");
+    echo "✅ índices de expressão fin_lancamentos (data efetiva): prontos\n";
+} catch (Throwable $e) {
+    echo "❌ índices de expressão fin_lancamentos: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

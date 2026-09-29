@@ -1048,6 +1048,22 @@ CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status)
 -- índice, full table scan a cada visita dessas 3 telas.
 CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_vencimento ON fin_lancamentos(status, data_vencimento);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL;
+-- 29/09/2026, 2ª rodada de performance ("melhore o carregamento das
+-- páginas") — 2 índices de EXPRESSÃO (SQLite suporta index em expressão
+-- exata desde 3.9+), confirmados via EXPLAIN QUERY PLAN virando SCAN de
+-- tabela inteira em SEARCH indexado, contra um banco de teste com 3000
+-- linhas simuladas: a listagem padrão de admin/financeiro-lancamentos.php
+-- (sem nenhum filtro na URL, o carregamento normal da tela) filtra por
+-- COALESCE(data_pagamento, data_vencimento, created_at) — sem índice
+-- casando essa expressão exata, SQLite nunca aproveita nenhum dos índices
+-- de coluna simples acima, sempre SCAN.
+CREATE INDEX IF NOT EXISTS idx_fin_lanc_data_efetiva ON fin_lancamentos(COALESCE(data_pagamento, data_vencimento, created_at));
+-- Mesma classe de SCAN, expressão de 2 argumentos (sem created_at) —
+-- finSoma() do dashboard financeiro (admin/financeiro.php, chamada 4x por
+-- carregamento) e includes/financeiro_extrato.php/financeiro_dre.php
+-- (relatórios) usam essa variante; 1 índice só cobre os 3 arquivos porque
+-- o texto da expressão bate exatamente nos 3.
+CREATE INDEX IF NOT EXISTS idx_fin_lanc_data_pgto_venc ON fin_lancamentos(COALESCE(data_pagamento, data_vencimento));
 
 -- Cache/mapeamento dos clientes já cadastrados no Asaas (17/09/2026,
 -- "puxar tudo de lá") — existe independente de fin_lancamentos porque um

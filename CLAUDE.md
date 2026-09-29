@@ -8191,6 +8191,81 @@ segue no schema sem uso novo, não removida sem ganho real),
   vendo o guard falhar com a mensagem certa antes de restaurar. Usuário
   confirmou a percepção real de velocidade depois desta rodada: "AGORA TÁ
   RAPIDASH".
+  **3ª rodada — varredura completa nas telas que ainda faltavam**
+  (29/09/2026, "Investiga todas que falta") — depois do raio-x já ter
+  coberto o dashboard principal e os 3 WhatsApp Box, faltava passar o
+  mesmo pente fino nas telas maiores ainda não auditadas
+  (`admin/clientes.php`, `admin/veiculos.php`, `admin/financeiro*.php`,
+  `admin/venda.php`, `admin/vendas.php`, `admin/promissorias.php`,
+  `admin/avaliacoes.php`) — sempre via `EXPLAIN QUERY PLAN` real, nunca
+  adivinhando índice (a maioria já estava OK, ver achados negativos
+  abaixo). **2 SCANs de tabela inteira confirmados nas telas mais
+  visitadas do financeiro**: (1) `admin/financeiro-lancamentos.php`, no
+  carregamento PADRÃO da tela (sem nenhum filtro na URL — o caso mais
+  comum) filtra por
+  `COALESCE(l.data_pagamento, l.data_vencimento, l.created_at) BETWEEN ? AND ?`;
+  (2) `finSoma()` (`admin/financeiro.php`, chamada 4x por visita ao
+  dashboard financeiro — receita/despesa/despesa fixa/despesa variável do
+  período) + `includes/financeiro_extrato.php`/`financeiro_dre.php`
+  (geração de relatório) usam a variante de 2 argumentos,
+  `COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?`. Nos dois
+  casos, nenhum dos índices de coluna simples já existentes
+  (`idx_fin_lancamentos_status`/`_vencimento`) ajuda uma expressão
+  computada — corrigido com **2 índices de EXPRESSÃO** (SQLite suporta
+  índice sobre expressão exata desde 3.9+):
+  `idx_fin_lanc_data_efetiva` (3 argumentos) e `idx_fin_lanc_data_pgto_venc`
+  (2 argumentos) — 1 índice de expressão cobre TODO ponto do código cujo
+  texto da expressão bate exatamente, então os 2 novos resolvem os 4
+  arquivos de uma vez, sem precisar de índice por arquivo. Testado contra
+  banco de teste com 3000 linhas simuladas em `fin_lancamentos` (o dev
+  real está praticamente vazio, sem valor pra medir plano de query —
+  `EXPLAIN QUERY PLAN` depende só do schema/índices, não da quantidade de
+  linha, mas simular volume ajudou a confirmar o `ANALYZE`/comportamento
+  do planner num caso mais realista): `SCAN fin_lancamentos` virou
+  `SEARCH ... USING INDEX idx_fin_lanc_data_...` nos 2 casos, confirmado
+  antes/depois de criar o índice.
+  **Achado negativo, registrado de propósito** (a skill
+  `performance-php-sqlite` explicitamente pede pra nunca "adicionar
+  índice porque parece que ajuda" — este é o caso onde a verificação
+  correta foi "não adicionar"): `admin/promissorias.php`, aba "Todas as
+  parcelas" pro super_admin/supervisor (sem filtro de dono) faz
+  `WHERE fl.venda_id IS NOT NULL AND fl.parcela_numero IS NOT NULL` sem
+  nenhum índice que ajude essa combinação — testado um índice PARCIAL
+  (`ON fin_lancamentos(venda_id) WHERE parcela_numero IS NOT NULL`) contra
+  o mesmo banco de 3000 linhas: o SQLite só passou a escolhê-lo depois de
+  **remover** `idx_fin_lancamentos_status`/`_vencimento` do teste — com os
+  2 já necessários por outras queries presentes, o planner sempre preferiu
+  um deles (também um SCAN via índice, mas do mesmo tamanho) em vez do
+  parcial mais seletivo. Adicionar um índice que o planner comprovadamente
+  não usa seria só custo de escrita sem ganho de leitura nenhum — descartado.
+  As demais telas auditadas (Frota, avaliações, pipeline de vendas,
+  dashboard de clientes) já estavam com `SEARCH`/índice em todo `WHERE`
+  relevante, nenhuma mudança necessária. Migração testada contra o schema
+  ANTERIOR a esta mudança (`git show HEAD:install/schema.sql`, confirmando
+  que os 2 índices novos realmente não existiam antes, idempotente numa 2ª
+  rodada, dado pré-existente preservado) + `php install/migrar.php` rodado
+  no banco de dev real antes do smoke final + guard novo (2 nomes
+  adicionados à mesma lista `$indicesEsperados` já existente, seção 4 —
+  sanity-check confirmado apagando a linha do índice em `schema.sql` e
+  vendo o guard falhar com a mensagem certa antes de restaurar) + `php -l`
+  + `tests/smoke.php` limpos.
+  **De quebra, as 2 skills de infra (`performance-php-sqlite`/`setup-vps`)
+  foram promovidas de escopo de projeto pra escopo GLOBAL**
+  (`~/.claude/skills/`, mesmo padrão de `ux-mobile-php`, já global) —
+  "garanta isso para novos projetos" — viviam só em
+  `.claude/skills/` deste repo, um projeto-irmão novo não herdava nada
+  desse conhecimento. Nova skill global **`crm-php-sqlite`** captura o
+  resto da arquitetura reutilizável que só existia espalhada neste
+  CLAUDE.md — funil central `mudarEtapa()`, WhatsApp Box, fila de leads
+  round-robin, qualificação por IA, módulo financeiro, contratos +
+  assinatura eletrônica, 2FA, PWA leve — com uma seção própria (2b) pra
+  migração Z-API → WhatsApp Cloud API oficial da Meta (setup do app/WABA/
+  token permanente, adaptador de payload, janela de 24h, upload `/media`,
+  download autenticado, fallback provedor→provedor nunca instância→
+  instância) e outra (7b) pra Meta Ads/CPL (captura de `referral`/
+  `externalAdReply` no webhook, `GET insights?level=ad`, prefixo `act_`
+  obrigatório) — os 2 mecanismos reais validados em produção nesta mesma
+  sessão, generalizados pra qualquer CRM futuro nesta stack.
 - **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
   admin deixar offline usuario que faltar e pegar os lead que chegar") —
   o lado de COMPRA já tinha isso desde 22/09/2026

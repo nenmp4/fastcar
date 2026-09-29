@@ -369,6 +369,8 @@ $indicesEsperados = [
     'idx_vendas_responsavel'         => 'mesma query de carteira, lado do pipeline de vendas',
     'idx_fin_lancamentos_vencimento' => 'finRecalcularAtrasados() — roda em toda carga de admin/financeiro.php/financeiro-lancamentos.php/promissorias.php, full table scan sem esse índice',
     'idx_vendas_comprador_telefone'  => 'listarConversasVendas() (WhatsApp Box de vendas, polling 5s) — sem esse índice, SCAN vendas inteira a cada poll',
+    'idx_fin_lanc_data_efetiva'      => 'índice de expressão — carregamento padrão de admin/financeiro-lancamentos.php filtra por COALESCE(data_pagamento,data_vencimento,created_at), nenhum índice de coluna simples ajuda expressão computada',
+    'idx_fin_lanc_data_pgto_venc'    => 'índice de expressão — finSoma() do dashboard financeiro (4x por visita) + financeiro_extrato.php/financeiro_dre.php filtram por COALESCE(data_pagamento,data_vencimento)',
 ];
 foreach (['install/schema.sql', 'install/migrar.php'] as $arquivoIdx) {
     $caminhoIdx = $root . '/' . $arquivoIdx;
