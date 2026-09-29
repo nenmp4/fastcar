@@ -291,6 +291,10 @@ function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string 
 function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
 
+    if ($usandoPrincipal && oficialEhProviderPrincipal()) {
+        return oficialEnviarImagem($phone, $imagemUrl, $legenda);
+    }
+
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
         _chatbot_getConfig('zapi_instance_id'),
         _chatbot_getConfig('zapi_token'),
@@ -318,7 +322,7 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?ar
         }
     }
 
-    if (!$usandoPrincipal && oficialConfigured() && preg_match('#^https?://#i', $imagemUrl)) {
+    if (!$usandoPrincipal && oficialConfigured()) {
         return oficialEnviarImagem($phone, $imagemUrl, $legenda);
     }
     return false;
@@ -333,31 +337,43 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?ar
  * (`includes/ia_qualificacao_vendas.php`), junto das fotos.
  */
 function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?array $instanciaOverride = null): bool {
+    $usandoPrincipal = $instanciaOverride === null;
+
+    if ($usandoPrincipal && oficialEhProviderPrincipal()) {
+        return oficialEnviarVideo($phone, $videoUrl, $legenda);
+    }
+
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
         _chatbot_getConfig('zapi_instance_id'),
         _chatbot_getConfig('zapi_token'),
         _chatbot_getConfig('zapi_client_token'),
     ];
-    if (!$inst || !$tok || !$phone || !$videoUrl) return false;
 
-    $phone = normalizarTelefone($phone);
-    if (strlen($phone) < 12) return false;
+    if ($inst && $tok && $phone && $videoUrl) {
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) >= 12) {
+            $headers = ['Content-Type: application/json'];
+            if ($ctok) $headers[] = 'client-token: ' . $ctok;
 
-    $headers = ['Content-Type: application/json'];
-    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+            $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-video");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_POSTFIELDS => json_encode(['phone' => $phoneNorm, 'video' => $videoUrl, 'caption' => $legenda]),
+                CURLOPT_TIMEOUT => 30,
+            ]);
+            curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code === 200) return true;
+        }
+    }
 
-    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-video");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'video' => $videoUrl, 'caption' => $legenda]),
-        CURLOPT_TIMEOUT => 30,
-    ]);
-    curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return $code === 200;
+    if (!$usandoPrincipal && oficialConfigured()) {
+        return oficialEnviarVideo($phone, $videoUrl, $legenda);
+    }
+    return false;
 }
 
 /**
@@ -376,30 +392,44 @@ function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?arra
  * ao contrário de `zapiEnviarTexto()`, não dá pra "assinar" com o nome do
  * consultor dentro da própria mensagem que o cliente recebe.
  */
-function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl): bool {
-    $inst = _chatbot_getConfig('zapi_instance_id');
-    $tok  = _chatbot_getConfig('zapi_token');
-    $ctok = _chatbot_getConfig('zapi_client_token');
-    if (!$inst || !$tok || !$phone || !$audioDataUriOuUrl) return false;
+function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $instanciaOverride = null): bool {
+    $usandoPrincipal = $instanciaOverride === null;
 
-    $phone = normalizarTelefone($phone);
-    if (strlen($phone) < 12) return false;
+    if ($usandoPrincipal && oficialEhProviderPrincipal()) {
+        return oficialEnviarAudio($phone, $audioDataUriOuUrl);
+    }
 
-    $headers = ['Content-Type: application/json'];
-    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+    [$inst, $tok, $ctok] = $instanciaOverride ?? [
+        _chatbot_getConfig('zapi_instance_id'),
+        _chatbot_getConfig('zapi_token'),
+        _chatbot_getConfig('zapi_client_token'),
+    ];
 
-    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-audio");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'audio' => $audioDataUriOuUrl]),
-        CURLOPT_TIMEOUT => 30,
-    ]);
-    curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return $code === 200;
+    if ($inst && $tok && $phone && $audioDataUriOuUrl) {
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) >= 12) {
+            $headers = ['Content-Type: application/json'];
+            if ($ctok) $headers[] = 'client-token: ' . $ctok;
+
+            $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-audio");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_POSTFIELDS => json_encode(['phone' => $phoneNorm, 'audio' => $audioDataUriOuUrl]),
+                CURLOPT_TIMEOUT => 30,
+            ]);
+            curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code === 200) return true;
+        }
+    }
+
+    if (!$usandoPrincipal && oficialConfigured()) {
+        return oficialEnviarAudio($phone, $audioDataUriOuUrl);
+    }
+    return false;
 }
 
 /**
@@ -418,31 +448,43 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl): bool {
  * base64, mesmo caminho usado pra mandar foto do catálogo de revenda).
  */
 function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName, string $extensao, ?array $instanciaOverride = null): bool {
+    $usandoPrincipal = $instanciaOverride === null;
+
+    if ($usandoPrincipal && oficialEhProviderPrincipal()) {
+        return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
+    }
+
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
         _chatbot_getConfig('zapi_instance_id'),
         _chatbot_getConfig('zapi_token'),
         _chatbot_getConfig('zapi_client_token'),
     ];
-    if (!$inst || !$tok || !$phone || !$documentoDataUriOuUrl || !$extensao) return false;
 
-    $phone = normalizarTelefone($phone);
-    if (strlen($phone) < 12) return false;
+    if ($inst && $tok && $phone && $documentoDataUriOuUrl && $extensao) {
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) >= 12) {
+            $headers = ['Content-Type: application/json'];
+            if ($ctok) $headers[] = 'client-token: ' . $ctok;
 
-    $headers = ['Content-Type: application/json'];
-    if ($ctok) $headers[] = 'client-token: ' . $ctok;
+            $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-document/{$extensao}");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_POSTFIELDS => json_encode(['phone' => $phoneNorm, 'document' => $documentoDataUriOuUrl, 'fileName' => $fileName]),
+                CURLOPT_TIMEOUT => 30,
+            ]);
+            curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code === 200) return true;
+        }
+    }
 
-    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/send-document/{$extensao}");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_POSTFIELDS => json_encode(['phone' => $phone, 'document' => $documentoDataUriOuUrl, 'fileName' => $fileName]),
-        CURLOPT_TIMEOUT => 30,
-    ]);
-    curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return $code === 200;
+    if (!$usandoPrincipal && oficialConfigured()) {
+        return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
+    }
+    return false;
 }
 
 /**

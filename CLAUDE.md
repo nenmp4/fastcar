@@ -8472,7 +8472,123 @@ segue no schema sem uso novo, não removida sem ganho real),
   `zapiEnviarVideo()`/`zapiEnviarDocumento()` NÃO ganharam esse fallback
   nesta rodada — fora do escopo confirmado, seus chamadores atuais nunca
   passam URL pública (sempre base64/formato que a Meta não aceitaria de
-  qualquer forma sem o fluxo de upload `/media`).
+  qualquer forma sem o fluxo de upload `/media`). ⚠️ **Superado pelo bullet
+  seguinte** — o upload `/media` foi implementado no mesmo dia, então essa
+  limitação não existe mais.
+- **Meta oficial — mídia (upload `/media` + download autenticado), fechando
+  a paridade com a Z-API** (29/09/2026, sequência de pedidos diretos no
+  mesmo dia: primeiro "comom ficou inbox do whatsap", que levou a mapear
+  TODA função de envio/recebimento de WhatsApp do projeto e achar vários
+  buracos reais — anexo de imagem/áudio/documento do inbox de compra indo
+  pela Z-API antiga mesmo com o toggle em `'oficial'`, catálogo de fotos/
+  vídeo de vendas e o relatório DRE do financeiro sem nenhum fallback pro
+  Meta, e recebimento de mídia do cliente via Meta nunca implementado —
+  depois "usando instancia da meta todas as funcionalidades?" e a resposta
+  final "sim, temos deixar funcional igual zpi"). Até aqui (bullet acima),
+  o fallback Z-API→Meta só cobria TEXTO e imagem-por-URL-pública — qualquer
+  mídia que só existe como base64 (que é o caso comum: anexo do WhatsApp
+  Box vem do navegador, foto do catálogo de vendas vem de upload direto,
+  PDF do relatório financeiro é gerado na hora) nunca tinha como sair pelo
+  Meta, porque a Cloud API não aceita bytes direto no corpo de
+  `/messages` — só `link` (URL pública que ELA busca) ou `id` (de um
+  upload já feito). Faltava o mecanismo de upload em si.
+  **Envio**: `oficialUploadMedia()` (novo, `includes/whatsapp_oficial.php`)
+  — `POST /{phone_number_id}/media`, multipart/form-data
+  (`messaging_product=whatsapp`, `type`, `file`), devolve o `media_id`
+  gerado; usa `CURLStringFile` (PHP 8.1+, já confirmado disponível — PHP
+  8.4 em produção) pra montar o multipart direto dos bytes em memória, sem
+  precisar escrever arquivo temporário em disco. `_oficialParseDataUri()`
+  (helper puro, sem rede) decide se uma string é `data:{mime};base64,{...}`
+  ou não. `_oficialEnviarMidia()` (novo, substitui a implementação antiga
+  de `oficialEnviarImagem()` e serve de base pras 3 funções novas) decide
+  sozinha entre os 2 caminhos: URL pública → manda por `link` direto, sem
+  upload; base64 → `oficialUploadMedia()` primeiro, manda por `id` —
+  cobrindo os 2 formatos que o resto do projeto sempre usou (Z-API sempre
+  aceitou os dois). Áudio nunca manda `caption` (WhatsApp não aceita,
+  mesma limitação já documentada pro lado Z-API); documento sempre manda
+  `filename`. Novas `oficialEnviarAudio()`/`oficialEnviarVideo()`/
+  `oficialEnviarDocumento()` (mesma assinatura das equivalentes Z-API,
+  `includes/whatsapp_config.php`) + `oficialEnviarImagem()` reescrita por
+  cima do helper genérico — a restrição antiga ("SÓ funciona com URL
+  pública... recusa de propósito") foi removida por completo, já que o
+  upload resolve a limitação que a justificava.
+  **`includes/whatsapp_config.php`** — as 4 funções de envio de mídia
+  (`zapiEnviarImagem()`/`zapiEnviarAudio()`/`zapiEnviarVideo()`/
+  `zapiEnviarDocumento()`) ganharam o MESMO padrão que `zapiEnviarTexto()`
+  já tinha desde o bullet anterior: quando `$instanciaOverride === null`
+  (canal PRINCIPAL) e `oficialEhProviderPrincipal()`, vai direto pro Meta
+  — **fecha o buraco real achado no mapeamento**: antes disso,
+  `zapiEnviarImagem()`/`zapiEnviarAudio()`/`zapiEnviarDocumento()`
+  chamadas sem override (anexo/áudio manual do WhatsApp Box de compra,
+  `includes/whatsapp_inbox.php`) NUNCA olhavam pro toggle, sempre tentavam
+  a Z-API antiga direto — um anexo mandado pelo consultor saía por um
+  número diferente do que o cliente estava conversando (o Meta novo,
+  desde a migração de 25/09/2026); quando `$instanciaOverride` está
+  presente (vendas/financeiro) e a Z-API dedicada falha, cai pro Meta —
+  agora funciona pra base64 também (antes só imagem-por-URL), então o
+  catálogo de fotos/vídeo de vendas (`includes/vendas.php`) e o relatório
+  DRE do financeiro (`cron/financeiro_relatorio_mensal.php`) também
+  ganharam fallback de verdade, sem nenhuma mudança nesses 2 arquivos —
+  só chamam a mesma função de sempre. `zapiEnviarAudio()` ganhou o
+  parâmetro `?array $instanciaOverride = null` que não existia antes
+  (opcional, retrocompatível — nenhum caller precisou mudar).
+  **Recebimento**: `oficialBaixarMidiaRecebida()` (novo,
+  `includes/whatsapp_oficial.php`) — 2 chamadas autenticadas, diferente da
+  Z-API (que já entrega URL direta no payload do webhook): `GET
+  /{media_id}` resolve pra uma URL temporária + `mime_type` real, depois
+  baixa essa URL com o MESMO Bearer token (o CDN da Meta exige
+  autenticação pra baixar — 401/403 sem o header, nunca é link público
+  comum) — mesmo corte de tamanho (`WHATSAPP_MIDIA_MAX_BYTES`, 20MB, com
+  fallback hardcoded se a constante ainda não estiver carregada) e mesma
+  disciplina "nunca lança" do equivalente Z-API (`baixarMidiaZapi()`).
+  `chatbot-whatsapp/includes/mensagens.php` ganhou o `require_once` de
+  `whatsapp_oficial.php` (faltava) + um branch novo logo antes do caminho
+  Z-API existente: detecta mídia vinda da Cloud API por
+  `!empty($bloco['mediaId'])` (campo que só `oficialAdaptarPayloadParaZapi()`
+  preenche, nunca a Z-API) e resolve/baixa por esse caminho; sem
+  `mediaId`, cai no `extrairUrlMidia()`/`baixarMidiaZapi()` de sempre —
+  **os dois caminhos nunca se cruzam, Z-API 100% intocada**. Falha em
+  qualquer etapa (resolve ou download) grava
+  `storage/logs/whatsapp_midia_debug.log` (mesmo log/formato que a Z-API
+  já usava) e segue como mídia não processada — mesmo fallback gracioso
+  de sempre, nunca crasha o webhook.
+  **Ficou de fora, de propósito — limitação de PLATAFORMA, não lacuna de
+  código**: `zapiBuscarContato()` (busca de nome/foto de perfil do
+  WhatsApp) permanece Z-API-only — a Cloud API oficial da Meta não expõe
+  esse dado pra número arbitrário (proteção de privacidade da própria
+  plataforma), não tem "porta" nenhuma disso pro Meta, nunca vai ter
+  código pra isso enquanto a Fastcar usar a API oficial nesse ponto.
+  Vendas/financeiro continuam com a Cloud API só como FALLBACK (nunca
+  canal principal próprio) — teriam que ter `phone_number_id` dedicado
+  cada um, fora de escopo aqui.
+  Testado: 20 asserções de função em banco isolado contra fake Meta+CDN
+  locais (upload de bytes reais confere tamanho/mime exatos no multipart
+  capturado pelo fake server; `oficialEnviarImagem()` com data URI faz
+  upload+envio por id, com URL pública nunca faz upload — só 1 chamada;
+  áudio nunca manda `caption`; vídeo/documento com legenda/filename
+  certos; string sem formato reconhecido nunca tenta rede nenhuma; upload
+  falhando nunca chega a tentar mandar a mensagem; os 4 `zapiEnviar*()`
+  no caminho PRINCIPAL com toggle=oficial vão pro Meta mesmo com base64;
+  toggle=zapi nunca cai pro Meta sozinho — regressão confirmada; os 4 com
+  override QUEBRADO + base64 caem pro Meta — cenário real do catálogo de
+  vendas/DRE financeiro, nunca funcionava antes; `oficialBaixarMidiaRecebida()`
+  baixa os bytes certos com o Bearer certo no CDN, `media_id` desconhecido
+  vira `null` sem quebrar, arquivo maior que 20MB é cortado) + **pipeline
+  completo via HTTP real** contra o app server de verdade + fake Meta/CDN/
+  Gemini locais: payload de webhook simulando cliente mandando FOTO
+  (`type=image`, `mediaId`) processado de ponta a ponta — resolve+download
+  autenticado confirmados no log do fake CDN (`auth=Bearer TOKEN123`),
+  Gemini descreveu a imagem, mensagem gravada com prefixo `📷` + descrição,
+  **mídia de verdade SALVA em disco** (`arquivo_url` preenchido, bytes
+  exatos conferidos byte a byte — mesma disciplina de "não só a descrição,
+  a mídia em si" já documentada pro lado Z-API), cliente/oportunidade
+  criados, resposta da IA saindo pelo Meta (confirmado no log); reenviar o
+  MESMO `wamid` confirmado NÃO reprocessando nada (dedup existente,
+  `jaProcessado()`, funciona igual pra payload Meta); `media_id`
+  inexistente confirmado caindo no fallback gracioso de sempre (mensagem
+  salva como `[image]`, log de diagnóstico gravado, cliente recebe o
+  reconhecimento genérico, sem crash) — + `php -l` nos 3 arquivos +
+  `tests/smoke.php` limpo. Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

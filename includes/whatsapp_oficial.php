@@ -7,14 +7,32 @@
  * por padrão de mensagem repetida do jeito que a Z-API (protocolo não
  * oficial, WhatsApp Web/multi-device) sofre.
  *
- * **Fase 1 (esta rodada)**: só texto, só canal PRINCIPAL — resolve a
- * qualificação de lead novo, que é a urgência real. Mídia (foto/áudio/vídeo
- * recebidos), múltiplas instâncias (vendas/financeiro) e envio de
- * documento/imagem pelo WhatsApp Box ficam pra uma fase 2, quando/se pedido —
- * a API oficial exige mecanismo diferente pra mídia (upload prévio via
- * `/media`, nunca base64 direto no corpo como a Z-API aceitava), escopo
- * maior, não implementado agora pra não atrasar a fase 1 que resolve a
- * urgência.
+ * **Fase 1 (25/09/2026)**: só texto, só canal PRINCIPAL — resolve a
+ * qualificação de lead novo, que é a urgência real.
+ *
+ * **Fase 2 — mídia (29/09/2026, "sim, temos deixar funcional igual zpi")**:
+ * envio E recebimento de imagem/áudio/vídeo/documento, via o mecanismo
+ * próprio da Cloud API — upload prévio (`POST /{phone_number_id}/media`,
+ * multipart, devolve um `media_id`) seguido de envio referenciando esse id
+ * (`type: image/audio/video/document`, campo `id`), nunca base64 direto no
+ * corpo como a Z-API aceitava. `_oficialEnviarMidia()` aceita os DOIS
+ * formatos que o resto do projeto já usa — URL pública (manda por `link`,
+ * sem upload) OU data URI base64 (faz upload primeiro, manda por `id`) —
+ * decidido sozinho pelo formato da string recebida. Mídia recebida do
+ * cliente nunca vem com URL direta no payload do webhook (diferente da
+ * Z-API) — só um `media_id` que exige 2 chamadas autenticadas pra resolver
+ * (`oficialBaixarMidiaRecebida()`): `GET /{media_id}` devolve a URL
+ * temporária + mime real, depois baixa essa URL com o MESMO Bearer token
+ * (o CDN da Meta exige autenticação pra baixar, nunca é link público
+ * comum). **Múltiplas instâncias (vendas/financeiro) continuam Z-API** —
+ * a Cloud API só entrou como fallback pra ELAS (`zapiEnviarTexto()`/
+ * `zapiEnviarImagem()` etc, `includes/whatsapp_config.php`), nunca como
+ * canal PRINCIPAL de vendas/financeiro (isso exigiria phone_number_id
+ * dedicado por módulo, fora de escopo aqui). **Busca de nome/foto de
+ * perfil (`zapiBuscarContato()`) permanece Z-API-only, sem equivalente —
+ * a Cloud API oficial não expõe esse dado pra número arbitrário (limitação
+ * de privacidade da própria plataforma, não uma lacuna de código; nunca
+ * dá pra "portar" isso pro Meta).**
  *
  * **Regra crítica, diferente da Z-API**: só é permitido mandar mensagem de
  * texto LIVRE pra um número que escreveu pra gente nas últimas 24h — fora
@@ -135,31 +153,83 @@ function oficialEnviarTexto(string $phone, string $msg): bool {
 }
 
 /**
- * Envia imagem com legenda via Cloud API — POST /{phone_number_id}/messages,
- * type=image, image={link, caption}. 29/09/2026, "pode deixar todos envios
- * pelo whatsapp pela instância meta, dá uma revisão geral aí" — desbloqueia
- * o fallback de zapiEnviarImagem() (includes/whatsapp_config.php) pra
- * quando a instância Z-API DEDICADA de vendas/financeiro não está
- * configurada ou falha (o caso real que quebrou: link do wizard de
- * documentos com a logo, pela instância de vendas nunca configurada).
- *
- * SÓ funciona com URL PÚBLICA (http/https) — a Meta busca o arquivo
- * sozinha a partir do `link`, nunca aceita base64/data URI direto (ao
- * contrário da Z-API). Mídia que só existe como base64 (foto/vídeo do
- * catálogo de revenda, anexo do WhatsApp Box) exigiria o fluxo de upload
- * prévio via `/media` da Meta — fora do escopo desta rodada (Fase 2 já
- * sinalizada no CLAUDE.md) — `oficialEnviarImagem()` recusa de propósito
- * (nunca tenta mandar um data URI como se fosse link, regra #3: nunca
- * prometer capacidade que não existe).
+ * Se `$s` for um data URI base64 (`data:{mime};base64,{...}`), devolve
+ * `['mime'=>string,'bytes'=>string]` — senão `null`. Helper puro, sem
+ * chamada de rede.
  */
-function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda): bool {
-    [$phoneId, $token] = oficialCredenciais();
-    if (!$phoneId || !$token || !$phone || !$imagemUrl) {
-        _oficialSetUltimoErro('Sem Phone Number ID/token configurado, ou telefone/imagem vazio.');
-        return false;
+function _oficialParseDataUri(string $s): ?array {
+    if (!preg_match('#^data:([a-zA-Z0-9/+.\-]+);base64,(.+)$#s', $s, $m)) {
+        return null;
     }
-    if (!preg_match('#^https?://#i', $imagemUrl)) {
-        _oficialSetUltimoErro('Envio de imagem pelo Meta só aceita URL pública (http/https) — este arquivo não tem uma.');
+    $bytes = base64_decode($m[2], true);
+    if ($bytes === false) {
+        return null;
+    }
+    return ['mime' => $m[1], 'bytes' => $bytes];
+}
+
+/**
+ * Faz upload de mídia pra Cloud API — POST /{phone_number_id}/media,
+ * multipart/form-data (`messaging_product=whatsapp`, `type`, `file`) —
+ * devolve o `media_id` gerado, ou `null` em falha. Passo prévio obrigatório
+ * pra mandar qualquer mídia que só existe como base64 (a Cloud API nunca
+ * aceita bytes direto no corpo de `/messages`, só `link` OU `id` de um
+ * upload já feito). `CURLStringFile` (PHP 8.1+) evita precisar escrever um
+ * arquivo temporário em disco só pra montar o multipart.
+ */
+function oficialUploadMedia(string $bytes, string $mime, string $nomeArquivo = 'arquivo'): ?string {
+    [$phoneId, $token] = oficialCredenciais();
+    if (!$phoneId || !$token || $bytes === '') {
+        _oficialSetUltimoErro('Sem Phone Number ID/token configurado, ou arquivo vazio.');
+        return null;
+    }
+
+    $ch = curl_init(oficialBaseUrl() . "/{$phoneId}/media");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token],
+        CURLOPT_POSTFIELDS => [
+            'messaging_product' => 'whatsapp',
+            'type' => $mime,
+            'file' => new CURLStringFile($bytes, $nomeArquivo, $mime),
+        ],
+        CURLOPT_TIMEOUT => 40,
+    ]);
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($resp === false) {
+        _oficialSetUltimoErro("Falha de conexão no upload de mídia: {$curlErr}");
+        return null;
+    }
+    $json = json_decode($resp, true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($json['id'])) {
+        return (string)$json['id'];
+    }
+    $erroMsg = $json['error']['message'] ?? "HTTP {$httpCode}";
+    _oficialSetUltimoErro("Falha no upload de mídia: {$erroMsg} — resposta: " . substr((string)$resp, 0, 500));
+    return null;
+}
+
+/**
+ * Envia mídia (imagem/áudio/vídeo/documento) via Cloud API — POST
+ * /{phone_number_id}/messages, type={tipo}, campo {tipo}={link|id, caption?,
+ * filename?}. Aceita URL pública (manda por `link`, sem upload) OU data URI
+ * base64 (`oficialUploadMedia()` primeiro, manda por `id`) — decide sozinho
+ * pelo formato de `$urlOuDataUri`, cobrindo os 2 formatos que o resto do
+ * projeto já usa (Z-API sempre aceitou os dois). Áudio nunca aceita
+ * `caption` no WhatsApp (mesma limitação já documentada pro lado Z-API,
+ * `zapiEnviarAudio()`); documento sempre manda `filename`, os outros nunca.
+ * Nunca lança — falha de qualquer etapa (upload ou envio) só seta
+ * `oficialUltimoErro()` e retorna false.
+ */
+function _oficialEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, string $legenda, string $nomeArquivoFallback): bool {
+    [$phoneId, $token] = oficialCredenciais();
+    if (!$phoneId || !$token || !$phone || !$urlOuDataUri) {
+        _oficialSetUltimoErro('Sem Phone Number ID/token configurado, ou telefone/arquivo vazio.');
         return false;
     }
     $phoneNorm = normalizarTelefone($phone);
@@ -168,11 +238,30 @@ function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda):
         return false;
     }
 
+    $campo = [];
+    $dataUri = _oficialParseDataUri($urlOuDataUri);
+    if ($dataUri !== null) {
+        $mediaId = oficialUploadMedia($dataUri['bytes'], $dataUri['mime'], $nomeArquivoFallback);
+        if (!$mediaId) return false; // oficialUltimoErro() já setado por oficialUploadMedia()
+        $campo['id'] = $mediaId;
+    } elseif (preg_match('#^https?://#i', $urlOuDataUri)) {
+        $campo['link'] = $urlOuDataUri;
+    } else {
+        _oficialSetUltimoErro('Formato de mídia não reconhecido (nem URL http(s), nem data URI base64).');
+        return false;
+    }
+    if ($legenda !== '' && $tipo !== 'audio') {
+        $campo['caption'] = $legenda;
+    }
+    if ($tipo === 'document') {
+        $campo['filename'] = $nomeArquivoFallback;
+    }
+
     $body = [
         'messaging_product' => 'whatsapp',
         'to' => $phoneNorm,
-        'type' => 'image',
-        'image' => ['link' => $imagemUrl, 'caption' => $legenda],
+        'type' => $tipo,
+        $tipo => $campo,
     ];
 
     $ch = curl_init(oficialBaseUrl() . "/{$phoneId}/messages");
@@ -184,7 +273,7 @@ function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda):
             'Authorization: Bearer ' . $token,
             'Content-Type: application/json',
         ],
-        CURLOPT_TIMEOUT => 20,
+        CURLOPT_TIMEOUT => 30,
     ]);
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -204,6 +293,80 @@ function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda):
     $erroCode = $json['error']['code'] ?? null;
     _oficialSetUltimoErro("{$erroMsg}" . ($erroCode ? " (code {$erroCode})" : '') . " — resposta: " . substr($resp, 0, 500));
     return false;
+}
+
+/** Imagem com legenda — URL pública ou base64 (upload automático). */
+function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda): bool {
+    return _oficialEnviarMidia($phone, 'image', $imagemUrl, $legenda, 'imagem.jpg');
+}
+
+/** Áudio — URL pública ou base64 (upload automático). Sem legenda — WhatsApp não aceita caption em áudio. */
+function oficialEnviarAudio(string $phone, string $audioDataUriOuUrl): bool {
+    return _oficialEnviarMidia($phone, 'audio', $audioDataUriOuUrl, '', 'audio.ogg');
+}
+
+/** Vídeo com legenda — URL pública ou base64 (upload automático). */
+function oficialEnviarVideo(string $phone, string $videoUrlOuDataUri, string $legenda): bool {
+    return _oficialEnviarMidia($phone, 'video', $videoUrlOuDataUri, $legenda, 'video.mp4');
+}
+
+/** Documento (PDF/Word/planilha) — URL pública ou base64 (upload automático). `$fileName` vira o nome exibido na bolha. */
+function oficialEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName): bool {
+    return _oficialEnviarMidia($phone, 'document', $documentoDataUriOuUrl, '', $fileName !== '' ? $fileName : 'documento.pdf');
+}
+
+/**
+ * Baixa mídia RECEBIDA do cliente via Cloud API — 2 chamadas autenticadas,
+ * diferente da Z-API (que já entrega uma URL direta no payload do
+ * webhook): (1) `GET /{media_id}` resolve pro id um `url` temporário +
+ * `mime_type` real; (2) baixa essa URL com o MESMO Bearer token — o CDN da
+ * Meta exige autenticação pra baixar, nunca é link público comum, senão
+ * dá 401/403. Mesmo corte de tamanho
+ * (`WHATSAPP_MIDIA_MAX_BYTES`, definida em
+ * `chatbot-whatsapp/includes/mensagens.php`, com fallback pra 20MB se por
+ * algum motivo essa constante não estiver carregada ainda) e mesma
+ * disciplina de "nunca lança" do equivalente Z-API (`baixarMidiaZapi()`).
+ * Retorna `['bytes'=>string,'mime'=>string]` ou `null` em qualquer falha —
+ * quem chama decide o que logar (mesmo padrão de `logDiagnosticoMidiaZapi()`).
+ */
+function oficialBaixarMidiaRecebida(string $mediaId, string $tipo): ?array {
+    [, $token] = oficialCredenciais();
+    if (!$mediaId || !$token) return null;
+    $maxBytes = defined('WHATSAPP_MIDIA_MAX_BYTES') ? WHATSAPP_MIDIA_MAX_BYTES : (20 * 1024 * 1024);
+
+    try {
+        $ch = curl_init(oficialBaseUrl() . "/{$mediaId}");
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token],
+            CURLOPT_TIMEOUT => 15,
+        ]);
+        $resp = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($http !== 200 || !$resp) return null;
+
+        $meta = json_decode($resp, true);
+        $url = $meta['url'] ?? null;
+        if (!is_string($url) || $url === '') return null;
+
+        $ch2 = curl_init($url);
+        curl_setopt_array($ch2, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token],
+            CURLOPT_TIMEOUT => $tipo === 'video' ? 40 : 20,
+            CURLOPT_RANGE => '0-' . ($maxBytes - 1),
+        ]);
+        $conteudo = curl_exec($ch2);
+        $http2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+        curl_close($ch2);
+        if (!in_array($http2, [200, 206], true) || !$conteudo || strlen($conteudo) >= $maxBytes) {
+            return null;
+        }
+        return ['bytes' => $conteudo, 'mime' => (string)($meta['mime_type'] ?? '')];
+    } catch (Throwable $e) {
+        return null;
+    }
 }
 
 /**
@@ -297,10 +460,12 @@ function oficialStatusCache(bool $forcar = false): array {
  * aqui a Cloud API já separa isso estruturalmente em campos diferentes,
  * então nunca precisa de heurística — só checar se `messages[]` existe).
  *
- * Mídia (Fase 2, não implementada): marca o tipo reconhecido mas sem
- * nenhum campo de URL — extrairUrlMidia() (mensagens.php) não acha nada,
- * loga o diagnóstico e segue como mídia não processada, mesmo caminho já
- * existente pra Z-API quando o campo de URL não bate.
+ * Mídia (29/09/2026, Fase 2 implementada): nunca preenche URL de propósito
+ * — a Cloud API não entrega URL direta no payload do webhook, só um
+ * `mediaId`. `chatbot-whatsapp/includes/mensagens.php` detecta esse campo
+ * (`!empty($bloco['mediaId'])`) e resolve/baixa via `oficialBaixarMidiaRecebida()`
+ * em vez do caminho `extrairUrlMidia()`/`baixarMidiaZapi()` (Z-API), que
+ * continua intocado pra payload que nunca tem `mediaId`.
  */
 function oficialAdaptarPayloadParaZapi(array $body): ?array {
     $value = $body['entry'][0]['changes'][0]['value'] ?? null;

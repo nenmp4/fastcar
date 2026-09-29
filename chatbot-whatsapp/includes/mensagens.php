@@ -10,6 +10,7 @@ require_once dirname(__DIR__, 2) . '/includes/security.php';
 require_once dirname(__DIR__, 2) . '/includes/oportunidades.php';
 require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
+require_once dirname(__DIR__, 2) . '/includes/whatsapp_oficial.php'; // oficialBaixarMidiaRecebida() — mídia recebida via canal Meta
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
 require_once dirname(__DIR__, 2) . '/includes/documentos.php'; // salvarArquivoGeradoComoDocumento() — mídia recebida (áudio/imagem/vídeo)
 
@@ -604,13 +605,29 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
         $textoMidia = '';
         if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
-            $url = extrairUrlMidia($payload, $tipoBruto);
-            if ($url) {
-                $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
-                $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
-                $bytesMidia = baixarMidiaZapi($url, $tipoBruto);
-                if ($bytesMidia !== null) {
+            $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
+            $bloco = $payload[$tipoBruto] ?? [];
+            if (!empty($bloco['mediaId'])) {
+                // Mídia recebida via Cloud API (Meta oficial, 29/09/2026, "sim,
+                // temos deixar funcional igual zpi") — a Cloud API nunca entrega
+                // URL direta no payload do webhook (diferente da Z-API), só um
+                // id que exige 2 chamadas autenticadas pra resolver.
+                $resultadoMeta = oficialBaixarMidiaRecebida((string)$bloco['mediaId'], $tipoBruto);
+                if ($resultadoMeta !== null) {
+                    $bytesMidia = $resultadoMeta['bytes'];
+                    $mime = $resultadoMeta['mime'] !== '' ? $resultadoMeta['mime'] : (string)($bloco['mimeType'] ?: $mimeDefault);
                     $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
+                } else {
+                    logDiagnosticoMidiaZapi($tipoBruto, 'meta_media_falhou', ['mediaId' => $bloco['mediaId']]);
+                }
+            } else {
+                $url = extrairUrlMidia($payload, $tipoBruto);
+                if ($url) {
+                    $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
+                    $bytesMidia = baixarMidiaZapi($url, $tipoBruto);
+                    if ($bytesMidia !== null) {
+                        $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
+                    }
                 }
             }
         }
