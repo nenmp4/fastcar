@@ -183,6 +183,34 @@ Quando o domínio existir:
    na aplicação, mas na borda, antes até de gastar recurso da VPS. Sistema
    tem dado pessoal/financeiro de cliente, não pode aparecer indexado nem
    varrido por robô (ver CLAUDE.md).
+   ⚠️ **Achado real, 29/09/2026** — o Depurador de Compartilhamento da
+   Meta (developers.facebook.com/tools/debug) deu **403** tentando buscar
+   `https://fastcar.solutions/privacidade.php` pra gerar a prévia do link
+   (necessário pra configurar o app WhatsApp Cloud API/Business — ver
+   bullet "WhatsApp Cloud API" no CLAUDE.md). O `robots.txt` já liberava
+   esse caminho pro `User-agent: *`, então não era a causa — o 403 vinha
+   do próprio Bot Fight Mode barrando o crawler da Meta
+   (`facebookexternalhit`/`meta-externalagent`) na borda, antes de chegar
+   na VPS, porque ele não se comporta como navegador comum (sem JS,
+   headers diferentes) — o mesmo padrão que o Bot Fight Mode é feito pra
+   bloquear. Como agora existem páginas públicas de propósito nesse mesmo
+   domínio (`index.php`, `/blog/`, `privacidade.php`, `termos.php`,
+   `exclusao-dados.php` — nenhuma delas é o CRM, que segue 100% protegido
+   por `X-Robots-Tag: noindex` na aplicação independente disso), esse
+   robô específico precisa passar. Corrigido em 2 frentes: (1) `robots.txt`
+   ganhou um bloco dedicado pro `User-agent: facebookexternalhit`/
+   `meta-externalagent` (o próprio Meta pede isso na mensagem de erro do
+   Depurador), mas isso sozinho **não resolveu** — confirma que o bloqueio
+   real é o Bot Fight Mode, não o robots.txt; (2) **correção de verdade,
+   manual no painel da Cloudflare**: Security → WAF → Custom rules (ou
+   "Configuration Rules", dependendo da versão do painel) → criar regra
+   com campo "User Agent" contendo `facebookexternalhit` OU
+   `meta-externalagent` OU `WhatsApp`, ação **"Skip"** marcando "Bot Fight
+   Mode" (e "Super Bot Fight Mode" se o plano tiver) → salvar/publicar.
+   Isso deixa só esses user-agents específicos passarem direto pelo Bot
+   Fight Mode, sem abrir exceção nenhuma pra bot genérico — o resto do
+   domínio (inclusive `sistema.fastcar.solutions`, mesmo docroot) continua
+   protegido igual antes.
 8. **Firewall da VPS — só aceitar 80/443 vindo da Cloudflare** (impede
    alguém de bater direto no IP da VPS pulando a Cloudflare e o Bot Fight
    Mode):

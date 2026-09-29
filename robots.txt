@@ -1,3 +1,21 @@
+# 29/09/2026 — bloco dedicado pro robô de preview do Facebook/WhatsApp
+# (Meta), depois do Depurador de Compartilhamento retornar 403 tentando
+# extrair /privacidade.php. O robots.txt já liberava esse caminho pro
+# User-agent: * abaixo — o 403 real vem do Bot Fight Mode da Cloudflare
+# na borda, não daqui (ver install/SETUP_VPS.md) — mas o próprio Meta
+# pede explicitamente pra "allowlist facebookexternalhit no robots.txt",
+# então documentado aqui também, sem custo.
+User-agent: facebookexternalhit
+User-agent: meta-externalagent
+Allow: /$
+Allow: /privacidade.php
+Allow: /exclusao-dados.php
+Allow: /termos.php
+Allow: /blog/
+Allow: /public/assets/
+Allow: /admin/assets/img/icon-512.png
+Disallow: /
+
 User-agent: *
 Allow: /$
 Allow: /privacidade.php
