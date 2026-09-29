@@ -8146,6 +8146,51 @@ segue no schema sem uso novo, não removida sem ganho real),
   causando contenção de lock (`SQLSTATE[HY000] General error: 5`), não
   resolvido com índice, ver bullet "database is locked" do módulo
   financeiro pro caso real que originou essa parte do skill.
+  **2ª rodada, mesmo dia — "melhore o carregamento das páginas"**: pedido
+  de continuação depois da 1ª (PRAGMAs+5 índices, acima), desta vez com
+  foco explícito em carregamento de TELA, não só query isolada. Seguindo
+  o próprio runbook do skill (passo 1, nunca adivinhar índice): lidos os
+  3 WhatsApp Box do projeto (`includes/whatsapp_inbox.php` — compra,
+  `includes/vendas_inbox.php`, `includes/financeiro_inbox.php`) — os 3
+  são a tela com o polling mais agressivo do sistema (5s por aba aberta,
+  ver CLAUDE.md "WhatsApp Box... intervalos apertados... lista lateral
+  15s→5s") e os 3 usavam o MESMO anti-padrão pra achar "a última mensagem
+  de cada telefone": subquery correlacionada
+  (`WHERE m.id = (SELECT MAX(id) FROM whatsapp_mensagens m3 WHERE
+  m3.telefone = m.telefone)`), reexecutada por LINHA candidata — nunca
+  usa índice de cobertura, sempre `SCAN` completo da tabela
+  `whatsapp_mensagens` (confirmado via `EXPLAIN QUERY PLAN`, seguindo o
+  passo 1 do skill: sem `sqlite3` CLI neste sandbox, rodado via PHP
+  direto). Reescrito nos 3 arquivos pro padrão JOIN com subquery agregada
+  (`JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens
+  GROUP BY telefone) ult ON ult.telefone = m.telefone AND ult.max_id =
+  m.id`) — mesmo resultado, mas a subquery agregada roda 1x só (não por
+  linha) e sai como `SEARCH ... USING COVERING INDEX` em vez de `SCAN`.
+  `includes/vendas_inbox.php` tinha o mesmo padrão DUPLICADO (2 subqueries
+  correlacionadas na mesma query — uma pra `whatsapp_mensagens`, outra pra
+  achar a venda mais recente por `comprador_telefone`), as duas reescritas
+  junto. **Achado de quebra no mesmo `EXPLAIN QUERY PLAN`**:
+  `vendas.comprador_telefone` nunca teve índice nenhum, apesar de já ser
+  filtrado o tempo todo — não só nesse inbox, também em
+  `includes/vendas.php` (round-robin/dedup de lead por telefone) — cada
+  leitura por telefone ali era `SCAN vendas` completo; `idx_vendas_comprador_telefone`
+  novo em `install/schema.sql` + `install/migrar.php`. Testado: 3
+  asserções funcionais em banco isolado confirmando que o RESULTADO
+  retornado pelas 3 funções (`listarConversasWhatsapp()`/
+  `listarConversasVendas()`/`listarConversasFinanceiro()`) continua
+  idêntico ao de antes — só o plano de execução mudou, nunca o dado — +
+  `EXPLAIN QUERY PLAN` confirmado saindo `SEARCH`/`USING COVERING INDEX`
+  nos 3 arquivos, nunca mais `SCAN`; migração testada contra schema
+  anterior a esta mudança (índice ausente antes, presente e idempotente
+  numa 2ª rodada depois, dado pré-existente preservado) + `php -l` +
+  `tests/smoke.php` limpos. **Guard novo**
+  (`whatsapp-inbox-subquery-correlacionada`, seção 4 do smoke) — barra o
+  padrão `WHERE m.id = (SELECT MAX(id)... WHERE ...telefone = m.telefone)`
+  voltando a aparecer em qualquer um dos 3 arquivos; sanity-check
+  confirmado reintroduzindo o padrão antigo temporariamente num dos 3 e
+  vendo o guard falhar com a mensagem certa antes de restaurar. Usuário
+  confirmou a percepção real de velocidade depois desta rodada: "AGORA TÁ
+  RAPIDASH".
 - **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
   admin deixar offline usuario que faltar e pegar os lead que chegar") —
   o lado de COMPRA já tinha isso desde 22/09/2026
