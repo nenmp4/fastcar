@@ -87,30 +87,58 @@ function extrairTexto(array $payload): ?string {
  * de provedor no futuro pra um BSP oficial). Nunca lança: sem nenhum dos
  * dois formatos, retorna tudo vazio (contato direto) — nunca inventa
  * atribuição que não veio no evento.
+ *
+ * 29/09/2026, CPL das campanhas Meta ("registrar de qual anúncio veio cada
+ * lead e quanto cada campanha gastou") — `anuncio_origem` deixou de aceitar
+ * `ctwaClid`/`ctwa_clid` como fallback quando não vem `sourceId`/`source_id`:
+ * pra cruzar com `anuncio_gasto_diario.ad_id` (puxado da Marketing API,
+ * sempre o ad_id de verdade) o campo precisa ser SEMPRE o ad_id ou vazio —
+ * nunca um ctwa_clid disfarçado de ad_id, que nunca bateria com nada no
+ * relatório de custo. `ctwa_clid` agora sai num campo próprio (nunca lido
+ * antes desta mudança), junto dos outros campos crus que
+ * `registrarLeadOrigemAnuncio()` usa pra alimentar `lead_origem_anuncio`
+ * (histórico completo de todo clique, não só o mais recente).
  */
 function extrairOrigemAnuncio(array $payload): array {
     $contextInfo = $payload['contextInfo'] ?? $payload['message']['contextInfo'] ?? [];
     $ad = $contextInfo['externalAdReply'] ?? $payload['externalAdReply'] ?? null;
 
     if (is_array($ad) && (!empty($ad['sourceId']) || ($ad['sourceType'] ?? '') === 'ad')) {
+        $adId = (string)($ad['sourceId'] ?? '');
         return [
             'canal_origem' => 'meta_ads',
             // title é o texto do anúncio exibido — mais legível que só um ID
             // pra identificar "de qual campanha" na hora de olhar o relatório.
             'campanha_origem' => (string)($ad['title'] ?? ''),
-            'anuncio_origem' => (string)($ad['sourceId'] ?? $ad['ctwaClid'] ?? ''),
+            'anuncio_origem' => $adId,
+            'ad_id' => $adId,
+            'ctwa_clid' => (string)($ad['ctwaClid'] ?? ''),
+            'source_type' => (string)($ad['sourceType'] ?? ''),
+            'headline' => (string)($ad['title'] ?? ''),
+            'corpo' => (string)($ad['body'] ?? ''),
+            'source_url' => (string)($ad['sourceUrl'] ?? ''),
+            'media_type' => (string)($ad['mediaType'] ?? ''),
         ];
     }
 
-    // Fallback pro formato da WhatsApp Cloud API oficial (referral) — a
-    // Z-API não usa isso hoje (ver comentário acima), mas mantém por
-    // segurança caso o provedor mude de mecanismo no futuro.
+    // Formato da WhatsApp Cloud API oficial (referral) — canal PRINCIPAL
+    // desde 25/09/2026 (includes/whatsapp_oficial.php), confirmado real em
+    // produção; a Z-API não usa isso (ver comentário acima), mantido por
+    // segurança/portabilidade entre os 2 provedores.
     $referral = $payload['referral'] ?? $payload['message']['referral'] ?? null;
     if (is_array($referral) && !empty($referral['source_id'])) {
+        $adId = (string)($referral['source_id'] ?? '');
         return [
             'canal_origem' => 'meta_ads',
             'campanha_origem' => (string)($referral['headline'] ?? ''),
-            'anuncio_origem' => (string)($referral['source_id'] ?? $referral['ctwa_clid'] ?? ''),
+            'anuncio_origem' => $adId,
+            'ad_id' => $adId,
+            'ctwa_clid' => (string)($referral['ctwa_clid'] ?? ''),
+            'source_type' => (string)($referral['source_type'] ?? ''),
+            'headline' => (string)($referral['headline'] ?? ''),
+            'corpo' => (string)($referral['body'] ?? ''),
+            'source_url' => (string)($referral['source_url'] ?? ''),
+            'media_type' => (string)($referral['media_type'] ?? ''),
         ];
     }
 
@@ -125,6 +153,59 @@ function extrairOrigemAnuncio(array $payload): array {
     }
 
     return ['canal_origem' => '', 'campanha_origem' => '', 'anuncio_origem' => ''];
+}
+
+/**
+ * Grava 1 linha em lead_origem_anuncio (histórico completo de todo clique
+ * de anúncio, não só first/last-touch) e atualiza o last-touch em
+ * clientes/vendas — 29/09/2026, CPL. Chamada de dentro de
+ * processarMensagemZapi() (compra) e processarMensagemVendasZapi() (venda),
+ * logo depois de criarOuAbrirOportunidade()/criarOuAbrirVendaLead(), que já
+ * grava o first-touch (nunca mexido aqui).
+ *
+ * Só grava quando $origem tem sinal de anúncio de verdade (canal_origem
+ * === 'meta_ads') — mensagem sem clique de anúncio por trás não tem nada
+ * útil pra registrar aqui, mesmo critério do "se existir" do spec original.
+ * Idempotente por wamid (UNIQUE) — INSERT OR IGNORE, nunca duplica se a
+ * Meta reenviar o mesmo webhook. Nunca lança — best-effort, mesmo padrão
+ * de notificarNovoLeadWhatsapp() e afins (nunca pode quebrar o fluxo
+ * principal de qualificação por causa de atribuição de anúncio).
+ */
+function registrarLeadOrigemAnuncio(array $payload, string $telefone, array $origem, ?int $clienteId = null, ?int $vendaId = null): void {
+    if (($origem['canal_origem'] ?? '') !== 'meta_ads') return;
+    $wamid = (string)($payload['messageId'] ?? '');
+    if ($wamid === '') return;
+
+    try {
+        $db = getDB();
+        $agora = date('Y-m-d H:i:s');
+        $db->prepare("
+            INSERT OR IGNORE INTO lead_origem_anuncio
+                (cliente_id, venda_id, telefone, wamid, source_type, ad_id, ctwa_clid, headline, corpo, source_url, media_type, recebido_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ")->execute([
+            $clienteId, $vendaId, $telefone, $wamid,
+            (string)($origem['source_type'] ?? ''),
+            (string)($origem['ad_id'] ?? ''),
+            (string)($origem['ctwa_clid'] ?? ''),
+            (string)($origem['headline'] ?? ''),
+            (string)($origem['corpo'] ?? ''),
+            (string)($origem['source_url'] ?? ''),
+            (string)($origem['media_type'] ?? ''),
+            $agora,
+        ]);
+
+        // Last-touch — sempre sobrescreve, diferente do first-touch já
+        // gravado por criarOuAbrirOportunidade()/criarOuAbrirVendaLead().
+        $tabela = $clienteId !== null ? 'clientes' : ($vendaId !== null ? 'vendas' : null);
+        $id = $clienteId ?? $vendaId;
+        if ($tabela !== null && $id !== null) {
+            $db->prepare("UPDATE {$tabela} SET origem_ad_id_last = ?, origem_ctwa_clid = ?, origem_atualizada_em = ? WHERE id = ?")
+               ->execute([(string)($origem['ad_id'] ?? ''), (string)($origem['ctwa_clid'] ?? ''), $agora, $id]);
+        }
+    } catch (Throwable $e) {
+        // best-effort — atribuição de anúncio nunca pode derrubar o webhook.
+    }
 }
 
 /** Log de diagnóstico — mesmo padrão de logDiagnosticoMidiaZapi(), pra
@@ -569,6 +650,9 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         $oportunidade = criarOuAbrirOportunidade($phone, $nomeContato, $origemAnuncio);
     } catch (Throwable $e) {
         $erroOportunidade = $e->getMessage();
+    }
+    if ($oportunidade) {
+        registrarLeadOrigemAnuncio($payload, $phone, $origemAnuncio, (int)$oportunidade['cliente_id']);
     }
 
     // Salva a mídia de verdade (não só a descrição do Gemini) assim que dá

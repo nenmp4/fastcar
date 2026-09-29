@@ -1,0 +1,42 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "2682351345571204",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "5511934505474",
+              "phone_number_id": "1414968168356551"
+            },
+            "contacts": [
+              {"profile": {"name": "Cliente Fixture"}, "wa_id": "5511999990000"}
+            ],
+            "messages": [
+              {
+                "from": "5511999990000",
+                "id": "wamid.FIXTURE_TESTE_0001",
+                "timestamp": "1735500000",
+                "type": "text",
+                "text": {"body": "Oi, tenho um carro financiado pra vender"},
+                "referral": {
+                  "source_url": "https://fb.me/exemplo",
+                  "source_id": "120245111222333",
+                  "source_type": "ad",
+                  "headline": "Venda seu carro financiado sem burocracia",
+                  "body": "A Fastcar compra seu carro financiado",
+                  "media_type": "image",
+                  "image_url": "https://scontent.example.com/imagem.jpg",
+                  "ctwa_clid": "ARAkFIXTURECLID"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

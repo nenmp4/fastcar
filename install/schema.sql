@@ -56,8 +56,20 @@ CREATE TABLE IF NOT EXISTS clientes (
     estado_civil TEXT DEFAULT '',
     profissao TEXT DEFAULT '',
     canal_origem TEXT DEFAULT '',      -- facebook_ads, google_ads, whatsapp_direto, etc
-    campanha_origem TEXT DEFAULT '',
-    anuncio_origem TEXT DEFAULT '',
+    campanha_origem TEXT DEFAULT '',   -- headline do anúncio (first-touch, nunca sobrescrito)
+    anuncio_origem TEXT DEFAULT '',    -- ad_id (first-touch) — 29/09/2026: agora SEMPRE o
+                                        -- ad_id de verdade (nunca mais cai pro ctwa_clid, ver
+                                        -- extrairOrigemAnuncio()) pra poder cruzar com
+                                        -- anuncio_gasto_diario.ad_id no relatório de CPL.
+    -- 29/09/2026, CPL das campanhas Meta ("registrar de qual anúncio veio
+    -- cada lead e quanto cada campanha gastou") — last-touch, sempre
+    -- SOBRESCRITO a cada novo clique de anúncio da mesma pessoa (diferente
+    -- dos 3 campos acima, que são first-touch e nunca mudam). Histórico
+    -- completo de TODO clique (não só o mais recente) fica em
+    -- lead_origem_anuncio.
+    origem_ad_id_last TEXT DEFAULT '',
+    origem_ctwa_clid TEXT DEFAULT '',
+    origem_atualizada_em DATETIME,
     -- Pasta do cliente no Google Drive (includes/google_drive.php), criada sob
     -- demanda dentro da pasta raiz "Fastcar" — mesmo padrão do JurídicoSaaS.
     drive_folder_id TEXT DEFAULT NULL,
@@ -585,6 +597,10 @@ CREATE TABLE IF NOT EXISTS vendas (
     canal_origem TEXT DEFAULT '',
     campanha_origem TEXT DEFAULT '',
     anuncio_origem TEXT DEFAULT '',
+    -- 29/09/2026, CPL — mesmo par last-touch de clientes.*, ver comentário lá.
+    origem_ad_id_last TEXT DEFAULT '',
+    origem_ctwa_clid TEXT DEFAULT '',
+    origem_atualizada_em DATETIME,
     responsavel_id INTEGER REFERENCES usuarios(id),
     proxima_acao TEXT DEFAULT '',
     proxima_acao_em DATETIME,
@@ -1106,3 +1122,66 @@ CREATE TABLE IF NOT EXISTS patrimonio_itens (
 );
 CREATE INDEX IF NOT EXISTS idx_patrimonio_categoria ON patrimonio_itens(categoria);
 CREATE INDEX IF NOT EXISTS idx_patrimonio_status ON patrimonio_itens(status);
+
+-- ── Custo por Lead (CPL) das campanhas Meta (29/09/2026) ──────────────
+-- Registra de qual anúncio veio CADA mensagem com clique de anúncio por
+-- trás (histórico completo, não só first/last-touch resumido em
+-- clientes/vendas) e quanto cada anúncio gastou por dia, pra calcular
+-- CPL = gasto / leads e custo por venda = gasto / leads que fecharam.
+--
+-- Idempotência: wamid é o messageId da própria mensagem que carregava o
+-- referral — a Meta reenvia webhook, então UNIQUE aqui evita registrar o
+-- mesmo clique 2x (defesa em profundidade além do dedup de
+-- whatsapp_mensagens.zapi_message_id, que já impede reprocessar a
+-- mensagem inteira — esta tabela tem a própria garantia, independente).
+--
+-- cliente_id/venda_id nullable e mutuamente exclusivos na prática — um
+-- clique do lado de COMPRA vira cliente_id, um do lado de VENDA
+-- (comprador de revenda) vira venda_id; nunca os dois juntos.
+CREATE TABLE IF NOT EXISTS lead_origem_anuncio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id INTEGER REFERENCES clientes(id),
+    venda_id INTEGER REFERENCES vendas(id),
+    telefone TEXT NOT NULL,
+    wamid TEXT NOT NULL,
+    source_type TEXT DEFAULT '',   -- 'ad' ou 'post'
+    ad_id TEXT DEFAULT '',         -- source_id/sourceId — chave pra cruzar com anuncio_gasto_diario.ad_id
+    ctwa_clid TEXT DEFAULT '',     -- id de clique, não usável pra cruzar com o gasto (só ad_id é)
+    headline TEXT DEFAULT '',
+    corpo TEXT DEFAULT '',
+    source_url TEXT DEFAULT '',
+    media_type TEXT DEFAULT '',
+    recebido_em DATETIME NOT NULL,
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_origem_anuncio_wamid ON lead_origem_anuncio(wamid);
+CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_ad ON lead_origem_anuncio(ad_id);
+CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_cliente ON lead_origem_anuncio(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_venda ON lead_origem_anuncio(venda_id);
+CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_recebido ON lead_origem_anuncio(recebido_em);
+
+-- Gasto diário por anúncio, puxado da Marketing API (cron/meta_insights.php,
+-- level=ad, UPSERT por (data, ad_id) — a Meta ajusta o número dela
+-- retroativamente, por isso o cron reprocessa hoje + últimos 3 dias
+-- sempre, nunca só o dia corrente). spend em REAL (BRL) — mesma unidade
+-- que a API já devolve, sem conversão de centavos (diferente de outras
+-- integrações do projeto que usam centavos, aqui segue o formato nativo
+-- da API pra nunca arredondar 2x).
+CREATE TABLE IF NOT EXISTS anuncio_gasto_diario (
+    data TEXT NOT NULL,
+    ad_account_id TEXT NOT NULL,
+    campaign_id TEXT DEFAULT '',
+    campaign_name TEXT DEFAULT '',
+    adset_id TEXT DEFAULT '',
+    adset_name TEXT DEFAULT '',
+    ad_id TEXT NOT NULL,
+    ad_name TEXT DEFAULT '',
+    spend REAL NOT NULL DEFAULT 0,
+    impressions INTEGER DEFAULT 0,
+    clicks INTEGER DEFAULT 0,
+    conversas_meta INTEGER DEFAULT 0,
+    atualizado_em DATETIME NOT NULL,
+    PRIMARY KEY (data, ad_id)
+);
+CREATE INDEX IF NOT EXISTS idx_anuncio_gasto_campanha ON anuncio_gasto_diario(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_anuncio_gasto_conta ON anuncio_gasto_diario(ad_account_id);

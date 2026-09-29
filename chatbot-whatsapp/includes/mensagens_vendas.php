@@ -101,12 +101,16 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
 
     $nomeContatoBruto = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
     $nomeContato = nomeWhatsappPareceValido($nomeContatoBruto) ? $nomeContatoBruto : '';
+    $origemAnuncioVenda = extrairOrigemAnuncio($payload);
     $vendaLead = null;
     $erroVenda = null;
     try {
-        $vendaLead = criarOuAbrirVendaLead($phone, $nomeContato, extrairOrigemAnuncio($payload));
+        $vendaLead = criarOuAbrirVendaLead($phone, $nomeContato, $origemAnuncioVenda);
     } catch (Throwable $e) {
         $erroVenda = $e->getMessage();
+    }
+    if ($vendaLead) {
+        registrarLeadOrigemAnuncio($payload, $phone, $origemAnuncioVenda, null, (int)$vendaLead['venda_id']);
     }
 
     // Mídia recebida (foto do veículo que o comprador já tem em mente,

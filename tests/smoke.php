@@ -166,6 +166,42 @@ if (file_exists($mensagensPath)) {
     aviso('chatbot-whatsapp/includes/mensagens.php não encontrado — guard pulado');
 }
 
+// 29/09/2026, CPL das campanhas Meta — achado real relendo
+// oficialAdaptarPayloadParaZapi() (includes/whatsapp_oficial.php): o
+// objeto `referral` que a Cloud API entrega na 1ª mensagem de uma
+// conversa iniciada por clique em anúncio nunca era propagado pro
+// payload adaptado, então extrairOrigemAnuncio() (que já tinha um
+// fallback pra esse formato desde 18/09/2026) NUNCA disparava de
+// verdade pra mensagem chegando pelo canal oficial — todo lead via
+// Cloud API caía em "(direto / sem anúncio)" mesmo vindo de anúncio,
+// silenciosamente (sem erro nenhum, só o dado de atribuição nunca saía).
+// Guard evita que um refactor futuro remova essa propagação de novo sem
+// ninguém perceber, já que não dá erro nenhum quando falta.
+$oficialPath = $root . '/includes/whatsapp_oficial.php';
+if (file_exists($oficialPath)) {
+    $conteudo = (string)file_get_contents($oficialPath);
+    if (!str_contains($conteudo, "\$adaptado['referral'] = \$msg['referral']")) {
+        falha('[whatsapp-oficial-referral-nao-propagado] oficialAdaptarPayloadParaZapi() não propaga msg[\'referral\'] — CPL/atribuição de anúncio via Cloud API quebra silenciosamente');
+    } else {
+        ok('[whatsapp-oficial-referral-nao-propagado] limpo (referral propagado pro payload adaptado)');
+    }
+} else {
+    aviso('includes/whatsapp_oficial.php não encontrado — guard de referral pulado');
+}
+
+// CPL — lead_origem_anuncio precisa existir nos 2 lugares (fresh install
+// E migração de produção já rodando), mesmo padrão de índice crítico já
+// usado na seção 4.
+foreach (['install/schema.sql', 'install/migrar.php'] as $arquivoCpl) {
+    $caminhoCpl = $root . '/' . $arquivoCpl;
+    if (!file_exists($caminhoCpl)) { aviso("{$arquivoCpl} não encontrado — guard de lead_origem_anuncio pulado"); continue; }
+    if (!str_contains((string)file_get_contents($caminhoCpl), 'lead_origem_anuncio')) {
+        falha("[lead-origem-anuncio-ausente] {$arquivoCpl} sem a tabela lead_origem_anuncio (CPL das campanhas Meta)");
+    } else {
+        ok("[lead-origem-anuncio-ausente] {$arquivoCpl} limpo");
+    }
+}
+
 // Bug real 12/09/2026: rodízio de leads (includes/fila_leads.php) ordenado
 // só por timestamp (ultimo_lead_recebido_em) empatava quando 2 leads
 // chegavam no mesmo segundo (granularidade do SQLite) e caía sempre na

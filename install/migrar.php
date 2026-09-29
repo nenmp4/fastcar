@@ -1517,6 +1517,83 @@ try {
     echo "❌ índices de performance: {$e->getMessage()}\n";
 }
 
+// 29/09/2026, CPL das campanhas Meta ("registrar de qual anúncio veio
+// cada lead e quanto cada campanha gastou") — last-touch em clientes/vendas
+// (first-touch já existia: canal_origem/campanha_origem/anuncio_origem).
+foreach (['clientes', 'vendas'] as $tabelaOrigem) {
+    foreach ([
+        'origem_ad_id_last'     => "ALTER TABLE {$tabelaOrigem} ADD COLUMN origem_ad_id_last TEXT DEFAULT ''",
+        'origem_ctwa_clid'      => "ALTER TABLE {$tabelaOrigem} ADD COLUMN origem_ctwa_clid TEXT DEFAULT ''",
+        'origem_atualizada_em'  => "ALTER TABLE {$tabelaOrigem} ADD COLUMN origem_atualizada_em DATETIME",
+    ] as $colunaOrigem => $sqlOrigem) {
+        if (!colunaExiste($db, $tabelaOrigem, $colunaOrigem)) {
+            try {
+                $db->exec($sqlOrigem);
+                echo "✅ {$tabelaOrigem}.{$colunaOrigem}: adicionada\n";
+            } catch (Throwable $e) {
+                echo "❌ {$tabelaOrigem}.{$colunaOrigem}: {$e->getMessage()}\n";
+            }
+        } else {
+            echo "⏭️  {$tabelaOrigem}.{$colunaOrigem}: já existia\n";
+        }
+    }
+}
+
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS lead_origem_anuncio (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER REFERENCES clientes(id),
+            venda_id INTEGER REFERENCES vendas(id),
+            telefone TEXT NOT NULL,
+            wamid TEXT NOT NULL,
+            source_type TEXT DEFAULT '',
+            ad_id TEXT DEFAULT '',
+            ctwa_clid TEXT DEFAULT '',
+            headline TEXT DEFAULT '',
+            corpo TEXT DEFAULT '',
+            source_url TEXT DEFAULT '',
+            media_type TEXT DEFAULT '',
+            recebido_em DATETIME NOT NULL,
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_origem_anuncio_wamid ON lead_origem_anuncio(wamid)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_ad ON lead_origem_anuncio(ad_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_cliente ON lead_origem_anuncio(cliente_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_venda ON lead_origem_anuncio(venda_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_lead_origem_anuncio_recebido ON lead_origem_anuncio(recebido_em)");
+    echo "✅ lead_origem_anuncio: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ lead_origem_anuncio: {$e->getMessage()}\n";
+}
+
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS anuncio_gasto_diario (
+            data TEXT NOT NULL,
+            ad_account_id TEXT NOT NULL,
+            campaign_id TEXT DEFAULT '',
+            campaign_name TEXT DEFAULT '',
+            adset_id TEXT DEFAULT '',
+            adset_name TEXT DEFAULT '',
+            ad_id TEXT NOT NULL,
+            ad_name TEXT DEFAULT '',
+            spend REAL NOT NULL DEFAULT 0,
+            impressions INTEGER DEFAULT 0,
+            clicks INTEGER DEFAULT 0,
+            conversas_meta INTEGER DEFAULT 0,
+            atualizado_em DATETIME NOT NULL,
+            PRIMARY KEY (data, ad_id)
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_anuncio_gasto_campanha ON anuncio_gasto_diario(campaign_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_anuncio_gasto_conta ON anuncio_gasto_diario(ad_account_id)");
+    echo "✅ anuncio_gasto_diario: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ anuncio_gasto_diario: {$e->getMessage()}\n";
+}
+
 // 29/09/2026, mesma rodada — vendas.comprador_telefone nunca teve índice
 // (JOIN/correlated subquery direto em includes/vendas_inbox.php, polling
 // a cada 5s — SCAN vendas confirmado via EXPLAIN QUERY PLAN).

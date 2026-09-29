@@ -482,6 +482,26 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
             <p><strong>Preço de venda:</strong> <?= $v['preco_venda'] !== null ? 'R$ ' . number_format((float)$v['preco_venda'], 2, ',', '.') : 'não definido' ?>
                <?php if ($percentualFipe !== null): ?> (<?= $percentualFipe ?>% da FIPE)<?php endif; ?></p>
             <p><strong>Data da venda:</strong> <?= $v['data_venda'] ? date('d/m/Y', strtotime($v['data_venda'])) : '—' ?></p>
+            <?php if ($v['canal_origem']): ?>
+                <?php
+                    // 29/09/2026, CPL — mesmo enriquecimento de admin/oportunidade.php
+                    // (campaign_name/ad_name de verdade quando já tem gasto sincronizado
+                    // pra esse ad_id, senão cai no texto cru já salvo).
+                    $origemNomesVenda = null;
+                    if ($v['anuncio_origem']) {
+                        $stmtOrigemNomesVenda = $db->prepare("SELECT campaign_name, ad_name FROM anuncio_gasto_diario WHERE ad_id = ? ORDER BY data DESC LIMIT 1");
+                        $stmtOrigemNomesVenda->execute([$v['anuncio_origem']]);
+                        $origemNomesVenda = $stmtOrigemNomesVenda->fetch();
+                    }
+                ?>
+                <p><strong>Origem:</strong> <?= e($v['canal_origem']) ?>
+                   <?php if ($origemNomesVenda): ?>
+                       · <?= e($origemNomesVenda['campaign_name']) ?> › <?= e($origemNomesVenda['ad_name']) ?>
+                   <?php else: ?>
+                       <?= $v['campanha_origem'] ? ' · ' . e($v['campanha_origem']) : '' ?>
+                   <?php endif; ?>
+                </p>
+            <?php endif; ?>
         </div>
     </div>
 </div>

@@ -196,6 +196,17 @@ function oficialAdaptarPayloadParaZapi(array $body): ?array {
         'chatName' => $nomeContato,
     ];
 
+    // 29/09/2026, CPL das campanhas Meta — achado real relendo este
+    // adaptador: `msg['referral']` (o objeto que a Cloud API entrega na 1ª
+    // mensagem de uma conversa iniciada por clique em anúncio) nunca era
+    // propagado pro payload adaptado, então extrairOrigemAnuncio() (que já
+    // tinha um fallback pra esse formato desde 18/09/2026) NUNCA disparava
+    // de verdade pra mensagem chegando pelo canal oficial — todo lead via
+    // Cloud API caía em "(direto / sem anúncio)" mesmo vindo de anúncio.
+    if (!empty($msg['referral']) && is_array($msg['referral'])) {
+        $adaptado['referral'] = $msg['referral'];
+    }
+
     $tipo = (string)($msg['type'] ?? '');
     if ($tipo === 'text') {
         $adaptado['text'] = ['message' => (string)($msg['text']['body'] ?? '')];

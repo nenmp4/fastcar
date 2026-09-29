@@ -13,7 +13,8 @@ $id = (int)($_GET['id'] ?? 0);
 
 $stmtOp = $db->prepare("
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
-           c.cidade, c.estado, c.canal_origem, c.campanha_origem, c.anuncio_origem
+           c.cidade, c.estado, c.canal_origem, c.campanha_origem, c.anuncio_origem,
+           c.origem_ad_id_last, c.origem_atualizada_em
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
     WHERE o.id = ?
@@ -455,9 +456,34 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                <?php endif; ?>
             </p>
             <p><strong>Cidade/UF:</strong> <?= e($op['cidade'] ?: '—') ?> / <?= e($op['estado'] ?: '—') ?></p>
+            <?php
+                // 29/09/2026, CPL — enriquece o first-touch (canal_origem/
+                // campanha_origem/anuncio_origem, gravado na criação) com
+                // nome de campanha/anúncio de verdade quando já tem gasto
+                // sincronizado pra esse ad_id (anuncio_gasto_diario,
+                // cron/meta_insights.php); sem isso, cai no texto cru já
+                // salvo (headline do clique). Last-touch só aparece quando
+                // difere do first-touch — a pessoa clicou noutro anúncio
+                // depois do 1º contato.
+                $origemNomes = null;
+                if ($op['anuncio_origem']) {
+                    $stmtOrigemNomes = $db->prepare("SELECT campaign_name, ad_name FROM anuncio_gasto_diario WHERE ad_id = ? ORDER BY data DESC LIMIT 1");
+                    $stmtOrigemNomes->execute([$op['anuncio_origem']]);
+                    $origemNomes = $stmtOrigemNomes->fetch();
+                }
+            ?>
             <p><strong>Origem:</strong> <?= e($op['canal_origem'] ?: '—') ?>
-               <?= $op['campanha_origem'] ? ' · ' . e($op['campanha_origem']) : '' ?>
-               <?= $op['anuncio_origem'] ? ' · ' . e($op['anuncio_origem']) : '' ?></p>
+               <?php if ($origemNomes): ?>
+                   · <?= e($origemNomes['campaign_name']) ?> › <?= e($origemNomes['ad_name']) ?>
+               <?php else: ?>
+                   <?= $op['campanha_origem'] ? ' · ' . e($op['campanha_origem']) : '' ?>
+                   <?= $op['anuncio_origem'] ? ' · anúncio ' . e($op['anuncio_origem']) : '' ?>
+               <?php endif; ?>
+               <?php if ($op['origem_ad_id_last'] && $op['origem_ad_id_last'] !== $op['anuncio_origem']): ?>
+                   <br><small>Último clique: anúncio <?= e($op['origem_ad_id_last']) ?>
+                   <?php if ($op['origem_atualizada_em']): ?> em <?= date('d/m/Y', strtotime($op['origem_atualizada_em'])) ?><?php endif; ?></small>
+               <?php endif; ?>
+            </p>
         </div>
         <div>
             <?php

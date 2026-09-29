@@ -50,6 +50,19 @@ $camposWhatsappOficial = [
     'whatsapp_oficial_verify_token'    => 'Verify Token (você inventa, cola igual no painel da Meta)',
 ];
 
+// Meta Marketing API — Custo por Lead (CPL) das campanhas (29/09/2026,
+// spec trazida pelo usuário: "registrar de qual anúncio veio cada lead e
+// quanto cada campanha/anúncio gastou"). Token precisa do escopo
+// `ads_read` além dos escopos do WhatsApp Cloud API — campo PRÓPRIO,
+// nunca reaproveita whatsapp_oficial_access_token automaticamente (pode
+// ser colado o mesmo valor se o token gerado já tiver os 2 escopos
+// juntos, decisão de quem configura, não travada aqui). Contas separadas
+// por vírgula (act_XXXXXXXXXX) — a mesma sintaxe simples já usada em
+// notificacao_leads_whatsapp/meta_ad_accounts.
+$camposMetaAds = [
+    'meta_ads_token' => 'Token com permissão ads_read (Usuário do Sistema, portfólio Fastcar Solutions)',
+];
+
 $camposIA = [
     'gemini_api_key' => 'Chave da API Gemini (principal)',
     'openai_api_key' => 'Chave da API OpenAI (fallback — só usada se o Gemini falhar)',
@@ -178,6 +191,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $provider = (string)($_POST['whatsapp_provider_principal'] ?? 'zapi');
             setConfig('whatsapp_provider_principal', in_array($provider, ['zapi', 'oficial'], true) ? $provider : 'zapi');
             $sucesso = 'Canal principal agora usa: ' . (getConfig('whatsapp_provider_principal') === 'oficial' ? 'API oficial (Meta)' : 'Z-API');
+        } elseif ($acao === 'salvar_meta_ads') {
+            setConfig('meta_ads_token', trim((string)($_POST['meta_ads_token'] ?? '')));
+            $contasDigitadas = array_filter(array_map('trim', explode(',', (string)($_POST['meta_ad_accounts'] ?? ''))));
+            setConfig('meta_ad_accounts', implode(',', $contasDigitadas));
+            $sucesso = 'Configurações da Meta Marketing API (CPL) salvas.';
+        } elseif ($acao === 'testar_meta_ads') {
+            $r = metaAdsTestarConexao();
+            if ($r['ok']) {
+                $sucesso = $r['msg'];
+            } else {
+                $erro = 'Falha no teste: ' . $r['erro'];
+            }
         } elseif ($acao === 'salvar_ia') {
             foreach (array_keys($camposIA) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -702,6 +727,51 @@ unset($fv);
             API oficial (Meta) — canal principal
         </label>
         <button type="submit">Salvar</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>📣 Meta Marketing API — Custo por Lead (CPL)</h3>
+    <p><small>Puxa o gasto diário de cada anúncio (Marketing API) e cruza com os leads que entraram por clique de
+       anúncio (<code>lead_origem_anuncio</code>, capturado automaticamente no webhook oficial — ver relatório em
+       <a href="/admin/relatorio_cpl.php">📣 Custo por Lead</a>). Token PRECISA da permissão <code>ads_read</code>
+       (Configurações do negócio → Usuários do sistema → gerar token), além dos escopos do WhatsApp já usados
+       acima — pode ser o mesmo valor se o token já tiver os 2 escopos juntos.</small></p>
+
+    <p>
+        Status Meta Ads:
+        <span class="badge <?= metaAdsConfigured() ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= metaAdsConfigured() ? '✅ configurado' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <?php if (getConfig('meta_ads_ultimo_erro')): ?>
+        <p><span class="badge badge-atraso">⚠️ <?= e(getConfig('meta_ads_ultimo_erro')) ?></span>
+           <small> — gravado pelo cron (cron/meta_insights.php); some sozinho na próxima vez que o teste ou o cron rodar com sucesso.</small></p>
+    <?php endif; ?>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_meta_ads">
+        <?php foreach ($camposMetaAds as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e(getConfig($chave) ?: '') ?>" autocomplete="off" placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <label for="meta_ad_accounts">Contas de anúncios (separadas por vírgula)</label>
+        <input type="text" id="meta_ad_accounts" name="meta_ad_accounts" value="<?= e(getConfig('meta_ad_accounts') ?: '') ?>"
+               placeholder="Ex: act_980951261213150, act_1020819143943433">
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Teste só de LEITURA na 1ª conta configurada (confirma o nome/acesso, nunca gasta nada).</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_meta_ads">
+        <button type="submit" <?= metaAdsConfigured() ? '' : 'disabled' ?>>Testar conexão</button>
+        <?php if (!metaAdsConfigured()): ?>
+            <p><small>Preencha e salve o token e pelo menos 1 conta de anúncios acima antes de testar.</small></p>
+        <?php endif; ?>
     </form>
 </div>
 

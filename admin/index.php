@@ -511,6 +511,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php if (perfilVeTudo()): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
+        <a href="/admin/relatorio_cpl.php">💰 Custo por Lead</a>
         <a href="/admin/qualidade_ia.php">🤖 Qualidade da IA</a>
     <?php endif; ?>
     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>

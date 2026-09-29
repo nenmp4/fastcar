@@ -5051,6 +5051,115 @@ segue no schema sem uso novo, não removida sem ganho real),
   IA respondeu certo) — faz sentido virar o toggle
   `whatsapp_provider_principal` pra `'oficial'` de vez, substituindo a
   Z-API como canal principal.
+- **Custo por Lead (CPL) das campanhas Meta** (29/09/2026, spec completa
+  trazida pelo usuário via Google Docs — "registrar de qual anúncio veio
+  cada lead e quanto cada campanha/anúncio gastou") — a spec original
+  assumia MySQL/mysqli/pasta `migrations/`, mas a stack real do projeto é
+  SQLite/PDO/`install/schema.sql`+`install/migrar.php`; adaptada mantendo
+  a intenção, nunca copiada literalmente (a própria spec já previa isso:
+  "antes de criar tabela, leia o schema atual e siga os nomes já usados").
+  **Achado real relendo o código ANTES de codar** (não um bug reportado
+  pelo usuário desta vez): `oficialAdaptarPayloadParaZapi()`
+  (`includes/whatsapp_oficial.php`) nunca propagava `msg['referral']` (o
+  objeto que a Cloud API entrega na 1ª mensagem de uma conversa iniciada
+  por clique em anúncio) pro payload adaptado — mesmo `extrairOrigemAnuncio()`
+  já tendo um fallback pra esse formato desde 18/09/2026, ele nunca
+  disparava de verdade pra mensagem chegando pelo canal oficial (o canal
+  PRINCIPAL desde 25/09/2026): todo lead via Cloud API caía silenciosamente
+  em "(direto / sem anúncio)" mesmo vindo de anúncio, sem erro nenhum pra
+  perceber. Corrigido copiando `$msg['referral']` pro payload adaptado
+  quando presente — guard novo em `tests/smoke.php`
+  (`whatsapp-oficial-referral-nao-propagado`) pra nunca regredir de novo
+  sem ninguém notar.
+  **`anuncio_origem` parou de aceitar `ctwa_clid` como fallback** —
+  `extrairOrigemAnuncio()` (`chatbot-whatsapp/includes/mensagens.php`)
+  desde 18/09/2026 caía pro `ctwaClid`/`ctwa_clid` quando não vinha
+  `sourceId`/`source_id`; pra CPL isso quebraria o cruzamento com
+  `anuncio_gasto_diario.ad_id` (puxado da Marketing API, sempre o ad_id de
+  verdade — um ctwa_clid nunca bate com nada lá). Agora `anuncio_origem`/
+  `ad_id` só grava o ad_id de verdade (ou vazio), e `ctwa_clid` sai num
+  campo próprio, nunca mais misturado.
+  **First-touch (já existia) + last-touch (novo)** — `clientes`/`vendas`
+  ganharam `origem_ad_id_last`/`origem_ctwa_clid`/`origem_atualizada_em`,
+  sempre SOBRESCRITOS a cada novo clique da mesma pessoa (diferente de
+  `canal_origem`/`campanha_origem`/`anuncio_origem`, first-touch, nunca
+  mudam depois da criação) — histórico completo de TODO clique (não só o
+  mais recente) fica em `lead_origem_anuncio` (tabela nova, idempotente
+  por `wamid` UNIQUE — a Meta reenvia webhook — nunca duplica; `cliente_id`
+  OU `venda_id`, nunca os dois juntos). Nova
+  `registrarLeadOrigemAnuncio()` (`chatbot-whatsapp/includes/mensagens.php`,
+  compartilhada entre compra e venda) chamada logo depois de
+  `criarOuAbrirOportunidade()`/`criarOuAbrirVendaLead()` nos 2 pontos reais
+  do projeto (`processarMensagemZapi()` e `processarMensagemVendasZapi()`)
+  — best-effort, nunca lança, nunca pode derrubar o webhook.
+  **`includes/meta_ads.php`** (novo) — `metaAdsRequest()` (mesmo formato
+  `['ok','http','dados','erro','erro_code']` de `asaasRequest()`, pra quem
+  chama decidir retry pelo código sem parsear string),
+  `metaAdsBuscarInsights()` (`GET /{conta}/insights?level=ad`, segue
+  `paging.next` até acabar, extrai
+  `onsite_conversion.messaging_conversation_started_7d` de `actions[]`
+  como "conversas segundo a Meta"), `metaAdsSalvarGastoDiario()` (UPSERT
+  em `anuncio_gasto_diario`, PK `(data, ad_id)`), `metaAdsTestarConexao()`
+  (`GET /{conta}?fields=name,account_status`, só leitura). **Nunca
+  confirmado contra a API real ainda** — construído a partir da
+  documentação pública da Marketing API (Graph API v21.0), mesma ressalva
+  de todo provedor novo deste projeto.
+  **`cron/meta_insights.php`** (novo, a cada 3h — `install/setup_crontab.sh`)
+  — reprocessa hoje + últimos 3 dias sempre (a Meta ajusta o número dela
+  retroativamente), `--dry-run`/`--since=`/`--until=` pra conferir antes de
+  rodar valendo (mesmo padrão de todo script deste projeto). Rate limit
+  (código 17/80004): backoff exponencial (5s/10s), até 3 tentativas por
+  conta — 1 conta com problema nunca impede as outras de processar. Token
+  inválido (código 190): loga e grava `config.meta_ads_ultimo_erro`
+  (mostrado como aviso no card de Configurações, limpo sozinho no próximo
+  sucesso — teste manual ou cron).
+  **`includes/meta_ads.php::metaAdsRelatorioCpl()`** — cálculo da
+  hierarquia Campanha→Conjunto→Anúncio feito em PHP (não SQL aninhado/CTE
+  de propósito, mais fácil de ler/testar): 2 queries simples (gasto por
+  `ad_id`, atribuição de lead por `ad_id` via `lead_origem_anuncio`) e a
+  agregação/cálculo de CPL em cima. Multi-touch: um lead que clicou em
+  anúncios de campanhas DIFERENTES conta em cada uma (mesmo espírito do
+  `COUNT(DISTINCT lead_id)` da spec original); clique duplicado no MESMO
+  anúncio conta 1 vez só. "Sem atribuição" = leads criados no período cujo
+  `canal_origem` não é `meta_ads` (nunca confundir com lead que veio de
+  anúncio mas ainda sem gasto sincronizado — esse aparece na árvore assim
+  que o cron rodar, não cai em "sem atribuição").
+  `admin/relatorio_cpl.php` (novo, mesmo acesso de `admin/origem_leads.php`
+  — super_admin + supervisor) — cards de resumo + árvore
+  campanha→conjunto→anúncio via `<details>` nativos (zero JS novo, mesmo
+  espírito do FAQ do site público), filtro por período/conta/campanha,
+  linkado de/pra `admin/origem_leads.php` e do dashboard principal. Origem
+  enriquecida (nome de campanha/anúncio de verdade, não só o ID cru) em
+  `admin/oportunidade.php`/`admin/venda.php` quando já existe gasto
+  sincronizado pra aquele `ad_id`; last-touch mostrado só quando difere do
+  first-touch.
+  Card "📣 Meta Marketing API — Custo por Lead (CPL)" em
+  `admin/configuracoes.php` (token `ads_read` + contas separadas por
+  vírgula, teste de conexão só-leitura). **Pré-requisitos do lado da Meta,
+  feitos pelo José, fora do código** (mesma spec original): atribuir o
+  usuário do sistema à(s) conta(s) de anúncios com "Ver desempenho",
+  gerar token com `ads_read`, e trocar o destino dos anúncios pro número
+  oficial `93450-5474` (sem isso o `referral` nunca chega no webhook).
+  Testado: 22 asserções de função em banco isolado (propagação de
+  `referral` pelo adaptador, `ad_id`/`ctwa_clid` nunca mais confundidos,
+  first-touch imutável + last-touch sempre sobrescrito, idempotência por
+  `wamid`, histórico completo com múltiplos cliques, lado de venda com
+  `cliente_id` sempre NULL) + fixture real de webhook
+  (`tests/fixtures/webhook_referral.json`) via HTTP ponta a ponta (2 POSTs
+  idênticos — Meta reenvia webhook — confirmando 1 cliente/1 oportunidade/
+  1 `lead_origem_anuncio`, nunca duplicado) + 12 asserções de
+  `includes/meta_ads.php` contra servidor Graph API fake local (paginação
+  seguindo `paging.next`, `conversas_meta` extraído de `actions[]`, token
+  inválido tratado, UPSERT idempotente) + `cron/meta_insights.php` rodado
+  de ponta a ponta 5x contra o mesmo fake server (dry-run sem gravar nada,
+  rodada real grava e é idempotente, backoff de rate limit recupera na 3ª
+  tentativa, conta com erro não-retryable nunca trava as outras contas,
+  token inválido grava e depois limpa o alerta) + 18 asserções de
+  `metaAdsRelatorioCpl()` (multi-touch, dedup, CPL/custo-por-venda,
+  "sem atribuição", filtro por campanha) + HTTP ponta a ponta real
+  confirmando `admin/relatorio_cpl.php`/`admin/configuracoes.php`/origem
+  enriquecida em `admin/oportunidade.php` renderizando sem erro + `php -l`
+  + `tests/smoke.php` (2 guards novos) limpos.
 - **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
   bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
   scripts dry-run/`--confirmar` (mesmo padrão de sempre):
@@ -8108,6 +8217,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | `cron/asaas_sync.php` | a cada 30 min | **18/09/2026, achado real: "tenho que sicornizar assas manual as cobranças de parcela dos carros"** — o script já existia no código desde 17/09/2026, mas nunca tinha sido cadastrado em `install/setup_crontab.sh` (arquivo que a própria cabeça do script declara como "fonte de verdade dos horários", mas ficou desatualizado — `resumo_produtividade.php`, linha abaixo, tinha o mesmo problema, também corrigido agora), então nunca rodou sozinho na VPS; e mesmo rodando, só resincronizava STATUS de cobrança já importada, nunca trazia cobrança NOVA criada direto no painel do Asaas — só o clique manual em "Importar cobranças" (`admin/financeiro-asaas.php`) fazia isso. Corrigido em 2 frentes: (1) `cron/asaas_sync.php` passou a chamar `asaasImportarCobrancas()` (mesma função do botão manual, dedup por `asaas_payment_id`, importa novas E atualiza status de todas numa passada) antes de `asaasSincronizarPendentes()` (mantido, mais barato pro caso comum de só status mudando); (2) linha nova em `install/setup_crontab.sh`, junto com a linha de `resumo_produtividade.php` que também estava faltando lá. Testado em banco isolado contra servidor Asaas fake local: 1 cobrança nova (`pay_novo123`, `PENDING`) + 1 já existente (`pay_existente456`, `pendente` no banco) — rodar o cron importa a nova (`status='pendente'`) e atualiza a existente pro status real vindo da API (`RECEIVED`→`pago`, `data_pagamento` preenchida), rodando de novo mostra "0 nova(s)" (dedup funcionando, não duplica). |
 | `cron/fila_horario_expediente.php` | a cada 5 min | Liga/desliga a fila de leads sozinha nos horários configurados (padrão 10:00/19:20) — 22/09/2026, "Colocar usuarios para ficar off line as 19:20 ... online 10 horas da manha", confirmado como regra permanente todo dia. Ver `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`, bullet completo na seção da fila de leads) — dedup por dia, nunca liga de volta quem está marcado `faltou_em`=hoje. |
 | `cron/lancamentos_fixos.php` | 1x/dia (5h) | Gera automaticamente a próxima ocorrência mensal de toda despesa marcada como "Fixa" (`natureza='fixa'`) no financeiro — 19/09/2026, "todas despesas fixas pode lançar todo mês automático". Ver `finGerarDespesasFixasDoMes()` (`includes/financeiro.php`, bullet completo na seção "Módulo financeiro") — idempotente, agrupa em cadeias via `recorrencia_origem_id`, copia o valor mais recente da série, e marcar o último lançamento como 'Cancelado' interrompe a série. |
+| `cron/meta_insights.php` | a cada 3h | Puxa gasto/impressões/cliques/conversas de cada anúncio Meta (Marketing API, `level=ad`) das contas configuradas e faz UPSERT em `anuncio_gasto_diario` — 29/09/2026, CPL das campanhas Meta. Reprocessa HOJE + últimos 3 dias sempre (a Meta ajusta retroativamente). `--dry-run`/`--since=`/`--until=` pra conferir antes de rodar valendo. Backoff em rate limit (código 17/80004), token inválido (código 190) grava `config.meta_ads_ultimo_erro` (aviso em Configurações, some sozinho no próximo sucesso). Ver bullet completo na seção de módulos (CPL das campanhas Meta). |
 | `cron/financeiro_relatorio_mensal.php` | 1x/dia (8h) | Envio Automático Mensal do DRE Gerencial — 19/09/2026, "essa parte é legal" (mostrando o Envio Automático Mensal do JurídicoSaaS). Decide sozinho se hoje é o dia configurado (`config.financeiro_relatorio_dia`); manda o DRE do mês anterior por WhatsApp (instância DEDICADA do financeiro) e/ou e-mail (anexo de verdade) pros usuários marcados + e-mails/WhatsApp extras + o e-mail do contador (`config.contador_email`, sempre incluído). Ver bullet completo na seção "Módulo financeiro" acima. |
 | `cron/resumo_produtividade.php` | 1x/dia, 19h30 | Resumo diário de produtividade pro WhatsApp pessoal de quem tem `perfil=supervisor` (15/09/2026, pedido José/Jean: "envia notificação de produção para números de notificação, supervisores acompanhar a produtividade"). Reaproveita exatamente `dashboardSuperAdmin()` (`includes/dashboard.php`, mesmas métricas de visão geral da empresa já usadas no dashboard — ativas/atrasadas/novas hoje/novas na semana/fechadas no mês/taxa de conversão), sem duplicar query nenhuma. Confirmado com o usuário (3 perguntas diretas): frequência = resumo diário automático (não sob demanda); destinatários = telefone (`usuarios.whatsapp`) de quem já tem `perfil=supervisor` cadastrado (não um campo novo de config com números avulsos); conteúdo = visão geral da empresa (não quebrado por consultor). Dedup por dia via `config.resumo_prod_enviado_{data}` — só marca como enviado se pelo menos 1 supervisor recebeu de verdade (`zapiEnviarTexto()` retornou sucesso), senão tenta de novo na próxima rodada do cron em vez de desistir o dia inteiro por causa de uma falha temporária da Z-API. Sem nenhum supervisor com `whatsapp` cadastrado, não manda nada (nunca quebra o cron). Testado ponta a ponta com banco isolado + servidor Z-API fake: 1 supervisor com WhatsApp recebe o resumo certo (métricas batendo com os dados semeados), 1 supervisor sem WhatsApp corretamente ignorado, rodando o cron de novo no mesmo dia o dedup bloqueia reenvio, e cenário sem nenhum supervisor cadastrado não dispara chamada nenhuma pra Z-API. |
 | `cron/backup_db.php` | 4x/dia (2h/8h/13h/18h) | Cópia rápida só do `.db`, mantém os últimos 7 dias — recuperação rápida de um "oops" recente |
@@ -8395,6 +8505,21 @@ Este ambiente de dev bloqueia acesso externo (só libera alguns hosts tipo
 GitHub/npm), então o que segue foi construído seguindo documentação e
 testado com servidor fake local — nunca contra o serviço real:
 
+- **Meta Marketing API** (`includes/meta_ads.php`, `cron/meta_insights.php`,
+  29/09/2026, CPL das campanhas Meta) — construída a partir da
+  documentação pública (Graph API v21.0), nunca contra uma conta real.
+  Confirmar assim que o token com `ads_read` estiver pronto: (1) se
+  `GET /{ad_account}/insights?level=ad&time_increment=1&fields=...` de
+  fato devolve os campos assumidos (`date_start`/`campaign_id`/
+  `adset_id`/`ad_id`/`spend`/`actions[]`); (2) se
+  `onsite_conversion.messaging_conversation_started_7d` é mesmo o
+  `action_type` certo pra "conversas iniciadas" (só achado via
+  documentação, nunca visto num payload real); (3) se `paging.next` vem
+  como URL absoluta completa (assumido, `_metaAdsSeguirPaginaAbsoluta()`);
+  (4) os 3 pré-requisitos do lado da Meta feitos pelo José (atribuir o
+  usuário do sistema à conta de anúncios, gerar token com `ads_read`,
+  trocar o destino do anúncio pro número `93450-5474`) — sem o 3º, o
+  `referral` nunca chega no webhook mesmo com o resto configurado certo.
 - **API ZapCar** (`includes/zapcar.php`, `admin/zapcar_ajax.php`,
   `admin/zapcar_pdf.php`, 22/09/2026) — construída a partir da doc oficial
   (openapi v1.1.0) colada pelo usuário direto via Google Docs. **✅ Auth +
