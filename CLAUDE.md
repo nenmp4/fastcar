@@ -5051,6 +5051,32 @@ segue no schema sem uso novo, não removida sem ganho real),
   IA respondeu certo) — faz sentido virar o toggle
   `whatsapp_provider_principal` pra `'oficial'` de vez, substituindo a
   Z-API como canal principal.
+  **Portas de entrada públicas trocadas pro número novo** (29/09/2026,
+  "os leads agora vai chegar na meta api ja estamos mudando nos anuncios")
+  — achado ao investigar por que um lead ainda respondia pelo Z-API mesmo
+  com o app Meta publicado: **quem recebe o webhook depende do número
+  físico que a pessoa mandou mensagem**, não de nenhuma config do sistema
+  — e o próprio site inteiro (não só os anúncios, que o usuário já estava
+  trocando) ainda apontava todo mundo pro número ANTIGO
+  (`5511958347764`, instância Z-API "FastCar | JEAN") em todo botão
+  "Falar no WhatsApp". Trocado pro número novo (`5511934505474`,
+  `+55 11 9 3450-5474`) em 5 pontos: `index.php` (`$whatsappNumero` — o
+  botão principal da home —, JSON-LD `telephone`, e o telefone visível no
+  card de contato), `includes/blog.php` (`BLOG_WHATSAPP_NUMERO`, usado
+  pelo CTA de todo artigo do blog), `termos.php` e `privacidade.php`
+  (telefone de contato no rodapé legal). **Só a ENTRADA** — o toggle
+  `whatsapp_provider_principal` (quem manda a RESPOSTA da IA) continua
+  intocado, ainda em `'zapi'` por padrão, até os 3 passos manuais
+  pendentes (token permanente/verificação/aprovação de nome, ver bullet
+  acima) estarem prontos; virar entrada e saída junto é essencial — lead
+  entrando pelo número novo mas resposta saindo pela instância Z-API
+  antiga (número diferente do que ele acabou de escrever) quebraria a
+  conversa. Testado: `index.php` renderizado de ponta a ponta (não só
+  lint) confirmando o número novo em `wa.me`, no telefone visível e no
+  JSON-LD, e nenhum resquício do número antigo no HTML gerado;
+  `blogWhatsappLink()` isolada confirmando o link novo + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema (é só conteúdo
+  estático das páginas públicas).
 - **Custo por Lead (CPL) das campanhas Meta** (29/09/2026, spec completa
   trazida pelo usuário via Google Docs — "registrar de qual anúncio veio
   cada lead e quanto cada campanha/anúncio gastou") — a spec original
