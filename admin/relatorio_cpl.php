@@ -26,6 +26,42 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ate)) $ate = $hoje;
 $contaFiltro = trim((string)($_GET['conta'] ?? ''));
 $campanhaFiltro = trim((string)($_GET['campanha'] ?? ''));
 
+$sincSucesso = '';
+$sincErro = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'sincronizar') {
+    // Botão manual "🔄 Sincronizar agora" — 29/09/2026, "coloca botão para
+    // sincronizar" — mesma lógica do cron (a cada 3h), só disparada na hora
+    // em vez de esperar. Sempre reprocessa hoje + últimos 3 dias (não o
+    // período do filtro na tela), mesmo padrão do cron/meta_insights.php —
+    // a Meta ajusta o número dela retroativamente.
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $sincErro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif (!metaAdsConfigured()) {
+        $sincErro = 'Meta Ads ainda não configurado — cadastre o token e as contas em Configurações.';
+    } else {
+        $desdeSinc = date('Y-m-d', strtotime('-3 days'));
+        $ateSinc = date('Y-m-d');
+        $totalLinhas = 0;
+        $totalGasto = 0.0;
+        $contasComErro = [];
+        foreach (metaAdsContas() as $conta) {
+            $r = metaAdsSincronizarConta($conta, $desdeSinc, $ateSinc);
+            if ($r['ok']) {
+                $totalLinhas += count($r['linhas']);
+                $totalGasto += $r['gasto'];
+            } else {
+                $contasComErro[] = "{$conta} ({$r['erro']})";
+            }
+        }
+        if ($contasComErro) {
+            $sincErro = "Sincronizado com falha em " . count($contasComErro) . " conta(s): " . implode(', ', $contasComErro)
+                . ($totalLinhas ? ". As demais deram certo: {$totalLinhas} linha(s), " . cplFmt($totalGasto) . " de gasto." : '.');
+        } else {
+            $sincSucesso = "✅ Sincronizado — {$totalLinhas} linha(s), " . cplFmt($totalGasto) . " de gasto (últimos 3 dias + hoje).";
+        }
+    }
+}
+
 $db = getDB();
 $contasDisponiveis = $db->query("SELECT DISTINCT ad_account_id FROM anuncio_gasto_diario ORDER BY ad_account_id")->fetchAll(PDO::FETCH_COLUMN);
 $campanhasDisponiveis = $db->query("SELECT DISTINCT campaign_id, campaign_name FROM anuncio_gasto_diario WHERE campaign_id != '' ORDER BY campaign_name")->fetchAll(PDO::FETCH_ASSOC);
@@ -75,12 +111,22 @@ function cplFmt(?float $v): string {
        entraram por clique de anúncio (<code>lead_origem_anuncio</code>, capturado automaticamente no webhook).
        CPL = gasto ÷ leads · Custo por venda = gasto ÷ leads que fecharam compra ou venda no CRM.</small></p>
 
+    <?php if ($sincErro): ?><div class="alerta-erro"><?= e($sincErro) ?></div><?php endif; ?>
+    <?php if ($sincSucesso): ?><div class="alerta-sucesso"><?= e($sincSucesso) ?></div><?php endif; ?>
+
     <?php if (!metaAdsConfigured()): ?>
         <p><span class="badge badge-atraso">⏳ Meta Ads ainda não configurado</span>
            <small> — cadastre o token e as contas de anúncios em <a href="/admin/configuracoes.php">Configurações → Meta Marketing API</a>.</small></p>
-    <?php elseif (!$temDadoDeGasto): ?>
-        <p><span class="badge badge-atraso">⏳ Nenhum gasto sincronizado ainda</span>
-           <small> — o cron roda a cada 3h; rode manualmente <code>php cron/meta_insights.php</code> pra puxar agora.</small></p>
+    <?php else: ?>
+        <?php if (!$temDadoDeGasto): ?>
+            <p><span class="badge badge-atraso">⏳ Nenhum gasto sincronizado ainda</span></p>
+        <?php endif; ?>
+        <form method="POST" style="margin-top:8px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="sincronizar">
+            <button type="submit">🔄 Sincronizar agora</button>
+            <small style="margin-left:8px;color:#666">Puxa hoje + últimos 3 dias da Marketing API — o cron já faz isso sozinho a cada 3h, use pra atualizar na hora.</small>
+        </form>
     <?php endif; ?>
 
     <form method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-top:12px">

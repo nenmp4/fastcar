@@ -5174,6 +5174,34 @@ segue no schema sem uso novo, não removida sem ganho real),
   isolada (número puro, já com `act_`, com espaço em volta — todos saem
   prefixados corretamente, sem duplicar) + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
+  **Botão "🔄 Sincronizar agora"** (29/09/2026, "coloca botão para
+  sincronizar" — até então o único jeito de puxar gasto fora da janela do
+  cron de 3h era `php cron/meta_insights.php` via SSH). O retry/backoff de
+  rate limit (code 17/80004, até 3 tentativas) e o alerta de token
+  inválido (190) que só viviam dentro de `cron/meta_insights.php` foram
+  extraídos pra `metaAdsSincronizarConta()`
+  (`includes/meta_ads.php`) — mesma lógica compartilhada entre o cron
+  (que loga cada tentativa em tempo real via `$onTentativa`, callback
+  opcional) e o botão novo em `admin/relatorio_cpl.php` (nunca duplicada
+  entre os dois pontos de entrada); `cron/meta_insights.php` reescrito por
+  cima dela sem mudar nenhuma mensagem de log existente. Botão sempre
+  reprocessa hoje + últimos 3 dias (mesmo período do cron, não o filtro de
+  data da tela — a Meta ajusta o gasto retroativamente), mesmo guard de
+  `requireVisaoGeral()`/CSRF do resto da página, banner distinguindo
+  sucesso total de sucesso parcial (algumas contas falharam, outras não).
+  Testado: `metaAdsSincronizarConta()` isolada contra servidor Graph API
+  fake local (sucesso grava no banco; rate limit na 1ª tentativa recupera
+  sozinho na 2ª, confirmado esperando os ~5s de backoff de verdade; token
+  inválido nunca grava e seta `meta_ads_ultimo_erro`; sucesso seguinte
+  limpa o alerta; `dryRun=true` nunca grava nada) + HTTP ponta a ponta
+  real (sessão primed como super_admin contra app+fake server isolados):
+  GET mostra o botão só com Meta Ads configurado; POST com 1 conta ok + 1
+  conta com token inválido grava o dado da que funcionou e mostra o
+  banner de falha parcial certo, confirmado o gasto exato gravado no
+  banco (`act_ok`/`Campanha Teste`/R$123,45/7 conversas); CSRF inválido
+  rejeitado sem sincronizar nada; acesso sem sessão redireciona (302)
+  antes mesmo do guard de perfil + `php -l` + `tests/smoke.php` limpos.
+  Sem migração de schema.
 - **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
   bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
   scripts dry-run/`--confirmar` (mesmo padrão de sempre):

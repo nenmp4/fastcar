@@ -235,6 +235,56 @@ function metaAdsSalvarGastoDiario(string $contaId, array $linha): void {
 }
 
 /**
+ * Sincroniza 1 conta de anúncios — retry com backoff em rate limit (code
+ * 17/80004, até 3 tentativas) e grava config.meta_ads_ultimo_erro em token
+ * inválido (190), mesma lógica que já vivia só dentro de
+ * cron/meta_insights.php — extraída pra cá, 29/09/2026, pra ser compartilhada
+ * com o botão manual "🔄 Sincronizar agora" em admin/relatorio_cpl.php sem
+ * duplicar o retry/backoff. `$onTentativa`, se passado, é chamado a cada
+ * tentativa de rate limit (usado pelo cron pra logar em tempo real; o botão
+ * manual não precisa, passa null). `$dryRun=true` nunca grava, só soma o
+ * que teria sido gravado.
+ */
+function metaAdsSincronizarConta(string $conta, string $desde, string $ate, bool $dryRun = false, ?callable $onTentativa = null): array {
+    $tentativas = 0;
+    $resultado = null;
+    while ($tentativas < 3) {
+        $tentativas++;
+        $resultado = metaAdsBuscarInsights($conta, $desde, $ate);
+        if ($resultado['ok']) break;
+
+        $codigo = $resultado['erro_code'];
+        if (in_array($codigo, [17, 80004], true) && $tentativas < 3) {
+            $espera = 5 * (2 ** ($tentativas - 1)); // backoff: 5s, 10s
+            if ($onTentativa) $onTentativa($conta, $codigo, $tentativas, $espera);
+            sleep($espera);
+            continue;
+        }
+        break;
+    }
+
+    if (!$resultado['ok']) {
+        if ($resultado['erro_code'] === 190) {
+            setConfig('meta_ads_ultimo_erro', date('Y-m-d H:i:s') . ' — token inválido/expirado (code 190): ' . $resultado['erro']);
+        }
+        return ['ok' => false, 'erro' => $resultado['erro'], 'erro_code' => $resultado['erro_code'], 'linhas' => [], 'gasto' => 0.0];
+    }
+
+    if (getConfig('meta_ads_ultimo_erro')) {
+        setConfig('meta_ads_ultimo_erro', ''); // sucesso de verdade — limpa o alerta anterior
+    }
+
+    $gasto = 0.0;
+    foreach ($resultado['linhas'] as $linha) {
+        $gasto += $linha['spend'];
+        if (!$dryRun) {
+            metaAdsSalvarGastoDiario($conta, $linha);
+        }
+    }
+    return ['ok' => true, 'erro' => '', 'erro_code' => null, 'linhas' => $resultado['linhas'], 'gasto' => $gasto];
+}
+
+/**
  * Monta o relatório de CPL (admin/relatorio_cpl.php) — hierarquia
  * Campanha → Conjunto → Anúncio com gasto/conversas/leads/CPL/vendas/
  * custo por venda/conversão, mais a linha "Sem atribuição".

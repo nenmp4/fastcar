@@ -65,54 +65,31 @@ $totalLinhas = 0;
 $totalGasto = 0.0;
 $contasComErro = [];
 
-foreach ($contas as $conta) {
-    $tentativas = 0;
-    $resultado = null;
-    while ($tentativas < 3) {
-        $tentativas++;
-        $resultado = metaAdsBuscarInsights($conta, $desde, $ate);
-        if ($resultado['ok']) break;
+$onTentativa = function (string $conta, ?int $codigo, int $tentativa, int $espera): void {
+    log_meta_insights("⏳ {$conta}: rate limit (code {$codigo}), tentativa {$tentativa}/3 — esperando {$espera}s...");
+};
 
-        $codigo = $resultado['erro_code'];
-        if (in_array($codigo, [17, 80004], true) && $tentativas < 3) {
-            $espera = 5 * (2 ** ($tentativas - 1)); // backoff: 5s, 10s, 20s
-            log_meta_insights("⏳ {$conta}: rate limit (code {$codigo}), tentativa {$tentativas}/3 — esperando {$espera}s...");
-            sleep($espera);
-            continue;
-        }
-        break;
-    }
+foreach ($contas as $conta) {
+    $resultado = metaAdsSincronizarConta($conta, $desde, $ate, $dryRun, $onTentativa);
 
     if (!$resultado['ok']) {
         $erro = $resultado['erro'];
         $codigo = $resultado['erro_code'];
         log_meta_insights("❌ {$conta}: falhou — {$erro}" . ($codigo !== null ? " (code {$codigo})" : ''));
         $contasComErro[] = $conta;
-        if ($codigo === 190) {
-            setConfig('meta_ads_ultimo_erro', date('Y-m-d H:i:s') . ' — token inválido/expirado (code 190): ' . $erro);
-        }
         continue; // 1 conta com erro nunca impede as outras de processar
     }
 
-    if (getConfig('meta_ads_ultimo_erro')) {
-        setConfig('meta_ads_ultimo_erro', ''); // sucesso de verdade — limpa o alerta anterior
-    }
-
-    $linhas = $resultado['linhas'];
-    $gastoConta = 0.0;
-    foreach ($linhas as $linha) {
-        $gastoConta += $linha['spend'];
-        if ($dryRun) {
+    if ($dryRun) {
+        foreach ($resultado['linhas'] as $linha) {
             echo "   {$linha['data']} | {$linha['campaign_name']} > {$linha['adset_name']} > {$linha['ad_name']} "
                . "(ad_id={$linha['ad_id']}) | gasto=R$ " . number_format($linha['spend'], 2, ',', '.')
                . " | conversas_meta={$linha['conversas_meta']}\n";
-        } else {
-            metaAdsSalvarGastoDiario($conta, $linha);
         }
     }
-    $totalLinhas += count($linhas);
-    $totalGasto += $gastoConta;
-    log_meta_insights("✅ {$conta}: " . count($linhas) . " linha(s), R$ " . number_format($gastoConta, 2, ',', '.') . " de gasto.");
+    $totalLinhas += count($resultado['linhas']);
+    $totalGasto += $resultado['gasto'];
+    log_meta_insights("✅ {$conta}: " . count($resultado['linhas']) . " linha(s), R$ " . number_format($resultado['gasto'], 2, ',', '.') . " de gasto.");
 }
 
 echo "\n";
