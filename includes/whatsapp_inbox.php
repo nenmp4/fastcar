@@ -64,9 +64,11 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
                (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM whatsapp_mensagens m
+        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
+          ON ult.telefone = m.telefone AND ult.max_id = m.id
         LEFT JOIN clientes c ON c.id = m.cliente_id
         LEFT JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone
-        WHERE m.id = (SELECT MAX(id) FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone)
+        WHERE 1=1
         {$whereBusca}{$whereResponsavel}
         ORDER BY m.created_at DESC
         LIMIT ?

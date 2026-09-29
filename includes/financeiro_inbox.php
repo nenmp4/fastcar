@@ -77,12 +77,14 @@ function listarConversasFinanceiro(string $busca = '', int $limite = 100): array
                fc.total_atrasado,
                (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas
         FROM whatsapp_mensagens m
+        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
+          ON ult.telefone = m.telefone AND ult.max_id = m.id
         JOIN (
             SELECT telefone, MAX(nome) AS nome, SUM(CASE WHEN status='atrasado' THEN valor ELSE 0 END) AS total_atrasado
             FROM ({$fonte}) x
             GROUP BY telefone
         ) fc ON fc.telefone = m.telefone
-        WHERE m.id = (SELECT MAX(id) FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone)
+        WHERE 1=1
         {$whereBusca}
         ORDER BY m.created_at DESC
         LIMIT ?

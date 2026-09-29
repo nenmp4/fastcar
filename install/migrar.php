@@ -1517,4 +1517,14 @@ try {
     echo "❌ índices de performance: {$e->getMessage()}\n";
 }
 
+// 29/09/2026, mesma rodada — vendas.comprador_telefone nunca teve índice
+// (JOIN/correlated subquery direto em includes/vendas_inbox.php, polling
+// a cada 5s — SCAN vendas confirmado via EXPLAIN QUERY PLAN).
+try {
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_vendas_comprador_telefone ON vendas(comprador_telefone)");
+    echo "✅ índice vendas.comprador_telefone: pronto\n";
+} catch (Throwable $e) {
+    echo "❌ índice vendas.comprador_telefone: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -711,6 +711,10 @@ CREATE INDEX IF NOT EXISTS idx_vendas_oportunidade ON vendas(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_vendas_etapa ON vendas(etapa);
 CREATE INDEX IF NOT EXISTS idx_vendas_proxima_acao ON vendas(proxima_acao_em);
 CREATE INDEX IF NOT EXISTS idx_vendas_responsavel ON vendas(responsavel_id, etapa);
+-- 29/09/2026, "melhora velocidade" — usado em toda leitura por telefone do
+-- comprador (WhatsApp Box de vendas, polling a cada 5s; dedup/round-robin
+-- em includes/vendas.php) — sem índice, cada uma varria a tabela inteira.
+CREATE INDEX IF NOT EXISTS idx_vendas_comprador_telefone ON vendas(comprador_telefone);
 -- Só 1 negociação ATIVA por veículo por vez (negociacao/contrato_enviado)
 -- — trava também no banco (índice único parcial), não só na aplicação;
 -- uma negociação cancelada libera o veículo pra uma nova tentativa.

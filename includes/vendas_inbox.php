@@ -54,10 +54,13 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
                (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM whatsapp_mensagens m
-        JOIN vendas v ON v.comprador_telefone = m.telefone
+        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
+          ON ult.telefone = m.telefone AND ult.max_id = m.id
+        JOIN (SELECT comprador_telefone, MAX(id) AS max_id FROM vendas GROUP BY comprador_telefone) ultv
+          ON ultv.comprador_telefone = m.telefone
+        JOIN vendas v ON v.id = ultv.max_id
         LEFT JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone
-        WHERE m.id = (SELECT MAX(id) FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone)
-          AND v.id = (SELECT MAX(id) FROM vendas v3 WHERE v3.comprador_telefone = m.telefone)
+        WHERE 1=1
         {$whereBusca}{$whereResponsavel}
         ORDER BY m.created_at DESC
         LIMIT ?

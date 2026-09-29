@@ -332,6 +332,7 @@ $indicesEsperados = [
     'idx_oportunidades_tipo_veiculo' => 'aba de filtro por tipo de veículo em admin/index.php',
     'idx_vendas_responsavel'         => 'mesma query de carteira, lado do pipeline de vendas',
     'idx_fin_lancamentos_vencimento' => 'finRecalcularAtrasados() — roda em toda carga de admin/financeiro.php/financeiro-lancamentos.php/promissorias.php, full table scan sem esse índice',
+    'idx_vendas_comprador_telefone'  => 'listarConversasVendas() (WhatsApp Box de vendas, polling 5s) — sem esse índice, SCAN vendas inteira a cada poll',
 ];
 foreach (['install/schema.sql', 'install/migrar.php'] as $arquivoIdx) {
     $caminhoIdx = $root . '/' . $arquivoIdx;
@@ -360,6 +361,29 @@ if (isset($db) && $db instanceof PDO) {
     } else {
         ok('[indices-criticos-ausentes-no-banco] todos presentes no banco real');
     }
+}
+
+// Anti-padrão "última mensagem por telefone" via subquery correlacionada
+// (WHERE m.id = (SELECT MAX(id) FROM whatsapp_mensagens WHERE telefone=m.telefone))
+// — 29/09/2026, achado via EXPLAIN QUERY PLAN nos 3 WhatsApp Box (compra/
+// vendas/financeiro, todos com polling de 5s): forçava SCAN da tabela
+// inteira a cada linha, mesmo com índice em telefone. Reescrito pro
+// padrão JOIN (SELECT telefone, MAX(id)... GROUP BY telefone) — vira
+// SCAN ... USING COVERING INDEX, sem tocar a tabela. Guard evita alguém
+// reintroduzir o padrão lento copiando um dos 3 arquivos de novo.
+$arquivosInbox = ['includes/whatsapp_inbox.php', 'includes/vendas_inbox.php', 'includes/financeiro_inbox.php'];
+$comAntiPadrao = [];
+foreach ($arquivosInbox as $arqInbox) {
+    $caminhoInbox = $root . '/' . $arqInbox;
+    if (!file_exists($caminhoInbox)) continue;
+    if (preg_match('/WHERE\s+m\.id\s*=\s*\(SELECT MAX\(id\)/i', (string)file_get_contents($caminhoInbox))) {
+        $comAntiPadrao[] = $arqInbox;
+    }
+}
+if ($comAntiPadrao) {
+    falha('[whatsapp-inbox-subquery-correlacionada] voltou o padrão lento (SCAN full table por poll): ' . implode(', ', $comAntiPadrao));
+} else {
+    ok('[whatsapp-inbox-subquery-correlacionada] limpo (os 3 inboxes usam JOIN por índice, não subquery correlacionada)');
 }
 
 // ─────────────────────────────────────────────────────────────
