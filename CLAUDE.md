@@ -4995,13 +4995,26 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmado NÃO duplicando a mensagem; payload de status/entrega
   processado sem crash, `ignored:not_a_message`) + `php -l` +
   `tests/smoke.php` limpos.
-  ⚠️ **Nunca confirmado contra a API real ainda** — sem Phone Number
-  ID/token de verdade nesta sessão (usuário configurando o Business
-  Manager do lado do Meta em paralelo, já com conta ativa usada pra
-  anúncio) — validar assim que as credenciais reais forem coladas em
-  Configurações: testar conexão, handshake do webhook no painel do Meta,
-  e uma mensagem real de ponta a ponta antes de virar o toggle pra
-  `'oficial'` em produção.
+  **✅ Handshake + envio confirmados reais, 29/09/2026** — app "Fastcar
+  Bot" criado no portfólio de negócios "Fastcar Solutions" (Meta Business
+  Manager gerenciado pela Ingrid), com um número de TESTE fornecido pela
+  própria Meta (`+1 555 188-5709`, Phone Number ID `1405656782625189`,
+  WABA ID `1409572601297538`, App ID `2357740111729782`) — nunca o número
+  real de produção do WhatsApp da Fastcar, esse continua na Z-API por
+  enquanto. Confirmado: (1) handshake GET do webhook
+  (`chatbot-whatsapp/webhook/whatsapp_oficial.php` com
+  `config.whatsapp_oficial_verify_token='fastcar2026'`) verificado com
+  sucesso no App Dashboard do Meta — passou na 3ª tentativa, as 2
+  primeiras falharam por instabilidade momentânea (não por token/lógica
+  errados, confirmado pela mesma config batendo na 3ª); (2) campo
+  `messages` assinado na subscription do webhook; (3) envio via
+  `oficialEnviarTexto()` (`POST /{phone_number_id}/messages`) confirmado
+  funcionando pela própria Meta. Ainda **não confirmado**: uma conversa
+  real ponta a ponta (cliente mandando mensagem de verdade pro número de
+  teste e a IA respondendo através do fluxo completo de qualificação) e
+  a migração pro número de produção real da Fastcar — antes de virar o
+  toggle `whatsapp_provider_principal` pra `'oficial'` em produção,
+  validar isso com o número real, não só o de teste da Meta.
 - **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
   bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
   scripts dry-run/`--confirmar` (mesmo padrão de sempre):
