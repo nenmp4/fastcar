@@ -163,6 +163,57 @@ function oficialTestarConexao(): string {
 }
 
 /**
+ * Status cacheado da API oficial (60s TTL, mesmo padrão exato de
+ * zapiStatusPrincipalCache() em includes/whatsapp_config.php) — pro badge
+ * do topbar mostrar o canal principal DE VERDADE, 29/09/2026 ("mudei
+ * [o toggle pra oficial] mais dica zpi bolinha" — o badge antigo sempre
+ * mostrava status da Z-API, mesmo depois do toggle já estar em 'oficial').
+ * Retorna ['estado' => 'conectado'|'desconectado'|'erro'|'nao_configurado',
+ * 'verificado_em' => ?int].
+ */
+function oficialStatusCache(bool $forcar = false): array {
+    [$phoneId, $token] = oficialCredenciais();
+    if (!$phoneId || !$token) {
+        return ['estado' => 'nao_configurado', 'verificado_em' => null];
+    }
+
+    $cacheRaw = getConfig('whatsapp_oficial_status_cache');
+    if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
+        [$ts, $json] = explode('|', $cacheRaw, 2);
+        if ((time() - (int)$ts) < 60) {
+            $d = json_decode($json, true);
+            if (is_array($d) && isset($d['estado'])) return $d;
+        }
+    }
+
+    $resultado = ['estado' => 'erro', 'verificado_em' => time()];
+    $ch = curl_init(oficialBaseUrl() . "/{$phoneId}?fields=display_phone_number");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token],
+        CURLOPT_TIMEOUT => 4,
+        CURLOPT_CONNECTTIMEOUT => 3,
+    ]);
+    $resp = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if (!$err && $code === 200) {
+        $d = json_decode((string)$resp, true);
+        // Cloud API não expõe "conectado/desconectado" como a Z-API (não é
+        // pareamento de dispositivo) — responder 200 com o número já é o
+        // sinal de que token+phone_number_id estão válidos e acessíveis.
+        $resultado = ['estado' => is_array($d) && isset($d['display_phone_number']) ? 'conectado' : 'erro', 'verificado_em' => time()];
+    } elseif ($code === 401 || $code === 403) {
+        $resultado = ['estado' => 'desconectado', 'verificado_em' => time()]; // token inválido/expirado
+    }
+
+    setConfig('whatsapp_oficial_status_cache', time() . '|' . json_encode($resultado));
+    return $resultado;
+}
+
+/**
  * Adapta 1 payload de webhook da Cloud API (formato
  * entry[].changes[].value) pro MESMO formato que processarMensagemZapi()
  * (chatbot-whatsapp/includes/mensagens.php) já sabe processar — reaproveita

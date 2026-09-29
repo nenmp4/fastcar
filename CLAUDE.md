@@ -6164,6 +6164,33 @@ segue no schema sem uso novo, não removida sem ganho real),
   seguidos dentro de 60s geraram só 1 chamada real ao fake Z-API
   (conferido no log do fake server) + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
+  **Badge passou a refletir o canal principal DE VERDADE (Z-API ou Meta)**
+  (29/09/2026, achado real do usuário logo depois de virar o toggle
+  `whatsapp_provider_principal` pra `'oficial'` em produção: "mudei mais
+  dica zpi bolinha" — o badge continuava mostrando "🟢 Z-API conectado"
+  mesmo com o canal principal já rodando pela Meta). Causa: o badge sempre
+  chamava `zapiStatusPrincipalCache()` direto, sem nunca checar qual
+  provedor está de fato ativo — nova `oficialStatusCache()`
+  (`includes/whatsapp_oficial.php`, mesmo padrão de cache de 60s em
+  `config`, `GET /{phone_number_id}` — responder 200 com o número já é o
+  sinal de "token válido", a Cloud API não expõe conceito de "pareado"
+  como a Z-API; 401/403 vira `desconectado`) + `canalPrincipalStatusCache()`
+  (`includes/whatsapp_config.php`) escolhe qual checar — `oficialEhProviderPrincipal()`
+  (o MESMO gate que `zapiEnviarTexto()` já usa pra decidir por onde a
+  resposta sai) manda Meta, senão cai pra Z-API — e devolve `provider`
+  junto do `estado`, pro badge escolher o rótulo certo ("🟢 Meta (oficial)
+  conectado" vs "🟢 Z-API conectado"). `admin/zapi_status_ajax.php` e
+  `admin/_zapi_status.php` (JS com 2 grupos de rótulo, um por provider)
+  atualizados, nenhuma outra página precisou mudar (o `include` já é
+  compartilhado). Testado: 6 cenários em banco isolado contra fake Meta
+  Graph + fake Z-API locais (nada configurado → zapi/não configurado; só
+  Z-API configurada, toggle ainda `'zapi'` → zapi/conectado; Meta
+  configurada mas toggle ainda `'zapi'` → continua mostrando zapi, nunca
+  muda sozinho; toggle virado pra `'oficial'` + Meta respondendo →
+  oficial/conectado; toggle `'oficial'` + token Meta inválido (401) →
+  oficial/desconectado; toggle `'oficial'` mas sem credencial Meta de
+  verdade → `oficialEhProviderPrincipal()` dá false, cai de volta pro
+  zapi) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
   **Topbar virou `position:sticky`** (mesmo dia, achado real via
   screenshot logo depois do badge acima: "precisamos arrumar o ux") — o
   sino de notificação e o badge de status da Z-API (`position:fixed`,

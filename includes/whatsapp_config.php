@@ -84,6 +84,22 @@ function zapiStatusPrincipalCache(bool $forcar = false): array {
 }
 
 /**
+ * Status do CANAL PRINCIPAL de verdade — Z-API ou Meta oficial, conforme
+ * `whatsapp_provider_principal` (o mesmo gate que zapiEnviarTexto() usa
+ * pra decidir por onde a resposta sai). 29/09/2026, achado real: o badge
+ * do topbar sempre mostrava status da Z-API mesmo depois do toggle já
+ * estar em 'oficial' — "mudei mais dica zpi bolinha". Retorna o mesmo
+ * formato de zapiStatusPrincipalCache()/oficialStatusCache() + 'provider'
+ * ('zapi'|'oficial'), pro badge escolher o rótulo certo.
+ */
+function canalPrincipalStatusCache(): array {
+    if (oficialEhProviderPrincipal()) {
+        return oficialStatusCache() + ['provider' => 'oficial'];
+    }
+    return zapiStatusPrincipalCache() + ['provider' => 'zapi'];
+}
+
+/**
  * Credenciais da instância Z-API DEDICADA de vendas (17/09/2026, módulo de
  * vendas ganhando funil de entrada pelo WhatsApp próprio — pedido
  * José/Jean: "vamos adcionar instancia só para vendas"). Config separada
