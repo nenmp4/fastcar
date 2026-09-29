@@ -83,6 +83,7 @@ $porCategoria = patrimonioContagemPorCategoria();
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
+<?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <header class="topbar">
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>

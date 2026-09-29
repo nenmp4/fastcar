@@ -152,6 +152,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
+<?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <header class="topbar">
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
@@ -238,7 +239,17 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                     <?php endif; ?>
                 </td>
                 <td><?= $u['disponivel'] ? '🟢 disponível' : '⚪ offline' ?></td>
-                <td><a href="/admin/usuarios.php?editar=<?= (int)$u['id'] ?>">Editar →</a></td>
+                <td>
+                    <a href="/admin/usuarios.php?editar=<?= (int)$u['id'] ?>">Editar →</a>
+                    <?php if ($u['perfil'] !== 'super_admin' && !$u['bloqueado']): ?>
+                        <form method="post" action="/admin/impersonar.php" style="display:inline-block;margin-left:8px"
+                              onsubmit="return confirm('Entrar como <?= e(addslashes($u['nome'])) ?>? Você vai navegar com as permissões dela até clicar em \'Voltar a ser super admin\'.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="usuario_id" value="<?= (int)$u['id'] ?>">
+                            <button type="submit" class="btn-texto" style="padding:0">🎭 Entrar como</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>

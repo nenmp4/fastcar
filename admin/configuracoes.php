@@ -375,6 +375,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'desmarcar_falta') {
             desmarcarConsultorFaltou((int)($_POST['usuario_id'] ?? 0));
             $sucesso = 'Falta desmarcada — o consultor volta a ser candidato normal na fila.';
+        } elseif ($acao === 'marcar_falta_vendedor') {
+            $resultado = marcarVendedorFaltou((int)($_POST['usuario_id'] ?? 0), (int)($_SESSION['admin_id'] ?? 0));
+            if (!$resultado['ok']) {
+                $erro = $resultado['motivo'];
+            } elseif ($resultado['movidas']) {
+                $sucesso = "{$resultado['ausente_nome']} marcado como ausente hoje. " . count($resultado['movidas']) . ' negociação(ões) redistribuída(s): ';
+                $partes = [];
+                foreach ($resultado['movidas'] as $m) {
+                    $partes[] = "#{$m['venda_id']} ({$m['comprador_nome']}) para {$m['para']}";
+                }
+                $sucesso .= implode('; ', $partes) . '.';
+            } else {
+                $sucesso = "{$resultado['ausente_nome']} marcado como ausente hoje. Sem negociações não-tocadas pra redistribuir (ou nenhum outro vendedor disponível agora).";
+            }
+        } elseif ($acao === 'desmarcar_falta_vendedor') {
+            desmarcarVendedorFaltou((int)($_POST['usuario_id'] ?? 0));
+            $sucesso = 'Falta desmarcada — o vendedor volta a ser candidato normal na fila.';
         } elseif ($acao === 'salvar_deploy') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
             if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
@@ -444,6 +461,14 @@ foreach ($fila as &$f) {
     $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
 }
 unset($f);
+// 29/09/2026, "permita super admin deixar offline usuario que faltar e
+// pegar os lead que chegar" — mesmo padrão da fila de compra, espelhado
+// pro lado de vendas (includes/fila_vendas.php).
+$filaVendas = listarFilaVendedores();
+foreach ($filaVendas as &$fv) {
+    $fv['vendas_ativas'] = contarVendasAtivas((int)$fv['id']);
+}
+unset($fv);
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -457,6 +482,7 @@ unset($f);
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
+<?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <header class="topbar">
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
@@ -1105,6 +1131,72 @@ unset($f);
        está offline, nunca dá lead novo pra quem não está disponível), e nunca em oportunidade já em Atendimento
        ou depois.</small></p>
     <?php endif; ?>
+</div>
+
+<div class="card">
+    <h3>🛒 Fila de vendas (vendedores)</h3>
+    <p><small>Mesmo mecanismo da fila de compra acima, espelhado pro lado de vendas — 29/09/2026,
+       "permita super admin deixar offline usuario que faltar e pegar os lead que chegar".</small></p>
+
+    <?php if (!$filaVendas): ?>
+        <p><small>Nenhum vendedor cadastrado ainda.</small></p>
+    <?php endif; ?>
+
+    <table class="tabela-oportunidades">
+        <thead>
+            <tr><th>Nome</th><th>Status</th><th>Negociações ativas</th><th>Último lead recebido</th><th>Plantão fim de expediente</th><th>Falta hoje</th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($filaVendas as $fv): ?>
+            <?php $faltouHojeVendedor = $fv['faltou_em'] === date('Y-m-d'); ?>
+            <tr>
+                <td><?= e($fv['nome']) ?> <span class="badge"><?= e($fv['perfil']) ?></span></td>
+                <td>
+                    <?php if ($faltouHojeVendedor): ?>
+                        <span class="badge badge-atraso">🤒 faltou hoje</span>
+                    <?php elseif ($fv['plantao_fim_expediente']): ?>
+                        <span class="badge">🌙 só plantão</span>
+                    <?php elseif ($fv['disponivel']): ?>
+                        <span class="badge badge-ok">🟢 disponível</span>
+                    <?php else: ?>
+                        <span class="badge badge-atraso">⚪ offline</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($fv['vendas_ativas'] > filaVendasMaxAtivas()): ?>
+                        <span class="badge badge-atraso"><?= (int)$fv['vendas_ativas'] ?> ⚠️ acima do teto</span>
+                    <?php elseif ($fv['vendas_ativas'] >= filaVendasMaxAtivas()): ?>
+                        <span class="badge"><?= (int)$fv['vendas_ativas'] ?> (no teto)</span>
+                    <?php else: ?>
+                        <?= (int)$fv['vendas_ativas'] ?>
+                    <?php endif; ?>
+                </td>
+                <td><?= $fv['ultimo_lead_recebido_em'] ? date('d/m H:i', strtotime($fv['ultimo_lead_recebido_em'])) : '— nunca —' ?></td>
+                <td>
+                    <form method="post" class="inline">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="definir_plantao">
+                        <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
+                        <input type="hidden" name="ativo" value="<?= $fv['plantao_fim_expediente'] ? '0' : '1' ?>">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
+                            <?= $fv['plantao_fim_expediente'] ? 'Remover plantão' : 'Marcar como plantão' ?>
+                        </button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" class="inline" onsubmit="<?= $faltouHojeVendedor ? '' : "return confirm('Marcar {$fv['nome']} como ausente hoje? As negociações dele(a) ainda não tocadas vão ser redistribuídas pros vendedores disponíveis agora mesmo.')" ?>">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="<?= $faltouHojeVendedor ? 'desmarcar_falta_vendedor' : 'marcar_falta_vendedor' ?>">
+                        <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
+                            <?= $faltouHojeVendedor ? '↩️ Desfazer falta' : '❌ Marcar falta' ?>
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
 </div>
 
 <div class="card">

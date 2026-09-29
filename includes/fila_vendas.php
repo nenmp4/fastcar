@@ -116,9 +116,110 @@ function proximoDaFilaVendas(bool $disponivelOnly, bool $apenasPlantao = false):
 function listarFilaVendedores(): array {
     $db = getDB();
     return $db->query("
-        SELECT id, nome, perfil, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em
+        SELECT id, nome, perfil, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, faltou_em
         FROM usuarios
         WHERE perfil = 'vendedor' AND bloqueado = 0
         ORDER BY nome
     ")->fetchAll();
+}
+
+/**
+ * Marca o vendedor como ausente HOJE e redistribui na hora as negociações
+ * de venda ainda não tocadas dele (ETAPAS_VENDA_LEAD_IA — antes de
+ * 'negociacao', onde já haveria contato humano de verdade) pros outros
+ * vendedores disponíveis — sempre pro que está com menos carga no
+ * momento, um por um. 29/09/2026, "permita super admin deixar offline
+ * usuario que faltar e pegar os lead que chegar" — espelha
+ * marcarConsultorFaltou() (includes/fila_leads.php, 22/09/2026), arquivo
+ * próprio de propósito (mesma disciplina de sempre deste módulo: nunca
+ * parametrizar o de compra, já bem testado em produção, pra acomodar um
+ * 2º perfil/tabela). Força `disponivel=0` na hora (nunca espera fechamento
+ * de expediente) — quem faltou não deve continuar candidato a receber
+ * lead novo enquanto o dia corre; como `proximoDaFilaVendas()` só escolhe
+ * `disponivel=1`, os leads que CHEGAREM depois já caem sozinhos pros
+ * outros, sem precisar de nenhum código extra além desse UPDATE. Nunca
+ * mexe em negociação já em 'negociacao'/'contrato_enviado'/'vendido'/
+ * 'cancelada' — contato humano de verdade já rolou ali.
+ */
+function marcarVendedorFaltou(int $usuarioId, int $executadoPor): array {
+    $db = getDB();
+    $hoje = date('Y-m-d');
+
+    $stmt = $db->prepare("SELECT nome FROM usuarios WHERE id = ? AND perfil = 'vendedor'");
+    $stmt->execute([$usuarioId]);
+    $ausente = $stmt->fetch();
+    if (!$ausente) {
+        return ['ok' => false, 'motivo' => 'Usuário não encontrado ou não é vendedor.', 'movidas' => []];
+    }
+
+    $db->prepare("UPDATE usuarios SET faltou_em = ?, disponivel = 0 WHERE id = ?")
+       ->execute([$hoje, $usuarioId]);
+
+    $receptores = $db->query("
+        SELECT id, nome FROM usuarios
+        WHERE perfil = 'vendedor' AND bloqueado = 0 AND disponivel = 1 AND id != {$usuarioId}
+        ORDER BY posicao_fila ASC, id ASC
+    ")->fetchAll();
+
+    $etapasPh = implode(',', array_fill(0, count(ETAPAS_VENDA_LEAD_IA), '?'));
+    $movidas = [];
+
+    if ($receptores) {
+        $cargas = [];
+        $stmtCarga = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND etapa IN ({$etapasPh})");
+        foreach ($receptores as $r) {
+            $stmtCarga->execute(array_merge([(int)$r['id']], ETAPAS_VENDA_LEAD_IA));
+            $cargas[(int)$r['id']] = (int)$stmtCarga->fetchColumn();
+        }
+
+        $stmt = $db->prepare("
+            SELECT id, etapa, comprador_nome
+            FROM vendas
+            WHERE responsavel_id = ? AND etapa IN ({$etapasPh})
+            ORDER BY created_at DESC
+        ");
+        $stmt->execute(array_merge([$usuarioId], ETAPAS_VENDA_LEAD_IA));
+        $candidatas = $stmt->fetchAll();
+
+        foreach ($candidatas as $venda) {
+            usort($receptores, fn($a, $b) => $cargas[(int)$a['id']] <=> $cargas[(int)$b['id']]);
+            $receptor = $receptores[0];
+            $receptorId = (int)$receptor['id'];
+
+            $db->beginTransaction();
+            try {
+                $db->prepare("UPDATE vendas SET responsavel_id = ? WHERE id = ?")
+                   ->execute([$receptorId, $venda['id']]);
+                $db->prepare("
+                    INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                    VALUES (?, ?, ?, ?, ?)
+                ")->execute([
+                    $venda['id'],
+                    $venda['etapa'],
+                    $venda['etapa'],
+                    "Redistribuído automaticamente: {$ausente['nome']} marcado como ausente hoje, lead passou pra {$receptor['nome']}",
+                    $executadoPor,
+                ]);
+                $db->commit();
+            } catch (Throwable $e) {
+                $db->rollBack();
+                throw $e;
+            }
+
+            $cargas[$receptorId]++;
+            $movidas[] = [
+                'venda_id' => $venda['id'],
+                'comprador_nome' => $venda['comprador_nome'],
+                'para' => $receptor['nome'],
+            ];
+        }
+    }
+
+    return ['ok' => true, 'motivo' => '', 'ausente_nome' => $ausente['nome'], 'movidas' => $movidas];
+}
+
+/** Desfaz a marcação de falta do vendedor (engano, ou voltou no mesmo dia) — nunca desfaz a redistribuição já feita. */
+function desmarcarVendedorFaltou(int $usuarioId): void {
+    $db = getDB();
+    $db->prepare("UPDATE usuarios SET faltou_em = NULL WHERE id = ?")->execute([$usuarioId]);
 }

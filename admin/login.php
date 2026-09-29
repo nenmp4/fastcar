@@ -33,15 +33,8 @@ require_once __DIR__ . '/../includes/auditoria.php';
 
 startSecureSession();
 
-/** vendedor→vendas, financeiro→financeiro — os dois perfis siloados (ver admin/_bootstrap.php) nunca caem no dashboard do funil de compra. */
-function paginaInicialPorPerfil(string $perfil): string {
-    return match ($perfil) {
-        'vendedor' => '/admin/vendas.php',
-        'financeiro' => '/admin/financeiro.php',
-        'avaliador' => '/admin/avaliacoes.php',
-        default => '/admin/index.php',
-    };
-}
+// paginaInicialPorPerfil() mora em includes/security.php desde 29/09/2026
+// (precisa ser chamada também de admin/impersonar.php).
 
 if (!empty($_SESSION['admin_id'])) {
     header('Location: ' . paginaInicialPorPerfil((string)($_SESSION['admin_perfil'] ?? '')));

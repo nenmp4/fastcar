@@ -88,6 +88,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'marcar_
     exit;
 }
 
+// 29/09/2026, "coloca fitro por super admin - puxar leads dos consultores"
+// — reatribuição em massa dos leads selecionados pra outro consultor.
+// Reaproveita reatribuirEmMassa() (includes/oportunidades.php) — sempre
+// grava histórico por oportunidade, nunca UPDATE em lote direto (regra
+// #6). Só quem vê a empresa inteira pode "puxar" (nunca consultor
+// reatribuindo em massa pra si mesmo — o servidor nunca confia só em
+// esconder o botão na tela).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'reatribuir_massa') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera oportunidades.');
+    }
+    if ($souDono) {
+        http_response_code(403);
+        exit('Reatribuição em massa só disponível pra quem vê a empresa inteira.');
+    }
+    $idsPost = array_map('intval', (array)($_POST['ids'] ?? []));
+    $novoResponsavelPost = (int)($_POST['novo_responsavel_id'] ?? 0);
+    $bulkQs = [];
+    if (!$idsPost) {
+        $bulkQs = ['bulk_erro' => 'Nenhuma oportunidade selecionada.'];
+    } elseif ($novoResponsavelPost <= 0) {
+        $bulkQs = ['bulk_erro' => 'Escolha um consultor de destino.'];
+    } else {
+        try {
+            $r = reatribuirEmMassa($idsPost, $novoResponsavelPost, $meuId);
+            $bulkQs = ['bulk_sucesso' => $r['sucesso'], 'bulk_ignorados' => $r['ignorados'], 'bulk_destino' => $r['destino_nome']];
+        } catch (Throwable $e) {
+            $bulkQs = ['bulk_erro' => $e->getMessage()];
+        }
+    }
+    $qs = $_GET;
+    unset($qs['bulk_sucesso'], $qs['bulk_ignorados'], $qs['bulk_erro'], $qs['bulk_destino']);
+    header('Location: /admin/index.php?' . http_build_query(array_merge($qs, $bulkQs)));
+    exit;
+}
+
 // 29/09/2026, "campo de observação manual para digitar consultor" —
 // anotação livre editável direto na linha da tabela, só enquanto a
 // oportunidade ainda está ativa (quando encerrada, a tela reaproveita
@@ -136,6 +177,23 @@ $tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro', 'sem_tipo'];
 $tipoVeiculoFiltro = (string)($_GET['tipo_veiculo'] ?? '');
 if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
     $tipoVeiculoFiltro = '';
+}
+
+// 29/09/2026, "coloca fitro por super admin - puxar leads dos consultores"
+// — filtro por consultor específico, só faz sentido pra quem vê a empresa
+// inteira (super_admin/supervisor); consultor já vê só a própria carteira
+// via $souDono, nunca precisa desse filtro. Validado contra um consultor
+// de verdade (nunca aceita id forjado de outro perfil).
+$consultorFiltro = 0;
+if (!$souDono) {
+    $consultorFiltroBruto = (int)($_GET['consultor'] ?? 0);
+    if ($consultorFiltroBruto > 0) {
+        $stmtConsultorValido = $db->prepare("SELECT id FROM usuarios WHERE id = ? AND perfil = 'consultor'");
+        $stmtConsultorValido->execute([$consultorFiltroBruto]);
+        if ($stmtConsultorValido->fetchColumn()) {
+            $consultorFiltro = $consultorFiltroBruto;
+        }
+    }
 }
 
 // 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
@@ -238,6 +296,10 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
+if ($consultorFiltro > 0) {
+    $where .= " AND o.responsavel_id = ?";
+    $params[] = $consultorFiltro;
+}
 // 28/09/2026, "queria que ficasse separado uma aba de carro e outra de
 // moto" — captura o WHERE/params ANTES de aplicar o filtro de tipo, pra
 // contar quantas oportunidades de CADA tipo existem dentro do mesmo
@@ -324,6 +386,10 @@ if ($busca !== '') {
     $sqlContagem .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsContagem, $like, $like, $like, $like, $like);
 }
+if ($consultorFiltro > 0) {
+    $sqlContagem .= " AND o.responsavel_id = ?";
+    $paramsContagem[] = $consultorFiltro;
+}
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $sqlContagem .= " AND o.tipo_veiculo IS NULL";
 } elseif ($tipoVeiculoFiltro !== '') {
@@ -350,6 +416,10 @@ if ($busca !== '') {
     $sqlFechadas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsFechadas, $like, $like, $like, $like, $like);
 }
+if ($consultorFiltro > 0) {
+    $sqlFechadas .= " AND o.fechado_por = ?";
+    $paramsFechadas[] = $consultorFiltro;
+}
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $sqlFechadas .= " AND o.tipo_veiculo IS NULL";
 } elseif ($tipoVeiculoFiltro !== '') {
@@ -374,6 +444,10 @@ if ($souDono) {
 if ($busca !== '') {
     $sqlEncerradas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsEncerradas, $like, $like, $like, $like, $like);
+}
+if ($consultorFiltro > 0) {
+    $sqlEncerradas .= " AND o.responsavel_id = ?";
+    $paramsEncerradas[] = $consultorFiltro;
 }
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $sqlEncerradas .= " AND o.tipo_veiculo IS NULL";
@@ -409,6 +483,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 </head>
 <body>
+<?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <header class="topbar">
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?> (<?= e($_SESSION['admin_perfil']) ?>)</span>
@@ -449,6 +524,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 <?php
     $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : '';
     $qsBusca .= $tipoVeiculoFiltro !== '' ? '&tipo_veiculo=' . urlencode($tipoVeiculoFiltro) : '';
+    $qsBusca .= $consultorFiltro > 0 ? '&consultor=' . $consultorFiltro : '';
     // Mesma combinação (busca + tipo de veículo), sem o "?etapa=" na frente
     // — usada nos links "Todas/Minhas" e "Limpar filtro" abaixo, que nunca
     // têm etapa nenhuma selecionada.
@@ -481,6 +557,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     if ($filtroEspecial !== '') $qsSemTipoPartes[] = 'filtro=' . urlencode($filtroEspecial);
     elseif ($etapaFiltro !== '') $qsSemTipoPartes[] = 'etapa=' . urlencode($etapaFiltro);
     if ($busca !== '') $qsSemTipoPartes[] = 'q=' . urlencode($busca);
+    if ($consultorFiltro > 0) $qsSemTipoPartes[] = 'consultor=' . $consultorFiltro;
     $qsSemTipo = implode('&', $qsSemTipoPartes);
     $tiposVeiculoRotulos = ['carro' => '🚗 Carro', 'moto' => '🏍️ Moto', 'caminhao' => '🚚 Caminhão', 'outro' => '🚙 Outro'];
 ?>
@@ -500,7 +577,9 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 
 <main>
 
-<?php if (isset($_GET['bulk_sucesso'])): ?>
+<?php if (isset($_GET['bulk_sucesso']) && isset($_GET['bulk_destino'])): ?>
+    <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> oportunidade(s) puxada(s) pra <strong><?= e((string)$_GET['bulk_destino']) ?></strong><?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (já era desse consultor ou já encerrada)' : '' ?>.</div>
+<?php elseif (isset($_GET['bulk_sucesso'])): ?>
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> oportunidade(s) marcada(s) como perdida(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
 <?php elseif (isset($_GET['bulk_erro'])): ?>
     <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
@@ -627,6 +706,9 @@ if ($filtroEspecialLabel !== ''): ?>
         <?php if ($tipoVeiculoFiltro !== ''): ?>
             <input type="hidden" name="tipo_veiculo" value="<?= e($tipoVeiculoFiltro) ?>">
         <?php endif; ?>
+        <?php if ($consultorFiltro > 0): ?>
+            <input type="hidden" name="consultor" value="<?= (int)$consultorFiltro ?>">
+        <?php endif; ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por nome, telefone, marca, modelo ou placa...">
         <button type="submit">Buscar</button>
         <?php if ($busca !== ''):
@@ -634,9 +716,41 @@ if ($filtroEspecialLabel !== ''): ?>
             if ($filtroEspecial !== '') $voltarQsPartes[] = 'filtro=' . urlencode($filtroEspecial);
             elseif ($etapaFiltro !== '') $voltarQsPartes[] = 'etapa=' . urlencode($etapaFiltro);
             if ($tipoVeiculoFiltro !== '') $voltarQsPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
+            if ($consultorFiltro > 0) $voltarQsPartes[] = 'consultor=' . $consultorFiltro;
             $voltarQs = $voltarQsPartes ? '?' . implode('&', $voltarQsPartes) : '';
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar busca</a><?php endif; ?>
     </form>
+    <?php if (!$souDono):
+        // 29/09/2026, "coloca fitro por super admin - puxar leads dos
+        // consultores" — filtro por consultor, só pra quem vê a empresa
+        // inteira. Formulário GET próprio (preserva etapa/busca/tipo já
+        // selecionados via hidden), sempre visível acima da barra de ação
+        // em massa — trocar de consultor nunca reseta os outros filtros.
+        $consultoresLista = array_filter(listarUsuarios(), fn($u) => $u['perfil'] === 'consultor');
+    ?>
+    <form method="get" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <?php if ($filtroEspecial !== ''): ?><input type="hidden" name="filtro" value="<?= e($filtroEspecial) ?>"><?php elseif ($etapaFiltro !== ''): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
+        <?php if ($busca !== ''): ?><input type="hidden" name="q" value="<?= e($busca) ?>"><?php endif; ?>
+        <?php if ($tipoVeiculoFiltro !== ''): ?><input type="hidden" name="tipo_veiculo" value="<?= e($tipoVeiculoFiltro) ?>"><?php endif; ?>
+        <label for="filtro-consultor" style="margin:0">Filtrar por consultor:</label>
+        <select name="consultor" id="filtro-consultor" onchange="this.form.submit()">
+            <option value="0">— Todos —</option>
+            <?php foreach ($consultoresLista as $c): ?>
+                <option value="<?= (int)$c['id'] ?>" <?= $consultorFiltro === (int)$c['id'] ? 'selected' : '' ?>><?= e($c['nome']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <?php if ($consultorFiltro > 0):
+            $qsSemConsultorPartes = [];
+            if ($filtroEspecial !== '') $qsSemConsultorPartes[] = 'filtro=' . urlencode($filtroEspecial);
+            elseif ($etapaFiltro !== '') $qsSemConsultorPartes[] = 'etapa=' . urlencode($etapaFiltro);
+            if ($busca !== '') $qsSemConsultorPartes[] = 'q=' . urlencode($busca);
+            if ($tipoVeiculoFiltro !== '') $qsSemConsultorPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
+            $qsSemConsultor = $qsSemConsultorPartes ? '?' . implode('&', $qsSemConsultorPartes) : '';
+        ?>
+            <a href="/admin/index.php<?= $qsSemConsultor ?>">Limpar filtro de consultor</a>
+        <?php endif; ?>
+    </form>
+    <?php endif; ?>
     <?php
         // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
         // exatamente o que a tabela abaixo está mostrando (mesmo filtro/
@@ -647,6 +761,7 @@ if ($filtroEspecialLabel !== ''): ?>
         elseif ($etapaFiltro !== '') $pdfQsPartes[] = 'etapa=' . urlencode($etapaFiltro);
         if ($busca !== '') $pdfQsPartes[] = 'q=' . urlencode($busca);
         if ($tipoVeiculoFiltro !== '') $pdfQsPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
+        if ($consultorFiltro > 0) $pdfQsPartes[] = 'consultor=' . $consultorFiltro;
         $pdfQs = $pdfQsPartes ? '?' . implode('&', $pdfQsPartes) : '';
     ?>
     <a class="btn" style="margin-top:10px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQs ?>" target="_blank">📄 Gerar PDF do relatório</a>
@@ -671,16 +786,31 @@ if ($filtroEspecialLabel !== ''): ?>
 $podeSelecionarEmMassa = $perfil !== 'supervisor';
 if ($podeSelecionarEmMassa):
 ?>
-<form id="form-bulk-marcar" method="post" onsubmit="return confirm('Marcar as oportunidades selecionadas como perdidas? Motivo fica gravado no histórico de cada uma, e dá pra reabrir depois se o negócio voltar.');">
+<form id="form-bulk-marcar" method="post">
     <?= csrfField() ?>
-    <input type="hidden" name="acao" value="marcar_perdida_massa">
 </form>
 <div id="barra-bulk-marcar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
     <strong><span id="bulk-contagem">0</span> selecionada(s)</strong>
-    <input type="text" name="motivo" form="form-bulk-marcar" id="bulk-motivo" required
-           placeholder="Motivo (obrigatório) — ex: desistiu, achou proposta baixa..."
+    <input type="text" name="motivo" form="form-bulk-marcar" id="bulk-motivo"
+           placeholder="Motivo (obrigatório pra marcar perdido) — ex: desistiu, achou proposta baixa..."
            style="flex:1;min-width:220px;margin:0">
-    <button type="submit" form="form-bulk-marcar" class="perigo" style="margin:0">🚫 Marcar como perdido</button>
+    <button type="submit" form="form-bulk-marcar" name="acao" value="marcar_perdida_massa" class="perigo" style="margin:0"
+            onclick="return document.getElementById('bulk-motivo').value.trim() !== '' ? confirm('Marcar as oportunidades selecionadas como perdidas? Motivo fica gravado no histórico de cada uma, e dá pra reabrir depois se o negócio voltar.') : (alert('Motivo é obrigatório pra marcar como perdido.'), false)">🚫 Marcar como perdido</button>
+    <?php if (!$souDono):
+        // 29/09/2026, "coloca fitro por super admin - puxar leads dos
+        // consultores" — "puxar" (reatribuir em massa) só faz sentido pra
+        // quem vê a empresa inteira; consultor já só marcaria a própria
+        // carteira como perdida, nunca reatribuiria pra si mesmo em massa.
+    ?>
+    <select name="novo_responsavel_id" form="form-bulk-marcar" id="bulk-novo-responsavel" style="margin:0">
+        <option value="">— pra qual consultor? —</option>
+        <?php foreach ($consultoresLista as $c): ?>
+            <option value="<?= (int)$c['id'] ?>"><?= e($c['nome']) ?></option>
+        <?php endforeach; ?>
+    </select>
+    <button type="submit" form="form-bulk-marcar" name="acao" value="reatribuir_massa" style="margin:0"
+            onclick="return document.getElementById('bulk-novo-responsavel').value !== '' ? confirm('Puxar as oportunidades selecionadas pra esse consultor? Fica registrado no histórico de cada uma.') : (alert('Escolha um consultor de destino.'), false)">🔀 Puxar leads selecionados</button>
+    <?php endif; ?>
     <button type="button" class="btn-texto" onclick="bulkLimparSelecao()">Limpar seleção</button>
 </div>
 <?php endif; ?>

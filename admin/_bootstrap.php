@@ -61,7 +61,10 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         'promissorias.php', 'meu_perfil.php', 'logout.php',
         // 26/09/2026 — leitura de CRLV por IA no modal "Vender na
         // Promissória" (admin/vendas.php, "cadastrar veículo novo").
-        'veiculo_crlv_ajax.php'];
+        'veiculo_crlv_ajax.php',
+        // 29/09/2026 — impersonamento: super_admin impersonando um
+        // vendedor precisa conseguir voltar (ver admin/parar_impersonar.php).
+        'parar_impersonar.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -85,6 +88,8 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
         'cliente_detalhe.php', 'financeiro_inbox.php', 'financeiro-relatorio-dre.php',
         'financeiro-relatorio-extrato.php', 'financeiro-relatorios.php',
         'financeiro-empresa.php', 'meu_perfil.php', 'logout.php',
+        // 29/09/2026 — impersonamento (ver nota equivalente no guard do vendedor acima).
+        'parar_impersonar.php',
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
@@ -107,7 +112,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // tentando adicionar foto do veículo que acabou de cadastrar pela
         // vistoria. Ver requireAcessoCatalogoRevenda() (includes/security.php)
         // pro racional completo.
-        'veiculo_midias.php', 'ver_midia_revenda.php'];
+        'veiculo_midias.php', 'ver_midia_revenda.php',
+        // 29/09/2026 — impersonamento (ver nota equivalente no guard do vendedor acima).
+        'parar_impersonar.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

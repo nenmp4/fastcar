@@ -869,6 +869,88 @@ function marcarPerdidaEmMassa(array $ids, string $motivo, ?int $responsavelId = 
 }
 
 /**
+ * 29/09/2026, "coloca fitro por super admin - puxar leads dos consultores"
+ * — super_admin/supervisor filtram a tabela por um consultor específico
+ * (admin/index.php, ?consultor=id) e podem PUXAR (reatribuir) os leads
+ * filtrados em massa pra outro consultor ou pra si mesmo. Diferente do
+ * atualizar_proxima_acao de admin/oportunidade.php (UPDATE simples, sem
+ * histórico, porque trocar responsável sozinho não é transição de etapa),
+ * aqui SEMPRE grava oportunidade_historico — é uma ação administrativa
+ * mais consequente, movendo potencialmente muitos leads de uma vez, mesma
+ * disciplina de marcarConsultorFaltou()/equalizarFilaLeads() (fila_leads.php)
+ * que já registram o motivo de toda reatribuição automática.
+ *
+ * Cada id é tratado independente (nunca 1 id ruim derruba o lote): id
+ * inexistente, já fora de ETAPAS_ATIVAS (fechado/perdido/sem_perfil — nunca
+ * reprocessa) ou já com esse responsável conta como "ignorado", nunca erro.
+ *
+ * @param int[] $ids
+ * @return array{total:int, sucesso:int, ignorados:int, destino_nome:string}
+ */
+function reatribuirEmMassa(array $ids, int $novoResponsavelId, int $executadoPor): array {
+    $db = getDB();
+    $stmtDestino = $db->prepare("SELECT nome FROM usuarios WHERE id = ? AND perfil IN ('consultor', 'super_admin') AND bloqueado = 0");
+    $stmtDestino->execute([$novoResponsavelId]);
+    $destino = $stmtDestino->fetch();
+    if (!$destino) {
+        throw new InvalidArgumentException('Consultor de destino inválido.');
+    }
+
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    $sucesso = 0;
+    $ignorados = 0;
+
+    foreach ($ids as $oportunidadeId) {
+        if ($oportunidadeId <= 0) {
+            $ignorados++;
+            continue;
+        }
+        $stmt = $db->prepare('SELECT etapa, responsavel_id FROM oportunidades WHERE id = ?');
+        $stmt->execute([$oportunidadeId]);
+        $op = $stmt->fetch();
+        if (!$op || !in_array($op['etapa'], ETAPAS_ATIVAS, true)) {
+            $ignorados++;
+            continue;
+        }
+        if ((int)$op['responsavel_id'] === $novoResponsavelId) {
+            $ignorados++;
+            continue;
+        }
+
+        try {
+            $origemNome = null;
+            if ($op['responsavel_id']) {
+                $stmtOrigem = $db->prepare('SELECT nome FROM usuarios WHERE id = ?');
+                $stmtOrigem->execute([(int)$op['responsavel_id']]);
+                $origemNome = $stmtOrigem->fetchColumn() ?: null;
+            }
+            $db->beginTransaction();
+            $db->prepare("UPDATE oportunidades SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+               ->execute([$novoResponsavelId, $oportunidadeId]);
+            $db->prepare("
+                INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                VALUES (?, ?, ?, ?, ?)
+            ")->execute([
+                $oportunidadeId,
+                $op['etapa'],
+                $op['etapa'],
+                'Reatribuído manualmente pelo super admin' . ($origemNome ? " (de {$origemNome}" : ' (sem responsável anterior') . " pra {$destino['nome']})",
+                $executadoPor,
+            ]);
+            $db->commit();
+            $sucesso++;
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            $ignorados++;
+        }
+    }
+
+    return ['total' => count($ids), 'sucesso' => $sucesso, 'ignorados' => $ignorados, 'destino_nome' => $destino['nome']];
+}
+
+/**
  * Anotação livre editável direto na linha da tabela do funil
  * (admin/index.php, 29/09/2026, "campo de observação manual para digitar
  * consultor") — nunca é mudança de etapa (sem mudarEtapa()/histórico, mesmo

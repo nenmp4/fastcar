@@ -188,6 +188,72 @@ function requireAcessoCatalogoRevenda(): void {
 }
 
 /**
+ * Página inicial de cada perfil — vendedor/financeiro/avaliador são
+ * siloed (ver guards em admin/_bootstrap.php), nunca caem no dashboard do
+ * funil de compra. Movida de admin/login.php (20/09/2026) pra cá em
+ * 29/09/2026 — precisa ser chamada também de admin/impersonar.php (pra
+ * onde o super_admin cai ao "entrar como" outro usuário), e um arquivo de
+ * admin/ não pode ser requerido sem executar o resto do fluxo de login.
+ */
+function paginaInicialPorPerfil(string $perfil): string {
+    return match ($perfil) {
+        'vendedor' => '/admin/vendas.php',
+        'financeiro' => '/admin/financeiro.php',
+        'avaliador' => '/admin/avaliacoes.php',
+        default => '/admin/index.php',
+    };
+}
+
+/**
+ * Impersonamento (29/09/2026, "colocar inperviosnamento dos usurios pelo
+ * super admin") — confirmado via AskUserQuestion: (1) sessão TEMPORÁRIA
+ * como o usuário-alvo (nunca precisa saber a senha dele); (2) qualquer
+ * perfil, exceto outro super_admin; (3) auditoria registra início/fim,
+ * sem expiração automática por tempo — só termina quando o super_admin
+ * clica em "Voltar a ser super admin" (ou faz logout, que também encerra).
+ *
+ * Mecanismo: a sessão original do super_admin é guardada em
+ * `$_SESSION['impersonando_de']` (id/nome/perfil de quem começou),
+ * `admin_id`/`admin_nome`/`admin_perfil` passam a ser os do ALVO — o resto
+ * do sistema (requireAdmin(), podeAcessarX(), guards de POST por perfil)
+ * nunca precisa saber que é impersonamento, olha só pra esses 3 campos
+ * normais. `estaImpersonando()`/`impersonandoOriginal()` são os únicos
+ * pontos que leem `impersonando_de`, usados só pelo banner e pra
+ * encerrar. Nunca aninha (impersonando dentro de impersonando) — encerrar
+ * sempre volta pro super_admin original, nunca empilha.
+ */
+function estaImpersonando(): bool {
+    return !empty($_SESSION['impersonando_de']['id'] ?? null);
+}
+
+function impersonandoOriginal(): ?array {
+    return estaImpersonando() ? $_SESSION['impersonando_de'] : null;
+}
+
+function iniciarImpersonacao(array $alvo): void {
+    $_SESSION['impersonando_de'] = [
+        'id' => (int)$_SESSION['admin_id'],
+        'nome' => (string)$_SESSION['admin_nome'],
+        'perfil' => (string)$_SESSION['admin_perfil'],
+    ];
+    $_SESSION['admin_id'] = (int)$alvo['id'];
+    $_SESSION['admin_nome'] = (string)$alvo['nome'];
+    $_SESSION['admin_perfil'] = (string)$alvo['perfil'];
+}
+
+/** Restaura a sessão do super_admin original — nunca chamar sem checar estaImpersonando() antes. */
+function encerrarImpersonacao(): void {
+    $original = $_SESSION['impersonando_de'] ?? null;
+    if (!$original) {
+        return;
+    }
+    $_SESSION['admin_id'] = $original['id'];
+    $_SESSION['admin_nome'] = $original['nome'];
+    $_SESSION['admin_perfil'] = $original['perfil'];
+    unset($_SESSION['impersonando_de']);
+}
+
+/**
  * Normaliza telefone pro padrão BR com DDI 55 — mesmo helper do
  * JurídicoSaaS (includes/leads.php::normalizarTelefone). O telefone é a
  * chave de identificação da oportunidade (1 cadastro por telefone, regra

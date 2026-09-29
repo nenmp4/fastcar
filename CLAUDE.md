@@ -7792,6 +7792,168 @@ segue no schema sem uso novo, não removida sem ganho real),
   causando contenção de lock (`SQLSTATE[HY000] General error: 5`), não
   resolvido com índice, ver bullet "database is locked" do módulo
   financeiro pro caso real que originou essa parte do skill.
+- **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
+  admin deixar offline usuario que faltar e pegar os lead que chegar") —
+  o lado de COMPRA já tinha isso desde 22/09/2026
+  (`marcarConsultorFaltou()`/`desmarcarConsultorFaltou()`,
+  `includes/fila_leads.php`); confirmado espelhar pro lado de VENDAS
+  (`includes/fila_vendas.php`, arquivo próprio de propósito, mesma
+  disciplina de sempre desse módulo — nunca parametrizar o de compra pra
+  acomodar um 2º perfil/tabela). `marcarVendedorFaltou()`/
+  `desmarcarVendedorFaltou()` — força `disponivel=0` na hora (nunca espera
+  fim de expediente) e redistribui IMEDIATAMENTE as negociações ainda não
+  tocadas do ausente (`ETAPAS_VENDA_LEAD_IA = ['whatsapp',
+  'qualificacao_ia']`, antes de `negociacao` — onde já haveria contato
+  humano de verdade) pros outros vendedores disponíveis, sempre pro que
+  está com menos carga no momento (mesmo algoritmo guloso um-por-um do
+  `equalizarFilaLeads()` do lado de compra). `usuarios.faltou_em`
+  (coluna já existia, compartilhada com o lado de compra — auto-expira
+  sozinha comparando contra a data de hoje). Sem nenhum outro vendedor
+  disponível no momento, marca a falta mas não move nada (fica pendente,
+  sem crash). Card novo "🛒 Fila de vendas (vendedores)" em
+  `admin/configuracoes.php`, mesmo layout/colunas/badges do card de fila
+  de compra (Nome/Status/Negociações ativas/Último lead recebido/Plantão/
+  Falta hoje), botão "❌ Marcar falta"/"↩️ Desfazer falta" por linha com
+  `confirm()` em JS antes de marcar. Testado: 8 asserções de função em
+  banco isolado (marca falta e redistribui as 2 não-tocadas pro único
+  vendedor disponível, nunca pro offline; `disponivel=0`/`faltou_em`=hoje
+  gravados certo; venda já em `negociacao` nunca é movida; histórico
+  gravado certo pras 2 movidas; desmarcar falta limpa a flag mas nunca
+  desfaz a redistribuição já feita; rejeita usuário que não é vendedor;
+  sem nenhum receptor disponível marca a falta mas não move nada) + HTTP
+  ponta a ponta real confirmando o fluxo completo via POST real + `php -l`
+  + `tests/smoke.php` limpos. Sem migração de schema.
+- **Filtro por consultor + puxar leads em massa** (29/09/2026, "coloca
+  fitro por super admin - puxar leads dos consultores") — confirmado via
+  AskUserQuestion: "Filtro + botão pra PUXAR (reatribuir) os leads pra
+  outro consultor/pra mim", não só um filtro somente-leitura. Novo
+  `?consultor=id` em `admin/index.php`, só disponível pra quem vê a
+  empresa inteira (`!$souDono` — consultor já vê só a própria carteira,
+  nunca precisa desse filtro), validado contra um `perfil='consultor'` de
+  verdade (nunca aceita id forjado de outro perfil). Roda-se o mesmo
+  padrão de threading já usado pro `?tipo_veiculo=`/`?q=` neste arquivo —
+  entra no `$where` principal, na contagem por etapa da nav
+  (`$sqlContagem`), nas contagens de "✅ Fechadas"/"❌ Encerradas"
+  (`$sqlFechadas` por `fechado_por`/`$sqlEncerradas` por `responsavel_id`)
+  e no relatório em PDF (`admin/dashboard_relatorio_pdf.php`, mesma lógica
+  duplicada de propósito de sempre) — pra nunca desalinhar os números
+  mostrados na tela do que o filtro realmente aplica. Select "Filtrar por
+  consultor" logo abaixo da busca, `onchange="this.form.submit()"`,
+  preservando etapa/busca/tipo já selecionados via hidden fields.
+  **"Puxar"**: nova `reatribuirEmMassa()` (`includes/oportunidades.php`,
+  ao lado de `marcarPerdidaEmMassa()`, mesmo padrão dessa função —
+  reaproveita a UI de seleção em massa já existente de 29/09/2026, mesmos
+  checkboxes por linha via `form="form-bulk-marcar"`) — diferente do
+  `atualizar_proxima_acao` de `admin/oportunidade.php` (UPDATE simples,
+  sem histórico, porque trocar responsável sozinho não é transição de
+  etapa), aqui SEMPRE grava `oportunidade_historico` por id movido — é uma
+  ação administrativa mais consequente, movendo potencialmente muitos
+  leads de uma vez, mesma disciplina de `marcarConsultorFaltou()`/
+  `equalizarFilaLeads()` (que já registram o motivo de toda reatribuição
+  automática). Cada id tratado independente (1 id ruim nunca derruba o
+  lote): id inexistente, já fora de `ETAPAS_ATIVAS` (já fechado/perdido/
+  sem_perfil — nunca reprocessa) ou já com esse responsável conta como
+  "ignorado", nunca erro. Destino válido é `perfil IN ('consultor',
+  'super_admin')` e `bloqueado=0` (deixa "puxar pra mim mesmo" também
+  funcionar, já que super_admin pode ser destino). Botões de submit do
+  form de seleção em massa passaram a levar `name="acao" value="..."`
+  DIRETO no próprio `<button>` (em vez de um `<input type="hidden">`
+  único) — padrão HTML já usado pra compartilhar os mesmos checkboxes
+  entre 2 ações diferentes ("🚫 Marcar como perdido" e "🔀 Puxar leads
+  selecionados") sem duplicar formulário nem checkbox. "Puxar" só aparece
+  (na tela E no guard do servidor, `admin/index.php`, ação
+  `reatribuir_massa` — nunca confia só em esconder o botão) pra quem vê a
+  empresa inteira; supervisor continua bloqueado (só acompanha, mesma
+  trava do resto da tela). Testado: 8 asserções de função em banco isolado
+  (move só as ativas que não eram já do destino, ignora fechada/já-do-
+  destino/inexistente; `responsavel_id` atualizado certo; histórico
+  gravado só pras movidas; destino bloqueado ou id inexistente lança
+  exceção; idempotente — rodar de novo sobre o mesmo destino não move
+  nada; super_admin também é destino válido) + HTTP ponta a ponta real
+  (filtro por consultor mostra certo os 2 leads dele; POST real move os 2
+  pro destino, banco confirmado; banner de sucesso mostra o nome do
+  destino certo; supervisor E consultor recebem 403 tentando POSTar essa
+  ação, mesmo com CSRF válido — banco confirmado sem alteração; UI do
+  próprio consultor confirmada NUNCA mostrando o select de "puxar" nem o
+  filtro por consultor) + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema.
+- **Impersonamento de usuário pelo super admin** (29/09/2026, "colocar
+  inperviosnamento dos usurios pelo super admin") — confirmado via
+  AskUserQuestion: (1) mecanismo = **sessão temporária** como o usuário
+  (nunca precisa saber a senha dele); (2) escopo = **qualquer perfil,
+  exceto outro super_admin**; (3) segurança = **registra início/fim na
+  auditoria já existente** (`includes/auditoria.php`), sem expiração
+  automática por tempo — só termina quando o super_admin clica em "Voltar
+  a ser super admin" (ou faz logout, que também encerra). Novas
+  `estaImpersonando()`/`impersonandoOriginal()`/`iniciarImpersonacao()`/
+  `encerrarImpersonacao()` em `includes/security.php` — o resto do sistema
+  (`requireAdmin()`, `podeAcessarX()`, guards de POST por perfil) nunca
+  precisa saber que é impersonamento, olha só pra `admin_id`/
+  `admin_nome`/`admin_perfil` normais; a sessão ORIGINAL do super_admin
+  fica guardada em `$_SESSION['impersonando_de']` enquanto isso.
+  `paginaInicialPorPerfil()` (existia só em `admin/login.php`) movida pra
+  `includes/security.php` — precisa ser chamada também de
+  `admin/impersonar.php`, e um arquivo de `admin/` não pode ser requerido
+  sem executar o resto do fluxo de login.
+  `admin/impersonar.php` (POST, `requireSuperAdmin()` — nunca aninha,
+  porque impersonando já não é mais `super_admin` de verdade, então uma
+  2ª tentativa de impersonar já é bloqueada pelo próprio guard) valida o
+  alvo (existe, não é `super_admin`, não está `bloqueado`), troca a
+  sessão e redireciona pra página inicial do perfil do alvo
+  (`paginaInicialPorPerfil()`, mesma função que o login já usa —
+  `vendedor`→vendas, `financeiro`→financeiro, `avaliador`→avaliações, o
+  resto→dashboard). `admin/parar_impersonar.php` (POST) restaura a
+  sessão original e redireciona pra `admin/usuarios.php`. Botão "🎭 Entrar
+  como" por linha em `admin/usuarios.php` (só quando `perfil !=
+  'super_admin'` e não bloqueado), com `confirm()` em JS antes de
+  submeter.
+  **Banner sempre visível** — `admin/_impersonando_banner.php` (partial
+  novo), incluído logo depois de `<body>` (ANTES do `<header
+  class="topbar">`) em todas as ~34 páginas cheias do admin — bulk-insert
+  via script Python, mesmo padrão já usado nesta sessão pra sino/badge Z-API.
+  Deliberadamente **nunca `position:fixed`** — regra de UX mobile do
+  projeto reserva o canto superior direito pro sino/badge, e `.topbar` já
+  é `position:sticky;top:0`; um 2º elemento fixo colidiria. Fluxo normal
+  em vez disso: o banner fica ANTES do topbar no DOM, sem ser sticky — no
+  carregamento da página aparece acima do topbar; ao rolar, o topbar
+  (sticky) assume o topo e o banner sai de vista, reaparecendo a cada
+  navegação nova (compromisso aceitável: ainda bem visível no
+  carregamento/troca de página, sem nenhum risco de colisão CSS com o
+  resto do layout). Cor reaproveita o token `--laranja` já existente
+  (mesmo usado pra "lead quente"), nunca hex solto.
+  **Silos dos perfis `vendedor`/`financeiro`/`avaliador`** —
+  `parar_impersonar.php` precisou entrar no allowlist central dos 3
+  (`admin/_bootstrap.php`) — sem isso, o super_admin impersonando um
+  vendedor (por exemplo) nunca conseguiria chegar no botão "Voltar", já
+  que o guard de página do silo redirecionaria pra `admin/vendas.php`
+  antes de qualquer lógica de `parar_impersonar.php` rodar (mesma classe
+  de bug já documentada 2x nesta sessão em outros módulos — "relaxar o
+  guard dentro do arquivo não basta sem atualizar o allowlist central").
+  `admin/logout.php` também ganhou tratamento: logout durante
+  impersonamento registra `impersonacao_finalizada` (atribuído ao
+  super_admin ORIGINAL, nunca ao alvo — senão o log ficaria enganoso,
+  parecendo que o alvo se deslogou sozinho) em vez do `logout` normal.
+  Eventos novos em `auditoriaRotuloEvento()`: `impersonacao_iniciada`/
+  `impersonacao_finalizada` (🎭). Testado: 5 asserções de função em banco
+  isolado (não impersonando por padrão; `iniciarImpersonacao()` troca a
+  sessão e guarda a original certa; `encerrarImpersonacao()` restaura e
+  limpa a flag; `paginaInicialPorPerfil()` cobre os 5 perfis certos;
+  `encerrarImpersonacao()` sem estar impersonando é no-op seguro) + HTTP
+  ponta a ponta real (impersonar outro super_admin bloqueado 403;
+  impersonar usuário bloqueado bloqueado 403; impersonar consultor
+  funciona — redirect certo, sessão trocada, banner aparece, evento de
+  auditoria gravado certo atribuído ao super_admin; página exclusiva de
+  super_admin, `admin/usuarios.php`, corretamente dá 403 enquanto
+  impersonando; `parar_impersonar.php` restaura a sessão original,
+  redireciona certo, e grava o 2º evento de auditoria certo; impersonar
+  um `vendedor` redireciona pra `admin/vendas.php`, o silo continua
+  funcionando normalmente durante a impersonação — tentar `admin/index.php`
+  redireciona de volta pra `vendas.php` —, banner aparece certo, e
+  `parar_impersonar.php` funciona mesmo dentro do silo graças ao allowlist
+  corrigido; consultor comum tentando chamar `admin/impersonar.php`
+  recebe 403, `requireSuperAdmin()` funcionando) + `php -l` (todas as ~40
+  páginas tocadas, incluindo as 34 do bulk-insert) + `tests/smoke.php`
+  limpos. Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

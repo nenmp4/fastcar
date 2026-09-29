@@ -32,6 +32,21 @@ $tipoVeiculoFiltro = (string)($_GET['tipo_veiculo'] ?? '');
 if (!in_array($tipoVeiculoFiltro, $tiposVeiculoValidos, true)) {
     $tipoVeiculoFiltro = '';
 }
+// 29/09/2026, mesmo filtro de consultor de admin/index.php — mantém o PDF
+// consistente com o que a tela está mostrando no momento do clique. Só
+// aplica pra quem vê a empresa inteira, mesma trava de lá.
+$consultorFiltro = 0;
+if (!$souDono) {
+    $consultorFiltroBruto = (int)($_GET['consultor'] ?? 0);
+    if ($consultorFiltroBruto > 0) {
+        $stmtConsultorValido = $db->prepare("SELECT id, nome FROM usuarios WHERE id = ? AND perfil = 'consultor'");
+        $stmtConsultorValido->execute([$consultorFiltroBruto]);
+        $consultorValido = $stmtConsultorValido->fetch();
+        if ($consultorValido) {
+            $consultorFiltro = $consultorFiltroBruto;
+        }
+    }
+}
 
 switch ($filtroEspecial) {
     case 'hoje':
@@ -88,6 +103,10 @@ if ($tipoVeiculoFiltro === 'sem_tipo') {
     $where .= " AND o.tipo_veiculo = ?";
     $params[] = $tipoVeiculoFiltro;
 }
+if ($consultorFiltro > 0) {
+    $where .= " AND o.responsavel_id = ?";
+    $params[] = $consultorFiltro;
+}
 
 $titulo = [
     'hoje' => 'Leads novos hoje', 'ontem' => 'Leads novos ontem',
@@ -104,6 +123,9 @@ if ($busca !== '') $titulo .= ' — busca: "' . $busca . '"';
 if ($tipoVeiculoFiltro !== '') {
     $tipoVeiculoRotulos = ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão', 'outro' => 'Outro', 'sem_tipo' => 'sem tipo definido'];
     $titulo .= ' — tipo: ' . ($tipoVeiculoRotulos[$tipoVeiculoFiltro] ?? $tipoVeiculoFiltro);
+}
+if ($consultorFiltro > 0 && isset($consultorValido)) {
+    $titulo .= ' — consultor: ' . $consultorValido['nome'];
 }
 
 // 21/09/2026, "ideal gerar com detalhe trazer resumos das convesas" —
