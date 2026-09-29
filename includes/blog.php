@@ -203,6 +203,7 @@ function blogRodape(?string $slugAtual = null): void {
         Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices<br>
         Alphaville Conde II, Barueri/SP — CEP 06473-073<br>
         © <?= (int)$anoAtual ?> Fastcar Solutions. Todos os direitos reservados. —
+        <a href="/termos.php">Termos de Uso</a> —
         <a href="/privacidade.php">Política de Privacidade</a>
     </footer>
 </div>
