@@ -5077,6 +5077,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   `blogWhatsappLink()` isolada confirmando o link novo + `php -l` +
   `tests/smoke.php` limpos. Sem migração de schema (é só conteúdo
   estático das páginas públicas).
+  **✅ Migração concluída de verdade — toggle virado, conversa real
+  confirmada, 29/09/2026** — mesmo dia, sequência rápida com o usuário:
+  anúncios do Meta Ads apontando pro número novo → site/blog trocados
+  (bullet acima) → usuário virou `whatsapp_provider_principal` pra
+  `'oficial'` em Configurações → badge do topbar confirmado mostrando
+  "🟢 Meta (oficial) conectado" (ver bullet "Badge passou a refletir o
+  canal principal DE VERDADE") → **teste real ponta a ponta: mensagem de
+  "oi" mandada de verdade pro `93450-5474`, IA respondeu** — confirma que
+  `processarMensagemZapi()` reaproveitado via `oficialAdaptarPayloadParaZapi()`
+  qualifica e responde certo pelo canal oficial em produção, não só nos
+  testes isolados contra fake server. Canal PRINCIPAL (compra/leads,
+  blocos 2-4 do funil) 100% na Meta a partir daqui — entrada (site/
+  anúncios/webhook) e saída (`zapiEnviarTexto()` → `oficialEnviarTexto()`)
+  batendo a mesma direção. Z-API segue conectada de propósito
+  (`"pode deixar zpi tá funcionando né no número antigo"`) — nunca
+  desconectada, serve de histórico/fallback pro canal principal e
+  continua sendo o canal de verdade pras instâncias DEDICADAS de vendas e
+  financeiro, que nunca migraram (fora de escopo desta migração, ver
+  bullet "WhatsApp Cloud API (Meta oficial) — canal principal, Fase 1").
 - **Custo por Lead (CPL) das campanhas Meta** (29/09/2026, spec completa
   trazida pelo usuário via Google Docs — "registrar de qual anúncio veio
   cada lead e quanto cada campanha/anúncio gastou") — a spec original
