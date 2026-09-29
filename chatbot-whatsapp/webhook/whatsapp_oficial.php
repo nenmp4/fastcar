@@ -80,7 +80,11 @@ if ($payloadAdaptado === null) {
     exit;
 }
 
-$instancia = ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => null];
+// 'canal' => 'oficial' — usado por iaProcessarTurno()/enviarTelefoneConsultorAoCliente()
+// (via zapiEnviarTextoPeloCanal()) pra garantir que a resposta do MESMO
+// turno saia pelo MESMO canal que o cliente usou, nunca pelo toggle
+// global sozinho — ver includes/whatsapp_config.php::zapiEnviarTextoPeloCanal().
+$instancia = ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => null, 'canal' => 'oficial'];
 
 try {
     $resultado = processarMensagemZapi($payloadAdaptado, $instancia);

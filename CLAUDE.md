@@ -5096,6 +5096,88 @@ segue no schema sem uso novo, não removida sem ganho real),
   continua sendo o canal de verdade pras instâncias DEDICADAS de vendas e
   financeiro, que nunca migraram (fora de escopo desta migração, ver
   bullet "WhatsApp Cloud API (Meta oficial) — canal principal, Fase 1").
+  **Bug real achado no mesmo dia — resposta pro MESMO turno ignorava por
+  onde o cliente escreveu, só olhava o toggle global** (29/09/2026,
+  pergunta direta do usuário: "e as conversas antigas, se responder
+  cliente que veio [do número] antigo?"). Investigando: `iaProcessarTurno()`
+  (`includes/ia_qualificacao.php`) e `enviarTelefoneConsultorAoCliente()`
+  (`includes/oportunidades.php`) sempre mandavam a resposta via
+  `zapiEnviarTexto($telefone, $resposta)` sem `$instanciaOverride` — que
+  decide o canal só pelo toggle global `whatsapp_provider_principal`,
+  nunca olhando de qual webhook a mensagem do cliente realmente chegou.
+  Assim que o toggle virou `'oficial'`, um cliente que ainda escreve pro
+  número ANTIGO (Z-API, nunca desconectado de propósito) tinha a resposta
+  da IA tentando sair pela Meta mesmo assim — que rejeita esse envio (code
+  `131047`, "re-engagement", fora da janela de 24h, porque esse telefone
+  nunca conversou com o número Meta) — a resposta simplesmente não saía,
+  silenciosamente, e o cliente ficava sem resposta nenhuma. Corrigido
+  threadando o CANAL de origem através de todo o caminho da resposta do
+  mesmo turno: `zapiIdentificarInstancia()` (`includes/zapi_instancias.php`)
+  ganhou `'canal' => 'zapi'` em todo retorno (é sempre quem identifica
+  payload do webhook Z-API); `chatbot-whatsapp/webhook/whatsapp_oficial.php`
+  monta `$instancia` com `'canal' => 'oficial'` direto. Nova
+  `zapiEnviarTextoPeloCanal($telefone, $msg, $canal)`
+  (`includes/whatsapp_config.php`) ignora o toggle global e força o canal
+  que o cliente usou — `'oficial'` chama `oficialEnviarTexto()` direto,
+  `'zapi'` manda pela instância Z-API principal direto, `null` (chamador
+  não sabe, ex: `chatbot-whatsapp/simulate.php`) cai no comportamento de
+  sempre (toggle global). `iaProcessarTurno()` ganhou parâmetro
+  `?string $canalOrigem`, usado na resposta da IA E propagado pra
+  `enviarTelefoneConsultorAoCliente($oportunidadeId, $canalOrigem)`; o
+  aviso de mídia não suportada em `chatbot-whatsapp/includes/mensagens.php`
+  também trocou pra `zapiEnviarTextoPeloCanal()`. As 3 notificações
+  INTERNAS pro consultor (`notificarNovoLeadWhatsapp()`/
+  `notificarConsultorLeadQualificado()`, `includes/oportunidades.php`)
+  ficaram de propósito no `zapiEnviarTexto()` de sempre — vão pro WhatsApp
+  PESSOAL do consultor/lista genérica, nunca pro cliente, não têm "canal
+  de origem" nenhum pra respeitar. Efeito colateral bom, de graça: o
+  mesmo mecanismo também resolve o problema INVERSO (avisado ao usuário
+  antes de ele virar o toggle) — cliente que já escreve pro número NOVO
+  (Meta) mas com o toggle AINDA em `'zapi'` (período de transição) também
+  passa a receber resposta certa, pelo canal certo, sem precisar esperar
+  o toggle virar — a resposta do mesmo turno agora é sempre simétrica ao
+  canal de entrada, o toggle global só decide mensagem PROATIVA (cron de
+  followup/recuperação, notificação interna). Testado: 6 cenários
+  isolados de `zapiEnviarTextoPeloCanal()` contra fake Z-API + fake Meta
+  locais (toggle=oficial + canal=zapi → sai pela Z-API, o bug exato
+  relatado, confirmado corrigido; toggle=oficial + canal=oficial → Meta,
+  sem regressão; toggle=zapi + canal=oficial → Meta mesmo assim, resolve
+  o problema inverso; canal=null com toggle nos 2 estados → cai no
+  comportamento de sempre; canal=oficial sem credencial Meta → falha
+  limpo, nunca cai pro Z-API por engano) + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
+- **Notificação de fim de turno — leads parados em "CRM preenchido"**
+  (29/09/2026, "ao terminar turno 7:30 enviar todos leads crm preenchido
+  que chegarem para numero de notificação") — `cron/leads_crm_preenchido_fim_turno.php`
+  (novo, sugerido a cada 5-10min, mesmo padrão `flock()`+dedup-por-dia de
+  `cron/fila_horario_expediente.php`) manda pro(s) número(s) de
+  notificação genérica (`config.notificacao_leads_whatsapp`) a lista de
+  leads que ENTRARAM no funil HOJE (`oportunidades.created_at`) e ainda
+  estão parados em `etapa='crm_preenchido'` (já qualificados pela IA,
+  bloco 4, esperando o consultor assumir de verdade) — nova
+  `notificarLeadsCrmPreenchidoFimTurno()` (`includes/oportunidades.php`),
+  cada linha com nome/telefone/veículo/responsável (ou "sem responsável")
+  + link direto pra oportunidade. Sempre manda alguma coisa, mesmo "0
+  leads parados ✅" — confirma que o cron está vivo, mesmo espírito do
+  resumo diário de produtividade. Horário configurável (padrão 19:30,
+  `leadsCrmPreenchidoHorarioNotificar()`) em Configurações → Fila, campo
+  novo ao lado do horário de abertura/fechamento — nunca reaproveita
+  `fila_horario_fechamento` (19:20) direto: são conceitos relacionados
+  mas distintos, um decide disponibilidade de rodízio, o outro decide
+  quando mandar o relatório, cada um pode mudar sem afetar o outro.
+  Mensagem interna (staff), nunca pro cliente — fica no `zapiEnviarTexto()`
+  de sempre (toggle global), sem canal de origem envolvido. Testado: 4
+  cenários de `notificarLeadsCrmPreenchidoFimTurno()` em banco isolado
+  (lead de hoje em `crm_preenchido` aparece com veículo/responsável
+  certos, mandado pros 2 números configurados; lead de ONTEM excluído;
+  lead de hoje mas ainda em `whatsapp` — não qualificado — excluído; sem
+  número de notificação configurado nunca tenta enviar; sem nenhum lead
+  hoje ainda manda a mensagem de confirmação "0 leads") + cron ponta a
+  ponta (horário no futuro não dispara; horário no passado dispara e
+  envia de verdade — confirmado no fake Z-API — grava o dedup; rodar de
+  novo no mesmo dia não reenvia, exatamente 1 chamada real ao longo das 3
+  rodadas) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
+  (`config` já é livre, key/value).
 - **Custo por Lead (CPL) das campanhas Meta** (29/09/2026, spec completa
   trazida pelo usuário via Google Docs — "registrar de qual anúncio veio
   cada lead e quanto cada campanha/anúncio gastou") — a spec original
@@ -8330,6 +8412,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | — | | **`install/diagnosticar_leads_mudos.php` (não é cron, script CLI de diagnóstico só-leitura)** — 21/09/2026, achado real: print de `admin/index.php?etapa=whatsapp` mostrando dezenas de leads "(sem nome)" parados em `etapa='whatsapp'`, todos criados na mesma janela de minutos em 20/09/2026 — à primeira vista parecia o mesmo padrão do incidente de flood antigo (`install/limpar_leads_invalidos.php`), mas os telefones eram válidos (formato real, não IDs de evento de 15 dígitos), diferente do flood. Investigado com o usuário: causa real confirmada foi uma campanha/followup de reengajamento manual disparada pra leads antigos ("foi followup"), que gerou uma leva de respostas reais de clientes voltando ao mesmo tempo — não é bug. `install/diagnosticar_leads_mudos.php` (novo, só leitura, nunca apaga/altera nada) separa dentro de `etapa='whatsapp'` quem já respondeu pelo menos 1 mensagem real (segue o funil normal) de quem está genuinamente mudo desde a entrada (só esses caem no fechamento automático do `cron/leads_sem_resposta.php` acima, 7 dias de silêncio) — lista os mudos com quantos dias cada um já está parado. Testado antes contra banco isolado simulando os 3 cenários (respondeu / mudo há 10 dias / mudo há 1 dia / oportunidade em outra etapa) — contagem e filtro batendo certo nos 4 casos. |
 | `cron/asaas_sync.php` | a cada 30 min | **18/09/2026, achado real: "tenho que sicornizar assas manual as cobranças de parcela dos carros"** — o script já existia no código desde 17/09/2026, mas nunca tinha sido cadastrado em `install/setup_crontab.sh` (arquivo que a própria cabeça do script declara como "fonte de verdade dos horários", mas ficou desatualizado — `resumo_produtividade.php`, linha abaixo, tinha o mesmo problema, também corrigido agora), então nunca rodou sozinho na VPS; e mesmo rodando, só resincronizava STATUS de cobrança já importada, nunca trazia cobrança NOVA criada direto no painel do Asaas — só o clique manual em "Importar cobranças" (`admin/financeiro-asaas.php`) fazia isso. Corrigido em 2 frentes: (1) `cron/asaas_sync.php` passou a chamar `asaasImportarCobrancas()` (mesma função do botão manual, dedup por `asaas_payment_id`, importa novas E atualiza status de todas numa passada) antes de `asaasSincronizarPendentes()` (mantido, mais barato pro caso comum de só status mudando); (2) linha nova em `install/setup_crontab.sh`, junto com a linha de `resumo_produtividade.php` que também estava faltando lá. Testado em banco isolado contra servidor Asaas fake local: 1 cobrança nova (`pay_novo123`, `PENDING`) + 1 já existente (`pay_existente456`, `pendente` no banco) — rodar o cron importa a nova (`status='pendente'`) e atualiza a existente pro status real vindo da API (`RECEIVED`→`pago`, `data_pagamento` preenchida), rodando de novo mostra "0 nova(s)" (dedup funcionando, não duplica). |
 | `cron/fila_horario_expediente.php` | a cada 5 min | Liga/desliga a fila de leads sozinha nos horários configurados (padrão 10:00/19:20) — 22/09/2026, "Colocar usuarios para ficar off line as 19:20 ... online 10 horas da manha", confirmado como regra permanente todo dia. Ver `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`, bullet completo na seção da fila de leads) — dedup por dia, nunca liga de volta quem está marcado `faltou_em`=hoje. |
+| `cron/leads_crm_preenchido_fim_turno.php` | a cada 10 min | Ao terminar o turno (padrão 19:30, configurável) manda pro(s) número(s) de notificação genérica a lista de leads que chegaram HOJE e ainda estão parados em `etapa='crm_preenchido'` (já qualificados pela IA, esperando o consultor assumir) — 29/09/2026, "ao terminar turno 7:30 enviar todos leads crm preenchido que chegarem para numero de notificação". Ver `notificarLeadsCrmPreenchidoFimTurno()` (`includes/oportunidades.php`, bullet completo na seção de módulos) — dedup por dia, sempre manda algo mesmo "0 leads" (confirma que o cron está vivo). |
 | `cron/lancamentos_fixos.php` | 1x/dia (5h) | Gera automaticamente a próxima ocorrência mensal de toda despesa marcada como "Fixa" (`natureza='fixa'`) no financeiro — 19/09/2026, "todas despesas fixas pode lançar todo mês automático". Ver `finGerarDespesasFixasDoMes()` (`includes/financeiro.php`, bullet completo na seção "Módulo financeiro") — idempotente, agrupa em cadeias via `recorrencia_origem_id`, copia o valor mais recente da série, e marcar o último lançamento como 'Cancelado' interrompe a série. |
 | `cron/meta_insights.php` | a cada 3h | Puxa gasto/impressões/cliques/conversas de cada anúncio Meta (Marketing API, `level=ad`) das contas configuradas e faz UPSERT em `anuncio_gasto_diario` — 29/09/2026, CPL das campanhas Meta. Reprocessa HOJE + últimos 3 dias sempre (a Meta ajusta retroativamente). `--dry-run`/`--since=`/`--until=` pra conferir antes de rodar valendo. Backoff em rate limit (código 17/80004), token inválido (código 190) grava `config.meta_ads_ultimo_erro` (aviso em Configurações, some sozinho no próximo sucesso). Ver bullet completo na seção de módulos (CPL das campanhas Meta). |
 | `cron/financeiro_relatorio_mensal.php` | 1x/dia (8h) | Envio Automático Mensal do DRE Gerencial — 19/09/2026, "essa parte é legal" (mostrando o Envio Automático Mensal do JurídicoSaaS). Decide sozinho se hoje é o dia configurado (`config.financeiro_relatorio_dia`); manda o DRE do mês anterior por WhatsApp (instância DEDICADA do financeiro) e/ou e-mail (anexo de verdade) pros usuários marcados + e-mails/WhatsApp extras + o e-mail do contador (`config.contador_email`, sempre incluído). Ver bullet completo na seção "Módulo financeiro" acima. |

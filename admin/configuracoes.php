@@ -383,6 +383,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig('fila_horario_fechamento', $fechamento);
                 $sucesso = "Horário da fila salvo: liga às {$abertura}, desliga às {$fechamento}, todo dia.";
             }
+        } elseif ($acao === 'salvar_horario_notificar_crm_preenchido') {
+            // 29/09/2026, "ao terminar turno 7:30 enviar todos leads crm
+            // preenchido que chegarem para numero de notificação".
+            $horaNotificar = trim((string)($_POST['leads_crm_preenchido_notificar_hora'] ?? ''));
+            if (!preg_match('/^\d{2}:\d{2}$/', $horaNotificar)) {
+                $erro = 'Horário inválido — use o formato HH:MM.';
+            } else {
+                setConfig('leads_crm_preenchido_notificar_hora', $horaNotificar);
+                $sucesso = "Horário do relatório de fim de turno salvo: {$horaNotificar}, todo dia.";
+            }
         } elseif ($acao === 'marcar_falta') {
             $resultado = marcarConsultorFaltou((int)($_POST['usuario_id'] ?? 0), (int)($_SESSION['admin_id'] ?? 0));
             if (!$resultado['ok']) {
@@ -1116,6 +1126,18 @@ unset($fv);
         <small style="display:block;color:#666">Todo dia, automático: liga "Disponível" de todo consultor na abertura
            (exceto quem foi marcado ausente hoje) e desliga todo mundo no fechamento. Roda via cron a cada poucos
            minutos (<code>cron/fila_horario_expediente.php</code>) — não precisa de ninguém clicando nada.</small>
+    </form>
+
+    <form method="post" class="inline" style="margin-bottom:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_horario_notificar_crm_preenchido">
+        <label>Notificar leads parados em "CRM preenchido" às</label>
+        <input type="time" name="leads_crm_preenchido_notificar_hora" value="<?= e(leadsCrmPreenchidoHorarioNotificar()) ?>" style="width:110px;display:inline-block">
+        <button type="submit" style="margin-top:0">Salvar horário</button>
+        <small style="display:block;color:#666">Todo dia, automático: manda pro(s) número(s) de notificação genérica
+           (card "🔔 Notificações", acima) a lista de leads que chegaram HOJE e ainda estão parados em "CRM
+           preenchido" (já qualificados pela IA, esperando o consultor assumir). Roda via cron
+           (<code>cron/leads_crm_preenchido_fim_turno.php</code>), 1x por dia, dedup automático.</small>
     </form>
 
     <?php if (!$fila): ?>

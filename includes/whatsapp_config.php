@@ -186,6 +186,44 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
     return _zapiEnviarTextoBruto($phone, $msg, $inst, $tok, $ctok);
 }
 
+/**
+ * Manda texto respeitando o CANAL de onde a mensagem do CLIENTE chegou
+ * (`$canal`: 'zapi'|'oficial'|null) — não o toggle global. 29/09/2026,
+ * achado real logo depois de virar `whatsapp_provider_principal` pra
+ * 'oficial': cliente que ainda escreve pro número ANTIGO (Z-API, nunca
+ * desconectado de propósito) tinha a resposta da IA tentando sair pela
+ * Meta mesmo assim — `zapiEnviarTexto()` só olha o toggle global, nunca
+ * de onde a mensagem realmente veio. Meta rejeita esse envio (code
+ * 131047, "re-engagement" — fora da janela de 24h, porque esse telefone
+ * nunca conversou com o número Meta), a resposta simplesmente não sai.
+ *
+ * Usado só nas respostas DO MESMO TURNO de uma mensagem recebida
+ * (iaProcessarTurno(), enviarTelefoneConsultorAoCliente(), o aviso de
+ * mídia não suportada em mensagens.php) — nunca em mensagem PROATIVA
+ * iniciada pelo sistema sem cliente ter acabado de escrever (cron de
+ * followup/recuperação, notificação interna pro consultor): essas
+ * continuam no toggle global de sempre, é o comportamento certo pra elas
+ * (não têm "canal de origem" nenhum pra respeitar).
+ *
+ * $canal=null (chamador não sabe/não importa, ex: chatbot-whatsapp/simulate.php)
+ * cai no comportamento de sempre — zapiEnviarTexto() decidindo pelo toggle.
+ */
+function zapiEnviarTextoPeloCanal(string $phone, string $msg, ?string $canal): bool {
+    if ($canal === 'oficial') {
+        return oficialConfigured() ? oficialEnviarTexto($phone, $msg) : false;
+    }
+    if ($canal === 'zapi') {
+        $inst = _chatbot_getConfig('zapi_instance_id');
+        $tok = _chatbot_getConfig('zapi_token');
+        $ctok = _chatbot_getConfig('zapi_client_token');
+        if (!$inst || !$tok || !$phone) return false;
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) < 12) return false;
+        return _zapiEnviarTextoBruto($phoneNorm, $msg, $inst, $tok, $ctok);
+    }
+    return zapiEnviarTexto($phone, $msg); // canal desconhecido — comportamento de sempre (toggle global)
+}
+
 function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string $tok, string $ctok): bool {
     $headers = ['Content-Type: application/json'];
     if ($ctok) $headers[] = 'client-token: ' . $ctok;

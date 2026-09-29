@@ -70,22 +70,32 @@ function zapiRemoverInstanciaConsultor(int $usuarioId): void {
  *           'usuario_id' => ?int, 'client_token' => ?string]
  */
 function zapiIdentificarInstancia(string $instanceId): array {
+    // 'canal' => 'zapi' em todo retorno daqui — este helper só identifica
+    // payload que chegou pelo webhook Z-API (chatbot-whatsapp/webhook/whatsapp.php);
+    // o webhook da Meta oficial nunca chama esta função, monta o próprio
+    // $instancia com 'canal' => 'oficial' direto (ver whatsapp_oficial.php).
+    // 29/09/2026, achado real: cliente que ainda escreve pro número ANTIGO
+    // (Z-API) tinha a resposta da IA tentando sair pela Meta (decidido só
+    // pelo toggle global whatsapp_provider_principal, sem olhar de onde a
+    // mensagem realmente veio) — Meta rejeita (code 131047, fora da janela
+    // de 24h) porque esse telefone nunca conversou com o número Meta. Ver
+    // zapiEnviarTextoPeloCanal() (includes/whatsapp_config.php).
     if ($instanceId === '') {
-        return ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => getConfig('zapi_client_token')];
+        return ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => getConfig('zapi_client_token'), 'canal' => 'zapi'];
     }
 
     if ($instanceId === (getConfig('zapi_instance_id') ?? '')) {
-        return ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => getConfig('zapi_client_token')];
+        return ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => getConfig('zapi_client_token'), 'canal' => 'zapi'];
     }
 
     $instanciaVendas = getConfig('zapi_instancia_vendas_id') ?? '';
     if ($instanciaVendas !== '' && $instanceId === $instanciaVendas) {
-        return ['tipo' => 'vendas', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_vendas_client_token')];
+        return ['tipo' => 'vendas', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_vendas_client_token'), 'canal' => 'zapi'];
     }
 
     $instanciaFinanceiro = getConfig('zapi_instancia_financeiro_id') ?? '';
     if ($instanciaFinanceiro !== '' && $instanceId === $instanciaFinanceiro) {
-        return ['tipo' => 'financeiro', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_financeiro_client_token')];
+        return ['tipo' => 'financeiro', 'usuario_id' => null, 'client_token' => getConfig('zapi_instancia_financeiro_client_token'), 'canal' => 'zapi'];
     }
 
     $db = getDB();
@@ -93,10 +103,10 @@ function zapiIdentificarInstancia(string $instanceId): array {
     $stmt->execute([$instanceId]);
     $row = $stmt->fetch();
     if ($row) {
-        return ['tipo' => 'consultor', 'usuario_id' => (int)$row['usuario_id'], 'client_token' => $row['client_token']];
+        return ['tipo' => 'consultor', 'usuario_id' => (int)$row['usuario_id'], 'client_token' => $row['client_token'], 'canal' => 'zapi'];
     }
 
-    return ['tipo' => 'desconhecida', 'usuario_id' => null, 'client_token' => null];
+    return ['tipo' => 'desconhecida', 'usuario_id' => null, 'client_token' => null, 'canal' => 'zapi'];
 }
 
 /**

@@ -690,7 +690,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 // nova vai responder pelas duas juntas.
                 if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
                     try {
-                        $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone);
+                        $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone, $instancia['canal'] ?? null);
                     } catch (Throwable $e) {
                         // Nunca deixa uma falha da IA quebrar o resto do webhook —
                         // mensagem do cliente já está salva, oportunidade já existe.
@@ -711,7 +711,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                     'Recebi! Pode me contar em texto ou áudio, por favor? 😊',
                     'Chegou por aqui, obrigado! Consegue me passar isso em texto ou áudio?',
                 ]);
-                if (zapiEnviarTexto($phone, $textoAck)) {
+                if (zapiEnviarTextoPeloCanal($phone, $textoAck, $instancia['canal'] ?? null)) {
                     registrarMensagem($phone, 'out', $textoAck, null, true);
                 }
             }

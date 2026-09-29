@@ -402,8 +402,12 @@ function iaAtualizarContadorEstagnacao(string $telefone, bool $avancou): int {
  * Só deve ser chamada quando: IA não está pausada, mensagem veio da
  * instância principal (não de consultor), e a oportunidade ainda está em
  * 'whatsapp' ou 'qualificacao_ia' — quem chama garante essas condições.
+ *
+ * $canalOrigem ('zapi'|'oficial'|null, 29/09/2026) — de qual canal a
+ * mensagem do cliente chegou, pra responder pelo MESMO canal (ver
+ * zapiEnviarTextoPeloCanal()); null cai no toggle global de sempre.
  */
-function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
+function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalOrigem = null): array {
     // 'resposta'/'enviada' expostos no retorno (não só efeito colateral) pra
     // dar pro simulador (chatbot-whatsapp/simulate.php) mostrar o que a IA
     // geraria mesmo quando zapiEnviarTexto falha por falta de credencial
@@ -419,7 +423,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
     $resposta = iaGerarResposta($telefone);
     $resultado['resposta'] = $resposta;
     if ($resposta !== '') {
-        $enviada = zapiEnviarTexto($telefone, $resposta);
+        $enviada = zapiEnviarTextoPeloCanal($telefone, $resposta, $canalOrigem);
         $resultado['enviada'] = $enviada;
         if ($enviada) {
             registrarMensagem($telefone, 'out', $resposta, null, true);
@@ -485,7 +489,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone): array {
         }
         mudarEtapa($oportunidadeId, 'crm_preenchido', null, 'Qualificação IA concluída — encaminhado pro consultor');
         notificarConsultorLeadQualificado($oportunidadeId, 'Qualificação concluída');
-        enviarTelefoneConsultorAoCliente($oportunidadeId);
+        enviarTelefoneConsultorAoCliente($oportunidadeId, $canalOrigem);
         $resultado['qualificacao_completa'] = true;
         return $resultado;
     }

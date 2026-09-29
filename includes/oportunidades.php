@@ -600,6 +600,78 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
     }
 }
 
+/** Horário configurável pra disparar o relatório de fim de turno (padrão 19:30). */
+function leadsCrmPreenchidoHorarioNotificar(): string {
+    $v = getConfig('leads_crm_preenchido_notificar_hora');
+    return ($v && preg_match('/^\d{2}:\d{2}$/', $v)) ? $v : '19:30';
+}
+
+/**
+ * Fim de turno (29/09/2026, "ao terminar turno 7:30 enviar todos leads
+ * crm preenchido que chegarem para numero de notificação") — lista os
+ * leads que ENTRARAM no funil hoje (`created_at`) e ainda estão parados
+ * em `etapa='crm_preenchido'` (já qualificados pela IA, bloco 4, esperando
+ * o consultor assumir de verdade) e manda pro(s) número(s) de notificação
+ * genérica (`config.notificacao_leads_whatsapp`, mesma lista já usada em
+ * `notificarNovoLeadWhatsapp()`/como fallback de
+ * `notificarConsultorLeadQualificado()`) — nunca a instância dedicada de
+ * ninguém, é aviso interno, mesmo espírito das outras notificações desta
+ * seção (global toggle de `zapiEnviarTexto()`, nunca precisa de canal de
+ * origem — não é resposta a cliente nenhum).
+ *
+ * Sempre manda algo (mesmo "0 leads parados"), pra confirmar que o cron
+ * está vivo — mesmo espírito do resumo diário de produtividade. Nunca
+ * lança, nunca bloqueia nada — quem chama (`cron/leads_crm_preenchido_fim_turno.php`)
+ * decide o dedup-por-dia olhando o retorno.
+ */
+function notificarLeadsCrmPreenchidoFimTurno(): array {
+    try {
+        $hoje = date('Y-m-d');
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT o.id, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+                   o.veiculo_marca, o.veiculo_modelo, u.nome AS responsavel_nome
+            FROM oportunidades o
+            JOIN clientes c ON c.id = o.cliente_id
+            LEFT JOIN usuarios u ON u.id = o.responsavel_id
+            WHERE o.etapa = 'crm_preenchido' AND date(o.created_at) = ?
+            ORDER BY o.created_at
+        ");
+        $stmt->execute([$hoje]);
+        $leads = $stmt->fetchAll();
+
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        $numeros = array_filter(array_map('trim', explode(',', $lista)));
+        if (!$numeros) {
+            return ['ok' => false, 'motivo' => 'nenhum número de notificação configurado', 'total' => count($leads)];
+        }
+
+        $baseUrl = getConfig('app_base_url') ?: '';
+        if (!$leads) {
+            $msg = "📋 Fim de turno — nenhum lead qualificado hoje ficou parado em \"CRM preenchido\". ✅";
+        } else {
+            $linhas = [];
+            foreach ($leads as $l) {
+                $veiculo = trim(($l['veiculo_marca'] ?? '') . ' ' . ($l['veiculo_modelo'] ?? ''));
+                $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/oportunidade.php?id={$l['id']}" : "#{$l['id']}";
+                $resp = $l['responsavel_nome'] ? $l['responsavel_nome'] : 'sem responsável';
+                $linhas[] = "• {$l['cliente_nome']} ({$l['cliente_telefone']})" . ($veiculo !== '' ? " — {$veiculo}" : '')
+                          . " — {$resp}\n  {$link}";
+            }
+            $msg = "📋 Fim de turno — " . count($leads) . ' lead(s) qualificado(s) hoje ainda em "CRM preenchido":' . "\n\n"
+                 . implode("\n\n", $linhas);
+        }
+
+        $enviouAlgum = false;
+        foreach ($numeros as $numero) {
+            if (zapiEnviarTexto($numero, $msg)) $enviouAlgum = true;
+        }
+        return ['ok' => $enviouAlgum, 'total' => count($leads)];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'motivo' => 'erro interno', 'total' => 0];
+    }
+}
+
 /**
  * Manda o telefone do consultor responsável direto pro CLIENTE via
  * WhatsApp — regra de negócio de 15/09/2026 (José/Jean: "cliente aceitou
@@ -612,8 +684,13 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
  * quebrada/sem número nenhum pro cliente. Mensagem fica registrada em
  * `whatsapp_mensagens` como qualquer outra mandada ao cliente, pro
  * consultor que assumir depois ver o que já foi dito.
+ *
+ * $canalOrigem ('zapi'|'oficial'|null, 29/09/2026) — mesmo canal que o
+ * cliente usou nesse turno (ver zapiEnviarTextoPeloCanal()), pra nunca
+ * tentar responder pela Meta um cliente que só fala com o número Z-API
+ * antigo (ou vice-versa).
  */
-function enviarTelefoneConsultorAoCliente(int $oportunidadeId): void {
+function enviarTelefoneConsultorAoCliente(int $oportunidadeId, ?string $canalOrigem = null): void {
     try {
         $db = getDB();
         $stmt = $db->prepare("
@@ -632,7 +709,7 @@ function enviarTelefoneConsultorAoCliente(int $oportunidadeId): void {
 
         $msg = "Perfeito! O(a) {$op['consultor_nome']}, da nossa equipe, vai te ligar em breve. "
              . "Se quiser chamar antes, o WhatsApp dele(a) é: {$op['consultor_whatsapp']}";
-        if (!zapiEnviarTexto($op['cliente_telefone'], $msg)) return;
+        if (!zapiEnviarTextoPeloCanal($op['cliente_telefone'], $msg, $canalOrigem)) return;
 
         // 22/09/2026, "está aparecendo mesma oportunidade para outros
         // consultores" — a partir daqui o cliente já sabe o nome/WhatsApp
