@@ -5160,6 +5160,20 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmando `admin/relatorio_cpl.php`/`admin/configuracoes.php`/origem
   enriquecida em `admin/oportunidade.php` renderizando sem erro + `php -l`
   + `tests/smoke.php` (2 guards novos) limpos.
+  **"Testar conexão" falhando em produção — faltava o prefixo `act_`**
+  (29/09/2026, achado real testando com credencial de verdade pela 1ª vez)
+  — a Graph API só aceita a conta de anúncios com o prefixo `act_` na URL
+  (`/act_980951261213150/...`), nunca o ID numérico puro; o campo
+  "Contas de anúncios" só tinha o `act_` como sugestão no placeholder, sem
+  nada garantindo que o usuário digitasse com o prefixo. `metaAdsContas()`
+  (`includes/meta_ads.php`) passou a normalizar cada entrada sozinha —
+  adiciona `act_` quando falta, nunca duplica quando já tem — cobrindo os
+  2 pontos que montam URL a partir dela (`metaAdsTestarConexao()`,
+  `metaAdsBuscarInsights()`/`cron/meta_insights.php`) sem precisar o
+  usuário resalvar a config com o prefixo certo. Testado: normalização
+  isolada (número puro, já com `act_`, com espaço em volta — todos saem
+  prefixados corretamente, sem duplicar) + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
 - **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
   bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
   scripts dry-run/`--confirmar` (mesmo padrão de sempre):

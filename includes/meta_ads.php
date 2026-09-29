@@ -38,10 +38,25 @@ function metaAdsConfigured(): bool {
     return $token !== '' && $contas !== '';
 }
 
-/** Lista de act_XXXXXXXXXX (config meta_ad_accounts, separadas por vírgula). */
+/**
+ * Lista de act_XXXXXXXXXX (config meta_ad_accounts, separadas por vírgula).
+ *
+ * Sempre normaliza o prefixo `act_` — a Graph API só aceita conta de
+ * anúncios com esse prefixo na URL (`/act_123.../insights`), nunca o ID
+ * numérico puro; achado real em produção, 29/09/2026 ("Testar conexão"
+ * falhando porque o campo foi salvo sem o prefixo). Em vez de só confiar
+ * que o usuário digitou certo (o placeholder do campo já sugere
+ * "act_980951261213150", mas nada impedia digitar só o número), cada
+ * entrada ganha o prefixo sozinha se estiver faltando — funciona com ou
+ * sem `act_` já digitado, nunca duplica se já tiver.
+ */
 function metaAdsContas(): array {
     [, $contas] = metaAdsCredenciais();
-    return array_values(array_filter(array_map('trim', explode(',', $contas))));
+    $lista = array_values(array_filter(array_map('trim', explode(',', $contas))));
+    return array_map(
+        fn(string $c): string => str_starts_with($c, 'act_') ? $c : "act_{$c}",
+        $lista
+    );
 }
 
 /**
