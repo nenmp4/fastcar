@@ -9033,6 +9033,68 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmado contra o número Meta de vendas real — mesma ressalva de
   sempre pra integração nova, validar assim que o número for criado no
   Meta Business e as credenciais coladas em Configurações.
+  **🚨 Conta WhatsApp Business da Meta desabilitada PERMANENTEMENTE
+  (30/09/2026)** — pouco depois da migração acima, a Meta notificou o
+  usuário (texto colado direto, verbatim): "desabilitamos Fastcar
+  Solutions e suas contas do WhatsApp Business por causa de atividades
+  que não estão em conformidade com a Termos de Serviço do WhatsApp
+  Business: violação dos Termos de Uso Aceitável... Duração: Permanente /
+  You can't receive messages from customers / You can't respond to
+  messages from customers / You can't start conversations with customers
+  / You can't have phone numbers added to it". Confirmado com o usuário
+  (via pergunta direta): afeta o Business Manager "Fastcar Solutions"
+  inteiro — **os 2 números do mesmo App/WABA** ("Fastcar Bot", App ID
+  `2357740111729782`) ficam mortos junto: o principal (`93450-5474`,
+  canal do funil de compra) e o dedicado de vendas recém-configurado no
+  mesmo dia. Motivo exato da violação **não confirmado** (a notificação
+  da Meta não detalha qual atividade específica disparou — só cita
+  "violação dos Termos de Uso Aceitável" de forma genérica); não
+  investigado a fundo por falta de mais detalhe da própria Meta,
+  registrar aqui se/quando surgir mais contexto. **Mitigação imediata
+  feita pelo usuário direto em Configurações**: toggle
+  `whatsapp_provider_principal` revertido de `'oficial'` pra `'zapi'` —
+  o canal principal volta a funcionar pela instância Z-API de sempre
+  (nunca foi desconectada, só deixou de ser o canal ativo durante a
+  migração de 25-29/09/2026), restaurando entrada/qualificação de lead
+  novo pelo WhatsApp. `whatsapp_provider_vendas` nunca chegou a ser
+  confirmado ligado pra `'oficial'` em produção (o bullet acima registra
+  que a integração de vendas ainda estava "não confirmada" quando o
+  bloqueio aconteceu) — mesmo assim, vale conferir esse toggle também em
+  Configurações e garantir que está em `'zapi'`, já que o número Meta de
+  vendas está igualmente morto agora, permanente. **Nenhuma mudança de
+  código foi necessária** — o mecanismo de fallback/dispatch
+  (`oficialEhProviderPrincipal()`/`oficialEhProviderVendas()`,
+  `includes/whatsapp_config.php`) já lê o toggle do banco a cada chamada,
+  então a correção inteira foi 100% administrativa (trocar o valor salvo
+  em `config`), sem precisar de deploy. Os 2 mecanismos de fallback
+  construídos nos dias anteriores (`zapiEnviarTextoInterno()`, que tenta
+  Z-API primeiro e só cairia pro Meta se a Z-API falhasse; e o fallback
+  Z-API-dedicada→Meta de vendas/financeiro) continuam seguros de manter
+  no código mesmo com a Meta permanentemente morta — o "cair pro Meta"
+  vai simplesmente falhar graciosamente (já testado: `oficialEnviarTexto()`
+  nunca lança, só retorna `false`) e nunca é o caminho feliz agora que
+  Z-API é o principal de novo; não há necessidade de remover esse código,
+  só ele nunca vai ter efeito prático enquanto a conta Meta continuar
+  desabilitada. **Isso provavelmente explica, ao menos em parte, a
+  pergunta em aberto "por que não envia mensagem pra quem não tem o
+  contato salvo"** feita pelo usuário pouco antes deste aviso chegar — se
+  a tentativa de envio caiu no meio da janela em que o canal principal
+  ainda apontava pra Meta (já desabilitada, mas antes do toggle ter sido
+  revertido), o envio teria falhado de qualquer forma independente da
+  causa código-level investigada até ali (janela de 24h / checagem de
+  permissão do WhatsApp Box) — não totalmente confirmado, mas correlação
+  forte de tempo. ⚠️ **Pendências reais, ainda em aberto**: (1) nenhuma
+  investigação foi feita sobre o que pode ter disparado a violação — vale
+  reler o histórico de incidentes já documentados neste arquivo (flood de
+  mensagem duplicada, volume de reengajamento em massa) como possíveis
+  candidatos, mas nada confirmado; (2) sem o app "Fastcar Bot"
+  reabilitado (permanente, não deveria reabilitar sozinho), a Fastcar
+  fica 100% dependente da Z-API de novo pro canal principal — reavaliar
+  se vale abrir um App/WABA NOVO no futuro (número novo, processo de
+  verificação/aprovação do zero) ou desistir da Cloud API oficial por
+  ora; (3) `whatsapp_provider_vendas` precisa de confirmação manual de
+  que está mesmo em `'zapi'` (não verificado neste turno, só recomendado
+  ao usuário).
 - **Popup de resultado de ação, visível não importa onde a página está
   rolada** (30/09/2026, screenshot mostrando o banner "Link enviado por
   WhatsApp." — resultado de clicar "Enviar link" numa venda — visível só
