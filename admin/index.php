@@ -849,12 +849,16 @@ if ($podeSelecionarEmMassa):
             <?php if ($podeSelecionarEmMassa): ?>
             <th><input type="checkbox" id="bulk-chk-todos" onchange="bulkToggleTodos(this)" title="Selecionar todas as visíveis"></th>
             <?php endif; ?>
-            <th>Cliente</th><th>Recebido em</th><th>Veículo</th><th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th>Observação</th><th></th>
+            <th>Cliente</th><th>Recebido em</th><th>Veículo</th>
+            <?php if ($etapaBuscandoFechadas): ?>
+            <th>Valor pago</th>
+            <?php endif; ?>
+            <th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th>Observação</th><th></th>
         </tr>
     </thead>
     <tbody>
     <?php if (!$oportunidades): ?>
-        <tr><td colspan="<?= $podeSelecionarEmMassa ? 9 : 8 ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
+        <tr><td colspan="<?= ($podeSelecionarEmMassa ? 9 : 8) + ($etapaBuscandoFechadas ? 1 : 0) ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php // "Atrasada" só faz sentido pra oportunidade ainda em aberto —
@@ -918,6 +922,11 @@ if ($podeSelecionarEmMassa):
                     <?php endforeach; ?>
                 <?php endif; ?>
             </td>
+            <?php if ($etapaBuscandoFechadas): ?>
+            <td data-label="Valor pago">
+                <?= $op['valor_final'] ? moeda((float)$op['valor_final']) : '—' ?>
+            </td>
+            <?php endif; ?>
             <td>
                 <span class="badge <?= e(etapaBadgeClasse($op['etapa'])) ?>"><?= e(etapaLabel($op['etapa'])) ?></span>
                 <?php if ($etapaBuscandoEncerradas && $op['motivo_perda']): ?>

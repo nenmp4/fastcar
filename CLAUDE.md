@@ -9467,6 +9467,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirma `"type":"image"` com a URL da logo; sem logo, confirmado
   caminho de texto puro (cenário já coberto no teste anterior desta mesma
   função) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+- **Coluna "Valor pago" na aba "✅ Fechadas" do funil de compra**
+  (30/09/2026, exploratório — usuário pediu ideia pra registrar algo a
+  mais no dashboard de fechados sem ter ideia própria ("o que acha
+  registrar nesse dasborda cliente fechado" → "nao sei a ideia"),
+  sugerido e aprovado ("ceto vamos ver como fica") no contexto do dia
+  focado em CPL/custo de anúncio: dar visibilidade rápida a quanto cada
+  compra fechada custou de verdade, direto na listagem, sem abrir cada
+  oportunidade uma por uma). `admin/index.php`: `$etapaBuscandoFechadas`
+  (já existia, computado como `$etapasEscopo === ['fechado']`) passou a
+  condicionar uma coluna nova "Valor pago" (`<th>`/`<td>`), só na aba
+  Fechadas — nunca aparece nas outras abas (Minhas/Todas/Encerradas) —
+  reaproveitando `oportunidades.valor_final` (já vinha no `SELECT o.*` de
+  sempre, sem mudança de query) e o helper `moeda()` já existente. Nunca
+  chuta valor: `$op['valor_final'] ? moeda(...) : '—'`. Colspan do
+  estado vazio ("Nenhuma oportunidade...") ajustado pra somar +1 quando a
+  coluna está presente (`($podeSelecionarEmMassa ? 9 : 8) +
+  ($etapaBuscandoFechadas ? 1 : 0)`, sempre um inteiro calculado em PHP —
+  nunca concatenar string solta num atributo `colspan`, que quebraria o
+  HTML). Testado ponta a ponta em banco isolado (arquivo `.php` de seed
+  executado via `php arquivo.php`, nunca `php -r 'código inline'` — essa
+  2ª forma ignora silenciosamente `auto_prepend_file`, mesma pegadinha já
+  documentada neste arquivo, e faria o teste escrever no banco de dev
+  real por engano): 1 oportunidade `etapa='fechado'` com
+  `valor_final=12345.67` e 1 `etapa='whatsapp'` sem valor — renderizando
+  `?etapa=fechado` confirma o header "Valor pago" presente, o valor
+  formatado "R$ 12.345,67" aparecendo na linha certa, e o cliente ativo
+  de fora; renderizando a aba padrão (sem `?etapa=`) confirma que o
+  header NUNCA aparece ali + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema (coluna já existia e já era preenchida por
+  `mudarEtapa()` desde a correção documentada em "Dashboard por perfil"
+  mais acima).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
