@@ -152,6 +152,18 @@ foreach ($quentesParados as $op) {
 }
 
 // ── 3. Reengajamento — lead esfriando sem responsável ainda ─────────────────
+// 30/09/2026 — DESATIVADO a pedido do usuário ("pode remover todo
+// followup desativar" / "para leads"): esse é o único dos 3 papéis deste
+// cron que manda mensagem PROATIVA pro CLIENTE/LEAD (os blocos 1/2 acima
+// só avisam a equipe interna, nunca o lead — continuam ativos, ninguém
+// pediu pra desligar eles). Vira no-op logo no início, nunca chega a
+// consultar/mandar nada — reversível, é só trocar de novo pra `true`.
+$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO = false;
+
+if (!$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO) {
+    log_followup('Reengajamento de lead (bloco 3) desativado — nenhuma mensagem mandada pro cliente.');
+    $esfriando = [];
+} else {
 // Oportunidade ainda na entrada do funil (bot/IA), sem mensagem nova do
 // cliente há 30-120min, sem responsável humano assumido ainda — mesma
 // janela usada no followup_leads.php do JurídicoSaaS.
@@ -164,6 +176,7 @@ $esfriando = $db->query("
     WHERE o.etapa IN ('whatsapp','qualificacao_ia')
       AND o.responsavel_id IS NULL
 ")->fetchAll();
+} // fim do if (!$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO)
 
 // 28/09/2026, "deixa automação em horário comercial seria medida que
 // ajudaria" — checado uma vez fora do loop (mesma decisão vale pro lote
@@ -174,7 +187,7 @@ $esfriando = $db->query("
 // consumido, então a próxima rodada do cron dentro do horário tenta de
 // novo normalmente, sem perder ninguém.
 $dentroHorario = automacaoDentroHorarioComercial();
-if (!$dentroHorario) {
+if ($FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO && !$dentroHorario) {
     log_followup('Fora do horário comercial — reengajamento adiado pra próxima rodada dentro do horário.');
 }
 
