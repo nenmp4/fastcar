@@ -88,6 +88,64 @@ function oficialEhProviderPrincipal(): bool {
 }
 
 /**
+ * [phone_number_id, access_token] pro número Meta oficial DEDICADO de
+ * vendas — 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" →
+ * "meta só permite mais um numero no aplicativo aprovado". Achado real: a
+ * ideia original era Meta dedicada pra vendas E financeiro (espelhando a
+ * Z-API, que tinha instância própria pra cada um), mas o app aprovado da
+ * Meta só libera 1 número EXTRA além do principal — escolhido pra vendas
+ * (confirmado via pergunta direta: "leads chegando pelo WhatsApp real,
+ * mesmo risco de banimento do canal principal"). Financeiro continua só
+ * Z-API dedicada + fallback pro Meta PRINCIPAL (nunca ganha um número
+ * Meta próprio — não existe 3º número disponível). Nunca reaproveita
+ * verify_token do principal aqui: o handshake do webhook é 1 só, por App,
+ * não por número — os 2 phone_number_id compartilham a MESMA URL/
+ * verify_token (ver oficialIdentificarCanal()).
+ */
+function oficialCredenciaisVendas(): array {
+    return [
+        getConfig('whatsapp_oficial_vendas_phone_number_id') ?: '',
+        getConfig('whatsapp_oficial_vendas_access_token') ?: '',
+    ];
+}
+
+function oficialConfiguredVendas(): bool {
+    [$phoneId, $token] = oficialCredenciaisVendas();
+    return $phoneId !== '' && $token !== '';
+}
+
+/** Canal de vendas usa Meta oficial dedicada? Mesmo raciocínio de oficialEhProviderPrincipal(). */
+function oficialEhProviderVendas(): bool {
+    return getConfig('whatsapp_provider_vendas') === 'oficial' && oficialConfiguredVendas();
+}
+
+/**
+ * Identifica de qual número (principal ou vendas) veio um webhook a
+ * partir do `metadata.phone_number_id` que a Cloud API manda em TODO
+ * payload — mesmo papel de zapiIdentificarInstancia() pro lado Z-API, só
+ * que aqui os 2 números compartilham a MESMA URL de webhook/App (Meta não
+ * separa webhook por número dentro do mesmo App — só o phone_number_id no
+ * corpo do payload diferencia). Vazio (payload malformado/antigo) cai em
+ * 'principal', mesma defesa que zapiIdentificarInstancia('') já tem pra
+ * instanceId vazio. Nunca 'financeiro' — não existe Meta dedicada pra esse
+ * canal (ver oficialCredenciaisVendas() acima).
+ */
+function oficialIdentificarCanal(string $phoneNumberId): array {
+    if ($phoneNumberId === '') {
+        return ['tipo' => 'principal', 'canal' => 'oficial'];
+    }
+    [$idPrincipal] = oficialCredenciais();
+    if ($idPrincipal !== '' && $phoneNumberId === $idPrincipal) {
+        return ['tipo' => 'principal', 'canal' => 'oficial'];
+    }
+    [$idVendas] = oficialCredenciaisVendas();
+    if ($idVendas !== '' && $phoneNumberId === $idVendas) {
+        return ['tipo' => 'vendas', 'canal' => 'oficial'];
+    }
+    return ['tipo' => 'desconhecida', 'canal' => 'oficial'];
+}
+
+/**
  * Envia texto via Cloud API — POST /{phone_number_id}/messages, Bearer
  * token. Nunca lança; retorna false em qualquer falha (sem credencial,
  * erro de rede, erro reportado pela Meta — inclusive fora da janela de
@@ -102,8 +160,14 @@ function _oficialSetUltimoErro(?string $msg): void {
     $GLOBALS['_oficial_ultimo_erro'] = $msg;
 }
 
-function oficialEnviarTexto(string $phone, string $msg): bool {
-    [$phoneId, $token] = oficialCredenciais();
+/**
+ * $override (30/09/2026): [phone_number_id, access_token] opcional — usado
+ * pra mandar pelo número Meta DEDICADO de vendas (oficialCredenciaisVendas())
+ * em vez do principal, mesmo espírito do $instanciaOverride de
+ * zapiEnviarTexto(). Omitido (padrão) = número principal, igual sempre foi.
+ */
+function oficialEnviarTexto(string $phone, string $msg, ?array $override = null): bool {
+    [$phoneId, $token] = $override ?? oficialCredenciais();
     if (!$phoneId || !$token || !$phone) {
         _oficialSetUltimoErro('Sem Phone Number ID/token configurado.');
         return false;
@@ -177,8 +241,8 @@ function _oficialParseDataUri(string $s): ?array {
  * upload já feito). `CURLStringFile` (PHP 8.1+) evita precisar escrever um
  * arquivo temporário em disco só pra montar o multipart.
  */
-function oficialUploadMedia(string $bytes, string $mime, string $nomeArquivo = 'arquivo'): ?string {
-    [$phoneId, $token] = oficialCredenciais();
+function oficialUploadMedia(string $bytes, string $mime, string $nomeArquivo = 'arquivo', ?array $override = null): ?string {
+    [$phoneId, $token] = $override ?? oficialCredenciais();
     if (!$phoneId || !$token || $bytes === '') {
         _oficialSetUltimoErro('Sem Phone Number ID/token configurado, ou arquivo vazio.');
         return null;
@@ -226,8 +290,8 @@ function oficialUploadMedia(string $bytes, string $mime, string $nomeArquivo = '
  * Nunca lança — falha de qualquer etapa (upload ou envio) só seta
  * `oficialUltimoErro()` e retorna false.
  */
-function _oficialEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, string $legenda, string $nomeArquivoFallback): bool {
-    [$phoneId, $token] = oficialCredenciais();
+function _oficialEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, string $legenda, string $nomeArquivoFallback, ?array $override = null): bool {
+    [$phoneId, $token] = $override ?? oficialCredenciais();
     if (!$phoneId || !$token || !$phone || !$urlOuDataUri) {
         _oficialSetUltimoErro('Sem Phone Number ID/token configurado, ou telefone/arquivo vazio.');
         return false;
@@ -241,7 +305,7 @@ function _oficialEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, 
     $campo = [];
     $dataUri = _oficialParseDataUri($urlOuDataUri);
     if ($dataUri !== null) {
-        $mediaId = oficialUploadMedia($dataUri['bytes'], $dataUri['mime'], $nomeArquivoFallback);
+        $mediaId = oficialUploadMedia($dataUri['bytes'], $dataUri['mime'], $nomeArquivoFallback, $override);
         if (!$mediaId) return false; // oficialUltimoErro() já setado por oficialUploadMedia()
         $campo['id'] = $mediaId;
     } elseif (preg_match('#^https?://#i', $urlOuDataUri)) {
@@ -295,24 +359,24 @@ function _oficialEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, 
     return false;
 }
 
-/** Imagem com legenda — URL pública ou base64 (upload automático). */
-function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda): bool {
-    return _oficialEnviarMidia($phone, 'image', $imagemUrl, $legenda, 'imagem.jpg');
+/** Imagem com legenda — URL pública ou base64 (upload automático). $override: [phone_number_id, token] opcional (ex: número dedicado de vendas). */
+function oficialEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?array $override = null): bool {
+    return _oficialEnviarMidia($phone, 'image', $imagemUrl, $legenda, 'imagem.jpg', $override);
 }
 
 /** Áudio — URL pública ou base64 (upload automático). Sem legenda — WhatsApp não aceita caption em áudio. */
-function oficialEnviarAudio(string $phone, string $audioDataUriOuUrl): bool {
-    return _oficialEnviarMidia($phone, 'audio', $audioDataUriOuUrl, '', 'audio.ogg');
+function oficialEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $override = null): bool {
+    return _oficialEnviarMidia($phone, 'audio', $audioDataUriOuUrl, '', 'audio.ogg', $override);
 }
 
 /** Vídeo com legenda — URL pública ou base64 (upload automático). */
-function oficialEnviarVideo(string $phone, string $videoUrlOuDataUri, string $legenda): bool {
-    return _oficialEnviarMidia($phone, 'video', $videoUrlOuDataUri, $legenda, 'video.mp4');
+function oficialEnviarVideo(string $phone, string $videoUrlOuDataUri, string $legenda, ?array $override = null): bool {
+    return _oficialEnviarMidia($phone, 'video', $videoUrlOuDataUri, $legenda, 'video.mp4', $override);
 }
 
 /** Documento (PDF/Word/planilha) — URL pública ou base64 (upload automático). `$fileName` vira o nome exibido na bolha. */
-function oficialEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName): bool {
-    return _oficialEnviarMidia($phone, 'document', $documentoDataUriOuUrl, '', $fileName !== '' ? $fileName : 'documento.pdf');
+function oficialEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName, ?array $override = null): bool {
+    return _oficialEnviarMidia($phone, 'document', $documentoDataUriOuUrl, '', $fileName !== '' ? $fileName : 'documento.pdf', $override);
 }
 
 /**
@@ -375,8 +439,8 @@ function oficialBaixarMidiaRecebida(string $mediaId, string $tipo): ?array {
  * Retorna o display_phone_number confirmado pela Meta em sucesso, ou
  * lança pra a tela mostrar o erro.
  */
-function oficialTestarConexao(): string {
-    [$phoneId, $token] = oficialCredenciais();
+function oficialTestarConexao(?array $override = null): string {
+    [$phoneId, $token] = $override ?? oficialCredenciais();
     if (!$phoneId || !$token) {
         throw new RuntimeException('Phone Number ID/token não configurados.');
     }
@@ -406,13 +470,14 @@ function oficialTestarConexao(): string {
  * Retorna ['estado' => 'conectado'|'desconectado'|'erro'|'nao_configurado',
  * 'verificado_em' => ?int].
  */
-function oficialStatusCache(bool $forcar = false): array {
-    [$phoneId, $token] = oficialCredenciais();
+function oficialStatusCache(bool $forcar = false, string $canal = 'principal'): array {
+    [$phoneId, $token] = $canal === 'vendas' ? oficialCredenciaisVendas() : oficialCredenciais();
     if (!$phoneId || !$token) {
         return ['estado' => 'nao_configurado', 'verificado_em' => null];
     }
 
-    $cacheRaw = getConfig('whatsapp_oficial_status_cache');
+    $chaveCache = $canal === 'vendas' ? 'whatsapp_oficial_vendas_status_cache' : 'whatsapp_oficial_status_cache';
+    $cacheRaw = getConfig($chaveCache);
     if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
         [$ts, $json] = explode('|', $cacheRaw, 2);
         if ((time() - (int)$ts) < 60) {
@@ -444,7 +509,7 @@ function oficialStatusCache(bool $forcar = false): array {
         $resultado = ['estado' => 'desconectado', 'verificado_em' => time()]; // token inválido/expirado
     }
 
-    setConfig('whatsapp_oficial_status_cache', time() . '|' . json_encode($resultado));
+    setConfig($chaveCache, time() . '|' . json_encode($resultado));
     return $resultado;
 }
 

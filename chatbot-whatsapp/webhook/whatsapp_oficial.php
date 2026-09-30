@@ -10,6 +10,19 @@
  * oficialAdaptarPayloadParaZapi(), sem duplicar lógica de dedup/
  * qualificação por IA.
  *
+ * 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só
+ * permite mais um numero no aplicativo aprovado": só o canal de VENDAS
+ * ganhou número Meta oficial DEDICADO (financeiro fica de fora — não
+ * existe 3º número). Os 2 números (principal e vendas) compartilham a
+ * MESMA URL de webhook/App — a Cloud API nunca separa isso por número,
+ * só o `metadata.phone_number_id` dentro do payload diferencia de qual
+ * número veio. `oficialIdentificarCanal()` (includes/whatsapp_oficial.php)
+ * resolve isso ANTES de processar, roteando pra
+ * processarMensagemVendasZapi() (mesmo processador que a Z-API dedicada de
+ * vendas já usa, chatbot-whatsapp/includes/mensagens_vendas.php) quando o
+ * número bate com o de vendas — mesma disciplina de "reaproveita 100% do
+ * que já foi testado" da Fase 1/2.
+ *
  * 2 métodos, como toda Cloud API:
  *   GET  — handshake de verificação (Meta chama 1x quando você salva a URL
  *          do webhook no App Dashboard): confere hub.verify_token contra
@@ -24,8 +37,10 @@ require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
 require_once ROOT . '/includes/whatsapp_oficial.php';
 require_once ROOT . '/includes/oportunidades.php';
+require_once ROOT . '/includes/vendas.php';
 require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens_vendas.php';
 
 header('Content-Type: application/json');
 
@@ -65,6 +80,21 @@ if (!is_array($body)) {
     exit;
 }
 
+// 30/09/2026 — os 2 números (principal e vendas) compartilham a mesma URL
+// de webhook; `metadata.phone_number_id` (presente em TODO payload,
+// mensagem ou status) diz de qual número veio. Rejeitado ANTES de adaptar
+// o payload — mesma disciplina do `instanceId` desconhecido no webhook
+// Z-API (chatbot-whatsapp/webhook/whatsapp.php), nunca processa origem
+// que não reconhecemos.
+$phoneNumberId = (string)($body['entry'][0]['changes'][0]['value']['metadata']['phone_number_id'] ?? '');
+$canalInfo = oficialIdentificarCanal($phoneNumberId);
+if ($canalInfo['tipo'] === 'desconhecida') {
+    log_webhook_oficial("phone_number_id desconhecido, rejeitando webhook: {$phoneNumberId}");
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'ignored' => 'unknown_phone_number_id']);
+    exit;
+}
+
 try {
     $payloadAdaptado = oficialAdaptarPayloadParaZapi($body);
 } catch (Throwable $e) {
@@ -84,10 +114,12 @@ if ($payloadAdaptado === null) {
 // (via zapiEnviarTextoPeloCanal()) pra garantir que a resposta do MESMO
 // turno saia pelo MESMO canal que o cliente usou, nunca pelo toggle
 // global sozinho — ver includes/whatsapp_config.php::zapiEnviarTextoPeloCanal().
-$instancia = ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => null, 'canal' => 'oficial'];
+$instancia = ['tipo' => $canalInfo['tipo'], 'usuario_id' => null, 'client_token' => null, 'canal' => 'oficial'];
 
 try {
-    $resultado = processarMensagemZapi($payloadAdaptado, $instancia);
+    $resultado = $canalInfo['tipo'] === 'vendas'
+        ? processarMensagemVendasZapi($payloadAdaptado, $instancia)
+        : processarMensagemZapi($payloadAdaptado, $instancia);
 } catch (Throwable $e) {
     log_webhook_oficial('Erro ao processar mensagem (' . get_class($e) . '): ' . $e->getMessage());
     http_response_code(500);
@@ -97,6 +129,9 @@ try {
 
 if (!empty($resultado['erro_oportunidade'])) {
     log_webhook_oficial("Erro ao criar/abrir oportunidade ({$resultado['telefone']}): {$resultado['erro_oportunidade']}");
+}
+if (!empty($resultado['erro_venda'])) {
+    log_webhook_oficial("Erro ao criar/abrir lead de venda ({$resultado['telefone']}): {$resultado['erro_venda']}");
 }
 
 echo json_encode(['ok' => true]);

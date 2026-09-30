@@ -8736,6 +8736,88 @@ segue no schema sem uso novo, não removida sem ganho real),
   inclua o partial, mesma disciplina do PWA/notificação — sanity-check
   confirmado removendo o include de 1 página e vendo o guard falhar antes
   de restaurar.
+- **WhatsApp Cloud API (Meta oficial) — número dedicado de VENDAS**
+  (30/09/2026, olhando os cards "Instância Z-API — Vendas"/"...Financeiro"
+  ainda "não configurado" em Configurações: "zpi vendas zpi financeiro não
+  faz mais sentido") — depois da migração do canal PRINCIPAL pra Meta
+  oficial (25-29/09/2026), o plano original era migrar vendas E financeiro
+  também, cada um com número Meta dedicado, espelhando a Z-API (que tinha
+  instância própria pra cada um). Achado real no meio da implementação,
+  avisado pelo próprio usuário: "meta só permite mais um numero no
+  aplicativo aprovado" — o app aprovado da Meta só libera 1 número EXTRA
+  além do principal, nunca 2. Confirmado via AskUserQuestion qual dos 2
+  módulos ganha esse único número extra: **vendas** (comprador de revenda
+  entrando pelo WhatsApp tem o mesmo risco de banimento do canal
+  principal — leads reais chegando o tempo todo). **Financeiro nunca ganha
+  Meta dedicada** — não existe 3º número; continua só Z-API dedicada +
+  fallback pro Meta PRINCIPAL quando falha (comportamento de 29/09,
+  intocado).
+  `includes/whatsapp_oficial.php` ganhou `oficialCredenciaisVendas()`/
+  `oficialConfiguredVendas()`/`oficialEhProviderVendas()` (mesmo trio de
+  funções do canal principal, só lendo `whatsapp_oficial_vendas_phone_number_id`/
+  `_access_token`) e `oficialIdentificarCanal(string $phoneNumberId)` —
+  os 2 números (principal e vendas) compartilham a MESMA URL de webhook e
+  o MESMO Verify Token (a Cloud API nunca separa isso por número dentro
+  do mesmo App, só o `metadata.phone_number_id` no payload diferencia de
+  qual número veio — igual `instanceId` já fazia pro lado Z-API,
+  `zapiIdentificarInstancia()`). `oficialEnviarTexto()`/
+  `_oficialEnviarMidia()`/`oficialUploadMedia()`/`oficialTestarConexao()`
+  ganharam parâmetro `?array $override` ([phone_number_id, token])
+  opcional — omitido usa o principal, igual sempre foi.
+  `oficialStatusCache()` ganhou parâmetro `string $canal` (cache key
+  própria por canal, mesmo TTL de 60s de sempre).
+  `chatbot-whatsapp/webhook/whatsapp_oficial.php` — ANTES de adaptar o
+  payload, extrai `entry[].changes[].value.metadata.phone_number_id` e
+  chama `oficialIdentificarCanal()`; `phone_number_id` desconhecido é
+  rejeitado (401, mesma disciplina do `instanceId` desconhecido no
+  webhook Z-API) — nunca processa origem que não reconhecemos. Roteia pra
+  `processarMensagemVendasZapi()` (MESMO processador que a Z-API dedicada
+  de vendas já usa, `chatbot-whatsapp/includes/mensagens_vendas.php`,
+  reaproveitado sem nenhuma mudança) quando o número bate com o de vendas,
+  senão cai no `processarMensagemZapi()` de sempre.
+  `includes/whatsapp_config.php` — `zapiCredenciaisVendas()` ganhou um 4º
+  elemento no array de retorno, `'vendas'` (nunca muda os 3 primeiros —
+  `[instance_id, token, client_token]` — todos os ~8 call sites existentes
+  que desestruturam só os 3 primeiros continuam funcionando sem mudança
+  nenhuma; `zapiCredenciaisFinanceiro()` ficou intocada, sem marcador,
+  garantindo que financeiro nunca entra no caminho de Meta dedicada). As 5
+  funções de envio (`zapiEnviarTexto`/`Imagem`/`Video`/`Audio`/`Documento`)
+  ganharam a mesma checagem nova: canal `'vendas'` com o toggle
+  `whatsapp_provider_vendas='oficial'` já ligado despacha DIRETO pro Meta
+  dedicado de vendas, nem tenta a Z-API (mesmo padrão do canal principal);
+  enquanto o toggle continuar em `'zapi'` (padrão, período de teste), o
+  comportamento é o de sempre — Z-API dedicada primeiro — só que o
+  fallback, quando ela falha/não está configurada, agora PRIORIZA o Meta
+  DEDICADO de vendas (se já configurado, mesmo com o toggle ainda em
+  `'zapi'`) antes de cair pro Meta PRINCIPAL como último recurso
+  (comportamento de 29/09 nunca perdido, só passou a ter um degrau novo
+  no meio). Card novo "🛒 WhatsApp Cloud API (Meta oficial) — Vendas" em
+  `admin/configuracoes.php` (campos Phone Number ID/token, avisando que
+  reaproveita a MESMA URL/Verify Token do card principal — nunca precisa
+  cadastrar um 2º webhook no painel da Meta, só adicionar o número ao
+  MESMO App), teste de conexão só-leitura, e o mesmo radio Z-API/Meta
+  oficial do canal principal, só que pro canal de vendas
+  (`whatsapp_provider_vendas`). Sem migração de schema — tudo em `config`
+  (chave/valor genérico, sem coluna nova). Testado: 8 cenários de função
+  contra fake server local simulando Z-API E Meta na mesma porta (toggle
+  oficial + Meta vendas configurada → direto pro Meta, Z-API nunca
+  tentada; toggle zapi + Z-API funcionando → Z-API, sem regressão; Z-API
+  falha + Meta vendas configurada → fallback pro Meta DEDICADO de vendas;
+  Z-API falha + Meta vendas NÃO configurada + Meta principal configurada
+  → fallback pro Meta PRINCIPAL, comportamento antigo preservado;
+  financeiro nunca usa o número de vendas mesmo com ele configurado;
+  canal principal sem nenhuma regressão; `oficialIdentificarCanal()` nos
+  4 casos — principal/vendas/desconhecida/vazio; imagem respeitando o
+  mesmo dispatch) + **HTTP ponta a ponta real** contra o app server de
+  verdade: payload simulando mensagem chegando no número de VENDAS cria a
+  `venda` (`origem='whatsapp'`, `etapa='qualificacao_ia'`, nome/telefone
+  certos — nunca uma `oportunidade` de compra), mensagem gravada em
+  `whatsapp_mensagens` com o texto certo, reenviar o MESMO `wamid`
+  confirmado NÃO duplicando (dedup funcionando igual ao payload Z-API) —
+  + `php -l` nos 4 arquivos + `tests/smoke.php` limpos. ⚠️ Ainda não
+  confirmado contra o número Meta de vendas real — mesma ressalva de
+  sempre pra integração nova, validar assim que o número for criado no
+  Meta Business e as credenciais coladas em Configurações.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

@@ -50,6 +50,17 @@ $camposWhatsappOficial = [
     'whatsapp_oficial_verify_token'    => 'Verify Token (você inventa, cola igual no painel da Meta)',
 ];
 
+// 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só
+// permite mais um numero no aplicativo aprovado" → confirmado: só VENDAS
+// ganha o número Meta oficial extra (financeiro fica de fora, não existe
+// 3º número). Compartilha o MESMO webhook/Verify Token do principal acima
+// — Meta não separa isso por número, só o phone_number_id no payload
+// diferencia (ver includes/whatsapp_oficial.php::oficialIdentificarCanal()).
+$camposWhatsappOficialVendas = [
+    'whatsapp_oficial_vendas_phone_number_id' => 'Phone Number ID (vendas)',
+    'whatsapp_oficial_vendas_access_token'    => 'Token de acesso (vendas — pode ser o mesmo token acima, se o mesmo Usuário do Sistema tiver acesso aos 2 números)',
+];
+
 // Meta Marketing API — Custo por Lead (CPL) das campanhas (29/09/2026,
 // spec trazida pelo usuário: "registrar de qual anúncio veio cada lead e
 // quanto cada campanha/anúncio gastou"). Token precisa do escopo
@@ -212,6 +223,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $provider = (string)($_POST['whatsapp_provider_principal'] ?? 'zapi');
             setConfig('whatsapp_provider_principal', in_array($provider, ['zapi', 'oficial'], true) ? $provider : 'zapi');
             $sucesso = 'Canal principal agora usa: ' . (getConfig('whatsapp_provider_principal') === 'oficial' ? 'API oficial (Meta)' : 'Z-API');
+        } elseif ($acao === 'salvar_whatsapp_oficial_vendas') {
+            foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da API oficial (Meta) — vendas — salvas.';
+        } elseif ($acao === 'testar_whatsapp_oficial_vendas') {
+            try {
+                $confirmado = oficialTestarConexao(oficialCredenciaisVendas());
+                $sucesso = "Meta respondeu (vendas): {$confirmado} — conexão funcionando.";
+            } catch (Throwable $e) {
+                $erro = 'Falha ao testar: ' . $e->getMessage();
+            }
+        } elseif ($acao === 'salvar_provider_vendas') {
+            $provider = (string)($_POST['whatsapp_provider_vendas'] ?? 'zapi');
+            setConfig('whatsapp_provider_vendas', in_array($provider, ['zapi', 'oficial'], true) ? $provider : 'zapi');
+            $sucesso = 'Canal de vendas agora usa: ' . (getConfig('whatsapp_provider_vendas') === 'oficial' ? 'API oficial (Meta)' : 'Z-API');
         } elseif ($acao === 'salvar_meta_ads') {
             setConfig('meta_ads_token', trim((string)($_POST['meta_ads_token'] ?? '')));
             $contasDigitadas = array_filter(array_map('trim', explode(',', (string)($_POST['meta_ad_accounts'] ?? ''))));
@@ -511,6 +538,12 @@ foreach (array_keys($camposWhatsappOficial) as $chave) {
 }
 $configuradoOficial = $valoresOficial['whatsapp_oficial_phone_number_id'] && $valoresOficial['whatsapp_oficial_access_token'];
 $providerPrincipalAtual = getConfig('whatsapp_provider_principal') ?: 'zapi';
+$valoresOficialVendas = [];
+foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
+    $valoresOficialVendas[$chave] = getConfig($chave) ?? '';
+}
+$configuradoOficialVendas = $valoresOficialVendas['whatsapp_oficial_vendas_phone_number_id'] && $valoresOficialVendas['whatsapp_oficial_vendas_access_token'];
+$providerVendasAtual = getConfig('whatsapp_provider_vendas') ?: 'zapi';
 $urlWebhookOficial = (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'sistema.fastcar.solutions') . '/chatbot-whatsapp/webhook/whatsapp_oficial.php';
 $fila = listarFilaConsultores();
 foreach ($fila as &$f) {
@@ -756,6 +789,67 @@ unset($fv);
         <label>
             <input type="radio" name="whatsapp_provider_principal" value="oficial" <?= $providerPrincipalAtual === 'oficial' ? 'checked' : '' ?> <?= $configuradoOficial ? '' : 'disabled' ?>>
             API oficial (Meta) — canal principal
+        </label>
+        <button type="submit">Salvar</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🛒 WhatsApp Cloud API (Meta oficial) — Vendas</h2>
+    <p><small>30/09/2026 — a Meta só libera <strong>1 número extra</strong> além do principal no app aprovado
+       (achado real, "meta só permite mais um numero no aplicativo aprovado"), então só vendas ganha canal Meta
+       oficial dedicado (comprador de revenda entrando pelo WhatsApp tem o mesmo risco de banimento do canal
+       principal). Financeiro segue só na instância Z-API dedicada (card acima), com fallback pro Meta
+       PRINCIPAL quando falha.</small></p>
+    <p><small>Compartilha a <strong>mesma URL de webhook e o mesmo Verify Token</strong> do card principal acima —
+       a Meta não separa isso por número, só o Phone Number ID dentro do payload diferencia de qual número veio
+       (o sistema descobre sozinho). Nunca precisa cadastrar uma 2ª URL no painel do Meta, só adicionar este
+       número ao MESMO App/webhook já configurado.</small></p>
+
+    <p>
+        Status API oficial (vendas):
+        <span class="badge <?= $configuradoOficialVendas ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoOficialVendas ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_whatsapp_oficial_vendas">
+        <?php foreach ($camposWhatsappOficialVendas as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresOficialVendas[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresOficialVendas[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Teste só de LEITURA (confirma o número verificado, nunca gasta nada nem manda mensagem).</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_whatsapp_oficial_vendas">
+        <button type="submit" <?= $configuradoOficialVendas ? '' : 'disabled' ?>>Testar conexão</button>
+        <?php if (!$configuradoOficialVendas): ?>
+            <p><small>Preencha e salve o Phone Number ID e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+
+    <hr>
+    <p><small><strong>Canal que o módulo de vendas usa pra mandar/receber mensagem agora</strong> — só muda
+       depois de testar a conexão acima com sucesso; nunca troca sozinho. Enquanto estiver em Z-API, a Meta
+       dedicada já salva acima serve de FALLBACK automático se a instância Z-API de vendas falhar/não estiver
+       configurada — nenhuma das duas opções trava a outra.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_provider_vendas">
+        <label>
+            <input type="radio" name="whatsapp_provider_vendas" value="zapi" <?= $providerVendasAtual === 'zapi' ? 'checked' : '' ?>>
+            Z-API (padrão de sempre)
+        </label>
+        <label>
+            <input type="radio" name="whatsapp_provider_vendas" value="oficial" <?= $providerVendasAtual === 'oficial' ? 'checked' : '' ?> <?= $configuradoOficialVendas ? '' : 'disabled' ?>>
+            API oficial (Meta) — canal de vendas
         </label>
         <button type="submit">Salvar</button>
     </form>

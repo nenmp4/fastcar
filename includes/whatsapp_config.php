@@ -109,11 +109,22 @@ function canalPrincipalStatusCache(): array {
  * ainda (quem chama decide o que fazer — zapiEnviarTexto() etc já tratam
  * "sem instância" como falha graciosa).
  */
+/**
+ * 30/09/2026 — 4º elemento 'vendas' identifica o CANAL pra zapiEnviarTexto()/
+ * zapiEnviarImagem()/etc conseguirem decidir entre a Meta oficial DEDICADA
+ * de vendas (oficialCredenciaisVendas(), quando configurada/ligada em
+ * Configurações) e a Z-API dedicada de sempre — nunca muda o array que já
+ * era retornado (index 0-2 continuam [instance_id, token, client_token]),
+ * só acrescenta; os ~8 call sites existentes que fazem
+ * `[$inst, $tok, $ctok] = zapiCredenciaisVendas()` continuam funcionando
+ * sem mudança (PHP ignora elemento extra na desestruturação).
+ */
 function zapiCredenciaisVendas(): array {
     return [
         _chatbot_getConfig('zapi_instancia_vendas_id'),
         _chatbot_getConfig('zapi_instancia_vendas_token'),
         _chatbot_getConfig('zapi_instancia_vendas_client_token'),
+        'vendas',
     ];
 }
 
@@ -180,12 +191,29 @@ function zapiCredenciaisFinanceiro(): array {
  * essa função) por quem precisa testar SÓ a instância dedicada de verdade,
  * sem o fallback mascarar o resultado — ver os botões "Testar conexão" de
  * vendas/financeiro em admin/configuracoes.php.
+ *
+ * 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só
+ * permite mais um numero no aplicativo aprovado" → decidido: só VENDAS
+ * ganha número Meta oficial DEDICADO (financeiro fica de fora, não existe
+ * 3º número). Quando `$instanciaOverride` vem de `zapiCredenciaisVendas()`
+ * (4º elemento `'vendas'`) e o canal já está ligado em Configurações
+ * (`oficialEhProviderVendas()`), despacha DIRETO pra Meta oficial dedicada
+ * — nem tenta a Z-API, mesmo padrão do canal principal. Enquanto o toggle
+ * não for ligado (ou pra financeiro, que nunca tem essa opção), o
+ * comportamento é idêntico ao de antes: Z-API dedicada primeiro, cai pro
+ * Meta oficial DEDICADA de vendas se já configurada (upgrade silencioso
+ * sobre o fallback antigo), senão pro Meta PRINCIPAL como último recurso.
  */
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
+    $canal = $instanciaOverride[3] ?? null;
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarTexto($phone, $msg);
+    }
+
+    if ($canal === 'vendas' && oficialEhProviderVendas()) {
+        return oficialEnviarTexto($phone, $msg, oficialCredenciaisVendas());
     }
 
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
@@ -203,11 +231,18 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
 
     // Instância DEDICADA (vendas/financeiro) sem credencial configurada ou
     // que falhou ao enviar: cai pro Meta oficial em vez de só reportar
-    // falha. Nunca se aplica à instância PRINCIPAL (já teria ido pro Meta
-    // acima, se fosse o caso — cair aqui de novo pra ela seria redundante,
-    // não errado, mas o guard evita a chamada dupla).
-    if (!$usandoPrincipal && oficialConfigured()) {
-        return oficialEnviarTexto($phone, $msg);
+    // falha. Vendas prioriza o número DEDICADO dela (se já configurado,
+    // mesmo com o toggle ainda em 'zapi' — cobre o período de teste),
+    // senão qualquer um dos dois (vendas sem Meta própria, ou financeiro)
+    // cai pro Meta PRINCIPAL como sempre foi. Nunca se aplica à instância
+    // PRINCIPAL (já teria ido pro Meta acima, se fosse o caso).
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && oficialConfiguredVendas()) {
+            return oficialEnviarTexto($phone, $msg, oficialCredenciaisVendas());
+        }
+        if (oficialConfigured()) {
+            return oficialEnviarTexto($phone, $msg);
+        }
     }
     return false;
 }
@@ -290,9 +325,16 @@ function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string 
  */
 function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
+    $canal = $instanciaOverride[3] ?? null;
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarImagem($phone, $imagemUrl, $legenda);
+    }
+
+    // 30/09/2026, mesmo padrão de zapiEnviarTexto() — só vendas tem Meta
+    // oficial dedicada (Meta só libera 1 número extra no app aprovado).
+    if ($canal === 'vendas' && oficialEhProviderVendas()) {
+        return oficialEnviarImagem($phone, $imagemUrl, $legenda, oficialCredenciaisVendas());
     }
 
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
@@ -322,8 +364,13 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?ar
         }
     }
 
-    if (!$usandoPrincipal && oficialConfigured()) {
-        return oficialEnviarImagem($phone, $imagemUrl, $legenda);
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && oficialConfiguredVendas()) {
+            return oficialEnviarImagem($phone, $imagemUrl, $legenda, oficialCredenciaisVendas());
+        }
+        if (oficialConfigured()) {
+            return oficialEnviarImagem($phone, $imagemUrl, $legenda);
+        }
     }
     return false;
 }
@@ -338,9 +385,14 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?ar
  */
 function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
+    $canal = $instanciaOverride[3] ?? null;
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarVideo($phone, $videoUrl, $legenda);
+    }
+
+    if ($canal === 'vendas' && oficialEhProviderVendas()) {
+        return oficialEnviarVideo($phone, $videoUrl, $legenda, oficialCredenciaisVendas());
     }
 
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
@@ -370,8 +422,13 @@ function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?arra
         }
     }
 
-    if (!$usandoPrincipal && oficialConfigured()) {
-        return oficialEnviarVideo($phone, $videoUrl, $legenda);
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && oficialConfiguredVendas()) {
+            return oficialEnviarVideo($phone, $videoUrl, $legenda, oficialCredenciaisVendas());
+        }
+        if (oficialConfigured()) {
+            return oficialEnviarVideo($phone, $videoUrl, $legenda);
+        }
     }
     return false;
 }
@@ -394,9 +451,14 @@ function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?arra
  */
 function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
+    $canal = $instanciaOverride[3] ?? null;
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarAudio($phone, $audioDataUriOuUrl);
+    }
+
+    if ($canal === 'vendas' && oficialEhProviderVendas()) {
+        return oficialEnviarAudio($phone, $audioDataUriOuUrl, oficialCredenciaisVendas());
     }
 
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
@@ -426,8 +488,13 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $insta
         }
     }
 
-    if (!$usandoPrincipal && oficialConfigured()) {
-        return oficialEnviarAudio($phone, $audioDataUriOuUrl);
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && oficialConfiguredVendas()) {
+            return oficialEnviarAudio($phone, $audioDataUriOuUrl, oficialCredenciaisVendas());
+        }
+        if (oficialConfigured()) {
+            return oficialEnviarAudio($phone, $audioDataUriOuUrl);
+        }
     }
     return false;
 }
@@ -449,9 +516,14 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $insta
  */
 function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName, string $extensao, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
+    $canal = $instanciaOverride[3] ?? null;
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
+    }
+
+    if ($canal === 'vendas' && oficialEhProviderVendas()) {
+        return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName, oficialCredenciaisVendas());
     }
 
     [$inst, $tok, $ctok] = $instanciaOverride ?? [
@@ -481,8 +553,13 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
         }
     }
 
-    if (!$usandoPrincipal && oficialConfigured()) {
-        return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && oficialConfiguredVendas()) {
+            return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName, oficialCredenciaisVendas());
+        }
+        if (oficialConfigured()) {
+            return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
+        }
     }
     return false;
 }
