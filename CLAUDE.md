@@ -2041,6 +2041,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   `$`, etc — ver bullet "puxa foto do zap e nome"). Campo + botão "Salvar
   nome" logo abaixo do cabeçalho `#ID — Nome`, mesmo guard de supervisor
   (só acompanha, não edita) das outras ações da página.
+  **RG/CNH/nacionalidade/estado civil/profissão editáveis pelo consultor**
+  (30/09/2026, "consultores precisa editar manual a documentação do
+  cliente ia preencheu faltando numero bom precisa editar manual") —
+  esses 5 campos existem no schema (`clientes.rg`/`cnh`/`nacionalidade`/
+  `estado_civil`/`profissao`) desde a 1ª etapa do wizard público
+  (`public/documentos.php`, 13/09/2026, qualificação civil do
+  contrato-mestre), mas até aqui só o PRÓPRIO CLIENTE conseguia
+  preencher/corrigir por lá — sem nenhum jeito de o consultor editar
+  manualmente pelo admin quando a extração por IA vinha incompleta (ex:
+  número da CNH ilegível na foto) e reabrir o link com o cliente não era
+  prático. `admin/cliente_detalhe.php` ganhou os 5 campos no mesmo
+  `<form>`/`UPDATE` que já editava nome/CPF/e-mail/cidade/estado/endereço
+  — texto livre, mesmos rótulos/placeholders do wizard (nunca um padrão
+  visual novo), sempre sobrescreve (edição manual direta, nunca
+  fill-if-empty, diferente do resto do projeto onde IA/wizard nunca
+  sobrescreve humano — aqui é o INVERSO, humano corrigindo o que a IA
+  deixou incompleto). RG/CNH entraram na mesma lista de "dado sensível"
+  do módulo de auditoria (junto de CPF/e-mail/endereço, 20/09/2026) —
+  nacionalidade/estado civil/profissão ficaram de fora, mesmo espírito de
+  nome/cidade/estado (mudam com frequência maior, bem menos sensíveis).
+  Mesmo guard de sempre (`supervisor`/`financeiro` só consultam, nunca
+  editam — bloqueado no servidor, não só escondido na tela). Testado
+  ponta a ponta via HTTP real (sessão primed direto por perfil, banco
+  isolado): os 3 campos novos aparecem no form renderizado; POST com os 5
+  valores persiste certo no banco (conferido linha a linha); evento de
+  auditoria grava "RG, CNH" junto de e-mail/endereço quando mudam; POST
+  forjado de `financeiro` com CSRF inválido não altera nada (RG continua
+  o valor original, não o forjado) — confirma que o bloqueio é real, não
+  só visual + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
+  (as 5 colunas já existiam).
 - **Checklist de vistoria/avaliação do veículo (compra e venda)**
   (`includes/veiculo_avaliacoes.php` + `includes/veiculo_avaliacoes_pdf.php` +
   `admin/avaliacoes.php`/`admin/avaliacao.php`, 21/09/2026) — pedido direto:

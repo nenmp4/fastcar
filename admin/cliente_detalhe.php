@@ -65,8 +65,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $novoCpf = clean((string)($_POST['cpf'] ?? ''));
             $novoEmail = clean((string)($_POST['email'] ?? ''));
             $novoEndereco = clean((string)($_POST['endereco'] ?? ''));
+            // 30/09/2026, "consultores precisa editar manual a documentação
+            // do cliente ia preencheu faltando numero" — RG/CNH/nacionalidade/
+            // estado civil/profissão já existiam no schema desde a 1ª etapa do
+            // wizard público (public/documentos.php), mas até aqui só o
+            // CLIENTE conseguia preencher/corrigir esses campos por lá — sem
+            // nenhum jeito de o consultor editar manualmente pelo admin quando
+            // a extração por IA vinha incompleta (ex: CNH sem número legível
+            // na foto) e o cliente não dava pra reabrir o link. Mesmo padrão
+            // fill-livre dos campos já existentes acima, nunca fill-if-empty —
+            // é edição manual direta, sobrescreve sempre.
+            $novoRg = clean((string)($_POST['rg'] ?? ''));
+            $novoCnh = clean((string)($_POST['cnh'] ?? ''));
             $db->prepare("
-                UPDATE clientes SET nome = ?, cidade = ?, estado = ?, cpf = ?, email = ?, endereco = ? WHERE id = ?
+                UPDATE clientes SET nome = ?, cidade = ?, estado = ?, cpf = ?, email = ?, endereco = ?,
+                    rg = ?, cnh = ?, nacionalidade = ?, estado_civil = ?, profissao = ? WHERE id = ?
             ")->execute([
                 clean((string)($_POST['nome'] ?? '')),
                 clean((string)($_POST['cidade'] ?? '')),
@@ -74,6 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $novoCpf,
                 $novoEmail,
                 $novoEndereco,
+                $novoRg,
+                $novoCnh,
+                clean((string)($_POST['nacionalidade'] ?? '')),
+                clean((string)($_POST['estado_civil'] ?? '')),
+                clean((string)($_POST['profissao'] ?? '')),
                 $id,
             ]);
             // 20/09/2026, "modulo auditoria" — só CPF/e-mail/endereço contam
@@ -81,11 +99,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // de fora, mudam com frequência maior e são bem menos sensíveis);
             // nunca grava o valor antigo/novo no log, só QUAIS campos
             // mudaram — o CPF em si não precisa virar um 2º lugar de dado
-            // sensível em repouso.
+            // sensível em repouso. RG/CNH entraram na mesma lista (30/09/2026,
+            // mesma disciplina — também documento de identidade).
             $camposMudaram = [];
             if ((string)($cliente['cpf'] ?? '') !== $novoCpf) $camposMudaram[] = 'CPF';
             if ((string)($cliente['email'] ?? '') !== $novoEmail) $camposMudaram[] = 'e-mail';
             if ((string)($cliente['endereco'] ?? '') !== $novoEndereco) $camposMudaram[] = 'endereço';
+            if ((string)($cliente['rg'] ?? '') !== $novoRg) $camposMudaram[] = 'RG';
+            if ((string)($cliente['cnh'] ?? '') !== $novoCnh) $camposMudaram[] = 'CNH';
             if ($camposMudaram) {
                 auditoriaRegistrar('cliente_dado_editado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'cliente', $id, 'Campo(s) alterado(s): ' . implode(', ', $camposMudaram) . '.');
             }
@@ -171,6 +192,10 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
                 <small>Telefone é a chave de identificação — não editável por aqui.</small>
                 <label>CPF</label>
                 <input type="text" name="cpf" value="<?= e($cliente['cpf'] ?? '') ?>">
+                <label>RG</label>
+                <input type="text" name="rg" value="<?= e($cliente['rg'] ?? '') ?>">
+                <label>Nº da CNH (se tiver)</label>
+                <input type="text" name="cnh" value="<?= e($cliente['cnh'] ?? '') ?>">
                 <label>E-mail</label>
                 <input type="email" name="email" value="<?= e($cliente['email'] ?? '') ?>">
                 <small>Usado também pra ZapSign avisar por e-mail quando mandar o contrato pra assinatura.</small>
@@ -182,8 +207,15 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
                 <input type="text" name="estado" value="<?= e($cliente['estado']) ?>">
                 <label>Endereço completo</label>
                 <input type="text" name="endereco" value="<?= e($cliente['endereco'] ?? '') ?>">
+                <label>Nacionalidade</label>
+                <input type="text" name="nacionalidade" value="<?= e($cliente['nacionalidade'] ?: 'Brasileiro(a)') ?>">
+                <label>Estado civil</label>
+                <input type="text" name="estado_civil" value="<?= e($cliente['estado_civil'] ?? '') ?>" placeholder="Solteiro(a), casado(a)...">
+                <label>Profissão</label>
+                <input type="text" name="profissao" value="<?= e($cliente['profissao'] ?? '') ?>">
             </div>
         </div>
+        <small>Esses campos também aparecem pro cliente preencher no wizard de documentos (link de CNH/RG) — editar aqui sobrescreve o que ele já confirmou, útil quando a IA leu algo incompleto/errado da foto e o consultor precisa corrigir direto.</small>
         <p><small>Origem: <?= e($cliente['canal_origem'] ?: 'direto') ?>
            <?= $cliente['campanha_origem'] ? ' · ' . e($cliente['campanha_origem']) : '' ?></small></p>
         <button type="submit">Salvar</button>
