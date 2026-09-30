@@ -13,6 +13,7 @@ require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_oficial.php'; // oficialBaixarMidiaRecebida() — mídia recebida via canal Meta
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
 require_once dirname(__DIR__, 2) . '/includes/documentos.php'; // salvarArquivoGeradoComoDocumento() — mídia recebida (áudio/imagem/vídeo)
+require_once dirname(__DIR__, 2) . '/includes/whatsapp_conformidade.php'; // whatsappTextoEhOptOut()/registrarOptOut()
 
 // Segundos de silêncio esperados antes da IA responder — evita o bot
 // respondendo picotado quando o cliente manda várias mensagens curtas em
@@ -684,6 +685,26 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
     $ia_pausada = iaPausada($phone);
     $iaResultado = null;
+
+    // 30/09/2026 — conformidade WhatsApp (regra 4): opt-out por palavra-chave
+    // ("SAIR"/"PARAR"/"STOP"/"não quero"/"cancelar"/"remover"), verificado
+    // ANTES de qualquer resposta da IA — nunca continua a qualificação
+    // depois de um pedido explícito de parar. Manda a confirmação ÚNICA
+    // (mesmo canal de entrada, categoria B — resposta reativa normal, não
+    // passa pelo gate de envio ativo) e sai. Nunca bloqueia o PRÓXIMO turno
+    // se o cliente escrever de novo — optout_whatsapp só afeta envio ATIVO
+    // automático (ver includes/whatsapp_conformidade.php::podeEnviarAtivo()),
+    // uma mensagem nova dele é ele reiniciando contato, processa normal.
+    if ($oportunidade && $tipoRegistro === 'text' && whatsappTextoEhOptOut($texto)) {
+        registrarOptOut((int)$oportunidade['cliente_id']);
+        $msgConfirmacao = 'Combinado, você não vai mais receber mensagem por aqui. Se mudar de ideia, é só escrever de novo.';
+        if (zapiEnviarTextoPeloCanal($phone, $msgConfirmacao, $instancia['canal'] ?? null)) {
+            registrarMensagem($phone, 'out', $msgConfirmacao, null, true);
+        }
+        return ['ignored' => 'opt_out', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => $ia_pausada, 'oportunidade' => $oportunidade,
+                'erro_oportunidade' => $erroOportunidade, 'instancia' => $instancia, 'ia_resultado' => null];
+    }
 
     // Qualificação por IA (bloco 3, pendência #3 resolvida) — só roda pela
     // instância principal (nunca sobre uma conversa que já é de um

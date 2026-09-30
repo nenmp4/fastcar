@@ -365,6 +365,45 @@ if ($confirmNativo) {
     ok('[confirm-nativo-nao-substituido] limpo (todo confirm() nativo já foi trocado por confirmarAcao())');
 }
 
+// 30/09/2026 — conta WhatsApp Business da Fastcar foi desativada
+// permanentemente pela Meta por "disparo em massa sem consentimento".
+// Os 2 únicos pontos do projeto que mandavam mensagem PROATIVA automática
+// pro cliente/lead sem ele ter escrito primeiro (cron/recuperacao_leads.php
+// via includes/recuperacao_leads.php, e o bloco 3 de reengajamento em
+// cron/followup.php) passaram a rotear TUDO por
+// includes/whatsapp_conformidade.php::enviarAtivoComGate() — o gate central
+// (flag global desligada por padrão, opt-in, opt-out, rate-limit, horário
+// comercial, circuit breaker). Guard: nenhum dos 2 arquivos pode voltar a
+// chamar zapiEnviarTexto()/zapiEnviarImagem() direto pro cliente, nem
+// existir sem referenciar o gate — regressão aqui reabriria exatamente o
+// padrão que causou o banimento.
+$arquivosEnvioAtivo = [
+    $root . '/includes/recuperacao_leads.php',
+    $root . '/cron/followup.php',
+];
+$regressaoEnvioAtivo = [];
+foreach ($arquivosEnvioAtivo as $arqEnvio) {
+    if (!file_exists($arqEnvio)) continue;
+    $conteudoEnvio = (string)file_get_contents($arqEnvio);
+    $nomeCurtoEnvio = str_replace($root . '/', '', $arqEnvio);
+    if (preg_match('/zapiEnviarTexto\(|zapiEnviarImagem\(/', $conteudoEnvio)) {
+        $regressaoEnvioAtivo[] = "{$nomeCurtoEnvio} chama zapiEnviarTexto()/zapiEnviarImagem() direto (deveria ser enviarAtivoComGate())";
+    }
+    if (!str_contains($conteudoEnvio, 'enviarAtivoComGate(')) {
+        $regressaoEnvioAtivo[] = "{$nomeCurtoEnvio} não referencia enviarAtivoComGate() — envio ativo sem gate de conformidade?";
+    }
+}
+if ($regressaoEnvioAtivo) {
+    falha('[envio-ativo-sem-gate-conformidade] ' . implode('; ', $regressaoEnvioAtivo));
+} else {
+    ok('[envio-ativo-sem-gate-conformidade] os 2 pontos de envio ativo automático passam pelo gate de conformidade');
+}
+if (!str_contains((string)file_get_contents($root . '/includes/whatsapp_conformidade.php'), 'function podeEnviarAtivo(')) {
+    falha('[envio-ativo-sem-gate-conformidade] podeEnviarAtivo() não existe mais em includes/whatsapp_conformidade.php');
+} else {
+    ok('[envio-ativo-sem-gate-conformidade] podeEnviarAtivo() presente em includes/whatsapp_conformidade.php');
+}
+
 // version.json precisa ser JSON válido e semver
 $vj = json_decode((string)@file_get_contents($root . '/version.json'), true);
 if (!$vj || empty($vj['version']) || !preg_match('/^\d+\.\d+\.\d+$/', $vj['version'])) {

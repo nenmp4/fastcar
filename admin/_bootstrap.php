@@ -44,6 +44,7 @@ require_once __DIR__ . '/../includes/zapcar.php';
 require_once __DIR__ . '/../includes/patrimonio.php';
 require_once __DIR__ . '/../includes/meta_ads.php';
 require_once __DIR__ . '/../includes/notificacoes.php';
+require_once __DIR__ . '/../includes/whatsapp_conformidade.php';
 
 requireAdmin();
 

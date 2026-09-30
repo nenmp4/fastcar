@@ -24,6 +24,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/gemini.php';
 require_once __DIR__ . '/openai.php';
 require_once __DIR__ . '/oportunidades.php';
+require_once __DIR__ . '/whatsapp_conformidade.php'; // registrarOptIn()/registrarOptInRecusado()
 
 const IA_QUALIFICACAO_PROMPT_SISTEMA = <<<PROMPT
 Você é da equipe Fastcar, empresa que COMPRA veículos que o dono ainda está
@@ -79,6 +80,15 @@ Quando sentir que já tem o essencial, feche recapitulando rapidinho o que
 entendeu (ex: "Show! Então recapitulando: [resumo curto do que foi dito] —
 é isso mesmo?") e pergunte se pode passar o contato pra um consultor ligar.
 Espere a resposta antes de considerar a conversa concluída.
+
+Nesse mesmo momento de fechamento (ou logo depois, na resposta seguinte),
+pergunte também, numa frase separada e natural, se pode continuar mandando
+atualização sobre a proposta por aqui pelo WhatsApp (ex: "Posso te mandar
+as atualizações da sua proposta por aqui mesmo?") — é uma pergunta
+diferente de "aceita a ligação do consultor", não junte as duas na mesma
+frase. Nunca insista nem repita se a pessoa não responder isso
+especificamente; é só um dado a mais, nunca trava nem atrasa o andamento
+do atendimento.
 
 Em algum momento da 1ª ou 2ª mensagem seguintes, sem soar burocrático,
 avise em UMA frase curta que os dados são usados só pra avaliar a proposta
@@ -142,7 +152,7 @@ explicitamente — nunca invente, deduza ou arredonde um valor não
 mencionado. Campo não informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null}
+{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"optin_whatsapp":null,"optin_whatsapp_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null}
 
 - nome_cliente: o nome que a própria pessoa deu na conversa (nunca o que já estava salvo antes). null se ela não disse o nome ainda.
 - veiculo_placa: a placa do veículo, exatamente como o cliente escreveu (ex: "ABC1234" ou "ABC-1234"). null se não informou.
@@ -153,6 +163,8 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - urgencia: texto curto livre resumindo o que a pessoa disse sobre pressa/prazo (ex: "precisa vender essa semana, atrasando parcela", "sem pressa, só pesquisando"). null se não deu pra saber ainda.
 - temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRECISANDO vender AGORA (não pergunte isso ao cliente, é uma leitura sua da conversa). O sinal MAIS FORTE é a situação financeira do financiamento, não só o tom: muitas parcelas em atraso e a pessoa parecendo sem outra opção pra resolver isso = "quente" (urgência real, dor financeira); parcelas em dia / financiamento tranquilo, sem sinal de aperto = "frio" (pode estar só pesquisando, sem pressa de fechar), mesmo que responda rápido e educadamente — isso INCLUI quem já pagou boa parte do financiamento e está com poucas parcelas restantes/saldo baixo, mesmo sem nenhum atraso (ajustado 16/09/2026, achado real: lead com só 4 parcelas restantes tinha saído "quente" errado — quem está perto de quitar sozinho tem MENOS motivo pra vender agora, não mais: pouca dívida restante pra Fastcar assumir, e o cliente não tem pressa nenhuma, já está quase lá). "morno" fica no meio (ex: 1-2 parcelas atrasadas; ou situação financeira ok — parcelas em dia, sem estar perto de quitar — mas já decidida a vender por outro motivo real como trocar de carro). Tom/engajamento na conversa (responde rápido, decidido, insiste em prosseguir) é sinal SECUNDÁRIO — desempata dentro da mesma faixa, nunca sozinho vira "quente" se as parcelas estão em dia. Preencha sempre que já houver conversa suficiente pra avaliar (mesmo sem saber ainda todos os dados do veículo), e reavalie se a situação de atraso mudar de figura.
 - aceita_ligacao_consultor: true se a pessoa confirmou que um consultor pode ligar, false se ela recusou/preferiu só texto, null se ainda não foi perguntado ou ela não respondeu isso.
+- optin_whatsapp: true se a pessoa confirmou explicitamente que pode continuar recebendo mensagem/atualização por aqui pelo WhatsApp, false se ela recusou ("não, prefiro outro canal", "não manda mais"), null se ainda não foi perguntado ou ela não respondeu isso especificamente — pergunta DIFERENTE de aceita_ligacao_consultor, nunca confunda as duas.
+- optin_whatsapp_texto: a resposta LITERAL (palavra por palavra) que a pessoa deu pra essa pergunta específica, sem parafrasear. null se optin_whatsapp ainda é null.
 - sem_perfil: true se o cliente disse claramente que não quer vender um veículo NOVO, não tem interesse, ou não se enquadra pra uma compra nova (não é o dono, etc) — OU se confirmou que o veículo (que está oferecendo AGORA) JÁ ESTÁ QUITADO (sem financiamento em aberto). O foco da Fastcar é comprar veículo AINDA financiado (assumir a dívida do financiamento); veículo quitado foge desse foco, então nesse caso preencha motivo_sem_perfil com algo como "Veículo já quitado — fora do foco de compra financiada, possível oportunidade pro setor de vendas" (não é rejeição do cliente, é só fora do perfil dessa qualificação — mantenha o tom educado com ele, sem dizer "não compramos", só encerre a qualificação nesse ponto). NUNCA use sem_perfil pro caso de "veículo já vendido pra Fastcar antes" — isso é reclamacao_pos_venda (ver abaixo), categoria bem diferente.
 - reclamacao_pos_venda: true se o cliente está falando de um veículo que ELE JÁ VENDEU pra Fastcar antes (não está oferecendo um veículo novo agora) — reclamando de financiamento não quitado, transferência não feita, notificação/multa/cobrança chegando em nome dele por causa desse carro que já não é mais dele, ou perguntando sobre um negócio já fechado. Isso é uma categoria BEM DIFERENTE de sem_perfil — não é alguém desqualificado pra vender, é um CLIENTE JÁ CONVERTIDO com uma pendência real que precisa de atenção humana rápida (pode envolver problema jurídico). Quando true, preencha motivo_reclamacao_pos_venda com um resumo curto do que a pessoa relatou (ex: "Cliente recebeu notificação extrajudicial sobre financiamento não quitado do Duster placa DVN3E82 vendido à Fastcar"), e pare de fazer perguntas de qualificação de venda nova (marca/modelo/banco/parcela) — o objetivo aqui é só captar o relato, não vender/qualificar nada.
 - qualificacao_completa: true SOMENTE quando já se sabe modelo+ano, a situação do financiamento (banco+parcela, confirmando que AINDA tem parcelas em aberto), o valor pretendido pelo cliente, E a pessoa já respondeu se aceita a ligação do consultor (aceita_ligacao_consultor não é mais null). Veículo quitado nunca chega em qualificacao_completa=true — vira sem_perfil (ver acima) assim que a quitação for confirmada. reclamacao_pos_venda também nunca chega em qualificacao_completa=true.
@@ -322,6 +334,24 @@ function iaAplicarDadosExtraidos(int $oportunidadeId, array $dados): bool {
         $sets[] = "aceita_ligacao_consultor = ?";
         $params[] = $dados['aceita_ligacao_consultor'] ? 1 : 0;
         $avancouDadoReal = true;
+    }
+
+    // 30/09/2026, conformidade WhatsApp (regra 3) — opt-in conversacional,
+    // mesmo tri-state de aceita_ligacao_consultor logo acima (0/false é
+    // resposta válida — recusou —, nunca "vazio"). Grava em `clientes`
+    // (não `oportunidades`, registrarOptIn()/registrarOptInRecusado() já
+    // são idempotentes — nunca sobrescrevem se já respondido antes).
+    // Puramente aditivo, de propósito: NUNCA marca $avancouDadoReal — não
+    // trava nem acelera qualificacao_completa, só alimenta o dado que
+    // includes/whatsapp_conformidade.php::podeEnviarAtivo() consulta mais
+    // tarde se o lead esfriar.
+    if (isset($dados['optin_whatsapp']) && $dados['optin_whatsapp'] !== null) {
+        $textoOptin = (string)($dados['optin_whatsapp_texto'] ?? '');
+        if ($dados['optin_whatsapp']) {
+            registrarOptIn((int)$op['cliente_id'], $textoOptin);
+        } else {
+            registrarOptInRecusado((int)$op['cliente_id'], $textoOptin);
+        }
     }
 
     // temperatura_lead: julgamento vivo da IA sobre a conversa até agora —

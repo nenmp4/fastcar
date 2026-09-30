@@ -36,6 +36,16 @@ $camposZapiFinanceiro = [
     'zapi_instancia_financeiro_client_token' => 'Client-Token (financeiro)',
 ];
 
+// 30/09/2026 — conformidade WhatsApp, instância DEDICADA só pra envio
+// ativo automático (recuperação de leads, reengajamento) — nunca a
+// principal (ad-facing, onde chega lead de anúncio pago). Ver
+// includes/whatsapp_conformidade.php::credenciaisNotificacaoOptin().
+$camposZapiNotificacaoOptin = [
+    'zapi_notificacao_optin_instance_id'  => 'ID da instância Z-API (notificação/opt-in)',
+    'zapi_notificacao_optin_token'        => 'Token da instância Z-API (notificação/opt-in)',
+    'zapi_notificacao_optin_client_token' => 'Client-Token (notificação/opt-in)',
+];
+
 // WhatsApp Cloud API (Meta oficial) — 25/09/2026, "os dois vamos usar api
 // oficial" (principal E fallback — instância que existiu de 20/09 a
 // 28/09/2026, removida por decisão direta, "vamos remover fallback", ver
@@ -207,6 +217,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($acao === 'salvar_zapi_notificacao_optin') {
+            foreach (array_keys($camposZapiNotificacaoOptin) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da instância de notificação/opt-in salvas.';
+        } elseif ($acao === 'testar_zapi_notificacao_optin') {
+            $telefoneTeste = (string)($_POST['telefone_teste_notificacao_optin'] ?? '');
+            if (!$telefoneTeste) {
+                $erro = 'Informe um telefone pra receber a mensagem de teste.';
+            } else {
+                [$instN, $tokN, $ctokN] = credenciaisNotificacaoOptin();
+                if (!$instN || !$tokN) {
+                    $erro = 'Instância de notificação/opt-in ainda não configurada — salve as credenciais antes de testar.';
+                } else {
+                    $telNorm = normalizarTelefone($telefoneTeste);
+                    $ok = strlen($telNorm) >= 12 && _zapiEnviarTextoBruto($telNorm, '✅ Teste de conexão Z-API (notificação/opt-in) — Fastcar CRM.', $instN, $tokN, $ctokN);
+                    if ($ok) {
+                        $sucesso = 'Mensagem de teste (notificação/opt-in) enviada com sucesso.';
+                    } else {
+                        $erro = 'Falha ao enviar — confira as credenciais da instância de notificação/opt-in e se ela está conectada.';
+                    }
+                }
+            }
+        } elseif ($acao === 'salvar_conformidade_whatsapp') {
+            setConfig('whatsapp_envio_ativo', isset($_POST['whatsapp_envio_ativo']) ? '1' : '0');
+            $limite = (int)($_POST['whatsapp_limite_diario'] ?? 50);
+            setConfig('whatsapp_limite_diario', $limite > 0 ? (string)$limite : '50');
+            $sucesso = 'Configurações de conformidade WhatsApp salvas.';
         } elseif ($acao === 'salvar_whatsapp_oficial') {
             foreach (array_keys($camposWhatsappOficial) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -532,6 +570,11 @@ foreach (array_keys($camposZapiFinanceiro) as $chave) {
     $valoresFinanceiro[$chave] = getConfig($chave) ?? '';
 }
 $configuradoZapiFinanceiro = $valoresFinanceiro['zapi_instancia_financeiro_id'] && $valoresFinanceiro['zapi_instancia_financeiro_token'];
+$valoresNotificacaoOptin = [];
+foreach (array_keys($camposZapiNotificacaoOptin) as $chave) {
+    $valoresNotificacaoOptin[$chave] = getConfig($chave) ?? '';
+}
+$configuradoZapiNotificacaoOptin = $valoresNotificacaoOptin['zapi_notificacao_optin_instance_id'] && $valoresNotificacaoOptin['zapi_notificacao_optin_token'];
 $valoresOficial = [];
 foreach (array_keys($camposWhatsappOficial) as $chave) {
     $valoresOficial[$chave] = getConfig($chave) ?? '';
@@ -576,6 +619,7 @@ unset($fv);
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
     <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
+    <a href="/admin/whatsapp_conformidade.php">🛡️ Conformidade WhatsApp</a>
     <a href="/admin/logout.php">Sair</a>
 </header>
 
@@ -728,6 +772,59 @@ unset($fv);
         <?php if (!$configuradoZapiFinanceiro): ?>
             <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
         <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🛡️ Conformidade WhatsApp</h2>
+    <p><small>30/09/2026 — a conta WhatsApp Business da Fastcar foi <strong>desativada permanentemente pela
+       Meta</strong> por "disparo em massa, sem consentimento, pra qualificar leads". Este card controla o único
+       tipo de envio que causou isso: mensagem ATIVA/automática (cron de recuperação de leads e reengajamento de
+       lead esfriando) — nunca a resposta normal da IA, nem mensagem manual do WhatsApp Box. Painel completo em
+       <a href="/admin/whatsapp_conformidade.php">Conformidade WhatsApp</a>.</small></p>
+
+    <p><small>Instância Z-API DEDICADA — nunca a principal (ad-facing, onde chega lead de anúncio pago): sem essa
+       instância configurada, todo envio ativo automático fica bloqueado, mesmo com o interruptor abaixo ligado.</small></p>
+    <p>
+        Status Z-API (notificação/opt-in):
+        <span class="badge <?= $configuradoZapiNotificacaoOptin ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoZapiNotificacaoOptin ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_zapi_notificacao_optin">
+        <?php foreach ($camposZapiNotificacaoOptin as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="password" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresNotificacaoOptin[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresNotificacaoOptin[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+    <hr>
+    <p><small>Manda uma mensagem de teste pro número informado, usando as credenciais salvas acima.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_zapi_notificacao_optin">
+        <label>Telefone (com DDD)</label>
+        <input type="text" name="telefone_teste_notificacao_optin" placeholder="Ex: 31999998888">
+        <button type="submit" <?= $configuradoZapiNotificacaoOptin ? '' : 'disabled' ?>>Enviar mensagem de teste</button>
+        <?php if (!$configuradoZapiNotificacaoOptin): ?>
+            <p><small>Preencha e salve o ID da instância e o token acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+
+    <hr>
+    <p><small><strong>Envio ativo automático</strong> — desligado por padrão, nunca liga sozinho. Mesmo ligado, cada
+       envio ainda passa por opt-in (ou histórico de conversa já existente), opt-out, horário comercial, no máximo 1
+       mensagem por contato a cada 7 dias, 2 tentativas no total por contato, e o limite diário abaixo.</small></p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_conformidade_whatsapp">
+        <label><input type="checkbox" name="whatsapp_envio_ativo" <?= envioAtivoHabilitado() ? 'checked' : '' ?> style="width:auto;display:inline-block"> Envio ativo automático habilitado</label>
+        <label for="whatsapp_limite_diario">Limite diário de envios ativos</label>
+        <input type="number" id="whatsapp_limite_diario" name="whatsapp_limite_diario" min="1" value="<?= (int)whatsappLimiteDiario() ?>">
+        <button type="submit">Salvar</button>
     </form>
 </div>
 

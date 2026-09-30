@@ -79,6 +79,21 @@ CREATE TABLE IF NOT EXISTS clientes (
     -- expirar/mudar com o tempo (é a foto atual do WhatsApp da pessoa, não
     -- um arquivo nosso) — sem garantia de validade eterna, só um cache.
     foto_perfil_url TEXT DEFAULT NULL,
+    -- 30/09/2026 — conformidade WhatsApp (conta Meta desativada
+    -- permanentemente por "disparo em massa sem consentimento"): tri-state
+    -- igual oportunidades.aceita_ligacao_consultor — NULL=nunca perguntado,
+    -- 1=aceitou, 0=recusou. optin_texto guarda a resposta literal do
+    -- cliente (nunca paráfrase), optin_origem sempre 'conversa' por ora
+    -- (não existe formulário de captura no site público ainda).
+    optin_whatsapp INTEGER DEFAULT NULL,
+    optin_em DATETIME,
+    optin_origem TEXT DEFAULT '',
+    optin_texto TEXT DEFAULT '',
+    -- "SAIR"/"PARAR"/etc detectado no webhook (ver
+    -- includes/whatsapp_conformidade.php::podeEnviarAtivo()) — contato com
+    -- opt-out nunca mais recebe envio ATIVO automático, em nenhum canal.
+    optout_whatsapp INTEGER NOT NULL DEFAULT 0,
+    optout_em DATETIME,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_clientes_telefone ON clientes(telefone);
@@ -314,6 +329,27 @@ CREATE INDEX IF NOT EXISTS idx_wpp_nao_lidas ON whatsapp_mensagens(telefone) WHE
 -- Mensagens digitadas manualmente no CRM (sem messageId) não competem entre si.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wpp_zapi_message_id
     ON whatsapp_mensagens(zapi_message_id) WHERE zapi_message_id != '';
+
+-- 30/09/2026 — conformidade WhatsApp: log só de ENVIO ATIVO/PROATIVO
+-- (categoria A — automação sem cliente ter escrito antes, ex:
+-- cron/recuperacao_leads.php, bloco 3 de cron/followup.php), nunca de
+-- toda mensagem (isso já é whatsapp_mensagens) — mesma disciplina
+-- "auditoria enxuta" de includes/auditoria.php. Ver
+-- includes/whatsapp_conformidade.php::podeEnviarAtivo()/enviarAtivoComGate().
+CREATE TABLE IF NOT EXISTS whatsapp_envios_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id INTEGER REFERENCES clientes(id),
+    telefone TEXT NOT NULL,
+    canal TEXT NOT NULL DEFAULT '',          -- 'zapi' | 'oficial'
+    numero_origem TEXT NOT NULL DEFAULT '',  -- 'notificacao_optin' (nunca a instância principal/ad-facing)
+    funcao_origem TEXT NOT NULL DEFAULT '',  -- 'recuperacao_leads' | 'followup_reengajamento'
+    status TEXT NOT NULL CHECK (status IN ('enviado', 'bloqueado', 'falhou')),
+    motivo_bloqueio TEXT DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_envios_log_cliente ON whatsapp_envios_log(cliente_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_envios_log_created ON whatsapp_envios_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_envios_log_telefone ON whatsapp_envios_log(telefone, status, created_at);
 
 -- Instância Z-API própria de cada consultor/closer — canal PARALELO ao
 -- funil oficial (que roda todo na instância principal, config.zapi_*):
@@ -735,6 +771,16 @@ CREATE TABLE IF NOT EXISTS vendas (
     parcelamento_primeira_parcela_data DATE,
 
     data_venda DATE,                   -- quando etapa vira 'vendido'
+
+    -- 30/09/2026 — conformidade WhatsApp: mesmo par de `clientes.optout_*`,
+    -- espelhado aqui porque o comprador de revenda não vira `clientes`
+    -- (ver comentário acima). Não há automação proativa do lado de vendas
+    -- hoje (categoria A só existe no funil de compra), mas o gatilho de
+    -- opt-out por palavra-chave é checado nos 2 webhooks por igual ("em
+    -- qualquer canal", regra 4 da spec) — fica pronto pro dia em que um
+    -- envio ativo automático de vendas existir.
+    optout_whatsapp INTEGER NOT NULL DEFAULT 0,
+    optout_em DATETIME,
 
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

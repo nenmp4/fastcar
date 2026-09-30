@@ -22,6 +22,7 @@ define('ROOT', dirname(__DIR__));
 require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
+require_once ROOT . '/includes/whatsapp_conformidade.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem() — log do reengajamento no histórico do cliente
 
 function log_followup(string $msg): void {
@@ -152,21 +153,23 @@ foreach ($quentesParados as $op) {
 }
 
 // ── 3. Reengajamento — lead esfriando sem responsável ainda ─────────────────
-// 30/09/2026 — DESATIVADO a pedido do usuário ("pode remover todo
-// followup desativar" / "para leads"): esse é o único dos 3 papéis deste
-// cron que manda mensagem PROATIVA pro CLIENTE/LEAD (os blocos 1/2 acima
-// só avisam a equipe interna, nunca o lead — continuam ativos, ninguém
-// pediu pra desligar eles). Vira no-op logo no início, nunca chega a
-// consultar/mandar nada — reversível, é só trocar de novo pra `true`.
-$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO = false;
-
-if (!$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO) {
-    log_followup('Reengajamento de lead (bloco 3) desativado — nenhuma mensagem mandada pro cliente.');
-    $esfriando = [];
-} else {
+// 30/09/2026 — passou a usar o gate central de conformidade
+// (includes/whatsapp_conformidade.php::enviarAtivoComGate()), depois da
+// conta Meta ter sido desativada permanentemente por "disparo em massa
+// sem consentimento". Substitui o hardcode isolado de mais cedo hoje
+// ($FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO) — o comportamento observável
+// continua idêntico (0 mensagens saem, já que `whatsapp_envio_ativo`
+// nasce desligado), mas agora por um único mecanismo reutilizável,
+// testável e auditável (whatsapp_envios_log), que pode ser religado
+// deliberadamente em Configurações com todos os limites valendo (opt-in,
+// 1/contato/7 dias, 2 tentativas totais, horário comercial, limite
+// diário, circuit breaker de falha). Dedup antigo por `reeng_sent_*` em
+// config e o horário comercial checado aqui foram substituídos — o gate
+// já cobre os dois.
+//
 // Oportunidade ainda na entrada do funil (bot/IA), sem mensagem nova do
 // cliente há 30-120min, sem responsável humano assumido ainda — mesma
-// janela usada no followup_leads.php do JurídicoSaaS.
+// janela usada desde sempre neste bloco.
 $esfriando = $db->query("
     SELECT o.id, c.id as cliente_id, c.nome, c.telefone,
            (SELECT MAX(created_at) FROM whatsapp_mensagens m WHERE m.telefone = c.telefone AND m.direcao='in') as ultima_msg_in,
@@ -176,42 +179,20 @@ $esfriando = $db->query("
     WHERE o.etapa IN ('whatsapp','qualificacao_ia')
       AND o.responsavel_id IS NULL
 ")->fetchAll();
-} // fim do if (!$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO)
-
-// 28/09/2026, "deixa automação em horário comercial seria medida que
-// ajudaria" — checado uma vez fora do loop (mesma decisão vale pro lote
-// inteiro desta rodada). Só trava o reengajamento PROATIVO abaixo — nunca
-// os alertas internos pro consultor dos blocos 1/2 acima (poucos números
-// fixos, sem o mesmo risco de "disparo em massa pra externo fora de
-// hora"). Fora do horário, simplesmente não roda o bloco — nenhum guard é
-// consumido, então a próxima rodada do cron dentro do horário tenta de
-// novo normalmente, sem perder ninguém.
-$dentroHorario = automacaoDentroHorarioComercial();
-if ($FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO && !$dentroHorario) {
-    log_followup('Fora do horário comercial — reengajamento adiado pra próxima rodada dentro do horário.');
-}
 
 $reengajados = 0;
 foreach ($esfriando as $op) {
-    if (!$dentroHorario) break;
     if (!$op['ultima_msg_in']) continue;
 
     $minutosParado = (time() - strtotime($op['ultima_msg_in'])) / 60;
     $respondeuDepois = $op['ultima_msg_out'] && strtotime($op['ultima_msg_out']) > strtotime($op['ultima_msg_in']);
 
-    // Só reengaja quem parou de responder entre 30 e 120 min atrás e ainda
-    // não recebeu resposta nossa depois da última mensagem dele
+    // Só considera candidato quem parou de responder entre 30 e 120 min
+    // atrás e ainda não recebeu resposta nossa depois da última mensagem
+    // dele — pré-filtro barato antes de gastar uma chamada do gate
+    // (rate-limit/horário/opt-in já cobertos lá, mas não faz sentido nem
+    // chegar no gate pra quem não está na janela certa de "esfriando").
     if ($minutosParado < 30 || $minutosParado > 120 || $respondeuDepois) continue;
-
-    // Dedup de 24h (mesmo padrão do alerta de atraso acima, só que com
-    // janela maior — reengajamento é abordagem fria, não alerta interno).
-    // Sem expiração o guard virava permanente: um cliente que já foi
-    // reengajado uma vez no passado nunca mais receberia o toque de novo,
-    // nem numa oportunidade futura completamente diferente (2º veículo,
-    // meses depois) — bug real, corrigido.
-    $guardKey = 'reeng_sent_' . $op['telefone'];
-    $ultimoReeng = getConfig($guardKey);
-    if ($ultimoReeng && (time() - strtotime($ultimoReeng)) < 24 * 3600) continue;
 
     // Variações (21/09/2026, mesmo racional de RECUPERACAO_MSGS_REENGAJAMENTO
     // em includes/recuperacao_leads.php) — esse reengajamento roda o tempo
@@ -232,15 +213,14 @@ foreach ($esfriando as $op) {
             "Olá! Vi que ficou pendente nossa conversa — ainda está pensando em vender o veículo? Me conta quando puder!",
         ]);
 
-    $ok = zapiEnviarTexto($op['telefone'], $msg);
-    log_followup(($ok ? '✅' : '❌') . " Reengajamento → oportunidade #{$op['id']} ({$op['telefone']})");
+    $ok = enviarAtivoComGate($op['cliente_id'], $op['telefone'], $msg, 'followup_reengajamento');
+    log_followup(($ok ? '✅' : '⏭️') . " Reengajamento → oportunidade #{$op['id']} ({$op['telefone']})");
     if ($ok) {
         // Fica no histórico igual qualquer outra mensagem enviada ao cliente
         // (senão o consultor que assumir depois vê a resposta do cliente
         // sem a pergunta que a gerou, e o admin/oportunidade.php não mostra
         // que esse toque saiu).
         registrarMensagem($op['telefone'], 'out', $msg, null, true);
-        setConfig($guardKey, date('Y-m-d H:i:s'));
         $reengajados++;
     }
 }

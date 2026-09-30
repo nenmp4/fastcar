@@ -1661,4 +1661,66 @@ try {
     echo "❌ notificacoes: {$e->getMessage()}\n";
 }
 
+// 30/09/2026 — conformidade WhatsApp (conta Meta desativada
+// permanentemente por "disparo em massa sem consentimento"). 6 colunas de
+// opt-in/opt-out em clientes + tabela nova de log de envio ativo. Ver
+// includes/whatsapp_conformidade.php.
+foreach ([
+    ['optin_whatsapp', "ALTER TABLE clientes ADD COLUMN optin_whatsapp INTEGER DEFAULT NULL"],
+    ['optin_em', "ALTER TABLE clientes ADD COLUMN optin_em DATETIME"],
+    ['optin_origem', "ALTER TABLE clientes ADD COLUMN optin_origem TEXT DEFAULT ''"],
+    ['optin_texto', "ALTER TABLE clientes ADD COLUMN optin_texto TEXT DEFAULT ''"],
+    ['optout_whatsapp', "ALTER TABLE clientes ADD COLUMN optout_whatsapp INTEGER NOT NULL DEFAULT 0"],
+    ['optout_em', "ALTER TABLE clientes ADD COLUMN optout_em DATETIME"],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'clientes', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ clientes.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ clientes.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  clientes.{$coluna}: já existia\n";
+    }
+}
+
+foreach ([
+    ['optout_whatsapp', "ALTER TABLE vendas ADD COLUMN optout_whatsapp INTEGER NOT NULL DEFAULT 0"],
+    ['optout_em', "ALTER TABLE vendas ADD COLUMN optout_em DATETIME"],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'vendas', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ vendas.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ vendas.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  vendas.{$coluna}: já existia\n";
+    }
+}
+
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS whatsapp_envios_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER REFERENCES clientes(id),
+            telefone TEXT NOT NULL,
+            canal TEXT NOT NULL DEFAULT '',
+            numero_origem TEXT NOT NULL DEFAULT '',
+            funcao_origem TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL CHECK (status IN ('enviado', 'bloqueado', 'falhou')),
+            motivo_bloqueio TEXT DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_envios_log_cliente ON whatsapp_envios_log(cliente_id, created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_envios_log_created ON whatsapp_envios_log(created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_envios_log_telefone ON whatsapp_envios_log(telefone, status, created_at)");
+    echo "✅ whatsapp_envios_log: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ whatsapp_envios_log: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

@@ -39,8 +39,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/whatsapp_config.php';
-require_once __DIR__ . '/oportunidades.php'; // criarOuAbrirOportunidade()
-require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem()
+require_once __DIR__ . '/whatsapp_conformidade.php';
 
 /**
  * Variações da mensagem de desculpa + reengajamento — nunca geradas pela IA
@@ -147,13 +146,23 @@ function recuperacaoTelefonesFaltando(string $desde): array {
 }
 
 /**
- * Processa até $tamanhoLote telefones pendentes: cria o cadastro (mesma
- * função que o webhook usa na entrada normal — regra #2, salva desde o
- * 1º contato) e manda a mensagem fixa de desculpa+reengajamento. Nunca
- * chama a IA diretamente aqui — não tem mensagem real do cliente pra
- * qualificar ainda; se a pessoa responder, o webhook de produção assume a
- * conversa do zero, exatamente como qualquer entrada nova. Best-effort por
- * telefone: uma falha não derruba o lote inteiro, só pula pro próximo.
+ * 30/09/2026 — reescrita depois da conta Meta ter sido desativada
+ * permanentemente por "disparo em massa sem consentimento". Este é
+ * exatamente o caso que a regra 1 da conformidade (ver
+ * includes/whatsapp_conformidade.php) pede pra desativar: contato que
+ * só escreveu 1x há muito tempo e NUNCA virou cliente de verdade aqui —
+ * zero histórico bidirecional, zero opt-in. Nunca mais cria
+ * cliente/oportunidade automaticamente (criar já seria "engajar"
+ * alguém que não consentiu, mesmo sem mandar mensagem nenhuma) — só
+ * roda o telefone pelo gate central (`enviarAtivoComGate()`), que
+ * SEMPRE bloqueia com motivo 'sem_optin' nesse cenário (a flag global
+ * `whatsapp_envio_ativo` também nasce desligada, então bloqueia mesmo
+ * antes de chegar nessa checagem). Cada tentativa fica registrada em
+ * `whatsapp_envios_log` — visível no painel
+ * `admin/whatsapp_conformidade.php` como fila de recontato MANUAL
+ * (ligação/SMS/e-mail, regra 7 da spec), nunca WhatsApp automático.
+ * Reversível e nunca apaga nada — só passou a não fazer mais o que
+ * causou o banimento.
  *
  * @return array{processados:int, pulados:int, detalhe:array}
  */
@@ -167,18 +176,19 @@ function recuperacaoProcessarLote(int $tamanhoLote = 10, string $desde = '2026-0
     foreach ($faltando as $c) {
         $telefone = $c['telefone'];
         try {
-            $oportunidade = criarOuAbrirOportunidade($telefone, $c['nome']);
             $msg = variarMensagem(RECUPERACAO_MSGS_REENGAJAMENTO);
+            // clienteIdPorTelefone() nunca cria — esses contatos por
+            // definição ainda não têm cadastro (recuperacaoTelefonesFaltando()
+            // só lista quem NÃO está em `clientes`).
+            $ok = enviarAtivoComGate(clienteIdPorTelefone($telefone), $telefone, $msg, 'recuperacao_leads');
 
-            if (!zapiEnviarTexto($telefone, $msg)) {
+            if ($ok) {
+                $processados++;
+                $detalhe[] = ['telefone' => $telefone, 'ok' => true];
+            } else {
                 $pulados++;
-                $detalhe[] = ['telefone' => $telefone, 'ok' => false, 'motivo' => 'zapiEnviarTexto() falhou'];
-                continue;
+                $detalhe[] = ['telefone' => $telefone, 'ok' => false, 'motivo' => 'bloqueado pelo gate de conformidade (ver whatsapp_envios_log)'];
             }
-            registrarMensagem($telefone, 'out', $msg, null, true);
-
-            $processados++;
-            $detalhe[] = ['telefone' => $telefone, 'ok' => true, 'oportunidade_id' => $oportunidade['oportunidade_id'] ?? null];
         } catch (Throwable $e) {
             $pulados++;
             $detalhe[] = ['telefone' => $telefone, 'ok' => false, 'motivo' => $e->getMessage()];

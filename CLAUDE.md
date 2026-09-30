@@ -9168,6 +9168,145 @@ segue no schema sem uso novo, não removida sem ganho real),
   ora; (3) `whatsapp_provider_vendas` precisa de confirmação manual de
   que está mesmo em `'zapi'` (não verificado neste turno, só recomendado
   ao usuário).
+- **Conformidade WhatsApp — gate central de envio ativo, opt-in/opt-out**
+  (30/09/2026, mesmo dia do banimento acima) — usuário colou um prompt
+  externo completo de "ajustar o bot às políticas do WhatsApp" (causa
+  apontada pela própria Meta: "disparo em massa, sem consentimento, pra
+  qualificar leads"). Antes de implementar, mapeado TODO call site de
+  envio de WhatsApp do projeto (2 agentes Explore) em 4 categorias — A:
+  envio ativo/automático ao cliente (`cron/followup.php` bloco 3 —
+  reengajamento de lead esfriando, já desativado mais cedo neste mesmo
+  dia a pedido direto do usuário — e
+  `includes/recuperacao_leads.php`/`cron/recuperacao_leads.php` —
+  recuperação de leads perdidos, removida do crontab desde 20/09/2026 mas
+  código ainda existia); B: resposta reativa da IA no mesmo turno (já
+  sempre dentro da janela, nunca precisou de gate); C: notificação
+  interna pro WhatsApp pessoal de staff (`zapiEnviarTextoInterno()`, já
+  separada); D: envio manual deliberado (WhatsApp Box, botão "enviar link
+  de documentos/contrato"). Confirmado com o usuário (3 perguntas diretas,
+  AskUserQuestion) antes de codar: (1) o kill switch + opt-in + rate-limit
+  valem **só pra categoria A** — WhatsApp Box e botões manuais continuam
+  livres (são continuidade de conversa já em andamento, não disparo em
+  massa), só passam a respeitar opt-out; (2) cliente/lead já em conversa
+  ativa hoje é **grandfathered** — nunca precisa de opt-in retroativo
+  formal; opt-in explícito só é exigido de quem NUNCA teve mensagem
+  recebida (o caso exato de `recuperacao_leads.php`); (3) não existe
+  formulário de captura no site público hoje (só botões `wa.me`) —
+  pulado, opt-in passa a ser capturado só dentro da própria conversa de
+  WhatsApp.
+  **Schema** — `clientes` ganhou 6 colunas (`optin_whatsapp` tri-state —
+  NULL=nunca perguntado/1=aceitou/0=recusou, mesmo padrão de
+  `aceita_ligacao_consultor` — `optin_em`/`optin_origem`/`optin_texto`/
+  `optout_whatsapp`/`optout_em`); `vendas` ganhou o par
+  `optout_whatsapp`/`optout_em` espelhado (comprador de revenda nunca vira
+  `clientes`, mas o gatilho de opt-out por palavra-chave é checado nos 2
+  webhooks por igual — "em qualquer canal" da regra 4 do prompt — mesmo
+  sem automação proativa do lado de vendas hoje, fica pronto pro dia em
+  que existir). Tabela nova `whatsapp_envios_log` (data, telefone, canal,
+  número de origem, função de origem, status enviado/bloqueado/falhou,
+  motivo do bloqueio) — log só de ENVIO ATIVO (categoria A), nunca de
+  toda mensagem (isso já é `whatsapp_mensagens`), mesma disciplina
+  "auditoria enxuta" de `includes/auditoria.php`.
+  **`includes/whatsapp_conformidade.php`** (novo) — gate central,
+  `podeEnviarAtivo(?int $clienteId, string $telefone, string
+  $funcaoOrigem): array`, primeira checagem que falhar vence, nessa
+  ordem: (1) `envioAtivoHabilitado()` — `config.whatsapp_envio_ativo`,
+  **desligado por padrão**, nunca liga sozinho; (2) instância Z-API
+  DEDICADA de notificação/opt-in configurada — nunca a principal
+  (ad-facing, onde chega lead de anúncio pago) nem as dedicadas de
+  vendas/financeiro, precondição estrutural (regra 6 do prompt: número
+  que recebe lead de anúncio nunca é usado pra disparo em massa) — sem
+  ela configurada, bloqueia sempre, nunca cai pra principal como
+  fallback (diferente do fallback de PROVEDOR que já existe pra vendas/
+  financeiro, aqui seria fallback de RISCO); (3) opt-out — nunca mais
+  envio ativo, em nenhum canal; (4) "grandfathered" — sem histórico
+  bidirecional (`whatsapp_mensagens` direcao='in') E sem
+  `optin_whatsapp=1` → bloqueia (`sem_optin`); (5) horário comercial
+  (reaproveita `automacaoDentroHorarioComercial()` já existente); (6)
+  rate limit de 1 envio por contato a cada 7 dias (via
+  `whatsapp_envios_log`, nunca um contador denormalizado em `clientes`);
+  (7) máximo de 2 tentativas totais por contato; (8) limite diário global
+  (`config.whatsapp_limite_diario`, padrão 50); (9) circuit breaker —
+  taxa de falha/bloqueio do dia > 2%, só avalia com volume mínimo (≥20
+  hoje, senão 1 falha em poucas tentativas dispararia à toa).
+  `enviarAtivoComGate()` roda o gate, espera 20-60s (`random_int`, só
+  aqui — nunca em resposta reativa) antes de mandar, loga toda tentativa
+  (bloqueada/enviada/falhou) em `whatsapp_envios_log`.
+  **Rewire dos 2 pontos de categoria A** — `recuperacaoProcessarLote()`
+  (`includes/recuperacao_leads.php`) **nunca mais cria cliente/oportunidade
+  automaticamente** (criar já seria "engajar" quem não consentiu, mesmo
+  sem mandar mensagem) — só roda o telefone pelo gate via
+  `clienteIdPorTelefone()` (nunca cria, só busca), que sempre bloqueia
+  com `sem_optin` nesse cenário; fica registrado no log, visível no
+  painel como fila de recontato MANUAL (regra 7 do prompt — ligação/SMS/
+  e-mail, nunca WhatsApp automático pra quem nunca deu consentimento).
+  `cron/followup.php` bloco 3 trocou o hardcode isolado
+  (`$FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO`, do fix de mais cedo no mesmo
+  dia) por `enviarAtivoComGate()` — comportamento observável idêntico (0
+  mensagens saem, flag nasce desligada), mas agora por um mecanismo
+  único, testável e religável deliberadamente em Configurações.
+  **Opt-out por palavra-chave** ("SAIR"/"PARAR"/"STOP"/"não quero"/
+  "cancelar"/"remover", regra 4) — hook em
+  `chatbot-whatsapp/includes/mensagens.php`/`mensagens_vendas.php`, ANTES
+  de qualquer resposta da IA: comparação EXATA normalizada (accent-strip +
+  só alnum, `whatsappTextoEhOptOut()`), nunca substring (mesmo cuidado de
+  `nomeWhatsappPareceValido()`) — "cancelar meu pedido de vaga" nunca
+  dispara à toa. Grava o opt-out, manda a confirmação ÚNICA (mesmo canal
+  de entrada — `zapiEnviarTextoPeloCanal()` no lado de compra,
+  `zapiEnviarTexto(..., $credenciaisVendas)` no lado de vendas) e retorna
+  sem chamar a IA nesse turno — etapa nunca avança. Opt-out **nunca
+  bloqueia turno seguinte**: mensagem nova de quem já deu opt-out
+  processa normal (só afeta envio ATIVO automático, nunca resposta
+  reativa — testado explicitamente).
+  **Opt-in conversacional** (regra 3) — mesmo padrão tri-state de
+  `aceita_ligacao_consultor`: `IA_QUALIFICACAO_PROMPT_SISTEMA` pergunta
+  "Posso te mandar as atualizações da sua proposta por aqui mesmo?" perto
+  do fechamento (pergunta separada de "aceita ligação do consultor",
+  nunca junta as duas), `IA_EXTRACAO_PROMPT` ganhou `optin_whatsapp`
+  (true/false/null) + `optin_whatsapp_texto` (resposta literal, nunca
+  paráfrase); `iaAplicarDadosExtraidos()` grava via
+  `registrarOptIn()`/`registrarOptInRecusado()` (idempotentes, nunca
+  sobrescrevem se já respondido) — **puramente aditivo**, nunca entra no
+  cálculo de `qualificacao_completa` nem conta como "avanço real" pro
+  contador de estagnação (mesma exceção de `temperatura_lead`).
+  **`admin/configuracoes.php`** — card novo "🛡️ Conformidade WhatsApp":
+  credenciais da instância dedicada + teste de conexão (nunca passa pelo
+  fallback de provedor, mesmo cuidado dos testes de vendas/financeiro) +
+  toggle "Envio ativo automático habilitado" (`'1'`/`'0'`, desmarcado por
+  padrão) + limite diário configurável. **`admin/whatsapp_conformidade.php`**
+  (novo, `requireVisaoGeral()`) — painel só-leitura: estado da flag/
+  instância/circuit breaker, envios ativos hoje por status, bloqueados
+  por motivo, total de opt-outs, e a fila de recontato manual (últimos 7
+  dias, `sem_optin`) — nenhuma ação de envio na própria tela.
+  Testado: 13 asserções isoladas do gate (flag desligada, sem instância,
+  sem opt-in, grandfathered, opt-out, rate-limit de 7 dias, máximo de 2
+  tentativas, limite diário, circuit breaker); rewire de
+  `recuperacaoProcessarLote()` confirmado nunca criando cliente como
+  efeito colateral; `cron/followup.php` ponta a ponta com flag desligada
+  (0 mensagens, log gravado `flag_desligada`); opt-out ponta a ponta nos
+  2 webhooks (compra e vendas) contra Z-API fake local — confirmação
+  única enviada pela instância certa, IA nunca chamada, etapa nunca
+  avança, mensagem nova depois do opt-out processa normal; opt-in
+  conversacional isolado (7 asserções — grava, nunca sobrescreve, recusa
+  vira 0 não NULL, campo null nunca grava); **happy path completo**
+  (flag ligada + instância configurada + grandfathered) confirmado
+  enviando de verdade pela instância dedicada e gravando `status='enviado'`
+  no log; migração testada contra schema anterior a esta mudança
+  (colunas/tabela ausentes antes, idempotente numa 2ª rodada, dado
+  pré-existente preservado); guard novo em `tests/smoke.php`
+  (`envio-ativo-sem-gate-conformidade`, sanity-check confirmado
+  reintroduzindo `zapiEnviarTexto()` bare temporariamente e vendo o guard
+  falhar antes de restaurar) + `php -l` em todos os arquivos tocados +
+  `tests/smoke.php` 100% limpo.
+  **Fora de escopo, documentado e não implementado** (confirmado com o
+  usuário): formulário de captura de lead no site público (não existe
+  hoje); infraestrutura de template aprovado pela Meta pra mensagem fora
+  da janela (nenhum template registrado ainda — o gate impede o envio,
+  mas não há caminho de template pra usar no lugar); fila de ligação/SMS/
+  e-mail de verdade (regra 7) — o painel só LISTA os contatos elegíveis,
+  nunca dispara nada; badge de opt-out nas telas de envio manual
+  (WhatsApp Box/oportunidade/venda) — não pedido, sinalizado como
+  melhoria futura.
 - **Popup de resultado de ação, visível não importa onde a página está
   rolada** (30/09/2026, screenshot mostrando o banner "Link enviado por
   WhatsApp." — resultado de clicar "Enviar link" numa venda — visível só

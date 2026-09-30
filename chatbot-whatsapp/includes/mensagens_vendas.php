@@ -123,6 +123,20 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
     $ia_pausada = iaPausada($phone);
     $iaResultado = null;
 
+    // 30/09/2026 — conformidade WhatsApp (regra 4), mesmo hook do lado de
+    // compra (chatbot-whatsapp/includes/mensagens.php) — comprador nunca
+    // vira `clientes`, opt-out fica em vendas.optout_whatsapp.
+    if ($vendaLead && $tipoRegistro === 'text' && whatsappTextoEhOptOut($texto)) {
+        registrarOptOutVenda((int)$vendaLead['venda_id']);
+        $msgConfirmacao = 'Combinado, você não vai mais receber mensagem por aqui. Se mudar de ideia, é só escrever de novo.';
+        if (zapiEnviarTexto($phone, $msgConfirmacao, $credenciaisVendas)) {
+            registrarMensagem($phone, 'out', $msgConfirmacao, null, true);
+        }
+        return ['ignored' => 'opt_out', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                'instancia' => $instancia, 'ia_resultado' => null];
+    }
+
     if ($vendaLead && !$ia_pausada && $instancia['tipo'] === 'vendas') {
         $db = getDB();
         $stmtEtapa = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
