@@ -9167,7 +9167,17 @@ segue no schema sem uso novo, não removida sem ganho real),
   verificação/aprovação do zero) ou desistir da Cloud API oficial por
   ora; (3) `whatsapp_provider_vendas` precisa de confirmação manual de
   que está mesmo em `'zapi'` (não verificado neste turno, só recomendado
-  ao usuário).
+  ao usuário). **Pedido de reconsideração já enviado à Meta, mesmo dia** —
+  usuário solicitou a revisão/recurso do banimento diretamente no painel
+  da Meta Business, aguardando resposta deles; nenhuma ação de código
+  depende disso (`oficialEhProviderPrincipal()`/`oficialEhProviderVendas()`
+  só mudam de comportamento se o toggle em Configurações for trocado de
+  volta pra `'oficial'` manualmente — confirmado no código que nada
+  automático faz essa troca, `setConfig('whatsapp_provider_principal'/
+  '_vendas', ...)` só é chamado dentro do handler de POST de
+  `admin/configuracoes.php`). Se a Meta reverter o banimento, o toggle
+  continua em `'zapi'` até alguém decidir migrar de volta deliberadamente
+  — nunca volta sozinho.
 - **Conformidade WhatsApp — gate central de envio ativo, opt-in/opt-out**
   (30/09/2026, mesmo dia do banimento acima) — usuário colou um prompt
   externo completo de "ajustar o bot às políticas do WhatsApp" (causa
