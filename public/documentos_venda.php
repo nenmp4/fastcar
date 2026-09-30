@@ -21,6 +21,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/venda_documentos.php';
 require_once __DIR__ . '/../includes/extracao_documentos.php';
+require_once __DIR__ . '/../includes/notificacoes.php';
 
 startSecureSession();
 
@@ -156,6 +157,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db = getDB();
             $db->prepare("UPDATE vendas SET documentos_confirmados_em = datetime('now','localtime') WHERE id = ?")
                 ->execute([$v['id']]);
+            // 30/09/2026, "como sabemos cliente preencheu... notificação
+            // clicável" (mesmo pedido do lado de compra, aqui pro
+            // comprador de revenda) — best-effort, nunca trava o wizard.
+            try { notificarDocumentosConfirmadosVenda((int)$v['id']); } catch (Throwable $e) { /* nunca trava o wizard do comprador */ }
         }
 
         $v = buscarVendaPorToken($token);

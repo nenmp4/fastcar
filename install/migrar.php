@@ -1619,4 +1619,28 @@ try {
     echo "❌ índices de expressão fin_lancamentos: {$e->getMessage()}\n";
 }
 
+// 30/09/2026, "como sabemos cliente preencheu... notificação clicável...
+// rola pra cima pra ver status das ações" — tabela nova, persistente, só
+// pra evento que precisa ficar clicável + com histórico (ex: cliente
+// confirmou tudo no wizard de documentos), sem misturar com a detecção de
+// lead novo (computada ao vivo, sem tabela, já validada em produção).
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS notificacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+            tipo TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            mensagem TEXT NOT NULL DEFAULT '',
+            url TEXT NOT NULL DEFAULT '',
+            lida INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_notificacoes_usuario ON notificacoes(usuario_id, lida, id)");
+    echo "✅ notificacoes: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ notificacoes: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

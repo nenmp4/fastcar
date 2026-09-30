@@ -553,6 +553,49 @@ a.zapi-status-badge:hover { background: rgba(255,255,255,.22); text-decoration: 
     to { opacity: 1; transform: translateX(0); }
 }
 
+/* ── Painel de notificações (histórico rolável) — 30/09/2026, "rola pra
+   cima pra ver os status das ações" — abre ao clicar no sino, mesma
+   posição/z-index dos toasts (nunca um novo elemento fixed solto no
+   canto, regra de UX mobile do projeto). ────────────────────────────── */
+.notif-painel {
+    position: fixed;
+    top: 64px;
+    right: 20px;
+    z-index: 1001;
+    width: 340px;
+    max-width: calc(100vw - 40px);
+    max-height: min(70vh, 480px);
+    overflow-y: auto;
+    background: var(--superficie);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio-sm);
+    box-shadow: 0 16px 40px rgba(16,24,40,.22);
+}
+.notif-painel-cabecalho {
+    position: sticky;
+    top: 0;
+    background: var(--superficie);
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--borda);
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--azul-escuro);
+}
+.notif-painel-item {
+    display: block;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--borda);
+    font-size: 13px;
+    color: var(--texto);
+    text-decoration: none;
+    cursor: pointer;
+}
+.notif-painel-item:last-child { border-bottom: none; }
+.notif-painel-item:hover { background: rgba(47,111,237,.06); }
+.notif-painel-item strong { display: block; color: var(--azul-escuro); margin-bottom: 2px; }
+.notif-painel-item small { color: var(--texto-suave); }
+.notif-painel-vazio { padding: 20px 14px; text-align: center; color: var(--texto-suave); font-size: 13px; }
+
 /* ── Módulo de vistoria/avaliação (admin/avaliacao.php/avaliacoes.php) ──
    21/09/2026, "modulo vistoria tem ficar ideal no tablet vamos usar" — o
    avaliador usa isso andando ao redor do carro, cutucando o checklist item

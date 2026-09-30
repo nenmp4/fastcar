@@ -250,13 +250,15 @@ foreach (['includes/oportunidades.php', 'admin/oportunidade.php', 'public/docume
 }
 
 // admin-pagina-sem-pwa guard — toda página cheia do admin (tem <html>, não é
-// _bootstrap/_pwa_*/_notify.php/login) precisa incluir os partials de PWA E
-// de notificações, senão a instalação como app ou o sino de aviso de lead
-// quebram silenciosamente numa tela específica (mesmo tipo de bug do
-// head_scripts nas landing pages do JurídicoSaaS: página com <head> próprio
-// que não passa pelo snippet compartilhado).
+// _bootstrap/_pwa_*/_notify.php/_scroll_restore.php/login) precisa incluir
+// os partials de PWA, notificações E restauração de scroll, senão a
+// instalação como app, o sino de aviso de lead, ou o "preenchi algo e a
+// página volta pro topo sozinha" (achado real 30/09/2026, ver
+// admin/_scroll_restore.php) quebram silenciosamente numa tela específica
+// (mesmo tipo de bug do head_scripts nas landing pages do JurídicoSaaS:
+// página com <head> próprio que não passa pelo snippet compartilhado).
 $semPwa = [];
-$parciais = ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', '_notify.php', 'login.php', 'esqueci_senha.php', 'redefinir_senha.php'];
+$parciais = ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', '_notify.php', '_scroll_restore.php', 'login.php', 'esqueci_senha.php', 'redefinir_senha.php'];
 foreach (glob($root . '/admin/*.php') as $f) {
     $rel = str_replace($root . '/', '', $f);
     $base = basename($f);
@@ -267,6 +269,7 @@ foreach (glob($root . '/admin/*.php') as $f) {
     if (!str_contains($conteudo, '_pwa_head.php')) $faltando[] = 'pwa-head';
     if (!str_contains($conteudo, '_pwa_register.php')) $faltando[] = 'pwa-register';
     if (!str_contains($conteudo, '_notify.php')) $faltando[] = 'notify';
+    if (!str_contains($conteudo, '_scroll_restore.php')) $faltando[] = 'scroll-restore';
     if ($faltando) $semPwa[] = "{$rel} (falta " . implode('+', $faltando) . ')';
 }
 if ($semPwa) {

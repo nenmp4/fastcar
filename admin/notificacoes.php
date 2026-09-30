@@ -1,21 +1,22 @@
 <?php
 /**
- * Endpoint JSON de polling — novos leads pro usuário logado. Sem
- * WebSocket/SSE (shared-hosting-friendly, mesma filosofia do resto do
- * projeto): o JS de admin/_notify.php chama isso a cada ~20s.
+ * Endpoint JSON de polling — novos leads + eventos persistentes (ex:
+ * "cliente confirmou os documentos") pro usuário logado. Sem WebSocket/SSE
+ * (shared-hosting-friendly, mesma filosofia do resto do projeto): o JS de
+ * admin/_notify.php chama isso a cada ~20s.
  *
- * "desde" é um cursor OPAINCO — uma string datetime no MESMO formato que
- * o banco já usa (datetime('now','localtime')), nunca calculado/parseado
- * no JS. Cliente só guarda e devolve o que o servidor mandou da última
- * vez — evita qualquer bug de fuso horário entre JS e SQLite (mesmo tipo
- * de cuidado que motivou o posicao_fila monotônico em vez de timestamp
- * em includes/fila_leads.php).
+ * Dois cursores independentes, mesclados numa resposta só:
+ * - "desde" (datetime): detecção de LEAD NOVO, computada ao vivo contra
+ *   oportunidades.created_at/updated_at — mecanismo ORIGINAL, intocado,
+ *   já validado em produção. Cursor OPACO (string no mesmo formato que o
+ *   banco já usa), nunca calculado/parseado no JS — evita bug de fuso
+ *   horário (mesmo cuidado do posicao_fila monotônico em includes/fila_leads.php).
+ * - "desde_notif_id" (inteiro): eventos da tabela `notificacoes` (30/09/2026,
+ *   "como sabemos cliente preencheu... notificação clicável") — cursor
+ *   simples por id autoincrement, um por usuário.
  *
- * super_admin: notifica sobre QUALQUER lead novo (created_at) — visão da
- * empresa inteira. consultor: notifica quando uma oportunidade
- * passa a ser dele (updated_at, cobre atribuição automática da fila E
- * reatribuição manual em admin/oportunidade.php, que faz UPDATE direto
- * sem passar por mudarEtapa()/oportunidade_historico).
+ * `?historico=1`: painel rolável do sino — últimas N notificações da
+ * tabela (lidas+não lidas), marca tudo como lida na mesma chamada.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -23,6 +24,23 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 $db = getDB();
+$perfil = $_SESSION['admin_perfil'];
+$meuId  = (int)$_SESSION['admin_id'];
+
+if (isset($_GET['historico'])) {
+    marcarNotificacoesLidas($meuId);
+    $itens = array_map(fn($n) => [
+        'id'         => (int)$n['id'],
+        'tipo'       => $n['tipo'],
+        'titulo'     => $n['titulo'],
+        'mensagem'   => $n['mensagem'],
+        'url'        => $n['url'],
+        'created_at' => $n['created_at'],
+    ], listarNotificacoes($meuId, 30));
+    echo json_encode(['itens' => $itens]);
+    exit;
+}
+
 $agora = $db->query("SELECT datetime('now','localtime')")->fetchColumn();
 $desde = trim((string)($_GET['desde'] ?? ''));
 // Sem cursor (1ª chamada) ou cursor malformado: baseline é agora — nunca
@@ -30,9 +48,7 @@ $desde = trim((string)($_GET['desde'] ?? ''));
 if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $desde)) {
     $desde = $agora;
 }
-
-$perfil = $_SESSION['admin_perfil'];
-$meuId  = (int)$_SESSION['admin_id'];
+$desdeNotifId = (int)($_GET['desde_notif_id'] ?? 0);
 
 if ($perfil === 'super_admin') {
     $stmt = $db->prepare("
@@ -41,9 +57,6 @@ if ($perfil === 'super_admin') {
         WHERE o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
     ");
     $stmt->execute([$desde]);
-    $stmtTotal = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE created_at > ?");
-    $stmtTotal->execute([$desde]);
-    $total = (int)$stmtTotal->fetchColumn();
 } else {
     $stmt = $db->prepare("
         SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome
@@ -51,19 +64,33 @@ if ($perfil === 'super_admin') {
         WHERE o.responsavel_id = ? AND o.updated_at > ? ORDER BY o.updated_at ASC LIMIT 20
     ");
     $stmt->execute([$meuId, $desde]);
-    $stmtTotal = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND updated_at > ?");
-    $stmtTotal->execute([$meuId, $desde]);
-    $total = (int)$stmtTotal->fetchColumn();
 }
-
-$novos = array_map(fn($o) => [
+$leads = array_map(fn($o) => [
     'id'      => (int)$o['id'],
-    'cliente' => $o['cliente_nome'] ?: '(sem nome)',
-    'veiculo' => trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')),
+    'tipo'    => 'novo_lead',
+    'titulo'  => '🚗 Novo lead',
+    'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
+    'url'     => '/admin/oportunidade.php?id=' . $o['id'],
 ], $stmt->fetchAll());
 
+$stmtNotif = $db->prepare("
+    SELECT id, tipo, titulo, mensagem, url FROM notificacoes
+    WHERE usuario_id = ? AND id > ? ORDER BY id ASC LIMIT 20
+");
+$stmtNotif->execute([$meuId, $desdeNotifId]);
+$eventosLinhas = $stmtNotif->fetchAll();
+$eventos = array_map(fn($n) => [
+    'id'       => (int)$n['id'],
+    'tipo'     => $n['tipo'],
+    'titulo'   => $n['titulo'],
+    'mensagem' => $n['mensagem'],
+    'url'      => $n['url'],
+], $eventosLinhas);
+$proximoNotifId = $eventosLinhas ? (int)end($eventosLinhas)['id'] : $desdeNotifId;
+
 echo json_encode([
-    'novos'       => $novos,
-    'total'       => $total,
-    'proximo_desde' => $agora,
+    'novos'           => array_merge($leads, $eventos),
+    'proximo_desde'   => $agora,
+    'proximo_notif_id' => $proximoNotifId,
+    'nao_lidos_notif' => contarNotificacoesNaoLidas($meuId),
 ]);

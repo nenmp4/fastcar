@@ -1201,3 +1201,24 @@ CREATE TABLE IF NOT EXISTS anuncio_gasto_diario (
 );
 CREATE INDEX IF NOT EXISTS idx_anuncio_gasto_campanha ON anuncio_gasto_diario(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_anuncio_gasto_conta ON anuncio_gasto_diario(ad_account_id);
+
+-- 30/09/2026, "como sabemos cliente preencheu... temos ter notificação
+-- clicável... rola pra cima pra ver status das ações" — o sino original
+-- (admin/_notify.php) só detecta "lead novo" computando created_at/
+-- updated_at ao vivo, sem guardar nada — nunca dava pra saber quando um
+-- cliente TERMINOU de preencher o wizard de documentos (compra ou venda),
+-- nem tinha histórico pra rolar/revisar depois que o toast sumia (7s).
+-- Tabela nova, persistente, só pra esse tipo de evento — nunca substitui
+-- a detecção de lead novo já validada em produção, os dois convivem e são
+-- mesclados na resposta de admin/notificacoes.php.
+CREATE TABLE IF NOT EXISTS notificacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    tipo TEXT NOT NULL,
+    titulo TEXT NOT NULL,
+    mensagem TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    lida INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_notificacoes_usuario ON notificacoes(usuario_id, lida, id);

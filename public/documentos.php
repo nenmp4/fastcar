@@ -24,6 +24,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/documentos.php';
 require_once __DIR__ . '/../includes/extracao_documentos.php';
+require_once __DIR__ . '/../includes/notificacoes.php';
 
 startSecureSession();
 
@@ -220,6 +221,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db = getDB();
             $db->prepare("UPDATE oportunidades SET documentos_confirmados_em = datetime('now','localtime') WHERE id = ?")
                 ->execute([$op['oportunidade_id']]);
+            // 30/09/2026, "como sabemos cliente preencheu... notificação
+            // clicável" — best-effort, nunca pode travar a confirmação do
+            // cliente por causa de um problema aqui.
+            try { notificarDocumentosConfirmados((int)$op['oportunidade_id']); } catch (Throwable $e) { /* nunca trava o wizard do cliente */ }
         }
 
         // Recarrega pra refletir o que já foi salvo.

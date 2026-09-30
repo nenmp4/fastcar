@@ -8664,6 +8664,78 @@ segue no schema sem uso novo, não removida sem ganho real),
   salva como `[image]`, log de diagnóstico gravado, cliente recebe o
   reconhecimento genérico, sem crash) — + `php -l` nos 3 arquivos +
   `tests/smoke.php` limpo. Sem migração de schema.
+- **Notificação clicável de "cliente confirmou os documentos" (compra e
+  venda) + painel de histórico rolável** (30/09/2026, "como sabemos
+  cliente preencheu... temos ter notificação clicável... rola pra cima
+  pra ver os status das ações" — seguido de "vai aparecendo vários leads
+  um embaixo do outro é normal as notificações", print mostrando 2 toasts
+  "Novo lead" empilhados) — o sino original (`admin/_notify.php`/
+  `admin/notificacoes.php`) só detectava "lead novo" computando
+  `created_at`/`updated_at` ao vivo, sem guardar nada — nunca avisava
+  quando o cliente TERMINAVA de preencher o wizard de documentos
+  (`documentos_confirmados_em`), e cada evento empilhava 1 toast por vez,
+  sem limite, sem histórico pra rever depois que sumia (7s). Tabela nova
+  `notificacoes` (`includes/notificacoes.php`) — persistente, só pra
+  evento que precisa ficar clicável+com histórico, nunca substitui a
+  detecção de lead novo já validada em produção, os dois convivem e são
+  mesclados na mesma resposta de `admin/notificacoes.php`.
+  `notificarDocumentosConfirmados()`/`notificarDocumentosConfirmadosVenda()`
+  (chamadas de dentro de `public/documentos.php`/`public/documentos_venda.php`,
+  ação `confirmar_final`, best-effort — nunca trava a confirmação do
+  cliente) mandam pra: o **responsável ATUAL** daquela oportunidade/venda
+  (`responsavel_id` — quase sempre a mesma pessoa que mandou o link, mas
+  segue o dono de agora se o lead foi reatribuído depois) + todo
+  `super_admin`/`supervisor` (mesmo raciocínio de "acompanha tudo" já
+  usado no resto do projeto), nunca duplicando se a mesma pessoa cair nos
+  2 grupos. Título/mensagem/url prontos na hora de gravar (nome do
+  cliente/comprador + veículo, link direto pra `oportunidade.php`/
+  `venda.php`) — nunca calculados de novo no JS.
+  **Sino reescrito** (`admin/_notify.php`): (1) rajada de 4+ eventos na
+  mesma checagem de 20s vira 1 toast agrupado ("🔔 N novidades — clique
+  pra ver"), nunca mais empilha um embaixo do outro; (2) clicar no sino
+  abre um painel (`.notif-painel`, mesma posição fixa dos toasts — nunca
+  um elemento novo solto no canto superior direito, regra de UX mobile do
+  projeto) com as últimas 30 notificações (lidas+não lidas, `?historico=1`
+  em `admin/notificacoes.php`, que também marca tudo como lida na mesma
+  chamada), rolável de verdade — cada linha clicável indo direto pro
+  registro. Badge do sino soma 2 fontes: contagem client-side de leads
+  (como sempre) + `nao_lidos_notif` (contagem AUTORITATIVA do servidor a
+  cada poll, nunca incremental — evita dessincronizar). Testado: 6
+  cenários de função isolada (destinatário certo com/sem responsável,
+  usuário bloqueado nunca notifica, dedup entre os 2 grupos, `listar/
+  contar/marcarLidas` isolado por usuário, id inexistente nunca lança) +
+  HTTP ponta a ponta real (sessão primed, servidor real): polling mescla
+  lead-novo + evento da tabela na mesma resposta, `?historico=1` marca
+  lida e o próximo polling reflete `nao_lidos_notif=0` — confirmado que os
+  2 cursores (`desde`/`desde_notif_id`) são independentes de verdade + PHP
+  `-l` + JS (`node --check`) + `tests/smoke.php` limpos. Migração testada
+  contra schema anterior (`git show HEAD:install/schema.sql`, tabela
+  ausente antes, idempotente numa 2ª rodada).
+- **Página trava rolagem lá no topo depois de qualquer "Salvar"**
+  (30/09/2026, achado real: "quando abrimos cliente tem ficar rolando pra
+  baixo... preencho algo ainda rola pra baixo, [tenho que] voltar") —
+  telas como `admin/oportunidade.php`/`admin/venda.php`/
+  `admin/cliente_detalhe.php` têm dezenas de `<form>` pequenos espalhados
+  pela página (dados do veículo, financiamento, documentos, avaliação...);
+  cada "Salvar" é um POST clássico (nunca AJAX) que recarrega a página
+  inteira, sempre voltando pro TOPO — mesmo que o formulário editado
+  estivesse lá embaixo, o consultor tinha que rolar de novo pra achar onde
+  estava. `admin/_scroll_restore.php` (novo, incluído no mesmo ponto das
+  35 páginas cheias do admin que já incluem `_notify.php`) resolve de
+  forma **genérica**, sem precisar de âncora `#id` nem tocar em cada um
+  dos formulários espalhados pelo projeto: guarda `scrollY` no momento do
+  `submit` (listener em captura no `document`, pega mesmo se o form tiver
+  seu próprio handler) em `sessionStorage`, sob uma chave por
+  página+querystring (nunca cruza entre registros diferentes — `?id=1`
+  nunca restaura a rolagem salva por `?id=2`); a próxima carga da MESMA
+  página+query consome a chave 1x (removida assim que lida — F5 manual
+  depois não restaura de novo) e rola de volta, 2x (na hora + no evento
+  `load`, porque imagem/fonte carregando depois pode empurrar o layout um
+  pouco). Guard novo em `tests/smoke.php`
+  (`admin-pagina-sem-pwa`, estendido) garante que toda página cheia nova
+  inclua o partial, mesma disciplina do PWA/notificação — sanity-check
+  confirmado removendo o include de 1 página e vendo o guard falhar antes
+  de restaurar.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

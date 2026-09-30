@@ -128,6 +128,7 @@ function pctFunil(int $n, int $total): string { return $total > 0 ? round($n / $
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
+<?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>
