@@ -458,11 +458,12 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <?php endif; ?>
     </h2>
     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-        <form method="post" class="inline" style="margin-bottom:10px">
+        <form method="post" class="inline" style="margin-bottom:10px;display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="atualizar_nome_cliente">
             <input type="text" name="nome_cliente" value="<?= e($op['cliente_nome']) ?>" placeholder="Nome do cliente" style="width:240px;display:inline-block">
             <button type="submit" style="margin-top:0;padding:5px 12px;font-size:13px">Salvar nome</button>
+            <a class="btn" href="/admin/cliente_detalhe.php?id=<?= (int)$op['cliente_id'] ?>" style="padding:5px 12px;font-size:13px">✏️ Editar cadastro do cliente</a>
         </form>
     <?php endif; ?>
     <div class="grid-2">
