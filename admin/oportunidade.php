@@ -682,7 +682,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <input type="hidden" name="acao" value="gerar_contrato_preview">
         <button type="submit" class="secundario">👁️ Gerar contrato (só visualizar)</button>
     </form>
-    <form method="post" style="display:inline-block" onsubmit="return confirm('Gerar o contrato e enviar pra assinatura eletrônica?');">
+    <form method="post" style="display:inline-block" onsubmit="return confirmarAcao(this, 'Gerar o contrato e enviar pra assinatura eletrônica?');">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="gerar_contrato">
         <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>
@@ -707,53 +707,56 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     </td>
                     <td><?= date('d/m/Y H:i', strtotime($ct['created_at'])) ?></td>
                     <td>
-                        <?php if ($ct['drive_file_id'] || $ct['arquivo_url']): ?>
-                            <a href="/admin/ver_contrato.php?id=<?= (int)$ct['id'] ?>" target="_blank">ver PDF</a>
-                        <?php endif; ?>
-                        <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
-                            · <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
-                            <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋</button>
-                            <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-                                <form method="post" style="display:inline-block" onsubmit="return confirm('Reenviar o link de assinatura por WhatsApp (Meta oficial)?');">
-                                    <?= csrfField() ?>
-                                    <input type="hidden" name="acao" value="reenviar_link_assinatura_meta">
-                                    <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
-                                    <button type="submit" class="btn-texto">📲 reenviar por WhatsApp (Meta)</button>
-                                </form>
+                        <div class="acoes-linha">
+                            <?php if ($ct['drive_file_id'] || $ct['arquivo_url']): ?>
+                                <a class="chip-acao" href="/admin/ver_contrato.php?id=<?= (int)$ct['id'] ?>" target="_blank">📄 Ver PDF</a>
                             <?php endif; ?>
-                            <?php if ($ct['envio_email_status'] === 'entregue'): ?>
-                                <br><small style="color:#2a7a3b">📧 E-mail: ✅ entregue <?= $ct['envio_email_em'] ? date('d/m H:i', strtotime($ct['envio_email_em'])) : '' ?></small>
-                            <?php elseif ($ct['envio_email_status'] === 'sem_email'): ?>
-                                <br><small style="color:#a3701a">📧 E-mail: ⚠️ sem e-mail cadastrado</small>
-                            <?php elseif ($ct['envio_email_status'] === 'falhou'): ?>
-                                <br><small style="color:#a33">📧 E-mail: ❌ falha ao enviar (erro na API)</small>
-                            <?php endif; ?>
-                        <?php endif; ?>
-
-                        <?php if ($ct['status'] === 'assinado'): ?>
-                            <div style="margin-top:6px;font-size:12px;color:var(--texto-fraco)">
-                                <?php if ($ct['aviso_whatsapp_enviado_em']): ?>
-                                    📱 WhatsApp: <span style="color:#2a7a3b">✅ entregue <?= date('d/m H:i', strtotime($ct['aviso_whatsapp_enviado_em'])) ?></span>
-                                <?php else: ?>
-                                    📱 WhatsApp: <span style="color:#a33">⏳ não confirmado</span>
-                                <?php endif; ?>
-                                &nbsp;·&nbsp;
-                                <?php if ($ct['aviso_email_enviado_em']): ?>
-                                    📧 E-mail: <span style="color:#2a7a3b">✅ entregue <?= date('d/m H:i', strtotime($ct['aviso_email_enviado_em'])) ?></span>
-                                <?php else: ?>
-                                    📧 E-mail: <span style="color:#a33">⏳ não confirmado</span>
-                                <?php endif; ?>
+                            <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
+                                <a class="chip-acao" href="<?= e($ct['sign_url']) ?>" target="_blank">🔗 Link de assinatura</a>
+                                <button type="button" class="chip-acao" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋 Copiar</button>
                                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-                                    <br>
-                                    <form method="post" style="display:inline-block;margin-top:4px">
+                                    <form method="post" onsubmit="return confirmarAcao(this, 'Reenviar o link de assinatura por WhatsApp (Meta oficial)?');">
+                                        <?= csrfField() ?>
+                                        <input type="hidden" name="acao" value="reenviar_link_assinatura_meta">
+                                        <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
+                                        <button type="submit" class="chip-acao">📲 Reenviar (WhatsApp)</button>
+                                    </form>
+                                <?php endif; ?>
+                                <?php if ($ct['envio_email_status'] === 'entregue'): ?>
+                                    <span class="status-linha" style="color:#2a7a3b">📧 e-mail entregue <?= $ct['envio_email_em'] ? date('d/m H:i', strtotime($ct['envio_email_em'])) : '' ?></span>
+                                <?php elseif ($ct['envio_email_status'] === 'sem_email'): ?>
+                                    <span class="status-linha" style="color:#a3701a">📧 e-mail: sem cadastro</span>
+                                <?php elseif ($ct['envio_email_status'] === 'falhou'): ?>
+                                    <span class="status-linha" style="color:#a33">📧 e-mail: falha na API</span>
+                                <?php endif; ?>
+                            <?php endif; ?>
+
+                            <?php if ($ct['status'] === 'assinado'): ?>
+                                <span class="status-linha">
+                                    📱 WhatsApp:
+                                    <?php if ($ct['aviso_whatsapp_enviado_em']): ?>
+                                        <span style="color:#2a7a3b">✅ entregue <?= date('d/m H:i', strtotime($ct['aviso_whatsapp_enviado_em'])) ?></span>
+                                    <?php else: ?>
+                                        <span style="color:#a33">⏳ não confirmado</span>
+                                    <?php endif; ?>
+                                    &nbsp;·&nbsp;
+                                    📧 E-mail:
+                                    <?php if ($ct['aviso_email_enviado_em']): ?>
+                                        <span style="color:#2a7a3b">✅ entregue <?= date('d/m H:i', strtotime($ct['aviso_email_enviado_em'])) ?></span>
+                                    <?php else: ?>
+                                        <span style="color:#a33">⏳ não confirmado</span>
+                                    <?php endif; ?>
+                                </span>
+                                <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                                    <form method="post">
                                         <?= csrfField() ?>
                                         <input type="hidden" name="acao" value="reenviar_aviso_contrato_meta">
                                         <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
-                                        <button type="submit" class="btn-texto">🔁 Reenviar aviso por WhatsApp (Meta oficial)</button>
+                                        <button type="submit" class="chip-acao">🔁 Reenviar aviso (WhatsApp)</button>
                                     </form>
                                 <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -820,7 +823,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     <?php elseif ($ehDocCliente && !$doc['dados_confirmados']): ?>
                         <span class="badge badge-atraso">📝 enviado, aguardando cliente confirmar dados</span>
                         <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-                            <form method="post" class="inline" style="margin-top:4px" onsubmit="return confirm('Confirmar que já revisou os dados desse documento (marca/modelo/banco etc já editados nos cards acima) em nome do cliente?');">
+                            <form method="post" class="inline" style="margin-top:4px" onsubmit="return confirmarAcao(this, 'Confirmar que já revisou os dados desse documento (marca/modelo/banco etc já editados nos cards acima) em nome do cliente?');">
                                 <?= csrfField() ?>
                                 <input type="hidden" name="acao" value="confirmar_documento_staff">
                                 <input type="hidden" name="tipo_documento" value="<?= e($tipo) ?>">
@@ -900,7 +903,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             </small></p>
 
             <hr>
-            <form method="post" onsubmit="return confirm('Encerrar esta oportunidade?');">
+            <form method="post" onsubmit="return confirmarAcao(this, 'Encerrar esta oportunidade?');">
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="marcar_perdida">
                 <label>Motivo (obrigatório)</label>
@@ -1496,6 +1499,7 @@ function copiarTextoFallback(texto, callback) {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

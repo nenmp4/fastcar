@@ -126,6 +126,10 @@ pre, code { overflow-x: auto; max-width: 100%; }
     button { min-height: 44px; }
     button.btn-texto { min-height: 40px; padding: 8px 4px; }
     a.btn, a.btn-primary { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+    /* Chips de ação da tabela de contrato (admin/oportunidade.php,
+       admin/venda.php) — 30/09/2026, mesmo alvo de toque de 44px, maior
+       que o padding compacto do desktop. */
+    .acoes-linha .chip-acao { min-height: 44px; padding: 8px 12px; }
     main form[style*="display:flex"], main form[style*="display: flex"],
     main div[style*="display:flex"], main div[style*="display: flex"] { flex-wrap: wrap; }
     main form[style*="display:flex"] > *, main form[style*="display: flex"] > * { flex: 1 1 100%; }

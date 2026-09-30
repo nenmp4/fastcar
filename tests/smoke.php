@@ -250,17 +250,21 @@ foreach (['includes/oportunidades.php', 'admin/oportunidade.php', 'public/docume
 }
 
 // admin-pagina-sem-pwa guard — toda página cheia do admin (tem <html>, não é
-// _bootstrap/_pwa_*/_notify.php/_scroll_restore.php/_acao_popup.php/login)
-// precisa incluir os partials de PWA, notificações, restauração de scroll E
-// popup de ação, senão a instalação como app, o sino de aviso de lead, o
+// _bootstrap/_pwa_*/_notify.php/_scroll_restore.php/_acao_popup.php/
+// _confirm_dialog.php/login) precisa incluir os partials de PWA,
+// notificações, restauração de scroll, popup de ação E confirmação
+// estilizada, senão a instalação como app, o sino de aviso de lead, o
 // "preenchi algo e a página volta pro topo sozinha" (achado real 30/09/2026,
-// ver admin/_scroll_restore.php), ou o "status da ação só aparece lá em
-// cima, fora da tela" (achado real 30/09/2026, ver admin/_acao_popup.php)
-// quebram silenciosamente numa tela específica (mesmo tipo de bug do
-// head_scripts nas landing pages do JurídicoSaaS: página com <head> próprio
-// que não passa pelo snippet compartilhado).
+// ver admin/_scroll_restore.php), o "status da ação só aparece lá em
+// cima, fora da tela" (achado real 30/09/2026, ver admin/_acao_popup.php),
+// ou um `onsubmit="return confirmarAcao(...)"` numa página sem o <dialog>
+// correspondente (mostraria erro de JS silencioso e o form nunca
+// submeteria — ver admin/_confirm_dialog.php) quebram silenciosamente numa
+// tela específica (mesmo tipo de bug do head_scripts nas landing pages do
+// JurídicoSaaS: página com <head> próprio que não passa pelo snippet
+// compartilhado).
 $semPwa = [];
-$parciais = ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', '_notify.php', '_scroll_restore.php', '_acao_popup.php', 'login.php', 'esqueci_senha.php', 'redefinir_senha.php'];
+$parciais = ['_bootstrap.php', '_pwa_head.php', '_pwa_register.php', '_notify.php', '_scroll_restore.php', '_acao_popup.php', '_confirm_dialog.php', 'login.php', 'esqueci_senha.php', 'redefinir_senha.php'];
 foreach (glob($root . '/admin/*.php') as $f) {
     $rel = str_replace($root . '/', '', $f);
     $base = basename($f);
@@ -273,12 +277,33 @@ foreach (glob($root . '/admin/*.php') as $f) {
     if (!str_contains($conteudo, '_notify.php')) $faltando[] = 'notify';
     if (!str_contains($conteudo, '_scroll_restore.php')) $faltando[] = 'scroll-restore';
     if (!str_contains($conteudo, '_acao_popup.php')) $faltando[] = 'acao-popup';
+    if (!str_contains($conteudo, '_confirm_dialog.php')) $faltando[] = 'confirm-dialog';
     if ($faltando) $semPwa[] = "{$rel} (falta " . implode('+', $faltando) . ')';
 }
 if ($semPwa) {
     falha('[admin-pagina-sem-pwa] página cheia do admin sem include de PWA/notificação — em: ' . implode(', ', $semPwa));
 } else {
     ok('[admin-pagina-sem-pwa] limpo');
+}
+
+// confirm-nativo-nao-substituido guard — 30/09/2026, "essa ações da para
+// deixar ux bonito... acho feio" + "faz todo sistema": todo
+// `onsubmit="return confirm(...)"` do admin/public foi trocado por
+// `confirmarAcao(this, ...)` (admin/_confirm_dialog.php, dialog estilizado
+// em vez da caixa cinza padrão do navegador) — nunca deveria voltar a
+// aparecer um confirm() nativo cru num form novo/editado depois disso.
+$confirmNativo = [];
+foreach (array_merge(glob($root . '/admin/*.php'), glob($root . '/public/*.php')) as $f) {
+    if (basename($f) === '_confirm_dialog.php') continue; // docblock cita o padrão antigo só de exemplo
+    $conteudo = (string)file_get_contents($f);
+    if (str_contains($conteudo, 'return confirm(')) {
+        $confirmNativo[] = str_replace($root . '/', '', $f);
+    }
+}
+if ($confirmNativo) {
+    falha('[confirm-nativo-nao-substituido] use confirmarAcao(this, ...) em vez de confirm() nativo — em: ' . implode(', ', $confirmNativo));
+} else {
+    ok('[confirm-nativo-nao-substituido] limpo (todo confirm() nativo já foi trocado por confirmarAcao())');
 }
 
 // version.json precisa ser JSON válido e semver

@@ -312,7 +312,7 @@ function rotuloStatusParcelaPromissoria(string $status): string {
                 <td>
                     <a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a>
                     <?php if ($v['etapa'] === 'vendido' && $resumo['qtd'] === 0 && $perfil !== 'supervisor'): ?>
-                        <form method="post" style="display:inline-block;margin-top:4px" onsubmit="return confirm('Gerar receita/comissão dessa venda no financeiro agora?');">
+                        <form method="post" style="display:inline-block;margin-top:4px" onsubmit="return confirmarAcao(this, 'Gerar receita/comissão dessa venda no financeiro agora?');">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="gerar_financeiro">
                             <input type="hidden" name="venda_id" value="<?= (int)$v['id'] ?>">
@@ -332,6 +332,7 @@ function rotuloStatusParcelaPromissoria(string $status): string {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

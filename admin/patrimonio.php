@@ -210,7 +210,7 @@ $porCategoria = patrimonioContagemPorCategoria();
         </td>
         <td style="white-space:nowrap">
           <a href="?editar=<?= (int)$it['id'] ?>">✏️</a>
-          <form method="POST" style="display:inline" onsubmit="return confirm('Excluir este item de patrimônio? Não pode ser desfeito.')">
+          <form method="POST" style="display:inline" onsubmit="return confirmarAcao(this, 'Excluir este item de patrimônio? Não pode ser desfeito.');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="excluir">
             <input type="hidden" name="id" value="<?= (int)$it['id'] ?>">
@@ -229,6 +229,7 @@ $porCategoria = patrimonioContagemPorCategoria();
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

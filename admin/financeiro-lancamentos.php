@@ -502,7 +502,7 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
             <?php if ($l['status'] !== 'pago'): ?>
               <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="marcar_pago"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" class="btn-texto" title="Marcar pago">✅</button></form>
             <?php endif; ?>
-            <form method="POST" style="display:inline" onsubmit="return confirm('Excluir este lançamento?')"><?= csrfField() ?><input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" class="btn-texto perigo" title="Excluir">🗑️</button></form>
+            <form method="POST" style="display:inline" onsubmit="return confirmarAcao(this, 'Excluir este lançamento?');"><?= csrfField() ?><input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button type="submit" class="btn-texto perigo" title="Excluir">🗑️</button></form>
           <?php else: ?>
             <a href="?action=edit&id=<?= (int)$l['id'] ?>" title="Ver detalhes">👁️ via Asaas</a>
           <?php endif; ?>
@@ -546,6 +546,7 @@ function fcConfirmarCancelamento(form) {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

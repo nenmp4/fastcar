@@ -325,7 +325,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         </form>
                     <?php endif; ?>
                     <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
-                        <form method="post" class="inline" onsubmit="return confirm('Apagar essa conversa inteira? Não tem como desfazer.');">
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Apagar essa conversa inteira? Não tem como desfazer.');">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="excluir_conversa">
                             <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
@@ -953,6 +953,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

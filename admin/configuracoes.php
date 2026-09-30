@@ -1301,7 +1301,7 @@ unset($fv);
                     </form>
                 </td>
                 <td>
-                    <form method="post" class="inline" onsubmit="<?= $faltouHoje ? '' : "return confirm('Marcar {$f['nome']} como ausente hoje? As leads dele(a) ainda não tocadas vão ser redistribuídas pros consultores disponíveis agora mesmo.')" ?>">
+                    <form method="post" class="inline" onsubmit="<?= $faltouHoje ? '' : "return confirmarAcao(this, 'Marcar {$f['nome']} como ausente hoje? As leads dele(a) ainda não tocadas vão ser redistribuídas pros consultores disponíveis agora mesmo.')" ?>">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="<?= $faltouHoje ? 'desmarcar_falta' : 'marcar_falta' ?>">
                         <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
@@ -1391,7 +1391,7 @@ unset($fv);
                     </form>
                 </td>
                 <td>
-                    <form method="post" class="inline" onsubmit="<?= $faltouHojeVendedor ? '' : "return confirm('Marcar {$fv['nome']} como ausente hoje? As negociações dele(a) ainda não tocadas vão ser redistribuídas pros vendedores disponíveis agora mesmo.')" ?>">
+                    <form method="post" class="inline" onsubmit="<?= $faltouHojeVendedor ? '' : "return confirmarAcao(this, 'Marcar {$fv['nome']} como ausente hoje? As negociações dele(a) ainda não tocadas vão ser redistribuídas pros vendedores disponíveis agora mesmo.')" ?>">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="<?= $faltouHojeVendedor ? 'desmarcar_falta_vendedor' : 'marcar_falta_vendedor' ?>">
                         <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
@@ -1457,6 +1457,7 @@ document.getElementById('mostrarSenhas').addEventListener('change', function () 
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

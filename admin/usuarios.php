@@ -243,7 +243,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                     <a href="/admin/usuarios.php?editar=<?= (int)$u['id'] ?>">Editar →</a>
                     <?php if ($u['perfil'] !== 'super_admin' && !$u['bloqueado']): ?>
                         <form method="post" action="/admin/impersonar.php" style="display:inline-block;margin-left:8px"
-                              onsubmit="return confirm('Entrar como <?= e(addslashes($u['nome'])) ?>? Você vai navegar com as permissões dela até clicar em \'Voltar a ser super admin\'.');">
+                              onsubmit="return confirmarAcao(this, 'Entrar como <?= e(addslashes($u['nome'])) ?>? Você vai navegar com as permissões dela até clicar em \'Voltar a ser super admin\'.');">
                             <?= csrfField() ?>
                             <input type="hidden" name="usuario_id" value="<?= (int)$u['id'] ?>">
                             <button type="submit" class="btn-texto" style="padding:0">🎭 Entrar como</button>
@@ -260,6 +260,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

@@ -746,7 +746,7 @@ document.getElementById('modal-promissoria').showModal();
 $podeSelecionarEmMassa = $perfil !== 'supervisor';
 if ($podeSelecionarEmMassa):
 ?>
-<form id="form-bulk-cancelar" method="post" onsubmit="return confirm('Cancelar as negociações selecionadas? Motivo fica gravado no histórico de cada uma; o veículo volta a ficar disponível pra uma nova venda.');">
+<form id="form-bulk-cancelar" method="post" onsubmit="return confirmarAcao(this, 'Cancelar as negociações selecionadas? Motivo fica gravado no histórico de cada uma; o veículo volta a ficar disponível pra uma nova venda.');">
     <?= csrfField() ?>
     <input type="hidden" name="acao" value="cancelar_venda_massa">
 </form>
@@ -858,6 +858,7 @@ function bulkLimparSelecao() {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

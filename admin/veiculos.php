@@ -494,7 +494,7 @@ function lerCrlvManual() {
                 </td>
                 <td><a href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
                 <td>
-                    <form method="post" class="inline" onsubmit="return confirm('Excluir este veículo da frota? Ação sem volta — nunca funciona se já tiver venda/contrato assinado/dinheiro pago vinculado.');">
+                    <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Excluir este veículo da frota? Ação sem volta — nunca funciona se já tiver venda/contrato assinado/dinheiro pago vinculado.');">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="excluir_veiculo">
                         <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
@@ -512,6 +512,7 @@ function lerCrlvManual() {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

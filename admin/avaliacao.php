@@ -174,7 +174,7 @@ function avTermoStatusLabel(string $status): string {
     <p><strong>Status:</strong> <?= avStatusLabel($av['status']) ?>
         <?php if ($av['concluida_em']): ?><small>— concluída em <?= date('d/m/Y H:i', strtotime($av['concluida_em'])) ?></small><?php endif; ?></p>
     <?php if ($perfil === 'super_admin' && empty($av['termo_status'])): ?>
-        <form method="post" onsubmit="return confirm('Excluir esta vistoria inteira (itens e fotos)? Ação sem volta — use só pra limpar duplicata criada por engano.');" style="margin-top:10px">
+        <form method="post" onsubmit="return confirmarAcao(this, 'Excluir esta vistoria inteira (itens e fotos)? Ação sem volta — use só pra limpar duplicata criada por engano.');" style="margin-top:10px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="excluir_avaliacao">
             <button type="submit" class="perigo">🗑️ Excluir esta vistoria (duplicata)</button>
@@ -300,7 +300,7 @@ function avTermoStatusLabel(string $status): string {
                             <span class="badge badge-aviso">aguardando aprovação do vendedor</span>
                         <?php endif; ?>
                         <?php if ($podeEditarChecklist): ?>
-                            <form method="post" onsubmit="return confirm('Remover essa mídia da vistoria?');">
+                            <form method="post" onsubmit="return confirmarAcao(this, 'Remover essa mídia da vistoria?');">
                                 <?= csrfField() ?>
                                 <input type="hidden" name="acao" value="excluir_foto">
                                 <input type="hidden" name="foto_id" value="<?= (int)$f['id'] ?>">
@@ -352,7 +352,7 @@ function avTermoStatusLabel(string $status): string {
         <p><small>Nenhum termo gerado ainda.</small></p>
     <?php endif; ?>
     <?php if ($podeEditarChecklist): ?>
-        <form method="post" onsubmit="return confirm('Gerar o termo e enviar pra assinatura eletrônica agora?');">
+        <form method="post" onsubmit="return confirmarAcao(this, 'Gerar o termo e enviar pra assinatura eletrônica agora?');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_termo">
             <button type="submit" style="min-height:48px;font-size:15px">📤 Gerar e enviar pra assinatura</button>
@@ -372,6 +372,7 @@ function avTermoStatusLabel(string $status): string {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

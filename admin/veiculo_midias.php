@@ -121,7 +121,7 @@ $midias = listarMidiasRevenda($id);
                         <video src="/admin/ver_midia_revenda.php?id=<?= (int)$m['id'] ?>" controls preload="metadata" style="width:100%;border-radius:8px"></video>
                     <?php endif; ?>
                     <?php if ($m['legenda']): ?><small><?= e($m['legenda']) ?></small><?php endif; ?>
-                    <form method="post" onsubmit="return confirm('Remover essa mídia do catálogo?');" style="margin-top:4px">
+                    <form method="post" onsubmit="return confirmarAcao(this, 'Remover essa mídia do catálogo?');" style="margin-top:4px">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="excluir_midia_revenda">
                         <input type="hidden" name="midia_id" value="<?= (int)$m['id'] ?>">
@@ -185,6 +185,7 @@ $midias = listarMidiasRevenda($id);
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

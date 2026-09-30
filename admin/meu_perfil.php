@@ -129,7 +129,7 @@ $voltarPara = match ($usuario['perfil']) {
                 <button type="submit" style="margin-top:8px">📷 Enviar foto</button>
             </form>
             <?php if ($avatarAtual): ?>
-                <form method="post" class="inline" style="margin-top:6px" onsubmit="return confirm('Remover a foto de perfil?')">
+                <form method="post" class="inline" style="margin-top:6px" onsubmit="return confirmarAcao(this, 'Remover a foto de perfil?');">
                     <?= csrfField() ?>
                     <input type="hidden" name="acao" value="remover_avatar">
                     <button type="submit" class="btn-texto perigo">🗑️ Remover foto</button>
@@ -160,6 +160,7 @@ $voltarPara = match ($usuario['perfil']) {
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
+<?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
 </body>
 </html>

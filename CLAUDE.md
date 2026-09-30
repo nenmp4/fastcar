@@ -9005,6 +9005,82 @@ segue no schema sem uso novo, não removida sem ganho real),
   (mobile) e 1400px (desktop), popup bem centralizado, sem cortar/colidir
   com nada — + `php -l` + `node --check` + `tests/smoke.php` limpos. Sem
   migração de schema.
+- **Confirmação estilizada (substitui `window.confirm()` nativo) + chips de
+  ação mais limpos na tabela de contrato** (30/09/2026, achado real via
+  screenshot — caixa cinza padrão do navegador ("sistema.fastcar.solutions
+  diz") pedindo pra confirmar o reenvio de link de assinatura, junto de uma
+  linha de links "·"-separados: "essa ações da para deixar ux bonito de
+  outra forma acho feio" → "faz todo sistema" → "coloca javascript ali") —
+  2 pedaços, aplicados nos 2 lugares que o pedido cobriu.
+  **(1) Confirmação estilizada, sistema inteiro**: `admin/_confirm_dialog.php`
+  (novo, incluído no mesmo ponto — logo depois de `_acao_popup.php` — das
+  35 páginas cheias do admin, mesmo bulk-insert de sempre) — `<dialog>`
+  nativo pequeno/centralizado (ícone ⚠️, mensagem, "Cancelar"/"Confirmar"),
+  cores/tokens do design system (nunca hex solto). Substitui TODO
+  `onsubmit="return confirm('...')"` nativo do projeto (23 ocorrências em
+  13 arquivos: `admin/venda.php`(6)/`oportunidade.php`(4)/`avaliacao.php`(3)/
+  `configuracoes.php`(2, dentro de ternário PHP)/`veiculos.php`/
+  `promissorias.php`/`vendas.php`/`whatsapp_inbox.php`/`veiculo_midias.php`/
+  `meu_perfil.php`/`usuarios.php`(1, com PHP+aspas escapadas embutidas na
+  mensagem — `impersonar`)/`patrimonio.php`/`financeiro-lancamentos.php`)
+  por `onsubmit="return confirmarAcao(this, '...')"`. Como `confirm()` é
+  síncrono (o valor de retorno decide a submissão na hora) e um `<dialog>`
+  é sempre assíncrono, `confirmarAcao(form, mensagem)` (`window.*`, JS
+  puro) resolve com o padrão "bloqueia e reenvia": 1ª chamada SEMPRE
+  retorna `false` na hora (cancela o submit nativo) e abre o modal; se o
+  usuário clicar "Confirmar", o form ganha um marcador
+  (`dataset.confirmado='1'`) e o script chama `form.requestSubmit()` de
+  novo — dispara o `submit` uma 2ª vez, `confirmarAcao()` vê o marcador e
+  retorna `true` direto (removendo o marcador em seguida), deixando a
+  submissão de verdade acontecer sem reabrir o modal; Cancelar/Esc/clique
+  fora fecha sem confirmar nada. Testado com Chromium headless real
+  (`/opt/pw-browsers`, sem Playwright): 10 asserções simulando clique real
+  (`.click()`) num roteiro completo — 1º clique abre o modal e NUNCA
+  submete na hora (confirmado via listener de `submit` separado checando
+  `event.defaultPrevented`, não um contador ingênuo dentro do próprio
+  `onsubmit` — esse teria contado toda invocação do handler, inclusive a
+  bloqueada); Cancelar fecha sem submeter; Confirmar fecha e submete
+  EXATAMENTE 1 vez; um clique NOVO depois disso reabre o modal de novo
+  (prova que o marcador não "vaza" e passa a pular a confirmação pra
+  sempre) — visual conferido por screenshot real também. Guard novo
+  `confirm-nativo-nao-substituido` (`tests/smoke.php`) barra qualquer
+  `return confirm(` novo em `admin/`/`public/`; `admin-pagina-sem-pwa`
+  estendido pra também exigir o include de `_confirm_dialog.php` — sanity-
+  check de ambos confirmado reintroduzindo o padrão antigo temporariamente
+  e vendo os guards falharem antes de restaurar.
+  **(2) Chips de ação mais limpos**: a linha de ações da tabela de
+  contratos (`admin/oportunidade.php`/`admin/venda.php`) trocou o texto
+  sublinhado cru separado por "·" por `.acoes-linha`/`.chip-acao`
+  (`admin/assets/style.css`, novo) — pílulas pequenas com borda sutil,
+  `flex-wrap` (empilha em várias linhas quando precisar, nunca estoura
+  horizontal), status de entrega (WhatsApp/e-mail) numa linha própria
+  abaixo dos chips em vez de misturado com eles. `admin/assets/mobile.css`
+  ganhou `.acoes-linha .chip-acao { min-height:44px }` no breakpoint de
+  700px — mesmo alvo de toque mínimo já exigido em toda tela do projeto.
+  Renderizado com o CSS real do projeto (headless Chromium, screenshot)
+  pra confirmar visualmente o resultado antes de considerar pronto.
+- **Reenvio do link de assinatura sai como imagem+legenda (like o link do
+  wizard), não texto cru** (30/09/2026, mesma sessão — usuário mandou
+  print do WhatsApp Web mostrando os 2 links reais lado a lado: o do
+  wizard de documentos com preview/card bonito, o da ZapSign como link
+  puro sem preview nenhum; "meta tags igual contrato" / "subir tag
+  legal") — `reenviarLinkAssinaturaContratoMeta()` (`includes/contratos.php`)
+  não tinha como adicionar meta tag nenhuma no link (`app.zapsign.com.br`
+  é domínio de terceiro, fora do nosso controle); a melhoria possível do
+  nosso lado é mandar a mensagem no MESMO formato que o link do wizard já
+  usa — imagem (logo da Fastcar) + legenda — em vez de texto puro, gerando
+  um card visual na conversa mesmo sem controlar as meta tags do destino.
+  Mesma checagem `marcaLogoConfigurada()` já usada em
+  `enviar_link_documentos`/`enviar_link_documentos_venda`, mas via
+  `oficialEnviarImagem()` (força Meta oficial de verdade, igual o resto
+  dessa função) em vez de `zapiEnviarImagem()` (que poderia rotear por
+  outro canal); sem logo configurada, cai pro texto puro de sempre, nunca
+  quebra o envio por falta de imagem. Testado em banco isolado contra
+  fake Meta local: com uma logo de teste temporária (nunca commitada,
+  removida e `git status` conferido limpo depois), o payload capturado
+  confirma `"type":"image"` com a URL da logo; sem logo, confirmado
+  caminho de texto puro (cenário já coberto no teste anterior desta mesma
+  função) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

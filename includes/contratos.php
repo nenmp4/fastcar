@@ -918,7 +918,20 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
     $veiculo = trim(($campos['veiculo_marca'] ?? '') . ' ' . ($campos['veiculo_modelo'] ?? '')) ?: 'veículo';
 
     $msg = "Olá, {$nome}! Segue o link pra assinar o contrato do seu {$veiculo}:\n{$ct['sign_url']}";
-    if (!oficialEnviarTexto($telefone, $msg)) {
+
+    // 30/09/2026, "meta tags igual contrato"/"subir tag legal" — o link do
+    // wizard de documentos (enviar_link_documentos_venda/enviar_link_documentos)
+    // já sai como IMAGEM (logo da Fastcar) + legenda, gerando um card
+    // bonito no WhatsApp em vez de link cru sem preview (a ZapSign é
+    // domínio de terceiro, sem nenhuma meta tag nossa pra melhorar —
+    // mandar como imagem é o único jeito de dar uma cara bonita à
+    // mensagem que É nossa). Mesmo padrão aplicado aqui.
+    $baseUrl = getConfig('app_base_url') ?: '';
+    $enviado = marcaLogoConfigurada() && $baseUrl
+        ? oficialEnviarImagem($telefone, rtrim($baseUrl, '/') . '/public/assets/logo.png', $msg)
+        : oficialEnviarTexto($telefone, $msg);
+
+    if (!$enviado) {
         $erro = oficialUltimoErro();
         $detalhe = $erro ? " ({$erro})" : '';
         return ['ok' => false, 'erro' => "Não deu pra enviar pelo WhatsApp oficial da Meta{$detalhe}. Se esse número nunca escreveu pro WhatsApp da empresa, a Meta bloqueia mensagem proativa fora da janela de 24h."];

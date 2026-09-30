@@ -311,6 +311,67 @@ button.btn-texto:hover { text-decoration: underline; filter: none; box-shadow: n
 button.btn-texto:active { transform: none; }
 button.btn-texto.perigo { color: var(--vermelho); }
 
+/* Grupo de ações compactas em célula de tabela (ex: linha de contrato) —
+   30/09/2026, achado real: "·" separando link/copiar/reenviar numa linha
+   só (admin/oportunidade.php, admin/venda.php) ficava com cara de
+   wall-of-links ("essa ações da para deixar ux bonito... acho feio").
+   Chip pequeno em vez de texto sublinhado cru, empilha em várias linhas
+   quando precisar (flex-wrap), sem separador "·" no meio. */
+.acoes-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.acoes-linha .chip-acao {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 0;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--borda);
+    background: var(--fundo);
+    color: var(--texto-suave);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: none;
+    transition: border-color .15s, color .15s, background .15s;
+}
+.acoes-linha .chip-acao:hover { border-color: var(--azul); color: var(--azul-escuro); background: var(--azul-claro); text-decoration: none; }
+.acoes-linha form { display: inline-flex; margin: 0; }
+.acoes-linha .status-linha { flex-basis: 100%; font-size: 12px; color: var(--texto-suave); }
+
+/* Confirmação estilizada — substitui window.confirm() nativo em todo
+   <form onsubmit="return confirm('...')"> do admin — 30/09/2026, "coloca
+   javascript ali", pedido junto do bullet acima. Mesmo <dialog> nativo do
+   modal-lancamento, só menor/centralizado. Markup+JS em
+   admin/_confirm_dialog.php (incluído em toda página cheia, mesmo padrão
+   de admin/_notify.php etc). */
+dialog.modal-confirm {
+    border: none;
+    border-radius: var(--raio);
+    padding: 24px 26px;
+    width: min(400px, 90vw);
+    box-shadow: 0 24px 60px rgba(10, 18, 41, .35);
+    text-align: center;
+}
+dialog.modal-confirm::backdrop { background: rgba(10, 18, 41, .55); backdrop-filter: blur(1px); }
+dialog.modal-confirm .confirm-icone {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 12px;
+    border-radius: 999px;
+    background: var(--amarelo-bg);
+    color: var(--amarelo);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+}
+dialog.modal-confirm p { margin: 0 0 20px; font-size: 14.5px; color: var(--texto); line-height: 1.5; }
+dialog.modal-confirm .confirm-acoes { display: flex; gap: 10px; justify-content: center; }
+dialog.modal-confirm .confirm-acoes button { margin-top: 0; flex: 1; }
+
 /* 19/09/2026 — `.btn`/`.btn-primary` em <a> (nav de admin/financeiro.php,
    badges clicáveis de atraso/prazo em admin/financeiro-lancamentos.php e
    admin/veiculos.php) nunca tiveram regra própria — as duas classes
