@@ -229,6 +229,15 @@ $migracoes = [
     // includes/zapcar.php::zapcarAplicarNaOportunidade().
     'oportunidades.zapcar_resumo_texto' => "ALTER TABLE oportunidades ADD COLUMN zapcar_resumo_texto TEXT DEFAULT ''",
     'oportunidades.zapcar_consultado_em' => "ALTER TABLE oportunidades ADD COLUMN zapcar_consultado_em DATETIME",
+
+    // 30/09/2026, "coloca status entregue no email, entregue no whatsapp" —
+    // status de entrega do aviso de assinatura de contrato
+    // (notificarAssinaturaContrato(), includes/contratos.php), por canal.
+    // NULL = nunca confirmado entregue nesse canal (nem tentou, ou tentou e
+    // falhou); preenchido = pelo menos 1 envio confirmado com sucesso nesse
+    // canal, nunca sobrescrito com NULL de volta.
+    'contratos.aviso_whatsapp_enviado_em' => "ALTER TABLE contratos ADD COLUMN aviso_whatsapp_enviado_em DATETIME",
+    'contratos.aviso_email_enviado_em' => "ALTER TABLE contratos ADD COLUMN aviso_email_enviado_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {

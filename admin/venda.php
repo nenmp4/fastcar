@@ -224,6 +224,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $erro = $resultadoPreview['erro'];
                     }
                 }
+            } elseif ($acao === 'reenviar_aviso_contrato_meta') {
+                $resultadoReenvio = reenviarAvisoAssinaturaContratoMeta((int)($_POST['contrato_id'] ?? 0));
+                if ($resultadoReenvio['ok']) {
+                    $sucesso = 'Aviso reenviado pelo WhatsApp oficial da Meta.';
+                } else {
+                    $erro = $resultadoReenvio['erro'];
+                }
             } elseif ($acao === 'enviar_link_documentos_venda') {
                 // 19/09/2026, "espelhar compra - subir os documentos
                 // preencher tudo ter link igual de compra" — mesmo padrão
@@ -966,6 +973,31 @@ function adicionarParteEntrada() {
                         <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
                             · <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
                             <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋</button>
+                        <?php endif; ?>
+
+                        <?php if ($ct['status'] === 'assinado'): ?>
+                            <div style="margin-top:6px;font-size:12px;color:var(--texto-fraco)">
+                                <?php if ($ct['aviso_whatsapp_enviado_em']): ?>
+                                    📱 WhatsApp: <span style="color:#2a7a3b">✅ entregue <?= date('d/m H:i', strtotime($ct['aviso_whatsapp_enviado_em'])) ?></span>
+                                <?php else: ?>
+                                    📱 WhatsApp: <span style="color:#a33">⏳ não confirmado</span>
+                                <?php endif; ?>
+                                &nbsp;·&nbsp;
+                                <?php if ($ct['aviso_email_enviado_em']): ?>
+                                    📧 E-mail: <span style="color:#2a7a3b">✅ entregue <?= date('d/m H:i', strtotime($ct['aviso_email_enviado_em'])) ?></span>
+                                <?php else: ?>
+                                    📧 E-mail: <span style="color:#a33">⏳ não confirmado</span>
+                                <?php endif; ?>
+                                <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                                    <br>
+                                    <form method="post" style="display:inline-block;margin-top:4px">
+                                        <?= csrfField() ?>
+                                        <input type="hidden" name="acao" value="reenviar_aviso_contrato_meta">
+                                        <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
+                                        <button type="submit" class="btn-texto">🔁 Reenviar aviso por WhatsApp (Meta oficial)</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
                         <?php endif; ?>
                     </td>
                 </tr>

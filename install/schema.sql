@@ -547,6 +547,12 @@ CREATE TABLE IF NOT EXISTS contratos (
     drive_file_id TEXT DEFAULT '',
     arquivo_url TEXT DEFAULT '',
     pdf_assinado_url TEXT DEFAULT '',  -- não usado (nunca escrito) — mantido só por compat com bancos já criados
+    -- Status de entrega do aviso automático de "contrato assinado"
+    -- (notificarAssinaturaContrato()) por canal — 30/09/2026. NULL = nunca
+    -- confirmado entregue (nem tentou, ou tentou e falhou); preenchido =
+    -- pelo menos 1 envio com sucesso confirmado, nunca volta a NULL depois.
+    aviso_whatsapp_enviado_em DATETIME,
+    aviso_email_enviado_em DATETIME,
     created_by INTEGER REFERENCES usuarios(id),
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

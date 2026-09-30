@@ -4413,6 +4413,71 @@ segue no schema sem uso novo, não removida sem ganho real),
   veículo, link `/admin/venda.php`), e o comportamento pré-existente de
   marcar a negociação como `vendido` na assinatura continua intacto — sem
   regressão nos 2 fluxos de sincronização já validados em produção.
+  **Também manda e-mail, com status de entrega por canal + botão de
+  reenvio manual via Meta oficial** (30/09/2026, 3 pedidos em sequência —
+  "cliente enviou documentação notificar consultor no zap" (ver bullet
+  próprio em `includes/notificacoes.php`), "coloca botão para reenviar
+  contrato pelo zap usando instancia meta pois jean não recebeu caso isso
+  aconteça" e "coloca status entregue no email, entregue no whatsapp") —
+  achado real: `notificarAssinaturaContrato()` nunca checava o retorno de
+  `zapiEnviarTexto()` (chamava e esquecia), então não tinha como saber se
+  o aviso realmente chegou — e como o canal principal migrou pra Meta
+  oficial em 29/09/2026 (`whatsapp_provider_principal='oficial'`), um
+  responsável cujo número pessoal NUNCA escreveu pro WhatsApp oficial da
+  empresa faz esse envio falhar silenciosamente (Meta rejeita mensagem
+  proativa fora da janela de 24h, código `131047`) — explicação mais
+  provável pro "Jean não recebeu".
+  Duas colunas novas em `contratos` — `aviso_whatsapp_enviado_em`/
+  `aviso_email_enviado_em` (DATETIME, `NULL` = nunca confirmado entregue
+  nesse canal — nem tentou, ou tentou e falhou — só preenchido quando o
+  ENVIO de fato confirma sucesso, nunca "tentei"; e nunca volta a `NULL`
+  depois de preenchido). Lógica de montar contato/mensagem extraída pra
+  `_dadosAvisoAssinaturaContrato()` (nova, `includes/contratos.php`,
+  deriva `$ehVenda` sozinha de `contratos.tipo` — nunca precisa que quem
+  chama já saiba) pra nunca duplicar as 2 ramificações compra/venda entre
+  o aviso automático e o reenvio manual. `notificarAssinaturaContrato()`
+  passou a mandar E-MAIL também (reaproveita `enviarEmail()`/
+  `emailLayout()`/`emailBotao()` já existentes, nenhuma mudança neles) —
+  pro `usuarios.email` do responsável (sempre existe, é o e-mail de login)
+  quando cadastrado, senão fallback pra todo `super_admin`/`supervisor`
+  (`_emailsFallbackAvisoInterno()`, mesmo raciocínio de "acompanha tudo" já
+  usado em `includes/notificacoes.php::destinatariosNotificacao()`) — cada
+  canal marca sua própria coluna só quando aquele envio específico
+  confirma sucesso, independente do outro canal.
+  **Botão "🔁 Reenviar aviso por WhatsApp (Meta oficial)"** — nova
+  `reenviarAvisoAssinaturaContratoMeta()` (`includes/contratos.php`), nunca
+  decide pra quem manda por conta própria (mesmos destinatários do aviso
+  automático — responsável, senão a lista de fallback), só troca o
+  TRANSPORTE: chama `oficialEnviarTexto()` DIRETO (nunca `zapiEnviarTexto()`,
+  que respeitaria o toggle/Z-API) — nunca manda e-mail (é só o canal
+  WhatsApp que pode precisar de reforço manual). Sem a Meta oficial
+  configurada, erro claro antes de tentar qualquer coisa; falhando o
+  envio, devolve o erro REAL da própria Meta via `oficialUltimoErro()`
+  (ex: código `131047`) em vez de um "não deu" genérico — texto explica
+  a causa mais provável (número nunca escreveu pro WhatsApp oficial da
+  empresa antes). Botão aparece na linha do contrato já `assinado`
+  (`admin/oportunidade.php` e `admin/venda.php`, mesma tabela de
+  contratos que já existia — idêntico nos 2 arquivos), ao lado dos 2
+  badges de status por canal ("📱 WhatsApp: ✅ entregue {data}"/"⏳ não
+  confirmado", "📧 E-mail: ..."); mesma trava de `supervisor` (só
+  acompanha) do resto das 2 telas. Testado: 5 cenários em banco isolado
+  contra fake Z-API + Meta Graph + Gmail locais (contrato de compra com
+  responsável com zap+e-mail cadastrados marca os 2 canais; contrato de
+  venda sem responsável cai nos 2 fallbacks — lista de números E
+  super_admin/supervisor — e marca os 2 canais também; reenvio sem Meta
+  configurada devolve erro claro sem tentar nada; reenvio com Meta
+  configurada e sucesso marca só `aviso_whatsapp_enviado_em`, confirmado
+  que NENHUMA chamada nova de e-mail aconteceu — contagem de chamadas ao
+  Gmail no fake server ficou igual antes/depois do reenvio; reenvio com a
+  Meta respondendo erro real (`131047` simulado) propaga o texto exato do
+  erro e NUNCA marca como entregue) + migração testada contra schema
+  anterior a esta mudança (`git show HEAD:install/schema.sql`, colunas
+  confirmadas ausentes antes, `ALTER TABLE` aplicado com sucesso, dado
+  pré-existente preservado, idempotente numa 2ª rodada) + `php -l` +
+  `tests/smoke.php` limpos. Sem regressão no fluxo automático — o log das
+  chamadas do fake Z-API/Meta conferido byte a byte confirma que cada
+  canal só chama a URL certa (`/instances/.../send-text` pro Z-API,
+  `/{phone_number_id}/messages` pra Meta), nunca cruzando.
   **Importar contratos antigos da ZapSign (CRM anterior)** (19/09/2026,
   "zapasine tem monte contrato do crm anti será possivel puxar concliar" →
   "pela api" → escolhendo "listar + tentar vincular automaticamente" e
@@ -8711,6 +8776,23 @@ segue no schema sem uso novo, não removida sem ganho real),
   `-l` + JS (`node --check`) + `tests/smoke.php` limpos. Migração testada
   contra schema anterior (`git show HEAD:install/schema.sql`, tabela
   ausente antes, idempotente numa 2ª rodada).
+  **Também manda pro WhatsApp pessoal do responsável, não só o sino**
+  (30/09/2026, pedido de acompanhamento no mesmo dia: "cliente enviou
+  documentação notificar consultor no zap") — o sino é ótimo pra quem já
+  está com o admin aberto, mas o consultor pode estar em campo sem a tela
+  aberta; `notificarDocumentosConfirmados()`/`notificarDocumentosConfirmadosVenda()`
+  ganharam uma chamada extra pra `notificarDocumentosConfirmadosZap()`
+  (nova, mesmo arquivo), mesmo padrão já usado em
+  `notificarAssinaturaContrato()` (`includes/contratos.php`): manda pro
+  WhatsApp PESSOAL do responsável (`usuarios.whatsapp`) quando cadastrado,
+  senão cai no fallback genérico de `config.notificacao_leads_whatsapp` —
+  nunca deixa passar batido. Best-effort (try/catch próprio, nunca herda
+  falha do sino nem propaga pra travar o wizard do cliente/comprador) —
+  os 2 canais (sino + zap) são independentes, um falhar nunca impede o
+  outro. `includes/notificacoes.php` ganhou `require_once` de
+  `whatsapp_config.php` (faltava — só funcionava antes porque quem
+  chamava (`public/documentos.php`/`public/documentos_venda.php`) nunca
+  precisava de `zapiEnviarTexto()` até agora).
 - **Página trava rolagem lá no topo depois de qualquer "Salvar"**
   (30/09/2026, achado real: "quando abrimos cliente tem ficar rolando pra
   baixo... preencho algo ainda rola pra baixo, [tenho que] voltar") —

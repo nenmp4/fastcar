@@ -647,75 +647,191 @@ function zapsignSincronizarContrato(int $contratoId): void {
 }
 
 /**
+ * Monta contato/mensagem do aviso de assinatura pra um contrato — extraído
+ * de notificarAssinaturaContrato() em 30/09/2026 pra ser reaproveitado
+ * também por reenviarAvisoAssinaturaContratoMeta() (botão manual de
+ * reenvio, "jean não recebeu caso isso aconteça") sem duplicar as 2
+ * ramificações compra/venda. `$ehVenda` é sempre derivado de
+ * contratos.tipo, nunca precisa ser passado por quem chama.
+ */
+function _dadosAvisoAssinaturaContrato(int $contratoId): ?array {
+    $db = getDB();
+    $stmtTipo = $db->prepare("SELECT tipo FROM contratos WHERE id = ?");
+    $stmtTipo->execute([$contratoId]);
+    $tipo = $stmtTipo->fetchColumn();
+    if ($tipo === false) return null;
+    $ehVenda = $tipo === 'venda';
+    $baseUrl = getConfig('app_base_url') ?: '';
+
+    if ($ehVenda) {
+        $stmt = $db->prepare("
+            SELECT v.id AS ref_id, v.comprador_nome, o.veiculo_marca, o.veiculo_modelo,
+                   u.whatsapp AS responsavel_whatsapp, u.email AS responsavel_email
+            FROM contratos c
+            JOIN vendas v ON v.id = c.venda_id
+            LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+            LEFT JOIN usuarios u ON u.id = v.responsavel_id
+            WHERE c.id = ?
+        ");
+        $stmt->execute([$contratoId]);
+        $d = $stmt->fetch();
+        if (!$d) return null;
+
+        $nomeContato = $d['comprador_nome'] ?: '(sem nome)';
+        $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/venda.php?id={$d['ref_id']}" : '';
+        $rotuloContato = 'Comprador';
+    } else {
+        $stmt = $db->prepare("
+            SELECT o.id AS ref_id, cl.nome AS cliente_nome, o.veiculo_marca, o.veiculo_modelo,
+                   u.whatsapp AS responsavel_whatsapp, u.email AS responsavel_email
+            FROM contratos c
+            JOIN oportunidades o ON o.id = c.oportunidade_id
+            JOIN clientes cl ON cl.id = o.cliente_id
+            LEFT JOIN usuarios u ON u.id = o.responsavel_id
+            WHERE c.id = ?
+        ");
+        $stmt->execute([$contratoId]);
+        $d = $stmt->fetch();
+        if (!$d) return null;
+
+        $nomeContato = $d['cliente_nome'] ?: '(sem nome)';
+        $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/oportunidade.php?id={$d['ref_id']}" : '';
+        $rotuloContato = 'Cliente';
+    }
+
+    $veiculo = trim(($d['veiculo_marca'] ?? '') . ' ' . ($d['veiculo_modelo'] ?? '')) ?: 'veículo';
+    $msg = "✅ Contrato assinado!\n{$rotuloContato}: {$nomeContato}\nVeículo: {$veiculo}"
+         . ($link ? "\n{$link}" : '');
+
+    return [
+        'msg' => $msg,
+        'rotuloContato' => $rotuloContato,
+        'nomeContato' => $nomeContato,
+        'veiculo' => $veiculo,
+        'link' => $link,
+        'responsavelWhatsapp' => $d['responsavel_whatsapp'] ?: null,
+        'responsavelEmail' => $d['responsavel_email'] ?: null,
+    ];
+}
+
+/** E-mails de fallback pro aviso interno quando não há responsável cadastrado (ou ele não tem e-mail) — todo super_admin/supervisor, mesmo raciocínio de "acompanha tudo" já usado em includes/notificacoes.php::destinatariosNotificacao(). */
+function _emailsFallbackAvisoInterno(): array {
+    $db = getDB();
+    $emails = [];
+    foreach ($db->query("SELECT email FROM usuarios WHERE bloqueado = 0 AND perfil IN ('super_admin','supervisor') AND email != ''")->fetchAll() as $row) {
+        $emails[] = $row['email'];
+    }
+    return array_values(array_unique($emails));
+}
+
+/** Grava aviso_whatsapp_enviado_em/aviso_email_enviado_em só quando o canal correspondente confirmou sucesso — nunca sobrescreve com NULL de volta (SET condicional por canal). */
+function _marcarAvisoAssinaturaEnviado(int $contratoId, bool $whatsappOk, bool $emailOk): void {
+    $sets = [];
+    if ($whatsappOk) $sets[] = "aviso_whatsapp_enviado_em = datetime('now','localtime')";
+    if ($emailOk) $sets[] = "aviso_email_enviado_em = datetime('now','localtime')";
+    if (!$sets) return;
+    getDB()->prepare("UPDATE contratos SET " . implode(', ', $sets) . " WHERE id = ?")->execute([$contratoId]);
+}
+
+/**
  * Avisa o RESPONSÁVEL (consultor de compra, ou vendedor de venda), por
- * WhatsApp, assim que a assinatura eletrônica é confirmada de verdade —
- * 18/09/2026, respondendo a "quando cliente assina o contrato tem como
- * saber assinatura ok?": até então era 100% "puxar" (só descobria abrindo
- * a oportunidade/venda na tela), nenhum aviso automático saía. Mesmo
- * padrão de notificarConsultorLeadQualificado()/notificarVendedorLeadQualificado()
- * — sem responsável definido ou sem WhatsApp cadastrado pra ele, cai no
- * aviso genérico de `notificacao_leads_whatsapp` como fallback, nunca
- * deixa passar batido. Chamada só de dentro de zapsignSincronizarContrato(),
- * e só quando a cópia assinada foi salva de verdade (mesma condição que já
- * grava assinado_em pela 1ª vez) — nunca dispara de novo numa
- * resincronização seguinte. Best-effort, nunca lança, nunca trava a
- * sincronização do contrato por causa disso.
+ * WhatsApp E E-MAIL, assim que a assinatura eletrônica é confirmada de
+ * verdade — 18/09/2026, respondendo a "quando cliente assina o contrato
+ * tem como saber assinatura ok?": até então era 100% "puxar" (só
+ * descobria abrindo a oportunidade/venda na tela), nenhum aviso automático
+ * saía. Mesmo padrão de notificarConsultorLeadQualificado()/
+ * notificarVendedorLeadQualificado() — sem responsável definido (ou sem
+ * WhatsApp/e-mail cadastrado pra ele), cai no fallback genérico em cada
+ * canal (WhatsApp: `notificacao_leads_whatsapp`; e-mail: todo super_admin/
+ * supervisor), nunca deixa passar batido. Chamada só de dentro de
+ * zapsignSincronizarContrato(), e só quando a cópia assinada foi salva de
+ * verdade (mesma condição que já grava assinado_em pela 1ª vez) — nunca
+ * dispara de novo numa resincronização seguinte. Best-effort, nunca lança,
+ * nunca trava a sincronização do contrato por causa disso.
+ *
+ * 30/09/2026, "coloca status entregue no email, entregue no whatsapp" —
+ * grava aviso_whatsapp_enviado_em/aviso_email_enviado_em SÓ quando o envio
+ * daquele canal específico confirma sucesso (nunca "tentei", sempre
+ * "confirmei") — admin/oportunidade.php e admin/venda.php mostram esse
+ * status junto do contrato, e é o mesmo dado que decide se o botão manual
+ * "Reenviar por WhatsApp (Meta oficial)" precisa aparecer.
  */
 function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
     try {
-        $db = getDB();
-        $baseUrl = getConfig('app_base_url') ?: '';
+        $d = _dadosAvisoAssinaturaContrato($contratoId);
+        if (!$d) return;
 
-        if ($ehVenda) {
-            $stmt = $db->prepare("
-                SELECT v.id AS ref_id, v.comprador_nome, o.veiculo_marca, o.veiculo_modelo,
-                       u.whatsapp AS responsavel_whatsapp
-                FROM contratos c
-                JOIN vendas v ON v.id = c.venda_id
-                LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
-                LEFT JOIN usuarios u ON u.id = v.responsavel_id
-                WHERE c.id = ?
-            ");
-            $stmt->execute([$contratoId]);
-            $d = $stmt->fetch();
-            if (!$d) return;
-
-            $nomeContato = $d['comprador_nome'] ?: '(sem nome)';
-            $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/venda.php?id={$d['ref_id']}" : '';
-            $rotuloContato = 'Comprador';
+        $whatsappOk = false;
+        if (!empty($d['responsavelWhatsapp'])) {
+            $whatsappOk = zapiEnviarTexto($d['responsavelWhatsapp'], $d['msg']);
         } else {
-            $stmt = $db->prepare("
-                SELECT o.id AS ref_id, cl.nome AS cliente_nome, o.veiculo_marca, o.veiculo_modelo,
-                       u.whatsapp AS responsavel_whatsapp
-                FROM contratos c
-                JOIN oportunidades o ON o.id = c.oportunidade_id
-                JOIN clientes cl ON cl.id = o.cliente_id
-                LEFT JOIN usuarios u ON u.id = o.responsavel_id
-                WHERE c.id = ?
-            ");
-            $stmt->execute([$contratoId]);
-            $d = $stmt->fetch();
-            if (!$d) return;
-
-            $nomeContato = $d['cliente_nome'] ?: '(sem nome)';
-            $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/oportunidade.php?id={$d['ref_id']}" : '';
-            $rotuloContato = 'Cliente';
+            $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+            foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
+                if (zapiEnviarTexto($numero, $d['msg'])) $whatsappOk = true;
+            }
         }
 
-        $veiculo = trim(($d['veiculo_marca'] ?? '') . ' ' . ($d['veiculo_modelo'] ?? '')) ?: 'veículo';
-        $msg = "✅ Contrato assinado!\n{$rotuloContato}: {$nomeContato}\nVeículo: {$veiculo}"
-             . ($link ? "\n{$link}" : '');
+        $corpoEmail = "<p>✅ <strong>Contrato assinado!</strong></p>"
+            . "<p>{$d['rotuloContato']}: " . htmlspecialchars($d['nomeContato'], ENT_QUOTES) . "<br>"
+            . "Veículo: " . htmlspecialchars($d['veiculo'], ENT_QUOTES) . "</p>"
+            . ($d['link'] ? emailBotao('Abrir no sistema', $d['link']) : '');
 
-        if (!empty($d['responsavel_whatsapp'])) {
-            zapiEnviarTexto($d['responsavel_whatsapp'], $msg);
-            return;
+        $emailOk = false;
+        if (!empty($d['responsavelEmail'])) {
+            $emailOk = enviarEmail($d['responsavelEmail'], 'Contrato assinado — Fastcar', emailLayout($corpoEmail)) === true;
+        } else {
+            foreach (_emailsFallbackAvisoInterno() as $email) {
+                if (enviarEmail($email, 'Contrato assinado — Fastcar', emailLayout($corpoEmail)) === true) $emailOk = true;
+            }
         }
 
-        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
-        foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
-            zapiEnviarTexto($numero, $msg);
-        }
+        _marcarAvisoAssinaturaEnviado($contratoId, $whatsappOk, $emailOk);
     } catch (Throwable $e) {
         // best-effort — nunca pode travar a sincronização do contrato.
     }
+}
+
+/**
+ * Reenvio MANUAL do aviso de assinatura, forçando o WhatsApp Cloud API
+ * OFICIAL da Meta (nunca a Z-API/toggle global, nunca e-mail) —
+ * 30/09/2026, "coloca botão para reenviar contrato pelo zap usando
+ * instancia meta pois jean não recebeu caso isso aconteça". Mesmos
+ * destinatários que o aviso automático já usa (responsável, senão a lista
+ * de fallback) — só troca o TRANSPORTE, nunca decide sozinho pra quem
+ * manda. Nunca lança — devolve ['ok'=>bool,'erro'=>?string] pra tela
+ * mostrar o motivo real (inclusive o erro da própria Meta via
+ * oficialUltimoErro(), ex: código 131047 — fora da janela de 24h — o caso
+ * mais provável de "não recebeu" se o número do responsável nunca
+ * escreveu pro WhatsApp oficial da empresa antes).
+ */
+function reenviarAvisoAssinaturaContratoMeta(int $contratoId): array {
+    if (!oficialConfigured()) {
+        return ['ok' => false, 'erro' => 'WhatsApp Cloud API (Meta oficial) não está configurado em Configurações.'];
+    }
+    $d = _dadosAvisoAssinaturaContrato($contratoId);
+    if (!$d) return ['ok' => false, 'erro' => 'Contrato não encontrado.'];
+
+    $enviouAlgum = false;
+    $ultimoErro = null;
+    if (!empty($d['responsavelWhatsapp'])) {
+        $enviouAlgum = oficialEnviarTexto($d['responsavelWhatsapp'], $d['msg']);
+        if (!$enviouAlgum) $ultimoErro = oficialUltimoErro();
+    } else {
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
+            if (oficialEnviarTexto($numero, $d['msg'])) {
+                $enviouAlgum = true;
+            } else {
+                $ultimoErro = oficialUltimoErro();
+            }
+        }
+    }
+
+    if (!$enviouAlgum) {
+        $detalhe = $ultimoErro ? " ({$ultimoErro})" : '';
+        return ['ok' => false, 'erro' => "Não deu pra enviar pelo WhatsApp oficial da Meta{$detalhe}. Se o número nunca escreveu pro WhatsApp da empresa, a Meta bloqueia mensagem proativa fora da janela de 24h."];
+    }
+
+    _marcarAvisoAssinaturaEnviado($contratoId, true, false);
+    return ['ok' => true, 'erro' => null];
 }
