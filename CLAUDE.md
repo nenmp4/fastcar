@@ -5348,6 +5348,36 @@ segue no schema sem uso novo, não removida sem ganho real),
   `blogWhatsappLink()` isolada confirmando o link novo + `php -l` +
   `tests/smoke.php` limpos. Sem migração de schema (é só conteúdo
   estático das páginas públicas).
+  **Revertido de volta pro Z-API, 30/09/2026** — a conta WhatsApp
+  Business da Meta foi **desabilitada permanentemente** pela própria Meta
+  logo depois dessa migração (ver bullet "🚨 Conta WhatsApp Business da
+  Meta desabilitada PERMANENTEMENTE" mais abaixo) — o número
+  `5511934505474` está morto pra sempre, nunca vai voltar a responder.
+  `whatsapp_provider_principal` já tinha sido revertido pra `'zapi'` em
+  Configurações no mesmo dia do banimento (corrige quem RESPONDE), mas
+  as portas de ENTRADA público continuavam com o número morto —
+  confirmado ao investigar a pergunta direta do usuário ("Leads vai
+  chegar normalmente? Zpi"): qualquer visitante novo clicando no botão do
+  site/blog cairia numa conversa com um número que nunca mais responde,
+  mesmo com o sistema já 100% funcional do lado de dentro. Revertidos os
+  mesmos 5 pontos de volta pro número real (`5511958347764`, "FastCar |
+  JEAN") — `index.php` (`$whatsappNumero`, JSON-LD `telephone`, telefone
+  visível no card de contato), `includes/blog.php`
+  (`BLOG_WHATSAPP_NUMERO`), `termos.php` e `privacidade.php` (rodapé
+  legal — achado que esses 2 nunca tinham sido tocados de verdade na
+  migração de 29/09, apesar do bullet anterior alegar que sim; ainda
+  mostravam o número morto até agora). Confirmado com o usuário antes de
+  agir ("Numero voltou antigo" / "5474 tá destivado"). **Fora do alcance
+  do código**: a campanha do Meta Ads também foi apontada pro número
+  morto em 29/09 ("estamos mudando nos anuncios") — isso vive na
+  configuração do Gerenciador de Anúncios da Meta, não no repositório;
+  segue como ação manual do usuário, não revertida por aqui. Pedido de
+  reconsideração do banimento já enviado à Meta pelo usuário — se algum
+  dia for revertido, nada aqui volta sozinho pro Meta: `index.php`/
+  `includes/blog.php` seguem sendo texto estático até alguém decidir
+  migrar de novo deliberadamente. Testado: grep no repo inteiro confirma
+  zero ocorrência restante de `5511934505474`/`9 3450-5474`; `php -l` nos
+  4 arquivos + `tests/smoke.php` limpos. Sem migração de schema.
   **✅ Migração concluída de verdade — toggle virado, conversa real
   confirmada, 29/09/2026** — mesmo dia, sequência rápida com o usuário:
   anúncios do Meta Ads apontando pro número novo → site/blog trocados

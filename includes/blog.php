@@ -20,7 +20,7 @@
  * artigo termina com esse aviso (`blogRodape()` imprime automaticamente).
  */
 
-const BLOG_WHATSAPP_NUMERO = '5511934505474'; // WhatsApp Cloud API (Meta oficial), 29/09/2026 — canal principal de entrada do funil
+const BLOG_WHATSAPP_NUMERO = '5511958347764'; // 30/09/2026 — revertido pro Z-API "FastCar | JEAN": conta Meta (5511934505474) desabilitada PERMANENTEMENTE, ver CLAUDE.md
 
 // 29/09/2026 — App ID do app "Fastcar Bot" (Meta Business Manager,
 // portfólio "Fastcar Solutions"), usado no WhatsApp Cloud API (Fase 1,

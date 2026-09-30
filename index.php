@@ -31,7 +31,7 @@
 // não quebra o "nunca depende de banco" deste arquivo.
 require_once __DIR__ . '/includes/blog.php';
 
-$whatsappNumero = '5511934505474'; // WhatsApp Cloud API (Meta oficial), 29/09/2026 — canal principal de entrada do funil, substituiu o número antigo Z-API "FastCar | JEAN"
+$whatsappNumero = '5511958347764'; // 30/09/2026 — revertido pro Z-API "FastCar | JEAN": a conta WhatsApp Business da Meta (5511934505474) foi desabilitada PERMANENTEMENTE pela Meta ("violação dos Termos de Uso Aceitável"), ver CLAUDE.md
 $whatsappTexto = rawurlencode('Olá! Tenho um veículo financiado e quero saber mais sobre a compra pela Fastcar.');
 $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappTexto}";
 $anoAtual = date('Y');
@@ -79,7 +79,7 @@ $anoAtual = date('Y');
     "url": "https://fastcar.solutions/",
     "logo": "https://fastcar.solutions/public/assets/logo.png",
     "image": "https://fastcar.solutions/admin/assets/img/icon-512.png",
-    "telephone": "+5511934505474",
+    "telephone": "+5511958347764",
     "email": "contato@fastcar.solutions",
     "taxID": "66.934.500/0001-09",
     "description": "Compra de veículos ainda em financiamento — carro, moto, caminhão, caminhonete e jet ski.",
@@ -405,7 +405,7 @@ body {
         <div class="contato-grade">
             <div class="contato-item">
                 <div class="icone">💬</div>
-                <div class="texto"><strong>WhatsApp</strong><a href="<?= htmlspecialchars($whatsappLink, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">(11) 9 3450-5474</a></div>
+                <div class="texto"><strong>WhatsApp</strong><a href="<?= htmlspecialchars($whatsappLink, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">(11) 9 5834-7764</a></div>
             </div>
             <div class="contato-item">
                 <div class="icone">✉️</div>

@@ -71,7 +71,7 @@ blogAbrirPagina(
         <p>Estes Termos são regidos pelas leis da República Federativa do Brasil. Fica eleito o foro da Comarca de Barueri/SP pra dirimir eventuais controvérsias, respeitadas regras cogentes de competência (ex: foro do consumidor, quando aplicável).</p>
 
         <h2>12. Contato</h2>
-        <p>Dúvidas sobre estes Termos: <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a> · (11) 9 3450-5474.</p>
+        <p>Dúvidas sobre estes Termos: <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a> · (11) 9 5834-7764.</p>
 
         <p><a href="/">← Voltar pra página inicial</a></p>
     </div>

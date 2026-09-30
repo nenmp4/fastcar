@@ -39,7 +39,7 @@ blogAbrirPagina(
         <p>
             <strong>FASTCAR SOLUTIONS LTDA</strong> — CNPJ 66.934.500/0001-09<br>
             Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices, Alphaville Conde II, Barueri/SP — CEP 06473-073<br>
-            E-mail: <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a> · Telefone/WhatsApp: (11) 9 3450-5474
+            E-mail: <a href="mailto:contato@fastcar.solutions">contato@fastcar.solutions</a> · Telefone/WhatsApp: (11) 9 5834-7764
         </p>
 
         <h2>2. Quais dados coletamos</h2>
