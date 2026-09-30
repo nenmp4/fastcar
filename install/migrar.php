@@ -238,6 +238,15 @@ $migracoes = [
     // canal, nunca sobrescrito com NULL de volta.
     'contratos.aviso_whatsapp_enviado_em' => "ALTER TABLE contratos ADD COLUMN aviso_whatsapp_enviado_em DATETIME",
     'contratos.aviso_email_enviado_em' => "ALTER TABLE contratos ADD COLUMN aviso_email_enviado_em DATETIME",
+
+    // 30/09/2026, "status contrato entregue no email - ou falha email não
+    // existe ou erro api" — status do e-mail complementar mandado na
+    // GERAÇÃO do contrato (diferente de aviso_email_enviado_em acima, que
+    // é do aviso de ASSINATURA confirmada). SQLite não valida CHECK em
+    // ALTER TABLE ADD COLUMN da mesma forma que no CREATE — a validação
+    // real fica a cargo da aplicação (só grava 'entregue'/'sem_email'/'falhou').
+    'contratos.envio_email_status' => "ALTER TABLE contratos ADD COLUMN envio_email_status TEXT",
+    'contratos.envio_email_em' => "ALTER TABLE contratos ADD COLUMN envio_email_em DATETIME",
 ];
 
 foreach ($migracoes as $nome => $sql) {

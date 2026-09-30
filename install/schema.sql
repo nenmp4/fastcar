@@ -553,6 +553,16 @@ CREATE TABLE IF NOT EXISTS contratos (
     -- pelo menos 1 envio com sucesso confirmado, nunca volta a NULL depois.
     aviso_whatsapp_enviado_em DATETIME,
     aviso_email_enviado_em DATETIME,
+    -- Status do e-mail complementar mandado na GERAÇÃO do contrato (não
+    -- confundir com aviso_email_enviado_em acima, que é do aviso de
+    -- ASSINATURA confirmada — momento e público diferentes) — 30/09/2026,
+    -- "status contrato entregue no email - ou falha email não existe ou
+    -- erro api". NULL = contrato gerado antes desta coluna existir (nunca
+    -- checado). 'sem_email' = cliente/comprador sem e-mail cadastrado,
+    -- nada a tentar. 'falhou' = tentou e a API/credencial deu erro.
+    -- 'entregue' = sucesso confirmado (só aí envio_email_em é preenchido).
+    envio_email_status TEXT CHECK (envio_email_status IS NULL OR envio_email_status IN ('entregue', 'sem_email', 'falhou')),
+    envio_email_em DATETIME,
     created_by INTEGER REFERENCES usuarios(id),
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

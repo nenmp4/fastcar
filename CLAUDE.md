@@ -4478,6 +4478,67 @@ segue no schema sem uso novo, não removida sem ganho real),
   chamadas do fake Z-API/Meta conferido byte a byte confirma que cada
   canal só chama a URL certa (`/instances/.../send-text` pro Z-API,
   `/{phone_number_id}/messages` pra Meta), nunca cruzando.
+  **Reenvio do LINK DE ASSINATURA (não só o aviso de assinado) + status de
+  entrega do e-mail complementar de geração** (30/09/2026, achado real via
+  screenshot — venda #27, contrato de um comprador "enviado" há dias sem
+  ninguém assinar, e o botão construído acima nunca aparece nesse estado
+  porque só cobre contrato JÁ `assinado`; pedido direto: "coloca botão
+  para reenviar contrato pelo zap usando instancia meta pois jean não
+  recebeu" + "status contrato entregue no email - ou falha email não
+  existe ou erro api - botão reenviar no whatsapp mesmo coisa") — o gap
+  real: `zapsignCriarDocumentoEAssinatura()` já manda o `sign_url` por
+  conta própria na criação (telefone/e-mail informados), mas isso é 100%
+  "puxar", sem confirmação de entrega nenhuma do lado da ZapSign, e sem
+  NENHUM jeito de reenviar pelo WhatsApp da própria Fastcar se o
+  destinatário nunca recebeu (canal da ZapSign pode falhar por motivo
+  nenhum a ver com a gente).
+  Nova `reenviarLinkAssinaturaContratoMeta()` (`includes/contratos.php`)
+  — DIFERENTE de `reenviarAvisoAssinaturaContratoMeta()` acima (essa
+  reavisa STAFF que o contrato JÁ foi assinado): esta é pro
+  CLIENTE/COMPRADOR, contrato AINDA pendente de assinatura
+  (`status !== 'assinado'`), reenvia o MESMO `sign_url` já salvo — nunca
+  gera contrato novo nem toca no existente. Reaproveita
+  `montarCamposContratoCompra()`/`montarCamposContratoVenda()` (mesmos
+  dados já usados na geração original) só pra ler telefone/nome/veículo;
+  recusa com mensagem clara se o contrato não existe, não tem `sign_url`
+  ainda, já está `assinado` (reenviar não faz sentido) ou sem telefone
+  cadastrado; sem a Meta oficial configurada, erro antes de tentar
+  qualquer coisa; falhando o envio, propaga o erro REAL de
+  `oficialUltimoErro()` (mesmo padrão do reenvio de aviso). Botão "📲
+  reenviar por WhatsApp (Meta)" ao lado do link/copiar já existentes
+  (`admin/oportunidade.php`/`admin/venda.php`, mesma condição
+  `sign_url && status !== 'assinado'`), com `confirm()` em JS, mesma
+  trava de `supervisor`.
+  **Status do e-mail complementar de geração, por causa** — até agora
+  `gerarEEnviarContratoCompra()` mandava esse e-mail (16/09/2026, "só um
+  'está a caminho'... nunca compete com o link oficial de assinatura")
+  igual fire-and-forget, nunca checando `enviarEmail()` (que pode
+  retornar `bool|array`, nunca conferido antes — mesmo bug de padrão já
+  documentado em `login_2fa.php`, aqui corrigido com `=== true`), e o
+  lado de VENDA nunca tinha esse e-mail complementar (só compra) — sem
+  paridade. Colunas novas `contratos.envio_email_status`
+  (`'entregue'`/`'sem_email'`/`'falhou'`, `NULL` = contrato de antes desta
+  migração, nunca checado) + `envio_email_em` (só preenchido em
+  `'entregue'`) — DIFERENTES de `aviso_email_enviado_em` (essa é do aviso
+  de ASSINATURA confirmada, momento/público diferente: interno, depois de
+  assinado; esta é externa, na hora de gerar). `gerarEEnviarContratoVenda()`
+  ganhou o MESMO e-mail complementar que compra já tinha (extensão de
+  paridade, nunca existia antes) + o mesmo tracking. Badge por causa na
+  mesma linha do contrato pendente ("📧 E-mail: ✅ entregue {data}" / "⚠️
+  sem e-mail cadastrado" / "❌ falha ao enviar (erro na API)") — distingue
+  explicitamente as 2 causas de "não chegou" pedidas ("email não existe"
+  vs "erro api"), nunca um "falhou" genérico só. Testado: 6 cenários em
+  banco isolado contra fake ZapSign + Meta + Gmail locais (compra com
+  e-mail válido → `entregue`; compra sem e-mail → `sem_email`, nunca tenta
+  a API; compra com e-mail mas Gmail respondendo erro → `falhou`, nunca
+  trava a geração do contrato em si; venda com e-mail válido → `entregue`,
+  confirmando a paridade nova; reenvio do link via Meta funcionando de
+  ponta a ponta pro caso real da venda; reenvio recusando contrato já
+  `assinado` com a mensagem certa) + migração testada contra o schema do
+  commit anterior (`git show HEAD:install/schema.sql`, colunas realmente
+  ausentes antes, `ALTER TABLE` aplicado com sucesso, dado pré-existente —
+  incluindo `aviso_whatsapp_enviado_em` já preenchido — preservado,
+  idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos.
   **Importar contratos antigos da ZapSign (CRM anterior)** (19/09/2026,
   "zapasine tem monte contrato do crm anti será possivel puxar concliar" →
   "pela api" → escolhendo "listar + tentar vincular automaticamente" e

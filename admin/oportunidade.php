@@ -131,6 +131,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $erro = $resultadoContrato['erro'];
                 }
+            } elseif ($acao === 'reenviar_link_assinatura_meta') {
+                $resultadoReenvioLink = reenviarLinkAssinaturaContratoMeta((int)($_POST['contrato_id'] ?? 0));
+                if ($resultadoReenvioLink['ok']) {
+                    $sucesso = 'Link de assinatura reenviado pelo WhatsApp oficial da Meta.';
+                } else {
+                    $erro = $resultadoReenvioLink['erro'];
+                }
             } elseif ($acao === 'reenviar_aviso_contrato_meta') {
                 $resultadoReenvio = reenviarAvisoAssinaturaContratoMeta((int)($_POST['contrato_id'] ?? 0));
                 if ($resultadoReenvio['ok']) {
@@ -706,6 +713,21 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                         <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
                             · <a href="<?= e($ct['sign_url']) ?>" target="_blank">link de assinatura</a>
                             <button type="button" class="btn-texto" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋</button>
+                            <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                                <form method="post" style="display:inline-block" onsubmit="return confirm('Reenviar o link de assinatura por WhatsApp (Meta oficial)?');">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="acao" value="reenviar_link_assinatura_meta">
+                                    <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
+                                    <button type="submit" class="btn-texto">📲 reenviar por WhatsApp (Meta)</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if ($ct['envio_email_status'] === 'entregue'): ?>
+                                <br><small style="color:#2a7a3b">📧 E-mail: ✅ entregue <?= $ct['envio_email_em'] ? date('d/m H:i', strtotime($ct['envio_email_em'])) : '' ?></small>
+                            <?php elseif ($ct['envio_email_status'] === 'sem_email'): ?>
+                                <br><small style="color:#a3701a">📧 E-mail: ⚠️ sem e-mail cadastrado</small>
+                            <?php elseif ($ct['envio_email_status'] === 'falhou'): ?>
+                                <br><small style="color:#a33">📧 E-mail: ❌ falha ao enviar (erro na API)</small>
+                            <?php endif; ?>
                         <?php endif; ?>
 
                         <?php if ($ct['status'] === 'assinado'): ?>

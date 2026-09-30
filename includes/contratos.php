@@ -247,6 +247,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         $oportunidadeId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
         $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
+    $contratoId = (int)$db->lastInsertId();
 
     // Aviso complementar por e-mail (16/09/2026, "cria todos os templates")
     // — a ZapSign já manda o link de assinatura de verdade por conta
@@ -254,6 +255,15 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     // "está a caminho" com a cara da Fastcar, nunca compete com o link
     // oficial de assinatura. Best-effort, nunca pode travar a geração do
     // contrato (já foi criado/salvo acima, independente disso).
+    //
+    // 30/09/2026, "status contrato entregue no email - ou falha email não
+    // existe ou ero api" — antes disso o envio era fire-and-forget (nunca
+    // checava o retorno de enviarEmail()), sem jeito nenhum de saber se
+    // chegou. envio_email_status distingue as 3 causas possíveis de "não
+    // entregue" ('sem_email' = cliente sem e-mail cadastrado, nada a
+    // tentar; 'falhou' = tentou e a API/credencial deu erro) de 'entregue'
+    // (sucesso confirmado) — mostrado junto do botão de reenvio por
+    // WhatsApp em admin/oportunidade.php/venda.php.
     if ($campos['_email']) {
         $corpoEmail = "<p>Olá, " . htmlspecialchars($campos['vendedor_nome'] ?: '', ENT_QUOTES) . "!</p>"
             . "<p>O contrato de compra do seu veículo (<strong>" . htmlspecialchars(trim($campos['veiculo_marca'] . ' ' . $campos['veiculo_modelo']), ENT_QUOTES) . "</strong>) "
@@ -261,12 +271,18 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
             . "<p>Você vai receber um link de assinatura da ZapSign, nossa plataforma parceira, por WhatsApp"
             . ($campos['_email'] ? ' e/ou e-mail' : '') . ". Basta seguir as instruções por lá pra assinar.</p>"
             . "<p>Qualquer dúvida, é só chamar a gente.</p>";
-        enviarEmail($campos['_email'], 'Contrato enviado pra assinatura — Fastcar', emailLayout($corpoEmail), $campos['vendedor_nome'] ?: '');
+        $emailOk = enviarEmail($campos['_email'], 'Contrato enviado pra assinatura — Fastcar', emailLayout($corpoEmail), $campos['vendedor_nome'] ?: '') === true;
+        $envioEmailStatus = $emailOk ? 'entregue' : 'falhou';
+    } else {
+        $envioEmailStatus = 'sem_email';
     }
+    $db->prepare("
+        UPDATE contratos SET envio_email_status = ?, envio_email_em = CASE WHEN ? = 'entregue' THEN datetime('now','localtime') ELSE NULL END WHERE id = ?
+    ")->execute([$envioEmailStatus, $envioEmailStatus, $contratoId]);
 
     return [
         'ok' => true,
-        'contrato_id' => (int)$db->lastInsertId(),
+        'contrato_id' => $contratoId,
         'sign_url' => $docRes['sign_url'],
         'aviso' => $aviso,
     ];
@@ -427,6 +443,26 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
     $contratoId = (int)$db->lastInsertId();
+
+    // Aviso complementar por e-mail pro COMPRADOR, mesmo padrão do lado de
+    // compra (acima) — 30/09/2026, "status contrato entregue no email":
+    // venda nunca tinha esse e-mail complementar (só compra), extendido
+    // aqui pra ter a mesma paridade e a mesma checagem de status.
+    if ($campos['_email']) {
+        $corpoEmail = "<p>Olá, " . htmlspecialchars($campos['comprador_nome'] ?: '', ENT_QUOTES) . "!</p>"
+            . "<p>O contrato de venda do seu veículo (<strong>" . htmlspecialchars(trim($campos['veiculo_marca'] . ' ' . $campos['veiculo_modelo']), ENT_QUOTES) . "</strong>) "
+            . "acaba de ser enviado pra assinatura eletrônica.</p>"
+            . "<p>Você vai receber um link de assinatura da ZapSign, nossa plataforma parceira, por WhatsApp e/ou e-mail. "
+            . "Basta seguir as instruções por lá pra assinar.</p>"
+            . "<p>Qualquer dúvida, é só chamar a gente.</p>";
+        $emailOk = enviarEmail($campos['_email'], 'Contrato enviado pra assinatura — Fastcar', emailLayout($corpoEmail), $campos['comprador_nome'] ?: '') === true;
+        $envioEmailStatus = $emailOk ? 'entregue' : 'falhou';
+    } else {
+        $envioEmailStatus = 'sem_email';
+    }
+    $db->prepare("
+        UPDATE contratos SET envio_email_status = ?, envio_email_em = CASE WHEN ? = 'entregue' THEN datetime('now','localtime') ELSE NULL END WHERE id = ?
+    ")->execute([$envioEmailStatus, $envioEmailStatus, $contratoId]);
 
     // Diferente da compra, enviar o contrato pra assinatura já move a
     // negociação pra 'contrato_enviado' (só na 1ª vez — reenvio/correção
@@ -833,5 +869,60 @@ function reenviarAvisoAssinaturaContratoMeta(int $contratoId): array {
     }
 
     _marcarAvisoAssinaturaEnviado($contratoId, true, false);
+    return ['ok' => true, 'erro' => null];
+}
+
+/**
+ * Reenvio MANUAL do LINK DE ASSINATURA (sign_url) pro CLIENTE/COMPRADOR,
+ * forçando o WhatsApp Cloud API OFICIAL da Meta — 30/09/2026, achado real
+ * (venda #27, contrato "enviado" há dias, comprador nunca assinou):
+ * `zapsignCriarDocumentoEAssinatura()` já manda o sign_url por conta
+ * própria na hora de criar o documento (telefone/e-mail informados na
+ * criação), mas isso é 100% "puxar" — sem confirmação de entrega nenhuma
+ * do lado da ZapSign, e sem NENHUM jeito de reenviar pelo próprio
+ * WhatsApp da Fastcar se o comprador nunca recebeu (canal da ZapSign
+ * pode falhar por motivo nenhum a ver com a gente). Diferente de
+ * reenviarAvisoAssinaturaContratoMeta() acima (reavisa STAFF que o
+ * contrato JÁ foi assinado) — esta é pro CLIENTE, contrato AINDA
+ * pendente de assinatura, manda o link de novo. Reaproveita
+ * montarCamposContratoCompra()/montarCamposContratoVenda() (mesmos dados
+ * já usados na geração original) só pra ler telefone/nome/veículo —
+ * nunca gera um contrato novo nem toca no já existente, só reenvia o
+ * MESMO sign_url já salvo.
+ */
+function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT * FROM contratos WHERE id = ?");
+    $stmt->execute([$contratoId]);
+    $ct = $stmt->fetch();
+    if (!$ct) return ['ok' => false, 'erro' => 'Contrato não encontrado.'];
+    if (!$ct['sign_url']) return ['ok' => false, 'erro' => 'Esse contrato ainda não tem link de assinatura gerado.'];
+    if ($ct['status'] === 'assinado') return ['ok' => false, 'erro' => 'Esse contrato já foi assinado, não faz sentido reenviar o link.'];
+    if (!oficialConfigured()) {
+        return ['ok' => false, 'erro' => 'WhatsApp Cloud API (Meta oficial) não está configurado em Configurações.'];
+    }
+
+    if ($ct['tipo'] === 'venda') {
+        $campos = montarCamposContratoVenda((int)$ct['venda_id']);
+        if (!$campos) return ['ok' => false, 'erro' => 'Venda não encontrada.'];
+        $nome = $campos['comprador_nome'] ?: '(sem nome)';
+    } else {
+        $campos = montarCamposContratoCompra((int)$ct['oportunidade_id']);
+        if (!$campos) return ['ok' => false, 'erro' => 'Oportunidade não encontrada.'];
+        $nome = $campos['vendedor_nome'] ?: '(sem nome)';
+    }
+    $telefone = $campos['_telefone'] ?? '';
+    if (!$telefone) {
+        return ['ok' => false, 'erro' => 'Sem telefone cadastrado pra essa pessoa — não dá pra mandar por WhatsApp.'];
+    }
+    $veiculo = trim(($campos['veiculo_marca'] ?? '') . ' ' . ($campos['veiculo_modelo'] ?? '')) ?: 'veículo';
+
+    $msg = "Olá, {$nome}! Segue o link pra assinar o contrato do seu {$veiculo}:\n{$ct['sign_url']}";
+    if (!oficialEnviarTexto($telefone, $msg)) {
+        $erro = oficialUltimoErro();
+        $detalhe = $erro ? " ({$erro})" : '';
+        return ['ok' => false, 'erro' => "Não deu pra enviar pelo WhatsApp oficial da Meta{$detalhe}. Se esse número nunca escreveu pro WhatsApp da empresa, a Meta bloqueia mensagem proativa fora da janela de 24h."];
+    }
+
     return ['ok' => true, 'erro' => null];
 }
