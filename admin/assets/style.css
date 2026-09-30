@@ -340,6 +340,12 @@ button.btn-texto.perigo { color: var(--vermelho); }
 .acoes-linha .chip-acao:hover { border-color: var(--azul); color: var(--azul-escuro); background: var(--azul-claro); text-decoration: none; }
 .acoes-linha form { display: inline-flex; margin: 0; }
 .acoes-linha .status-linha { flex-basis: 100%; font-size: 12px; color: var(--texto-suave); }
+/* 30/09/2026, chip de excluir rascunho de contrato (regra #8 — ação
+   destrutiva sempre com cor .perigo) — .chip-acao sozinho tem
+   especificidade maior que button.perigo e mascararia o vermelho, então
+   precisa de uma regra própria aqui. */
+.acoes-linha .chip-acao.perigo { color: var(--vermelho); border-color: var(--vermelho); background: var(--fundo); }
+.acoes-linha .chip-acao.perigo:hover { background: var(--vermelho); color: #fff; }
 
 /* Confirmação estilizada — substitui window.confirm() nativo em todo
    <form onsubmit="return confirm('...')"> do admin — 30/09/2026, "coloca

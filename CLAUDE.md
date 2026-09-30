@@ -4254,16 +4254,59 @@ segue no schema sem uso novo, não removida sem ganho real),
   gerado" — só faltava um jeito de chegar nele). Botão novo "👁️ Gerar
   contrato (só visualizar)" ao lado do botão de envio em
   `admin/oportunidade.php`, mesma validação de campos obrigatórios da
-  cláusula 27.2. Gerar de novo (ex: depois de corrigir um dado) cria uma
-  **nova linha**, nunca sobrescreve a anterior — mesmo espírito de nunca
-  perder histórico do resto do projeto; o botão de envio continua
-  totalmente independente, gera sua própria cópia final na hora de
-  mandar de verdade. Testado em banco isolado: preview funciona mesmo
-  sem nenhuma credencial ZapSign configurada (prova que o caminho não
-  depende dela pra nada), `zapsign_doc_token`/`zapsign_signer_token`/
-  `sign_url` ficam vazios (nunca chamou a ZapSign), `status='gerado'`
-  (nunca `'enviado'`), gerar 2x cria 2 linhas distintas, e campo
-  obrigatório faltando bloqueia igual ao fluxo de envio.
+  cláusula 27.2. ~~Gerar de novo (ex: depois de corrigir um dado) cria
+  uma nova linha, nunca sobrescreve a anterior~~ — **comportamento
+  trocado em 30/09/2026, ver bullet logo abaixo** (nunca mais empilha).
+  O botão de envio continua totalmente independente, gera sua própria
+  cópia final na hora de mandar de verdade. Testado em banco isolado:
+  preview funciona mesmo sem nenhuma credencial ZapSign configurada
+  (prova que o caminho não depende dela pra nada),
+  `zapsign_doc_token`/`zapsign_signer_token`/`sign_url` ficam vazios
+  (nunca chamou a ZapSign), `status='gerado'` (nunca `'enviado'`), e
+  campo obrigatório faltando bloqueia igual ao fluxo de envio.
+  **Rascunho não empilha mais — nunca mais de 1 por vez, com botão de
+  excluir** (30/09/2026, "anderson gerou monte de previa do contratro
+  permita ele exluir não deixe ficar gerando monte apenas 1 se precisar
+  exluir") — cada clique em "👁️ Gerar contrato (só visualizar)" criava
+  uma linha NOVA (comportamento original documentado acima), sem limite;
+  um consultor clicando várias vezes em sequência (Anderson, caso real)
+  empilhava dezenas de rascunhos idênticos na tabela, sem nenhum jeito de
+  limpar. Corrigido em 2 frentes, no lado de COMPRA (`gerarContratoCompraPreview()`)
+  E de VENDA (`gerarContratoVendaPreview()`, mesmo padrão, mesma correção)
+  — nunca tocado no lado do contrato de verdade (`gerarEEnviarContratoCompra()`/
+  `gerarEEnviarContratoVenda()`, esses sempre criam linha nova, é
+  histórico de envio real, não rascunho): (1) antes do `INSERT`, um
+  `DELETE FROM contratos WHERE ... AND status = 'gerado'` apaga qualquer
+  rascunho anterior daquela oportunidade/venda — nunca mais de 1 rascunho
+  vivo por vez, regenerar sempre SUBSTITUI (nunca mexe em
+  `enviado`/`visualizado`/`assinado`/`recusado`/`erro`, esses são
+  documento real que já saiu do sistema ou tem rastro de assinatura,
+  nunca "rascunho" pra apagar sozinho); (2) `excluirContratoPreview()`
+  (novo, `includes/contratos.php`) — exclusão manual, só funciona em
+  `status='gerado'` (recusa com mensagem clara em qualquer outro status),
+  compartilhada pelos dois tipos de contrato (mesma tabela `contratos`).
+  Botão "🗑️ Excluir rascunho" (chip vermelho, `confirm()` estilizado) na
+  tabela de contratos de `admin/oportunidade.php` E `admin/venda.php`, só
+  aparece em linha `status='gerado'`, mesmo guard de `supervisor`
+  (só acompanha) do resto das 2 telas — bloqueado no servidor, não só
+  escondido na tela. CSS novo `.acoes-linha .chip-acao.perigo`
+  (`admin/assets/style.css`) — achado ao implementar: `.chip-acao` sozinho
+  tinha especificidade CSS maior que `button.perigo`, mascarando o
+  vermelho da ação destrutiva (regra #8, nunca colar botão destrutivo sem
+  destaque visual próprio). Testado: função isolada em banco isolado (3+
+  gerações seguidas na mesma oportunidade — simulando o cenário exato do
+  Anderson — sempre resultam em exatamente 1 linha `gerado`, com id
+  diferente a cada vez — confirma que substitui, não reaproveita a mesma
+  linha; excluir remove de verdade; excluir id inexistente falha com
+  mensagem clara; contrato já `assinado` nunca pode ser excluído por essa
+  função, e gerar um rascunho novo depois nunca apaga o assinado —
+  dedupe só mexe em `status='gerado'`) + HTTP ponta a ponta real (3
+  cliques em sequência no botão de gerar preview resultam em exatamente 1
+  linha/1 botão de excluir na tela renderizada; clicar excluir remove a
+  linha de verdade e a tabela reflete na hora; supervisor não vê o botão
+  e um POST forjado com CSRF roubado da própria tela recebe 403 sem
+  alterar nada no banco) + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema.
   **Saldo do financiamento calculado automático** (17/09/2026, "pode
   calcular saldo do financiamento automático ao preencher o valor da
   parcela"): ao digitar `valor_parcela`/`parcelas_restantes` no card

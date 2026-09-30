@@ -224,6 +224,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $erro = $resultadoPreview['erro'];
                     }
                 }
+            } elseif ($acao === 'excluir_contrato_preview') {
+                $resultadoExclusao = excluirContratoPreview((int)($_POST['contrato_id'] ?? 0));
+                if ($resultadoExclusao['ok']) {
+                    $sucesso = 'Rascunho do contrato excluído.';
+                } else {
+                    $erro = $resultadoExclusao['erro'];
+                }
             } elseif ($acao === 'reenviar_link_assinatura_meta') {
                 $resultadoReenvioLink = reenviarLinkAssinaturaContratoMeta((int)($_POST['contrato_id'] ?? 0));
                 if ($resultadoReenvioLink['ok']) {
@@ -954,6 +961,9 @@ function adicionarParteEntrada() {
             <input type="hidden" name="acao" value="gerar_contrato">
             <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>
         </form>
+        <p><small>"👁️ Gerar contrato" salva um rascunho só pra conferir, sem disparar assinatura nem
+           avisar o comprador. Gerar de novo substitui o rascunho anterior (nunca empilha) — dá pra
+           excluir manualmente também, na tabela abaixo.</small></p>
     <?php elseif (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true)): ?>
         <p><small>⏳ Vincule um veículo da frota (card acima) antes de gerar o contrato.</small></p>
     <?php endif; ?>
@@ -977,6 +987,14 @@ function adicionarParteEntrada() {
                         <div class="acoes-linha">
                             <?php if ($ct['drive_file_id'] || $ct['arquivo_url']): ?>
                                 <a class="chip-acao" href="/admin/ver_contrato.php?id=<?= (int)$ct['id'] ?>" target="_blank">📄 Ver PDF</a>
+                            <?php endif; ?>
+                            <?php if ($ct['status'] === 'gerado' && $_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                                <form method="post" onsubmit="return confirmarAcao(this, 'Excluir este rascunho de contrato? Ação sem volta.');">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="acao" value="excluir_contrato_preview">
+                                    <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
+                                    <button type="submit" class="chip-acao perigo">🗑️ Excluir rascunho</button>
+                                </form>
                             <?php endif; ?>
                             <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
                                 <a class="chip-acao" href="<?= e($ct['sign_url']) ?>" target="_blank">🔗 Link de assinatura</a>

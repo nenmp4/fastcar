@@ -142,10 +142,13 @@ function verificarCamposObrigatoriosContrato(array $campos): array {
  * e registra em `contratos` com `status='gerado'` (o schema/UI já
  * previam esse status — badge "📄 gerado" já existia em
  * admin/oportunidade.php, só faltava um jeito de chegar nele). Gerar de
- * novo depois de corrigir algo na oportunidade cria uma NOVA linha (não
- * sobrescreve a anterior) — mesmo espírito de nunca perder histórico do
- * resto do projeto; o botão de enviar pra assinatura continua
- * independente, gera a própria cópia final na hora de enviar de verdade.
+ * novo depois de corrigir algo na oportunidade SUBSTITUI o rascunho
+ * anterior — 30/09/2026, "anderson gerou monte de previa... não deixe
+ * ficar gerando monte apenas 1" (antes criava uma linha nova por clique,
+ * empilhando sem fim; ver excluirContratoPreview() logo abaixo pra
+ * exclusão manual) — nunca toca em `enviado`/`assinado`/etc, o botão de
+ * enviar pra assinatura continua independente, gera a própria cópia
+ * final na hora de enviar de verdade.
  * Mesma validação de campos obrigatórios de `gerarEEnviarContratoCompra()`
  * (regra: nunca gerar contrato faltando dado essencial da cláusula 27.2).
  */
@@ -175,6 +178,14 @@ function gerarContratoCompraPreview(int $oportunidadeId, ?int $usuarioId): array
     @unlink($pdfPath);
 
     $db = getDB();
+    // 30/09/2026, "anderson gerou monte de previa do contratro... não
+    // deixe ficar gerando monte apenas 1" — cada clique em "só
+    // visualizar" criava uma linha NOVA, empilhando sem fim; agora nunca
+    // acumula mais de 1 rascunho vivo por oportunidade — regenerar
+    // sempre substitui o anterior (nunca toca em `enviado`/`assinado`/
+    // etc, esses são documento real que já saiu do sistema).
+    $db->prepare("DELETE FROM contratos WHERE oportunidade_id = ? AND tipo = 'compra' AND status = 'gerado'")
+        ->execute([$oportunidadeId]);
     $db->prepare("
         INSERT INTO contratos
             (oportunidade_id, tipo, nome, campos_json, status, drive_file_id, arquivo_url, created_by)
@@ -184,6 +195,30 @@ function gerarContratoCompraPreview(int $oportunidadeId, ?int $usuarioId): array
     ]);
 
     return ['ok' => true, 'contrato_id' => (int)$db->lastInsertId(), 'aviso' => $aviso];
+}
+
+/**
+ * Exclui um contrato que foi só GERADO pra visualização (nunca mandado
+ * pra assinatura) — 30/09/2026, "anderson gerou monte de previa do
+ * contratro permita ele exluir". Nunca toca em contrato
+ * enviado/visualizado/assinado/recusado/erro — esse já é documento real
+ * que saiu do sistema ou tem rastro de assinatura, não é "rascunho" pra
+ * apagar. Funciona tanto pra contrato de compra quanto de venda, mesma
+ * tabela `contratos`.
+ */
+function excluirContratoPreview(int $contratoId): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT status FROM contratos WHERE id = ?");
+    $stmt->execute([$contratoId]);
+    $status = $stmt->fetchColumn();
+    if ($status === false) {
+        return ['ok' => false, 'erro' => 'Contrato não encontrado.'];
+    }
+    if ($status !== 'gerado') {
+        return ['ok' => false, 'erro' => 'Só dá pra excluir um rascunho (nunca enviado pra assinatura) — esse já foi enviado/assinado.'];
+    }
+    $db->prepare("DELETE FROM contratos WHERE id = ? AND status = 'gerado'")->execute([$contratoId]);
+    return ['ok' => true, 'erro' => null];
 }
 
 /**
@@ -518,6 +553,10 @@ function gerarContratoVendaPreview(int $vendaId, ?int $usuarioId): array {
     @unlink($pdfPath);
 
     $db = getDB();
+    // 30/09/2026, mesmo fix do lado de compra — nunca acumula mais de 1
+    // rascunho vivo por negociação de venda, regenerar sempre substitui.
+    $db->prepare("DELETE FROM contratos WHERE venda_id = ? AND tipo = 'venda' AND status = 'gerado'")
+        ->execute([$vendaId]);
     $db->prepare("
         INSERT INTO contratos
             (oportunidade_id, venda_id, tipo, nome, campos_json, status, drive_file_id, arquivo_url, created_by)
