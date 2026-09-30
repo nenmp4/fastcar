@@ -8818,6 +8818,50 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmado contra o número Meta de vendas real — mesma ressalva de
   sempre pra integração nova, validar assim que o número for criado no
   Meta Business e as credenciais coladas em Configurações.
+- **Popup de resultado de ação, visível não importa onde a página está
+  rolada** (30/09/2026, screenshot mostrando o banner "Link enviado por
+  WhatsApp." — resultado de clicar "Enviar link" numa venda — visível só
+  lá em cima; "se fazemos uma ação status da ação aparece lá em cima só...
+  mostrar popup em todas") — consequência direta do
+  `admin/_scroll_restore.php` do mesmo dia: agora que a página volta pro
+  MESMO ponto onde o usuário estava (em vez de sempre pro topo), o banner
+  estático de `$erro`/`$sucesso` — sempre renderizado bem no topo de
+  `<main>`/`<body>` — ficava fora da área visível, sem nenhuma
+  confirmação visual da ação que acabou de rodar.
+  `admin/_acao_popup.php` (novo, JS puro, ZERO mudança nas ~35 páginas que
+  já renderizam esses banners) resolve isso sem depender do nome da
+  variável PHP (`$erro`/`$sucesso` na maioria, mas também `$sincErro`/
+  `$sincSucesso`, `$erroPromissoria`, `$_GET['bulk_*']` em telas
+  diferentes — nomes variam, o MARKUP renderizado não): seleciona todo
+  `.alerta-sucesso`/`.alerta-erro` que seja filho DIRETO de `<main>` ou
+  `<body>` (levantamento completo de toda ocorrência dessas 2 classes no
+  projeto, ~74 linhas — confirmado que o banner de ação-resultado sempre
+  aparece nessa posição, antes de qualquer `.card`), clona o conteúdo pra
+  um popup flutuante fixo embaixo-centro (nunca no canto superior direito,
+  reservado pro sino/badge — regra de UX mobile do projeto) e ESCONDE o
+  original (nunca duplica a mensagem) — clicável pra fechar antes da hora,
+  some sozinho em 6s. **Nunca mexe** em alerta mais profundo na árvore —
+  ex: "✅ Dados confirmados em..." dentro do card "📎 Documentos"
+  (`admin/oportunidade.php`/`admin/venda.php`) é ESTADO permanente do
+  registro, não resultado de uma ação que acabou de rodar, precisa
+  continuar sempre visível — nem em elemento com `id` (controlado por
+  outro JS, ex: `#av-selecionado` em `admin/avaliacoes.php`) ou já
+  escondido de propósito (`style="display:none"`). Incluído no mesmo
+  ponto (logo depois de `_scroll_restore.php`) das mesmas 35 páginas já
+  cobertas por ele — mesmo bulk-insert de sempre. Guard
+  `admin-pagina-sem-pwa` (`tests/smoke.php`) estendido pra também exigir
+  esse include — sanity-check confirmado removendo de 1 página e vendo o
+  guard falhar antes de restaurar. Testado com Chromium headless real
+  (`/opt/pw-browsers`, sem precisar de Playwright/npm — invocado direto
+  via CLI com `--virtual-time-budget` pra simular o timer de 6s): banner
+  de ação vira popup com o texto certo e o original fica `display:none`;
+  banner PERSISTENTE dentro de um card (simulando "Dados confirmados
+  em...") fica **intocado**, sem `display:none`, confirmando que o
+  seletor por posição no DOM não pega falso positivo; popup some sozinho
+  depois do timeout — e visual conferido por screenshot real em 414px
+  (mobile) e 1400px (desktop), popup bem centralizado, sem cortar/colidir
+  com nada — + `php -l` + `node --check` + `tests/smoke.php` limpos. Sem
+  migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

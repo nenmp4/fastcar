@@ -343,6 +343,50 @@ a.btn-primary:hover { filter: brightness(1.08); }
 .alerta-erro { background: var(--vermelho-bg); color: var(--vermelho); border-color: #fecaca; }
 .alerta-sucesso { background: var(--verde-bg); color: var(--verde); border-color: #bbf7d0; }
 
+/* ── Popup de resultado de ação — 30/09/2026, "se fazemos uma ação status
+   da ação aparece lá em cima só... mostrar popup em todas": o banner
+   estático de $erro/$sucesso sempre ficou fixo no TOPO da página — desde
+   que admin/_scroll_restore.php passou a manter a rolagem onde o usuário
+   estava depois de um "Salvar", esse banner ficava fora da tela, invisível.
+   admin/_acao_popup.php clona o mesmo texto pra este popup flutuante,
+   visível não importa onde a página esteja rolada, e esconde o original
+   (nunca duplica a mensagem). Fica embaixo, centralizado — nunca no canto
+   superior direito, que já é reservado pro sino/badge (regra de UX mobile
+   do projeto). ───────────────────────────────────────────────────────── */
+.acao-popup-wrap {
+    position: fixed;
+    left: 50%;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    width: min(92vw, 480px);
+    pointer-events: none;
+}
+.acao-popup {
+    pointer-events: auto;
+    width: 100%;
+    padding: 14px 18px;
+    border-radius: var(--raio-sm);
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: 0 12px 32px rgba(16,24,40,.24);
+    border: 1px solid transparent;
+    cursor: pointer;
+    animation: acao-popup-entrando .25s ease-out;
+    box-sizing: border-box;
+}
+.acao-popup-sucesso { background: var(--verde-bg); color: var(--verde); border-color: #bbf7d0; }
+.acao-popup-erro { background: var(--vermelho-bg); color: var(--vermelho); border-color: #fecaca; }
+.acao-popup-saindo { opacity: 0; transform: translateY(12px); transition: opacity .3s, transform .3s; }
+@keyframes acao-popup-entrando {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Histórico / timeline ────────────────────────────────────────────── */
 .historico-item { border-left: 2px solid var(--borda); padding: 4px 0 4px 14px; margin-bottom: 10px; font-size: 13px; }
 .historico-item .quando { color: var(--texto-fraco); font-size: 12px; }
