@@ -202,6 +202,65 @@ foreach (['install/schema.sql', 'install/migrar.php'] as $arquivoCpl) {
     }
 }
 
+// 30/09/2026, achado real: "contrato foi assinado mais não teve mensagem
+// de notificação sistema... no e-mail do consultor chegou certinho" —
+// notificações INTERNAS (aviso de contrato assinado, 2FA por WhatsApp,
+// aviso de doc confirmado, lead novo/qualificado, alerta de atraso/lead
+// quente, resumo diário de produtividade) iam todas por zapiEnviarTexto()
+// sem override — com o toggle whatsapp_provider_principal='oficial'
+// (migração de 29/09/2026), isso manda direto pela Meta Cloud API, que
+// rejeita mensagem proativa pra número que nunca escreveu como cliente
+// (código 131047, janela de 24h) — o número PESSOAL de um consultor/
+// supervisor nunca escreve pro WhatsApp oficial da empresa como cliente
+// escreveria, então TODA notificação interna por esse caminho falhava
+// silenciosamente assim que o toggle virou 'oficial', enquanto o e-mail
+// (canal independente) continuava chegando — exatamente o sintoma
+// relatado. Fix: zapiEnviarTextoInterno() (includes/whatsapp_config.php)
+// — sempre tenta a Z-API principal primeiro (ignora o toggle de propósito,
+// Z-API segue conectada/configurada só pra esse tipo de uso desde a
+// migração), só cai pro Meta se a Z-API não estiver configurada ou falhar.
+// Guard: nenhum dos 6 arquivos com notificação interna pode voltar a ter
+// uma chamada BARE a zapiEnviarTexto() em código real (só comentário/doc é
+// aceito) — a única exceção legítima é cron/followup.php linha do bloco 3
+// (reengajamento — mensagem PROATIVA pro CLIENTE, que deve mesmo respeitar
+// o toggle/canal principal).
+$arquivosNotifInterna = [
+    'includes/contratos.php',
+    'includes/login_2fa.php',
+    'includes/notificacoes.php',
+    'includes/oportunidades.php',
+    'includes/vendas.php',
+    'cron/followup.php',
+    'cron/resumo_produtividade.php',
+];
+$regressaoNotifInterna = [];
+foreach ($arquivosNotifInterna as $arqNotif) {
+    $caminhoNotif = $root . '/' . $arqNotif;
+    if (!file_exists($caminhoNotif)) continue;
+    $linhas = file($caminhoNotif);
+    foreach ($linhas as $numLinha => $linha) {
+        if (!preg_match('/zapiEnviarTexto\(/', $linha)) continue;
+        if (preg_match('/zapiEnviarTextoInterno\(|zapiEnviarTextoPeloCanal\(/', $linha)) continue;
+        $trim = ltrim($linha);
+        // linha de comentário/docblock (* ..., // ..., /** ...) mencionando
+        // o nome da função em prosa — não é chamada de código real.
+        if ($trim === '' || $trim[0] === '*' || str_starts_with($trim, '//') || str_starts_with($trim, '/*')) continue;
+        // única exceção legítima: reengajamento proativo pro CLIENTE.
+        if ($arqNotif === 'cron/followup.php' && str_contains($linha, "\$op['telefone']")) continue;
+        $regressaoNotifInterna[] = $arqNotif . ':' . ($numLinha + 1);
+    }
+}
+if ($regressaoNotifInterna) {
+    falha('[notificacao-interna-sem-fallback-zapi] chamada bare a zapiEnviarTexto() voltou pra notificação interna (deveria ser zapiEnviarTextoInterno) em: ' . implode(', ', $regressaoNotifInterna));
+} else {
+    ok('[notificacao-interna-sem-fallback-zapi] limpo (todas as notificações internas usam zapiEnviarTextoInterno())');
+}
+if (!str_contains((string)file_get_contents($root . '/includes/whatsapp_config.php'), 'function zapiEnviarTextoInterno(')) {
+    falha('[notificacao-interna-sem-fallback-zapi] zapiEnviarTextoInterno() não existe mais em includes/whatsapp_config.php');
+} else {
+    ok('[notificacao-interna-sem-fallback-zapi] zapiEnviarTextoInterno() presente em includes/whatsapp_config.php');
+}
+
 // Bug real 12/09/2026: rodízio de leads (includes/fila_leads.php) ordenado
 // só por timestamp (ultimo_lead_recebido_em) empatava quando 2 leads
 // chegavam no mesmo segundo (granularidade do SQLite) e caía sempre na

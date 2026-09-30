@@ -536,7 +536,7 @@ function notificarNovoLeadWhatsapp(int $oportunidadeId, string $nomeCliente, str
         $msg = "🚗 Novo lead no Fastcar CRM!\nCliente: {$nomeCliente}\nTelefone: {$telefoneCliente}\n{$link}";
 
         foreach ($numeros as $numero) {
-            zapiEnviarTexto($numero, $msg);
+            zapiEnviarTextoInterno($numero, $msg);
         }
     } catch (Throwable $e) {
         // notificação nunca pode derrubar a criação do lead
@@ -585,7 +585,7 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
              . $link;
 
         if (!empty($op['consultor_whatsapp'])) {
-            zapiEnviarTexto($op['consultor_whatsapp'], $msg);
+            zapiEnviarTextoInterno($op['consultor_whatsapp'], $msg);
             return;
         }
 
@@ -593,7 +593,7 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
         // não deixar o lead qualificado sem NENHUM aviso saindo.
         $lista = getConfig('notificacao_leads_whatsapp') ?: '';
         foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
-            zapiEnviarTexto($numero, $msg);
+            zapiEnviarTextoInterno($numero, $msg);
         }
     } catch (Throwable $e) {
         // notificação nunca pode travar o fluxo da qualificação
@@ -616,8 +616,14 @@ function leadsCrmPreenchidoHorarioNotificar(): string {
  * `notificarNovoLeadWhatsapp()`/como fallback de
  * `notificarConsultorLeadQualificado()`) — nunca a instância dedicada de
  * ninguém, é aviso interno, mesmo espírito das outras notificações desta
- * seção (global toggle de `zapiEnviarTexto()`, nunca precisa de canal de
- * origem — não é resposta a cliente nenhum).
+ * seção — usa `zapiEnviarTextoInterno()` (sempre Z-API principal, nunca o
+ * toggle/Meta oficial), não `zapiEnviarTexto()`: 30/09/2026, achado real
+ * ("contrato assinado mas sem notificação, e-mail chegou certinho") — um
+ * número pessoal de staff nunca escreveu pro WhatsApp oficial da empresa
+ * como cliente, então a Meta rejeita como mensagem fora da janela de 24h
+ * (código 131047) se essas notificações caírem no toggle global. Não
+ * precisa de canal de origem (não é resposta a cliente nenhum), mas
+ * também não pode depender do provider ativo pro canal de clientes.
  *
  * Sempre manda algo (mesmo "0 leads parados"), pra confirmar que o cron
  * está vivo — mesmo espírito do resumo diário de produtividade. Nunca
@@ -664,7 +670,7 @@ function notificarLeadsCrmPreenchidoFimTurno(): array {
 
         $enviouAlgum = false;
         foreach ($numeros as $numero) {
-            if (zapiEnviarTexto($numero, $msg)) $enviouAlgum = true;
+            if (zapiEnviarTextoInterno($numero, $msg)) $enviouAlgum = true;
         }
         return ['ok' => $enviouAlgum, 'total' => count($leads)];
     } catch (Throwable $e) {

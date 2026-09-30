@@ -4539,6 +4539,78 @@ segue no schema sem uso novo, não removida sem ganho real),
   ausentes antes, `ALTER TABLE` aplicado com sucesso, dado pré-existente —
   incluindo `aviso_whatsapp_enviado_em` já preenchido — preservado,
   idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos.
+  **Aviso de assinatura confirmada continuava sem chegar por WhatsApp,
+  mesmo com o tracking por canal já implementado acima** (30/09/2026,
+  achado real: "deu certo contrato foi assinado mais não teve mensagem de
+  notificação sistema contrato foi assinado mais no e-mail do consultor
+  chegou certinho") — o bullet anterior (mesmo dia) corrigiu o RASTREIO
+  (checar o retorno, gravar a coluna certa por canal), mas nunca corrigiu
+  o TRANSPORTE em si: `notificarAssinaturaContrato()` continuava chamando
+  `zapiEnviarTexto()` puro pro WhatsApp — com o toggle
+  `whatsapp_provider_principal='oficial'` (migração de 29/09/2026), isso
+  manda DIRETO pela Meta Cloud API, sem nenhum fallback pra Z-API se
+  falhar. A causa raiz é estrutural, não só desse 1 call site: o WhatsApp
+  PESSOAL de um consultor/vendedor/supervisor **nunca** escreve pro número
+  oficial da Fastcar "como cliente" — então toda notificação INTERNA
+  (staff avisando staff) mandada por esse caminho sempre bate na janela
+  de 24h da Meta (erro `131047`, "Message failed... more than 24 hours
+  have passed since the customer last replied") e falha silenciosamente,
+  enquanto o e-mail (canal 100% independente) segue chegando — bate exato
+  com o sintoma relatado. Varredura completa em todo o projeto
+  (`grep -rn "zapiEnviarTexto("`) achou **15 call sites** com esse mesmo
+  padrão errado, não só o de assinatura — `notificarAssinaturaContrato()`
+  (`includes/contratos.php`, este bullet), o código de 2FA por WhatsApp
+  (`login2faEnviarCodigo()`, `includes/login_2fa.php`), o aviso de "cliente
+  confirmou os documentos" (`notificarDocumentosConfirmadosZap()`,
+  `includes/notificacoes.php`), 3 funções em `includes/oportunidades.php`
+  (`notificarNovoLeadWhatsapp()`, `notificarConsultorLeadQualificado()`,
+  `notificarLeadsCrmPreenchidoFimTurno()`), 2 em `includes/vendas.php`
+  (`notificarNovoLeadVendas()`, `notificarVendedorLeadQualificado()`), os
+  2 alertas internos de `cron/followup.php` (atraso/lead quente parado —
+  **nunca** o bloco 3 de reengajamento, esse é mensagem proativa de
+  verdade pro CLIENTE, correto continuar no toggle) e
+  `cron/resumo_produtividade.php` (resumo diário pro supervisor). Todos
+  compartilham a mesma característica: telefone de um FUNCIONÁRIO, nunca
+  de cliente/comprador — a distinção que faltava fazer.
+  Corrigido com uma função nova, própria pra esse caso — nunca mexendo em
+  `zapiEnviarTexto()` em si (que continua certo pro uso dela, mensagem
+  PROATIVA pro cliente, onde respeitar o toggle/Meta é o comportamento
+  certo) nem em `zapiEnviarTextoPeloCanal()` (que é pra resposta do MESMO
+  TURNO, espelhando o canal de entrada — outro caso, também correto como
+  está): `zapiEnviarTextoInterno(string $phone, string $msg): bool`
+  (`includes/whatsapp_config.php`) sempre tenta a Z-API PRINCIPAL primeiro
+  — ignora o toggle de propósito, já que a Z-API "segue conectada de
+  propósito... serve de histórico/fallback pro canal principal" mesmo
+  depois da migração (CLAUDE.md, bullet "WhatsApp Cloud API — canal
+  principal") — e só cai pro Meta oficial (`oficialEnviarTexto()`) se a
+  Z-API não estiver configurada ou o envio falhar por qualquer motivo.
+  Os 15 call sites trocados pra essa função nova (nenhuma mudança na
+  lógica de destinatário/fallback de cada um, só o transporte). 2
+  comentários que raciocinavam errado sobre isso (`includes/notificacoes.php`,
+  `includes/oportunidades.php`) corrigidos pra referenciar a função certa.
+  Testado: 6 cenários isolados de `zapiEnviarTextoInterno()` contra fake
+  Z-API + fake Meta Graph API locais (Z-API funcionando → sucesso, Meta
+  NUNCA chamada; Z-API ausente + Meta configurada → fallback; Z-API
+  configurada mas falha (500) + Meta funciona → fallback depois da
+  tentativa; nenhum configurado → `false`, zero chamada de rede; os 2
+  falhando → `false`; regressão confirmando que `zapiEnviarTexto()` com
+  toggle=oficial e SEM override continua indo direto pro Meta, nunca cai
+  pro Z-API sozinho — comportamento de mensagem proativa ao cliente
+  intocado) + reprodução ponta a ponta do cenário EXATO relatado via
+  `notificarAssinaturaContrato()` (toggle='oficial', WhatsApp do consultor
+  simulado rejeitando com `131047`, Z-API principal configurada e
+  funcionando): confirmado que a notificação agora sai pela Z-API certa
+  (nunca tenta o Meta), `aviso_whatsapp_enviado_em` grava certo, e uma
+  chamada de comparação simulando o comportamento ANTIGO
+  (`zapiEnviarTexto()` puro no mesmo cenário) confirma que teria falhado
+  de verdade — prova de que o bug era real e que o fix resolve — + `php
+  -l` nos 7 arquivos editados + `tests/smoke.php` limpo (guard novo,
+  `[notificacao-interna-sem-fallback-zapi]`, varre os 7 arquivos linha a
+  linha e barra qualquer chamada bare a `zapiEnviarTexto()` em código real
+  que não seja a exceção legítima do bloco 3 de `cron/followup.php`;
+  sanity-check confirmado revertendo 1 call site pra `zapiEnviarTexto()`
+  puro e vendo o guard falhar com a mensagem certa antes de restaurar).
+  Sem migração de schema.
   **Importar contratos antigos da ZapSign (CRM anterior)** (19/09/2026,
   "zapasine tem monte contrato do crm anti será possivel puxar concliar" →
   "pela api" → escolhendo "listar + tentar vincular automaticamente" e

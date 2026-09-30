@@ -92,7 +92,7 @@ foreach ($atrasadas as $op) {
              . "📋 Próxima ação: {$acao}\n"
              . "⏰ Estava marcada pra: " . date('d/m H:i', strtotime($op['proxima_acao_em'])) . "\n\n"
              . "Atualize a próxima ação ou o status no CRM.";
-        $ok = zapiEnviarTexto($op['responsavel_wpp'], $msg);
+        $ok = zapiEnviarTextoInterno($op['responsavel_wpp'], $msg);
         log_followup(($ok ? '✅' : '❌') . " Alerta atraso → oportunidade #{$op['id']} → {$op['responsavel_nome']}");
     } else {
         log_followup("⏭️ Oportunidade #{$op['id']} atrasada mas sem responsável com WhatsApp cadastrado.");
@@ -142,7 +142,7 @@ foreach ($quentesParados as $op) {
              . "👤 {$nomeCliente} ({$op['telefone']})\n\n"
              . "Esse lead tem urgência real (financiamento atrasado, sem outra opção) e já está "
              . "com você há mais de {$IA_QUENTE_MINUTOS_LIMITE} min sem avançar. Ligue o quanto antes!";
-        $ok = zapiEnviarTexto($op['responsavel_wpp'], $msg);
+        $ok = zapiEnviarTextoInterno($op['responsavel_wpp'], $msg);
         log_followup(($ok ? '✅' : '❌') . " Alerta quente parado → oportunidade #{$op['id']} → {$op['responsavel_nome']}");
     } else {
         log_followup("⏭️ Oportunidade #{$op['id']} quente parada mas responsável sem WhatsApp cadastrado.");

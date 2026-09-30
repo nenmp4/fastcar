@@ -75,7 +75,7 @@ function login2faEnviarCodigo(array $usuario, string $canal): array {
     $codigo = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
     if ($canal === 'whatsapp') {
-        $enviouOk = zapiEnviarTexto($usuario['whatsapp'], "🔐 *Fastcar CRM* — seu código de verificação é *{$codigo}*.\n\nVálido por 10 minutos. Nunca compartilhe esse código com ninguém, nem com a própria Fastcar.");
+        $enviouOk = zapiEnviarTextoInterno($usuario['whatsapp'], "🔐 *Fastcar CRM* — seu código de verificação é *{$codigo}*.\n\nVálido por 10 minutos. Nunca compartilhe esse código com ninguém, nem com a própria Fastcar.");
     } else {
         $enviouOk = enviarEmail($usuario['email'], 'Seu código de verificação — Fastcar CRM', emailLayout(login2faEmailCorpo($codigo)), $usuario['nome']) === true;
     }

@@ -11,7 +11,7 @@
  * admin/notificacoes.php (mescla os dois) e admin/_notify.php (JS).
  */
 
-require_once __DIR__ . '/whatsapp_config.php'; // zapiEnviarTexto() — precisa pra notificarDocumentosConfirmadosZap()
+require_once __DIR__ . '/whatsapp_config.php'; // zapiEnviarTextoInterno() — precisa pra notificarDocumentosConfirmadosZap()
 
 function criarNotificacao(int $usuarioId, string $tipo, string $titulo, string $mensagem, string $url): void {
     getDB()->prepare("
@@ -55,13 +55,13 @@ function notificarDocumentosConfirmadosZap(?string $whatsappResponsavel, string 
              . ($link ? "\n{$link}" : '');
 
         if (!empty($whatsappResponsavel)) {
-            zapiEnviarTexto($whatsappResponsavel, $msg);
+            zapiEnviarTextoInterno($whatsappResponsavel, $msg);
             return;
         }
 
         $lista = getConfig('notificacao_leads_whatsapp') ?: '';
         foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
-            zapiEnviarTexto($numero, $msg);
+            zapiEnviarTextoInterno($numero, $msg);
         }
     } catch (Throwable $e) {
         // best-effort — nunca pode travar o wizard do cliente/comprador

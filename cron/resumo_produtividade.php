@@ -78,7 +78,7 @@ $msg = "📊 *Resumo de produtividade — " . date('d/m/Y') . "*\n\n"
 
 $enviados = 0;
 foreach ($supervisores as $sup) {
-    $ok = zapiEnviarTexto($sup['whatsapp'], $msg);
+    $ok = zapiEnviarTextoInterno($sup['whatsapp'], $msg);
     log_resumo_produtividade(($ok ? '✅' : '❌') . " Resumo → {$sup['nome']} ({$sup['whatsapp']})");
     if ($ok) $enviados++;
 }

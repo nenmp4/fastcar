@@ -790,7 +790,7 @@ function notificarNovoLeadVendas(int $vendaId, string $nomeComprador, string $te
         $msg = "🛒 Novo lead de VENDA no Fastcar CRM!\nComprador: {$nomeComprador}\nTelefone: {$telefoneComprador}\n{$link}";
 
         foreach ($numeros as $numero) {
-            zapiEnviarTexto($numero, $msg);
+            zapiEnviarTextoInterno($numero, $msg);
         }
     } catch (Throwable $e) {
         // notificação nunca pode derrubar a criação do lead
@@ -826,13 +826,13 @@ function notificarVendedorLeadQualificado(int $vendaId, string $motivo = 'Qualif
              . $link;
 
         if (!empty($v['vendedor_whatsapp'])) {
-            zapiEnviarTexto($v['vendedor_whatsapp'], $msg);
+            zapiEnviarTextoInterno($v['vendedor_whatsapp'], $msg);
             return;
         }
 
         $lista = getConfig('notificacao_leads_whatsapp') ?: '';
         foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
-            zapiEnviarTexto($numero, $msg);
+            zapiEnviarTextoInterno($numero, $msg);
         }
     } catch (Throwable $e) {
         // notificação nunca pode travar o fluxo da qualificação

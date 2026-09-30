@@ -791,6 +791,15 @@ function _marcarAvisoAssinaturaEnviado(int $contratoId, bool $whatsappOk, bool $
  * "confirmei") — admin/oportunidade.php e admin/venda.php mostram esse
  * status junto do contrato, e é o mesmo dado que decide se o botão manual
  * "Reenviar por WhatsApp (Meta oficial)" precisa aparecer.
+ *
+ * 30/09/2026, achado real ("contrato assinado, mas sem notificação, e-mail
+ * chegou certinho") — o canal WhatsApp usa `zapiEnviarTextoInterno()`
+ * (sempre Z-API principal primeiro, nunca o toggle/Meta oficial), não
+ * `zapiEnviarTexto()`: o número PESSOAL do responsável nunca escreveu pro
+ * WhatsApp oficial da empresa como cliente escreveria, então cair no
+ * toggle global (que migrou pra Meta em 29/09/2026) fazia a Meta rejeitar
+ * como mensagem proativa fora da janela de 24h (código 131047),
+ * silenciosamente — só o e-mail (canal independente) chegava.
  */
 function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
     try {
@@ -799,11 +808,11 @@ function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
 
         $whatsappOk = false;
         if (!empty($d['responsavelWhatsapp'])) {
-            $whatsappOk = zapiEnviarTexto($d['responsavelWhatsapp'], $d['msg']);
+            $whatsappOk = zapiEnviarTextoInterno($d['responsavelWhatsapp'], $d['msg']);
         } else {
             $lista = getConfig('notificacao_leads_whatsapp') ?: '';
             foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
-                if (zapiEnviarTexto($numero, $d['msg'])) $whatsappOk = true;
+                if (zapiEnviarTextoInterno($numero, $d['msg'])) $whatsappOk = true;
             }
         }
 

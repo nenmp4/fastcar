@@ -204,6 +204,46 @@ function zapiCredenciaisFinanceiro(): array {
  * Meta oficial DEDICADA de vendas se já configurada (upgrade silencioso
  * sobre o fallback antigo), senão pro Meta PRINCIPAL como último recurso.
  */
+/**
+ * Manda mensagem INTERNA (staff — consultor/vendedor/supervisor logando
+ * ou sendo avisado, NUNCA conversa com cliente) por WhatsApp — 30/09/2026,
+ * achado real: "contrato foi assinado mais não teve mensagem de
+ * notificação... no e-mail do consultor chegou certinho". Causa raiz:
+ * notificarAssinaturaContrato() (e toda outra notificação interna do
+ * projeto — 2FA, lead novo, lead qualificado, alerta de atraso/quente
+ * parado, resumo de produtividade, fim de turno) chamava zapiEnviarTexto()
+ * sem override, que decide o transporte pelo toggle global
+ * (whatsapp_provider_principal). Desde que o canal principal migrou pra
+ * Meta oficial (29/09/2026), isso passou a rotear TODA notificação interna
+ * pra Meta também — mas o número PESSOAL de um consultor/vendedor/
+ * supervisor nunca escreveu pro WhatsApp oficial da empresa como cliente
+ * escreveria, então a Meta rejeita como mensagem proativa fora da janela
+ * de 24h (código 131047), silenciosamente (zapiEnviarTexto() só retorna
+ * false, nenhuma tela mostra o motivo). A instância Z-API PRINCIPAL segue
+ * conectada de propósito justamente pra esse tipo de uso (ver CLAUDE.md,
+ * "Z-API segue conectada... serve de histórico/fallback pro canal
+ * principal") — mensagem interna, que nunca é resposta a cliente nenhum,
+ * deve SEMPRE preferir ela, nunca depender do toggle. Só cai pro Meta
+ * oficial (canal PRINCIPAL, nunca vendas/financeiro dedicados) se a Z-API
+ * principal não estiver configurada ou falhar de verdade — melhor tentar
+ * do que deixar sem nenhum aviso saindo.
+ */
+function zapiEnviarTextoInterno(string $phone, string $msg): bool {
+    $inst = _chatbot_getConfig('zapi_instance_id');
+    $tok = _chatbot_getConfig('zapi_token');
+    $ctok = _chatbot_getConfig('zapi_client_token');
+    if ($inst && $tok && $phone) {
+        $phoneNorm = normalizarTelefone($phone);
+        if (strlen($phoneNorm) >= 12 && _zapiEnviarTextoBruto($phoneNorm, $msg, $inst, $tok, $ctok)) {
+            return true;
+        }
+    }
+    if (oficialConfigured()) {
+        return oficialEnviarTexto($phone, $msg);
+    }
+    return false;
+}
+
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
     $canal = $instanciaOverride[3] ?? null;
