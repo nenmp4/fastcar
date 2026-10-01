@@ -137,6 +137,20 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
                 'instancia' => $instancia, 'ia_resultado' => null];
     }
 
+    // 01/10/2026 — pedido de exclusão de dados (LGPD), mesmo hook do lado de
+    // compra — comprador de revenda nunca vira `clientes`, por isso o alvo
+    // registrado na auditoria é 'venda' (não 'cliente').
+    if ($vendaLead && $tipoRegistro === 'text' && whatsappTextoEhPedidoExclusaoDados($texto)) {
+        registrarPedidoExclusaoDados($phone, 'venda', (int)$vendaLead['venda_id']);
+        $msgExclusao = whatsappMsgPedidoExclusaoDados();
+        if (zapiEnviarTexto($phone, $msgExclusao, $credenciaisVendas)) {
+            registrarMensagem($phone, 'out', $msgExclusao, null, true);
+        }
+        return ['ignored' => 'pedido_exclusao_dados', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                'instancia' => $instancia, 'ia_resultado' => null];
+    }
+
     if ($vendaLead && !$ia_pausada && $instancia['tipo'] === 'vendas') {
         $db = getDB();
         $stmtEtapa = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");

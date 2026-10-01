@@ -706,6 +706,23 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 'erro_oportunidade' => $erroOportunidade, 'instancia' => $instancia, 'ia_resultado' => null];
     }
 
+    // 01/10/2026 — pedido de exclusão de dados (LGPD, art. 18), verificado
+    // também ANTES da IA, mesma disciplina do opt-out acima: nunca continua
+    // a qualificação depois de um pedido desses. Responde com o processo
+    // REAL (e-mail, verificação por telefone, 15 dias — exclusao-dados.php,
+    // regra #3 do projeto, nunca promete exclusão automática que não
+    // existe), registra na auditoria e avisa a equipe pra garantir o prazo.
+    if ($oportunidade && $tipoRegistro === 'text' && whatsappTextoEhPedidoExclusaoDados($texto)) {
+        registrarPedidoExclusaoDados($phone, 'cliente', (int)$oportunidade['cliente_id']);
+        $msgExclusao = whatsappMsgPedidoExclusaoDados();
+        if (zapiEnviarTextoPeloCanal($phone, $msgExclusao, $instancia['canal'] ?? null)) {
+            registrarMensagem($phone, 'out', $msgExclusao, null, true);
+        }
+        return ['ignored' => 'pedido_exclusao_dados', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => $ia_pausada, 'oportunidade' => $oportunidade,
+                'erro_oportunidade' => $erroOportunidade, 'instancia' => $instancia, 'ia_resultado' => null];
+    }
+
     // Qualificação por IA (bloco 3, pendência #3 resolvida) — só roda pela
     // instância principal (nunca sobre uma conversa que já é de um
     // consultor), só com IA não pausada, e só enquanto a oportunidade ainda

@@ -93,6 +93,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'lancamento_cancelado' => '🚫 Lançamento financeiro cancelado',
         'impersonacao_iniciada' => '🎭 Impersonação iniciada',
         'impersonacao_finalizada' => '🎭 Impersonação encerrada',
+        'lgpd_exclusao_solicitada' => '⚖️ Pedido de exclusão de dados (LGPD)',
         default => $evento,
     };
 }

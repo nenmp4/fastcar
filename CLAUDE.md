@@ -9982,6 +9982,57 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   próxima conversa real. Sem migração de schema (`pedido_atendente_humano`
   nunca vira coluna de banco, só lido no momento do turno, igual
   `reclamacao_pos_venda`).
+- **Pedido de exclusão de dados (LGPD) detectado no webhook do WhatsApp**
+  (01/10/2026, "vamos implementar mensagem lgp para exlusão do dados") —
+  já existia uma página pública (`exclusao-dados.php`, 29/09/2026) com o
+  processo oficial (e-mail, verificação por telefone, prazo de 15 dias),
+  mas nenhum canal dentro da conversa de WhatsApp reconhecia um pedido
+  desses — o cliente só saberia se já conhecesse a URL. Novo
+  `whatsappTextoEhPedidoExclusaoDados()` (`includes/whatsapp_conformidade.php`,
+  mesmo arquivo do gate de conformidade/opt-out criado em 30/09/2026) —
+  diferente de `whatsappTextoEhOptOut()` (match exato de 1 palavra
+  sozinha), aqui a mensagem normalmente vem em frase ("quero excluir meus
+  dados"), então exige um VERBO de ação (excluir/apagar/deletar/remover,
+  com variações) E um ALVO (dado/dados/cadastro/informação/conta) como
+  palavras inteiras na MESMA mensagem — nunca substring solta, evita falso
+  positivo tipo "pode mandar os dados do financiamento?" (tem "dados", sem
+  verbo de exclusão). Citar "LGPD" pelo nome dispara sozinho. Verificado
+  no webhook (`chatbot-whatsapp/includes/mensagens.php`/
+  `mensagens_vendas.php`) logo depois do opt-out e ANTES da IA, mesma
+  disciplina — nunca continua a qualificação depois de um pedido desses.
+  `whatsappMsgPedidoExclusaoDados()` responde com o MESMO processo real já
+  documentado em `exclusao-dados.php` (regra #3, nunca promete exclusão
+  automática/imediata que o sistema não tem: continua manual, por e-mail,
+  15 dias). `registrarPedidoExclusaoDados()` grava evento novo na
+  auditoria (`lgpd_exclusao_solicitada`, `includes/auditoria.php`,
+  `usuario_id=null`, alvo `cliente`/`venda` conforme o lado) E manda aviso
+  pro(s) número(s) de notificação genérica
+  (`config.notificacao_leads_whatsapp`, mesma lista já usada pra lead
+  novo) — sem isso, o pedido ficaria só com o cliente esperando mandar
+  o e-mail de confirmação, sem ninguém da equipe saber que precisa
+  acompanhar o prazo de 15 dias já prometido publicamente. Best-effort
+  (try/catch), nunca trava o webhook. Testado: 10 casos isolados de
+  detecção (frases reais de pedido/variação verbo-alvo/menção à LGPD, e 5
+  negativos incluindo "cancelar" sozinho — que é opt-out, não exclusão —
+  e "pode mandar os dados do financiamento?") — todos bateram certo;
+  ponta a ponta via `processarMensagemZapi()`/`processarMensagemVendasZapi()`
+  reais contra Z-API fake local, nos 2 lados (compra e venda): mensagem
+  simulando pedido de exclusão nunca avança a etapa pra IA (fica em
+  `whatsapp`), grava exatamente 1 evento de auditoria com
+  alvo_tipo/alvo_id certos, manda a resposta certa pro cliente E os avisos
+  internos certos pros números configurados (conferido byte a byte no log
+  do fake Z-API — as chamadas extras capturadas eram de mecanismos JÁ
+  existentes e sem relação, tipo `notificarNovoLeadWhatsapp()` disparando
+  porque é a 1ª mensagem desse cliente); reenviar o MESMO `messageId`
+  confirmado não duplicando nem a mensagem nem o evento de auditoria
+  (dedup de sempre). Confirmado que o banco de dev real não foi tocado
+  durante o teste (sempre via script em ARQUIVO com `auto_prepend_file`,
+  nunca `php -r` inline). `php -l` + `tests/smoke.php` limpos nos 4
+  arquivos tocados. Sem migração de schema (usa a tabela `auditoria` já
+  existente). ⚠️ A exclusão em si continua 100% manual (ninguém automatiza
+  apagar cadastro/histórico/documento ainda) — esta mudança só fecha a
+  lacuna de detecção/encaminhamento dentro da conversa, nunca executa a
+  exclusão sozinha.
 
 ## Pendências (aguardando definição antes de codar mais)
 

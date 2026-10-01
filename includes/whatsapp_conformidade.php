@@ -33,6 +33,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/whatsapp_config.php';
+require_once __DIR__ . '/auditoria.php'; // auditoriaRegistrar() — rastro do pedido LGPD
 
 /**
  * Kill switch global — `config.whatsapp_envio_ativo`, mesmo padrão
@@ -364,6 +365,81 @@ function whatsappTextoEhOptOut(string $texto): bool {
     $norm = strtolower(preg_replace('/[^a-z0-9]/i', '', iconv('UTF-8', 'ASCII//TRANSLIT', $texto) ?: $texto));
     static $palavras = ['sair', 'parar', 'stop', 'naoquero', 'cancelar', 'remover'];
     return in_array($norm, $palavras, true);
+}
+
+/**
+ * Detecta pedido de exclusão de dados — direito LGPD (Lei 13.709/2018,
+ * art. 18) — 01/10/2026, "vamos implementar mensagem lgp para exclusão de
+ * dados". Diferente de whatsappTextoEhOptOut() (palavra sozinha, match
+ * exato): pedido de exclusão normalmente vem numa frase ("quero excluir
+ * meus dados", "apaga meu cadastro"), então aqui exige um VERBO de ação
+ * (excluir/apagar/deletar/apague/exclua/delete) E um ALVO (dado(s)/
+ * cadastro/informação(ões)) presentes como palavras inteiras na mesma
+ * mensagem — nunca substring solta (evita falso positivo tipo "pode
+ * mandar os dados do financiamento?", que tem "dados" mas nenhum verbo de
+ * exclusão). Mencionar "LGPD" explicitamente também dispara sozinho — quem
+ * cita a lei pelo nome quase certamente está fazendo um pedido de direito,
+ * não só comentando.
+ */
+function whatsappTextoEhPedidoExclusaoDados(string $texto): bool {
+    $norm = strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $texto) ?: $texto);
+    $palavras = preg_split('/[^a-z0-9]+/', $norm, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+    if (in_array('lgpd', $palavras, true)) return true;
+
+    $temVerbo = (bool)array_intersect(['excluir', 'exclua', 'apagar', 'apague', 'deletar', 'delete', 'remover', 'remova'], $palavras);
+    $temAlvo = (bool)array_intersect(['dado', 'dados', 'cadastro', 'informacao', 'informacoes', 'conta'], $palavras);
+    return $temVerbo && $temAlvo;
+}
+
+/**
+ * Mensagem de resposta ao pedido de exclusão — reflete o MESMO processo
+ * real já documentado em exclusao-dados.php (nunca promete exclusão
+ * automática/imediata que o sistema não tem — regra #3, nunca inventar
+ * fluxo que não existe): o pedido é sempre confirmado por e-mail,
+ * verificado pelo próprio telefone, com prazo de 15 dias.
+ */
+function whatsappMsgPedidoExclusaoDados(): string {
+    $baseUrl = rtrim(getConfig('app_base_url') ?: 'https://fastcar.solutions', '/');
+    return "Entendido! Pra confirmar que é você mesmo pedindo (segurança dos seus dados), "
+        . "o processo oficial de exclusão é por e-mail: manda pra contato@fastcar.solutions "
+        . "com o assunto \"Exclusão de dados\" e esse mesmo telefone — a gente confirma em até "
+        . "15 dias. Detalhes completos: {$baseUrl}/exclusao-dados.php";
+}
+
+/**
+ * Registra o pedido na auditoria + avisa a equipe pelo WhatsApp interno —
+ * sem isso, o cliente só recebe a mensagem de resposta e a exclusão de
+ * verdade (processo manual, ver exclusao-dados.php) nunca aconteceria sem
+ * alguém ver o e-mail; o aviso aqui é extra garantia de que o prazo de 15
+ * dias (compromisso já público na própria página) é cumprido mesmo que o
+ * cliente esqueça de mandar o e-mail de confirmação. Best-effort, nunca
+ * pode travar o webhook.
+ */
+function registrarPedidoExclusaoDados(string $telefone, string $alvoTipo, ?int $alvoId): void {
+    try {
+        auditoriaRegistrar(
+            'lgpd_exclusao_solicitada',
+            null,
+            "Cliente via WhatsApp ({$telefone})",
+            $alvoTipo,
+            $alvoId,
+            "Pedido de exclusão de dados (LGPD) recebido por mensagem — telefone {$telefone}, aguardando confirmação por e-mail."
+        );
+
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        $numeros = array_filter(array_map('trim', explode(',', $lista)));
+        if ($numeros) {
+            $msgInterna = "⚖️ Pedido de exclusão de dados (LGPD) recebido no WhatsApp\nTelefone: {$telefone}\n"
+                . "O cliente precisa confirmar por e-mail (contato@fastcar.solutions) pra concluir — "
+                . "já orientado automaticamente. Acompanhar o prazo de 15 dias.";
+            foreach ($numeros as $numero) {
+                zapiEnviarTextoInterno($numero, $msgInterna);
+            }
+        }
+    } catch (Throwable $e) {
+        // registro/aviso nunca pode travar o webhook
+    }
 }
 
 /** Rótulo legível pro motivo de bloqueio — usado no painel. */
