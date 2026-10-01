@@ -10033,6 +10033,66 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   apagar cadastro/histórico/documento ainda) — esta mudança só fecha a
   lacuna de detecção/encaminhamento dentro da conversa, nunca executa a
   exclusão sozinha.
+- **Lançamento pendente do Asaas contava como receita já recebida**
+  (01/10/2026, achado real: "os lançamentos que vem do assas como pedente
+  ele conta com receita já certo contar como receita lançada com status
+  pago" → confirmado "neste seria receita prevista / com pedente") —
+  `finSoma()` (`admin/financeiro.php`), a query principal do DRE
+  (`includes/financeiro_dre.php::finGerarDrePdf()`) e a do Extrato
+  (`includes/financeiro_extrato.php::_finExtratoSoma()`) sempre somavam
+  `status != 'cancelado'` — ou seja, `pendente`/`atrasado`/`pago` entravam
+  TODOS juntos em "Receitas do mês"/"RECEITA BRUTA" do DRE, mesmo o DRE já
+  alegando no próprio rodapé ser "regime de CAIXA: cada valor entra nesta
+  soma na data em que foi EFETIVAMENTE pago/recebido" — contradição real
+  entre o texto e a query. Uma cobrança importada do Asaas ainda
+  `status='pendente'` (aguardando o cliente pagar) inflava o total como se
+  o dinheiro já tivesse entrado — mesmo bug nas comissões ("🤝 Comissões
+  PAGAS aos consultores/vendedores" somava qualquer uma não cancelada,
+  inclusive pendente). `finSoma()` ganhou `$situacao` (`'pago'` — padrão
+  novo, `status='pago'` de verdade; `'previsto'` — `status='pendente'`;
+  `'todos'` — comportamento antigo, nenhum call site usa). `atrasado`
+  fica de fora dos dois de propósito: já tem card próprio ("⏰ Contas
+  atrasadas") — somar junto faria o valor do card "previsto" não bater
+  com o link `?status=pendente` que ele aponta. Dashboard
+  (`admin/financeiro.php`) ganhou 2 cards novos — "📅 Receita prevista
+  (pendente)"/"📅 Despesa prevista (pendente)" — ao lado dos renomeados
+  "💰 Receita realizada do mês"/"💸 Despesa realizada do mês" (antes só
+  "Receitas/Despesas do mês", sem deixar claro que já estava misturado);
+  "Saldo do mês" virou "Saldo do mês (realizado)" (receita paga − despesa
+  paga, nunca previsto); comissões trocadas pra `status='pago'` de
+  verdade, finalmente batendo com o que o rótulo "PAGAS" já prometia. DRE
+  ganhou um bloco novo de disclosure ("📅 PREVISTO NO PERÍODO... NÃO
+  incluído no resultado acima"), mesmo espírito do aviso já existente de
+  "sem categoria" — nunca esconde o pendente, só não deixa ele contaminar
+  o resultado líquido; o aviso de "sem categoria" também passou a contar
+  só quem é `status='pago'` (antes contava pendente sem categoria também,
+  que nunca entraria na soma de qualquer forma — inconsistente). Extrato
+  Completo: totais do topo ("Receitas"/"Despesas"/"Saldo") renomeados pra
+  deixar claro que são "(realizadas)", com linha nova "📅 Previsto
+  (pendente)" ao lado — a TABELA de linhas individuais embaixo nunca foi
+  tocada, já mostrava o `status` de cada lançamento corretamente, só os
+  totais resumidos é que misturavam. Testado: função isolada em banco
+  isolado (4 lançamentos — receita paga R$1.000, receita pendente
+  R$2.200 simulando cobrança Asaas real, despesa paga R$300, despesa
+  pendente R$500 — confirmando receita/despesa realizada NUNCA inclui o
+  pendente, previsto bate exatamente com o valor pendente, saldo realizado
+  = 1000-300 nunca 3200-800) + PDF real do DRE e do Extrato gerados e
+  decodificados (content streams via `gzuncompress`) confirmando
+  "1.000,00" presente e "3.200,00" ausente, aviso de previsto com
+  "2.200,00" certo — + HTTP ponta a ponta real (sessão primed de
+  super_admin, servidor PHP embutido contra o banco isolado):
+  `admin/financeiro.php` renderiza os 5 cards certos com os valores
+  batendo; `admin/financeiro-relatorio-dre.php`/`-extrato.php` via HTTP
+  real devolvem PDF de verdade (`%PDF`, 200) com o mesmo conteúdo
+  confirmado. Confirmado que o banco de dev real não foi tocado durante o
+  teste (sempre via script em ARQUIVO com `auto_prepend_file`, nunca
+  `php -r` inline) + `php -l` + `tests/smoke.php` limpos nos 3 arquivos.
+  Sem migração de schema (`fin_lancamentos.status` já aceitava
+  `pendente`/`pago`/`atrasado`/`cancelado` desde sempre).
+  `finResumoLancamentosVenda()` (`includes/financeiro.php`, usado por
+  `admin/promissorias.php`) já separava `total_pago`/`total_pendente`
+  corretamente desde antes — não tinha o mesmo bug, não precisou de
+  mudança.
 
 ## Pendências (aguardando definição antes de codar mais)
 

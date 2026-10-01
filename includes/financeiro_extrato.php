@@ -18,11 +18,28 @@
 require_once __DIR__ . '/contratos_pdf.php';
 
 if (!function_exists('_finExtratoSoma')) {
-    function _finExtratoSoma(PDO $db, string $tipo, string $de, string $ate, ?string $natureza = null): float {
+    /**
+     * 01/10/2026, mesma correção de admin/financeiro.php::finSoma() —
+     * somava `status != 'cancelado'`, misturando pendente/atrasado junto
+     * com pago nos totais do topo do extrato. `$situacao` separa: `'pago'`
+     * (padrão, dinheiro que já entrou/saiu de verdade) ou `'previsto'`
+     * (`status='pendente'`, ainda não realizado). A TABELA de linhas
+     * individuais logo abaixo continua mostrando todo lançamento não
+     * cancelado com seu status real — é onde o contador vê o pendente,
+     * nunca escondido, só não contaminando o total resumido.
+     */
+    function _finExtratoSoma(PDO $db, string $tipo, string $de, string $ate, ?string $natureza = null, string $situacao = 'pago'): float {
         $sql = "SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
-                WHERE tipo=? AND status != 'cancelado'
+                WHERE tipo=?
                   AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?";
         $params = [$tipo, $de, $ate];
+        if ($situacao === 'pago') {
+            $sql .= " AND status='pago'";
+        } elseif ($situacao === 'previsto') {
+            $sql .= " AND status='pendente'";
+        } else {
+            $sql .= " AND status != 'cancelado'";
+        }
         if ($natureza) { $sql .= " AND natureza=?"; $params[] = $natureza; }
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
@@ -31,10 +48,12 @@ if (!function_exists('_finExtratoSoma')) {
 }
 
 function finGerarExtratoPdf(PDO $db, string $de, string $ate): FPDF {
-    $totalReceitas = _finExtratoSoma($db, 'receita', $de, $ate);
-    $totalDespesas = _finExtratoSoma($db, 'despesa', $de, $ate);
-    $despFixas = _finExtratoSoma($db, 'despesa', $de, $ate, 'fixa');
-    $despVar = _finExtratoSoma($db, 'despesa', $de, $ate, 'variavel');
+    $totalReceitas = _finExtratoSoma($db, 'receita', $de, $ate, null, 'pago');
+    $totalReceitasPrevistas = _finExtratoSoma($db, 'receita', $de, $ate, null, 'previsto');
+    $totalDespesas = _finExtratoSoma($db, 'despesa', $de, $ate, null, 'pago');
+    $totalDespesasPrevistas = _finExtratoSoma($db, 'despesa', $de, $ate, null, 'previsto');
+    $despFixas = _finExtratoSoma($db, 'despesa', $de, $ate, 'fixa', 'pago');
+    $despVar = _finExtratoSoma($db, 'despesa', $de, $ate, 'variavel', 'pago');
     $saldo = $totalReceitas - $totalDespesas;
 
     $stmt = $db->prepare("
@@ -95,24 +114,35 @@ function finGerarExtratoPdf(PDO $db, string $de, string $ate): FPDF {
     $pdf->Ln(4);
 
     $pdf->SetFont('Helvetica', 'B', 10);
-    $pdf->Cell(60, 7, _pdfTexto('Receitas'), 0, 0);
+    $pdf->Cell(60, 7, _pdfTexto('Receitas (realizadas)'), 0, 0);
     $pdf->SetTextColor(22, 101, 52);
     $pdf->Cell(0, 7, _pdfTexto('R$ ' . number_format($totalReceitas, 2, ',', '.')), 0, 1);
     $pdf->SetTextColor(0, 0, 0);
 
     $pdf->SetFont('Helvetica', 'B', 10);
-    $pdf->Cell(60, 7, _pdfTexto('Despesas'), 0, 0);
+    $pdf->Cell(60, 7, _pdfTexto('Despesas (realizadas)'), 0, 0);
     $pdf->SetTextColor(153, 27, 27);
     $pdf->Cell(0, 7, _pdfTexto('R$ ' . number_format($totalDespesas, 2, ',', '.') . '  (Fixas: R$ ' . number_format($despFixas, 2, ',', '.') . ' | Variáveis: R$ ' . number_format($despVar, 2, ',', '.') . ')'), 0, 1);
     $pdf->SetTextColor(0, 0, 0);
 
     $pdf->SetFont('Helvetica', 'B', 11);
-    $pdf->Cell(60, 8, _pdfTexto('Saldo do período'), 0, 0);
+    $pdf->Cell(60, 8, _pdfTexto('Saldo do período (realizado)'), 0, 0);
     $corSaldo = $saldo >= 0 ? [22, 101, 52] : [153, 27, 27];
     $pdf->SetTextColor(...$corSaldo);
     $situacao = $saldo >= 0 ? 'SUPERÁVIT' : 'DÉFICIT';
     $pdf->Cell(0, 8, _pdfTexto('R$ ' . number_format($saldo, 2, ',', '.') . '  —  ' . $situacao), 0, 1);
     $pdf->SetTextColor(0, 0, 0);
+
+    // 01/10/2026 — linha de PREVISTO (status='pendente'), separada de
+    // propósito dos totais acima: nunca entra na soma de "realizado",
+    // só informa o contador do que ainda não virou caixa de verdade.
+    if ($totalReceitasPrevistas > 0 || $totalDespesasPrevistas > 0) {
+        $pdf->SetFont('Helvetica', 'I', 9);
+        $pdf->SetTextColor(8, 120, 160);
+        $pdf->Cell(60, 6, _pdfTexto('📅 Previsto (pendente)'), 0, 0);
+        $pdf->Cell(0, 6, _pdfTexto('Receita: R$ ' . number_format($totalReceitasPrevistas, 2, ',', '.') . '  |  Despesa: R$ ' . number_format($totalDespesasPrevistas, 2, ',', '.') . '  — não incluído nos totais acima'), 0, 1);
+        $pdf->SetTextColor(0, 0, 0);
+    }
     $pdf->Ln(4);
 
     // Tabela — larguras somam 267mm (área útil em paisagem: 297-15-15)

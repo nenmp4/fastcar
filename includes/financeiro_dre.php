@@ -62,13 +62,23 @@ function finGruposDreComRotulos(): array {
  * fora por falta de categoria e imprime um aviso no rodapé do próprio PDF
  * — o contador não deveria receber um DRE que parece completo mas está
  * descontando/somando menos do que devia sem nenhum sinal disso.
+ *
+ * 01/10/2026, achado real — a query somava `status != 'cancelado'`
+ * (pendente/atrasado/pago juntos), contradizendo o próprio rodapé do PDF
+ * ("regime de CAIXA: cada valor entra nesta soma na data em que foi
+ * EFETIVAMENTE pago/recebido") — uma cobrança Asaas ainda pendente entrava
+ * na "RECEITA BRUTA" como se o dinheiro já tivesse sido recebido. Corrigido
+ * pra `status = 'pago'` de verdade, com o mesmo tipo de aviso explícito no
+ * rodapé (como já existia pra "sem categoria") mostrando quanto ficou de
+ * fora por ainda estar pendente/atrasado — nunca esconde o dado, só não
+ * mistura com o que já é dinheiro de verdade.
  */
 function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
     $stmt = $db->prepare("
         SELECT c.grupo_dre, c.nome AS categoria_nome, c.icone, l.tipo, SUM(l.valor) AS total
         FROM fin_lancamentos l
         JOIN fin_categorias c ON c.id = l.categoria_id
-        WHERE l.status != 'cancelado' AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
+        WHERE l.status = 'pago' AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
         GROUP BY c.grupo_dre, c.id
         ORDER BY c.grupo_dre, categoria_nome
     ");
@@ -100,11 +110,29 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
 
     $stmtSemCat = $db->prepare("
         SELECT COUNT(*) FROM fin_lancamentos
-        WHERE status != 'cancelado' AND categoria_id IS NULL
+        WHERE status = 'pago' AND categoria_id IS NULL
           AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
     ");
     $stmtSemCat->execute([$de, $ate]);
     $semCategoria = (int)$stmtSemCat->fetchColumn();
+
+    // 01/10/2026 — disclosure do que ficou de fora por ainda não estar
+    // pago (regime de caixa de verdade, ver docblock acima): nunca
+    // esconder, só deixar claro que esse valor é PREVISÃO, não resultado
+    // do período. Soma à parte de receita/despesa pendente/atrasado,
+    // independente de ter categoria ou não.
+    $stmtPrevisto = $db->prepare("
+        SELECT tipo, COUNT(*) AS qtd, COALESCE(SUM(valor),0) AS total
+        FROM fin_lancamentos
+        WHERE status IN ('pendente','atrasado')
+          AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
+        GROUP BY tipo
+    ");
+    $stmtPrevisto->execute([$de, $ate]);
+    $previsto = ['receita' => ['qtd' => 0, 'total' => 0.0], 'despesa' => ['qtd' => 0, 'total' => 0.0]];
+    foreach ($stmtPrevisto->fetchAll(PDO::FETCH_ASSOC) as $p) {
+        $previsto[$p['tipo']] = ['qtd' => (int)$p['qtd'], 'total' => (float)$p['total']];
+    }
 
     // ── PDF ────────────────────────────────────────────────────────────
     $pdf = _pdfNovo();
@@ -196,11 +224,35 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
     $pdf->MultiCell(0, 4, _pdfTexto('ℹ Regime de caixa: cada valor entra nesta soma na data em que foi efetivamente pago/recebido (entrada e cada parcela de venda são lançadas separadamente, conforme o vencimento) — não é o regime de competência da escrituração contábil oficial, que normalmente reconheceria o valor total do contrato na data da venda. O contrato assinado de cada negociação (armazenado no sistema) é o documento de suporte de cada lançamento.'));
     $pdf->SetTextColor(0, 0, 0);
     $pdf->Ln(2);
+
+    // 01/10/2026, achado real: "os lançamentos que vem do assas como
+    // pendente ele conta com receita já... certo contar como receita
+    // lançada com status pago" — confirmado "neste seria receita prevista
+    // / com pendente". Disclosure explícito do que é PREVISÃO (ainda não
+    // pago/recebido), separado do resultado acima — nunca esconde o
+    // valor, só deixa claro que não é caixa de verdade ainda.
+    if ($previsto['receita']['qtd'] > 0 || $previsto['despesa']['qtd'] > 0) {
+        $pdf->SetFont('Helvetica', 'B', 8);
+        $pdf->SetTextColor(8, 120, 160);
+        $pdf->MultiCell(0, 4, _pdfTexto('📅 PREVISTO NO PERÍODO (ainda pendente/atrasado, NÃO incluído no resultado acima):'));
+        $pdf->SetFont('Helvetica', '', 8);
+        if ($previsto['receita']['qtd'] > 0) {
+            $plural = $previsto['receita']['qtd'] === 1 ? 'lançamento' : 'lançamentos';
+            $pdf->MultiCell(0, 4, _pdfTexto("   Receita prevista: {$previsto['receita']['qtd']} {$plural}, R$ " . number_format($previsto['receita']['total'], 2, ',', '.') . ' ainda não recebidos.'));
+        }
+        if ($previsto['despesa']['qtd'] > 0) {
+            $plural = $previsto['despesa']['qtd'] === 1 ? 'lançamento' : 'lançamentos';
+            $pdf->MultiCell(0, 4, _pdfTexto("   Despesa prevista: {$previsto['despesa']['qtd']} {$plural}, R$ " . number_format($previsto['despesa']['total'], 2, ',', '.') . ' ainda não pagos.'));
+        }
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Ln(2);
+    }
+
     if ($semCategoria > 0) {
         $pdf->SetFont('Helvetica', 'B', 8);
         $pdf->SetTextColor(153, 27, 27);
         $plural = $semCategoria === 1 ? 'lançamento' : 'lançamentos';
-        $pdf->MultiCell(0, 4, _pdfTexto("⚠ {$semCategoria} {$plural} do período sem categoria vinculada NÃO entraram nesta soma — confira em Financeiro > Lançamentos e vincule uma categoria pra esse(s) lançamento(s) aparecer(em) no DRE."));
+        $pdf->MultiCell(0, 4, _pdfTexto("⚠ {$semCategoria} {$plural} JÁ PAGO(S) do período sem categoria vinculada NÃO entraram nesta soma — confira em Financeiro > Lançamentos e vincule uma categoria pra esse(s) lançamento(s) aparecer(em) no DRE."));
         $pdf->SetTextColor(0, 0, 0);
         $pdf->Ln(2);
     }

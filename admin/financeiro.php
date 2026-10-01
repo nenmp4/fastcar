@@ -31,30 +31,64 @@ if ($fPeriodo) {
     $fimMes = date('Y-m-t', strtotime($inicioMes));
 }
 
-function finSoma(PDO $db, string $tipo, string $inicio, string $fim, ?string $natureza = null): float {
+/**
+ * 01/10/2026, achado real: "os lançamentos que vem do assas como pendente
+ * ele conta com receita já... certo contar como receita lançada com status
+ * pago" — confirmado com o usuário ("neste seria receita prevista / com
+ * pendente"). Até aqui `finSoma()` somava `status != 'cancelado'`, ou seja,
+ * `pendente`/`atrasado`/`pago` entravam TODOS juntos em "Receitas do mês" —
+ * uma cobrança do Asaas ainda não paga inflava o total como se o dinheiro
+ * já tivesse entrado. `$situacao` separa os 2 conceitos, nunca mais
+ * mistura: `'pago'` (padrão — dinheiro que REALMENTE já entrou/saiu,
+ * `status='pago'`, é o que "Receitas/Despesas do mês" deveria sempre ter
+ * significado) e `'previsto'` (ainda não realizado, `status='pendente'` —
+ * é exatamente o caso de uma cobrança Asaas aguardando pagamento).
+ * `atrasado` fica de fora dos dois de propósito: já tem card/métrica
+ * própria no dashboard ("⏰ Contas atrasadas") — somar junto aqui faria o
+ * valor do card "previsto" não bater com o link de `?status=pendente`
+ * que ele aponta. `'todos'` fica disponível só pra quem precisar do
+ * comportamento antigo de propósito (nenhum call site usa hoje). Mesma
+ * correção aplicada em `includes/financeiro_dre.php` e
+ * `includes/financeiro_extrato.php`, que tinham o MESMO padrão — e nas
+ * queries de comissão logo abaixo (já rotuladas "Comissões PAGAS", mas
+ * somando qualquer coisa não cancelada).
+ */
+function finSoma(PDO $db, string $tipo, string $inicio, string $fim, ?string $natureza = null, string $situacao = 'pago'): float {
     $sql = "SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
-            WHERE tipo=? AND status != 'cancelado'
+            WHERE tipo=?
               AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?";
     $params = [$tipo, $inicio, $fim];
+    if ($situacao === 'pago') {
+        $sql .= " AND status='pago'";
+    } elseif ($situacao === 'previsto') {
+        $sql .= " AND status='pendente'";
+    } else {
+        $sql .= " AND status != 'cancelado'";
+    }
     if ($natureza) { $sql .= " AND natureza=?"; $params[] = $natureza; }
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     return (float)$stmt->fetchColumn();
 }
 
-$totalReceitas = finSoma($db, 'receita', $inicioMes, $fimMes);
-$totalDespesas = finSoma($db, 'despesa', $inicioMes, $fimMes);
-$totalDespesasFixas = finSoma($db, 'despesa', $inicioMes, $fimMes, 'fixa');
-$totalDespesasVariaveis = finSoma($db, 'despesa', $inicioMes, $fimMes, 'variavel');
+$totalReceitas = finSoma($db, 'receita', $inicioMes, $fimMes, null, 'pago');
+$totalReceitasPrevistas = finSoma($db, 'receita', $inicioMes, $fimMes, null, 'previsto');
+$totalDespesas = finSoma($db, 'despesa', $inicioMes, $fimMes, null, 'pago');
+$totalDespesasPrevistas = finSoma($db, 'despesa', $inicioMes, $fimMes, null, 'previsto');
+$totalDespesasFixas = finSoma($db, 'despesa', $inicioMes, $fimMes, 'fixa', 'pago');
+$totalDespesasVariaveis = finSoma($db, 'despesa', $inicioMes, $fimMes, 'variavel', 'pago');
 $saldo = $totalReceitas - $totalDespesas;
 
 // 23/09/2026, "joga la dasbord comições pagas oas consutores" — total das
 // comissões automáticas de compra (finRegistrarComissaoCompraFechada())
 // pagas dentro do período selecionado, mesmo critério de data
 // (data_pagamento/vencimento) de finSoma().
+// 01/10/2026 — mesma correção do bullet acima: o card diz "PAGAS", então
+// só pode somar o que de fato já foi pago (status='pago'), nunca comissão
+// ainda pendente.
 $stmtComissoes = $db->prepare("
     SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
-    WHERE origem = 'comissao_compra' AND status != 'cancelado'
+    WHERE origem = 'comissao_compra' AND status = 'pago'
       AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
 ");
 $stmtComissoes->execute([$inicioMes, $fimMes]);
@@ -68,7 +102,7 @@ $comissoesPorConsultor = $db->prepare("
     SELECT fc.nome AS consultor_nome, COUNT(*) AS qtd, SUM(l.valor) AS total
     FROM fin_lancamentos l
     LEFT JOIN fin_colaboradores fc ON fc.id = l.funcionario_id
-    WHERE l.origem = 'comissao_compra' AND l.status != 'cancelado'
+    WHERE l.origem = 'comissao_compra' AND l.status = 'pago'
       AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
     GROUP BY l.funcionario_id
     ORDER BY total DESC
@@ -81,7 +115,7 @@ $comissoesPorConsultor = $comissoesPorConsultor->fetchAll(PDO::FETCH_ASSOC);
 // (finRegistrarComissaoVendaFechada()).
 $stmtComissoesVenda = $db->prepare("
     SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
-    WHERE origem = 'comissao_venda' AND status != 'cancelado'
+    WHERE origem = 'comissao_venda' AND status = 'pago'
       AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
 ");
 $stmtComissoesVenda->execute([$inicioMes, $fimMes]);
@@ -91,7 +125,7 @@ $comissoesPorVendedor = $db->prepare("
     SELECT fc.nome AS vendedor_nome, COUNT(*) AS qtd, SUM(l.valor) AS total
     FROM fin_lancamentos l
     LEFT JOIN fin_colaboradores fc ON fc.id = l.funcionario_id
-    WHERE l.origem = 'comissao_venda' AND l.status != 'cancelado'
+    WHERE l.origem = 'comissao_venda' AND l.status = 'pago'
       AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
     GROUP BY l.funcionario_id
     ORDER BY total DESC
@@ -170,13 +204,25 @@ $asaasPendenteImportar = asaasConfigured();
 </div>
 
 <div class="grid-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem">
-  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=receita&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #16a34a">
-    <div style="font-size:.8rem;color:var(--muted);font-weight:600">📥 Receitas do mês</div>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=receita&status=pago&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #16a34a">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">💰 Receita realizada do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:#16a34a">R$ <?= number_format($totalReceitas, 2, ',', '.') ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">só o que já foi pago de verdade</div>
   </a>
-  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #dc2626">
-    <div style="font-size:.8rem;color:var(--muted);font-weight:600">📤 Despesas do mês</div>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=receita&status=pendente&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #0ea5e9">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">📅 Receita prevista (pendente)</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#0ea5e9">R$ <?= number_format($totalReceitasPrevistas, 2, ',', '.') ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">ainda não entrou — ex: cobrança Asaas aguardando pagamento</div>
+  </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&status=pago&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #dc2626">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">💸 Despesa realizada do mês</div>
     <div style="font-size:1.6rem;font-weight:800;color:#dc2626">R$ <?= number_format($totalDespesas, 2, ',', '.') ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">só o que já foi pago de verdade</div>
+  </a>
+  <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&status=pendente&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #f97316">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">📅 Despesa prevista (pendente)</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#f97316">R$ <?= number_format($totalDespesasPrevistas, 2, ',', '.') ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">ainda não foi paga</div>
   </a>
   <a class="card" href="/admin/financeiro-lancamentos.php?tipo=despesa&natureza=fixa&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #b45309">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">📌 Despesas fixas do mês</div>
@@ -187,8 +233,9 @@ $asaasPendenteImportar = asaasConfigured();
     <div style="font-size:1.6rem;font-weight:800;color:#7c3aed">R$ <?= number_format($totalDespesasVariaveis, 2, ',', '.') ?></div>
   </a>
   <div class="card" style="border-top:4px solid <?= $saldo >= 0 ? '#16a34a' : '#dc2626' ?>">
-    <div style="font-size:.8rem;color:var(--muted);font-weight:600">Saldo do mês</div>
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">Saldo do mês (realizado)</div>
     <div style="font-size:1.6rem;font-weight:800;color:<?= $saldo >= 0 ? '#16a34a' : '#dc2626' ?>">R$ <?= number_format($saldo, 2, ',', '.') ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">receita paga − despesa paga, nunca mistura previsto</div>
   </div>
   <a class="card" href="/admin/financeiro-lancamentos.php?status=atrasado&todos_periodos=1" style="display:block;color:inherit;text-decoration:none;border-top:4px solid <?= $contasAtrasadas > 0 ? '#dc2626' : '#94a3b8' ?>">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">⏰ Contas atrasadas</div>
