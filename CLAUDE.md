@@ -9877,6 +9877,46 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   link pro CLIENTE, não é notificação interna) — sanity-check confirmado
   reintroduzindo a regressão temporariamente e vendo o guard falhar com a
   mensagem certa antes de restaurar. Sem migração de schema.
+- **Script de diagnóstico: lead duplicado entre 2 consultores**
+  (01/10/2026, "verifica rafael e anderson fecharam mesmo cliente caiu
+  mesmo lead para eles") — este sandbox de dev nunca tem acesso ao banco
+  de produção (só a VPS tem, mesma limitação documentada em todo
+  provedor novo deste projeto), então não dá pra confirmar/negar direto
+  daqui. Em vez disso, `install/diagnosticar_lead_duplicado_consultores.php`
+  (novo, CLI, só leitura, nunca apaga/altera nada, mesmo molde de
+  `install/diagnosticar_leads_mudos.php`) — roda na VPS via SSH
+  (`php install/diagnosticar_lead_duplicado_consultores.php [nome1] [nome2]`,
+  padrão "Rafael"/"Anderson" se omitido, reutilizável pra qualquer outra
+  dupla de consultores) e checa 5 cenários, do lado de COMPRA e de VENDA
+  (revenda): (1) mesmo cliente com oportunidades DIFERENTES, 1 atribuída
+  a cada um (pode ser legítimo — regra #1, 1 cliente pode ter mais de 1
+  veículo em negociação — ou cadastro duplicado); (2) a MESMA
+  oportunidade com histórico de responsável passando pelos dois
+  (`oportunidade_historico`) — padrão clássico de corrida de rodízio
+  (23/09/2026) ou redistribuição automática; (3) dentro do caso 2,
+  destaca quando `consultor_tel_enviado_em` já estava preenchido ANTES
+  da reatribuição — é o sinal mais forte de bug real, exatamente o já
+  corrigido uma vez em 22/09/2026 ("Reatribuição automática deixava o
+  cliente com contato de consultor errado"); se aparecer isso de novo
+  depois do fix, é achado real que merece investigação; (4) oportunidade
+  já `fechado` com `fechado_por` de um e `responsavel_id` atual do
+  outro — combinação estranha, vale olhar manual; (5/6) os mesmos 2
+  cenários (mesmo comprador com venda duplicada + mesma venda
+  reatribuída) espelhados pro lado de `vendas`/`venda_historico`.
+  Testado em banco isolado reproduzindo os 6 cenários plantados de
+  propósito (2 consultores reais-fictícios, cliente com 3 oportunidades
+  diferentes, 1 oportunidade reatribuída com `consultor_tel_enviado_em`
+  já preenchido antes da troca, 1 fechamento cruzado, 2 vendas pro mesmo
+  telefone em veículos diferentes, 1 venda reatribuída) — o script achou
+  exatamente os 10 casos plantados, nenhum a mais nem a menos, incluindo
+  o aviso ⚠️ certo na reatribuição com telefone já enviado. Confirmado
+  que o banco de dev real (`database/fastcar.db`) não foi tocado durante
+  o teste (rodado 100% via script em ARQUIVO com
+  `-d auto_prepend_file=prepend.php`, nunca `php -r` inline — mesma
+  pegadinha já documentada neste arquivo de sessões anteriores). ⚠️
+  Ainda não rodado contra produção — falta o usuário rodar via SSH e
+  mandar a saída pra eu interpretar junto, ou interpretar sozinho usando
+  as instruções de leitura no topo de cada seção do script.
 
 ## Pendências (aguardando definição antes de codar mais)
 
