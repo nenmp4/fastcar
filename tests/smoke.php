@@ -247,6 +247,13 @@ foreach ($arquivosNotifInterna as $arqNotif) {
         if ($trim === '' || $trim[0] === '*' || str_starts_with($trim, '//') || str_starts_with($trim, '/*')) continue;
         // única exceção legítima: reengajamento proativo pro CLIENTE.
         if ($arqNotif === 'cron/followup.php' && str_contains($linha, "\$op['telefone']")) continue;
+        // 01/10/2026, outra exceção legítima: reenviarLinkAssinaturaContratoMeta()
+        // (includes/contratos.php) manda o LINK DE ASSINATURA pro
+        // CLIENTE/COMPRADOR ($telefone, nunca o WhatsApp pessoal de
+        // staff) — mensagem proativa que deve respeitar o toggle/canal
+        // principal igual o resto dos envios ao cliente, não é
+        // notificação interna.
+        if ($arqNotif === 'includes/contratos.php' && str_contains($linha, '$telefone, $msg')) continue;
         $regressaoNotifInterna[] = $arqNotif . ':' . ($numLinha + 1);
     }
 }

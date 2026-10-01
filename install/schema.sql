@@ -215,6 +215,13 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     terceiro_quitacao TEXT DEFAULT '', -- quem a FASTCAR indica pra quitar o financiamento (Quadro-Resumo do contrato)
     seguro_texto TEXT DEFAULT '',      -- condição de seguro/proteção durante a posse da FASTCAR (Quadro-Resumo do contrato)
     encargos_texto TEXT DEFAULT '',    -- responsável por IPVA/licenciamento/multas após a entrega (Quadro-Resumo do contrato)
+    -- Chave PIX do vendedor/cedente (quem vende o veículo pra Fastcar) pra
+    -- onde o valor_ofertado é transferido — 01/10/2026, "adiciona campo de
+    -- pagamento do cedente para qual pix a empresa está transferido no
+    -- caso da compra". Texto livre (CPF/e-mail/telefone/chave aleatória,
+    -- sem formato fixo) — entra no Quadro-Resumo do contrato de compra
+    -- (ver gerarPdfContratoCompra(), includes/contratos_pdf.php).
+    pix_pagamento_cedente TEXT DEFAULT '',
     prazo_quitacao_meses INTEGER,      -- prazo negociado pra quitar o financiamento (normal: 12-18, nunca > 24 meses — cláusulas 1.3/4.1/5ª/18.3 do contrato-mestre de compra); sem DEFAULT de propósito, sempre confirmado com o cliente por oportunidade, nunca fixo em 24
     -- Flag manual (19/09/2026, "ter botão veiculo quitado") de que o
     -- financiamento do banco que a FASTCAR assumiu na compra já foi
@@ -781,6 +788,17 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- envio ativo automático de vendas existir.
     optout_whatsapp INTEGER NOT NULL DEFAULT 0,
     optout_em DATETIME,
+
+    -- Anotação livre do vendedor, editável direto na linha da tabela de
+    -- admin/vendas.php — 01/10/2026, "adicionar campo para recado tanto na
+    -- compra e revenda" (compra já tinha desde 29/09/2026, ver
+    -- oportunidades.observacao_manual acima; aqui é a mesma mecânica
+    -- espelhada pro lado de vendas). Enquanto a negociação tá ativa, texto
+    -- livre digitado por quem quiser; quando já encerrada
+    -- (cancelada/sem_perfil), a tela reaproveita
+    -- motivo_cancelamento/motivo_perda em vez desse campo — ver
+    -- atualizarObservacaoManualVenda() em includes/vendas.php.
+    observacao_manual TEXT DEFAULT '',
 
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

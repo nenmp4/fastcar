@@ -1000,7 +1000,7 @@ function adicionarParteEntrada() {
                                 <a class="chip-acao" href="<?= e($ct['sign_url']) ?>" target="_blank">🔗 Link de assinatura</a>
                                 <button type="button" class="chip-acao" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋 Copiar</button>
                                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-                                    <form method="post" onsubmit="return confirmarAcao(this, 'Reenviar o link de assinatura por WhatsApp (Meta oficial)?');">
+                                    <form method="post" onsubmit="return confirmarAcao(this, 'Reenviar o link de assinatura por WhatsApp?');">
                                         <?= csrfField() ?>
                                         <input type="hidden" name="acao" value="reenviar_link_assinatura_meta">
                                         <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">

@@ -97,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
                         saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
+                        pix_pagamento_cedente = ?,
                         data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -107,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['terceiro_quitacao'] ?? '')),
                     clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
+                    clean((string)($_POST['pix_pagamento_cedente'] ?? '')),
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
                     // Nunca mais que 24 meses (limite contratual, cláusula
                     // 5ª/1.3) — travado no servidor, não só no max="24" do
@@ -650,6 +652,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="number" step="0.01" name="valor_fipe_referencia" id="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
                 <label>Valor ofertado ao vendedor (R$) — limitado a 25% da FIPE</label>
                 <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)($op['valor_ofertado'] ?? '')) ?>">
+                <label>Chave PIX do vendedor/cedente (pra onde a Fastcar transfere o pagamento)</label>
+                <input type="text" name="pix_pagamento_cedente" value="<?= e($op['pix_pagamento_cedente'] ?? '') ?>" placeholder="CPF, e-mail, telefone ou chave aleatória">
                 <label>Nº do contrato de financiamento</label>
                 <input type="text" name="contrato_financiamento_numero" value="<?= e($op['contrato_financiamento_numero'] ?? '') ?>">
                 <label>Saldo do financiamento atual (R$)</label>
@@ -732,7 +736,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                                 <a class="chip-acao" href="<?= e($ct['sign_url']) ?>" target="_blank">🔗 Link de assinatura</a>
                                 <button type="button" class="chip-acao" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋 Copiar</button>
                                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-                                    <form method="post" onsubmit="return confirmarAcao(this, 'Reenviar o link de assinatura por WhatsApp (Meta oficial)?');">
+                                    <form method="post" onsubmit="return confirmarAcao(this, 'Reenviar o link de assinatura por WhatsApp?');">
                                         <?= csrfField() ?>
                                         <input type="hidden" name="acao" value="reenviar_link_assinatura_meta">
                                         <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">

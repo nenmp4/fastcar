@@ -73,10 +73,30 @@ function extracaoDocumentoPrompt(string $tipo): string {
         . "Se for mesmo o documento certo, marque \"parece_ser_esse_documento\": true e deixe \"tipo_real_se_diferente\" vazio.";
 
     return match ($tipo) {
+        // 01/10/2026, achado real (José mandou uma CNH de verdade pra testar —
+        // modelo digital novo do SENATRAN, com QR code): nessa CNH o RG
+        // aparece NUM CAMPO SÓ junto com a sigla do órgão emissor e a UF
+        // ("47742409 SSP SP", rotulado "Doc. Identidade / Órgão Emissor / UF")
+        // — o prompt antigo só pedia "rg" sem explicar isso, deixando a IA
+        // sem pista de onde separar o número da sigla/UF, e sem nenhuma
+        // instrução contra "completar"/encurtar um dígito incerto. Reforçado
+        // com a localização exata de cada campo (inclusive esse formato
+        // combinado) e uma regra explícita: número incompleto é pior que
+        // vazio. ⚠️ Mudança de prompt (julgamento de IA) não é testável
+        // contra servidor fake — validação real só no próximo CNH de
+        // verdade — mas o campo "cpf" ganhou TAMBÉM uma trava de código
+        // (ver aplicarDadosExtraidosDocumento() abaixo): CPF brasileiro tem
+        // sempre EXATAMENTE 11 dígitos, invariante confiável (diferente do
+        // RG, que varia por estado) — um CPF com contagem de dígitos errada
+        // nunca mais é aplicado, mesmo que a IA leia errado de novo.
         'cnh' => "Leia esta CNH (Carteira Nacional de Habilitação) ou documento de identidade com foto e extraia os dados abaixo. NUNCA invente informação — se não conseguir ler algum campo com certeza, deixe como string vazia \"\".{$checagemTipo}\n\n"
+            . "Atenção, alguns campos às vezes aparecem combinados na mesma linha do documento — nunca confundir um com o outro:\n"
+            . "- \"cpf\": CPF do titular, sempre 11 dígitos (campo rotulado \"CPF\", formato XXX.XXX.XXX-XX — copie como estiver escrito, com ou sem pontuação).\n"
+            . "- \"rg\": número do documento de identidade (RG). Em algumas CNHs — inclusive o modelo digital mais novo — esse número vem junto da sigla do órgão emissor e da UF NA MESMA linha, num campo tipo \"Doc. Identidade / Órgão Emissor / UF\" (ex: \"47742409 SSP SP\") — extraia SÓ o número do RG, nunca a sigla (SSP, DETRAN etc.) nem a UF junto.\n"
+            . "- \"cnh\": número de REGISTRO da própria carteira (campo \"Nº Registro\", geralmente 11 dígitos) — não confundir com o CPF, que tem tamanho parecido mas é outro campo, em outro lugar do documento.\n\n"
+            . "IMPORTANTE: leia cada número dígito por dígito, com cuidado. NUNCA encurte, arredonde ou complete um número — se não tiver certeza absoluta de TODOS os dígitos de um campo, deixe esse campo inteiro vazio em vez de arriscar um valor incompleto ou errado (um número incompleto é pior que vazio, porque parece confiável sem ser).\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
-            . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","nome": "", "cpf": "", "rg": "", "cnh": ""}' . "\n"
-            . '("cnh" é o número de registro da carteira de habilitação, se estiver visível — não confundir com o CPF.)',
+            . '{"parece_ser_esse_documento":true,"tipo_real_se_diferente":"","nome": "", "cpf": "", "rg": "", "cnh": ""}',
 
         'comprovante_endereco' => "Leia este comprovante de endereço — pode ser qualquer conta, fatura ou BOLETO (luz, água, telefone, internet, condomínio, cartão de crédito, financiamento etc.), desde que mostre um endereço — e extraia o endereço completo (rua, número, bairro, cidade, estado, CEP — o que estiver visível, numa linha só). Um boleto de cobrança é um comprovante de endereço válido, não é um tipo de documento diferente. NUNCA invente informação — se não conseguir ler com certeza, deixe vazio.{$checagemTipo}\n\n"
             . "Responda APENAS um JSON, sem texto fora dele nem markdown, no formato exato:\n"
@@ -181,6 +201,21 @@ function aplicarDadosExtraidosDocumento(int $clienteId, int $oportunidadeId, str
     foreach ($dados as $campo => $valorBruto) {
         $valor = trim((string)$valorBruto);
         if ($valor === '') continue;
+
+        // 01/10/2026, achado real (CNH modelo digital novo do SENATRAN,
+        // RG combinado com sigla do órgão/UF na mesma linha — ver prompt
+        // acima) — CPF/RG vindo incompleto da IA sempre passava direto pro
+        // fill-if-empty, sem checagem nenhuma. CPF brasileiro é invariante
+        // confiável (SEMPRE 11 dígitos, nunca mais nunca menos) — diferente
+        // de RG, que varia de dígitos por estado e não tem um tamanho fixo
+        // pra validar contra. Um "cpf" com contagem de dígitos errada
+        // (truncado, ou a IA confundiu com outro campo do documento) nunca
+        // é aplicado — fica vazio pro cliente/consultor revisar e digitar
+        // na tela, em vez de gravar silenciosamente um CPF errado via
+        // fill-if-empty (regra #3: número incompleto é pior que vazio).
+        if ($campo === 'cpf' && strlen(preg_replace('/\D/', '', $valor)) !== 11) {
+            continue;
+        }
 
         if (in_array($campo, $camposCliente, true)) {
             $setsCliente[] = "{$campo} = CASE WHEN {$campo} IS NULL OR {$campo} = '' THEN ? ELSE {$campo} END";

@@ -74,6 +74,11 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'valor_fipe_referencia'         => $op['valor_fipe_referencia'] !== null ? (float)$op['valor_fipe_referencia'] : null,
         'percentual_fipe'               => $percentual,
         'valor_pago_vendedor'           => $op['valor_ofertado'] !== null ? (float)$op['valor_ofertado'] : null,
+        // 01/10/2026, "adiciona campo de pagamento do cedente para qual
+        // pix a empresa está transferido no caso da compra" — chave PIX
+        // do vendedor, só informativa (nunca bloqueia geração do
+        // contrato), citada no Quadro-Resumo (ver gerarPdfContratoCompra()).
+        'pix_pagamento_cedente'         => $op['pix_pagamento_cedente'] ?: '',
         'banco_financiamento'           => $op['banco_financiamento'] ?: '',
         'contrato_financiamento_numero' => $op['contrato_financiamento_numero'] ?: '',
         'saldo_financiamento_atual'     => $op['saldo_financiamento_atual'] !== null ? (float)$op['saldo_financiamento_atual'] : null,
@@ -876,44 +881,45 @@ function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
 }
 
 /**
- * Reenvio MANUAL do aviso de assinatura, forçando o WhatsApp Cloud API
- * OFICIAL da Meta (nunca a Z-API/toggle global, nunca e-mail) —
- * 30/09/2026, "coloca botão para reenviar contrato pelo zap usando
- * instancia meta pois jean não recebeu caso isso aconteça". Mesmos
- * destinatários que o aviso automático já usa (responsável, senão a lista
- * de fallback) — só troca o TRANSPORTE, nunca decide sozinho pra quem
- * manda. Nunca lança — devolve ['ok'=>bool,'erro'=>?string] pra tela
- * mostrar o motivo real (inclusive o erro da própria Meta via
- * oficialUltimoErro(), ex: código 131047 — fora da janela de 24h — o caso
- * mais provável de "não recebeu" se o número do responsável nunca
- * escreveu pro WhatsApp oficial da empresa antes).
+ * Reenvio MANUAL do aviso de assinatura — 30/09/2026, "coloca botão para
+ * reenviar contrato pelo zap usando instancia meta pois jean não recebeu
+ * caso isso aconteça": 1ª versão forçava sempre o WhatsApp Cloud API
+ * OFICIAL da Meta, direto via oficialEnviarTexto(), nunca passando pelo
+ * zapiEnviarTextoInterno()/toggle de sempre.
+ *
+ * 01/10/2026, achado real ("e enviar contrato ele tá chamando api do
+ * meta não zpi") — a conta WhatsApp Business da Meta foi desabilitada
+ * PERMANENTEMENTE no mesmo dia 30/09/2026 (ver CLAUDE.md), e
+ * `whatsapp_provider_principal` já tinha sido revertido pra 'zapi' em
+ * Configurações — mas essa função continuava hardcoded em Meta, que
+ * nunca mais vai responder, então o botão "Reenviar" ficou
+ * estruturalmente quebrado pra sempre (sempre falha com "WhatsApp Cloud
+ * API não está configurado"/erro de janela de 24h, mesmo com a Z-API
+ * funcionando normal). Isso é AVISO INTERNO (vai pro WhatsApp pessoal do
+ * responsável/lista de fallback, nunca pro cliente) — corrigido trocando
+ * pra zapiEnviarTextoInterno(), a mesma função que toda outra notificação
+ * interna deste arquivo já usa desde 29/09/2026 (sempre tenta a Z-API
+ * principal primeiro, cai pro Meta só se ela não estiver configurada —
+ * nunca força um provedor morto nem depende do toggle global).
  */
 function reenviarAvisoAssinaturaContratoMeta(int $contratoId): array {
-    if (!oficialConfigured()) {
-        return ['ok' => false, 'erro' => 'WhatsApp Cloud API (Meta oficial) não está configurado em Configurações.'];
-    }
     $d = _dadosAvisoAssinaturaContrato($contratoId);
     if (!$d) return ['ok' => false, 'erro' => 'Contrato não encontrado.'];
 
     $enviouAlgum = false;
-    $ultimoErro = null;
     if (!empty($d['responsavelWhatsapp'])) {
-        $enviouAlgum = oficialEnviarTexto($d['responsavelWhatsapp'], $d['msg']);
-        if (!$enviouAlgum) $ultimoErro = oficialUltimoErro();
+        $enviouAlgum = zapiEnviarTextoInterno($d['responsavelWhatsapp'], $d['msg']);
     } else {
         $lista = getConfig('notificacao_leads_whatsapp') ?: '';
         foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
-            if (oficialEnviarTexto($numero, $d['msg'])) {
+            if (zapiEnviarTextoInterno($numero, $d['msg'])) {
                 $enviouAlgum = true;
-            } else {
-                $ultimoErro = oficialUltimoErro();
             }
         }
     }
 
     if (!$enviouAlgum) {
-        $detalhe = $ultimoErro ? " ({$ultimoErro})" : '';
-        return ['ok' => false, 'erro' => "Não deu pra enviar pelo WhatsApp oficial da Meta{$detalhe}. Se o número nunca escreveu pro WhatsApp da empresa, a Meta bloqueia mensagem proativa fora da janela de 24h."];
+        return ['ok' => false, 'erro' => 'Não deu pra enviar por WhatsApp — confira as credenciais em Configurações (Z-API ou WhatsApp Cloud API, conforme o canal ativo).'];
     }
 
     _marcarAvisoAssinaturaEnviado($contratoId, true, false);
@@ -921,22 +927,28 @@ function reenviarAvisoAssinaturaContratoMeta(int $contratoId): array {
 }
 
 /**
- * Reenvio MANUAL do LINK DE ASSINATURA (sign_url) pro CLIENTE/COMPRADOR,
- * forçando o WhatsApp Cloud API OFICIAL da Meta — 30/09/2026, achado real
- * (venda #27, contrato "enviado" há dias, comprador nunca assinou):
- * `zapsignCriarDocumentoEAssinatura()` já manda o sign_url por conta
- * própria na hora de criar o documento (telefone/e-mail informados na
- * criação), mas isso é 100% "puxar" — sem confirmação de entrega nenhuma
- * do lado da ZapSign, e sem NENHUM jeito de reenviar pelo próprio
- * WhatsApp da Fastcar se o comprador nunca recebeu (canal da ZapSign
- * pode falhar por motivo nenhum a ver com a gente). Diferente de
- * reenviarAvisoAssinaturaContratoMeta() acima (reavisa STAFF que o
- * contrato JÁ foi assinado) — esta é pro CLIENTE, contrato AINDA
- * pendente de assinatura, manda o link de novo. Reaproveita
- * montarCamposContratoCompra()/montarCamposContratoVenda() (mesmos dados
- * já usados na geração original) só pra ler telefone/nome/veículo —
- * nunca gera um contrato novo nem toca no já existente, só reenvia o
- * MESMO sign_url já salvo.
+ * Reenvio MANUAL do LINK DE ASSINATURA (sign_url) pro CLIENTE/COMPRADOR —
+ * 30/09/2026, achado real (venda #27, contrato "enviado" há dias,
+ * comprador nunca assinou): `zapsignCriarDocumentoEAssinatura()` já manda
+ * o sign_url por conta própria na hora de criar o documento (telefone/
+ * e-mail informados na criação), mas isso é 100% "puxar" — sem
+ * confirmação de entrega nenhuma do lado da ZapSign, e sem NENHUM jeito
+ * de reenviar pelo próprio WhatsApp da Fastcar se o comprador nunca
+ * recebeu (canal da ZapSign pode falhar por motivo nenhum a ver com a
+ * gente). Diferente de reenviarAvisoAssinaturaContratoMeta() acima
+ * (reavisa STAFF que o contrato JÁ foi assinado) — esta é pro CLIENTE,
+ * contrato AINDA pendente de assinatura, manda o link de novo.
+ *
+ * 01/10/2026, mesmo achado/correção da função acima ("ele tá chamando
+ * api do meta não zpi") — 1ª versão forçava sempre o WhatsApp Cloud API
+ * oficial da Meta, hoje desabilitada permanentemente; trocado pra
+ * zapiEnviarTexto()/zapiEnviarImagem() de sempre, que já decide sozinho
+ * Z-API × Meta pelo toggle global (hoje Z-API).
+ *
+ * Reaproveita montarCamposContratoCompra()/montarCamposContratoVenda()
+ * (mesmos dados já usados na geração original) só pra ler telefone/nome/
+ * veículo — nunca gera um contrato novo nem toca no já existente, só
+ * reenvia o MESMO sign_url já salvo.
  */
 function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
     $db = getDB();
@@ -946,9 +958,6 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
     if (!$ct) return ['ok' => false, 'erro' => 'Contrato não encontrado.'];
     if (!$ct['sign_url']) return ['ok' => false, 'erro' => 'Esse contrato ainda não tem link de assinatura gerado.'];
     if ($ct['status'] === 'assinado') return ['ok' => false, 'erro' => 'Esse contrato já foi assinado, não faz sentido reenviar o link.'];
-    if (!oficialConfigured()) {
-        return ['ok' => false, 'erro' => 'WhatsApp Cloud API (Meta oficial) não está configurado em Configurações.'];
-    }
 
     if ($ct['tipo'] === 'venda') {
         $campos = montarCamposContratoVenda((int)$ct['venda_id']);
@@ -976,13 +985,11 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
     // mensagem que É nossa). Mesmo padrão aplicado aqui.
     $baseUrl = getConfig('app_base_url') ?: '';
     $enviado = marcaLogoConfigurada() && $baseUrl
-        ? oficialEnviarImagem($telefone, rtrim($baseUrl, '/') . '/public/assets/logo.png', $msg)
-        : oficialEnviarTexto($telefone, $msg);
+        ? zapiEnviarImagem($telefone, rtrim($baseUrl, '/') . '/public/assets/logo.png', $msg)
+        : zapiEnviarTexto($telefone, $msg);
 
     if (!$enviado) {
-        $erro = oficialUltimoErro();
-        $detalhe = $erro ? " ({$erro})" : '';
-        return ['ok' => false, 'erro' => "Não deu pra enviar pelo WhatsApp oficial da Meta{$detalhe}. Se esse número nunca escreveu pro WhatsApp da empresa, a Meta bloqueia mensagem proativa fora da janela de 24h."];
+        return ['ok' => false, 'erro' => 'Não deu pra enviar por WhatsApp — confira as credenciais em Configurações (Z-API ou WhatsApp Cloud API, conforme o canal ativo).'];
     }
 
     return ['ok' => true, 'erro' => null];

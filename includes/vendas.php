@@ -237,6 +237,23 @@ function cancelarVendaEmMassa(array $ids, string $motivo, ?int $responsavelId = 
 }
 
 /**
+ * Anotação livre editável direto na linha da tabela de admin/vendas.php —
+ * 01/10/2026, "adicionar campo para recado tanto na compra e revenda",
+ * espelhando atualizarObservacaoManual() (includes/oportunidades.php, já
+ * existia só pro funil de compra desde 29/09/2026) — mesma disciplina:
+ * nunca é mudança de etapa (UPDATE direto, sem mudarEtapaVenda()/
+ * histórico), e enquanto a negociação já está encerrada
+ * (cancelada/sem_perfil) a tela reaproveita motivo_cancelamento/
+ * motivo_perda em vez desse campo, mesmo espírito do lado de compra.
+ */
+function atualizarObservacaoManualVenda(int $vendaId, string $observacao): bool {
+    $db = getDB();
+    $stmt = $db->prepare("UPDATE vendas SET observacao_manual = ?, updated_at = datetime('now','localtime') WHERE id = ?");
+    $stmt->execute([clean($observacao), $vendaId]);
+    return $stmt->rowCount() > 0;
+}
+
+/**
  * Cria (ou reaproveita) o lead de VENDA por telefone e já abre a
  * negociação na etapa 'whatsapp' — espelha
  * includes/oportunidades.php::criarOuAbrirOportunidade() (regra #2:

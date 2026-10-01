@@ -1723,4 +1723,32 @@ try {
     echo "❌ whatsapp_envios_log: {$e->getMessage()}\n";
 }
 
+// 01/10/2026, "adicionar campo para recado tanto na compra e revenda" —
+// compra já tinha observacao_manual desde 29/09/2026; aqui espelha pro
+// lado de vendas (admin/vendas.php), mesma mecânica.
+if (!colunaExiste($db, 'vendas', 'observacao_manual')) {
+    try {
+        $db->exec("ALTER TABLE vendas ADD COLUMN observacao_manual TEXT DEFAULT ''");
+        echo "✅ vendas.observacao_manual: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ vendas.observacao_manual: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  vendas.observacao_manual: já existia\n";
+}
+
+// 01/10/2026, "adiciona campo de pagamento do cedente para qual pix a
+// empresa está transferido no caso da compra" — entra no Quadro-Resumo
+// do contrato de compra (gerarPdfContratoCompra()).
+if (!colunaExiste($db, 'oportunidades', 'pix_pagamento_cedente')) {
+    try {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN pix_pagamento_cedente TEXT DEFAULT ''");
+        echo "✅ oportunidades.pix_pagamento_cedente: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ oportunidades.pix_pagamento_cedente: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  oportunidades.pix_pagamento_cedente: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

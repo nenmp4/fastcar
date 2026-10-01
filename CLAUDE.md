@@ -9774,6 +9774,109 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 > cron sobreposta automática) e fora do escopo dessa varredura específica
 > — nenhum indício de que essa classe de duplicação tenha causado o
 > bloqueio visto.
+- **CNH — CPF/RG com dígito faltando (achado real, modelo digital novo do
+  SENATRAN)** (01/10/2026, "da olhada na logica que ia ler cnh está
+  gerando número do rg cpf faltando numero" — seguido de uma CNH real
+  colada na conversa pra testar: modelo digital novo do SENATRAN, com QR
+  code, onde o RG aparece NUM CAMPO SÓ junto da sigla do órgão emissor e
+  da UF — "4c DOC IDENTIDADE/ÓRG EMISSOR/UF: 47742409 SSP SP") —
+  `extracaoDocumentoPrompt()`/`aplicarDadosExtraidosDocumento()`
+  (`includes/extracao_documentos.php`). Duas frentes: (1) **prompt**
+  reforçado com a localização exata de cada campo (CPF sempre rotulado
+  "CPF", RG às vezes combinado com órgão/UF na mesma linha — "extraia SÓ
+  o número", nº de registro da CNH não confundir com CPF) + instrução
+  explícita contra encurtar/completar dígito incerto ("número incompleto
+  é pior que vazio") — mudança de prompt (julgamento de IA), não
+  testável contra servidor fake, validação real só no próximo documento
+  de verdade. (2) **trava de código, testável e testada**: CPF
+  brasileiro é invariante confiável (sempre EXATAMENTE 11 dígitos,
+  diferente de RG, que varia por estado) —
+  `aplicarDadosExtraidosDocumento()` ganhou guard rejeitando qualquer
+  "cpf" com contagem de dígitos ≠ 11 antes de aplicar via
+  fill-if-empty — nunca mais um CPF truncado/errado vai pro cadastro
+  silenciosamente, fica vazio pro cliente/consultor digitar na tela.
+  Testado em banco isolado: CPF de 10 dígitos nunca é aplicado; CPF
+  válido de 11 dígitos aplica normal; fill-if-empty confirmado intacto
+  (CPF já confirmado nunca é sobrescrito por uma extração nova, mesmo
+  truncada); RG continua sem regressão (sem checagem de tamanho fixo,
+  só não pode ser vazio — RG não tem invariante nacional pra validar
+  contra) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+- **Campo de recado (observação manual) estendido pra vendas** (01/10/2026,
+  "adicionar campo para recado tanto na compra e revenda") — o funil de
+  compra já tinha isso desde 29/09/2026 (`oportunidades.observacao_manual`,
+  coluna "Observação" editável direto na linha de `admin/index.php`,
+  reaproveitando `motivo_perda` quando já encerrada); confirmado com o
+  usuário (AskUserQuestion) estender a MESMA mecânica pro pipeline de
+  vendas, não criar um campo novo. `vendas.observacao_manual` (coluna
+  nova) + `atualizarObservacaoManualVenda()` (`includes/vendas.php`,
+  espelha `atualizarObservacaoManual()` — UPDATE direto, nunca é mudança
+  de etapa/histórico) + handler POST `atualizar_observacao_manual` em
+  `admin/vendas.php` (mesmo guard de supervisor/dono do resto da tela) +
+  coluna "Observação" nova na tabela — editável enquanto a negociação tá
+  ativa, reaproveita `motivo_cancelamento ?: motivo_perda` quando já
+  encerrada (cancelada/sem_perfil), mesma disciplina do lado de compra.
+  Testado ponta a ponta via HTTP real (sessão primed por perfil, banco
+  isolado): vendedor salva e recarrega vendo o valor persistido;
+  supervisor nunca vê o form nem consegue POSTar (403, banco intocado);
+  vendedor tentando editar negociação de OUTRO vendedor é silenciosamente
+  ignorado (banco intocado); negociação cancelada mostra o motivo em vez
+  do form editável + migração testada contra schema anterior (idempotente,
+  dado preservado) + `php -l` + `tests/smoke.php` limpos.
+- **Chave PIX do vendedor/cedente, pra onde a Fastcar transfere o
+  pagamento da compra** (01/10/2026, "adiciona campo de pagamento do
+  cedente para qual pix a empresa está transferido no caso da compra" +
+  "sair no contrato") — `oportunidades.pix_pagamento_cedente` (coluna
+  nova, texto livre — CPF/e-mail/telefone/chave aleatória, sem formato
+  fixo). Campo novo no card "Financiamento e contrato de compra"
+  (`admin/oportunidade.php`, ação `atualizar_contrato`, mesmo form de
+  sempre), logo abaixo de "Valor ofertado ao vendedor". **Nunca
+  obrigatório** pra gerar o contrato (`verificarCamposObrigatoriosContrato()`
+  intocada) — é informativo/comprovação de pagamento, não bloqueia nada.
+  "Sair no contrato": entra no Quadro-Resumo do PDF de compra
+  (`montarCamposContratoCompra()`/`gerarPdfContratoCompra()`,
+  `includes/contratos.php`/`contratos_pdf.php`), logo após "Valor pago ao
+  VENDEDOR" — "a informar" quando ainda não preenchido (regra #3, nunca
+  chuta). Só o lado de COMPRA — venda não tem "cedente" (é a Fastcar quem
+  recebe, não quem paga). Testado: PDF real gerado e decodificado
+  (content streams via `gzuncompress`) confirmando a chave PIX aparecendo
+  no texto renderizado, e o fallback "a informar" quando vazio; migração
+  testada contra schema anterior (idempotente, dado preservado); HTTP
+  ponta a ponta real confirmando o form salvando e pré-preenchendo depois
+  de recarregar + `php -l` + `tests/smoke.php` limpos.
+- **Reenvio de contrato/aviso de assinatura chamando a API da Meta
+  (morta) em vez da Z-API** (01/10/2026, achado real: "e enviar contrato
+  ele tá chamando api do meta não zpi") — `reenviarLinkAssinaturaContratoMeta()`/
+  `reenviarAvisoAssinaturaContratoMeta()` (`includes/contratos.php`,
+  criadas em 30/09/2026 como reforço via Meta oficial) continuavam
+  hardcoded chamando `oficialEnviarTexto()`/`oficialEnviarImagem()`
+  direto — no MESMO dia a conta WhatsApp Business da Meta foi
+  **desabilitada permanentemente** (ver bullet "🚨 Conta WhatsApp Business
+  da Meta desabilitada PERMANENTEMENTE" acima) e o toggle
+  `whatsapp_provider_principal` já tinha sido revertido pra `'zapi'` em
+  Configurações — mas essas 2 funções de reenvio nunca foram atualizadas
+  junto, ficando estruturalmente quebradas pra sempre (sempre falhavam
+  tentando um provedor morto, mesmo com a Z-API funcionando normal).
+  Corrigido trocando o transporte: `reenviarLinkAssinaturaContratoMeta()`
+  (manda o link de assinatura pro CLIENTE/comprador) passou a usar
+  `zapiEnviarTexto()`/`zapiEnviarImagem()` — a mesma função de sempre, que
+  já decide sozinha Z-API × Meta pelo toggle global, nunca mais força um
+  provedor específico; `reenviarAvisoAssinaturaContratoMeta()` (manda
+  AVISO INTERNO pro WhatsApp pessoal do responsável/lista de fallback, não
+  pro cliente) passou a usar `zapiEnviarTextoInterno()` — a função certa
+  pra notificação interna (sempre tenta Z-API primeiro, cai pro Meta só se
+  ela não estiver configurada), mesmo padrão já usado pelo resto das
+  notificações internas deste arquivo desde 29/09/2026. Texto do
+  `confirm()` dos 2 botões (`admin/oportunidade.php`/`admin/venda.php`)
+  deixou de mencionar "(Meta oficial)" — enganoso agora que o transporte
+  real depende do canal ativo, não é mais sempre Meta. Testado: `php -l` +
+  `tests/smoke.php` limpos, incluindo o guard
+  `notificacao-interna-sem-fallback-zapi` (`tests/smoke.php`) — que
+  inclusive PEGOU o 1º rascunho desta correção (usar `zapiEnviarTexto()`
+  pro aviso interno em vez de `zapiEnviarTextoInterno()`), corrigido antes
+  do commit; guard ganhou 1 exceção nova (a chamada legítima que manda o
+  link pro CLIENTE, não é notificação interna) — sanity-check confirmado
+  reintroduzindo a regressão temporariamente e vendo o guard falhar com a
+  mensagem certa antes de restaurar. Sem migração de schema.
 
 ## Pendências (aguardando definição antes de codar mais)
 

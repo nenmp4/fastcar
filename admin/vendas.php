@@ -156,6 +156,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cancela
     exit;
 }
 
+// 01/10/2026, "adicionar campo para recado tanto na compra e revenda" —
+// mesma mecânica de admin/index.php (atualizarObservacaoManual()): texto
+// livre editável direto na linha, só enquanto a negociação ainda está
+// ativa; nunca é mudança de etapa, nunca grava histórico.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'atualizar_observacao_manual') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera negociações.');
+    }
+    $idObsPost = (int)($_POST['id'] ?? 0);
+    $obsPost = (string)($_POST['observacao'] ?? '');
+    try {
+        if ($souDono) {
+            $stmtDonoObs = $db->prepare('SELECT responsavel_id FROM vendas WHERE id = ?');
+            $stmtDonoObs->execute([$idObsPost]);
+            $vDonoObs = $stmtDonoObs->fetch();
+            if (!$vDonoObs || (int)$vDonoObs['responsavel_id'] !== $meuId) {
+                throw new RuntimeException('Essa negociação não é da sua carteira.');
+            }
+        }
+        atualizarObservacaoManualVenda($idObsPost, $obsPost);
+    } catch (Throwable $e) {
+        // best-effort — se falhar (id inválido, não é dono), só não salva.
+    }
+    header('Location: /admin/vendas.php?' . http_build_query($_GET));
+    exit;
+}
+
 $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
@@ -768,12 +800,12 @@ if ($podeSelecionarEmMassa):
                 <th><input type="checkbox" id="bulk-chk-todos" onchange="bulkToggleTodos(this)" title="Selecionar todas as visíveis"></th>
                 <?php endif; ?>
                 <th>Veículo</th><th>Comprador</th><th>Preço/interesse</th>
-                <th>Etapa</th><th>Responsável</th><th>Atualizado em</th><th></th>
+                <th>Etapa</th><th>Responsável</th><th>Atualizado em</th><th>Observação</th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$vendas): ?>
-            <tr><td colspan="<?= $podeSelecionarEmMassa ? 8 : 7 ?>">Nenhuma <?= $souDono ? 'venda sua' : 'venda' ?> <?= $busca ? 'encontrada' : ($etapaFiltro ? 'nessa etapa' : 'iniciada ainda') ?>.</td></tr>
+            <tr><td colspan="<?= $podeSelecionarEmMassa ? 9 : 8 ?>">Nenhuma <?= $souDono ? 'venda sua' : 'venda' ?> <?= $busca ? 'encontrada' : ($etapaFiltro ? 'nessa etapa' : 'iniciada ainda') ?>.</td></tr>
         <?php endif; ?>
         <?php foreach ($vendas as $v): ?>
             <?php
@@ -827,6 +859,26 @@ if ($podeSelecionarEmMassa):
                 </td>
                 <td><?= e($v['responsavel_nome'] ?? '—') ?></td>
                 <td><?= date('d/m/Y H:i', strtotime($v['updated_at'])) ?></td>
+                <td data-label="Observação">
+                    <?php if ($ativaParaSelecao && $perfil !== 'supervisor'): ?>
+                        <?php // 01/10/2026, "adicionar campo para recado tanto na
+                              // compra e revenda" — mesma mecânica de admin/index.php,
+                              // texto livre editável direto na linha, só enquanto a
+                              // negociação ainda está ativa. ?>
+                        <form method="post" style="display:flex;gap:4px;min-width:160px">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="atualizar_observacao_manual">
+                            <input type="hidden" name="id" value="<?= (int)$v['id'] ?>">
+                            <input type="text" name="observacao" value="<?= e($v['observacao_manual'] ?? '') ?>" placeholder="anotação..." style="flex:1;min-width:0;font-size:13px;padding:4px 6px">
+                            <button type="submit" class="btn-texto" style="padding:4px 8px" title="Salvar observação">💾</button>
+                        </form>
+                    <?php else: ?>
+                        <?php // Encerrada (cancelada/sem_perfil) — reaproveita o
+                              // motivo já mostrado no card de etapa em vez de
+                              // aceitar edição aqui, mesma disciplina de compra. ?>
+                        <small><?= e(($v['motivo_cancelamento'] ?: $v['motivo_perda']) ?: ($v['observacao_manual'] ?? '') ?: '—') ?></small>
+                    <?php endif; ?>
+                </td>
                 <td><a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
             </tr>
         <?php endforeach; ?>

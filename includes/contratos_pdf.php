@@ -236,6 +236,7 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfLinhaResumo($pdf, 'Valor FIPE de referência na contratação', _fmtMoeda($c['valor_fipe_referencia']));
     _pdfLinhaResumo($pdf, 'Percentual pago pela FASTCAR ao VENDEDOR', $c['percentual_fipe'] . '% da FIPE, limitado contratualmente a 25%');
     _pdfLinhaResumo($pdf, 'Valor pago ao VENDEDOR', _fmtMoeda($c['valor_pago_vendedor']));
+    _pdfLinhaResumo($pdf, 'Chave PIX do VENDEDOR para pagamento', $c['pix_pagamento_cedente'] ?: 'a informar');
     _pdfLinhaResumo($pdf, 'Instituição financeira/credor', $c['banco_financiamento']);
     _pdfLinhaResumo($pdf, 'Contrato de financiamento nº', $c['contrato_financiamento_numero']);
     _pdfLinhaResumo($pdf, 'Saldo estimado do financiamento na data', _fmtMoeda($c['saldo_financiamento_atual']));
