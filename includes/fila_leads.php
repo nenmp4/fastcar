@@ -454,15 +454,44 @@ function equalizarFilaLeads(int $executadoPor): array {
     return $movidas;
 }
 
-/** Toggle de disponibilidade — o próprio usuário liga/desliga no admin. */
-function alternarDisponibilidade(int $usuarioId): bool {
+/**
+ * Toggle de disponibilidade — o próprio usuário liga/desliga no admin.
+ *
+ * 01/10/2026, achado real ("eles não estão trabalhando kk pc e celular
+ * fica na fastcar") — o fechamento automático (aplicarHorarioExpedienteFila(),
+ * acima) só desliga 1x por dia; quem clica "Disponível" de novo depois
+ * disso (equipamento deixado ligado no escritório, ninguém de verdade
+ * atendendo) ficava preso "disponível" até o FECHAMENTO DO DIA SEGUINTE
+ * (dedup por dia em `fila_expediente_fechou_{data}`), recebendo lead a
+ * noite inteira sem ninguém pra atender de verdade — a IA responde o
+ * cliente a qualquer hora, isso nunca muda; só o RESPONSÁVEL humano da
+ * oportunidade ficava errado. Corrigido travando só o caminho de LIGAR
+ * fora do horário de expediente configurado
+ * (filaHorarioAbertura()/filaHorarioFechamento()) — DESLIGAR continua
+ * sempre livre, nunca prende ninguém na fila contra a vontade (ex: sair
+ * mais cedo, pausa no meio do expediente).
+ *
+ * Retorna ['ok' => bool, 'disponivel' => bool] — `ok=false` é a tentativa
+ * de ligar fora do horário, bloqueada (nunca grava nada no banco nesse
+ * caso); `disponivel` sempre reflete o estado ATUAL depois da chamada,
+ * mudou ou não.
+ */
+function alternarDisponibilidade(int $usuarioId): array {
     $db = getDB();
     $stmt = $db->prepare("SELECT disponivel FROM usuarios WHERE id = ?");
     $stmt->execute([$usuarioId]);
     $atual = (int)$stmt->fetchColumn();
     $novo = $atual ? 0 : 1;
+
+    if ($novo === 1) {
+        $agora = date('H:i');
+        if ($agora < filaHorarioAbertura() || $agora >= filaHorarioFechamento()) {
+            return ['ok' => false, 'disponivel' => (bool)$atual];
+        }
+    }
+
     $db->prepare("UPDATE usuarios SET disponivel = ? WHERE id = ?")->execute([$novo, $usuarioId]);
-    return (bool)$novo;
+    return ['ok' => true, 'disponivel' => (bool)$novo];
 }
 
 /** Marca/desmarca um usuário como plantão de fim de expediente (super_admin). */

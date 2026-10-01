@@ -9575,6 +9575,49 @@ segue no schema sem uso novo, não removida sem ganho real),
   screenshot via Chromium headless real em desktop (900px, "FastCar"
   renderiza como palavra única, "Car" em azul vivo) e mobile (390px, logo
   visível ao lado do ☰, sem sumir nem duplicar). Sem migração de schema.
+- **Toggle "Disponível" ficava preso ligado até o fechamento do dia
+  seguinte** (01/10/2026, achado real: "eles não estão trabalhando kk pc
+  e celular fica na fastcar" — screenshot mostrando os 3 consultores
+  "🟢 disponível" às 22h, bem depois do fechamento automático configurado
+  pra 19:20) — `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`)
+  só desliga 1x por dia (dedup por `config.fila_expediente_fechou_{data}`);
+  o botão manual "🟢 Disponível / ⚪ Offline" (`admin/toggle_disponivel.php`)
+  nunca teve nenhuma trava de horário — qualquer um religava a qualquer
+  hora, inclusive de madrugada com o PC/celular deixado ligado no
+  escritório sem ninguém atendendo de verdade, e ficava preso
+  "disponível" (recebendo lead novo no rodízio normal) até o FECHAMENTO
+  DO DIA SEGUINTE, não até a manhã seguinte. Confirmado com o usuário via
+  AskUserQuestion antes de mexer em roteamento de lead — escolhida "Sim,
+  travar ligar fora do horário (recomendado)". `alternarDisponibilidade()`
+  passou a recusar a transição `disponivel: 0→1` quando o horário atual
+  está fora de `filaHorarioAbertura()`/`filaHorarioFechamento()` (mesmas 2
+  chaves já configuráveis em Configurações → Fila), retornando
+  `['ok'=>false,'disponivel'=>estado atual]` sem gravar nada no banco —
+  **DESLIGAR continua 100% livre, a qualquer hora**, nunca prende ninguém
+  na fila contra a vontade (sair mais cedo, pausa no meio do expediente).
+  Nunca afeta a IA — ela responde o cliente a qualquer hora, isso é
+  completamente independente de quem está "disponível" pra virar
+  responsável humano. `admin/toggle_disponivel.php` repassa o bloqueio
+  via `?disponivel_bloqueado=1` no redirect; `admin/index.php` mostra o
+  aviso ("Fora do horário de expediente (HH:MM–HH:MM)... A IA continua
+  respondendo normalmente"). Escopo só do lado de COMPRA (perfil
+  `consultor`) — vendas (`perfil='vendedor'`) nunca teve esse botão
+  self-toggle pra começar (`disponivel` de vendedor não é mexido pelo
+  cron automático, que já filtra só `perfil='consultor'`), fora do que
+  foi relatado/confirmado. Testado: função isolada em banco isolado,
+  janelas calculadas em cima do relógio real do servidor (nunca mockando
+  `date()`) — ligar fora da janela bloqueado e banco intocado; ligar
+  dentro da janela funciona; desligar fora da janela sempre funciona;
+  limite inclusivo na abertura (`>=`) e exclusivo no fechamento (`<`,
+  mesma convenção de `automacaoDentroHorarioComercial()`); sem config
+  nenhuma salva cai no padrão 10:00/19:20 sem quebrar — + HTTP ponta a
+  ponta real (sessão primed, servidor real): POST fora da janela
+  configurada redireciona com `?disponivel_bloqueado=1` e o banco
+  continua `disponivel=0`; banner renderiza o aviso certo (horário
+  configurado interpolado); ajustando a janela pra incluir o relógio
+  real e repetindo o POST liga de verdade (banco vira 1, redirect limpo);
+  desligar de novo fora da janela funciona sem bloqueio (banco volta a
+  0) — + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
