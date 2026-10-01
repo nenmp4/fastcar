@@ -490,7 +490,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 <body>
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <header class="topbar">
-    <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
+    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?> (<?= e($_SESSION['admin_perfil']) ?>)</span>
     <?php if ($_SESSION['admin_perfil'] === 'consultor'): ?>
         <?php $euAtual = buscarUsuario((int)$_SESSION['admin_id']); ?>

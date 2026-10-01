@@ -52,25 +52,35 @@ $desdeNotifId = (int)($_GET['desde_notif_id'] ?? 0);
 
 if ($perfil === 'super_admin') {
     $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.created_at
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
         WHERE o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
     ");
     $stmt->execute([$desde]);
 } else {
     $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.updated_at AS created_at
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
         WHERE o.responsavel_id = ? AND o.updated_at > ? ORDER BY o.updated_at ASC LIMIT 20
     ");
     $stmt->execute([$meuId, $desde]);
 }
+// 01/10/2026, "notificação marca 1, clico, não guarda histórico" — o painel
+// (?historico=1) só lia a tabela `notificacoes`, nunca "lead novo" (sempre
+// ao vivo, nunca persistido) — clicar o sino depois de um toast de lead
+// novo mostrava "Nenhuma notificação ainda.", mesmo o contador tendo
+// marcado 1. `created_at` entra aqui pra admin/_notify.php guardar esse
+// item num histórico local (localStorage) e mesclar com o painel do
+// servidor — nunca precisou virar linha na tabela `notificacoes` (lead
+// novo já tem o próprio badge/contador, duplicar criaria 2 fontes de
+// verdade pro mesmo evento).
 $leads = array_map(fn($o) => [
     'id'      => (int)$o['id'],
     'tipo'    => 'novo_lead',
     'titulo'  => '🚗 Novo lead',
     'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
     'url'     => '/admin/oportunidade.php?id=' . $o['id'],
+    'created_at' => $o['created_at'],
 ], $stmt->fetchAll());
 
 $stmtNotif = $db->prepare("

@@ -13,7 +13,11 @@
         if (!topbar || topbar.dataset.mobileOk) return;
         topbar.dataset.mobileOk = '1';
 
-        var links = Array.prototype.slice.call(topbar.querySelectorAll(':scope > a'));
+        // 01/10/2026 — o logo/wordmark virou <a class="topbar-brand"> (clicável,
+        // volta pra home do perfil); sem o :not() aqui, ele seria clonado pra
+        // dentro da gaveta do menu junto dos links de nav de verdade (duplicado,
+        // sem sentido — ele já fica sempre visível na própria barra).
+        var links = Array.prototype.slice.call(topbar.querySelectorAll(':scope > a:not(.topbar-brand)'));
         if (!links.length) return;
 
         var menu = document.createElement('nav');

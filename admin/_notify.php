@@ -18,6 +18,22 @@
  * histórico (últimos 30 eventos, lidos+não lidos) em vez de navegar direto
  * — cobre tanto lead novo quanto o evento novo "cliente confirmou os
  * documentos" (admin/notificacoes.php mescla os dois, ver includes/notificacoes.php).
+ *
+ * 01/10/2026, achado real ("notificação marca 1, clico, não guarda
+ * histórico") — "lead novo" nunca foi persistido na tabela `notificacoes`
+ * (sempre ao vivo, comparando created_at/updated_at), só o evento
+ * "cliente confirmou os documentos" é. Resultado: o contador do sino podia
+ * marcar 1 por causa de um lead novo, mas abrir o painel (que só lê a
+ * tabela) mostrava "Nenhuma notificação ainda." — o próprio evento que
+ * disparou o badge sumia ao clicar. Nunca virou linha em `notificacoes`
+ * (duplicaria a fonte de verdade do lead novo, que já tem o próprio
+ * mecanismo validado em produção); em vez disso, cada lead novo recebido
+ * no polling fica guardado também num histórico PRÓPRIO no localStorage
+ * (`salvarLeadNoHistoricoLocal()`, até 20 itens), mesclado com o painel do
+ * servidor na hora de abrir (`abrirPainel()`) — histórico só deste
+ * navegador/aparelho, mesmo espírito de conveniência por-viewer já usado
+ * no resto do projeto pra estado que não precisa ser 100% confiável/
+ * compartilhado entre dispositivos.
  */
 $meuId = (int)($_SESSION['admin_id'] ?? 0);
 ?>
@@ -34,6 +50,8 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
 (function () {
     var CHAVE = 'fastcar_notif_desde_<?= $meuId ?>';
     var CHAVE_NOTIF_ID = 'fastcar_notif_id_<?= $meuId ?>';
+    var CHAVE_LEADS_HIST = 'fastcar_notif_leads_hist_<?= $meuId ?>';
+    var LEADS_HIST_MAX = 20;
     var desde = localStorage.getItem(CHAVE) || '';
     var desdeNotifId = parseInt(localStorage.getItem(CHAVE_NOTIF_ID) || '0', 10) || 0;
     var sino = document.getElementById('notif-sino');
@@ -105,6 +123,30 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
         }
     }
 
+    // Histórico local de "lead novo" — nunca existe no servidor (ver
+    // comentário do topo do arquivo), só pra o painel não ficar vazio
+    // depois de um toast desse tipo. Sempre em try/catch: localStorage
+    // pode lançar (aba anônima, storage bloqueado) e isso nunca pode
+    // quebrar o resto do sino.
+    function obterLeadsHistoricoLocal() {
+        try {
+            var bruto = localStorage.getItem(CHAVE_LEADS_HIST);
+            var lista = bruto ? JSON.parse(bruto) : [];
+            return Array.isArray(lista) ? lista : [];
+        } catch (e) { return []; }
+    }
+
+    function salvarLeadsNoHistoricoLocal(itens) {
+        if (!itens || itens.length === 0) return;
+        try {
+            var lista = obterLeadsHistoricoLocal();
+            itens.forEach(function (n) {
+                lista.unshift({ titulo: n.titulo, mensagem: n.mensagem, url: n.url, created_at: n.created_at || '' });
+            });
+            localStorage.setItem(CHAVE_LEADS_HIST, JSON.stringify(lista.slice(0, LEADS_HIST_MAX)));
+        } catch (e) { /* storage indisponível — só o toast ao vivo continua funcionando */ }
+    }
+
     function checar() {
         if (document.hidden) return; // não gasta requisição com aba em segundo plano
         var url = '/admin/notificacoes.php?desde=' + encodeURIComponent(desde) + '&desde_notif_id=' + desdeNotifId;
@@ -114,9 +156,11 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
                 if (!data) return;
                 if (data.novos && data.novos.length > 0) {
                     mostrarToasts(data.novos);
+                    var novosLeads = [];
                     data.novos.forEach(function (n) {
-                        if (n.tipo === 'novo_lead') naoLidosLeads++;
+                        if (n.tipo === 'novo_lead') { naoLidosLeads++; novosLeads.push(n); }
                     });
+                    salvarLeadsNoHistoricoLocal(novosLeads);
                 }
                 if (typeof data.nao_lidos_notif === 'number') naoLidosNotif = data.nao_lidos_notif;
                 atualizarContador();
@@ -153,7 +197,18 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
         painelListaEl.innerHTML = '<div class="notif-painel-vazio">Carregando…</div>';
         fetch('/admin/notificacoes.php?historico=1', { credentials: 'same-origin' })
             .then(function (r) { return r.ok ? r.json() : { itens: [] }; })
-            .then(function (data) { renderPainel(data.itens || []); })
+            .then(function (data) {
+                // Mescla o histórico do servidor (eventos persistidos, ex:
+                // "cliente confirmou os documentos") com o histórico local
+                // de "lead novo" (nunca persistido, ver comentário do topo
+                // do arquivo) — sem isso o painel ficava vazio depois de um
+                // toast de lead novo, mesmo o contador tendo marcado 1.
+                var mesclado = (data.itens || []).concat(obterLeadsHistoricoLocal());
+                mesclado.sort(function (a, b) {
+                    return (b.created_at || '').localeCompare(a.created_at || '');
+                });
+                renderPainel(mesclado.slice(0, 30));
+            })
             .catch(function () { painelListaEl.innerHTML = '<div class="notif-painel-vazio">Falha ao carregar.</div>'; });
         // Abrir o painel já marca tudo como visto — mesma disciplina do clique
         // antigo no sino, que sempre zerava o contador.

@@ -75,7 +75,24 @@ a:hover { text-decoration: underline; }
     box-shadow: 0 1px 3px rgba(0,0,0,.15);
     flex-wrap: wrap;
 }
-.topbar strong { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: .01em; margin-right: 10px; font-weight: 700; }
+/* 01/10/2026, achado real ("no topo do site juntar as palavras... volta
+   tudo") — era `<strong><img>...Fast<b>Car</b></strong>` com
+   `display:inline-flex;gap:10px` direto no `<strong>`: texto solto ("Fast")
+   e `<b>Car</b>` viram CADA UM seu próprio item de flex (texto cru
+   adjacente a um elemento flex vira item anônimo, pela spec) — o `gap`
+   pensado só pra separar o ícone do nome acabava separando "Fast" de "Car"
+   também, com um vão de 10px bem no meio da palavra. Virou `<a
+   class="topbar-brand">` (clicável, volta pra home do perfil via
+   paginaInicialPorPerfil()) com um `<span class="topbar-wordmark">` único
+   envolvendo "Fast<b>Car</b>" — só 2 itens de flex de verdade (ícone +
+   span), o texto dentro do span nunca quebra em itens separados.
+   `.topbar a.topbar-brand` (não só `.topbar-brand`) de propósito — precisa
+   de especificidade MAIOR que `.topbar a`/`.topbar a:hover` (regra
+   genérica de link de nav logo abaixo), senão o link "comum" ganha e some
+   com a cor branca/peso 700 do logo, ou pior, aplica o background cinza de
+   hover igual um link de menu normal. */
+.topbar a.topbar-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: .01em; margin-right: 10px; font-weight: 700; color: #fff; padding: 0; border-radius: 0; }
+.topbar a.topbar-brand:hover { background: none; color: #fff; filter: brightness(1.15); text-decoration: none; }
 .topbar-logo {
     width: 40px;
     height: 40px;
@@ -83,8 +100,8 @@ a:hover { text-decoration: underline; }
     object-fit: cover;
     box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 2px 6px rgba(0,0,0,.25);
 }
-.topbar strong b, .login-box h2 b { font-weight: 800; }
-.topbar strong b { color: var(--azul-vivo); }
+.topbar a.topbar-brand b, .login-box h2 b { font-weight: 800; }
+.topbar a.topbar-brand b { color: var(--azul-vivo); }
 .login-box h2 b { color: var(--azul); }
 .topbar a {
     color: #cbd5e1;

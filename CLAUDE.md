@@ -9029,6 +9029,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   `whatsapp_config.php` (faltava — só funcionava antes porque quem
   chamava (`public/documentos.php`/`public/documentos_venda.php`) nunca
   precisava de `zapiEnviarTexto()` até agora).
+  **Painel vazio depois de um toast de "lead novo"** (01/10/2026, achado
+  real: "notificação marca 1, vou clicar, olha resultado... não guarda
+  histórico... acho [que devia ser] clicável") — "lead novo" nunca foi
+  persistido em `notificacoes` (sempre ao vivo, comparando
+  `created_at`/`updated_at` contra o cursor `desde` — mecanismo original,
+  intocado), só o evento "cliente confirmou os documentos" é; o painel
+  (`?historico=1`) só lê a tabela, então clicar o sino depois de um badge
+  marcado por lead novo mostrava "Nenhuma notificação ainda.", mesmo o
+  contador tendo marcado 1 — o próprio evento que disparou o badge sumia
+  ao abrir. Nunca virou linha em `notificacoes` (duplicaria a fonte de
+  verdade do lead novo, que já tem o próprio mecanismo validado em
+  produção); `admin/notificacoes.php` passou a incluir `created_at` no
+  payload de cada lead novo (`o.created_at`/`o.updated_at` conforme o
+  perfil), e `admin/_notify.php` ganhou um histórico PRÓPRIO em
+  `localStorage` (`salvarLeadsNoHistoricoLocal()`/
+  `obterLeadsHistoricoLocal()`, até 20 itens, só deste navegador/aparelho
+  — mesmo espírito de conveniência por-viewer já usado no projeto pra
+  estado que não precisa ser 100% confiável/compartilhado) — a cada
+  polling que traz lead novo, guarda também aqui; ao abrir o painel,
+  mescla esse histórico local com o do servidor (`created_at` igual nos
+  dois lados, ordenação por `localeCompare` desc) antes de renderizar,
+  nunca mais fica vazio por causa de um lead novo. Sempre em try/catch
+  (localStorage pode lançar em aba anônima/storage bloqueado — nunca
+  quebra o resto do sino). Testado: função isolada (cópia literal do
+  trecho do arquivo, rodada via Node com um polyfill mínimo de
+  `localStorage`) reproduzindo o cenário exato relatado — painel do
+  servidor sozinho confirmado vazio (`{"itens":[]}`, via HTTP real contra
+  banco isolado com uma oportunidade recém-criada) virando 1 item depois
+  do merge; mescla com evento persistido real ordena certo (mais recente
+  primeiro); cap de 20 itens nunca estoura; storage bloqueado nunca
+  lança — + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 - **Página trava rolagem lá no topo depois de qualquer "Salvar"**
   (30/09/2026, achado real: "quando abrimos cliente tem ficar rolando pra
   baixo... preencho algo ainda rola pra baixo, [tenho que] voltar") —
@@ -9498,6 +9529,52 @@ segue no schema sem uso novo, não removida sem ganho real),
   migração de schema (coluna já existia e já era preenchida por
   `mudarEtapa()` desde a correção documentada em "Dashboard por perfil"
   mais acima).
+- **Logo "FastCar" do topbar partido ao meio + nunca clicável** (01/10/2026,
+  achado real via screenshot: "no topo do site juntar as palavras de
+  clicavel volta tudo") — causa raiz: `<strong><img>...Fast<b>Car</b></strong>`
+  com `display:inline-flex;gap:10px` direto no `<strong>` (`.topbar
+  strong`, `admin/assets/style.css`) — texto cru ("Fast") ao lado de um
+  elemento (`<b>Car</b>`) dentro de um container flex vira CADA UM seu
+  próprio item de flex (texto solto adjacente a um elemento flex vira item
+  anônimo, pela spec de CSS), então o `gap` pensado só pra separar o ícone
+  do nome acabava abrindo um vão de 10px bem no meio da palavra "FastCar",
+  renderizando como "Fast" + vão + "Car" em vez de uma palavra só — o
+  mesmo artefato visual já suspeitado (e não resolvido de vez) no bullet
+  "Subtítulo 'Solutions' na tela de login" (23/09/2026), mas achado só
+  agora reproduzindo de verdade. Corrigido nas ~36 páginas do admin que
+  repetem esse trecho (sem `layout.php` compartilhado, mesma disciplina
+  de bulk-insert já usada pro sino/badge/PWA — script Python fazendo a
+  troca estrutural em vez de editar 1 por 1): virou
+  `<a class="topbar-brand"><img>...<span class="topbar-wordmark">Fast<b>Car</b></span></a>`
+  — só 2 itens de flex de verdade (ícone + 1 span só envolvendo a palavra
+  inteira), o texto dentro do span nunca quebra em itens separados.
+  **"Clicável, volta tudo"** — o link aponta pra `paginaInicialPorPerfil($_SESSION['admin_perfil'])`
+  (helper já existente, criado pro impersonamento de usuário — vendedor
+  volta pra `vendas.php`, financeiro pra `financeiro.php`, avaliador pra
+  `avaliacoes.php`, resto pra `index.php`), nunca um link fixo —
+  clicar o logo sempre volta pra home de verdade do perfil logado, não só
+  pro dashboard de compra. CSS (`admin/assets/style.css`) usa
+  `.topbar a.topbar-brand` (não só `.topbar-brand`) de propósito —
+  precisa de especificidade MAIOR que `.topbar a`/`.topbar a:hover`
+  (regra genérica de link de nav), senão o link "comum" ganhava e o logo
+  saía cinza/com fundo de hover de menu normal em vez de branco/sem
+  decoração. **2 efeitos colaterais achados e corrigidos no próprio
+  mobile.js/mobile.css, antes de qualquer teste** — o `<a>` novo é filho
+  direto de `.topbar`, igual aos links de nav de verdade: (1)
+  `.topbar > a { display:none }` (≤900px, esconde os links reais da barra
+  pra só aparecerem clonados dentro da gaveta do hambúrguer) escondia o
+  logo JUNTO no celular — corrigido pra `.topbar > a:not(.topbar-brand)`;
+  (2) `mobile.js::montarMenu()` clona TODO `<a>` filho direto da topbar
+  pra dentro da gaveta (exceto "← Voltar"), o que duplicaria "FastCar"
+  como item de menu — corrigido com o mesmo `:not(.topbar-brand)` no
+  seletor (`topbar.querySelectorAll(':scope > a:not(.topbar-brand)')`).
+  Testado: `php -l` nas ~36 páginas + `node --check` em `mobile.js` +
+  `tests/smoke.php` limpos; HTTP real contra banco isolado (super_admin →
+  `href="/admin/index.php"`, vendedor → `href="/admin/vendas.php"`,
+  confirmando que o link segue o perfil de verdade, não hardcoded) +
+  screenshot via Chromium headless real em desktop (900px, "FastCar"
+  renderiza como palavra única, "Car" em azul vivo) e mobile (390px, logo
+  visível ao lado do ☰, sem sumir nem duplicar). Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

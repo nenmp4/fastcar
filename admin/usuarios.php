@@ -155,7 +155,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <header class="topbar">
     <a href="/admin/index.php" style="color:#fff">← Voltar</a>
-    <strong><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"> Fast<b>Car</b></strong>
+    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
     <a href="/admin/auditoria.php">🕵️ Auditoria</a>
     <a href="/admin/configuracoes.php">⚙️ Configurações</a>

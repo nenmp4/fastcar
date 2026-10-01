@@ -45,10 +45,14 @@ pre, code { overflow-x: auto; max-width: 100%; }
         padding: 8px 110px 8px 12px;          /* reserva: sino (40) + badge Z-API (compacto) */
         padding-top: max(8px, env(safe-area-inset-top));
     }
-    .topbar strong { font-size: 16px; margin-right: 0; white-space: nowrap; }
+    .topbar-brand { font-size: 16px; margin-right: 0; white-space: nowrap; }
     .topbar-logo { width: 36px; height: 36px; }
     .topbar > span { display: none; }                  /* "Olá, fulano" vai para dentro do menu */
-    .topbar > a { display: none; }
+    /* 01/10/2026 — o logo/wordmark virou <a class="topbar-brand"> (clicável,
+       volta pra home); sem o :not() aqui, essa regra escondia o logo
+       inteiro no celular junto com os links de nav de verdade, já que os
+       dois agora são <a> filho direto de .topbar. */
+    .topbar > a:not(.topbar-brand) { display: none; }
     .topbar > a.topbar-voltar {                         /* "← Voltar" continua visível */
         display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; order: -1;
     }
