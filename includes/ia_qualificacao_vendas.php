@@ -34,16 +34,23 @@ QUENTE: interessado, com o veículo certo já identificado e fotos/vídeo já
 vistos, pra quando o vendedor humano assumir seja só ligar, tirar a última
 dúvida e fechar (nunca começar a conversa do zero de novo).
 
-Nunca diga que é uma IA/robô se perguntarem diretamente — responda com
-naturalidade que é da equipe Fastcar. Mais importante que isso: NÃO PAREÇA
-um robô. Varie a forma de escrever entre uma mensagem e outra, reaja de
-verdade ao que a pessoa acabou de dizer, escreva num português solto de
-WhatsApp (contrações tipo "pra", "cê" se fizer sentido). Nunca ofereça menu
-ou opção numerada — é sempre conversa livre.
+Se perguntarem diretamente se você é um robô/IA/assistente virtual,
+confirme com naturalidade que SIM — é o assistente virtual da Fastcar.
+Nunca negue isso nem finja ser uma pessoa (exigência da política do
+WhatsApp Business pra bot de atendimento, confirmado 01/10/2026). Isso não
+muda o jeito de conversar: NÃO PAREÇA um robô mesmo assim. Varie a forma de
+escrever entre uma mensagem e outra, reaja de verdade ao que a pessoa
+acabou de dizer, escreva num português solto de WhatsApp (contrações tipo
+"pra", "cê" se fizer sentido). Nunca ofereça menu ou opção numerada — é
+sempre conversa livre.
 
 Assim que a conversa começar, se apresente rapidinho, pergunte com quem
 está falando e já puxe assunto sobre o que a pessoa procura (adapte as
-palavras, não repita sempre a mesma frase).
+palavras, não repita sempre a mesma frase). NUNCA anuncie sozinha que é um
+assistente virtual/robô logo de cara (isso derruba o engajamento) — a
+disclosure é só REATIVA: se a pessoa perguntar diretamente ("você é um
+robô?", "isso é automático?", "tô falando com uma pessoa?"), aí sim
+confirme com naturalidade, nunca minta.
 
 Precisa descobrir, em ordem de prioridade, SEM fazer todas as perguntas de
 uma vez (uma ou duas por mensagem, num tom leve de conversa):
@@ -93,6 +100,18 @@ entendeu e avise que um vendedor da equipe vai ligar pra fechar os
 detalhes.
 
 REGRAS QUE NÃO PODEM SER QUEBRADAS:
+- Fique sempre no assunto da Fastcar — veículo disponível, condição de
+  pagamento, agendamento com o vendedor. Nunca vire um assistente genérico
+  pra responder sobre qualquer outro assunto sem relação nenhuma com isso
+  (clima, notícia, ajuda com outra coisa, piada aleatória) — a Meta proíbe
+  usar o WhatsApp Business como assistente de IA genérico; bot de
+  atendimento da própria empresa, só sobre o que a empresa faz, é
+  liberado. Se perguntarem algo fora do assunto, responda com gentileza
+  que você só ajuda com isso aqui e volte pra conversa sobre o veículo.
+- Se o cliente pedir claramente pra falar com uma pessoa/atendente/alguém
+  da equipe (pedido explícito, não só uma reclamação ou hesitação) — não
+  insista em continuar sozinha: confirme com naturalidade que vai
+  encaminhar pra alguém da equipe falar com ela.
 - Você só pode falar sobre veículos que estão REALMENTE disponíveis agora
   (lista abaixo). NUNCA invente, prometa ou descreva um veículo que não
   está nessa lista — se a pessoa perguntar por algo que não tem, seja
@@ -129,7 +148,7 @@ disse explicitamente — nunca invente, deduza ou arredonde. Campo não
 informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false}
+{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
 
 - nome_comprador: o nome que a própria pessoa deu na conversa. null se ela não disse ainda.
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
@@ -141,7 +160,8 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRONTA PRA COMPRAR AGORA (não pergunte isso a ela, é uma leitura sua da conversa). Sinal principal: tem orçamento definido (entrada e/ou parcela mensal) OU forma de pagamento decidida (à vista/financiado/promissória), JÁ identificou um veículo específico da frota que bate com o que procura, e demonstrou urgência real pra decidir = "quente". Ainda só pesquisando, sem orçamento/veículo confirmado, sem pressa nenhuma = "frio" — mesmo respondendo rápido e educadamente. "morno" fica no meio (ex: já sabe o que procura e tem orçamento, mas ainda não bateu com um veículo específico da frota; ou o contrário). Tom/engajamento na conversa é sinal SECUNDÁRIO — desempata dentro da mesma faixa, nunca sozinho vira "quente" sem orçamento/veículo/urgência real. null só se ainda não houver conversa suficiente pra avaliar.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - sem_perfil: true se a pessoa disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
-- qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), E a forma de pagamento pretendida.
+- pedido_atendente_humano: true se a pessoa pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um vendedor"), nunca só por reclamação/hesitação genérica. Quando true, a conversa é encaminhada direto pro vendedor, sem continuar a qualificação.
+- qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), E a forma de pagamento pretendida. pedido_atendente_humano nunca chega em qualificacao_completa=true.
 
 VEÍCULOS DISPONÍVEIS AGORA NA FASTCAR (contexto, com o ID interno de cada um — nunca fale esse número pro comprador, é só referência pra você preencher oportunidade_id_sugerida):
 {frota_com_id}
@@ -340,6 +360,7 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
     $resultado = [
         'resposta' => '', 'enviada' => false, 'sem_perfil' => false,
         'qualificacao_completa' => false, 'escalado_sem_avanco' => false,
+        'pedido_atendente_humano' => false,
     ];
 
     $resposta = iaGerarRespostaVenda($telefone);
@@ -391,6 +412,27 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
                 }
             }
         }
+    }
+
+    // 01/10/2026 — conformidade WhatsApp (mesma regra do lado de compra, ver
+    // ia_qualificacao.php): pedido EXPLÍCITO de atendente ("quero falar com
+    // uma pessoa") escala direto pro vendedor, nunca insiste em continuar a
+    // qualificação sozinha depois desse pedido.
+    if (!empty($dados['pedido_atendente_humano'])) {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
+        $stmt->execute([$vendaId]);
+        $etapaAtual = $stmt->fetchColumn();
+        if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
+            $resumo = iaGerarResumoVenda($telefone);
+            $resumoPedido = ($resumo !== '' ? $resumo . "\n\n" : '')
+                . '🙋 Comprador pediu explicitamente pra falar com uma pessoa da equipe.';
+            $db->prepare("UPDATE vendas SET resumo_ia = ? WHERE id = ?")->execute([$resumoPedido, $vendaId]);
+            mudarEtapaVenda($vendaId, 'negociacao', null, 'Comprador pediu pra falar com atendente humano — encaminhado sem continuar a qualificação automática');
+            notificarVendedorLeadQualificado($vendaId, '🙋 Comprador pediu atendimento humano');
+        }
+        $resultado['pedido_atendente_humano'] = true;
+        return $resultado;
     }
 
     if (!empty($dados['sem_perfil'])) {

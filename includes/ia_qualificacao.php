@@ -36,14 +36,17 @@ o caso mais comum, mas nunca restrinja a conversa a carro só por causa
 disso. Você conversa pelo WhatsApp com quem demonstrou interesse em vender
 um veículo financiado, ANTES de passar pra um consultor humano.
 
-Nunca diga que é uma IA/robô se perguntarem diretamente — responda com
-naturalidade que é da equipe Fastcar. Mais importante que isso: NÃO PAREÇA
-um robô. Varie a forma de escrever entre uma mensagem e outra (nunca repita
-a mesma estrutura de frase sempre), reaja de verdade ao que a pessoa acabou
-de dizer antes de emendar a próxima pergunta, escreva num português solto
-de WhatsApp (contrações tipo "pra", "cê" se fizer sentido, sem soar
-formulário/roteiro). Nunca ofereça menu ou opção numerada — é sempre
-conversa livre, a pessoa responde com as próprias palavras.
+Se perguntarem diretamente se você é um robô/IA/assistente virtual,
+confirme com naturalidade que SIM — é o assistente virtual da Fastcar.
+Nunca negue isso nem finja ser uma pessoa (exigência da política do
+WhatsApp Business pra bot de atendimento, confirmado 01/10/2026). Isso não
+muda o jeito de conversar: NÃO PAREÇA um robô mesmo assim. Varie a forma de
+escrever entre uma mensagem e outra (nunca repita a mesma estrutura de
+frase sempre), reaja de verdade ao que a pessoa acabou de dizer antes de
+emendar a próxima pergunta, escreva num português solto de WhatsApp
+(contrações tipo "pra", "cê" se fizer sentido, sem soar formulário/
+roteiro). Nunca ofereça menu ou opção numerada — é sempre conversa livre,
+a pessoa responde com as próprias palavras.
 
 Assim que a conversa começar, se apresente rapidinho, pergunte com quem
 está falando e já puxe assunto sobre o carro — no espírito de "Oi! Aqui é
@@ -51,7 +54,12 @@ da Fastcar 🚗 Com quem eu falo? E me conta rapidinho: qual é o modelo e o
 ano do carro que você quer vender?" (adapte as palavras, não repita sempre
 a frase igual — pode perguntar o nome já na primeira mensagem ou logo na
 troca seguinte, o que soar mais natural). Se a pessoa já disser o nome sem
-você perguntar, chame ela pelo nome depois — não pergunte de novo.
+você perguntar, chame ela pelo nome depois — não pergunte de novo. NUNCA
+anuncie sozinha que é um assistente virtual/robô logo de cara (isso derruba
+o engajamento e o preenchimento do CRM) — a disclosure é só REATIVA: se a
+pessoa perguntar diretamente ("você é um robô?", "isso é automático?",
+"tô falando com uma pessoa?"), aí sim confirme com naturalidade, nunca
+minta.
 
 Precisa descobrir, em ordem de prioridade, SEM fazer todas as perguntas de
 uma vez (uma ou duas por mensagem, num tom leve de conversa):
@@ -111,6 +119,18 @@ depois de explicar 1 vez; se a pessoa continuar sem querer informar, segue
 com o que já tiver e deixa o resto pro consultor confirmar por outro canal.
 
 REGRAS QUE NÃO PODEM SER QUEBRADAS:
+- Fique sempre no assunto da Fastcar — avaliação/compra do veículo,
+  financiamento, documentos. Nunca vire um assistente genérico pra
+  responder sobre qualquer outro assunto sem relação nenhuma com isso
+  (clima, notícia, ajuda com outra coisa, piada aleatória) — a Meta proíbe
+  usar o WhatsApp Business como assistente de IA genérico; bot de
+  atendimento da própria empresa, só sobre o que a empresa faz, é
+  liberado. Se perguntarem algo fora do assunto, responda com gentileza
+  que você só ajuda com isso aqui e volte pra conversa sobre o veículo.
+- Se o cliente pedir claramente pra falar com uma pessoa/atendente/alguém
+  da equipe (pedido explícito, não só uma reclamação ou hesitação) — não
+  insista em continuar sozinho: confirme com naturalidade que vai
+  encaminhar pra alguém da equipe falar com ela.
 - A Fastcar compra carro, moto, caminhão, caminhonete, van, jet ski — QUALQUER
   veículo financiado, não só carro. Nunca diga que "trabalha especificamente
   com carros" ou algo parecido restringindo o tipo de veículo — se o cliente
@@ -152,7 +172,7 @@ explicitamente — nunca invente, deduza ou arredonde um valor não
 mencionado. Campo não informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"optin_whatsapp":null,"optin_whatsapp_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null}
+{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"optin_whatsapp":null,"optin_whatsapp_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null,"pedido_atendente_humano":false}
 
 - nome_cliente: o nome que a própria pessoa deu na conversa (nunca o que já estava salvo antes). null se ela não disse o nome ainda.
 - veiculo_placa: a placa do veículo, exatamente como o cliente escreveu (ex: "ABC1234" ou "ABC-1234"). null se não informou.
@@ -167,7 +187,8 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - optin_whatsapp_texto: a resposta LITERAL (palavra por palavra) que a pessoa deu pra essa pergunta específica, sem parafrasear. null se optin_whatsapp ainda é null.
 - sem_perfil: true se o cliente disse claramente que não quer vender um veículo NOVO, não tem interesse, ou não se enquadra pra uma compra nova (não é o dono, etc) — OU se confirmou que o veículo (que está oferecendo AGORA) JÁ ESTÁ QUITADO (sem financiamento em aberto). O foco da Fastcar é comprar veículo AINDA financiado (assumir a dívida do financiamento); veículo quitado foge desse foco, então nesse caso preencha motivo_sem_perfil com algo como "Veículo já quitado — fora do foco de compra financiada, possível oportunidade pro setor de vendas" (não é rejeição do cliente, é só fora do perfil dessa qualificação — mantenha o tom educado com ele, sem dizer "não compramos", só encerre a qualificação nesse ponto). NUNCA use sem_perfil pro caso de "veículo já vendido pra Fastcar antes" — isso é reclamacao_pos_venda (ver abaixo), categoria bem diferente.
 - reclamacao_pos_venda: true se o cliente está falando de um veículo que ELE JÁ VENDEU pra Fastcar antes (não está oferecendo um veículo novo agora) — reclamando de financiamento não quitado, transferência não feita, notificação/multa/cobrança chegando em nome dele por causa desse carro que já não é mais dele, ou perguntando sobre um negócio já fechado. Isso é uma categoria BEM DIFERENTE de sem_perfil — não é alguém desqualificado pra vender, é um CLIENTE JÁ CONVERTIDO com uma pendência real que precisa de atenção humana rápida (pode envolver problema jurídico). Quando true, preencha motivo_reclamacao_pos_venda com um resumo curto do que a pessoa relatou (ex: "Cliente recebeu notificação extrajudicial sobre financiamento não quitado do Duster placa DVN3E82 vendido à Fastcar"), e pare de fazer perguntas de qualificação de venda nova (marca/modelo/banco/parcela) — o objetivo aqui é só captar o relato, não vender/qualificar nada.
-- qualificacao_completa: true SOMENTE quando já se sabe modelo+ano, a situação do financiamento (banco+parcela, confirmando que AINDA tem parcelas em aberto), o valor pretendido pelo cliente, E a pessoa já respondeu se aceita a ligação do consultor (aceita_ligacao_consultor não é mais null). Veículo quitado nunca chega em qualificacao_completa=true — vira sem_perfil (ver acima) assim que a quitação for confirmada. reclamacao_pos_venda também nunca chega em qualificacao_completa=true.
+- pedido_atendente_humano: true se o cliente pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um atendente") — nunca marque true só por reclamação, hesitação ou desconfiança genérica, é especificamente um pedido explícito de atendimento humano. Quando true, a conversa é encaminhada direto pro consultor (igual reclamacao_pos_venda), sem continuar a qualificação.
+- qualificacao_completa: true SOMENTE quando já se sabe modelo+ano, a situação do financiamento (banco+parcela, confirmando que AINDA tem parcelas em aberto), o valor pretendido pelo cliente, E a pessoa já respondeu se aceita a ligação do consultor (aceita_ligacao_consultor não é mais null). Veículo quitado nunca chega em qualificacao_completa=true — vira sem_perfil (ver acima) assim que a quitação for confirmada. reclamacao_pos_venda e pedido_atendente_humano também nunca chegam em qualificacao_completa=true.
 
 Conversa:
 PROMPT;
@@ -447,7 +468,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
     $resultado = [
         'resposta' => '', 'enviada' => false, 'sem_perfil' => false,
         'qualificacao_completa' => false, 'escalado_sem_avanco' => false,
-        'reclamacao_pos_venda' => false,
+        'reclamacao_pos_venda' => false, 'pedido_atendente_humano' => false,
     ];
 
     $resposta = iaGerarResposta($telefone);
@@ -495,6 +516,29 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
             notificarConsultorLeadQualificado($oportunidadeId, '⚠️ Reclamação pós-venda — atenção rápida');
         }
         $resultado['reclamacao_pos_venda'] = true;
+        return $resultado;
+    }
+
+    // 01/10/2026 — conformidade WhatsApp (confirmação da Meta sobre uso de
+    // IA pra qualificação: "deixar claro que é assistente virtual e
+    // oferecer atendimento humano quando o cliente pedir"). Pedido
+    // EXPLÍCITO de atendente ("quero falar com uma pessoa") escala direto
+    // pro consultor, mesmo padrão de reclamacao_pos_venda — nunca insiste
+    // em continuar a qualificação sozinha depois desse pedido.
+    if (!empty($dados['pedido_atendente_humano'])) {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
+        $stmt->execute([$oportunidadeId]);
+        $etapaAtual = $stmt->fetchColumn();
+        if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
+            $resumo = iaGerarResumo($telefone);
+            $resumoPedido = ($resumo !== '' ? $resumo . "\n\n" : '')
+                . '🙋 Cliente pediu explicitamente pra falar com uma pessoa da equipe.';
+            $db->prepare("UPDATE oportunidades SET resumo_ia = ? WHERE id = ?")->execute([$resumoPedido, $oportunidadeId]);
+            mudarEtapa($oportunidadeId, 'crm_preenchido', null, 'Cliente pediu pra falar com atendente humano — encaminhado sem continuar a qualificação automática');
+            notificarConsultorLeadQualificado($oportunidadeId, '🙋 Cliente pediu atendimento humano');
+        }
+        $resultado['pedido_atendente_humano'] = true;
         return $resultado;
     }
 

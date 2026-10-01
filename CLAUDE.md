@@ -9917,6 +9917,71 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   Ainda não rodado contra produção — falta o usuário rodar via SSH e
   mandar a saída pra eu interpretar junto, ou interpretar sozinho usando
   as instruções de leitura no topo de cada seção do script.
+- **Qualificação por IA via WhatsApp — confirmada como permitida pela Meta,
+  com 5 regras** (01/10/2026, confirmação direta do usuário citando a
+  política: "Pode, sim. Qualificar com IA no WhatsApp é permitido, desde
+  que o bot cumpra algumas regras: só responder quem chamou primeiro;
+  ficar no assunto da Fastcar (nunca virar assistente genérico); deixar
+  claro que é assistente virtual e oferecer atendente quando pedido; não
+  prometer o que não pode cumprir nem pedir dado sensível à toa; responder
+  SAIR na hora e parar"). Revisão dos 2 prompts do projeto
+  (`IA_QUALIFICACAO_PROMPT_SISTEMA`/`includes/ia_qualificacao.php` —
+  compra, e `IA_QUALIFICACAO_VENDAS_PROMPT_SISTEMA_BASE`/
+  `includes/ia_qualificacao_vendas.php` — vendas) contra as 5: regra 1
+  (só quem chamou primeiro) é estrutural, nada a mudar; regra 5 ("SAIR")
+  já tinha sido implementada antes (`includes/whatsapp_conformidade.php`,
+  ver bullet "Conformidade WhatsApp" acima); regra 4 (nunca prometer
+  valor/aprovação) já existia nos dois prompts. **Achado real, violação
+  direta da regra 3**: os dois prompts tinham a instrução "Nunca diga que
+  é uma IA/robô se perguntarem diretamente — responda com naturalidade que
+  é da equipe Fastcar" — o exato OPOSTO do exigido. Corrigido pra confirmar
+  com naturalidade que é o assistente virtual da Fastcar SE perguntado
+  diretamente, nunca mentir. **Ajuste feito em cima do feedback do usuário
+  no mesmo turno** ("problema que ela fala que robo derrumamos
+  preenchimento do crm"): a 1ª versão da correção também fazia a IA se
+  apresentar como "assistente virtual" já na saudação de abertura — o
+  usuário apontou (corretamente) que isso derruba engajamento/conversão,
+  já que "tava dando muito certo, ia acertou lead, crm preenchido, deu
+  negócio fechado". Revertido pra disclosure **só reativa** (nunca anuncia
+  sozinha, só confirma se perguntada diretamente) — mantém a honestidade
+  exigida sem precisar abrir mão do tom natural que já estava convertendo
+  bem. Também confirmado (e documentado explicitamente nos comentários do
+  código) que isso só é relevante ANTES do CRM preenchido — assim que a
+  oportunidade/venda chega em `crm_preenchido`/é escalada, `iaProcessarTurno()`/
+  `iaProcessarTurnoVenda()` param de processar turno pra aquele telefone
+  (quem responde a partir daí é sempre um humano de verdade pelo WhatsApp
+  Box, nunca mais a IA), então não tem como "a IA falar depois do CRM
+  preenchido" — estruturalmente impossível, nenhuma mudança extra
+  precisou. Regra 2 (ficar só no assunto Fastcar, nunca virar assistente
+  genérico) e regra 3/handoff (oferecer atendente quando o cliente pedir
+  explicitamente) — nenhuma das duas existia antes, adicionadas nos 2
+  prompts: nova seção em "REGRAS QUE NÃO PODEM SER QUEBRADAS" + novo campo
+  `pedido_atendente_humano` (bool) nos 2 prompts de extração
+  (`IA_EXTRACAO_PROMPT`/`IA_EXTRACAO_VENDAS_PROMPT_BASE`) — true SOMENTE
+  quando o cliente pede CLARAMENTE e DIRETAMENTE pra falar com uma pessoa
+  (nunca só por reclamação/hesitação genérica, mesmo cuidado de
+  `reclamacao_pos_venda` pra nunca disparar à toa). Handling em
+  `iaProcessarTurno()`/`iaProcessarTurnoVenda()` espelha exatamente o
+  bloco já existente de `reclamacao_pos_venda`: escala direto pro
+  consultor/vendedor (`mudarEtapa()`/`mudarEtapaVenda()` pra
+  `crm_preenchido`/`negociacao`), grava `resumo_ia` com o marcador 🙋,
+  notifica o responsável, e NUNCA continua tentando qualificar depois
+  desse pedido — mesma disciplina de "não insistir" já usada pro pedido de
+  desistência do cliente. Testado ponta a ponta contra servidor Gemini
+  fake local, nos 2 lados (compra e vendas): mensagem simulando pedido
+  explícito de atendente dispara a escalada certa (etapa muda, resumo
+  gravado com o texto certo); mensagem normal de qualificação (sem pedido
+  de atendente) continua processando igual sempre foi, sem nenhuma
+  regressão (dado extraído aplicado, etapa não muda, resposta normal) —
+  confirmado em banco isolado, nunca tocando o banco de dev real (rodado
+  100% via script em ARQUIVO com `auto_prepend_file`, nunca `php -r`
+  inline). `php -l` + `tests/smoke.php` limpos nos 2 arquivos. Mudança de
+  prompt (julgamento de IA em si, o texto que o cliente lê) não é 100%
+  testável contra servidor fake — mesma ressalva de sempre pra esse tipo
+  de mudança no projeto —, validação final da naturalidade/tom só na
+  próxima conversa real. Sem migração de schema (`pedido_atendente_humano`
+  nunca vira coluna de banco, só lido no momento do turno, igual
+  `reclamacao_pos_venda`).
 
 ## Pendências (aguardando definição antes de codar mais)
 
