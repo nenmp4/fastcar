@@ -198,6 +198,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $erro = $r['erro'];
                     }
                 }
+            } elseif ($acao === 'cancelar_parcelamento') {
+                // 02/10/2026, achado real: "contrato foi gerado mas não
+                // assinado, precisa fazer alteração no parcelamento de 36
+                // pra 35" — até aqui não existia jeito de corrigir: cancelar
+                // lançamento um a um em Financeiro nunca destravava o
+                // formulário de gerar outro plano (finGerarPlanoParcelamentoVenda()
+                // contava QUALQUER linha, até cancelada). Este botão cancela
+                // de uma vez os lançamentos PENDENTES da venda (nunca mexe em
+                // já pago — finCancelarLancamentosPendentesVenda() já é essa
+                // mesma função usada na devolução de veículo vendido) e, com
+                // finContarLancamentosAtivosVenda() agora ignorando cancelado,
+                // o formulário de "Gerar plano de parcelamento" reaparece
+                // sozinho na recarga — sem mexer na etapa da venda, que
+                // continua intacta (nunca dispara mudarEtapaVenda()).
+                $rCancel = finCancelarLancamentosPendentesVenda($id);
+                if ($rCancel['canceladas'] > 0) {
+                    $sucesso = "Parcelamento atual cancelado ({$rCancel['canceladas']} lançamento(s)) — já pode gerar outro abaixo.";
+                    if ($rCancel['asaas_falhas'] > 0) {
+                        $sucesso .= " ⚠️ {$rCancel['asaas_falhas']} cobrança(s) no Asaas não confirmaram cancelamento — confira lá manualmente.";
+                    }
+                } else {
+                    $erro = 'Nenhum lançamento pendente pra cancelar (já pago fica intocado).';
+                }
             } elseif ($acao === 'gerar_contrato') {
                 if (!$v['oportunidade_id']) {
                     $erro = 'Vincule um veículo da frota a esta negociação antes de gerar o contrato.';
@@ -1073,7 +1096,13 @@ function adicionarParteEntrada() {
     <h3>💳 Financeiro — plano de parcelamento</h3>
     <p><small>Fastcar vende o veículo financiado pro comprador — entrada + parcelas. Gera 1x só; depois disso os
        lançamentos são acompanhados em <a href="/admin/financeiro.php">Financeiro</a>.</small></p>
-    <?php $lancamentosVenda = finListarLancamentosVenda($id); ?>
+    <?php
+        $lancamentosVenda = finListarLancamentosVenda($id);
+        // 02/10/2026 — "ativo" = ainda pendente/pago/atrasado; cancelado
+        // nunca conta aqui (mesmo critério de finContarLancamentosAtivosVenda(),
+        // calculado em PHP pra não bater no banco de novo com o que já veio).
+        $lancamentosAtivosVenda = array_filter($lancamentosVenda, fn($l) => $l['status'] !== 'cancelado');
+    ?>
     <?php if ($lancamentosVenda): ?>
         <table class="tabela-oportunidades">
             <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead>
@@ -1088,9 +1117,24 @@ function adicionarParteEntrada() {
             <?php endforeach; ?>
             </tbody>
         </table>
+    <?php endif; ?>
+    <?php if ($lancamentosAtivosVenda): ?>
+        <p>
+            <small>Plano já gerado e lançado no financeiro. Precisa corrigir número de parcelas/valor antes de
+               assinar o contrato? Cancele o plano atual (nunca apaga o histórico acima, só marca como cancelado —
+               e pede confirmação no Asaas também, se for o caso) e gere outro embaixo.</small>
+        </p>
+        <form method="post" onsubmit="return confirmarAcao(this, 'Cancelar o parcelamento atual? Os lançamentos pendentes (entrada/parcelas) viram \'cancelado\' — nunca apagados, só saem do fluxo de cobrança. Lançamento já PAGO não é afetado.')">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="cancelar_parcelamento">
+            <button type="submit" class="chip-acao perigo">🚫 Cancelar parcelamento atual (pra gerar outro)</button>
+        </form>
     <?php elseif (!$v['oportunidade_id']): ?>
         <p><small>⏳ Vincule um veículo da frota antes de gerar o parcelamento.</small></p>
     <?php else: ?>
+        <?php if ($lancamentosVenda): ?>
+            <p><small>✅ Parcelamento anterior cancelado — pode gerar um novo abaixo.</small></p>
+        <?php endif; ?>
         <form method="post">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_parcelamento">

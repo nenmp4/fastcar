@@ -378,8 +378,8 @@ function asaasCriarClienteSeNecessario(string $nome, string $cpfCnpj, string $te
  */
 function asaasGerarCobrancaParceladaVenda(int $vendaId, string $asaasCustomerId, float $valorParcela, int $numParcelas, string $primeiraParcelaData, string $descricao): array {
     if (!asaasConfigured()) return ['ok' => false, 'erro' => 'Chave da API Asaas não configurada.'];
-    if (finContarLancamentosVenda($vendaId) > 0) {
-        return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros gerados — não é possível gerar de novo.'];
+    if (finContarLancamentosAtivosVenda($vendaId) > 0) {
+        return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros ativos — cancele o plano atual antes de gerar outro.'];
     }
 
     $r = asaasRequest('POST', '/payments', [

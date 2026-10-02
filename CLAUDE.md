@@ -7951,6 +7951,61 @@ segue no schema sem uso novo, não removida sem ganho real),
   `storage/logs/deploy_2026-09.log` que já está quebrado
   (`chown :www-data` + `chmod 664` nesse arquivo específico), senão o
   warning continua até a virada do mês que vem.
+- **Nenhum jeito de corrigir o parcelamento de uma venda depois de gerado**
+  (02/10/2026, achado real: "Contrato foi gerado mais não assinado precisa
+  fazer alteração no parcelamento de era 36 foi 35") — confirmado com o
+  usuário (AskUserQuestion) que as 36 parcelas já tinham virado
+  `fin_lancamentos` de verdade em Financeiro, pendentes. Causa: o card
+  "💳 Financeiro — plano de parcelamento" (`admin/venda.php`) só mostra o
+  formulário de gerar enquanto `finListarLancamentosVenda($id)` vem vazio
+  — depois que existe QUALQUER linha (mesmo cancelada), o formulário some
+  pra sempre, substituído pela tabela só-leitura; e
+  `finGerarPlanoParcelamentoVenda()`/`asaasGerarCobrancaParceladaVenda()`
+  recusavam gerar de novo contando `finContarLancamentosVenda()` — QUALQUER
+  linha, cancelada ou não. Cancelar as 36 parcelas erradas uma a uma em
+  Financeiro → Lançamentos (ação "🚫 Cancelar" já existente, 23/09/2026)
+  nunca destravava nada — a trava nunca distinguia "existe histórico" de
+  "existe cobrança ativa pra evitar duplicar". Corrigido com
+  `finContarLancamentosAtivosVenda()` (novo, `includes/financeiro.php` —
+  mesma contagem de sempre, só ignorando `status='cancelado'`) substituindo
+  `finContarLancamentosVenda()` nos 2 guards de geração
+  (`finGerarPlanoParcelamentoVenda()`/`asaasGerarCobrancaParceladaVenda()`)
+  — `finContarLancamentosVenda()` em si não foi tocada, continua usada sem
+  mudança nos outros lugares (promissórias, histórico, backfill
+  retroativo), onde o sentido é "já teve lançamento alguma vez", não "tem
+  cobrança viva agora". Botão novo "🚫 Cancelar parcelamento atual (pra
+  gerar outro)" em `admin/venda.php`, ação `cancelar_parcelamento` — chama
+  a MESMA `finCancelarLancamentosPendentesVenda()` já usada na devolução de
+  veículo vendido (nunca mexe em lançamento já `pago`, tenta cancelar a
+  cobrança no Asaas também quando `origem='asaas'`), mas disparada
+  isolada, sem passar por `mudarEtapaVenda()` — a negociação continua na
+  mesma etapa, nada além do parcelamento é afetado. Tela passou a mostrar
+  SEMPRE a tabela com o histórico completo (inclusive linha cancelada,
+  badge de status já existente deixa isso visível) e, quando não resta
+  nenhum lançamento ativo, o formulário de gerar reaparece embaixo com o
+  aviso "✅ Parcelamento anterior cancelado — pode gerar um novo abaixo." —
+  nunca apaga nada, só cancela e deixa gerar de novo por cima. Depois de
+  corrigido o número, falta só clicar em "Gerar contrato e enviar pra
+  assinatura" de novo — isso já funciona sem mudança (sempre cria uma nova
+  linha em `contratos`/novo documento na ZapSign); o contrato antigo
+  (errado, nunca assinado) fica esquecido na lista, sem ação de excluir
+  pra status `'enviado'` (só rascunho `'gerado'` tem isso, ver bullet
+  "Rascunho não empilha mais" acima) — avisar o comprador que o link antigo
+  não vale, usar o novo. Testado: função isolada em banco isolado
+  reproduzindo o cenário exato (gera 36, confirma bloqueio pra gerar de
+  novo sem cancelar, cancela, confirma `finContarLancamentosAtivosVenda()=0`
+  mas `finContarLancamentosVenda()` continua 36 — histórico preservado —,
+  gera 35 com sucesso, confirma total=71/ativos=35/`vendas.parcelamento_qtd_parcelas=35`,
+  confirma que gerar de novo por cima dos 35 ativos volta a ser recusado;
+  cenário extra com lançamento já `pago` no meio confirmando que cancelar
+  nunca toca nele) + HTTP ponta a ponta real (sessão `vendedor` primed,
+  servidor PHP embutido): GET mostra tabela+botão cancelar, nunca o form,
+  enquanto ativo; POST `cancelar_parcelamento` cancela as 36 de verdade,
+  banner de sucesso certo, form reaparece; POST `gerar_parcelamento` com
+  35 gera de verdade (confirmado "35/35" na tabela, `vendas.parcelamento_qtd_parcelas`
+  batendo); POST forjado de `supervisor` com CSRF roubado da própria tela
+  rejeitado com 403, banco confirmado intocado + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

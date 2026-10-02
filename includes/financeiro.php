@@ -87,6 +87,27 @@ function finContarLancamentosVenda(int $vendaId): int {
     return (int)$stmt->fetchColumn();
 }
 
+/**
+ * Igual a finContarLancamentosVenda(), mas ignora lançamento já
+ * `status='cancelado'` — 02/10/2026, achado real: "contrato foi gerado mas
+ * não assinado, precisa fazer alteração no parcelamento de 36 pra 35" —
+ * `finGerarPlanoParcelamentoVenda()`/`asaasGerarCobrancaParceladaVenda()`
+ * sempre travavam "já tem lançamento, não dá pra gerar de novo" contando
+ * QUALQUER linha, mesmo cancelada; cancelar as 36 parcelas erradas uma a
+ * uma (ação já existente em Financeiro → Lançamentos) nunca destravava o
+ * formulário de gerar outro plano. Usada só nos 2 guards de geração — o
+ * resto do projeto (promissórias, histórico, backfill retroativo) continua
+ * usando finContarLancamentosVenda() sem mudança, propositalmente: lá o
+ * sentido é "essa venda já teve lançamento em algum momento", não "ainda
+ * tem lançamento vivo pra cobrar".
+ */
+function finContarLancamentosAtivosVenda(int $vendaId): int {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM fin_lancamentos WHERE venda_id = ? AND status != 'cancelado'");
+    $stmt->execute([$vendaId]);
+    return (int)$stmt->fetchColumn();
+}
+
 /** Lançamentos (parcelas/entrada) de uma venda, ordenados pela ordem da parcela. */
 function finListarLancamentosVenda(int $vendaId): array {
     $db = getDB();
@@ -159,8 +180,8 @@ function finGerarPlanoParcelamentoVenda(
     ?int $categoriaEntradaId = null,
     ?string $dataEntrada = null
 ): array {
-    if (finContarLancamentosVenda($vendaId) > 0) {
-        return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros gerados — não é possível gerar de novo.'];
+    if (finContarLancamentosAtivosVenda($vendaId) > 0) {
+        return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros ativos — cancele o plano atual antes de gerar outro.'];
     }
     if ($numParcelas < 1) {
         return ['ok' => false, 'erro' => 'Informe pelo menos 1 parcela.'];
