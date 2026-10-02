@@ -156,6 +156,23 @@ function _pdfLinhaResumo(FPDF $pdf, string $label, string $valor): void {
     $linhasValor = _pdfContarLinhas($pdf, $valorPdf, $larguraUtil);
     $altura = max(6, max($linhasLabel, $linhasValor) * $alturaLinha + 1.5);
 
+    // Garante que a linha INTEIRA (os 2 retângulos + rótulo + valor) nunca
+    // fica partida entre 2 páginas — bug real achado em produção (02/10/2026,
+    // venda #29, linha "Penalidade por atraso..."): Rect() desenha direto na
+    // posição atual sem nunca disparar quebra de página sozinho (só
+    // Cell()/MultiCell() fazem isso), então uma linha cujo Y já estava perto
+    // do rodapé tinha o RÓTULO quebrando de página sozinho no meio do
+    // MultiCell() (FPDF insere AddPage() automático lá dentro), enquanto o
+    // $y capturado logo abaixo ficava desatualizado — o VALOR, desenhado em
+    // seguida com esse $y antigo (da página anterior), quase sempre também
+    // estourava o rodapé da página NOVA e disparava uma 2ª quebra: rótulo e
+    // valor acabavam em páginas diferentes, cada um sozinho, sem o quadro
+    // cinza ao redor (ele nunca "seguiu" a quebra, ficou só na 1ª página).
+    // 277mm = 297mm (altura da A4) - 20mm (margem inferior de _pdfNovo()).
+    if ($pdf->GetY() + $altura > 277) {
+        $pdf->AddPage();
+    }
+
     $x = $pdf->GetX();
     $y = $pdf->GetY();
 

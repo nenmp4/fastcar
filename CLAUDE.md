@@ -10403,6 +10403,43 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `status='assinado'` de um contrato antigo — preservado intacto,
   idempotente numa 2ª rodada) + `php -l` nos 7 arquivos tocados +
   `tests/smoke.php` limpo.
+  **Bug real de layout — linha "Penalidade por atraso..." quebrando em 2
+  páginas quase em branco** (02/10/2026, usuário mandou o PDF da preview
+  do contrato de venda #29 — página 2 só com o rótulo "Penalidade por
+  atraso imputável à FASTCAR" sozinho perto do topo, resto em branco, e
+  página 3 só com "a definir entre as partes" flutuando sozinho no meio,
+  também em branco). Causa raiz em `_pdfLinhaResumo()`
+  (`includes/contratos_pdf.php`, compartilhada entre Quadro-Resumo de
+  COMPRA e de VENDA): a função desenha 2 `Rect()` (fundo cinza das 2
+  células) direto na posição atual — `Rect()` nunca dispara quebra de
+  página sozinho no FPDF, só `Cell()`/`MultiCell()`/`Write()` fazem isso
+  —, e só DEPOIS chama `MultiCell()` separado pro rótulo e pro valor. Se
+  o `$y` da linha já estava perto do rodapé, o `MultiCell()` do RÓTULO
+  disparava uma quebra de página AUTOMÁTICA no meio dele (comportamento
+  padrão do FPDF), mas a variável `$y` capturada no início da função
+  ficava desatualizada — o `MultiCell()` do VALOR, chamado em seguida
+  reposicionando com esse `$y` antigo (da página anterior), quase sempre
+  também estourava o rodapé da página NOVA e disparava uma 2ª quebra:
+  rótulo e valor acabavam cada um sozinho numa página, sem o quadro cinza
+  ao redor (que nunca "seguiu" a quebra, ficou só na página de origem).
+  Nunca era específico dessa linha — depende da altura acumulada de TODAS
+  as linhas anteriores do Quadro-Resumo, que varia por oportunidade/venda
+  (textos de negociação digitados livremente); só não tinha aparecido
+  antes por coincidência de dado. Corrigido com uma checagem explícita
+  ANTES de desenhar qualquer coisa: `if ($pdf->GetY() + $altura > 277)
+  $pdf->AddPage();` (277mm = 297mm da A4 menos os 20mm de margem inferior
+  já configurados em `_pdfNovo()`) — garante que a linha INTEIRA (os 2
+  retângulos + rótulo + valor) sempre nasce e termina na mesma página,
+  nunca mais parte no meio. Testado: PDF real gerado com os mesmos dados
+  exatos da venda #29 (`gerarPdfContratoVenda()`, sem tocar em banco
+  nenhum — a função não depende de DB) confirmando a linha "Penalidade
+  por atraso..." inteira (rótulo + valor, mesmo quadro cinza) na MESMA
+  página, logo seguida da Cláusula 1ª sem nenhuma página em branco entre
+  elas — documento caiu de 9 pra 7 páginas; regressão testada no lado de
+  COMPRA também (mesma função compartilhada, `gerarPdfContratoCompra()`
+  com dado de teste à parte) confirmando geração normal, sem quebra nova
+  nenhuma + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
+  (mudança só na geração do PDF).
 
 ## Pendências (aguardando definição antes de codar mais)
 
