@@ -1016,6 +1016,25 @@ function adicionarParteEntrada() {
                                 <?php endif; ?>
                             <?php endif; ?>
 
+                            <?php
+                                // 02/10/2026 — FASTCAR/testemunhas, quando configuradas em
+                                // Configurações, viram signatárias REAIS (signatariosExtrasContrato()),
+                                // não só nome impresso. Link de cada uma, enquanto o contrato
+                                // ainda não fechou 100% (status só vira 'assinado' quando TODO
+                                // mundo configurado já assinou, inclusive essas).
+                                $signersExtra = json_decode($ct['zapsign_signers_extra_json'] ?? '{}', true) ?: [];
+                            ?>
+                            <?php if ($signersExtra && $ct['status'] !== 'assinado'): ?>
+                                <span class="status-linha" style="display:block;margin-top:4px">
+                                    Também precisa assinar:
+                                    <?php foreach ($signersExtra as $chaveExtra => $dadosExtra): ?>
+                                        <?php if (!empty($dadosExtra['sign_url'])): ?>
+                                            <a class="chip-acao" href="<?= e($dadosExtra['sign_url']) ?>" target="_blank">🔗 <?= e(signatarioExtraLabel((string)$chaveExtra)) ?></a>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </span>
+                            <?php endif; ?>
+
                             <?php if ($ct['status'] === 'assinado'): ?>
                                 <span class="status-linha">
                                     📱 WhatsApp:

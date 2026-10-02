@@ -32,6 +32,38 @@ const CONTRATOS_STATUS_ZAPSIGN = [
     'pending' => 'enviado',
 ];
 
+/**
+ * Signatários ALÉM da contraparte (vendedor na compra, comprador na venda)
+ * — 02/10/2026, "tou falando que todos precisam assinar... bota as duas
+ * testemunhas pra assinar". Até aqui FASTCAR e as 2 testemunhas só
+ * apareciam IMPRESSAS no PDF (linha de assinatura em branco), mas
+ * zapsignCriarDocumentoEAssinatura() nunca mandava elas pra ZapSign — o
+ * "Relatório de Assinaturas" sempre fechava em "1 de 1", nunca os 4/4 que
+ * o contrato antigo (sistema legado) de fato capturava. Mesmos 3 nomes
+ * configurados em Configurações pros dois tipos de contrato (compra e
+ * venda), igual testemunha1/2 já eram — item sem nome preenchido nem
+ * entra no array (zapsignCriarDocumentoEAssinatura() ignora sozinho),
+ * nunca bloqueia a geração do contrato por falta de representante/
+ * testemunha cadastrado.
+ */
+function signatariosExtrasContrato(): array {
+    return [
+        ['chave' => 'fastcar', 'nome' => getConfig('fastcar_signatario_nome') ?: '', 'telefone' => getConfig('fastcar_signatario_telefone') ?: '', 'email' => getConfig('fastcar_signatario_email') ?: ''],
+        ['chave' => 'testemunha1', 'nome' => getConfig('testemunha1_nome') ?: '', 'telefone' => getConfig('testemunha1_telefone') ?: '', 'email' => getConfig('testemunha1_email') ?: ''],
+        ['chave' => 'testemunha2', 'nome' => getConfig('testemunha2_nome') ?: '', 'telefone' => getConfig('testemunha2_telefone') ?: '', 'email' => getConfig('testemunha2_email') ?: ''],
+    ];
+}
+
+/** Rótulo amigável pra chave de signatário extra — admin/oportunidade.php e admin/venda.php usam pra listar o link de cada um. */
+function signatarioExtraLabel(string $chave): string {
+    return match ($chave) {
+        'fastcar' => 'FASTCAR',
+        'testemunha1' => 'Testemunha 1',
+        'testemunha2' => 'Testemunha 2',
+        default => $chave,
+    };
+}
+
 function formatarDataExtensoPtBr(string $dataYmd): string {
     $meses = [1 => 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
               'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -272,7 +304,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     // Assinafy, que precisava de 3 chamadas separadas) — telefone e e-mail
     // são os canais de verificação/notificação quando existem (pedido do
     // José/Jean, 14/09/2026: "vamos enviar no email dele o contrato").
-    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone'], $campos['_email']);
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato());
     @unlink($pdfPath);
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
@@ -281,11 +313,11 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     $db = getDB();
     $db->prepare("
         INSERT INTO contratos
-            (oportunidade_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, status, drive_file_id, arquivo_url, created_by)
-        VALUES (?, 'compra', ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
+            (oportunidade_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, zapsign_signers_extra_json, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, 'compra', ?, ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
     ")->execute([
         $oportunidadeId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
-        $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
+        $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
     $contratoId = (int)$db->lastInsertId();
 
@@ -467,7 +499,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         'application/pdf', 'contratos/' . $campos['_oportunidade_id']
     );
 
-    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email']);
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato());
     @unlink($pdfPath);
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
@@ -476,11 +508,11 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     $db = getDB();
     $db->prepare("
         INSERT INTO contratos
-            (oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, status, drive_file_id, arquivo_url, created_by)
-        VALUES (?, ?, 'venda', ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
+            (oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, zapsign_signers_extra_json, status, drive_file_id, arquivo_url, created_by)
+        VALUES (?, ?, 'venda', ?, ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
     ")->execute([
         $campos['_oportunidade_id'], $vendaId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
-        $docRes['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
+        $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
     $contratoId = (int)$db->lastInsertId();
 

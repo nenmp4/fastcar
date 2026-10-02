@@ -247,6 +247,11 @@ $migracoes = [
     // real fica a cargo da aplicação (só grava 'entregue'/'sem_email'/'falhou').
     'contratos.envio_email_status' => "ALTER TABLE contratos ADD COLUMN envio_email_status TEXT",
     'contratos.envio_email_em' => "ALTER TABLE contratos ADD COLUMN envio_email_em DATETIME",
+
+    // 02/10/2026 — "todos precisam assinar... bota as duas testemunhas pra
+    // assinar": FASTCAR + as 2 testemunhas viram signatários REAIS na
+    // ZapSign (não só nome impresso no PDF). Ver zapsignCriarDocumentoEAssinatura().
+    'contratos.zapsign_signers_extra_json' => "ALTER TABLE contratos ADD COLUMN zapsign_signers_extra_json TEXT DEFAULT '{}'",
 ];
 
 foreach ($migracoes as $nome => $sql) {

@@ -10179,6 +10179,98 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   de dev real confirmado intocado (testado 100% via scripts em arquivo
   desta vez) + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema.
+- **FASTCAR + as 2 testemunhas viram signatários REAIS na ZapSign**
+  (02/10/2026, usuário mandou o PDF do contrato antigo — sistema legado
+  `fastcar.site`, "4 de 4 Assinaturas", FASTCAR+CEDENTE+2 testemunhas
+  todas assinadas de verdade — ao lado do PDF de um contrato de VENDA
+  deste sistema (#VENDA-28), onde o "Relatório de Assinaturas" da própria
+  ZapSign fechava em "1 de 1 Assinaturas": "tou falando que todos precisam
+  assinar / tem necessidade mesmo / antigo contrato e novo") — achado
+  real confirmado lendo o código antes de qualquer mudança:
+  `zapsignCriarDocumentoEAssinatura()` (`includes/zapsign.php`) sempre
+  mandou só 1 signatário pra ZapSign (`'signers' => [$signer]`), tanto em
+  COMPRA quanto em VENDA — "FASTCAR SOLUTIONS / CNPJ" e as 2 "TESTEMUNHA"
+  no rodapé do PDF (`includes/contratos_pdf.php`, puxando
+  `testemunha1_nome`/`testemunha2_nome` de `config`) sempre foram só texto
+  impresso, nunca uma assinatura eletrônica de verdade — só a contraparte
+  (vendedor na compra, comprador na venda) de fato assinava via link da
+  ZapSign. Confirmado com o usuário via AskUserQuestion o escopo (opção
+  inicial escolhida foi "só FASTCAR", revertida no mesmo turno — "bota as
+  duas testmunhas para assinar" / "eles querem isso" / "venda mesma
+  coisa") — escopo final: FASTCAR **e** as 2 testemunhas, nos dois tipos
+  de contrato, igual ao antigo.
+  `zapsignCriarDocumentoEAssinatura()` reescrita pra aceitar
+  `$signersExtras` (array opcional, retrocompatível — assinatura antiga de
+  5 argumentos continua funcionando sem mudança nenhuma, usada por
+  `includes/veiculo_avaliacoes.php` pro termo de vistoria, que continua
+  single-signer de propósito, fora de escopo aqui): cada item
+  `['chave'=>'fastcar'|'testemunha1'|'testemunha2', 'nome'=>, 'telefone'=>,
+  'email'=>]`, item sem `nome` preenchido nunca entra no array mandado pra
+  ZapSign (regra #3, nunca inventa signatário — sem FASTCAR/testemunha
+  cadastrados em Configurações, o contrato continua gerando normal, só
+  sem esses assinando eletronicamente, exatamente como sempre foi). Nova
+  `signatariosExtrasContrato()` (`includes/contratos.php`) monta esse
+  array lendo `config.fastcar_signatario_nome/_telefone/_email` (3 chaves
+  novas) + `config.testemunha1_telefone/_email`/`testemunha2_telefone/_email`
+  (4 chaves novas — nome/CPF já existiam desde 13/09/2026, só pra
+  imprimir; telefone/e-mail são o que faltava pra virar signatário de
+  verdade) — usada igual nos dois pontos de envio
+  (`gerarEEnviarContratoCompra()`/`gerarEEnviarContratoVenda()`).
+  **Status geral do contrato continua correto sem nenhuma mudança em
+  `zapsignSincronizarContrato()`** — ela já lia só o campo agregado
+  `doc.status` da ZapSign, que só vira "signed" quando TODOS os
+  signatários configurados assinam (confirmado pelo próprio PDF antigo,
+  "4 de 4" só depois da Ingrid assinar por último, uma semana depois dos
+  outros 3) — zero código de espera/contagem precisou ser escrito aqui,
+  só testado que o comportamento realmente se propaga sozinho.
+  Nova coluna `contratos.zapsign_signers_extra_json` (`TEXT DEFAULT '{}'`)
+  guarda `{"fastcar":{"token":...,"sign_url":...},"testemunha1":{...}}` —
+  só as chaves que de fato entraram como signatário (as sem nome
+  configurado nunca aparecem aqui). `admin/oportunidade.php`/
+  `admin/venda.php` ganharam um bloco novo na tabela de contratos, visível
+  enquanto `status !== 'assinado'`, com um chip de link por signatário
+  extra pendente ("🔗 FASTCAR" / "🔗 Testemunha 1" etc — `signatarioExtraLabel()`)
+  — mesmo espírito do link de assinatura que a contraparte já tinha,
+  útil caso o SMS/e-mail automático da ZapSign não chegue em alguém
+  internamente. `admin/configuracoes.php`: card "✍️ Testemunhas" ganhou
+  os 4 campos novos de telefone/e-mail (2 por testemunha) + card novo
+  "🖊️ Representante da FASTCAR (assina o contrato)" (nome/telefone/
+  e-mail), os dois deixando explícito que telefone/e-mail vazio = continua
+  só impresso, nunca bloqueia gerar o contrato.
+  **Bug real cometido e corrigido no próprio processo de teste, antes de
+  qualquer commit**: testando a migração contra um banco simulando
+  produção ANTES desta mudança, usei `php -r 'código inline'` pra
+  verificar o resultado — mesma pegadinha já documentada 2x neste
+  arquivo (`auto_prepend_file` é silenciosamente ignorado nesse modo) —
+  e a chamada, sem `require` relativo ao `__DIR__`, resolveu `DB_PATH`
+  pro banco de dev REAL em vez do banco de teste isolado, apagando
+  `clientes`/`oportunidades`/`contratos` de lá e gravando dado de teste
+  por cima. Descoberto pela própria inconsistência do resultado (coluna
+  que já devia estar lá aparecia ausente), corrigido resetando o banco de
+  dev pro estado limpo de sempre (`rm` + `getDB()` recria sozinho, já
+  com a coluna nova do schema atualizado) e refazendo a suíte de migração
+  inteira só com scripts em ARQUIVO (`seed_old.php`/`check_old.php` via
+  `-d auto_prepend_file=prepend_old.php`, nunca mais `-r`). Nenhum dado de
+  produção foi afetado (só existe na VPS, fora de alcance deste sandbox).
+  Testado: função isolada (`zapsignCriarDocumentoEAssinatura()` com os 3
+  extras configurados, mais um "testemunha2" sem nome — payload mandado
+  pro fake ZapSign confirmado com EXATAMENTE 3 signers, nunca 4, na ordem
+  certa; chamada SEM `$signersExtras` — o caso do termo de vistoria —
+  confirmada continuando com só 1 signer, comportamento intocado) +
+  `gerarEEnviarContratoCompra()`/`gerarEEnviarContratoVenda()` ponta a
+  ponta contra fake ZapSign local (os 2 gravam `zapsign_signers_extra_json`
+  certo, nunca incluindo testemunha2) + `zapsignSincronizarContrato()`
+  chamada 2x contra o mesmo contrato — fake server simulando "pending"
+  primeiro (contrato continua "enviado", `assinado_em` vazio) depois
+  "signed" (vira "assinado" de verdade, baixa a cópia certa, e do lado de
+  venda só aí a negociação vira `vendido` — confirmado que com status
+  "pending" a etapa fica presa em `contrato_enviado`, provando que o
+  fechamento automático espera TODOS assinarem, não só a contraparte) +
+  migração testada contra schema anterior a esta mudança (coluna ausente
+  antes, `ALTER TABLE` aplicado com sucesso, dado pré-existente —
+  `status='assinado'` de um contrato antigo — preservado intacto,
+  idempotente numa 2ª rodada) + `php -l` nos 7 arquivos tocados +
+  `tests/smoke.php` limpo.
 
 ## Pendências (aguardando definição antes de codar mais)
 
@@ -10672,6 +10764,28 @@ testado com servidor fake local — nunca contra o serviço real:
   ZapSign ou via `POST /user/company/webhook/header/` — não implementado
   automaticamente, mesmo padrão que a Assinafy já tinha (nunca teve
   auto-registro de webhook via código aqui).
+  **Multi-signer (FASTCAR + testemunhas), 02/10/2026** — até aqui só o
+  caminho de 1 signatário (`'signers' => [$signer]`) tinha rodado contra a
+  API real (confirmado pelos próprios PDFs assinados já em produção).
+  `zapsignCriarDocumentoEAssinatura()` passou a aceitar `$signersExtras`
+  e mandar até 4 signers no mesmo `POST /docs/` — depende de 2 suposições
+  **nunca confirmadas contra a API real**: (1) `res.data.signers[]` na
+  resposta da criação preserva a MESMA ORDEM dos `signers[]` mandados no
+  request (o código lê `signers[0]` pra contraparte e `signers[$i+1]`
+  pros extras, posicionalmente — só testado contra fake server local, que
+  sempre devolve na mesma ordem recebida, nunca confirmado se a ZapSign
+  real garante isso); (2) o campo agregado `doc.status` (`GET
+  /docs/{token}/`) só vira `"signed"` quando TODOS os N signatários
+  configurados assinaram, não só o primeiro — essa suposição vem do
+  comportamento visto no PDF real do contrato ANTIGO (sistema legado,
+  "Status: Assinado" só apareceu depois dos "4 de 4", a Ingrid assinando
+  por último, uma semana depois dos outros 3), nunca confirmada contra UM
+  contrato gerado por ESTE sistema com múltiplos signatários de verdade.
+  Validar no primeiro contrato real com FASTCAR+testemunha configurados:
+  conferir se o link de cada um (`sign_url` em
+  `contratos.zapsign_signers_extra_json`) realmente corresponde à pessoa
+  certa (não trocado por causa de ordem), e se o status só fecha
+  "assinado" depois de todo mundo assinar de verdade.
   **`GET /docs/` (listagem, pra importar contratos antigos)** — 19/09/2026,
   `zapsignListarDocumentos()`/`zapsignListarTodosDocumentos()`
   (`includes/zapsign.php`), usado por `admin/zapsign_importar.php`.

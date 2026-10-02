@@ -606,6 +606,17 @@ CREATE TABLE IF NOT EXISTS contratos (
     -- 'entregue' = sucesso confirmado (só aí envio_email_em é preenchido).
     envio_email_status TEXT CHECK (envio_email_status IS NULL OR envio_email_status IN ('entregue', 'sem_email', 'falhou')),
     envio_email_em DATETIME,
+    -- Signatários ALÉM da contraparte (vendedor/comprador) — 02/10/2026,
+    -- "tou falando que todos precisam assinar... bota as duas testemunhas
+    -- para assinar". Até aqui FASTCAR e as 2 testemunhas só apareciam
+    -- IMPRESSAS no PDF (linha em branco, nunca uma assinatura eletrônica
+    -- de verdade) — zapsignCriarDocumentoEAssinatura() sempre mandava só
+    -- 1 signatário pra ZapSign. JSON {"fastcar":{"token":...,"sign_url":...},
+    -- "testemunha1":{...},"testemunha2":{...}} — só as chaves configuradas
+    -- em Configurações (nome preenchido) entram aqui; sem config nenhuma,
+    -- fica '{}' e o contrato segue só com a contraparte assinando (nunca
+    -- bloqueia a geração por falta de testemunha/representante cadastrado).
+    zapsign_signers_extra_json TEXT DEFAULT '{}',
     created_by INTEGER REFERENCES usuarios(id),
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

@@ -68,18 +68,9 @@ function zapsignRequest(string $method, string $endpoint, array $data = []): arr
     return ['code' => $httpCode, 'data' => $decoded ?? []];
 }
 
-/**
- * Cria o documento JÁ com o signatário (1 chamada só, diferente da
- * Assinafy) — manda o PDF inteiro em base64. Retorna
- * ['doc_token' => string, 'signer_token' => string, 'sign_url' => string]
- * ou ['error' => string].
- */
-function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, string $signerNome, string $telefone = '', string $email = ''): array {
-    if (!file_exists($pdfPath)) {
-        return ['error' => 'Arquivo não encontrado: ' . $pdfPath];
-    }
-
-    $signer = ['name' => $signerNome ?: 'Vendedor'];
+/** Monta o objeto 'signer' pro payload da ZapSign a partir de nome/telefone/email — usado pelo signatário principal e por cada extra. */
+function _zapsignMontarSigner(string $nome, string $telefone = '', string $email = ''): array {
+    $signer = ['name' => $nome ?: 'Signatário'];
     if ($telefone) {
         $tel = preg_replace('/\D/', '', $telefone);
         if (strlen($tel) === 11 || strlen($tel) === 10) {
@@ -91,17 +82,50 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
     // E-mail (14/09/2026, pedido do José/Jean — "vamos enviar no email dele
     // o contrato"): a ZapSign manda o link de assinatura por e-mail quando
     // o signatário tem um cadastrado, além/em vez do WhatsApp/SMS pelo
-    // telefone acima. Sem e-mail no cadastro do cliente (wizard antigo, ou
-    // etapa ainda não confirmada), segue só pelo telefone — nunca bloqueia
+    // telefone acima. Sem e-mail, segue só pelo telefone — nunca bloqueia
     // o envio do contrato por falta desse dado.
     if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $signer['email'] = $email;
+    }
+    return $signer;
+}
+
+/**
+ * Cria o documento JÁ com o(s) signatário(s) (1 chamada só, diferente da
+ * Assinafy) — manda o PDF inteiro em base64. `$signersExtras` (02/10/2026,
+ * "todos precisam assinar... bota as duas testemunhas pra assinar") é uma
+ * lista de signatários ALÉM da contraparte principal — cada item
+ * `['chave'=>'fastcar'|'testemunha1'|'testemunha2', 'nome'=>, 'telefone'=>,
+ * 'email'=>]`; item sem `nome` preenchido é ignorado (nunca bloqueia a
+ * geração do contrato por falta de representante/testemunha cadastrado em
+ * Configurações — mesma regra #3 do projeto, nunca inventa signatário).
+ * O status geral do documento na ZapSign (`doc.status`) só vira "signed"
+ * quando TODOS os signatários configurados assinarem — zapsignSincronizarContrato()
+ * não precisou de nenhuma mudança por causa disso, já lê esse campo agregado.
+ *
+ * Retorna ['doc_token'=>, 'signer_token'=>, 'sign_url'=>] (sempre da
+ * contraparte principal, mesmo contrato de antes) + 'signers_extra' =>
+ * ['chave' => ['token'=>, 'sign_url'=>], ...] só com quem de fato entrou
+ * como signatário — ou ['error' => string].
+ */
+function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, string $signerNome, string $telefone = '', string $email = '', array $signersExtras = []): array {
+    if (!file_exists($pdfPath)) {
+        return ['error' => 'Arquivo não encontrado: ' . $pdfPath];
+    }
+
+    $signers = [_zapsignMontarSigner($signerNome, $telefone, $email)];
+    $chavesExtras = [];
+    foreach ($signersExtras as $extra) {
+        $nomeExtra = trim((string)($extra['nome'] ?? ''));
+        if ($nomeExtra === '') continue; // sem nome configurado — nunca inventa signatário
+        $signers[] = _zapsignMontarSigner($nomeExtra, (string)($extra['telefone'] ?? ''), (string)($extra['email'] ?? ''));
+        $chavesExtras[] = (string)($extra['chave'] ?? ('extra' . count($chavesExtras)));
     }
 
     $payload = [
         'name'       => $nomeDoc,
         'base64_pdf' => base64_encode((string)file_get_contents($pdfPath)),
-        'signers'    => [$signer],
+        'signers'    => $signers,
     ];
 
     $res = zapsignRequest('POST', '/docs/', $payload);
@@ -111,15 +135,28 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
     }
 
     $docToken = $res['data']['token'] ?? null;
-    $assinante = $res['data']['signers'][0] ?? [];
+    $assinantesRes = $res['data']['signers'] ?? [];
+    $assinante = $assinantesRes[0] ?? [];
     if (!$docToken || empty($assinante['token'])) {
         return ['error' => 'Resposta da ZapSign sem token de documento/signatário.'];
     }
 
+    $signersExtra = [];
+    foreach ($chavesExtras as $i => $chave) {
+        $assinanteExtra = $assinantesRes[$i + 1] ?? null;
+        if ($assinanteExtra && !empty($assinanteExtra['token'])) {
+            $signersExtra[$chave] = [
+                'token'    => (string)$assinanteExtra['token'],
+                'sign_url' => (string)($assinanteExtra['sign_url'] ?? ''),
+            ];
+        }
+    }
+
     return [
-        'doc_token'    => (string)$docToken,
-        'signer_token' => (string)$assinante['token'],
-        'sign_url'     => (string)($assinante['sign_url'] ?? ''),
+        'doc_token'     => (string)$docToken,
+        'signer_token'  => (string)$assinante['token'],
+        'sign_url'      => (string)($assinante['sign_url'] ?? ''),
+        'signers_extra' => $signersExtra,
     ];
 }
 
