@@ -575,8 +575,23 @@ CREATE TABLE IF NOT EXISTS contratos (
     zapsign_signer_token TEXT DEFAULT '',
     assinafy_assignment_id TEXT DEFAULT '',
     sign_url TEXT DEFAULT '',
+    -- 'cancelado' (02/10/2026) — nunca vem da ZapSign, só a própria
+    -- aplicação marca: quando um NOVO contrato é gerado pra mesma
+    -- negociação (mesma oportunidade na compra, mesma venda_id na venda),
+    -- qualquer contrato ANTERIOR ainda 'enviado'/'visualizado' pra essa
+    -- negociação vira 'cancelado' sozinho — ver
+    -- cancelarContratosAnterioresDaNegociacao() (includes/contratos.php).
+    -- Existe pra nunca deixar um link de assinatura antigo, com dado
+    -- errado, vivo e esquecido: achado real, "contrato foi gerado mas não
+    -- assinado, precisa alterar o parcelamento" — gerar outro contrato
+    -- certo nunca invalidava o antigo, que continuava assinável de
+    -- verdade. zapsignSincronizarContrato() recusa processar/fechar
+    -- negociação em cima de um contrato já 'cancelado', mesmo que a
+    -- ZapSign reporte ele como assinado (cliente usou o link antigo por
+    -- engano) — rede de segurança final, nunca confia só em "ninguém vai
+    -- usar o link errado".
     status TEXT NOT NULL DEFAULT 'gerado'
-        CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro')),
+        CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro', 'cancelado')),
     motivo_recusa TEXT DEFAULT '',
     -- Quando o status virou 'assinado' de verdade (não confundir com
     -- updated_at, que muda em qualquer sincronização) — pedido pra mostrar

@@ -8006,6 +8006,83 @@ segue no schema sem uso novo, não removida sem ganho real),
   batendo); POST forjado de `supervisor` com CSRF roubado da própria tela
   rejeitado com 403, banco confirmado intocado + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
+- **Contrato antigo (superado pelo correto) nunca invalidava, link de
+  assinatura continuava vivo** (02/10/2026, pergunta direta: "o que
+  acontece com contrato atual errado ele muda status cancelado?" — em
+  seguida ao bullet acima, logo depois de gerar um 2º contrato de venda
+  com o parcelamento corrigido) — resposta honesta foi "não, hoje não
+  muda nada sozinho": `gerarEEnviarContratoCompra()`/
+  `gerarEEnviarContratoVenda()` sempre criam uma linha NOVA em `contratos`,
+  nunca tocam na anterior, e `contratos.status` nem aceitava `'cancelado'`
+  como valor — o contrato antigo ficava pra sempre `'enviado'`, com dado
+  errado e o link de assinatura da ZapSign genuinamente vivo/assinável.
+  Risco real: se o comprador/vendedor abrisse o link antigo por engano e
+  assinasse, o sistema trataria como válido — fecharia a negociação com
+  dado errado e ainda geraria lançamento financeiro automático em cima
+  disso. Confirmado com o usuário (AskUserQuestion, "Sim, implementar
+  agora") antes de corrigir.
+  `contratos.status` ganhou o valor `'cancelado'` (nunca vem da ZapSign,
+  só a própria aplicação marca). Nova
+  `cancelarContratosAnterioresDaNegociacao(string $tipo, int
+  $contratoIdNovo, int $oportunidadeId, ?int $vendaId)`
+  (`includes/contratos.php`), chamada logo depois do INSERT em
+  `gerarEEnviarContratoCompra()`/`gerarEEnviarContratoVenda()` — marca
+  `'cancelado'` qualquer contrato ANTERIOR da MESMA negociação ainda
+  `'enviado'`/`'visualizado'`: compra escopada por `oportunidade_id`,
+  venda escopada por `venda_id` (nunca só `oportunidade_id` — um mesmo
+  veículo pode ter várias `vendas` ao longo do tempo numa
+  devolução/revenda, e o contrato velho de uma venda já `cancelada` nunca
+  deve interferir na venda nova). Nunca toca `'assinado'` (documento legal
+  já fechado) nem `'gerado'` (rascunho, já tem exclusão própria). Rede de
+  segurança final em `zapsignSincronizarContrato()`: logo depois de buscar
+  o contrato, `if ($c['status'] === 'cancelado') return;` — mesmo que a
+  ZapSign reporte esse doc_token específico como `"signed"` (cliente usou
+  o link antigo por engano), a sincronização é ignorada por completo —
+  nunca marca `assinado_em`, nunca dispara `mudarEtapaVenda()`/
+  `mudarEtapa()`, nunca gera lançamento financeiro. `cron/zapsign_sync.php`
+  já nem tenta mais polling nesse contrato (`WHERE status IN ('enviado',
+  'visualizado')`, sem mudança — `'cancelado'` cai fora sozinho).
+  `reenviarLinkAssinaturaContratoMeta()` também ganhou o mesmo guard
+  (defesa em profundidade, nunca confia só em esconder o botão na tela).
+  UI (`admin/oportunidade.php`/`admin/venda.php`, mesmo bloco duplicado
+  nos dois): badge novo "🚫 cancelado" (`badge-atraso`, mesma cor de
+  recusado/erro); os chips "🔗 Link de assinatura"/"📋 Copiar"/"📲
+  Reenviar (WhatsApp)" e a lista de signatários extras (FASTCAR/
+  testemunhas) somem pra contrato cancelado — só continuam visíveis
+  enquanto `status !== 'assinado' && status !== 'cancelado'`, nunca mais
+  convidam alguém a reenviar/copiar um link morto. Migração em
+  `install/migrar.php` reconstrói `contratos` (SQLite não tem `ALTER
+  TABLE` pra `CHECK`, mesma técnica de sempre) — **achado real durante o
+  teste da própria migração**: rodar a reconstrução usando a conexão
+  `$db` compartilhada do resto do arquivo (a mesma que já rodou dezenas
+  de outras migrações/`PRAGMA table_info()` antes dela no mesmo script)
+  sempre falhava com `SQLITE_LOCKED: database table is locked`, mesmo sem
+  nenhuma transação aberta (`$db->inTransaction()` confirmado `false`) —
+  a mesma reconstrução, isolada num processo PHP próprio, sempre
+  funcionava sem erro. Corrigido abrindo uma conexão PRÓPRIA (`$dbFresh =
+  new PDO('sqlite:' . DB_PATH)`) só pra essa migração específica — WAL
+  mode já permite múltiplas conexões ao mesmo arquivo sem problema (mesmo
+  padrão de sempre deste projeto), nunca precisou migrar as outras
+  dezenas de migrações do arquivo pra esse padrão. Testado: ciclo de vida
+  completo em banco isolado + servidor ZapSign fake local com doc_token
+  ÚNICO por documento (permite controlar o status de cada contrato
+  independente) — gerar o contrato #2 confirma o #1 virando `'cancelado'`
+  sozinho; simular o cliente assinando o link ANTIGO por engano (ZapSign
+  fake reportando `#1` como `"signed"`) confirmado NUNCA mudando
+  `assinado_em`/etapa da venda/gerando lançamento financeiro; simular a
+  assinatura do contrato CERTO (#2) confirmado fechando a venda
+  normalmente, sem nenhuma interferência do histórico do #1; reenviar
+  link do contrato cancelado recusado com mensagem clara — os mesmos 2
+  cenários (gerar #1→#2, #1 vira cancelado) confirmados também do lado de
+  COMPRA + migração testada contra schema ANTERIOR a esta mudança
+  (reproduzido via `git show HEAD:install/schema.sql` — a única menção a
+  `'cancelado'` ali é de `fin_lancamentos`, nunca de `contratos`,
+  confirmando que o schema realmente não tinha o valor antes —, dado
+  pré-existente preservado, CHECK nova rejeitando valor inválido de
+  verdade, idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php`
+  limpos (rodado contra o banco de dev real, que por acaso ainda estava
+  no schema antigo — migração aplicada de verdade, não só testada
+  isolada).
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por

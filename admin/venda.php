@@ -1000,8 +1000,8 @@ function adicionarParteEntrada() {
                     <td><?= e($ct['nome']) ?></td>
                     <td>
                         <?php
-                            $badgeClasse = ['assinado' => 'badge-ok', 'recusado' => 'badge-atraso', 'erro' => 'badge-atraso'][$ct['status']] ?? '';
-                            $badgeIcone = ['gerado' => '📄', 'enviado' => '📤', 'visualizado' => '👀', 'assinado' => '✅', 'recusado' => '❌', 'erro' => '⚠️'][$ct['status']] ?? '';
+                            $badgeClasse = ['assinado' => 'badge-ok', 'recusado' => 'badge-atraso', 'erro' => 'badge-atraso', 'cancelado' => 'badge-atraso'][$ct['status']] ?? '';
+                            $badgeIcone = ['gerado' => '📄', 'enviado' => '📤', 'visualizado' => '👀', 'assinado' => '✅', 'recusado' => '❌', 'erro' => '⚠️', 'cancelado' => '🚫'][$ct['status']] ?? '';
                         ?>
                         <span class="badge <?= $badgeClasse ?>"><?= $badgeIcone ?> <?= e($ct['status']) ?></span>
                     </td>
@@ -1019,7 +1019,12 @@ function adicionarParteEntrada() {
                                     <button type="submit" class="chip-acao perigo">🗑️ Excluir rascunho</button>
                                 </form>
                             <?php endif; ?>
-                            <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado'): ?>
+                            <?php // 02/10/2026 — contrato 'cancelado' (superado por outro mais
+                                  // recente da mesma negociação) nunca mostra link de assinatura/
+                                  // reenviar — evitar que alguém reenvie por engano o link antigo,
+                                  // com dado errado, pro cliente. Ver cancelarContratosAnterioresDaNegociacao().
+                            ?>
+                            <?php if ($ct['sign_url'] && $ct['status'] !== 'assinado' && $ct['status'] !== 'cancelado'): ?>
                                 <a class="chip-acao" href="<?= e($ct['sign_url']) ?>" target="_blank">🔗 Link de assinatura</a>
                                 <button type="button" class="chip-acao" onclick='copiarTexto(<?= json_encode($ct['sign_url']) ?>, this)'>📋 Copiar</button>
                                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
@@ -1047,7 +1052,7 @@ function adicionarParteEntrada() {
                                 // mundo configurado já assinou, inclusive essas).
                                 $signersExtra = json_decode($ct['zapsign_signers_extra_json'] ?? '{}', true) ?: [];
                             ?>
-                            <?php if ($signersExtra && $ct['status'] !== 'assinado'): ?>
+                            <?php if ($signersExtra && $ct['status'] !== 'assinado' && $ct['status'] !== 'cancelado'): ?>
                                 <span class="status-linha" style="display:block;margin-top:4px">
                                     Também precisa assinar:
                                     <?php foreach ($signersExtra as $chaveExtra => $dadosExtra): ?>

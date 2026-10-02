@@ -1756,4 +1756,84 @@ if (!colunaExiste($db, 'oportunidades', 'pix_pagamento_cedente')) {
     echo "⏭️  oportunidades.pix_pagamento_cedente: já existia\n";
 }
 
+// 02/10/2026 — CHECK de contratos.status ganha 'cancelado' (nunca vem da
+// ZapSign, só a própria aplicação marca ao gerar outro contrato pra mesma
+// negociação — ver cancelarContratosAnterioresDaNegociacao(),
+// includes/contratos.php). SQLite não tem ALTER TABLE pra CHECK constraint
+// — mesma técnica de reconstrução das migrações acima. Idempotente — só
+// reconstrói se a CHECK atual ainda não aceitar 'cancelado'.
+//
+// Conexão PRÓPRIA (`$dbFresh`), não o `$db` compartilhado do resto do
+// arquivo — achado real testando a migração contra um banco simulando
+// produção: reconstruir `contratos` usando `$db` (a mesma conexão que já
+// rodou DEZENAS de outras migrações/`PRAGMA table_info()` antes dela neste
+// mesmo script) sempre falhava com `SQLITE_LOCKED: database table is
+// locked`, mesmo sem nenhuma transação aberta (`$db->inTransaction()`
+// confirmado `false`) — a mesma reconstrução, isolada num processo PHP
+// próprio, sempre funcionava. Abrir uma conexão nova só pra esta migração
+// (WAL mode já permite múltiplas conexões ao mesmo arquivo sem problema,
+// mesmo padrão de sempre deste projeto) contorna de vez, sem precisar
+// migrar o `$db` de todas as outras migrações do arquivo pra esse padrão.
+try {
+    $dbFresh = new PDO('sqlite:' . DB_PATH);
+    $dbFresh->exec('PRAGMA busy_timeout=15000');
+    $sqlAtual = (string)$dbFresh->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='contratos'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'cancelado'")) {
+        $dbFresh->exec('BEGIN');
+        $dbFresh->exec("
+            CREATE TABLE contratos_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+                venda_id INTEGER REFERENCES vendas(id),
+                tipo TEXT NOT NULL DEFAULT 'compra' CHECK (tipo IN ('compra', 'venda')),
+                nome TEXT DEFAULT '',
+                campos_json TEXT DEFAULT '{}',
+                zapsign_doc_token TEXT DEFAULT '',
+                zapsign_signer_token TEXT DEFAULT '',
+                assinafy_assignment_id TEXT DEFAULT '',
+                sign_url TEXT DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'gerado'
+                    CHECK (status IN ('gerado', 'enviado', 'visualizado', 'assinado', 'recusado', 'erro', 'cancelado')),
+                motivo_recusa TEXT DEFAULT '',
+                assinado_em DATETIME,
+                drive_file_id TEXT DEFAULT '',
+                arquivo_url TEXT DEFAULT '',
+                pdf_assinado_url TEXT DEFAULT '',
+                aviso_whatsapp_enviado_em DATETIME,
+                aviso_email_enviado_em DATETIME,
+                envio_email_status TEXT CHECK (envio_email_status IS NULL OR envio_email_status IN ('entregue', 'sem_email', 'falhou')),
+                envio_email_em DATETIME,
+                zapsign_signers_extra_json TEXT DEFAULT '{}',
+                created_by INTEGER REFERENCES usuarios(id),
+                created_at DATETIME DEFAULT (datetime('now','localtime')),
+                updated_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $dbFresh->exec("
+            INSERT INTO contratos_novo (id, oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token,
+                zapsign_signer_token, assinafy_assignment_id, sign_url, status, motivo_recusa, assinado_em,
+                drive_file_id, arquivo_url, pdf_assinado_url, aviso_whatsapp_enviado_em, aviso_email_enviado_em,
+                envio_email_status, envio_email_em, zapsign_signers_extra_json, created_by, created_at, updated_at)
+            SELECT id, oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token,
+                zapsign_signer_token, assinafy_assignment_id, sign_url, status, motivo_recusa, assinado_em,
+                drive_file_id, arquivo_url, pdf_assinado_url, aviso_whatsapp_enviado_em, aviso_email_enviado_em,
+                envio_email_status, envio_email_em, zapsign_signers_extra_json, created_by, created_at, updated_at
+            FROM contratos
+        ");
+        $dbFresh->exec('DROP TABLE contratos');
+        $dbFresh->exec('ALTER TABLE contratos_novo RENAME TO contratos');
+        $dbFresh->exec('CREATE INDEX IF NOT EXISTS idx_contratos_oportunidade ON contratos(oportunidade_id)');
+        $dbFresh->exec('CREATE INDEX IF NOT EXISTS idx_contratos_zapsign_doc ON contratos(zapsign_doc_token)');
+        $dbFresh->exec('COMMIT');
+        echo "✅ contratos.status: CHECK reconstruída pra aceitar 'cancelado'\n";
+    } else {
+        echo "⏭️  contratos.status: CHECK já aceitava 'cancelado'\n";
+    }
+} catch (Throwable $e) {
+    try { $dbFresh->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ contratos.status CHECK: {$e->getMessage()}\n";
+} finally {
+    $dbFresh = null;
+}
+
 echo "\n🎉 Migração concluída.\n";

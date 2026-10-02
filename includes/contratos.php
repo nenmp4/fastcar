@@ -320,6 +320,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
     $contratoId = (int)$db->lastInsertId();
+    cancelarContratosAnterioresDaNegociacao('compra', $contratoId, $oportunidadeId, null);
 
     // Aviso complementar por e-mail (16/09/2026, "cria todos os templates")
     // — a ZapSign já manda o link de assinatura de verdade por conta
@@ -515,6 +516,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ]);
     $contratoId = (int)$db->lastInsertId();
+    cancelarContratosAnterioresDaNegociacao('venda', $contratoId, $campos['_oportunidade_id'], $vendaId);
 
     // Aviso complementar por e-mail pro COMPRADOR, mesmo padrão do lado de
     // compra (acima) — 30/09/2026, "status contrato entregue no email":
@@ -606,6 +608,42 @@ function gerarContratoVendaPreview(int $vendaId, ?int $usuarioId): array {
 }
 
 /**
+ * Marca como 'cancelado' qualquer contrato ANTERIOR (ainda
+ * 'enviado'/'visualizado') da MESMA negociação — compra: mesma
+ * `oportunidade_id`; venda: mesma `venda_id` (nunca `oportunidade_id` sozinho
+ * — um mesmo veículo pode ter várias `vendas` ao longo do tempo, numa
+ * devolução/revenda, e o contrato antigo de uma venda CANCELADA nunca
+ * deveria influenciar a venda nova). Chamada logo depois de criar o
+ * contrato NOVO em gerarEEnviarContratoCompra()/gerarEEnviarContratoVenda()
+ * — 02/10/2026, achado real: "contrato foi gerado mas não assinado,
+ * precisa alterar o parcelamento" — gerar outro contrato corrigido nunca
+ * invalidava o antigo, que ficava com dado errado e um link de assinatura
+ * ainda vivo/assinável de verdade na ZapSign. Nunca toca em
+ * `status='assinado'` (documento legal já fechado, nem faria sentido
+ * cancelar) nem em `'gerado'` (rascunho — já tem exclusão própria, ver
+ * excluirContratoPreview()). Best-effort (try/catch) — nunca pode travar a
+ * geração do contrato novo por causa disso.
+ */
+function cancelarContratosAnterioresDaNegociacao(string $tipo, int $contratoIdNovo, int $oportunidadeId, ?int $vendaId): void {
+    try {
+        $db = getDB();
+        if ($tipo === 'venda') {
+            $db->prepare("
+                UPDATE contratos SET status = 'cancelado', updated_at = datetime('now','localtime')
+                WHERE tipo = 'venda' AND venda_id = ? AND id != ? AND status IN ('enviado', 'visualizado')
+            ")->execute([$vendaId, $contratoIdNovo]);
+        } else {
+            $db->prepare("
+                UPDATE contratos SET status = 'cancelado', updated_at = datetime('now','localtime')
+                WHERE tipo = 'compra' AND oportunidade_id = ? AND id != ? AND status IN ('enviado', 'visualizado')
+            ")->execute([$oportunidadeId, $contratoIdNovo]);
+        }
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a geração do contrato novo
+    }
+}
+
+/**
  * Consulta o status do contrato na ZapSign e sincroniza — usado pelo
  * webhook (api/zapsign_webhook.php) e pelo polling de fallback
  * (cron/zapsign_sync.php). Quando assinado, baixa o PDF final e sobe pra
@@ -618,6 +656,13 @@ function zapsignSincronizarContrato(int $contratoId): void {
     $stmt->execute([$contratoId]);
     $c = $stmt->fetch();
     if (!$c || !$c['zapsign_doc_token']) return;
+    // 02/10/2026 — contrato CANCELADO (gerou outro corrigido pra mesma
+    // negociação) nunca mais processa sincronização, mesmo que a ZapSign
+    // reporte ele como assinado (cliente usou o link antigo por engano) —
+    // rede de segurança final contra fechar negociação/gerar lançamento
+    // financeiro em cima de dado que já foi corrigido. Ver
+    // cancelarContratosAnterioresDaNegociacao().
+    if ($c['status'] === 'cancelado') return;
 
     $statusRes = zapsignStatusDocumento($c['zapsign_doc_token']);
     if (isset($statusRes['error'])) return;
@@ -990,6 +1035,10 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
     if (!$ct) return ['ok' => false, 'erro' => 'Contrato não encontrado.'];
     if (!$ct['sign_url']) return ['ok' => false, 'erro' => 'Esse contrato ainda não tem link de assinatura gerado.'];
     if ($ct['status'] === 'assinado') return ['ok' => false, 'erro' => 'Esse contrato já foi assinado, não faz sentido reenviar o link.'];
+    // 02/10/2026 — defesa em profundidade: nunca confia só em esconder o
+    // chip na tela (admin/oportunidade.php/venda.php já escondem), POST
+    // forjado pro contrato cancelado também é recusado aqui.
+    if ($ct['status'] === 'cancelado') return ['ok' => false, 'erro' => 'Esse contrato foi superado por outro mais recente — não reenviar, o link não vale mais.'];
 
     if ($ct['tipo'] === 'venda') {
         $campos = montarCamposContratoVenda((int)$ct['venda_id']);
