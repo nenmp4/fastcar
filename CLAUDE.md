@@ -10162,6 +10162,23 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   (`-d auto_prepend_file=...`), nunca mais `-r` pra teste que escreve.
   Nenhum dado de produção foi afetado (só existe na VPS, fora de alcance
   deste sandbox). Sem migração de schema.
+  **Upload manual também registrado em auditoria** (mesmo dia, pedido
+  direto logo em seguida: "Registrar esse documento em auditoria") — até
+  aqui só a EXCLUSÃO de documento ficava registrada; o upload que gera o
+  arquivo em 1º lugar (ação `upload_documento_staff`, "Anexar documento
+  manualmente") nunca tinha rastro nenhum de quem anexou o quê — exatamente
+  a pergunta que ficaria sem resposta da próxima vez que alguém perguntasse
+  "quem subiu esse documento errado?". Evento novo `documento_anexado`
+  gravado sempre que o arquivo é salvo com sucesso (mesmo quando a IA
+  aponta depois que o tipo está errado — esse aviso já aparece na tela; a
+  auditoria registra o FATO "fulano anexou X", nunca decide se estava
+  certo). Testado ponta a ponta via HTTP real (sessão primed, servidor PHP
+  embutido, upload multipart de um PDF de verdade): evento gravado com
+  `usuario_nome`/`alvo_tipo='oportunidade'`/`alvo_id` certos e detalhe
+  "Documento \"Comprovante de pagamento\" anexado manualmente." + banco
+  de dev real confirmado intocado (testado 100% via scripts em arquivo
+  desta vez) + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema.
 
 ## Pendências (aguardando definição antes de codar mais)
 

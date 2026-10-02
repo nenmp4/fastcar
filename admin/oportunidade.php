@@ -216,6 +216,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $resultado = salvarUploadDocumento($id, $tipoDoc, $_FILES['arquivo'], false);
                     if ($resultado['ok']) {
                         $sucesso = 'Documento anexado.';
+                        // 01/10/2026, pedido direto logo depois de
+                        // implementar a exclusão de documento errado
+                        // ("Registrar esse documento em auditoria") —
+                        // rastreabilidade completa: antes só a EXCLUSÃO
+                        // ficava registrada, o upload que gerou o arquivo
+                        // errado em 1º lugar nunca tinha registro nenhum
+                        // de quem anexou. Grava sempre que o arquivo é
+                        // salvo com sucesso, mesmo quando a IA depois
+                        // aponta que o tipo está errado (esse aviso já é
+                        // mostrado na tela — a auditoria registra o FATO
+                        // "fulano anexou X", nunca decide se estava certo).
+                        $labelDocAnexado = (TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO)[$tipoDoc] ?? $tipoDoc;
+                        auditoriaRegistrar('documento_anexado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id, "Documento \"{$labelDocAnexado}\" anexado manualmente.");
                         // Mesma extração por IA do wizard público (includes/extracao_documentos.php)
                         // — anexado pelo consultor (ex: foto que o cliente mandou no
                         // WhatsApp) já sai pré-preenchido, o cliente só confirma
