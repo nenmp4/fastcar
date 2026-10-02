@@ -346,6 +346,84 @@ function lerConteudoArquivoDocumento(?string $driveFileId, ?string $arquivoUrl):
 }
 
 /**
+ * Remove o arquivo já anexado num tipo de documento (01/10/2026, achado
+ * real — "Anderson subiu contrato errado, tem como ele remover"): até
+ * aqui o único jeito de corrigir um upload errado era reenviar o mesmo
+ * tipo por cima (`salvarUploadDocumento()`, `ON CONFLICT ... DO UPDATE`
+ * já sobrescrevia), mas não existia nenhum jeito de só LIMPAR o anexo
+ * errado sem já ter o arquivo certo em mãos — a linha ficava presa
+ * "✅ enviado" pra sempre com o arquivo errado.
+ *
+ * Nunca apaga a linha de `oportunidade_documentos` (preserva o
+ * `obrigatorio` — `garantirLinhasDocumentosObrigatorios()` só faz
+ * `INSERT OR IGNORE`, apagar a linha faria ela "desaparecer" do
+ * checklist até alguém reabrir o link/a tela de novo), só esvazia
+ * `arquivo_url`/`drive_file_id` — volta a mostrar "⏳ pendente" (ou
+ * "opcional, não enviado"), exatamente como se nunca tivesse sido
+ * enviado.
+ *
+ * `contrato_compra` é o único tipo com risco real: além do upload manual
+ * do consultor, `zapsignSincronizarContrato()` (includes/contratos.php)
+ * também grava essa MESMA linha quando a assinatura eletrônica de
+ * verdade é confirmada — nunca deixar apagar isso por engano, seria
+ * apagar o rastro de um contrato já assinado de verdade. Os outros 5
+ * tipos (CNH/comprovante de endereço/contrato de financiamento/CRLV/
+ * comprovante de pagamento/laudo) nunca têm essa duplicidade, sempre
+ * livres pra excluir.
+ *
+ * Exclusão do arquivo físico (Drive ou local) é best-effort — nunca
+ * bloqueia a limpeza do registro por causa disso (mesmo "nunca trava o
+ * fluxo por causa de um provedor externo" de salvarUploadDocumento()).
+ */
+function excluirUploadDocumento(int $oportunidadeId, string $tipo): array {
+    $db = getDB();
+
+    $stmt = $db->prepare("SELECT * FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?");
+    $stmt->execute([$oportunidadeId, $tipo]);
+    $doc = $stmt->fetch();
+    if (!$doc || (!$doc['arquivo_url'] && !$doc['drive_file_id'])) {
+        return ['ok' => false, 'erro' => 'Esse documento ainda não tem nenhum arquivo enviado.'];
+    }
+
+    if ($tipo === 'contrato_compra') {
+        $stmtContrato = $db->prepare("
+            SELECT COUNT(*) FROM contratos WHERE oportunidade_id = ? AND tipo = 'compra' AND status = 'assinado'
+        ");
+        $stmtContrato->execute([$oportunidadeId]);
+        if ((int)$stmtContrato->fetchColumn() > 0) {
+            return ['ok' => false, 'erro' => 'Esse é o contrato já assinado de verdade (via ZapSign) — não pode ser removido por aqui.'];
+        }
+    }
+
+    if ($doc['drive_file_id']) {
+        $drive = new GoogleDrive();
+        if ($drive->hasCredentials() && $drive->authenticate()) {
+            $drive->delete($doc['drive_file_id']);
+        }
+    } elseif ($doc['arquivo_url']) {
+        $caminho = realpath(UPLOADS_DIR . '/' . $doc['arquivo_url']);
+        if ($caminho && str_starts_with($caminho, realpath(UPLOADS_DIR) . DIRECTORY_SEPARATOR)) {
+            @unlink($caminho);
+        }
+    }
+
+    $db->prepare("
+        UPDATE oportunidade_documentos
+        SET arquivo_url = '', drive_file_id = '', enviado_pelo_cliente = 0, dados_confirmados = 0,
+            updated_at = datetime('now','localtime')
+        WHERE oportunidade_id = ? AND tipo = ?
+    ")->execute([$oportunidadeId, $tipo]);
+
+    // Mesma disciplina do wizard (`public/documentos.php?revisar=tipo`):
+    // corrigir um documento já confirmado força revisão de novo — nunca
+    // deixa o banner de "tudo confirmado" mentindo com um documento que
+    // acabou de voltar a ficar pendente.
+    $db->prepare("UPDATE oportunidades SET documentos_confirmados_em = NULL WHERE id = ?")->execute([$oportunidadeId]);
+
+    return ['ok' => true, 'erro' => null];
+}
+
+/**
  * Serve (inline, nunca força download) um arquivo salvo via Drive ou
  * fallback local — compartilhado entre admin/ver_documento.php e
  * admin/ver_contrato.php pra não duplicar a lógica de download/defesa

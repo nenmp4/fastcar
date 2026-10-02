@@ -94,6 +94,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'impersonacao_iniciada' => '🎭 Impersonação iniciada',
         'impersonacao_finalizada' => '🎭 Impersonação encerrada',
         'lgpd_exclusao_solicitada' => '⚖️ Pedido de exclusão de dados (LGPD)',
+        'documento_excluido' => '🗑️ Documento anexado removido',
         default => $evento,
     };
 }

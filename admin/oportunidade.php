@@ -299,6 +299,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $sucesso = 'Documento confirmado em nome do cliente.';
                 }
+            } elseif ($acao === 'excluir_documento_staff') {
+                // 01/10/2026, achado real: "Anderson subiu contrato
+                // errado, tem como ele remover" — até aqui só dava pra
+                // reenviar o tipo certo por cima (sobrescreve), nunca só
+                // limpar o anexo errado. Mesmo padrão de confirmação do
+                // resto do sistema (confirmarAcao() na tela, sem pedir
+                // senha de novo — não existe esse padrão em nenhuma outra
+                // ação destrutiva daqui), com rastro em auditoria.
+                $tipoDocExcluir = (string)($_POST['tipo_documento'] ?? '');
+                $tiposValidosExcluir = array_keys(TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO);
+                if (!in_array($tipoDocExcluir, $tiposValidosExcluir, true)) {
+                    $erro = 'Tipo de documento inválido.';
+                } else {
+                    $resultadoExclusaoDoc = excluirUploadDocumento($id, $tipoDocExcluir);
+                    if ($resultadoExclusaoDoc['ok']) {
+                        $labelDocExcluido = (TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO)[$tipoDocExcluir] ?? $tipoDocExcluir;
+                        auditoriaRegistrar('documento_excluido', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id, "Documento \"{$labelDocExcluido}\" removido (anexo errado).");
+                        $sucesso = 'Documento removido — pode anexar o arquivo certo agora.';
+                    } else {
+                        $erro = $resultadoExclusaoDoc['erro'];
+                    }
+                }
             } elseif ($acao === 'atualizar_nome_cliente') {
                 $novoNome = trim((string)($_POST['nome_cliente'] ?? ''));
                 if ($novoNome === '') {
@@ -856,7 +878,19 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     <?php endif; ?>
                 </td>
                 <td><?= $doc ? ($doc['enviado_pelo_cliente'] ? 'cliente' : 'equipe') : '—' ?></td>
-                <td><?= $temArquivo ? '<a href="/admin/ver_documento.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
+                <td>
+                    <?php if ($temArquivo): ?>
+                        <a href="/admin/ver_documento.php?id=<?= (int)$doc['id'] ?>" target="_blank">ver</a>
+                        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                        <form method="post" class="inline" style="display:inline-block;margin-left:6px" onsubmit="return confirmarAcao(this, 'Remover o arquivo enviado em \'<?= e(addslashes($label)) ?>\'? Isso só limpa o anexo errado — volta pra pendente, pra anexar o arquivo certo depois.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="excluir_documento_staff">
+                            <input type="hidden" name="tipo_documento" value="<?= e($tipo) ?>">
+                            <button type="submit" class="btn-texto perigo" style="font-size:11.5px">🗑️ excluir</button>
+                        </form>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>

@@ -10093,6 +10093,75 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `admin/promissorias.php`) já separava `total_pago`/`total_pendente`
   corretamente desde antes — não tinha o mesmo bug, não precisou de
   mudança.
+- **Excluir documento anexado errado** (01/10/2026, achado real: "Na
+  documentação Anderson subiu contrato errado tem como ele remover") —
+  até aqui, o único jeito de corrigir um upload errado no card "📎
+  Documentos" (`admin/oportunidade.php`) era reenviar o tipo certo por
+  cima (`salvarUploadDocumento()`, `ON CONFLICT ... DO UPDATE` já
+  sobrescrevia), mas não existia nenhum jeito de só LIMPAR o anexo errado
+  — a linha ficava presa em "✅ enviado" pra sempre com o arquivo errado,
+  sem ninguém ter o arquivo certo em mãos ainda. Nova
+  `excluirUploadDocumento(int $oportunidadeId, string $tipo): array`
+  (`includes/documentos.php`) — nunca apaga a linha de
+  `oportunidade_documentos` (preserva `obrigatorio`, senão a linha
+  "desapareceria" do checklist até alguém reabrir o link/a tela de novo),
+  só esvazia `arquivo_url`/`drive_file_id`/`enviado_pelo_cliente`/
+  `dados_confirmados` — volta a mostrar "⏳ pendente" exatamente como se
+  nunca tivesse sido enviado. Mesma disciplina do wizard
+  (`public/documentos.php?revisar=tipo`): zera
+  `oportunidades.documentos_confirmados_em` de novo, nunca deixa o banner
+  de "tudo confirmado" mentindo com um documento que acabou de voltar a
+  ficar pendente. Exclusão do arquivo físico (Drive via lixeira,
+  `GoogleDrive::delete()`, ou local via `unlink()`) é best-effort — nunca
+  bloqueia a limpeza do registro por causa disso.
+  **Guard pro tipo `contrato_compra`** — é o único tipo com risco real:
+  além do upload manual do consultor, `zapsignSincronizarContrato()`
+  (`includes/contratos.php`) também grava essa MESMA linha quando a
+  assinatura eletrônica de verdade é confirmada; `excluirUploadDocumento()`
+  bloqueia a exclusão se já existir `contratos.tipo='compra'` com
+  `status='assinado'` pra essa oportunidade — nunca deixa apagar o rastro
+  de um contrato já assinado de verdade por engano. Os outros 5 tipos
+  (CNH/comprovante de endereço/contrato de financiamento/CRLV/
+  comprovante de pagamento/laudo) nunca têm essa duplicidade, sempre
+  livres pra excluir. Botão "🗑️ excluir" novo na tabela de documentos, só
+  aparece quando já tem arquivo enviado, mesmo `confirmarAcao()` (modal
+  de confirmação estilizado, sem framework novo) do resto do sistema —
+  confirmado com o usuário via AskUserQuestion que NÃO precisa pedir senha
+  de novo aqui, mesmo padrão de toda outra ação destrutiva do projeto
+  (excluir conversa/avaliação/veículo, cancelar lançamento — só
+  confirmação na tela + rastro em auditoria, nunca reautenticação).
+  Escondido pra `supervisor` (mesma trava de "só acompanha, não altera"
+  do resto da página, bloqueado tanto na tela quanto no servidor — nunca
+  confia só em esconder o botão). Evento novo `documento_excluido` em
+  `includes/auditoria.php`. Testado: 5 cenários de função isolada em
+  banco de teste (tipo sem arquivo nenhum bloqueia; documento local com
+  arquivo exclui com sucesso e remove o arquivo físico do disco e zera
+  `documentos_confirmados_em`; `contrato_compra` sem contrato assinado
+  pode excluir — cenário exato do Anderson; `contrato_compra` COM
+  contrato assinado bloqueia com mensagem clara e nunca mexe no arquivo
+  físico; tipo sem linha nenhuma na oportunidade bloqueia) + HTTP ponta a
+  ponta real (sessão primed por perfil, servidor PHP embutido): super_admin
+  exclui de verdade (banco confirmado: `arquivo_url`/`drive_file_id`
+  vazios, evento de auditoria gravado com o nome do documento certo);
+  supervisor não vê mais o botão na tela (achado e corrigido no próprio
+  teste — a 1ª versão só bloqueava no servidor, mas deixava o botão
+  visível pro supervisor, inconsistente com o padrão de esconder ação que
+  ele não pode usar) e um POST forjado com CSRF roubado da própria tela
+  dele é rejeitado com 403, banco intocado + `php -l` + `tests/smoke.php`
+  limpos. **Confirmado que o banco de dev real não foi tocado durante o
+  teste** — achado real no processo: um primeiro round de debug usou
+  `php -r 'código inline'` pra investigar por que a request HTTP não via
+  os dados semeados, e `auto_prepend_file` é silenciosamente ignorado
+  nesse modo (mesma pegadinha já documentada várias vezes neste arquivo)
+  — isso fez 2 rodadas de `DELETE`+`INSERT` de teste caírem sem querer no
+  banco de dev real (`database/fastcar.db`, gitignorado, nunca produção,
+  que só existe na VPS) antes do erro ser percebido pelo próprio sintoma
+  (dado sumindo entre processos diferentes); corrigido resetando o banco
+  de dev pro estado limpo de sempre (`rm` + `getDB()` recria o schema
+  vazio sozinho) e refazendo a suíte inteira só com scripts em ARQUIVO
+  (`-d auto_prepend_file=...`), nunca mais `-r` pra teste que escreve.
+  Nenhum dado de produção foi afetado (só existe na VPS, fora de alcance
+  deste sandbox). Sem migração de schema.
 
 ## Pendências (aguardando definição antes de codar mais)
 
