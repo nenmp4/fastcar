@@ -33,7 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nome = (string)($_POST['nome'] ?? '');
             $email = (string)($_POST['email'] ?? '');
             $whatsapp = (string)($_POST['whatsapp'] ?? '');
-            $r = atualizarPerfilProprio($usuarioId, $nome, $email, $whatsapp);
+            $cpf = (string)($_POST['cpf'] ?? '');
+            $r = atualizarPerfilProprio($usuarioId, $nome, $email, $whatsapp, $cpf);
             if ($r['ok']) {
                 // Topbar mostra "Olá, {nome}" direto da sessão — sem isso o
                 // nome novo só apareceria depois de logout/login de novo.
@@ -151,9 +152,12 @@ $voltarPara = match ($usuario['perfil']) {
         <input type="email" name="email" value="<?= e($usuario['email']) ?>" required>
         <label>WhatsApp (recebe notificações de lead/avisos do sistema)</label>
         <input type="text" name="whatsapp" value="<?= e($usuario['whatsapp']) ?>" placeholder="Ex: 5511999998888">
+        <label>CPF (preenche automaticamente se você virar testemunha num contrato de compra/venda)</label>
+        <input type="text" name="cpf" value="<?= e($usuario['cpf'] ?? '') ?>" placeholder="Ex: 000.000.000-00">
         <button type="submit">Salvar</button>
     </form>
     <p><small>⚠️ Trocar o e-mail muda o login usado pra entrar no sistema — confirme que está certo antes de salvar.</small></p>
+    <p><small>📝 02/10/2026: o CPF só é usado pra você virar testemunha de contrato (quando você é o responsável pela negociação, ou é escolhido como 2ª testemunha) — nunca aparece em nenhuma outra tela.</small></p>
 </div>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>

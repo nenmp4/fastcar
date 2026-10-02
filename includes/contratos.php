@@ -25,6 +25,7 @@ require_once __DIR__ . '/vendas.php'; // mudarEtapaVenda() — auto-transição 
 require_once __DIR__ . '/oportunidades.php'; // mudarEtapa()/checklistFechamentoCompleto() — fecha a compra sozinha ao assinar (19/09/2026)
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
+require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — testemunha 1/2 dinâmicas, ver signatariosExtrasContrato()
 
 const CONTRATOS_STATUS_ZAPSIGN = [
     'signed'  => 'assinado',
@@ -39,19 +40,62 @@ const CONTRATOS_STATUS_ZAPSIGN = [
  * apareciam IMPRESSAS no PDF (linha de assinatura em branco), mas
  * zapsignCriarDocumentoEAssinatura() nunca mandava elas pra ZapSign — o
  * "Relatório de Assinaturas" sempre fechava em "1 de 1", nunca os 4/4 que
- * o contrato antigo (sistema legado) de fato capturava. Mesmos 3 nomes
- * configurados em Configurações pros dois tipos de contrato (compra e
- * venda), igual testemunha1/2 já eram — item sem nome preenchido nem
- * entra no array (zapsignCriarDocumentoEAssinatura() ignora sozinho),
- * nunca bloqueia a geração do contrato por falta de representante/
- * testemunha cadastrado.
+ * o contrato antigo (sistema legado) de fato capturava.
+ *
+ * Testemunhas viraram DINÂMICAS no mesmo dia, pedido de acompanhamento
+ * direto: "próprio consultor vira testemunha fixa pois eles responsável
+ * direto... depois ele pode selecionar outro usuário do sistema pra virar
+ * testemunha, que seria a segunda". Testemunha 1 é SEMPRE o responsável
+ * atual da negociação (consultor na compra, vendedor na venda —
+ * `responsavel_id`, lido ao vivo na hora de gerar, reflete reatribuição);
+ * testemunha 2 é quem o responsável escolheu pra aquela negociação
+ * específica (`oportunidades`/`vendas.testemunha2_usuario_id`, select em
+ * admin/oportunidade.php/venda.php). As 2 testemunhas fixas configuradas
+ * globalmente em Configurações (testemunha1_nome/cpf/... e testemunha2_*)
+ * saíram de uso — ficam órfãs em `config`, mesma disciplina de sempre pra
+ * chave sem ganho real em limpar.
+ *
+ * FASTCAR continua FIXA ("na assinatura da fastcar... isso fica fixo") —
+ * telefone/e-mail de contato seguem configuráveis em Configurações (canal
+ * de entrega do link pra quem assina de fato em nome da empresa), mas o
+ * NOME mandado pra ZapSign agora é sempre a razão social
+ * ('FASTCAR SOLUTIONS LTDA'), nunca o nome de uma pessoa — mesmo padrão do
+ * contrato antigo real (print do Relatório de Assinaturas da ZapSign:
+ * signatário "FAST CAR SOLUTIONS", não um nome próprio). O nome da pessoa
+ * que de fato assina (fastcar_signatario_nome/_cpf) passou a aparecer
+ * IMPRESSO no PDF como "Representante Legal" — ver _pdfRodapeAssinaturaFastcar()
+ * em includes/contratos_pdf.php.
+ *
+ * Item sem usuário resolvido nunca entra no array
+ * (zapsignCriarDocumentoEAssinatura() ignora sozinho quem não tem nome) —
+ * nunca bloqueia a geração do contrato por falta de responsável/testemunha
+ * cadastrado, mesma disciplina de sempre.
  */
-function signatariosExtrasContrato(): array {
-    return [
-        ['chave' => 'fastcar', 'nome' => getConfig('fastcar_signatario_nome') ?: '', 'telefone' => getConfig('fastcar_signatario_telefone') ?: '', 'email' => getConfig('fastcar_signatario_email') ?: ''],
-        ['chave' => 'testemunha1', 'nome' => getConfig('testemunha1_nome') ?: '', 'telefone' => getConfig('testemunha1_telefone') ?: '', 'email' => getConfig('testemunha1_email') ?: ''],
-        ['chave' => 'testemunha2', 'nome' => getConfig('testemunha2_nome') ?: '', 'telefone' => getConfig('testemunha2_telefone') ?: '', 'email' => getConfig('testemunha2_email') ?: ''],
+function signatariosExtrasContrato(?int $testemunha1UsuarioId = null, ?int $testemunha2UsuarioId = null): array {
+    $extras = [
+        [
+            'chave' => 'fastcar',
+            'nome' => 'FASTCAR SOLUTIONS LTDA',
+            'telefone' => getConfig('fastcar_signatario_telefone') ?: '',
+            'email' => getConfig('fastcar_signatario_email') ?: '',
+        ],
     ];
+
+    if ($testemunha1UsuarioId) {
+        $u = buscarUsuario($testemunha1UsuarioId);
+        if ($u) {
+            $extras[] = ['chave' => 'testemunha1', 'nome' => (string)$u['nome'], 'telefone' => (string)($u['whatsapp'] ?? ''), 'email' => (string)($u['email'] ?? '')];
+        }
+    }
+
+    if ($testemunha2UsuarioId) {
+        $u = buscarUsuario($testemunha2UsuarioId);
+        if ($u) {
+            $extras[] = ['chave' => 'testemunha2', 'nome' => (string)$u['nome'], 'telefone' => (string)($u['whatsapp'] ?? ''), 'email' => (string)($u['email'] ?? '')];
+        }
+    }
+
+    return $extras;
 }
 
 /** Rótulo amigável pra chave de signatário extra — admin/oportunidade.php e admin/venda.php usam pra listar o link de cada um. */
@@ -128,20 +172,42 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'prazo_quitacao_meses'          => $op['prazo_quitacao_meses'] !== null ? (int)$op['prazo_quitacao_meses'] : null,
         'seguro_texto'                  => $op['seguro_texto'] ?: '',
         'encargos_texto'                => $op['encargos_texto'] ?: '',
-        // Testemunhas são sempre da própria Fastcar (pedido do José/Jean,
-        // 13/09/2026) — fixas em Configurações (admin/configuracoes.php),
-        // não mais digitadas por oportunidade. oportunidades.testemunha1_*/
-        // testemunha2_* ficam sem uso a partir daqui (não removidas do
-        // schema — sem ganho real em reconstruir a tabela no SQLite só
-        // pra isso, e nenhum contrato real chegou a usar esses campos).
-        'testemunha1_nome'              => getConfig('testemunha1_nome') ?: '',
-        'testemunha1_cpf'               => getConfig('testemunha1_cpf') ?: '',
-        'testemunha2_nome'              => getConfig('testemunha2_nome') ?: '',
-        'testemunha2_cpf'               => getConfig('testemunha2_cpf') ?: '',
+        // Testemunha 1 = responsável ATUAL da oportunidade (consultor),
+        // testemunha 2 = quem ele escolheu pra essa negociação — dinâmico,
+        // 02/10/2026, ver signatariosExtrasContrato() acima. 'nunca
+        // chuta — sem responsável/sem seleção, linha sai em branco no PDF.
+        ...contratoCamposTestemunhas((int)($op['responsavel_id'] ?? 0) ?: null, (int)($op['testemunha2_usuario_id'] ?? 0) ?: null),
+        // "Representante Legal" impresso no PDF, abaixo de "FASTCAR
+        // SOLUTIONS LTDA" — essa parte CONTINUA fixa em Configurações
+        // (02/10/2026, "na assinatura da fastcar... isso fica fixo").
+        'fastcar_signatario_nome'       => getConfig('fastcar_signatario_nome') ?: '',
+        'fastcar_signatario_cpf'        => getConfig('fastcar_signatario_cpf') ?: '',
         'data_extenso'                  => formatarDataExtensoPtBr(date('Y-m-d')),
         '_telefone'                     => $op['telefone'],
         '_email'                        => $op['email'] ?: '',
         '_cliente_id'                   => (int)$op['cliente_id'],
+    ];
+}
+
+/**
+ * Lookup compartilhado entre compra e venda — monta as 4 chaves
+ * testemunha1_nome/cpf, testemunha2_nome/cpf + os 2 ids internos
+ * (_testemunha1_usuario_id/_testemunha2_usuario_id, usados só pra
+ * repassar pra signatariosExtrasContrato() na hora de enviar pra
+ * assinatura). Usuário sem CPF preenchido ainda aparece como testemunha
+ * NA ZAPSIGN (o nome já é o suficiente pra assinar eletronicamente), mas
+ * a linha IMPRESSA mostra CPF em branco — mesma disciplina de sempre.
+ */
+function contratoCamposTestemunhas(?int $testemunha1UsuarioId, ?int $testemunha2UsuarioId): array {
+    $t1 = $testemunha1UsuarioId ? buscarUsuario($testemunha1UsuarioId) : null;
+    $t2 = $testemunha2UsuarioId ? buscarUsuario($testemunha2UsuarioId) : null;
+    return [
+        'testemunha1_nome'           => $t1['nome'] ?? '',
+        'testemunha1_cpf'            => $t1['cpf'] ?? '',
+        'testemunha2_nome'           => $t2['nome'] ?? '',
+        'testemunha2_cpf'            => $t2['cpf'] ?? '',
+        '_testemunha1_usuario_id'    => $testemunha1UsuarioId,
+        '_testemunha2_usuario_id'    => $testemunha2UsuarioId,
     ];
 }
 
@@ -304,7 +370,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     // Assinafy, que precisava de 3 chamadas separadas) — telefone e e-mail
     // são os canais de verificação/notificação quando existem (pedido do
     // José/Jean, 14/09/2026: "vamos enviar no email dele o contrato").
-    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato());
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['vendedor_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato($campos['_testemunha1_usuario_id'], $campos['_testemunha2_usuario_id']));
     @unlink($pdfPath);
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
@@ -434,10 +500,14 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         'parcelamento_valor_parcela'    => $v['parcelamento_valor_parcela'] !== null ? (float)$v['parcelamento_valor_parcela'] : null,
         'parcelamento_qtd_parcelas'     => $v['parcelamento_qtd_parcelas'] !== null ? (int)$v['parcelamento_qtd_parcelas'] : null,
         'parcelamento_primeira_parcela_data' => $v['parcelamento_primeira_parcela_data'] ? date('d/m/Y', strtotime($v['parcelamento_primeira_parcela_data'])) : '',
-        'testemunha1_nome'              => getConfig('testemunha1_nome') ?: '',
-        'testemunha1_cpf'               => getConfig('testemunha1_cpf') ?: '',
-        'testemunha2_nome'              => getConfig('testemunha2_nome') ?: '',
-        'testemunha2_cpf'               => getConfig('testemunha2_cpf') ?: '',
+        // Testemunha 1 = responsável ATUAL da venda (vendedor), testemunha
+        // 2 = quem ele escolheu — mesma mecânica dinâmica do lado de
+        // compra, 02/10/2026, ver contratoCamposTestemunhas() acima.
+        ...contratoCamposTestemunhas((int)($v['responsavel_id'] ?? 0) ?: null, (int)($v['testemunha2_usuario_id'] ?? 0) ?: null),
+        // "Representante Legal" impresso no PDF — continua fixo em
+        // Configurações, mesmo racional do lado de compra.
+        'fastcar_signatario_nome'       => getConfig('fastcar_signatario_nome') ?: '',
+        'fastcar_signatario_cpf'        => getConfig('fastcar_signatario_cpf') ?: '',
         'data_extenso'                  => formatarDataExtensoPtBr(date('Y-m-d')),
         '_venda_id'                     => (int)$v['id'],
         '_oportunidade_id'              => (int)$v['oportunidade_id'],
@@ -500,7 +570,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         'application/pdf', 'contratos/' . $campos['_oportunidade_id']
     );
 
-    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato());
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato($campos['_testemunha1_usuario_id'], $campos['_testemunha2_usuario_id']));
     @unlink($pdfPath);
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];

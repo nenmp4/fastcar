@@ -62,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $perfilPost = (string)($_POST['perfil'] ?? '');
             $perfil = in_array($perfilPost, ['consultor', 'supervisor', 'vendedor', 'financeiro', 'avaliador', 'super_admin'], true) ? $perfilPost : 'consultor';
             $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
+            $cpf = trim((string)($_POST['cpf'] ?? ''));
 
             if (!$nome || !$email || strlen($senha) < 8) {
                 $erro = 'Preencha nome, e-mail e uma senha com pelo menos 8 caracteres.';
@@ -69,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $erro = 'Já existe um usuário ativo com esse e-mail.';
             } else {
                 try {
-                    $novoId = criarUsuario($nome, $email, $senha, $perfil, $whatsapp);
+                    $novoId = criarUsuario($nome, $email, $senha, $perfil, $whatsapp, $cpf);
                     auditoriaRegistrar('usuario_criado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'usuario', $novoId, "Criou {$nome} ({$email}) como {$perfil}.");
                     $sucesso = "Usuário {$nome} criado.";
                 } catch (Throwable $e) {
@@ -85,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $nome  = trim((string)($_POST['nome'] ?? ''));
                 $email = trim((string)($_POST['email'] ?? ''));
                 $whatsapp = trim((string)($_POST['whatsapp'] ?? ''));
+                $cpf = trim((string)($_POST['cpf'] ?? ''));
                 // Nunca REBAIXA um super_admin já existente por aqui (perfil
                 // fica travado pra esse caso — mesma trava de sempre, só
                 // criar/promover foi liberado, não editar quem já é). Pra
@@ -106,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     try {
                         $quemFez = (int)$_SESSION['admin_id'];
                         $nomeQuemFez = (string)$_SESSION['admin_nome'];
-                        atualizarUsuario($id, $nome, $email, $whatsapp, $perfil, $bloqueado);
+                        atualizarUsuario($id, $nome, $email, $whatsapp, $perfil, $bloqueado, $cpf);
 
                         if ($alvo['perfil'] !== $perfil) {
                             auditoriaRegistrar('usuario_perfil_alterado', $quemFez, $nomeQuemFez, 'usuario', $id, "{$nome}: {$alvo['perfil']} → {$perfil}.");
@@ -184,6 +186,8 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                 <input type="email" name="email" value="<?= e($editando['email'] ?? '') ?>" required>
                 <label>WhatsApp (só recebe notificação de lead novo — 1 instância Z-API só, não é um canal de atendimento)</label>
                 <input type="text" name="whatsapp" value="<?= e($editando['whatsapp'] ?? '') ?>" placeholder="Ex: 31999998888">
+                <label>CPF (02/10/2026 — libera esse usuário a virar testemunha de contrato de compra/venda)</label>
+                <input type="text" name="cpf" value="<?= e($editando['cpf'] ?? '') ?>" placeholder="Ex: 000.000.000-00">
             </div>
             <div>
                 <label>Perfil</label>

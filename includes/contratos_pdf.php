@@ -91,6 +91,26 @@ function _pdfRodapeEndereco(FPDF $pdf): void {
     $pdf->SetTextColor(0, 0, 0);
 }
 
+/**
+ * Linha "Representante Legal" sob "FASTCAR SOLUTIONS LTDA" no bloco de
+ * assinatura — 02/10/2026, "na assinatura fast car vim Fastcar Solutions
+ * Ltda, assinatura seria do Representante Legal". Antes, o lado FASTCAR da
+ * assinatura só mostrava "FASTCAR SOLUTIONS"/CNPJ, sem nenhuma linha de
+ * nome/CPF — a pessoa configurada em fastcar_signatario_nome/_cpf (admin/
+ * configuracoes.php) só entrava como signatário na ZapSign, nunca era
+ * impressa aqui, diferente do vendedor/comprador/testemunhas, que sempre
+ * mostraram "Nome/CPF: ...". Compartilhada entre compra e venda (mesmo
+ * texto/posição nos dois). Sem representante configurado ainda, sai linha
+ * em branco pro nome/CPF serem escritos à mão — nunca bloqueia nada,
+ * mesma disciplina de toda testemunha/representante deste contrato.
+ */
+function _pdfLinhaRepresentanteLegal(FPDF $pdf, array $c): void {
+    $nome = trim((string)($c['fastcar_signatario_nome'] ?? ''));
+    $texto = 'Representante Legal: ' . ($nome !== '' ? $nome : '______________________')
+        . ' — CPF: ' . (($c['fastcar_signatario_cpf'] ?? '') ?: '______________');
+    $pdf->Cell(85, 5, _pdfTexto($texto), 0, 1, 'C');
+}
+
 function _pdfTituloClausula(FPDF $pdf, string $titulo): void {
     $pdf->Ln(2);
     $pdf->SetFont('Helvetica', 'B', 10);
@@ -283,17 +303,19 @@ function gerarPdfContratoCompra(array $c): string {
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS'), 0, 0, 'C');
+    $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('VENDEDOR/PROPRIETÁRIO'), 0, 1, 'C');
     $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['vendedor_nome']} / {$c['vendedor_cpf']}"), 0, 1, 'C');
+    _pdfLinhaRepresentanteLegal($pdf, $c);
 
     // Testemunha não é obrigatória pra gerar o contrato — se ainda não foi
-    // preenchida (Configurações → oportunidade → dados do contrato), a
-    // linha sai em branco pro nome/CPF serem escritos à mão no presencial,
-    // mesmo comportamento de antes dessas colunas existirem.
+    // preenchida (responsável pela negociação, ou testemunha 2 ainda não
+    // escolhida em admin/oportunidade.php), a linha sai em branco pro
+    // nome/CPF serem escritos à mão no presencial, mesmo comportamento de
+    // antes dessas colunas existirem.
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
 
@@ -545,16 +567,17 @@ function gerarPdfContratoVenda(array $c): string {
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS'), 0, 0, 'C');
+    $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('COMPRADOR(A)'), 0, 1, 'C');
     $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['comprador_nome']} / {$c['comprador_cpf']}"), 0, 1, 'C');
+    _pdfLinhaRepresentanteLegal($pdf, $c);
 
     // Testemunha não é obrigatória pra gerar o contrato — mesma regra do
-    // contrato de compra (fixas em Configurações, includes/marca.php); sem
-    // preenchimento, a linha sai em branco pra assinatura física.
+    // contrato de compra (responsável + selecionado em admin/venda.php);
+    // sem preenchimento, a linha sai em branco pra assinatura física.
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
 

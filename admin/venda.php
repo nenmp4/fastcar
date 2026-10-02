@@ -105,13 +105,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 26/09/2026 é sempre a soma das partes da entrada
                 // (ação salvar_entrada_partes, ver includes/vendas.php),
                 // pra não ter 2 formulários competindo pelo mesmo campo.
+                //
+                // Testemunha 2 — 02/10/2026, escolhida pelo vendedor
+                // responsável por negociação (ver
+                // includes/contratos.php::signatariosExtrasContrato());
+                // valor forjado/inexistente nunca é gravado.
+                $testemunha2Id = $_POST['testemunha2_usuario_id'] !== '' ? (int)$_POST['testemunha2_usuario_id'] : null;
+                if ($testemunha2Id !== null && !buscarUsuario($testemunha2Id)) {
+                    $testemunha2Id = null;
+                }
                 $db->prepare("
                     UPDATE vendas
                     SET km_entrega = ?, preco_venda = ?, forma_pagamento = ?,
                         saldo_preco_devido = ?, prazo_quitacao_meses = ?, data_limite_quitacao = ?,
                         prestacao_contas_texto = ?, seguro_texto = ?, ipva_responsavel_texto = ?, multas_texto = ?,
                         rastreador_texto = ?, prazo_transferencia_dias = ?, penalidade_atraso_texto = ?,
-                        updated_at = datetime('now','localtime')
+                        testemunha2_usuario_id = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
                     $_POST['km_entrega'] !== '' ? (int)$_POST['km_entrega'] : null,
@@ -127,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['rastreador_texto'] ?? '')),
                     $_POST['prazo_transferencia_dias'] !== '' ? (int)$_POST['prazo_transferencia_dias'] : null,
                     clean((string)($_POST['penalidade_atraso_texto'] ?? '')),
+                    $testemunha2Id,
                     $id,
                 ]);
                 $sucesso = 'Condições da venda atualizadas.';
@@ -437,6 +447,11 @@ $contratos = $stmtContratos->fetchAll();
 
 $usuarios = listarUsuarios();
 $avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
+// 02/10/2026 — mesma mecânica do lado de compra: testemunha 1 é sempre o
+// vendedor responsável atual, testemunha 2 é escolhida por negociação.
+$respIdAtualVenda = $v['responsavel_id'] ? (int)$v['responsavel_id'] : null;
+$responsavelAtualVenda = $respIdAtualVenda ? buscarUsuario($respIdAtualVenda) : null;
+$testemunha2CandidatosVenda = listarUsuariosParaTestemunha($respIdAtualVenda);
 $avaliacoesVeiculo = $v['oportunidade_id'] ? listarAvaliacoesDoVeiculo((int)$v['oportunidade_id']) : [];
 $entradaPartes = listarEntradaPartesVenda($id);
 $atrasada = $v['proxima_acao_em'] && $v['proxima_acao_em'] < date('Y-m-d H:i:s');
@@ -966,11 +981,25 @@ function adicionarParteEntrada() {
                 <input type="text" name="penalidade_atraso_texto" value="<?= e($v['penalidade_atraso_texto'] ?? '') ?>">
             </div>
         </div>
+
+        <div class="card" style="background:var(--fundo);margin:14px 0">
+            <strong style="font-size:13px">✍️ Testemunhas do contrato</strong>
+            <p style="margin-top:6px"><small>Testemunha 1: <strong><?= $responsavelAtualVenda ? e($responsavelAtualVenda['nome']) : '— ainda sem responsável atribuído —' ?></strong>
+               (vendedor responsável pela negociação, automático<?php if ($responsavelAtualVenda && !($responsavelAtualVenda['cpf'] ?? '')): ?> — ⚠️ sem CPF cadastrado ainda, a linha sai em branco no PDF até <a href="/admin/meu_perfil.php">ele preencher o próprio perfil</a><?php endif; ?>)</small></p>
+            <label>Testemunha 2 (escolha um usuário com CPF já cadastrado)</label>
+            <select name="testemunha2_usuario_id">
+                <option value="">— nenhuma escolhida —</option>
+                <?php foreach ($testemunha2CandidatosVenda as $cand): ?>
+                    <option value="<?= (int)$cand['id'] ?>" <?= (int)($v['testemunha2_usuario_id'] ?? 0) === (int)$cand['id'] ? 'selected' : '' ?>><?= e($cand['nome']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (!$testemunha2CandidatosVenda): ?>
+                <p><small>⚠️ Nenhum usuário com CPF cadastrado ainda — peça pra quem vai ser testemunha 2 preencher o próprio CPF em <a href="/admin/meu_perfil.php">Meu perfil</a>.</small></p>
+            <?php endif; ?>
+        </div>
+
         <button type="submit">Salvar condições da venda</button>
     </form>
-
-    <p><small>✍️ Testemunhas do contrato são fixas (sempre da própria Fastcar) — configura em
-       <a href="/admin/configuracoes.php">Configurações</a>, não muda por venda.</small></p>
 
     <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
         <hr>

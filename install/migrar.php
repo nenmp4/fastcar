@@ -1836,4 +1836,50 @@ try {
     $dbFresh = null;
 }
 
+// 02/10/2026, "teria que adicionar o CPF do usuário, preencheria CPF no
+// perfil do usuário para fazer automaticamente na assinatura" — testemunha
+// 1/2 do contrato passaram a ser usuários de verdade do sistema (ver
+// includes/contratos.php::signatariosExtrasContrato()), precisam de CPF
+// próprio pra entrar como signatário/aparecer impresso no PDF. Opcional,
+// sem DEFAULT que force preenchimento — fica vazio até o usuário preencher
+// no próprio perfil (admin/meu_perfil.php) ou o super_admin corrigir
+// (admin/usuarios.php).
+if (!colunaExiste($db, 'usuarios', 'cpf')) {
+    try {
+        $db->exec("ALTER TABLE usuarios ADD COLUMN cpf TEXT DEFAULT ''");
+        echo "✅ usuarios.cpf: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ usuarios.cpf: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  usuarios.cpf: já existia\n";
+}
+
+// Testemunha 2 do contrato — escolhida pelo responsável da negociação por
+// vez (select em admin/oportunidade.php/venda.php), nunca mais um nome
+// fixo configurado 1x em Configurações. Testemunha 1 NÃO precisa de coluna
+// nova — é sempre o responsavel_id já existente da própria oportunidade/
+// venda, lido ao vivo na hora de gerar o contrato.
+if (!colunaExiste($db, 'oportunidades', 'testemunha2_usuario_id')) {
+    try {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN testemunha2_usuario_id INTEGER REFERENCES usuarios(id)");
+        echo "✅ oportunidades.testemunha2_usuario_id: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ oportunidades.testemunha2_usuario_id: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  oportunidades.testemunha2_usuario_id: já existia\n";
+}
+
+if (!colunaExiste($db, 'vendas', 'testemunha2_usuario_id')) {
+    try {
+        $db->exec("ALTER TABLE vendas ADD COLUMN testemunha2_usuario_id INTEGER REFERENCES usuarios(id)");
+        echo "✅ vendas.testemunha2_usuario_id: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ vendas.testemunha2_usuario_id: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  vendas.testemunha2_usuario_id: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

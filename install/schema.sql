@@ -223,6 +223,15 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- (ver gerarPdfContratoCompra(), includes/contratos_pdf.php).
     pix_pagamento_cedente TEXT DEFAULT '',
     prazo_quitacao_meses INTEGER,      -- prazo negociado pra quitar o financiamento (normal: 12-18, nunca > 24 meses — cláusulas 1.3/4.1/5ª/18.3 do contrato-mestre de compra); sem DEFAULT de propósito, sempre confirmado com o cliente por oportunidade, nunca fixo em 24
+    -- 02/10/2026, "próprio consultor vira testemunha fixa pois eles
+    -- responsável direto... ele pode selecionar outro usuário do sistema
+    -- pra virar testemunha, que seria a segunda" — testemunha 1 nunca
+    -- precisa de coluna (é sempre responsavel_id, lido ao vivo na hora de
+    -- gerar o contrato); testemunha 2 é escolhida por negociação, nesse
+    -- select (admin/oportunidade.php) — ver
+    -- includes/contratos.php::signatariosExtrasContrato(). NULL = ninguém
+    -- escolhido ainda, linha sai em branco no PDF (nunca bloqueia gerar).
+    testemunha2_usuario_id INTEGER REFERENCES usuarios(id),
     -- Flag manual (19/09/2026, "ter botão veiculo quitado") de que o
     -- financiamento do banco que a FASTCAR assumiu na compra já foi
     -- quitado de verdade — separado de etapa='fechado' (só marca o
@@ -511,6 +520,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- está marcado faltou_em = hoje no horário de abertura.
     faltou_em DATE DEFAULT NULL,
 
+    -- 02/10/2026, "teria que adicionar o CPF do usuário, preencheria CPF
+    -- no perfil do usuário" — testemunha 1/2 do contrato passaram a ser
+    -- usuários de verdade do sistema (ver
+    -- includes/contratos.php::signatariosExtrasContrato()), precisam do
+    -- próprio CPF pra entrar como signatário/aparecer impresso no PDF.
+    -- Opcional, sem obrigar preenchimento na criação — fica vazio até o
+    -- próprio usuário preencher (admin/meu_perfil.php) ou o super_admin
+    -- corrigir (admin/usuarios.php).
+    cpf TEXT DEFAULT '',
+
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 
@@ -765,6 +784,11 @@ CREATE TABLE IF NOT EXISTS vendas (
     forma_pagamento TEXT DEFAULT '',
     saldo_preco_devido REAL,           -- NULL/0 = "inexistente" no Quadro-Resumo
     prazo_quitacao_meses INTEGER DEFAULT 24,  -- nunca > 24 (mesmo limite da cláusula 3.1 do modelo)
+    -- Testemunha 2 do contrato de venda — mesmo mecanismo do lado de
+    -- compra (ver oportunidades.testemunha2_usuario_id); testemunha 1 é
+    -- sempre responsavel_id (o vendedor daquela negociação), sem coluna
+    -- própria.
+    testemunha2_usuario_id INTEGER REFERENCES usuarios(id),
     data_limite_quitacao DATE,
     prestacao_contas_texto TEXT DEFAULT '',
     seguro_texto TEXT DEFAULT '',

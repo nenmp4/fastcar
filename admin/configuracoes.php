@@ -134,40 +134,29 @@ $camposEmail = [
     'email_from_nome' => 'Nome do remetente (ex: Fastcar)',
 ];
 
-// Testemunhas do contrato de compra/venda são sempre da própria Fastcar
-// (pedido do José/Jean, 13/09/2026) — fixas aqui em vez de digitadas de
-// novo em cada oportunidade (admin/oportunidade.php). includes/contratos.php
-// lê direto daqui na hora de gerar o PDF.
-//
-// Telefone/e-mail novos em 02/10/2026 ("todos precisam assinar... bota as
-// duas testemunhas pra assinar") — até então só nome+CPF existiam, usados
-// SÓ pra imprimir a linha de assinatura no PDF (nunca uma assinatura
-// eletrônica de verdade). Com telefone/e-mail preenchidos, a testemunha
-// vira signatário REAL na ZapSign (signatariosExtrasContrato(),
-// includes/contratos.php) — recebe o link de assinatura dela mesma, igual
-// o cliente/comprador já recebia. Em branco, continua só impresso como
-// sempre foi — nunca bloqueia gerar o contrato.
-$camposTestemunhas = [
-    'testemunha1_nome'      => 'Testemunha 1 — nome completo',
-    'testemunha1_cpf'       => 'Testemunha 1 — CPF',
-    'testemunha1_telefone'  => 'Testemunha 1 — telefone/WhatsApp (pra assinar de verdade)',
-    'testemunha1_email'     => 'Testemunha 1 — e-mail (opcional, além do telefone)',
-    'testemunha2_nome'      => 'Testemunha 2 — nome completo',
-    'testemunha2_cpf'       => 'Testemunha 2 — CPF',
-    'testemunha2_telefone'  => 'Testemunha 2 — telefone/WhatsApp (pra assinar de verdade)',
-    'testemunha2_email'     => 'Testemunha 2 — e-mail (opcional, além do telefone)',
-];
-
 // Representante da FASTCAR que assina o contrato por ela — 02/10/2026,
-// mesmo pedido acima. Antes disso NENHUM contrato (compra ou venda) tinha
-// a própria FASTCAR como signatário real — só "FASTCAR SOLUTIONS / CNPJ"
-// impresso em branco no PDF, enquanto só a contraparte (vendedor/comprador)
-// de fato assinava via ZapSign. Precisa de nome + telefone ou e-mail pra
-// virar signatário de verdade (signatariosExtrasContrato()); sem isso
-// configurado, o contrato segue gerando normal, só sem a FASTCAR assinando
-// eletronicamente (nunca bloqueia).
+// "na assinatura da fastcar... isso fica fixo". Antes disso NENHUM
+// contrato (compra ou venda) tinha a própria FASTCAR como signatário real
+// — só "FASTCAR SOLUTIONS / CNPJ" impresso em branco no PDF, enquanto só a
+// contraparte (vendedor/comprador) de fato assinava via ZapSign. Precisa
+// de nome + telefone ou e-mail pra virar signatário de verdade
+// (signatariosExtrasContrato()); sem isso configurado, o contrato segue
+// gerando normal, só sem a FASTCAR assinando eletronicamente (nunca
+// bloqueia). CPF novo no mesmo dia — nunca mandado pra ZapSign (o nome do
+// signatário lá é sempre "FASTCAR SOLUTIONS LTDA", a razão social), só
+// impresso no PDF como "Representante Legal: {nome} — CPF: {cpf}".
+//
+// As 2 testemunhas (testemunha1_nome/cpf/telefone/email,
+// testemunha2_nome/cpf/telefone/email) saíram de uso a partir do mesmo
+// dia — viraram dinâmicas (testemunha 1 = responsável da negociação,
+// testemunha 2 = escolhida por negociação em admin/oportunidade.php/
+// venda.php, CPF vindo do perfil de cada usuário) — ver
+// includes/contratos.php::signatariosExtrasContrato(). As chaves antigas
+// ficam órfãs em `config`, mesma disciplina de sempre pra config sem
+// ganho real em limpar.
 $camposFastcarSignatario = [
     'fastcar_signatario_nome'     => 'Nome completo (quem assina pela FASTCAR)',
+    'fastcar_signatario_cpf'      => 'CPF (impresso como "Representante Legal" no PDF)',
     'fastcar_signatario_telefone' => 'Telefone/WhatsApp',
     'fastcar_signatario_email'    => 'E-mail (opcional, além do telefone)',
 ];
@@ -544,11 +533,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $chaveWebhook = trim((string)($_POST['webhook_secret'] ?? ''));
             if ($chaveWebhook !== '') setConfig('webhook_secret', $chaveWebhook);
             $sucesso = 'Configurações de deploy salvas.';
-        } elseif ($acao === 'salvar_testemunhas') {
-            foreach (array_keys($camposTestemunhas) as $chave) {
-                setConfig($chave, clean((string)($_POST[$chave] ?? '')));
-            }
-            $sucesso = 'Testemunhas do contrato salvas.';
         } elseif ($acao === 'salvar_fastcar_signatario') {
             foreach (array_keys($camposFastcarSignatario) as $chave) {
                 setConfig($chave, clean((string)($_POST[$chave] ?? '')));
@@ -1286,53 +1270,25 @@ unset($fv);
 </div>
 
 <div class="card">
-    <h3>✍️ Testemunhas do contrato (compra e venda)</h3>
-    <p><small>Sempre as mesmas 2 pessoas, do lado da Fastcar — não muda por oportunidade. Nome/CPF só aparecem
-       impressos no PDF; preenchendo <strong>telefone (ou e-mail)</strong> também, a testemunha vira signatária
-       de verdade — recebe o próprio link da ZapSign e assina eletronicamente, igual o cliente já faz
-       (02/10/2026, "todos precisam assinar"). Sem telefone/e-mail, continua só a linha impressa em branco,
-       igual sempre foi — nunca trava a geração do contrato.</small></p>
-    <form method="post">
-        <?= csrfField() ?>
-        <input type="hidden" name="acao" value="salvar_testemunhas">
-        <div class="grid-2">
-            <div>
-                <label>Testemunha 1 — nome completo</label>
-                <input type="text" name="testemunha1_nome" value="<?= e(getConfig('testemunha1_nome') ?? '') ?>">
-                <label>Testemunha 1 — CPF</label>
-                <input type="text" name="testemunha1_cpf" value="<?= e(getConfig('testemunha1_cpf') ?? '') ?>" placeholder="000.000.000-00">
-                <label>Testemunha 1 — telefone/WhatsApp</label>
-                <input type="tel" name="testemunha1_telefone" value="<?= e(getConfig('testemunha1_telefone') ?? '') ?>" placeholder="11999999999">
-                <label>Testemunha 1 — e-mail</label>
-                <input type="email" name="testemunha1_email" value="<?= e(getConfig('testemunha1_email') ?? '') ?>">
-            </div>
-            <div>
-                <label>Testemunha 2 — nome completo</label>
-                <input type="text" name="testemunha2_nome" value="<?= e(getConfig('testemunha2_nome') ?? '') ?>">
-                <label>Testemunha 2 — CPF</label>
-                <input type="text" name="testemunha2_cpf" value="<?= e(getConfig('testemunha2_cpf') ?? '') ?>" placeholder="000.000.000-00">
-                <label>Testemunha 2 — telefone/WhatsApp</label>
-                <input type="tel" name="testemunha2_telefone" value="<?= e(getConfig('testemunha2_telefone') ?? '') ?>" placeholder="11999999999">
-                <label>Testemunha 2 — e-mail</label>
-                <input type="email" name="testemunha2_email" value="<?= e(getConfig('testemunha2_email') ?? '') ?>">
-            </div>
-        </div>
-        <button type="submit">Salvar testemunhas</button>
-    </form>
-</div>
-
-<div class="card">
     <h3>🖊️ Representante da FASTCAR (assina o contrato)</h3>
     <p><small>Quem assina pela FASTCAR de verdade nos contratos de compra e venda — até 02/10/2026 só
        "FASTCAR SOLUTIONS / CNPJ" aparecia impresso no PDF, sem ninguém assinar eletronicamente por ela.
        Preenchendo nome + telefone (ou e-mail), essa pessoa vira signatária real — recebe o link da ZapSign
-       igual o cliente/comprador. Sem isso configurado, o contrato segue sendo gerado normal, só sem a
-       FASTCAR assinando eletronicamente.</small></p>
+       igual o cliente/comprador. O NOME enviado pra ZapSign é sempre "FASTCAR SOLUTIONS LTDA" (a razão
+       social, nunca o nome de uma pessoa — igual ao contrato antigo real); o nome/CPF daqui aparecem
+       impressos no PDF como "Representante Legal". Sem isso configurado, o contrato segue sendo gerado
+       normal, só sem a FASTCAR assinando eletronicamente e sem essa linha preenchida no PDF.</small></p>
+    <p><small>✍️ As 2 testemunhas do contrato <strong>não são mais fixas aqui</strong> (02/10/2026) — testemunha 1
+       é sempre o responsável pela negociação (consultor/vendedor), testemunha 2 é escolhida por negociação em
+       <a href="/admin/oportunidade.php">admin/oportunidade.php</a>/<a href="/admin/vendas.php">admin/venda.php</a>.
+       O CPF de cada uma vem do próprio perfil (<a href="/admin/usuarios.php">Usuários</a>).</small></p>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_fastcar_signatario">
         <label>Nome completo</label>
         <input type="text" name="fastcar_signatario_nome" value="<?= e(getConfig('fastcar_signatario_nome') ?? '') ?>">
+        <label>CPF (impresso como "Representante Legal" no PDF)</label>
+        <input type="text" name="fastcar_signatario_cpf" value="<?= e(getConfig('fastcar_signatario_cpf') ?? '') ?>" placeholder="000.000.000-00">
         <label>Telefone/WhatsApp</label>
         <input type="tel" name="fastcar_signatario_telefone" value="<?= e(getConfig('fastcar_signatario_telefone') ?? '') ?>" placeholder="11999999999">
         <label>E-mail</label>

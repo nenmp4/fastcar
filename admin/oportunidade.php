@@ -90,14 +90,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $sucesso = 'Dados do veículo atualizados.';
             } elseif ($acao === 'atualizar_contrato') {
-                // Testemunhas saíram daqui em 13/09/2026 — são sempre da
-                // própria Fastcar, fixas em Configurações
-                // (admin/configuracoes.php), não mais por oportunidade.
+                // Testemunha 2 — 02/10/2026, escolhida pelo responsável por
+                // negociação (ver includes/contratos.php::signatariosExtrasContrato());
+                // valor forjado/inexistente nunca é gravado, só um id real
+                // de usuarios.id com CPF já preenchido (whitelist via
+                // listarUsuariosParaTestemunha() abaixo, no HTML).
+                $testemunha2Id = $_POST['testemunha2_usuario_id'] !== '' ? (int)$_POST['testemunha2_usuario_id'] : null;
+                if ($testemunha2Id !== null && !buscarUsuario($testemunha2Id)) {
+                    $testemunha2Id = null;
+                }
                 $db->prepare("
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
                         saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
-                        pix_pagamento_cedente = ?,
+                        pix_pagamento_cedente = ?, testemunha2_usuario_id = ?,
                         data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -109,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
                     clean((string)($_POST['pix_pagamento_cedente'] ?? '')),
+                    $testemunha2Id,
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
                     // Nunca mais que 24 meses (limite contratual, cláusula
                     // 5ª/1.3) — travado no servidor, não só no max="24" do
@@ -406,6 +413,12 @@ $mensagens = array_reverse($stmtMsg->fetchAll());
 
 $usuarios = listarUsuarios();
 $avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
+// 02/10/2026, "próprio consultor vira testemunha fixa pois eles
+// responsável direto" — testemunha 1 do contrato é sempre o responsável
+// ATUAL desta oportunidade (nunca precisa ser escolhido aqui, só exibido).
+$respIdAtual = $op['responsavel_id'] ? (int)$op['responsavel_id'] : null;
+$responsavelAtual = $respIdAtual ? buscarUsuario($respIdAtual) : null;
+$testemunha2Candidatos = listarUsuariosParaTestemunha($respIdAtual);
 $avaliacoesVeiculo = listarAvaliacoesDoVeiculo($id);
 $etapasFechaveis = array_merge(ETAPAS_ATIVAS, ['fechado']);
 $pendenciasPosVenda = $op['etapa'] === 'fechado' ? listarPendenciasDaOportunidade($id) : [];
@@ -710,11 +723,24 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             </div>
         </div>
 
+        <div class="card" style="background:var(--fundo);margin:14px 0">
+            <strong style="font-size:13px">✍️ Testemunhas do contrato</strong>
+            <p style="margin-top:6px"><small>Testemunha 1: <strong><?= $responsavelAtual ? e($responsavelAtual['nome']) : '— ainda sem responsável atribuído —' ?></strong>
+               (responsável pela negociação, automático<?php if ($responsavelAtual && !($responsavelAtual['cpf'] ?? '')): ?> — ⚠️ sem CPF cadastrado ainda, a linha sai em branco no PDF até <a href="/admin/meu_perfil.php">ele preencher o próprio perfil</a><?php endif; ?>)</small></p>
+            <label>Testemunha 2 (escolha um usuário com CPF já cadastrado)</label>
+            <select name="testemunha2_usuario_id">
+                <option value="">— nenhuma escolhida —</option>
+                <?php foreach ($testemunha2Candidatos as $cand): ?>
+                    <option value="<?= (int)$cand['id'] ?>" <?= (int)($op['testemunha2_usuario_id'] ?? 0) === (int)$cand['id'] ? 'selected' : '' ?>><?= e($cand['nome']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (!$testemunha2Candidatos): ?>
+                <p><small>⚠️ Nenhum usuário com CPF cadastrado ainda — peça pra quem vai ser testemunha 2 preencher o próprio CPF em <a href="/admin/meu_perfil.php">Meu perfil</a>.</small></p>
+            <?php endif; ?>
+        </div>
+
         <button type="submit">Salvar dados do contrato</button>
     </form>
-
-    <p><small>✍️ Testemunhas do contrato são fixas (sempre da própria Fastcar) — configura em
-       <a href="/admin/configuracoes.php">Configurações</a>, não muda por oportunidade.</small></p>
 
     <?php if ($op['valor_fipe_referencia'] && $op['valor_ofertado']): ?>
         <?php $percentualAtual = round((float)$op['valor_ofertado'] / (float)$op['valor_fipe_referencia'] * 100, 2); ?>

@@ -10440,6 +10440,80 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   com dado de teste à parte) confirmando geração normal, sem quebra nova
   nenhuma + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
   (mudança só na geração do PDF).
+  **Testemunhas viraram DINÂMICAS, nunca mais fixas em Configurações**
+  (02/10/2026, pedido direto: "próprio consultor vira testemunha fixa
+  pois eles responsável direto... depois ele pode selecionar outro
+  usuário do sistema pra virar testemunha, que seria a segunda... teria
+  que adicionar o CPF do usuário, preencheria CPF no perfil do usuário
+  pra fazer automaticamente") — reverte a decisão de mais cedo no mesmo
+  dia (as 2 testemunhas fixas configuradas 1x em Configurações, Dayane/
+  Anderson). Confirmado valer pros DOIS tipos de contrato (compra e
+  venda) pelo próprio texto do pedido ("consultor... ou vendedor") e pelo
+  comportamento esperado/testado. **Testemunha 1 é sempre o RESPONSÁVEL
+  ATUAL da negociação** (consultor na compra, vendedor na venda —
+  `responsavel_id`, lido ao vivo na hora de gerar o contrato — reflete
+  reatribuição automaticamente, nunca precisa ser escolhida manualmente).
+  **Testemunha 2 é escolhida por negociação** — select novo no card de
+  financiamento/condições (`admin/oportunidade.php`/`admin/venda.php`),
+  populado só com usuário ATIVO que já tem CPF cadastrado (nova
+  `listarUsuariosParaTestemunha()`, `includes/usuarios.php` — exclui
+  bloqueado e o próprio responsável, que já é testemunha 1), persistido
+  em `oportunidades.testemunha2_usuario_id`/`vendas.testemunha2_usuario_id`
+  (colunas novas). **CPF novo em `usuarios.cpf`** — autoatendimento em
+  `admin/meu_perfil.php` (cada um preenche o próprio) e também editável
+  por super_admin em `admin/usuarios.php` (corrige CPF de outro usuário,
+  mesmo padrão de outros campos administráveis nas 2 telas).
+  **FASTCAR continua FIXA** ("na assinatura da fastcar... isso fica
+  fixo") — telefone/e-mail de contato seguem configuráveis em
+  Configurações (canal de entrega do link pra quem assina de fato em
+  nome da empresa). O que mudou: o NOME mandado pra ZapSign é sempre a
+  razão social `'FASTCAR SOLUTIONS LTDA'` (constante no código, nunca
+  mais `fastcar_signatario_nome` de config) — confirmado contra um
+  screenshot real do contrato ANTIGO (sistema legado, Relatório de
+  Assinaturas da própria ZapSign: signatário "FAST CAR SOLUTIONS", não
+  um nome de pessoa). O nome/CPF da pessoa que assina de fato
+  (`fastcar_signatario_nome`/novo `fastcar_signatario_cpf`) passaram a
+  aparecer IMPRESSOS no PDF, pela 1ª vez, como "Representante Legal" —
+  antes o lado FASTCAR da assinatura só mostrava "FASTCAR SOLUTIONS"/CNPJ
+  sem nenhuma linha de nome, só entrava como signatário real na ZapSign,
+  nunca impresso (nova `_pdfLinhaRepresentanteLegal()`, compartilhada
+  entre `gerarPdfContratoCompra()`/`gerarPdfContratoVenda()`, mesma
+  disciplina de nunca bloquear — sem representante configurado, linha
+  sai em branco). `signatariosExtrasContrato()` ganhou 2 parâmetros
+  (`?int $testemunha1UsuarioId, ?int $testemunha2UsuarioId`) —
+  `montarCamposContratoCompra()`/`Venda()` resolvem esses ids a partir de
+  `responsavel_id`/`testemunha2_usuario_id` via nova
+  `contratoCamposTestemunhas()` (helper compartilhado, lookup em
+  `usuarios`, nunca duplicado entre os 2 tipos de contrato) e repassam
+  pros 2 pontos que chamam `zapsignCriarDocumentoEAssinatura()`. Item sem
+  usuário resolvido (lead órfão sem responsável, testemunha 2 nunca
+  escolhida) nunca entra no array de signatários — mesma disciplina de
+  sempre, nunca bloqueia gerar o contrato por falta de testemunha.
+  Card "✍️ Testemunhas do contrato" removido por inteiro de
+  `admin/configuracoes.php` (handler `salvar_testemunhas` também) — as 8
+  chaves de config antigas (`testemunha1_nome/cpf/telefone/email`,
+  `testemunha2_*`) ficam órfãs em `config`, mesma disciplina de sempre
+  pra chave sem ganho real em limpar. Testado ponta a ponta contra
+  servidor ZapSign fake local + banco isolado, 29 asserções cobrindo os
+  dois tipos de contrato: `listarUsuariosParaTestemunha()` (inclui ativo
+  com CPF, exclui sem CPF, exclui bloqueado mesmo com CPF, exclui o
+  próprio responsável); CPF persistindo nos 3 caminhos de escrita
+  (`atualizarPerfilProprio()`/`criarUsuario()`/`atualizarUsuario()`);
+  cenário completo (responsável + testemunha 2 escolhida) confirmando os
+  4 signatários na ordem certa, com "FASTCAR SOLUTIONS LTDA" sempre
+  constante (nunca o nome configurado); lead órfão (sem responsável, sem
+  testemunha 2) confirmando só 2 signatários, nunca inventando ninguém;
+  reatribuição de responsável confirmando que testemunha 1 reflete o
+  NOVO dono, nunca o antigo; o mesmo cenário completo no lado de VENDA
+  (`gerarEEnviarContratoVenda()`, `vendas.responsavel_id`/
+  `testemunha2_usuario_id`); `montarCamposContratoCompra()`/`Venda()`
+  confirmados devolvendo nome/CPF certos pro PDF nos dois lados + migração
+  testada contra schema anterior a esta mudança (`git show
+  HEAD:install/schema.sql`, as 3 colunas confirmadas ausentes antes,
+  `ALTER TABLE` aplicado com sucesso, dado pré-existente — usuário/
+  oportunidade/venda semeados no schema antigo — preservado intacto,
+  idempotente numa 2ª rodada) + `php -l` nos 10 arquivos tocados +
+  `tests/smoke.php` limpo.
 
 ## Pendências (aguardando definição antes de codar mais)
 
