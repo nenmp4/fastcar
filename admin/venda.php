@@ -105,22 +105,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 26/09/2026 é sempre a soma das partes da entrada
                 // (ação salvar_entrada_partes, ver includes/vendas.php),
                 // pra não ter 2 formulários competindo pelo mesmo campo.
-                //
-                // Testemunha 2 — 02/10/2026, escolhida pelo vendedor
-                // responsável por negociação (ver
-                // includes/contratos.php::signatariosExtrasContrato());
-                // valor forjado/inexistente nunca é gravado.
-                $testemunha2Id = $_POST['testemunha2_usuario_id'] !== '' ? (int)$_POST['testemunha2_usuario_id'] : null;
-                if ($testemunha2Id !== null && !buscarUsuario($testemunha2Id)) {
-                    $testemunha2Id = null;
-                }
                 $db->prepare("
                     UPDATE vendas
                     SET km_entrega = ?, preco_venda = ?, forma_pagamento = ?,
                         saldo_preco_devido = ?, prazo_quitacao_meses = ?, data_limite_quitacao = ?,
                         prestacao_contas_texto = ?, seguro_texto = ?, ipva_responsavel_texto = ?, multas_texto = ?,
                         rastreador_texto = ?, prazo_transferencia_dias = ?, penalidade_atraso_texto = ?,
-                        testemunha2_usuario_id = ?, updated_at = datetime('now','localtime')
+                        updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
                     $_POST['km_entrega'] !== '' ? (int)$_POST['km_entrega'] : null,
@@ -136,10 +127,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['rastreador_texto'] ?? '')),
                     $_POST['prazo_transferencia_dias'] !== '' ? (int)$_POST['prazo_transferencia_dias'] : null,
                     clean((string)($_POST['penalidade_atraso_texto'] ?? '')),
-                    $testemunha2Id,
                     $id,
                 ]);
                 $sucesso = 'Condições da venda atualizadas.';
+            } elseif ($acao === 'salvar_testemunha2') {
+                // 02/10/2026, achado de acompanhamento: "ao pedir para gerar
+                // contrato, selecione a 2ª testemunha" — mudou de lugar (do
+                // card de condições pra junto do botão de gerar contrato),
+                // virou ação PRÓPRIA pelo mesmo motivo do lado de compra (ver
+                // admin/oportunidade.php): nunca reaproveitar
+                // 'atualizar_condicoes' pra não apagar os outros campos com
+                // string vazia num form minúsculo só com esse select.
+                $testemunha2Id = $_POST['testemunha2_usuario_id'] !== '' ? (int)$_POST['testemunha2_usuario_id'] : null;
+                if ($testemunha2Id !== null && !buscarUsuario($testemunha2Id)) {
+                    $testemunha2Id = null;
+                }
+                $db->prepare("UPDATE vendas SET testemunha2_usuario_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+                   ->execute([$testemunha2Id, $id]);
+                $sucesso = 'Testemunha 2 atualizada.';
             } elseif ($acao === 'salvar_entrada_partes') {
                 // Réplica do sistema antigo (26/09/2026, "Jean quer em
                 // módulos promissórias vendas") — entrada paga em várias
@@ -982,27 +987,31 @@ function adicionarParteEntrada() {
             </div>
         </div>
 
-        <div class="card" style="background:var(--fundo);margin:14px 0">
-            <strong style="font-size:13px">✍️ Testemunhas do contrato</strong>
-            <p style="margin-top:6px"><small>Testemunha 1: <strong><?= $responsavelAtualVenda ? e($responsavelAtualVenda['nome']) : '— ainda sem responsável atribuído —' ?></strong>
-               (vendedor responsável pela negociação, automático<?php if ($responsavelAtualVenda && !($responsavelAtualVenda['cpf'] ?? '')): ?> — ⚠️ sem CPF cadastrado ainda, a linha sai em branco no PDF até <a href="/admin/meu_perfil.php">ele preencher o próprio perfil</a><?php endif; ?>)</small></p>
-            <label>Testemunha 2 (escolha um usuário com CPF já cadastrado)</label>
-            <select name="testemunha2_usuario_id">
-                <option value="">— nenhuma escolhida —</option>
-                <?php foreach ($testemunha2CandidatosVenda as $cand): ?>
-                    <option value="<?= (int)$cand['id'] ?>" <?= (int)($v['testemunha2_usuario_id'] ?? 0) === (int)$cand['id'] ? 'selected' : '' ?>><?= e($cand['nome']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <?php if (!$testemunha2CandidatosVenda): ?>
-                <p><small>⚠️ Nenhum usuário com CPF cadastrado ainda — peça pra quem vai ser testemunha 2 preencher o próprio CPF em <a href="/admin/meu_perfil.php">Meu perfil</a>.</small></p>
-            <?php endif; ?>
-        </div>
-
         <button type="submit">Salvar condições da venda</button>
     </form>
 
     <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
         <hr>
+        <div class="card" style="background:var(--fundo);margin-bottom:14px">
+            <strong style="font-size:13px">✍️ Testemunhas do contrato</strong>
+            <p style="margin-top:6px"><small>Testemunha 1: <strong><?= $responsavelAtualVenda ? e($responsavelAtualVenda['nome']) : '— ainda sem responsável atribuído —' ?></strong>
+               (vendedor responsável pela negociação, automático<?php if ($responsavelAtualVenda && !($responsavelAtualVenda['cpf'] ?? '')): ?> — ⚠️ sem CPF cadastrado ainda, a linha sai em branco no PDF até <a href="/admin/meu_perfil.php">ele preencher o próprio perfil</a><?php endif; ?>)</small></p>
+            <form method="post">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="salvar_testemunha2">
+                <label>Testemunha 2 — selecione antes de gerar o contrato (usuário com CPF já cadastrado)</label>
+                <select name="testemunha2_usuario_id">
+                    <option value="">— nenhuma escolhida —</option>
+                    <?php foreach ($testemunha2CandidatosVenda as $cand): ?>
+                        <option value="<?= (int)$cand['id'] ?>" <?= (int)($v['testemunha2_usuario_id'] ?? 0) === (int)$cand['id'] ? 'selected' : '' ?>><?= e($cand['nome']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if (!$testemunha2CandidatosVenda): ?>
+                    <p><small>⚠️ Nenhum usuário com CPF cadastrado ainda — peça pra quem vai ser testemunha 2 preencher o próprio CPF em <a href="/admin/meu_perfil.php">Meu perfil</a>.</small></p>
+                <?php endif; ?>
+                <button type="submit" class="secundario">Salvar testemunha 2</button>
+            </form>
+        </div>
         <form method="post" style="display:inline-block;margin-right:8px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_contrato_preview">

@@ -10514,6 +10514,36 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   oportunidade/venda semeados no schema antigo — preservado intacto,
   idempotente numa 2ª rodada) + `php -l` nos 10 arquivos tocados +
   `tests/smoke.php` limpo.
+  **Select da testemunha 2 mudou de lugar — junto do "Gerar contrato", não
+  mais no card de financiamento/condições** (mesmo dia, achado de
+  acompanhamento: "a Segunda Testemunha ao pedir para gerar contrato
+  selecione a 2ª testemunha, segue esse padrão") — até então o select
+  vivia dentro do MESMO `<form>` grande de "Financiamento e contrato de
+  compra"/"Condições da venda" (`atualizar_contrato`/`atualizar_condicoes`),
+  então salvar só a testemunha exigia reenviar TODOS os outros campos
+  juntos. Virou card próprio, com `<form>` e ação PRÓPRIA
+  (`salvar_testemunha2`, UPDATE tocando só essa 1 coluna) posicionado
+  imediatamente ANTES dos botões "👁️ Gerar contrato (só visualizar)"/
+  "📄 Gerar contrato e enviar pra assinatura" — nunca mais reaproveita
+  `atualizar_contrato`/`atualizar_condicoes` pra isso: um form minúsculo
+  só com esse select, se reaproveitasse a ação grande, mandaria
+  `valor_fipe_referencia`/`pix_pagamento_cedente`/etc como string vazia e
+  APAGARIA o que já estava salvo (risco real de perda de dado, evitado
+  com a ação dedicada). No lado de venda, o bloco entrou DENTRO do mesmo
+  `<?php if (in_array($v['etapa'], ['negociacao','contrato_enviado'],
+  true) && $v['oportunidade_id'])` que já condiciona os botões de gerar —
+  nunca aparece antes de ter veículo vinculado, mesma regra de sempre.
+  Testado via HTTP real (sessão primed por perfil, servidor PHP embutido,
+  banco isolado): `atualizar_contrato`/`atualizar_condicoes` com outros
+  campos reais mudando confirmados NUNCA tocando
+  `testemunha2_usuario_id` (isolado especificamente pro lado de venda —
+  estado antes/depois do `atualizar_condicoes` sozinho, sem nenhum outro
+  POST no meio, confirma o valor intacto); `salvar_testemunha2` sozinho
+  (só esse campo no POST) confirmado trocando a testemunha sem alterar
+  nenhum dos outros campos já salvos; supervisor recebendo 403 ao tentar
+  `salvar_testemunha2` (mesmo guard de sempre, "só acompanha") + `php -l`
+  + `tests/smoke.php` limpos. Sem migração de schema (reaproveita as
+  colunas já criadas no bullet acima).
 
 ## Pendências (aguardando definição antes de codar mais)
 
