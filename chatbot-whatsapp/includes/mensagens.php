@@ -737,18 +737,32 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
         if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
             if ($tipoRegistro === 'text') {
-                if ($etapaAtual === 'whatsapp') {
-                    mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
-                }
-                // Debounce (ver aguardarSilencioOuAbortar) — se chegar mensagem
-                // mais nova desse telefone enquanto essa dorme, aborta: a mais
-                // nova vai responder pelas duas juntas.
-                if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
-                    try {
-                        $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone, $instancia['canal'] ?? null);
-                    } catch (Throwable $e) {
-                        // Nunca deixa uma falha da IA quebrar o resto do webhook —
-                        // mensagem do cliente já está salva, oportunidade já existe.
+                // 03/10/2026 — "deixar ia qualificando só no horário comercial"
+                // (ver docblock de iaQualificacaoDentroHorarioComercial()).
+                // Fora da janela, avisa 1x/dia e NÃO roda a IA — nunca finge
+                // qualificar fora do expediente.
+                if (!iaQualificacaoDentroHorarioComercial()) {
+                    if (!iaQualificacaoJaAvisouForaHorarioHoje($phone)) {
+                        $msgForaHorario = iaQualificacaoMsgForaHorario();
+                        if (zapiEnviarTextoPeloCanal($phone, $msgForaHorario, $instancia['canal'] ?? null)) {
+                            registrarMensagem($phone, 'out', $msgForaHorario, null, true);
+                            iaQualificacaoRegistrarAvisoForaHorario($phone);
+                        }
+                    }
+                } else {
+                    if ($etapaAtual === 'whatsapp') {
+                        mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
+                    }
+                    // Debounce (ver aguardarSilencioOuAbortar) — se chegar mensagem
+                    // mais nova desse telefone enquanto essa dorme, aborta: a mais
+                    // nova vai responder pelas duas juntas.
+                    if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
+                        try {
+                            $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone, $instancia['canal'] ?? null);
+                        } catch (Throwable $e) {
+                            // Nunca deixa uma falha da IA quebrar o resto do webhook —
+                            // mensagem do cliente já está salva, oportunidade já existe.
+                        }
                     }
                 }
             } else {

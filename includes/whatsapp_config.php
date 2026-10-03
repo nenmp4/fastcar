@@ -787,6 +787,57 @@ function automacaoDentroHorarioComercial(): bool {
     return $agora >= $abertura && $agora < $fechamento;
 }
 
+/**
+ * 03/10/2026 — "deixar ia qualificando só no horário comercial". Reverte,
+ * de propósito, a regra antiga documentada acima ("nunca bloquear resposta
+ * a mensagem que o cliente mandou") só pra ESTE caso específico: o número
+ * principal acabou de voltar de um bloqueio real da Meta/WhatsApp, e a
+ * pesquisa que embasou o diagnóstico do bloqueio (ver CLAUDE.md,
+ * "Qualificação por IA via WhatsApp") aponta "cadência entre ações" como
+ * sinal de detecção de automação — responder 100% das mensagens, todo dia,
+ * 24h, é exatamente esse padrão. Pausar a QUALIFICAÇÃO fora do horário
+ * comercial (nunca a IA reativa de 1 turno só — essa regra é só pro fluxo
+ * de qualificação em si) imita cadência humana normal.
+ *
+ * Janela PRÓPRIA (config.ia_qualificacao_horario_*), de propósito mais
+ * larga que a da fila de consultores (08h-20h padrão vs 10h-19h20) —
+ * cliente de verdade escreve fora do turno estrito do time de vendas, e um
+ * corte muito justo/preciso pode parecer mais "programado" que uma janela
+ * comercial comum. Compartilhada entre compra (mensagens.php) e vendas
+ * (mensagens_vendas.php).
+ */
+function iaQualificacaoDentroHorarioComercial(): bool {
+    $agora = date('H:i');
+    $abertura = getConfig('ia_qualificacao_horario_abertura');
+    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '08:00';
+    $fechamento = getConfig('ia_qualificacao_horario_fechamento');
+    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '20:00';
+    return $agora >= $abertura && $agora < $fechamento;
+}
+
+/** Texto do aviso quando o lead escreve fora do horário de qualificação —
+ *  nunca silêncio total (lead real se sente ignorado), mas também nunca a
+ *  qualificação completa (regra #3, nunca "finge" estar atendendo). */
+function iaQualificacaoMsgForaHorario(): string {
+    $abertura = getConfig('ia_qualificacao_horario_abertura');
+    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '08:00';
+    $fechamento = getConfig('ia_qualificacao_horario_fechamento');
+    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '20:00';
+    return "Oi! Recebemos sua mensagem 🙂 Nosso atendimento funciona das {$abertura} às {$fechamento}. "
+        . "Assim que abrirmos, te respondemos certinho!";
+}
+
+/** Só manda o aviso de "fora do horário" 1x por telefone por dia — evita
+ *  repetir a cada mensagem nova se o lead continuar escrevendo à noite.
+ *  Mesmo padrão config.chave_id já usado em alerta_atraso_{id}/reeng_sent_{telefone}. */
+function iaQualificacaoJaAvisouForaHorarioHoje(string $telefone): bool {
+    return getConfig('ia_fora_horario_' . normalizarTelefone($telefone) . '_' . date('Y-m-d')) === '1';
+}
+
+function iaQualificacaoRegistrarAvisoForaHorario(string $telefone): void {
+    setConfig('ia_fora_horario_' . normalizarTelefone($telefone) . '_' . date('Y-m-d'), '1');
+}
+
 /** Mesmo padrão de logDiagnosticoMidiaZapi() — grava o corpo cru quando
  *  nenhum nome de campo esperado bate, pra achar o formato real depois. */
 function _zapiLogDiagnosticoContato(string $phone, $detalhe): void {

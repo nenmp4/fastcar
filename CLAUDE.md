@@ -10114,6 +10114,70 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   próxima conversa real. Sem migração de schema (`pedido_atendente_humano`
   nunca vira coluna de banco, só lido no momento do turno, igual
   `reclamacao_pos_venda`).
+- **Qualificação por IA restrita a horário comercial** (03/10/2026, "Tou
+  pensando deixar ia qualificando so no horário comercial" / "Janela do
+  meta que identifica automação") — depois do número principal voltar de
+  um bloqueio real do WhatsApp (ver "🚨 Conta WhatsApp Business da Meta
+  desabilitada PERMANENTEMENTE" e a lista de boas práticas que o próprio
+  suporte da Z-API mandou, ambos 30/09-03/10/2026), decisão deliberada de
+  reverter — só pra este caso — a regra antiga já documentada em
+  `automacaoDentroHorarioComercial()` ("nunca bloquear resposta a mensagem
+  que o cliente mandou"): responder 100% das mensagens, 24h por dia, é
+  exatamente o padrão de "cadência entre ações" que a pesquisa sobre a
+  política de IA da Meta (ver bullet acima) aponta como sinal de detecção
+  de automação, e o número está na janela mais sensível pós-bloqueio.
+  Nova `iaQualificacaoDentroHorarioComercial()` (`includes/whatsapp_config.php`,
+  ao lado de `automacaoDentroHorarioComercial()`, com docblock explicando a
+  reversão de propósito) — janela PRÓPRIA
+  (`config.ia_qualificacao_horario_abertura`/`_fechamento`, padrão
+  **08:00–20:00**), deliberadamente mais larga que a da fila de
+  consultores (10:00–19:20): cliente de verdade escreve fora do turno
+  estrito do time de vendas, e um corte muito justo/preciso podia parecer
+  mais "programado" que uma janela comercial comum (decisão tomada junto
+  com o usuário, perguntado "até que horário ideal dentro da janela").
+  Aplicado nos 2 pontos onde a IA processa texto de qualificação —
+  `chatbot-whatsapp/includes/mensagens.php::processarMensagemZapi()`
+  (compra) e `mensagens_vendas.php::processarMensagemVendasZapi()`
+  (vendas) — sempre DEPOIS dos guards de opt-out/exclusão de dados (regra
+  4/LGPD continuam funcionando a qualquer hora, nunca bloqueados por
+  isso) e só dentro do `if (in_array($etapaAtual, ['whatsapp',
+  'qualificacao_ia']))` já existente (nunca afeta conversa já escalada
+  pro humano). Fora da janela: nunca silêncio total (lead real se sente
+  ignorado) nem qualificação completa fingida (regra #3) —
+  `iaQualificacaoMsgForaHorario()` manda um aviso curto avisando o
+  horário de volta, deduplicado 1x/telefone/dia
+  (`iaQualificacaoJaAvisouForaHorarioHoje()`/
+  `iaQualificacaoRegistrarAvisoForaHorario()`, mesmo padrão
+  `config.chave_id` de `alerta_atraso_{id}`/`reeng_sent_{telefone}`) —
+  nunca repete o aviso a cada mensagem nova se o lead insistir escrevendo
+  à noite. Etapa NUNCA avança pra `qualificacao_ia` fora do horário (só o
+  aviso sai, `iaProcessarTurno()`/`iaProcessarTurnoVenda()` nem são
+  chamados) — só avança de verdade quando a janela reabre. Card novo
+  "IA qualifica das ... até ..." em `admin/configuracoes.php`, mesmo
+  padrão visual do card de horário da fila logo acima, com validação
+  HH:MM no servidor (nunca confia só no `<input type="time">` do HTML).
+  Testado: 9 asserções de função isoladas (mensagem cita o horário
+  configurado e cai pro default 08:00/20:00 com config ausente ou
+  inválida; janela 00:00–23:59 sempre `true` independente da hora real;
+  janela de largura zero — abertura==fechamento — sempre `false`,
+  também independente da hora real, truque usado pra testar
+  deterministicamente sem mockar `date()`; dedup de aviso por telefone/
+  dia, telefone diferente nunca é afetado) + 14 asserções de integração
+  ponta a ponta via `processarMensagemZapi()`/`processarMensagemVendasZapi()`
+  reais (nunca simuladas) contra banco isolado + fake Z-API local (`php
+  -S`) + `GEMINI_BASE_URL` apontando pro mesmo fake server (resposta 500
+  rápida, evita timeout real de 25s×3 modelos contra a internet
+  bloqueada deste sandbox): janela fechada em COMPRA e em VENDAS — etapa
+  nunca avança, exatamente 1 mensagem "out" com o horário certo, 2ª
+  mensagem do mesmo telefone no mesmo dia não duplica o aviso; janela
+  aberta nos dois lados — etapa avança pra `qualificacao_ia` (prova que o
+  gate deixou passar pro fluxo normal) e nenhum aviso de horário é
+  mandado; regressão confirmando que "SAIR" continua funcionando mesmo
+  fora do horário de qualificação (o guard de opt-out roda ANTES do gate
+  novo, nunca é bloqueado por ele) — confirmado que o banco de dev real
+  nunca foi tocado (sempre via script em ARQUIVO com `auto_prepend_file`,
+  nunca `php -r` inline) + `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema (as 2 chaves novas vivem em `config`, livre).
 - **Pedido de exclusão de dados (LGPD) detectado no webhook do WhatsApp**
   (01/10/2026, "vamos implementar mensagem lgp para exlusão do dados") —
   já existia uma página pública (`exclusao-dados.php`, 29/09/2026) com o

@@ -485,6 +485,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig('fila_horario_fechamento', $fechamento);
                 $sucesso = "Horário da fila salvo: liga às {$abertura}, desliga às {$fechamento}, todo dia.";
             }
+        } elseif ($acao === 'salvar_horario_ia_qualificacao') {
+            // 03/10/2026 — "deixar ia qualificando só no horário comercial",
+            // janela própria (mais larga que a da fila de consultores), ver
+            // docblock de iaQualificacaoDentroHorarioComercial().
+            $abertura = trim((string)($_POST['ia_qualificacao_horario_abertura'] ?? ''));
+            $fechamento = trim((string)($_POST['ia_qualificacao_horario_fechamento'] ?? ''));
+            if (!preg_match('/^\d{2}:\d{2}$/', $abertura) || !preg_match('/^\d{2}:\d{2}$/', $fechamento)) {
+                $erro = 'Horário inválido — use o formato HH:MM.';
+            } else {
+                setConfig('ia_qualificacao_horario_abertura', $abertura);
+                setConfig('ia_qualificacao_horario_fechamento', $fechamento);
+                $sucesso = "Horário da IA de qualificação salvo: responde das {$abertura} às {$fechamento}, todo dia.";
+            }
         } elseif ($acao === 'salvar_horario_notificar_crm_preenchido') {
             // 29/09/2026, "ao terminar turno 7:30 enviar todos leads crm
             // preenchido que chegarem para numero de notificação".
@@ -1357,6 +1370,20 @@ unset($fv);
         <small style="display:block;color:#666">Todo dia, automático: liga "Disponível" de todo consultor na abertura
            (exceto quem foi marcado ausente hoje) e desliga todo mundo no fechamento. Roda via cron a cada poucos
            minutos (<code>cron/fila_horario_expediente.php</code>) — não precisa de ninguém clicando nada.</small>
+    </form>
+
+    <form method="post" class="inline" style="margin-bottom:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_horario_ia_qualificacao">
+        <label>IA qualifica das</label>
+        <input type="time" name="ia_qualificacao_horario_abertura" value="<?= e(getConfig('ia_qualificacao_horario_abertura') ?: '08:00') ?>" style="width:110px;display:inline-block">
+        <label>até</label>
+        <input type="time" name="ia_qualificacao_horario_fechamento" value="<?= e(getConfig('ia_qualificacao_horario_fechamento') ?: '20:00') ?>" style="width:110px;display:inline-block">
+        <button type="submit" style="margin-top:0">Salvar horário</button>
+        <small style="display:block;color:#666">03/10/2026 — fora dessa janela, a IA não qualifica (manda 1 aviso curto
+           avisando o horário e espera reabrir) — reduz o padrão "bot respondendo 24h" logo depois de um bloqueio real
+           do número. Nunca bloqueia resposta de consultor pelo WhatsApp Box, só a qualificação automática. Janela
+           própria, de propósito mais larga que a da fila acima.</small>
     </form>
 
     <form method="post" class="inline" style="margin-bottom:12px">

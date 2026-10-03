@@ -159,14 +159,27 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
 
         if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
             if ($tipoRegistro === 'text') {
-                if ($etapaAtual === 'whatsapp') {
-                    mudarEtapaVenda($vendaLead['venda_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
-                }
-                if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
-                    try {
-                        $iaResultado = iaProcessarTurnoVenda($vendaLead['venda_id'], $phone);
-                    } catch (Throwable $e) {
-                        // Nunca deixa falha da IA quebrar o resto do webhook.
+                // 03/10/2026 — mesmo gate de horário comercial do lado de
+                // compra (ver docblock de iaQualificacaoDentroHorarioComercial()
+                // em includes/whatsapp_config.php).
+                if (!iaQualificacaoDentroHorarioComercial()) {
+                    if (!iaQualificacaoJaAvisouForaHorarioHoje($phone)) {
+                        $msgForaHorario = iaQualificacaoMsgForaHorario();
+                        if (zapiEnviarTexto($phone, $msgForaHorario, $credenciaisVendas)) {
+                            registrarMensagem($phone, 'out', $msgForaHorario, null, true);
+                            iaQualificacaoRegistrarAvisoForaHorario($phone);
+                        }
+                    }
+                } else {
+                    if ($etapaAtual === 'whatsapp') {
+                        mudarEtapaVenda($vendaLead['venda_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
+                    }
+                    if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
+                        try {
+                            $iaResultado = iaProcessarTurnoVenda($vendaLead['venda_id'], $phone);
+                        } catch (Throwable $e) {
+                            // Nunca deixa falha da IA quebrar o resto do webhook.
+                        }
                     }
                 }
             } else {
