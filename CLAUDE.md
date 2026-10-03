@@ -80,6 +80,25 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
    financiamento junto ao banco) continua vinculada à mesma pasta via
    `oportunidade_pendencias_pos_venda`, num controle operacional separado
    do funil de vendas.
+9. **IA de qualificação NUNCA roda 24h — sempre dentro de um horário
+   comercial configurável** (03/10/2026, "isso fica como padrão a
+   seguir", depois do número principal sofrer bloqueio real da Meta/
+   WhatsApp — ver bullet "Qualificação por IA restrita a horário
+   comercial" na seção de módulos). Responder cliente a qualquer hora,
+   todo dia, é um dos sinais que a própria pesquisa sobre a política de
+   IA da Meta aponta como risco de detecção de automação ("cadência
+   entre ações"). `iaQualificacaoDentroHorarioComercial()`
+   (`includes/whatsapp_config.php`, config `ia_qualificacao_horario_abertura`/
+   `_fechamento`) trava isso nos 2 webhooks (compra e vendas) — fora da
+   janela, nunca qualificação completa nem silêncio total, só um aviso
+   curto deduplicado avisando o horário de volta. Qualquer feature nova
+   que processe mensagem de cliente via IA tem que respeitar esse gate,
+   nunca reintroduzir resposta automática fora de horário sem decisão
+   explícita nova. **Mitigação parcial, não solução definitiva** —
+   reduz risco comportamental (o que está sob nosso controle), mas não
+   elimina o risco de detecção pela assinatura técnica da conexão em si
+   (fora do nosso controle enquanto o canal principal for Z-API/
+   não-oficial) — ver ressalva completa no bullet da seção de módulos.
 
 ---
 
