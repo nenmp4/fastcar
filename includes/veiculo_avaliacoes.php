@@ -385,7 +385,16 @@ function listarAvaliacoesPendentes(?int $avaliadorId): array {
     return $stmt->fetchAll();
 }
 
-function listarAvaliacoesConcluidas(?int $avaliadorId): array {
+/**
+ * 05/10/2026, "listagem de veículos vistoriados pra ele conferir todas
+ * suas vistorias" — antes tinha um `LIMIT 100` sem paginação nenhuma
+ * (mesma classe de bug já documentada em admin/clientes.php: passado o
+ * 100º registro, os mais antigos simplesmente sumiam da lista sem
+ * aviso). Agora paginado de verdade (includes/paginacao.php) + busca por
+ * placa/marca/modelo/cliente, pro avaliador achar uma vistoria antiga
+ * específica sem precisar rolar tudo.
+ */
+function listarAvaliacoesConcluidas(?int $avaliadorId, string $busca = '', int $limite = 100, int $offset = 0): array {
     $db = getDB();
     $sql = "
         SELECT va.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
@@ -401,10 +410,40 @@ function listarAvaliacoesConcluidas(?int $avaliadorId): array {
         $sql .= " AND va.avaliador_id = ?";
         $params[] = $avaliadorId;
     }
-    $sql .= " ORDER BY va.concluida_em DESC LIMIT 100";
+    if ($busca !== '') {
+        $sql .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ?)";
+        $like = '%' . $busca . '%';
+        array_push($params, $like, $like, $like, $like);
+    }
+    $sql .= " ORDER BY va.concluida_em DESC LIMIT " . max(1, $limite) . " OFFSET " . max(0, $offset);
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll();
+}
+
+/** Total de vistorias concluídas que batem com o mesmo filtro acima — pra paginação real. */
+function contarAvaliacoesConcluidas(?int $avaliadorId, string $busca = ''): int {
+    $db = getDB();
+    $sql = "
+        SELECT COUNT(*)
+        FROM veiculo_avaliacoes va
+        JOIN oportunidades o ON o.id = va.oportunidade_id
+        JOIN clientes c ON c.id = o.cliente_id
+        WHERE va.status = 'concluida'
+    ";
+    $params = [];
+    if ($avaliadorId !== null) {
+        $sql .= " AND va.avaliador_id = ?";
+        $params[] = $avaliadorId;
+    }
+    if ($busca !== '') {
+        $sql .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ?)";
+        $like = '%' . $busca . '%';
+        array_push($params, $like, $like, $like, $like);
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    return (int)$stmt->fetchColumn();
 }
 
 /**

@@ -130,8 +130,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $filtroAvaliador = ($souAvaliador && !$vejoTudo) ? $meuId : null;
 
 $aba = (string)($_GET['aba'] ?? 'pendentes');
+// 05/10/2026, "listagem de veículos vistoriados pra ele conferir todas
+// suas vistorias" — busca por placa/marca/modelo/cliente + paginação de
+// verdade na aba Concluídas (antes era um LIMIT 100 fixo, sem jeito de
+// ver o que ficasse além disso nem de achar uma vistoria antiga
+// específica sem rolar a lista inteira).
+$busca = trim((string)($_GET['q'] ?? ''));
 $pendentes = listarAvaliacoesPendentes($filtroAvaliador);
-$concluidas = $aba === 'concluidas' ? listarAvaliacoesConcluidas($filtroAvaliador) : [];
+$totalConcluidas = 0;
+$concluidas = [];
+if ($aba === 'concluidas') {
+    $totalConcluidas = contarAvaliacoesConcluidas($filtroAvaliador, $busca);
+    $concluidas = listarAvaliacoesConcluidas($filtroAvaliador, $busca, ITENS_POR_PAGINA_PADRAO, paginacaoOffset());
+}
 
 function avTipoPill(string $tipo): string {
     $rotulo = $tipo === 'venda' ? '🛒 VENDA' : '🚗 COMPRA';
@@ -539,27 +550,40 @@ function avStatusBadge(string $status): string {
 
 <div class="card">
     <h2><?= $aba === 'concluidas' ? '✅ Vistorias concluídas' : '⏳ Vistorias pendentes / em andamento' ?></h2>
+    <?php if ($aba === 'concluidas'): ?>
+    <form method="get" style="margin-bottom:1rem;display:flex;gap:8px;flex-wrap:wrap">
+        <input type="hidden" name="aba" value="concluidas">
+        <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por placa, marca, modelo ou cliente..." style="flex:1;min-width:220px">
+        <button type="submit" style="width:auto">Buscar</button>
+        <?php if ($busca): ?><a href="/admin/avaliacoes.php?aba=concluidas" class="btn-texto" style="align-self:center">Limpar</a><?php endif; ?>
+    </form>
+    <?php endif; ?>
     <?php $lista = $aba === 'concluidas' ? $concluidas : $pendentes; ?>
     <?php if (!$lista): ?>
-        <p><small>Nenhuma vistoria <?= $aba === 'concluidas' ? 'concluída' : 'pendente' ?> <?= $filtroAvaliador ? 'atribuída a você' : '' ?> no momento.</small></p>
+        <p><small>Nenhuma vistoria <?= $aba === 'concluidas' ? 'concluída' : 'pendente' ?> <?= $filtroAvaliador ? 'atribuída a você' : '' ?><?= $busca ? ' pra essa busca' : '' ?> no momento.</small></p>
     <?php else: ?>
         <div style="overflow-x:auto">
         <table>
-            <thead><tr><th>Veículo</th><th>Tipo</th><th>Status</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
+            <thead><tr><th>Veículo</th><th>Placa</th><th>Tipo</th><th>Status</th><th>Avaliador</th><th><?= $aba === 'concluidas' ? 'Concluída em' : 'Criada em' ?></th><th></th></tr></thead>
             <tbody>
             <?php foreach ($lista as $a): ?>
                 <tr>
                     <td><?= $a['tipo_veiculo'] === 'moto' ? '🏍️' : '🚗' ?> <?= e(trim($a['veiculo_marca'] . ' ' . $a['veiculo_modelo'])) ?: '—' ?> <?= e((string)($a['veiculo_ano'] ?? '')) ?><br><small><?= e($a['cliente_nome']) ?></small></td>
+                    <td><?= e($a['veiculo_placa'] ?: '—') ?></td>
                     <td><?= avTipoPill($a['tipo']) ?></td>
                     <td><?= avStatusBadge($a['status']) ?></td>
                     <td><?= $a['avaliador_nome'] ? e($a['avaliador_nome']) : '<em>não atribuído</em>' ?></td>
-                    <td><?= date('d/m/Y H:i', strtotime($a['created_at'])) ?></td>
+                    <td><?php
+                        $dataLinha = $aba === 'concluidas' ? ($a['concluida_em'] ?: $a['created_at']) : $a['created_at'];
+                        echo date('d/m/Y H:i', strtotime($dataLinha));
+                    ?></td>
                     <td><a class="btn-primary" href="/admin/avaliacao.php?id=<?= (int)$a['id'] ?>">Abrir →</a></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
         </div>
+        <?php if ($aba === 'concluidas') renderPaginacao($totalConcluidas); ?>
     <?php endif; ?>
 </div>
 </main>

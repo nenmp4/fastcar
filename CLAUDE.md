@@ -2863,6 +2863,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   de 1MB (o default do nginx) continuam batendo 413 cru — os `.user.ini`
   sozinhos (já no deploy) não resolvem isso, é a única peça 100%
   manual desta correção.
+  **Listagem de "Concluídas" paginada de verdade + busca por placa**
+  (05/10/2026, "implemente na avalista de vistoria listagem de veículos
+  vistoriados pra ele conferir todas suas vistorias") — `admin/avaliacoes.php`
+  já tinha a aba "✅ Concluídas" (filtrada por avaliador quando logado como
+  tal) desde a criação do módulo, mas `listarAvaliacoesConcluidas()` tinha
+  um `LIMIT 100` fixo sem paginação nenhuma — mesma classe de bug já
+  documentada em `admin/clientes.php`: passado o 100º registro (por
+  `concluida_em DESC`), os mais antigos simplesmente sumiam da lista sem
+  aviso, e não tinha nenhum jeito de achar uma vistoria antiga específica
+  sem rolar tudo. `listarAvaliacoesConcluidas()`/nova
+  `contarAvaliacoesConcluidas()` (`includes/veiculo_avaliacoes.php`)
+  ganharam `$busca` (placa/marca/modelo/cliente, `LIKE`) + `$limite`/
+  `$offset` de verdade — `admin/avaliacoes.php` passou a usar
+  `includes/paginacao.php` (mesmo padrão já usado em
+  `admin/index.php`/`clientes.php`/`veiculos.php`) + um campo de busca
+  só na aba Concluídas, e a coluna **Placa** (já vinha no `SELECT`, nunca
+  tinha sido exibida) apareceu na tabela — a aba "⏳ Pendentes/em
+  andamento" não precisou de paginação (fila de trabalho, não um
+  histórico que cresce sem limite). Testado: função isolada em banco
+  isolado (110 vistorias concluídas pro avaliador A + 3 pro avaliador B
+  — página 1 com 25/página, página 5 trazendo as 10 restantes que o
+  `LIMIT 100` antigo cortava fora, busca por placa/marca específica
+  achando exatamente 1, busca por nome do cliente achando as 110, cada
+  avaliador nunca vendo o dado do outro) + HTTP ponta a ponta real
+  (sessão primed por perfil, servidor PHP embutido): avaliador A vê
+  "Página 1 de 5 (110 no total)", página 5 mostra as 10 restantes,
+  busca por `XYZ9999` acha só a vistoria certa; avaliador B só vê as 3
+  próprias, nenhuma placa do A aparece; super_admin sem filtro vê as 113
+  juntas + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
+  (`veiculo_placa` já era lida no `JOIN` com `oportunidades`, só não
+  estava sendo mostrada).
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
