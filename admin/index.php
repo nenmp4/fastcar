@@ -17,6 +17,15 @@ $meuId = (int)$_SESSION['admin_id'];
 // empresa inteira (visão geral).
 $souDono = $perfil === 'consultor';
 
+// Lista pro seletor "Consultor responsável" do modal de nova oportunidade
+// manual (05/10/2026, ver handler mais abaixo) — só quem vê a empresa
+// inteira escolhe; consultor sempre cria pra própria carteira, sem
+// seletor. Mesmo filtro já usado em admin/veiculos.php::$consultoresParaCompra.
+$consultoresParaOportunidadeManual = $souDono ? [] : array_values(array_filter(
+    listarUsuarios(true),
+    fn($u) => in_array($u['perfil'], ['consultor', 'super_admin'], true)
+));
+
 // 28/09/2026, "separa eses leads" — botão rápido de classificar tipo de
 // veículo direto na linha da tabela (ver mais abaixo), pra não precisar
 // abrir cada oportunidade uma por uma só pra marcar carro/moto/etc.
@@ -161,6 +170,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'atualiz
     }
     header('Location: /admin/index.php?' . http_build_query($_GET));
     exit;
+}
+
+// 05/10/2026, "opçao adcionar uma opotunidade manual" — pedido pra cobrir o
+// lead que chegou por ligação, indicação ou presencial, sem nenhuma
+// mensagem no WhatsApp pra disparar a entrada normal do funil. Reaproveita
+// criarOportunidadeManual() (includes/oportunidades.php) — entra direto em
+// crm_preenchido, com histórico gravado via mudarEtapa() (regra #6).
+// Mesmo padrão de aviso de duplicidade (nunca bloqueia) já usado em
+// admin/veiculos.php::cadastrar_manual — avisa antes de criar se o telefone
+// já tiver oportunidade ativa, exige confirmação explícita pra prosseguir.
+$erroOportunidadeManual = '';
+$avisoDuplicidadeManual = null;
+$formularioOportunidadeManualRepetir = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'criar_oportunidade_manual') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não cria oportunidade.');
+    }
+    $telefonePost = (string)($_POST['telefone'] ?? '');
+    $duplicidadeManual = buscarOportunidadeAtivaPorTelefone($telefonePost);
+    if ($duplicidadeManual && empty($_POST['confirmar_duplicidade'])) {
+        $avisoDuplicidadeManual = $duplicidadeManual;
+        $formularioOportunidadeManualRepetir = $_POST;
+    } else {
+        try {
+            // Consultor sempre cria pra própria carteira (regra do dashboard,
+            // $souDono) — nunca aceita um responsavel_id forjado de outro
+            // consultor; quem vê a empresa inteira pode escolher (ou deixar
+            // em branco = pra si mesmo), mesmo padrão de criarVeiculoManualFrota().
+            $responsavelManualPost = $souDono ? $meuId : (!empty($_POST['responsavel_id']) ? (int)$_POST['responsavel_id'] : null);
+            $r = criarOportunidadeManual(
+                (string)($_POST['nome'] ?? ''),
+                $telefonePost,
+                $meuId,
+                $responsavelManualPost,
+                (string)($_POST['veiculo_marca'] ?? ''),
+                (string)($_POST['veiculo_modelo'] ?? ''),
+                (string)($_POST['veiculo_ano'] ?? ''),
+                (string)($_POST['veiculo_placa'] ?? ''),
+                valorMonetario((string)($_POST['valor_pretendido'] ?? '')),
+                (string)($_POST['observacao'] ?? '')
+            );
+            header('Location: /admin/oportunidade.php?id=' . $r['oportunidade_id']);
+            exit;
+        } catch (Throwable $e) {
+            $erroOportunidadeManual = $e->getMessage();
+            $formularioOportunidadeManualRepetir = $_POST;
+        }
+    }
 }
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
@@ -699,6 +761,12 @@ if ($filtroEspecialLabel !== ''): ?>
     </div>
 <?php endif; ?>
 
+<?php if ($perfil !== 'supervisor'): ?>
+<div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button type="button" class="btn-primary" style="width:auto" onclick="document.getElementById('modal-nova-oportunidade').showModal()">➕ Nova oportunidade</button>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <form method="get">
         <?php if ($filtroEspecial !== ''): ?>
@@ -796,6 +864,72 @@ if ($filtroEspecialLabel !== ''): ?>
     ?>
     <a class="btn" style="margin-top:10px;margin-left:8px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQsDetalhado ?>" target="_blank">📄💬 PDF detalhado (com resumo da IA)</a>
 </div>
+
+<?php if ($perfil !== 'supervisor'): ?>
+<dialog id="modal-nova-oportunidade" class="modal-lancamento">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h2 style="margin:0">➕ Nova oportunidade manual</h2>
+        <button type="button" onclick="document.getElementById('modal-nova-oportunidade').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
+    </div>
+    <p><small>Pra lead que chegou por ligação, indicação ou presencial — sem nenhuma mensagem no WhatsApp pra
+       entrar no funil sozinho. Entra direto em "CRM preenchido" (bloco 4), pronto pra atendimento.</small></p>
+
+    <?php if ($avisoDuplicidadeManual): ?>
+        <div class="alerta-erro">
+            ⚠️ Esse telefone já tem uma oportunidade <strong>ativa</strong> —
+            #<?= (int)$avisoDuplicidadeManual['id'] ?> (<?= e($avisoDuplicidadeManual['nome'] ?: '(sem nome)') ?>,
+            etapa <?= e($avisoDuplicidadeManual['etapa']) ?><?php if ($avisoDuplicidadeManual['veiculo_marca'] || $avisoDuplicidadeManual['veiculo_modelo']): ?>,
+            <?= e(trim($avisoDuplicidadeManual['veiculo_marca'] . ' ' . $avisoDuplicidadeManual['veiculo_modelo'])) ?><?php endif; ?>).
+            <a href="/admin/oportunidade.php?id=<?= (int)$avisoDuplicidadeManual['id'] ?>" target="_blank">Abrir essa oportunidade →</a><br>
+            Confere se não é o mesmo negócio duplicado antes de continuar. Se for mesmo um 2º veículo diferente
+            desse cliente, pode cadastrar normalmente.
+        </div>
+    <?php elseif ($erroOportunidadeManual): ?>
+        <div class="alerta-erro">⚠️ <?= e($erroOportunidadeManual) ?></div>
+    <?php endif; ?>
+
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="criar_oportunidade_manual">
+        <?php if ($avisoDuplicidadeManual): ?><input type="hidden" name="confirmar_duplicidade" value="1"><?php endif; ?>
+        <div class="grid-2">
+            <div>
+                <label>Nome do cliente *</label>
+                <input type="text" name="nome" required value="<?= e((string)($formularioOportunidadeManualRepetir['nome'] ?? '')) ?>">
+                <label>Telefone *</label>
+                <input type="text" name="telefone" required placeholder="Ex: 31999998888" value="<?= e((string)($formularioOportunidadeManualRepetir['telefone'] ?? '')) ?>">
+                <label>Valor pretendido pelo veículo (R$)</label>
+                <input type="text" name="valor_pretendido" placeholder="0,00" value="<?= e((string)($formularioOportunidadeManualRepetir['valor_pretendido'] ?? '')) ?>">
+                <?php if (!$souDono): ?>
+                <label>Consultor responsável</label>
+                <select name="responsavel_id">
+                    <option value="">— Eu mesmo (<?= e($_SESSION['admin_nome'] ?? '') ?>) —</option>
+                    <?php foreach ($consultoresParaOportunidadeManual as $u): ?>
+                        <option value="<?= (int)$u['id'] ?>" <?= (string)($formularioOportunidadeManualRepetir['responsavel_id'] ?? '') === (string)$u['id'] ? 'selected' : '' ?>><?= e($u['nome']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php endif; ?>
+            </div>
+            <div>
+                <label>Marca do veículo</label>
+                <input type="text" name="veiculo_marca" value="<?= e((string)($formularioOportunidadeManualRepetir['veiculo_marca'] ?? '')) ?>">
+                <label>Modelo</label>
+                <input type="text" name="veiculo_modelo" value="<?= e((string)($formularioOportunidadeManualRepetir['veiculo_modelo'] ?? '')) ?>">
+                <label>Ano</label>
+                <input type="text" name="veiculo_ano" style="max-width:120px" value="<?= e((string)($formularioOportunidadeManualRepetir['veiculo_ano'] ?? '')) ?>">
+                <label>Placa</label>
+                <input type="text" name="veiculo_placa" style="max-width:160px" value="<?= e((string)($formularioOportunidadeManualRepetir['veiculo_placa'] ?? '')) ?>">
+                <label>Observação</label>
+                <textarea name="observacao" rows="2"><?= e((string)($formularioOportunidadeManualRepetir['observacao'] ?? '')) ?></textarea>
+            </div>
+        </div>
+        <button type="submit" class="btn-primary"><?= $avisoDuplicidadeManual ? '⚠️ Cadastrar mesmo assim' : 'Criar oportunidade →' ?></button>
+    </form>
+</dialog>
+<?php if ($avisoDuplicidadeManual || $erroOportunidadeManual): ?>
+<script>document.getElementById('modal-nova-oportunidade').showModal();</script>
+<?php endif; ?>
+<?php endif; ?>
 
 <?php
 // 29/09/2026, "permitir que selecione em massa os leads pra marcar... tudo

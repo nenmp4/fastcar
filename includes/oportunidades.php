@@ -329,6 +329,91 @@ function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
     return $r ?: null;
 }
 
+/**
+ * Cria uma oportunidade MANUALMENTE, sem passar pelo WhatsApp — 05/10/2026,
+ * "opçao adcionar uma opotunidade manual". Cobre o lead que chegou por
+ * ligação, indicação ou presencial — o consultor/admin já tem o contato (e,
+ * às vezes, já o veículo) de verdade e quer registrar o negócio direto no
+ * funil, sem fingir que passou por entrada no WhatsApp ou qualificação por
+ * IA que nunca aconteceu.
+ *
+ * Entra direto em `etapa='crm_preenchido'` (bloco 4, já "concluído" — os
+ * dados já vieram prontos de um humano, não tem IA pra rodar), pronta pra
+ * "Atendimento do consultor" (bloco 5). Mesma disciplina de
+ * `criarOuAbrirOportunidade()` — grava via `mudarEtapa()` na própria etapa
+ * de entrada só pra deixar o registro em `oportunidade_historico` (regra
+ * #6), nunca um `INSERT` silencioso sem rastro.
+ *
+ * SEMPRE cria uma oportunidade NOVA, nunca reaproveita uma ativa já
+ * existente do mesmo telefone — diferente de `criarOuAbrirOportunidade()`
+ * (que reaproveita porque é a MESMA conversa de WhatsApp continuando), aqui
+ * é uma ação humana explícita de registrar um negócio; regra #1 permite +1
+ * veículo por cliente — quem chama (`admin/index.php`) já avisa antes
+ * (nunca bloqueia) se o telefone já tiver oportunidade ativa, mesmo padrão
+ * de `buscarOportunidadeAtivaPorTelefone()`/`criarVeiculoManualFrota()`.
+ *
+ * Nunca chama `atualizarNomeFotoWhatsapp()` pro cliente novo — mesma
+ * decisão já tomada em `criarVeiculoManualFrota()`: não faz sentido bater
+ * na Z-API atrás de nome/foto de alguém que ainda não mandou mensagem
+ * nenhuma por esse canal.
+ */
+function criarOportunidadeManual(
+    string $nome,
+    string $telefone,
+    int $criadoPor,
+    ?int $responsavelId = null,
+    string $veiculoMarca = '',
+    string $veiculoModelo = '',
+    string $veiculoAno = '',
+    string $veiculoPlaca = '',
+    ?float $valorPretendido = null,
+    string $observacao = ''
+): array {
+    if (trim($nome) === '') {
+        throw new InvalidArgumentException('Informe o nome do cliente.');
+    }
+    $telNorm = normalizarTelefone($telefone);
+    if (!$telNorm || strlen($telNorm) < 12) {
+        throw new InvalidArgumentException("Telefone inválido: {$telefone}");
+    }
+    $responsavelId = $responsavelId ?: $criadoPor;
+
+    $db = getDB();
+    $stmt = $db->prepare('SELECT id, nome FROM clientes WHERE telefone = ?');
+    $stmt->execute([$telNorm]);
+    $cliente = $stmt->fetch();
+
+    if (!$cliente) {
+        $db->prepare('INSERT INTO clientes (nome, telefone) VALUES (?, ?)')
+           ->execute([clean($nome), $telNorm]);
+        $clienteId = (int)$db->lastInsertId();
+    } else {
+        $clienteId = (int)$cliente['id'];
+        if (empty($cliente['nome']) && $nome) {
+            $db->prepare('UPDATE clientes SET nome = ? WHERE id = ?')->execute([clean($nome), $clienteId]);
+        }
+    }
+
+    $db->prepare('
+        INSERT INTO oportunidades
+            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa,
+             valor_pretendido, observacao_manual, responsavel_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ')->execute([
+        $clienteId, 'crm_preenchido',
+        clean($veiculoMarca), clean($veiculoModelo), clean($veiculoAno), clean($veiculoPlaca),
+        $valorPretendido,
+        clean($observacao),
+        $responsavelId,
+    ]);
+    $opId = (int)$db->lastInsertId();
+
+    mudarEtapa($opId, 'crm_preenchido', $responsavelId, 'Oportunidade criada manualmente pelo consultor/admin'
+        . ($observacao !== '' ? (' — ' . $observacao) : ''));
+
+    return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId];
+}
+
 function criarVeiculoManualFrota(
     string $vendedorNome,
     string $vendedorTelefone,

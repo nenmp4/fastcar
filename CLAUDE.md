@@ -9800,6 +9800,77 @@ segue no schema sem uso novo, não removida sem ganho real),
   real e repetindo o POST liga de verdade (banco vira 1, redirect limpo);
   desligar de novo fora da janela funciona sem bloqueio (banco volta a
   0) — + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+- **"opçao adcionar uma opotunidade manual" (05/10/2026)** — botão "➕ Nova
+  oportunidade" em `admin/index.php`, pedido direto. Cobre o lead que
+  chegou por ligação, indicação ou presencial — sem nenhuma mensagem no
+  WhatsApp pra disparar `criarOuAbrirOportunidade()` sozinha. Nova
+  `criarOportunidadeManual()` (`includes/oportunidades.php`, ao lado de
+  `buscarOportunidadeAtivaPorTelefone()`/`criarVeiculoManualFrota()`) —
+  entra direto em `etapa='crm_preenchido'` (bloco 4, "dados organizados
+  aguardando consultor" — já veio pronto de um humano, não tem IA de
+  qualificação pra rodar, nunca finge que passou por `whatsapp`/
+  `qualificacao_ia`), pronta pra "Atendimento do consultor" (bloco 5).
+  Grava via `mudarEtapa()` na própria etapa de entrada só pra deixar o
+  registro em `oportunidade_historico` (regra #6), mesma disciplina de
+  `criarOuAbrirOportunidade()`. SEMPRE cria oportunidade NOVA — nunca
+  reaproveita uma ativa já existente do mesmo telefone (diferente da
+  entrada por WhatsApp, que reaproveita porque é a MESMA conversa
+  continuando; aqui é ação humana explícita de registrar um negócio,
+  regra #1 permite +1 veículo por cliente). Nunca chama
+  `atualizarNomeFotoWhatsapp()` pro cliente novo — mesma decisão já
+  tomada em `criarVeiculoManualFrota()`, não faz sentido bater na Z-API
+  atrás de nome/foto de quem ainda não escreveu.
+  UI (`admin/index.php`) — mesmo molde do modal "💳 Vender na
+  Promissória" (`admin/vendas.php`): `<dialog class="modal-lancamento">`
+  com nome/telefone (obrigatórios), marca/modelo/ano/placa/valor
+  pretendido/observação (opcionais, `valorMonetario()` pro campo de R$).
+  Mesmo aviso de duplicidade (nunca bloqueia) já usado em
+  `admin/veiculos.php::cadastrar_manual` — reaproveita
+  `buscarOportunidadeAtivaPorTelefone()`, avisa antes de criar se o
+  telefone já tiver oportunidade ativa (link pra abrir, confere se não é
+  o mesmo negócio duplicado), exige `confirmar_duplicidade=1` pra
+  prosseguir; dialog reabre sozinho (`<script>`) quando o aviso/erro
+  aparece, pré-preenchido com o que já foi digitado. Consultor
+  (`$souDono`) sempre cria pra própria carteira, sem seletor — nunca
+  aceita `responsavel_id` forjado de outro; quem vê a empresa inteira
+  escolhe um consultor específico ou deixa em branco (= pra si mesmo),
+  mesmo padrão de `$consultoresParaCompra` em `admin/veiculos.php`.
+  Nunca aparece pro perfil `supervisor` (nem botão nem modal na tela,
+  guard duplicado no servidor — 403 mesmo com CSRF válido roubado de
+  outra parte da página, nunca confia só em esconder a UI). Redireciona
+  pra `admin/oportunidade.php?id=X` — o consultor já cai editando os
+  detalhes (financiamento, débitos etc).
+  **Bug real cometido e corrigido no próprio processo de teste, nunca
+  chegou a vazar pra fora do sandbox**: testando a feature via `php -S`
+  (servidor embutido), usei `php -r 'código inline'` pra "seedar"/
+  verificar o banco de teste algumas vezes — mesma pegadinha já
+  documentada várias vezes neste arquivo (`auto_prepend_file` é
+  silenciosamente ignorado no modo `-r`, então `DB_PATH` nunca foi
+  sobrescrito nessas chamadas específicas) — isso escreveu ~3 registros
+  de teste fake direto no banco de DEV LOCAL
+  (`database/fastcar.db`, gitignorado, nunca produção — essa só existe
+  na VPS, fora de alcance deste sandbox) antes de o sintoma (dado "sumindo"
+  entre processos) expor o erro. Corrigido resetando o banco de dev pro
+  estado limpo de sempre (`rm` + `getDB()` recria vazio sozinho) e
+  refazendo a suíte de teste inteira só com scripts em ARQUIVO
+  (`-d auto_prepend_file=...`), nunca mais `-r` pra nada que lê/escreve
+  dado de teste. Testado: função isolada em banco isolado (6 asserções —
+  cria com etapa/responsável/histórico certos; vehículo+valor+observação
+  salvos certos com responsável explícito diferente do criador; 2ª
+  chamada no mesmo telefone cria oportunidade NOVA mas reaproveita o
+  MESMO cliente, nunca duplica; nome vazio e telefone inválido rejeitados)
+  + HTTP ponta a ponta real (sessão primed por perfil, servidor PHP
+  embutido, banco isolado): consultor cria sem seletor, campos
+  persistidos certos (`valorMonetario()` parseando "65.000,00"→65000
+  corretamente), histórico gravado; supervisor nunca vê o botão/modal e
+  um POST forjado com CSRF genuinamente válido pra aquela sessão ainda
+  recebe 403 com a mensagem específica do perfil, banco confirmado
+  intocado; telefone duplicado sem confirmação mostra o aviso inline sem
+  criar nada, confirmando com `confirmar_duplicidade=1` cria a 2ª
+  oportunidade reaproveitando o MESMO cliente; super_admin vê o seletor
+  de responsável populado certo e a oportunidade nasce com o consultor
+  ESCOLHIDO, não com quem criou + `php -l` + `tests/smoke.php` limpos.
+  Sem migração de schema (todas as colunas usadas já existiam).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
