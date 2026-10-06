@@ -860,22 +860,29 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                             <?php endif; ?>
 
                             <?php
-                                // 02/10/2026 — FASTCAR/testemunhas, quando configuradas em
-                                // Configurações, viram signatárias REAIS (signatariosExtrasContrato()),
-                                // não só nome impresso. Link de cada uma, enquanto o contrato
-                                // ainda não fechou 100% (status só vira 'assinado' quando TODO
-                                // mundo configurado já assinou, inclusive essas).
-                                $signersExtra = json_decode($ct['zapsign_signers_extra_json'] ?? '{}', true) ?: [];
+                                // 06/10/2026 — "como saber quem já assinou" + achado real
+                                // "cliente e as testemunhas já assinaram" enquanto a tela
+                                // continuava mostrando todo mundo em "também precisa assinar"
+                                // pra sempre: o status AGREGADO (contratos.status) só vira
+                                // 'assinado' quando TODO signatário termina, mas nunca
+                                // distinguia quem especificamente já tinha ido. Ver
+                                // contratoSignatariosComStatus()/zapsignAtualizarDetalhePorSignatario()
+                                // em includes/contratos.php — reflete progresso PARCIAL em
+                                // tempo real, atualizado a cada sincronização (webhook ou
+                                // cron/zapsign_sync.php), não só no momento final.
+                                $signatariosStatus = contratoSignatariosComStatus($ct);
                             ?>
-                            <?php if ($signersExtra && $ct['status'] !== 'assinado' && $ct['status'] !== 'cancelado'): ?>
-                                <span class="status-linha" style="display:block;margin-top:4px">
-                                    Também precisa assinar:
-                                    <?php foreach ($signersExtra as $chaveExtra => $dadosExtra): ?>
-                                        <?php if (!empty($dadosExtra['sign_url'])): ?>
-                                            <a class="chip-acao" href="<?= e($dadosExtra['sign_url']) ?>" target="_blank">🔗 <?= e(signatarioExtraLabel((string)$chaveExtra)) ?></a>
+                            <?php if ($ct['status'] !== 'cancelado'): ?>
+                                <div class="status-linha" style="display:block;margin-top:4px">
+                                    <strong>Assinaturas:</strong>
+                                    <?php foreach ($signatariosStatus as $sig): ?>
+                                        <?php if ($sig['assinado']): ?>
+                                            <span style="display:inline-block;margin:2px 6px 2px 0;color:#2a7a3b">✅ <?= e($sig['label']) ?> assinou<?= $sig['assinado_em'] ? ' ' . date('d/m H:i', strtotime((string)$sig['assinado_em'])) : '' ?></span>
+                                        <?php elseif ($ct['status'] !== 'assinado'): ?>
+                                            <span style="display:inline-block;margin:2px 6px 2px 0;color:#a3701a">⏳ <?= e($sig['label']) ?> ainda não assinou<?php if ($sig['sign_url']): ?> <a href="<?= e($sig['sign_url']) ?>" target="_blank">🔗</a><?php endif; ?></span>
                                         <?php endif; ?>
                                     <?php endforeach; ?>
-                                </span>
+                                </div>
                             <?php endif; ?>
 
                             <?php if ($ct['status'] === 'assinado'): ?>

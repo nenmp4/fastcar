@@ -212,7 +212,19 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
 
 /**
  * Consulta o status de um documento.
- * @return array ['status'=>'signed'|'pending'|'refused', 'signed_file_url'=>, 'sign_url'=>] ou ['error'=>]
+ *
+ * 06/10/2026 — achado real: "como saber quem já assinou" (status agregado
+ * do documento só vira 'signed' quando TODO signatário terminou, mas a
+ * tela nunca distinguia quem especificamente já assinou — "cliente e as
+ * testemunhas já assinaram" só que o sistema continuava mostrando todo
+ * mundo como pendente). `signers` devolve o array CRU de
+ * `doc.signers[]` — cada item com `token`/`status` ('new'/'link-opened'/
+ * 'signed', confirmado via documentação pública — 2 buscas + leitura de
+ * um SKILL.md de terceiro convergindo no mesmo formato, nunca contra a
+ * API real)/`signed_at` (null até assinar). `zapsignSincronizarContrato()`
+ * (includes/contratos.php) usa isso pra montar o detalhe por signatário.
+ *
+ * @return array ['status'=>'signed'|'pending'|'refused', 'signed_file_url'=>, 'sign_url'=>, 'signers'=>array] ou ['error'=>]
  */
 function zapsignStatusDocumento(string $docToken): array {
     $res = zapsignRequest('GET', '/docs/' . $docToken . '/');
@@ -228,6 +240,7 @@ function zapsignStatusDocumento(string $docToken): array {
         // hora (zapsignBaixarAssinado()).
         'signed_file_url' => (string)($doc['signed_file'] ?? ''),
         'sign_url'        => (string)$signUrl,
+        'signers'         => is_array($doc['signers'] ?? null) ? $doc['signers'] : [],
     ];
 }
 

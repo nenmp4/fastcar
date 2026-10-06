@@ -108,6 +108,97 @@ function signatarioExtraLabel(string $chave): string {
     };
 }
 
+/**
+ * Grava, dentro de `zapsign_signers_extra_json`, o status/data de
+ * assinatura de CADA signatário individual (06/10/2026, ver bullet
+ * completo em zapsignSincronizarContrato()) — reaproveita a MESMA coluna
+ * já usada pra guardar token/sign_url de cada extra (fastcar/testemunha1/
+ * testemunha2), só acrescenta `status`/`assinado_em` ao lado do que já
+ * tinha, nunca sobrescreve token/sign_url. O signatário PRINCIPAL (sem
+ * "chave" própria, token vive em `zapsign_signer_token`) usa a chave
+ * reservada `_principal` (nunca colide com fastcar/testemunha1/
+ * testemunha2, nomes reais de `signatariosExtrasContrato()`).
+ * Casa cada item de `$signersRaw` (array cru de `doc.signers[]`) pelo
+ * `token` — nunca por posição/índice, mais seguro contra a ZapSign
+ * reordenar a lista. Item cujo token não bate com nenhum conhecido é
+ * ignorado (nunca grava lixo). Sempre best-effort, nunca lança — chamada
+ * de dentro do loop de sincronização, que não pode travar por causa
+ * disso.
+ */
+function zapsignAtualizarDetalhePorSignatario(int $contratoId, array $c, array $signersRaw): void {
+    if (!$signersRaw) return;
+    try {
+        $extra = json_decode($c['zapsign_signers_extra_json'] ?? '{}', true) ?: [];
+
+        $chavePorToken = [];
+        if (!empty($c['zapsign_signer_token'])) {
+            $chavePorToken[(string)$c['zapsign_signer_token']] = '_principal';
+        }
+        foreach ($extra as $chave => $dados) {
+            if (!empty($dados['token'])) $chavePorToken[(string)$dados['token']] = $chave;
+        }
+        if (!$chavePorToken) return;
+
+        $mudou = false;
+        foreach ($signersRaw as $s) {
+            $token = (string)($s['token'] ?? '');
+            if ($token === '' || !isset($chavePorToken[$token])) continue;
+            $chave = $chavePorToken[$token];
+            $extra[$chave]['status']      = (string)($s['status'] ?? '');
+            $extra[$chave]['assinado_em'] = $s['signed_at'] ?? null;
+            $mudou = true;
+        }
+        if ($mudou) {
+            getDB()->prepare("UPDATE contratos SET zapsign_signers_extra_json = ? WHERE id = ?")
+                ->execute([json_encode($extra), $contratoId]);
+        }
+    } catch (Throwable $e) {
+        // best-effort — nunca derruba a sincronização por causa do detalhe
+    }
+}
+
+/**
+ * Monta, pra exibir na tela, o status de assinatura de CADA signatário
+ * configurado do contrato (principal + FASTCAR/testemunha1/testemunha2,
+ * só os que de fato entraram como signatário de verdade) — 06/10/2026,
+ * "como saber quem já assinou" + achado real "cliente e as testemunhas já
+ * assinaram" enquanto a tela ainda mostrava todo mundo em
+ * "também precisa assinar" pra sempre: o status AGREGADO do contrato
+ * (`contratos.status`) só vira 'assinado' quando TODO mundo termina, e a
+ * lista antiga nunca distinguia quem já tinha ido. Lê o que
+ * `zapsignAtualizarDetalhePorSignatario()` grava a cada sincronização —
+ * reflete progresso PARCIAL em tempo real, não só o momento final.
+ * @return array cada item: ['chave','label','assinado'=>bool,'status_raw'=>?string,'assinado_em'=>?string,'sign_url'=>string]
+ */
+function contratoSignatariosComStatus(array $ct): array {
+    $extra = json_decode($ct['zapsign_signers_extra_json'] ?? '{}', true) ?: [];
+    $campos = json_decode($ct['campos_json'] ?? '{}', true) ?: [];
+    $ehVenda = ($ct['tipo'] ?? '') === 'venda';
+    $nomePrincipal = $ehVenda ? ($campos['comprador_nome'] ?? '') : ($campos['vendedor_nome'] ?? '');
+
+    $principal = $extra['_principal'] ?? [];
+    $itens = [[
+        'chave'       => '_principal',
+        'label'       => $nomePrincipal ?: ($ehVenda ? 'Comprador(a)' : 'Vendedor(a)'),
+        'assinado'    => ($principal['status'] ?? '') === 'signed',
+        'status_raw'  => $principal['status'] ?? null,
+        'assinado_em' => $principal['assinado_em'] ?? null,
+        'sign_url'    => (string)($ct['sign_url'] ?? ''),
+    ]];
+    foreach (['fastcar', 'testemunha1', 'testemunha2'] as $chave) {
+        if (empty($extra[$chave]['token'])) continue; // nunca configurado, nem entrou como signatário desse contrato
+        $itens[] = [
+            'chave'       => $chave,
+            'label'       => signatarioExtraLabel($chave),
+            'assinado'    => ($extra[$chave]['status'] ?? '') === 'signed',
+            'status_raw'  => $extra[$chave]['status'] ?? null,
+            'assinado_em' => $extra[$chave]['assinado_em'] ?? null,
+            'sign_url'    => (string)($extra[$chave]['sign_url'] ?? ''),
+        ];
+    }
+    return $itens;
+}
+
 function formatarDataExtensoPtBr(string $dataYmd): string {
     $meses = [1 => 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
               'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -739,6 +830,15 @@ function zapsignSincronizarContrato(int $contratoId): void {
 
     $statusRes = zapsignStatusDocumento($c['zapsign_doc_token']);
     if (isset($statusRes['error'])) return;
+
+    // 06/10/2026 — sempre atualiza o detalhe POR SIGNATÁRIO, mesmo quando
+    // o status agregado abaixo não muda (ex: cliente e testemunhas já
+    // assinaram, só falta o representante da FASTCAR — o agregado segue
+    // 'pending' até ele terminar, mas a tela precisa mostrar o progresso
+    // parcial sem esperar o early-return abaixo liberar). Ver bullet
+    // completo em zapsignAtualizarDetalhePorSignatario()/
+    // contratoSignatariosComStatus().
+    zapsignAtualizarDetalhePorSignatario($contratoId, $c, $statusRes['signers'] ?? []);
 
     $novoStatus = CONTRATOS_STATUS_ZAPSIGN[$statusRes['status']] ?? $c['status'];
 
