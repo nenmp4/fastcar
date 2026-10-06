@@ -6,9 +6,16 @@ database/*.db-wal
 storage/logs/*
 storage/backups/*
 storage/uploads/*
+storage/cache/*
 !storage/logs/.gitkeep
 !storage/backups/.gitkeep
 !storage/uploads/.gitkeep
+!storage/cache/.gitkeep
+
+# Cache local de mídia do WhatsApp já baixada do Drive (06/10/2026, ver
+# includes/whatsapp_inbox.php::lerMidiaWhatsappComCache()) — bytes
+# derivados, nunca fonte de verdade (Drive/banco são), nunca versionado.
+storage/cache/whatsapp_midia/*
 
 # Fotos de perfil enviadas pelos usuários (admin/meu_perfil.php) — dado
 # pessoal por conta, nunca versionado, mesmo espírito de storage/uploads/.

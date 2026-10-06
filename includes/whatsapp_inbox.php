@@ -24,6 +24,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — assinar mensagem com o nome do consultor
+require_once __DIR__ . '/documentos.php'; // lerConteudoArquivoDocumento() — cache local de mídia já baixada do Drive
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem(), iaPausada(), pausarIA(), retomarIA()
 
 /**
@@ -190,6 +191,80 @@ function renderizarMidiaWhatsapp(array $m): string {
         'document' => '<a href="' . e($url) . '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:inherit;font-size:.85rem">📎 ' . e(preg_replace('/^📎\s*/u', '', (string)$m['mensagem'])) . '</a>',
         default => '',
     };
+}
+
+/**
+ * Cache LOCAL (disco, `storage/cache/whatsapp_midia/`) pra bytes de mídia
+ * de mensagem já baixados do Drive — 06/10/2026, achado real: "inbox -
+ * fotos está demorando abrir [...] da geral na velocidade". Causa: toda
+ * vez que alguém abria uma foto/áudio/vídeo recebido do cliente,
+ * admin/ver_midia_whatsapp.php refazia do zero a autenticação JWT +
+ * download pela Drive API (lerConteudoArquivoDocumento()) — mesmo pra
+ * REABRIR a mesma mensagem que já tinha sido vista segundos antes, e o
+ * header de resposta era `no-store` (nunca deixava o navegador guardar
+ * nada). Numa conversa com várias fotos (fotos do veículo, CRLV etc),
+ * cada abertura de conversa disparava N round-trips reais pra Drive só
+ * pra servir de novo o que já tinha sido baixado antes — o próprio custo
+ * de rede da Drive API (autenticação + download) é o que sentia como
+ * "lento", não uma query do SQLite.
+ *
+ * Seguro cachear por `drive_file_id` pra sempre (sem TTL, diferente do
+ * cache de API externa documentado em includes/cnpj.php/fipe.php, que é
+ * pra DADO que pode mudar com o tempo): `whatsapp_mensagens.drive_file_id`/
+ * `arquivo_url` são escritos exatamente 1 vez (confirmado — só existe 1
+ * UPDATE no projeto todo pra essas 2 colunas, em
+ * chatbot-whatsapp/includes/mensagens.php, no momento em que a mídia é
+ * salva pela 1ª vez) e nunca mais sobrescritos depois — diferente de
+ * `oportunidade_documentos`/`contratos`, onde o mesmo id PODE trocar de
+ * arquivo (documento reenviado, contrato assinado por cima do rascunho);
+ * por isso esse cache é só pra mídia de WhatsApp, nunca generalizado pra
+ * `lerConteudoArquivoDocumento()` em si (usada também por
+ * admin/ver_documento.php/ver_contrato.php, onde cachear por esse motivo
+ * serviria conteúdo velho depois de uma substituição).
+ *
+ * Mídia já local (sem `drive_file_id`, fallback `storage/uploads/`) nunca
+ * passa por aqui — ler do próprio disco já é rápido, não precisa de cache
+ * em cima de cache.
+ */
+function whatsappMidiaCacheDir(): string {
+    $dir = dirname(__DIR__) . '/storage/cache/whatsapp_midia';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
+function lerMidiaWhatsappComCache(?string $driveFileId, ?string $arquivoUrl): ?array {
+    if (!$driveFileId) {
+        return lerConteudoArquivoDocumento($driveFileId, $arquivoUrl);
+    }
+
+    $dir = whatsappMidiaCacheDir();
+    // drive_file_id é um id do Google, sempre alfanumérico com -/_ — nunca
+    // passa por um nome de arquivo cru vindo de fora, mas sanitiza mesmo
+    // assim antes de montar o caminho (defesa a mais, sem custo).
+    $chave = preg_replace('/[^A-Za-z0-9_-]/', '_', $driveFileId);
+    $arquivoCache = $dir . '/' . $chave;
+    $metaCache = $arquivoCache . '.meta.json';
+
+    if (is_file($arquivoCache) && is_file($metaCache)) {
+        $meta = json_decode((string)@file_get_contents($metaCache), true);
+        $conteudo = @file_get_contents($arquivoCache);
+        if ($conteudo !== false && is_array($meta) && isset($meta['mime'], $meta['name'])) {
+            return ['content' => $conteudo, 'mime' => $meta['mime'], 'name' => $meta['name']];
+        }
+        // Cache corrompido/incompleto (ex: escrita anterior interrompida) —
+        // cai pro caminho normal abaixo e regrava certo.
+    }
+
+    $arquivo = lerConteudoArquivoDocumento($driveFileId, $arquivoUrl);
+    if ($arquivo) {
+        // Best-effort — nunca bloqueia servir o conteúdo que já foi
+        // baixado com sucesso só porque a escrita do cache falhou.
+        @file_put_contents($arquivoCache, $arquivo['content']);
+        @file_put_contents($metaCache, json_encode(['mime' => $arquivo['mime'], 'name' => $arquivo['name']]));
+    }
+    return $arquivo;
 }
 
 /** Marca toda mensagem recebida ('in') de um telefone como lida — chamado ao abrir a conversa. */

@@ -8883,6 +8883,69 @@ segue no schema sem uso novo, não removida sem ganho real),
   `externalAdReply` no webhook, `GET insights?level=ad`, prefixo `act_`
   obrigatório) — os 2 mecanismos reais validados em produção nesta mesma
   sessão, generalizados pra qualquer CRM futuro nesta stack.
+  **4ª rodada — cache de mídia do WhatsApp (fotos/áudio/vídeo recebidos
+  do cliente), 06/10/2026** ("inbox - fotos está demorando abrir da
+  geral na velocidade") — categoria DIFERENTE das 3 rodadas acima (essas
+  eram sobre query SQL lenta; esta é sobre chamada de API EXTERNA cara
+  repetida sem necessidade, domínio da skill `cache-php-sqlite`, não
+  `performance-php-sqlite`). Achado lendo `admin/ver_midia_whatsapp.php`:
+  toda abertura de foto/áudio/vídeo recebido numa conversa do WhatsApp
+  Box ia direto pra `includes/documentos.php::servirArquivoDriveOuLocal()`
+  (a mesma função compartilhada por `ver_documento.php`/`ver_contrato.php`)
+  com `Cache-Control: private, no-store` — pra mídia salva no Drive, isso
+  significa refazer do ZERO a autenticação JWT + o download da Drive API
+  TODA VEZ que a mesma foto é aberta (reabrir a mesma conversa, rolar a
+  thread, o navegador recarregando o `<img>`), mesmo a mídia já tendo
+  sido vista segundos antes — numa conversa com várias fotos (foto do
+  veículo, CRLV etc), abrir ela de novo disparava N round-trips reais pra
+  Drive só pra servir de novo bytes que já tinham sido baixados. Esse
+  `no-store` nunca foi mudado globalmente (seria arriscado:
+  `oportunidade_documentos`/`contratos` PODEM ter o arquivo de um mesmo id
+  substituído depois — documento reenviado, contrato assinado por cima do
+  rascunho — cachear ali serviria conteúdo velho) — a correção ficou
+  isolada em `admin/ver_midia_whatsapp.php`, que é um caso diferente:
+  confirmado via grep que `whatsapp_mensagens.drive_file_id`/`arquivo_url`
+  só têm 1 UPDATE no projeto todo (a escrita única em
+  `chatbot-whatsapp/includes/mensagens.php` quando a mídia é salva a
+  primeira vez), nunca sobrescritos depois — seguro cachear pra sempre
+  por `drive_file_id`.
+  Nova `lerMidiaWhatsappComCache()` (`includes/whatsapp_inbox.php`) — um
+  cache LOCAL em disco (`storage/cache/whatsapp_midia/`, gitignorado
+  igual `storage/uploads/`), chave = `drive_file_id` (nunca TTL, diferente
+  do cache de API externa documentado em `includes/cnpj.php`/`fipe.php`,
+  que é pra dado que PODE mudar com o tempo — bytes de uma mensagem já
+  recebida nunca mudam): cache hit lê do disco local sem tocar a Drive de
+  novo; cache miss baixa via `lerConteudoArquivoDocumento()` (sem
+  mudança nela) e grava em disco (best-effort, nunca bloqueia servir o
+  que já baixou com sucesso). Mídia já local (`arquivo_url`, fallback sem
+  Drive) nunca passa pelo cache — ler do próprio disco já é rápido.
+  `admin/ver_midia_whatsapp.php` passou a servir direto (sem mais
+  depender de `servirArquivoDriveOuLocal()`) com
+  `Cache-Control: private, max-age=2592000, immutable` (30 dias, `private`
+  porque é autenticado por conversa, nunca cache compartilhado/CDN) — e
+  limpa explicitamente o `Pragma: no-cache`/`Expires: 1981` que
+  `startSecureSession()` (via `session_start()`, `session.cache_limiter`
+  padrão do PHP) já tinha mandado antes, substituindo por um `Expires`
+  futuro coerente (achado real no teste HTTP: os 2 headers sobrevivem
+  porque têm nome diferente de `Cache-Control`, então `header()` não os
+  sobrescreve sozinho — navegador moderno já ignora os dois quando
+  `Cache-Control` está presente, RFC 7234 §5.3, mas limpa mesmo assim pra
+  não depender disso). Testado: função isolada contra servidor Google
+  OAuth+Drive fake local com log de request (1ª chamada bate no Drive — 3
+  requests: auth+meta+download — e grava o cache; 2ª chamada no MESMO
+  `drive_file_id` não gera NENHUM request novo, conteúdo idêntico; id
+  DIFERENTE bate no Drive de novo — cache é por id, nunca genérico;
+  fallback local nunca toca Drive nem cache) + HTTP ponta a ponta real
+  (sessão primed via `php -S`): 1ª abertura de uma foto real confirma os 3
+  requests no fake server + headers certos (`Cache-Control`, `Expires`
+  futuro, sem `Pragma`); 2ª abertura da MESMA mensagem, com OUTRA sessão
+  HTTP (não é cache de navegador sendo testado aqui, é o cache de disco
+  no servidor) confirma ZERO request novo ao Drive; 403 pra consultor sem
+  acesso à conversa confirmado bloqueando ANTES de qualquer tentativa de
+  baixar (nenhum request ao Drive); `admin/ver_documento.php` (função
+  compartilhada, nunca tocada) conferido continuando exatamente
+  `Cache-Control: private, no-store` — zero regressão nos documentos/
+  contratos. `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 - **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
   admin deixar offline usuario que faltar e pegar os lead que chegar") —
   o lado de COMPRA já tinha isso desde 22/09/2026
