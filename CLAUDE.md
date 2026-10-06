@@ -2975,6 +2975,110 @@ segue no schema sem uso novo, não removida sem ganho real),
   juntas + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
   (`veiculo_placa` já era lida no `JOIN` com `oportunidades`, só não
   estava sendo mostrada).
+  **Termo Ciente — substitui a assinatura via ZapSign por aceite simples
+  (link por e-mail, 1 clique)** (06/10/2026, "Não enviar checlist de
+  retirada do veiculo pelo zapsiner - vamos fazer documento interno
+  cliente só da uma aceite ao receber no email o link - termo ciente"
+  → mockup visual feito antes de codar, 4 decisões confirmadas:
+  (1) continua exclusivo da venda, como já era; (2) prova do aceite =
+  data/hora + IP + navegador; (3) link nunca expira; (4) cliente pode
+  escrever uma ressalva opcional ao confirmar) — **reverte** a decisão
+  original do módulo ("Termo de entrega/vistoria (PDF + assinatura
+  eletrônica)" acima: "Geração/envio é SEMPRE ação manual... reaproveita
+  os helpers de baixo nível de contratos_pdf.php" — ZapSign). O
+  `gerarEEnviarTermoAvaliacao()` continua ação manual e exclusivo de
+  venda (nada disso mudou), mas PAROU de criar documento na ZapSign:
+  agora gera o PDF (registro puramente interno) e manda o link do
+  **Termo Ciente** (`public/termo_ciente.php?token=...`) por **e-mail**
+  pro comprador — ele só clica "estou ciente", nunca uma assinatura
+  eletrônica de verdade. `zapsign_doc_token`/`zapsign_signer_token`/
+  `sign_url` (coluna já existia) ficam só pra histórico de termo já
+  enviado assim ANTES dessa mudança — `sincronizarTermoAvaliacao()`
+  nunca foi tocada, continua viva só pra esses registros antigos (nenhum
+  código novo escreve nelas de novo). `termo_status` ganhou o valor
+  `'confirmado'` (cliente clicou o link) ao lado dos antigos
+  `'assinado'`/`'recusado'` (nunca removidos). Colunas novas:
+  `termo_ciente_token` (bin2hex(random_bytes(20)), mesmo padrão de
+  `getOuCriarTokenDocumentos()` — gerado 1x, nunca muda, reenviar reusa
+  o mesmo link), `termo_ciente_enviado_em`, `termo_ciente_ip`,
+  `termo_ciente_user_agent`, `termo_ciente_ressalva` — índice único
+  PARCIAL no token (`WHERE termo_ciente_token != ''`, nunca exige
+  unicidade entre as linhas que ainda têm `''` default).
+  **Lista completa dos itens + resumo/score do veículo** (pedido de
+  acompanhamento no mesmo dia, "coloca toda lista completa dos intens
+  depois resumo e score do veiculo") — nova `veiculoAvaliacaoScore($itens)`
+  (`includes/veiculo_avaliacoes.php`) é contagem 100% determinística do
+  checklist já marcado pelo avaliador, NUNCA um julgamento novo de IA
+  (regra #3): conta ok/problema/não-verificado, calcula `percentual` só
+  em cima do que foi de fato VERIFICADO (ok+problema — "não verificado"
+  fica de fora, nunca conta nem a favor nem contra, e o percentual sai
+  `null` — nunca um 0%/100% chutado — quando nada foi verificado ainda),
+  monta `resumo` (frase pronta) e `problemas` (lista dos itens com
+  ressalva, rótulo+observação). Usada nos 3 lugares: PDF do termo
+  (`gerarPdfTermoAvaliacao()` ganhou 3º parâmetro opcional `$score`,
+  sempre mostra a lista INTEIRA dos itens — nunca um recorte só dos
+  problemáticos — seguida do bloco "RESUMO E SCORE DO VEÍCULO"), a
+  página pública (`public/termo_ciente.php`, caixa destacada com o
+  número da % ao lado do texto) e o próprio `admin/avaliacao.php` (linha
+  de resumo logo abaixo do título "📋 Checklist de vistoria", visível
+  pro avaliador sem precisar abrir o termo). **PDF nunca mais mostra bloco
+  de "assinatura" física** (as 2 linhas tracejadas + "FASTCAR SOLUTIONS"/
+  nome da parte lado a lado, que sugeriam 2 assinaturas de verdade) —
+  removido e substituído por um parágrafo "SOBRE A CONFIRMAÇÃO DESTE
+  DOCUMENTO" explicando que é registro interno sem valor de assinatura/
+  contrato, e que a confirmação é por link único com data/IP registrados
+  no sistema — o PDF nunca pode sugerir visualmente algo que deixou de
+  ser verdade.
+  **`public/termo_ciente.php`** (novo, sem login, token na URL — mesmo
+  padrão `X-Robots-Tag: noindex` + `startSecureSession()`/CSRF de
+  `public/documentos.php`) — mostra veículo/placa, checklist completo
+  (badge ✅/⚠️/❔ por item, com observação quando tiver), a caixa de
+  resumo/score, fotos da vistoria (`<img>`/`<video>`, servidas por
+  `public/termo_ciente_foto.php` novo — token+foto_id validados contra a
+  MESMA avaliação resolvida pelo token, nunca confia no `foto_id` isolado
+  vindo da URL), textarea de ressalva opcional, checkbox obrigatório "li
+  e concordo" e o botão de confirmar. Etapa sempre derivada do banco
+  (`termo_status`) — fechar a aba e reabrir o mesmo link depois mostra
+  exatamente onde ficou, e reabrir um link JÁ confirmado só mostra a
+  confirmação de novo (nunca reprocessa). `confirmarTermoCiente(string
+  $token, ...)` — **nunca recebe id, só o token** (mesmo cuidado do
+  wizard de documentos: id vindo de fora nunca é confiável) — é
+  idempotente de propósito: confirmar 2x (F5, 2 abas) nunca sobrescreve
+  IP/data/ressalva da 1ª confirmação com os da 2ª tentativa. Guard novo
+  em `gerarEEnviarTermoAvaliacao()`: reenviar depois de já confirmado é
+  bloqueado com mensagem clara, nunca reabre/reseta nada.
+  `admin/avaliacao.php`: rótulos atualizados (nunca mais "aguardando
+  assinatura"), link+botão "📋 Copiar" do Termo Ciente (reconstruído do
+  token salvo, funciona mesmo depois de recarregar a página — ganhou
+  `copiarTexto()`/`copiarTextoFallback()`, que essa página não tinha
+  ainda), ressalva do comprador exibida quando presente, e o botão de
+  gerar vira "🔄 Gerar de novo e reenviar" quando já tem termo
+  pendente, mas desaparece de vez quando `confirmado`.
+  **Bug real achado só no teste HTTP, antes de qualquer commit**: a
+  página pública chamava `auditoriaClienteIp()` sem o `require_once` de
+  `includes/auditoria.php` — todo clique em "confirmar" batia 500
+  ("Call to undefined function") — só apareceu testando via `php -S`
+  de ponta a ponta (função isolada nunca passa por essa rota HTTP, não
+  pegaria isso). Testado: 38 asserções de função em banco isolado
+  (score com item não-verificado/tudo ok/nada verificado ainda; gerar
+  termo sem e-mail cadastrado — `ok=true` com aviso + link pra copiar
+  manualmente, nunca trava; token reaproveitado ao reenviar; busca por
+  token certa/errada/vazia; confirmar grava IP/UA/ressalva; confirmar 2x
+  idempotente, nunca sobrescreve a 1ª vez; reenviar depois de confirmado
+  bloqueado; exclusivo de venda — compra recusado; PDF gerado de
+  verdade, `%PDF` confirmado) + HTTP ponta a ponta real via `php -S`
+  (GET mostra os 6 itens do checklist + score 50% batendo com o
+  semeado; POST sem marcar o checkbox mostra o erro certo sem confirmar
+  nada; POST completo com ressalva confirma de verdade — página final
+  mostra a ressalva certa; reabrir o link confirmado continua mostrando
+  "Recebimento confirmado"; token inválido e foto inexistente voltam
+  404; `admin/avaliacao.php` renderizado nos 2 estados — pendente, sem
+  termo gerado, e confirmado com ressalva — sem nenhum Warning/Notice/
+  Fatal vazando pro HTML) + migração testada no banco de dev real
+  (idempotente, confirmada rodando 2x) + `php -l` + `tests/smoke.php`
+  limpos. ⚠️ Mesma ressalva de sempre pro canal de e-mail (Gmail API,
+  já validado em produção pra outros e-mails transacionais do projeto)
+  — o link em si nunca depende dele pra existir/funcionar.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

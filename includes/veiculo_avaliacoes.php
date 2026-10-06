@@ -3,8 +3,10 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/vendas.php'; // VEICULO_MIDIA_MIME_PERMITIDOS/MAX_BYTES, veiculo_midias_revenda
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()
-require_once __DIR__ . '/zapsign.php';
+require_once __DIR__ . '/zapsign.php'; // só pro histórico de termo já enviado via ZapSign antes de 06/10/2026 — ver sincronizarTermoAvaliacao()
 require_once __DIR__ . '/veiculo_avaliacoes_pdf.php';
+require_once __DIR__ . '/email_templates.php'; // emailLayout()/emailBotao()/appBaseUrl()
+require_once __DIR__ . '/mail.php'; // enviarEmail()
 
 /**
  * Módulo de checklist de vistoria/avaliação do veículo — 21/09/2026,
@@ -40,18 +42,25 @@ require_once __DIR__ . '/veiculo_avaliacoes_pdf.php';
  * ruim/desnecessária colhida durante a inspeção (ex: foto de um defeito
  * pontual, ângulo estranho, foto de documento).
  *
- * O "termo de entrega/vistoria" (PDF + assinatura eletrônica via ZapSign)
- * NUNCA reaproveita `contratos`/zapsignSincronizarContrato() — essa função
- * já é complexa o bastante amarrada a mudarEtapa()/mudarEtapaVenda(), que
- * não fazem sentido pra um termo de vistoria; os campos de assinatura
- * (zapsign_doc_token etc) moram direto em `veiculo_avaliacoes`, com sync
- * própria (sincronizarTermoAvaliacao()) — mesmo raciocínio "arquivo
+ * O "termo de entrega/vistoria" — 06/10/2026, "Termo Ciente": PAROU de
+ * ir pra assinatura eletrônica via ZapSign (decisão explícita do
+ * usuário, "não enviar checlist de retirada do veiculo pelo zapsiner").
+ * Virou documento puramente INTERNO: `gerarEEnviarTermoAvaliacao()` gera
+ * o PDF e manda o link do termo por E-MAIL
+ * (public/termo_ciente.php?token=...); o comprador só CONFIRMA com 1
+ * clique (nunca assina de verdade) via `confirmarTermoCiente()`. Os
+ * campos `zapsign_doc_token`/`zapsign_signer_token`/`sign_url` continuam
+ * na tabela só pra histórico de termo já enviado assim ANTES dessa
+ * mudança (`sincronizarTermoAvaliacao()` segue funcionando pra eles, via
+ * webhook/cron) — nenhum código novo escreve neles de novo.
+ * `termo_ciente_token`/`_enviado_em`/`_ip`/`_user_agent`/`_ressalva` são
+ * os campos do fluxo atual. NUNCA reaproveita
+ * `contratos`/zapsignSincronizarContrato() — mesmo raciocínio "arquivo
  * próprio de propósito" já documentado várias vezes neste projeto pra
  * módulos com modelo de dado/regra de negócio diferente demais pra
  * copy-paste direto. Geração/envio é sempre AÇÃO MANUAL (confirmado com o
- * usuário) — nunca dispara sozinho ao concluir a avaliação, mesmo padrão
- * já usado nos contratos de compra/venda (botão "gerar e enviar", nunca
- * automático).
+ * usuário desde a 1ª versão) — nunca dispara sozinho ao concluir a
+ * avaliação.
  */
 
 // Itens fixos do checklist — exatamente os pedidos pelo usuário ("vericar
@@ -111,6 +120,64 @@ function veiculoAvaliacaoItens(string $tipoVeiculo): array {
  */
 function veiculoAvaliacaoRotuloItem(string $item): string {
     return VEICULO_AVALIACAO_ITENS_CARRO[$item] ?? VEICULO_AVALIACAO_ITENS_MOTO[$item] ?? $item;
+}
+
+/**
+ * Resumo + score do checklist — 06/10/2026, "coloca toda lista completa
+ * dos intens depois resumo e score do veiculo" (Termo Ciente). Nunca um
+ * julgamento de IA nem uma nota inventada — é só contagem determinística
+ * dos status que o próprio avaliador já marcou item por item (regra #3,
+ * nunca chuta condição do veículo). Usado no PDF do termo e na página
+ * pública que o cliente recebe, pra nunca precisar repetir essa conta em
+ * 2 lugares.
+ *
+ * "Não verificado" fica DE FORA do score de propósito — ausência de
+ * verificação não é "ok" disfarçado nem conta contra o veículo, só
+ * reduz quantos itens entraram na conta; por isso `percentual` sai
+ * `null` quando nada ainda foi verificado (nunca um 0%/100% inventado).
+ */
+function veiculoAvaliacaoScore(array $itens): array {
+    $total = count($itens);
+    $ok = 0;
+    $problema = 0;
+    $naoVerificado = 0;
+    $problemas = [];
+
+    foreach ($itens as $item) {
+        if ($item['status'] === 'ok') {
+            $ok++;
+        } elseif ($item['status'] === 'problema') {
+            $problema++;
+            $rotulo = veiculoAvaliacaoRotuloItem($item['item']);
+            $obs = (string)($item['observacao'] ?? '');
+            $problemas[] = $obs !== '' ? "{$rotulo} — {$obs}" : $rotulo;
+        } else {
+            $naoVerificado++;
+        }
+    }
+
+    $verificados = $ok + $problema;
+    $percentual = $verificados > 0 ? (int)round(($ok / $verificados) * 100) : null;
+
+    if ($total === 0) {
+        $resumo = 'Checklist ainda sem itens.';
+    } elseif ($naoVerificado > 0) {
+        $resumo = "{$ok} de {$total} item(ns) do checklist conferido(s) sem problema — {$naoVerificado} ainda não verificado(s).";
+    } elseif ($problema > 0) {
+        $resumo = "{$ok} de {$total} item(ns) sem problema — {$problema} com ressalva (ver detalhe abaixo).";
+    } else {
+        $resumo = "Todos os {$total} itens do checklist foram conferidos, sem nenhuma ressalva.";
+    }
+
+    return [
+        'total'          => $total,
+        'ok'             => $ok,
+        'problema'       => $problema,
+        'nao_verificado' => $naoVerificado,
+        'percentual'     => $percentual,
+        'resumo'         => $resumo,
+        'problemas'      => $problemas,
+    ];
 }
 
 /**
@@ -659,13 +726,62 @@ const AVALIACOES_STATUS_ZAPSIGN = [
 ];
 
 /**
- * Gera o PDF do termo de entrega/vistoria e manda pra assinatura via
- * ZapSign — SEMPRE ação manual (confirmado com o usuário), nunca dispara
- * sozinho ao concluir a avaliação. Signatário depende do $tipo: 'compra'
- * = vendedor original (cliente da oportunidade, quem está ENTREGANDO o
- * carro pra Fastcar); 'venda' = comprador novo (vendas.comprador_*, quem
- * está RECEBENDO o carro da Fastcar) — confirmado com o usuário, os dois
- * cenários (multiSelect, ambos selecionados).
+ * Token do link público do Termo Ciente — mesmo padrão
+ * bin2hex(random_bytes(20)) de getOuCriarTokenDocumentos()
+ * (includes/documentos.php). Gerado 1x, nunca muda depois — reenviar o
+ * termo reaproveita o MESMO link, nunca invalida um já mandado antes.
+ */
+function getOuCriarTokenTermoCiente(int $avaliacaoId): string {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT termo_ciente_token FROM veiculo_avaliacoes WHERE id = ?");
+    $stmt->execute([$avaliacaoId]);
+    $token = (string)$stmt->fetchColumn();
+    if ($token !== '') return $token;
+
+    $token = bin2hex(random_bytes(20));
+    $db->prepare("UPDATE veiculo_avaliacoes SET termo_ciente_token = ? WHERE id = ?")->execute([$token, $avaliacaoId]);
+    return $token;
+}
+
+/** Busca a avaliação pelo token do link público — nunca pelo id (o id nunca é confiável vindo de fora, só o token imprevisível). */
+function buscarAvaliacaoPorTermoCienteToken(string $token): ?array {
+    if ($token === '') return null;
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT va.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+               c.nome AS cliente_nome,
+               v.comprador_nome, v.comprador_telefone, v.comprador_email
+        FROM veiculo_avaliacoes va
+        JOIN oportunidades o ON o.id = va.oportunidade_id
+        JOIN clientes c ON c.id = o.cliente_id
+        LEFT JOIN vendas v ON v.id = va.venda_id
+        WHERE va.termo_ciente_token = ?
+    ");
+    $stmt->execute([$token]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/**
+ * Gera o PDF do termo de entrega/vistoria e manda o link do TERMO CIENTE
+ * por E-MAIL — 06/10/2026, "Não enviar checlist de retirada do veiculo
+ * pelo zapsiner - vamos fazer documento interno cliente só da uma aceite
+ * ao receber no email o link - termo ciente": reverte o fluxo anterior
+ * (assinatura eletrônica via ZapSign, WhatsApp) por decisão explícita do
+ * usuário. O documento passa a ser puramente interno — o comprador só
+ * CONFIRMA com 1 clique num link único (public/termo_ciente.php), nunca
+ * mais uma assinatura eletrônica de verdade. SEMPRE ação manual, nunca
+ * dispara sozinho ao concluir a avaliação (mesma regra de sempre).
+ * Exclusivo de venda (comprador novo recebendo o carro) — decisão
+ * original de 21/09/2026, nunca mudou (confirmado de novo no mockup do
+ * Termo Ciente: "Só o comprador, na venda — como hoje").
+ *
+ * O link SEMPRE é gerado, mesmo sem e-mail cadastrado pro comprador — o
+ * token funciona por si só; o e-mail é só o canal de ENTREGA automático.
+ * Sem e-mail (ou se o envio falhar), devolve o link pronto no `aviso`
+ * pra copiar/mandar manualmente — mesmo espírito do botão "📋 Copiar
+ * link" já usado nos contratos (26/09/2026), nunca trava a operação por
+ * falta de canal.
  */
 function gerarEEnviarTermoAvaliacao(int $avaliacaoId): array {
     $av = buscarAvaliacao($avaliacaoId);
@@ -674,36 +790,37 @@ function gerarEEnviarTermoAvaliacao(int $avaliacaoId): array {
     }
 
     // 21/09/2026, "enviar termo mais para venda" — confirmado com o
-    // usuário: termo de entrega/assinatura eletrônica exclusivo de venda
-    // (comprador confirmando recebimento). Na compra, o vendedor já
-    // assina o contrato de compra principal — o checklist/fotos da
-    // vistoria continuam servindo de registro interno, sem exigir uma 2ª
-    // assinatura dele. Nunca confia só em esconder o botão na tela —
-    // trava aqui também, pro caso de POST forjado numa avaliação de compra.
+    // usuário: termo de entrega exclusivo de venda (comprador confirmando
+    // recebimento). Na compra, o vendedor já assina o contrato de compra
+    // principal — o checklist/fotos da vistoria continuam servindo de
+    // registro interno, sem exigir mais nada dele. Nunca confia só em
+    // esconder o botão na tela — trava aqui também, pro caso de POST
+    // forjado numa avaliação de compra.
     if ($av['tipo'] !== 'venda') {
         return ['ok' => false, 'erro' => 'Termo de entrega é exclusivo das vistorias de venda.'];
     }
 
-    $nomeSigner = trim((string)$av['comprador_nome']);
-    $telSigner = (string)$av['comprador_telefone'];
-    $emailSigner = (string)$av['comprador_email'];
-    if ($nomeSigner === '') {
+    if ($av['termo_status'] === 'confirmado') {
+        return ['ok' => false, 'erro' => 'O cliente já confirmou esse termo em ' . date('d/m/Y H:i', strtotime((string)$av['termo_assinado_em'])) . ' — não precisa reenviar.'];
+    }
+
+    $nomeDestinatario = trim((string)$av['comprador_nome']);
+    $emailDestinatario = trim((string)$av['comprador_email']);
+    if ($nomeDestinatario === '') {
         return ['ok' => false, 'erro' => 'Preencha os dados do comprador na venda antes de gerar o termo.'];
     }
 
     $itens = listarItensAvaliacao($avaliacaoId);
-    $pdfPath = gerarPdfTermoAvaliacao($av, $itens);
+    $score = veiculoAvaliacaoScore($itens);
+    $pdfPath = gerarPdfTermoAvaliacao($av, $itens, $score);
     if (!$pdfPath) {
         return ['ok' => false, 'erro' => 'Falha ao gerar o PDF do termo.'];
     }
 
-    $nomeDoc = 'Termo de Entrega e Vistoria — ' . trim($av['veiculo_marca'] . ' ' . $av['veiculo_modelo']) . ' — #' . $avaliacaoId;
-    $res = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $nomeSigner, $telSigner, $emailSigner);
-
     $db = getDB();
 
-    // Sempre salva a cópia do PDF (rascunho, ainda sem assinar) — mesmo
-    // padrão de contratos: dá pra visualizar mesmo antes de assinado.
+    // Sempre salva a cópia do PDF — é o registro interno em si, nunca
+    // depende de confirmação nenhuma do cliente pra existir.
     $stmtCli = $db->prepare("SELECT c.id, c.nome FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?");
     $stmtCli->execute([$av['oportunidade_id']]);
     $cli = $stmtCli->fetch();
@@ -716,24 +833,66 @@ function gerarEEnviarTermoAvaliacao(int $avaliacaoId): array {
     }
     @unlink($pdfPath);
 
-    if (isset($res['error'])) {
-        // Falha na ZapSign — mesmo assim guarda o PDF gerado como rascunho,
-        // pra não perder o trabalho de checklist já feito.
-        $db->prepare("
-            UPDATE veiculo_avaliacoes SET termo_status = 'gerado', drive_file_id = ?, arquivo_url = ?, updated_at = datetime('now','localtime')
-            WHERE id = ?
-        ")->execute([$copia['drive_file_id'], $copia['arquivo_url'], $avaliacaoId]);
-        return ['ok' => false, 'erro' => $res['error']];
-    }
+    $token = getOuCriarTokenTermoCiente($avaliacaoId);
+    $link = appBaseUrl() . '/public/termo_ciente.php?token=' . $token;
 
     $db->prepare("
         UPDATE veiculo_avaliacoes
-        SET zapsign_doc_token = ?, zapsign_signer_token = ?, sign_url = ?, termo_status = 'enviado',
+        SET termo_status = 'enviado', termo_ciente_enviado_em = datetime('now','localtime'),
             drive_file_id = ?, arquivo_url = ?, updated_at = datetime('now','localtime')
         WHERE id = ?
-    ")->execute([$res['doc_token'], $res['signer_token'], $res['sign_url'], $copia['drive_file_id'], $copia['arquivo_url'], $avaliacaoId]);
+    ")->execute([$copia['drive_file_id'], $copia['arquivo_url'], $avaliacaoId]);
 
-    return ['ok' => true, 'erro' => null];
+    if ($emailDestinatario === '') {
+        return ['ok' => true, 'erro' => null, 'aviso' => 'Comprador sem e-mail cadastrado — copie o link abaixo e mande manualmente.', 'link' => $link];
+    }
+
+    $veiculo = trim($av['veiculo_marca'] . ' ' . $av['veiculo_modelo']) ?: 'seu veículo';
+    $corpo = '<p>Olá, ' . htmlspecialchars($nomeDestinatario, ENT_QUOTES) . '!</p>'
+        . "<p>Segue o resumo da vistoria de entrega do seu <strong>{$veiculo}</strong>. Confira os itens abaixo e confirme "
+        . 'que recebeu tudo certo — leva menos de 1 minuto, sem precisar assinar nada.</p>'
+        . emailBotao('📄 Ver termo e confirmar', $link);
+    $resEmail = enviarEmail($emailDestinatario, "Confirme o recebimento do seu {$veiculo}", emailLayout($corpo), $nomeDestinatario);
+
+    if ($resEmail !== true) {
+        $motivo = is_array($resEmail) ? ($resEmail['erro'] ?? 'falha ao enviar') : 'falha ao enviar';
+        return ['ok' => true, 'erro' => null, 'aviso' => "Link gerado, mas o e-mail não saiu ({$motivo}) — copie o link abaixo e mande manualmente.", 'link' => $link];
+    }
+
+    return ['ok' => true, 'erro' => null, 'aviso' => null, 'link' => $link];
+}
+
+/**
+ * Cliente confirma o Termo Ciente pelo link público — nunca confia em
+ * nada vindo do POST pra decidir QUAL avaliação, só o token (mesmo
+ * cuidado do wizard de documentos: o id nunca é confiável vindo de fora,
+ * só o token imprevisível resolve isso). Idempotente: reabrir o link já
+ * confirmado nunca sobrescreve a ressalva/IP/data da 1ª confirmação, só
+ * devolve o estado já salvo — evita que um 2º clique (F5, 2 abas)
+ * "atualize" a prova do aceite com um IP/horário diferente do real.
+ */
+function confirmarTermoCiente(string $token, string $ressalva, string $ip, string $userAgent): array {
+    $av = buscarAvaliacaoPorTermoCienteToken($token);
+    if (!$av) {
+        return ['ok' => false, 'erro' => 'Link inválido.', 'avaliacao' => null];
+    }
+    if ($av['termo_status'] === 'confirmado') {
+        return ['ok' => true, 'erro' => null, 'avaliacao' => $av];
+    }
+    if (!in_array($av['termo_status'], ['enviado', 'gerado'], true)) {
+        return ['ok' => false, 'erro' => 'Esse termo ainda não está pronto pra confirmação.', 'avaliacao' => null];
+    }
+
+    $db = getDB();
+    $db->prepare("
+        UPDATE veiculo_avaliacoes
+        SET termo_status = 'confirmado', termo_assinado_em = datetime('now','localtime'),
+            termo_ciente_ip = ?, termo_ciente_user_agent = ?, termo_ciente_ressalva = ?,
+            updated_at = datetime('now','localtime')
+        WHERE id = ?
+    ")->execute([clean($ip), clean(mb_substr($userAgent, 0, 255)), clean($ressalva), $av['id']]);
+
+    return ['ok' => true, 'erro' => null, 'avaliacao' => buscarAvaliacaoPorTermoCienteToken($token)];
 }
 
 /**

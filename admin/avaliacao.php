@@ -85,7 +85,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($resultado['ok']) { $sucesso = 'Foto aprovada — já disponível no catálogo de vendas.'; } else { $erro = $resultado['erro']; }
         } elseif ($acao === 'gerar_termo' && $podeEditarChecklist) {
             $resultado = gerarEEnviarTermoAvaliacao($id);
-            if ($resultado['ok']) { $sucesso = 'Termo gerado e enviado pra assinatura.'; } else { $erro = $resultado['erro']; }
+            if ($resultado['ok']) {
+                $sucesso = $resultado['aviso'] ?: 'Termo gerado e link mandado por e-mail pro comprador.';
+                $linkTermoGerado = $resultado['link'] ?? null;
+            } else {
+                $erro = $resultado['erro'];
+            }
         } elseif ($acao === 'excluir_avaliacao' && $perfil === 'super_admin') {
             $resultado = excluirAvaliacao($id);
             if ($resultado['ok']) {
@@ -102,8 +107,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $itens = listarItensAvaliacao($id);
+$score = veiculoAvaliacaoScore($itens);
 $fotos = listarFotosAvaliacao($id);
 $avaliadores = array_values(array_filter(listarUsuarios(), fn($u) => $u['perfil'] === 'avaliador'));
+
+// Link do Termo Ciente — sempre reconstruído a partir do token já salvo
+// (nunca gera um novo aqui, só exibe), pra "Copiar link" funcionar mesmo
+// depois de recarregar a página, não só no instante do envio.
+$linkTermoAtual = (!empty($linkTermoGerado))
+    ? $linkTermoGerado
+    : (($av['termo_ciente_token'] ?? '') !== '' ? appBaseUrl() . '/public/termo_ciente.php?token=' . $av['termo_ciente_token'] : null);
 
 function avStatusLabel(string $status): string {
     return match ($status) {
@@ -120,12 +133,17 @@ function avItemStatusLabel(string $status): string {
     };
 }
 function avTermoStatusLabel(string $status): string {
+    // 06/10/2026, Termo Ciente: 'confirmado' é o estado novo (cliente
+    // clicou "estou ciente" no link recebido por e-mail); 'assinado'/
+    // 'recusado' só aparecem em termo já enviado via ZapSign ANTES dessa
+    // mudança (histórico, nenhum código novo escreve mais nesses 2).
     return match ($status) {
-        'enviado'  => '📨 Enviado — aguardando assinatura',
-        'assinado' => '✅ Assinado',
-        'recusado' => '❌ Recusado',
-        'gerado'   => '📄 Gerado (ainda não enviado)',
-        default    => '',
+        'enviado'   => '📧 Link enviado — aguardando confirmação do cliente',
+        'confirmado'=> '✅ Cliente confirmou o recebimento',
+        'assinado'  => '✅ Assinado (via ZapSign, antes do Termo Ciente)',
+        'recusado'  => '❌ Recusado',
+        'gerado'    => '📄 Gerado (ainda não enviado)',
+        default     => '',
     };
 }
 ?>
@@ -208,6 +226,10 @@ function avTermoStatusLabel(string $status): string {
 
 <div class="card">
     <h3>📋 Checklist de vistoria</h3>
+    <p><small>
+        <?= e($score['resumo']) ?>
+        <?php if ($score['percentual'] !== null): ?> — <strong>Score: <?= (int)$score['percentual'] ?>%</strong><?php endif; ?>
+    </small></p>
     <?php foreach ($itens as $item):
         $obsAtual = $item['observacao'] ?? '';
     ?>
@@ -340,24 +362,43 @@ function avTermoStatusLabel(string $status): string {
 
 <?php if ($av['tipo'] === 'venda'): ?>
 <div class="card">
-    <h3>📄 Termo de entrega e vistoria</h3>
+    <h3>📄 Termo Ciente — entrega e vistoria</h3>
+    <p><small>Registro interno, sem assinatura eletrônica — o comprador só confirma com 1 clique no link
+       recebido por e-mail que está de acordo com o estado do veículo na entrega.</small></p>
     <?php if ($av['termo_status']): ?>
         <p><?= avTermoStatusLabel($av['termo_status']) ?>
-            <?php if ($av['termo_assinado_em']): ?><small>— <?= date('d/m/Y H:i', strtotime($av['termo_assinado_em'])) ?></small><?php endif; ?>
+            <?php if ($av['termo_status'] === 'confirmado' && $av['termo_assinado_em']): ?>
+                <small>— <?= date('d/m/Y H:i', strtotime($av['termo_assinado_em'])) ?></small>
+            <?php elseif ($av['termo_ciente_enviado_em']): ?>
+                <small>— link enviado em <?= date('d/m/Y H:i', strtotime($av['termo_ciente_enviado_em'])) ?></small>
+            <?php endif; ?>
         </p>
+        <?php if (($av['termo_ciente_ressalva'] ?? '') !== ''): ?>
+            <p class="alerta-info">💬 Observação do comprador: <?= e($av['termo_ciente_ressalva']) ?></p>
+        <?php endif; ?>
         <?php if ($av['drive_file_id'] || $av['arquivo_url']): ?>
             <p><a href="/admin/ver_avaliacao_termo.php?id=<?= (int)$av['id'] ?>" target="_blank">👁️ Ver PDF</a></p>
+        <?php endif; ?>
+        <?php if ($linkTermoAtual && $av['termo_status'] !== 'confirmado'): ?>
+            <p>
+                <a href="<?= e($linkTermoAtual) ?>" target="_blank">🔗 Link do Termo Ciente</a>
+                &nbsp;
+                <button type="button" onclick='copiarTexto(<?= json_encode($linkTermoAtual) ?>, this)'>📋 Copiar</button>
+            </p>
         <?php endif; ?>
     <?php else: ?>
         <p><small>Nenhum termo gerado ainda.</small></p>
     <?php endif; ?>
-    <?php if ($podeEditarChecklist): ?>
-        <form method="post" onsubmit="return confirmarAcao(this, 'Gerar o termo e enviar pra assinatura eletrônica agora?');">
+    <?php if ($podeEditarChecklist && $av['termo_status'] !== 'confirmado'): ?>
+        <form method="post" onsubmit="return confirmarAcao(this, 'Gerar o termo e mandar o link de ciência pro comprador agora?');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_termo">
-            <button type="submit" style="min-height:48px;font-size:15px">📤 Gerar e enviar pra assinatura</button>
+            <button type="submit" style="min-height:48px;font-size:15px">
+                <?= $av['termo_status'] ? '📧 Gerar de novo e reenviar o link' : '📧 Gerar e enviar o link por e-mail' ?>
+            </button>
         </form>
-        <p><small>Assina o comprador (dados da negociação).</small></p>
+        <p><small>Manda pro e-mail do comprador (dados da negociação) — sem e-mail cadastrado, o link ainda é
+           gerado pra copiar e mandar manualmente.</small></p>
     <?php endif; ?>
 </div>
 <?php else: ?>
@@ -368,6 +409,32 @@ function avTermoStatusLabel(string $status): string {
 </div>
 <?php endif; ?>
 </main>
+<script>
+// Botão "📋 Copiar" do link do Termo Ciente — mesmo padrão já usado em
+// admin/oportunidade.php/admin/venda.php pro link de documentos/contrato.
+function copiarTexto(texto, btn) {
+    var original = btn.textContent;
+    function marcarCopiado() {
+        btn.textContent = '✅ Copiado!';
+        setTimeout(function () { btn.textContent = original; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(marcarCopiado).catch(function () { copiarTextoFallback(texto, marcarCopiado); });
+    } else {
+        copiarTextoFallback(texto, marcarCopiado);
+    }
+}
+function copiarTextoFallback(texto, callback) {
+    var ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); callback(); } catch (e) {}
+    document.body.removeChild(ta);
+}
+</script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>

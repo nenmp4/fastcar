@@ -952,8 +952,36 @@ CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
     zapsign_doc_token TEXT DEFAULT '',
     zapsign_signer_token TEXT DEFAULT '',
     sign_url TEXT DEFAULT '',
-    termo_status TEXT NOT NULL DEFAULT '' CHECK (termo_status IN ('', 'gerado', 'enviado', 'assinado', 'recusado')),
+    -- 06/10/2026, "Não enviar checlist de retirada do veiculo pelo
+    -- zapsiner - vamos fazer documento interno cliente só da uma aceite
+    -- ao receber no email o link - termo ciente": o termo de entrega
+    -- PAROU de ir pra assinatura eletrônica via ZapSign (os 3 campos
+    -- zapsign_*/sign_url acima ficam só pra registro de venda já
+    -- enviada antes dessa mudança, nenhuma linha NOVA preenche eles
+    -- mais) — 'confirmado' é o estado novo (cliente clicou "estou
+    -- ciente" no link recebido por e-mail), 'assinado'/'recusado'
+    -- continuam aceitos só pra não quebrar histórico antigo.
+    termo_status TEXT NOT NULL DEFAULT '' CHECK (termo_status IN ('', 'gerado', 'enviado', 'confirmado', 'assinado', 'recusado')),
+    -- Reaproveitado pros dois fluxos: data em que a ZapSign confirmou a
+    -- assinatura (histórico antigo) OU data em que o cliente confirmou
+    -- o Termo Ciente pelo link (fluxo atual) — é sempre "quando o
+    -- destinatário deu o aceite final", só muda COMO isso aconteceu.
     termo_assinado_em DATETIME,
+    -- Token do link público (public/termo_ciente.php?token=...), mesmo
+    -- padrão bin2hex(random_bytes(20)) de getOuCriarTokenDocumentos() —
+    -- gerado 1x, nunca muda depois (reenviar usa o mesmo link).
+    termo_ciente_token TEXT DEFAULT '',
+    termo_ciente_enviado_em DATETIME,
+    -- Prova leve do aceite — IP/navegador de quem clicou, gravados só na
+    -- hora da confirmação (nunca antes). Nunca é assinatura eletrônica
+    -- de verdade, só contexto de auditoria de um clique num link único.
+    termo_ciente_ip TEXT DEFAULT '',
+    termo_ciente_user_agent TEXT DEFAULT '',
+    -- Ressalva opcional que o cliente pode escrever ao confirmar (ex:
+    -- "recebi, mas o retrovisor direito está trincado") — nunca some o
+    -- checklist original, só acrescenta o que o destinatário quis
+    -- registrar na hora do aceite.
+    termo_ciente_ressalva TEXT DEFAULT '',
     drive_file_id TEXT DEFAULT '',
     arquivo_url TEXT DEFAULT '',
     created_by INTEGER REFERENCES usuarios(id),
@@ -963,6 +991,9 @@ CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
 CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_oportunidade ON veiculo_avaliacoes(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_venda ON veiculo_avaliacoes(venda_id);
 CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_avaliador ON veiculo_avaliacoes(avaliador_id);
+-- Parcial — só exige unicidade entre tokens de fato gerados, nunca entre
+-- as várias linhas que ainda têm '' (default antes do 1º envio).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_termo_ciente_token ON veiculo_avaliacoes(termo_ciente_token) WHERE termo_ciente_token != '';
 
 -- Itens fixos do checklist (avarias/motor/suspensão/vazamentos/estofado —
 -- includes/veiculo_avaliacoes.php::VEICULO_AVALIACAO_ITENS_PADRAO), 1 linha

@@ -1901,4 +1901,88 @@ if (!colunaExiste($db, 'vendas', 'multa_atraso_parcelas_texto')) {
     echo "⏭️  vendas.multa_atraso_parcelas_texto: já existia\n";
 }
 
+// 06/10/2026, "Não enviar checlist de retirada do veiculo pelo zapsiner -
+// vamos fazer documento interno cliente só da uma aceite ao receber no
+// email o link - termo ciente": o termo de entrega/vistoria PARA de ir
+// pra assinatura eletrônica via ZapSign — nenhum código novo escreve
+// mais em zapsign_doc_token/sign_url desta tabela a partir de agora, eles
+// ficam só como histórico de termo já enviado assim antes dessa mudança.
+// termo_status ganha o valor 'confirmado' (cliente clicou "estou ciente"
+// no link recebido por e-mail) ao lado dos antigos 'assinado'/'recusado'
+// (nunca removidos — histórico ZapSign continua válido). SQLite não tem
+// ALTER TABLE pra CHECK constraint — mesma técnica de reconstrução já
+// usada em `contratos`/`usuarios` acima; a reconstrução já introduz de
+// uma vez as colunas novas do Termo Ciente (token do link público, data
+// de envio, IP/navegador de quem confirmou, ressalva opcional que o
+// cliente pode escrever ao aceitar). Idempotente — só reconstrói se a
+// CHECK atual ainda não aceitar 'confirmado'.
+//
+// Conexão PRÓPRIA (`$dbFresh`), mesmo motivo já documentado na
+// reconstrução de `contratos`: reconstruir usando o `$db` compartilhado
+// (que já rodou dezenas de outras migrações antes dele neste mesmo
+// script) falha com "database table is locked" mesmo sem transação
+// aberta; isolada num processo/conexão próprio sempre funciona (WAL
+// permite as duas conexões ao mesmo arquivo sem problema).
+try {
+    $dbFresh = new PDO('sqlite:' . DB_PATH);
+    $dbFresh->exec('PRAGMA busy_timeout=15000');
+    $sqlAtual = (string)$dbFresh->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='veiculo_avaliacoes'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'confirmado'")) {
+        $dbFresh->exec('BEGIN');
+        $dbFresh->exec("
+            CREATE TABLE veiculo_avaliacoes_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+                venda_id INTEGER REFERENCES vendas(id),
+                tipo TEXT NOT NULL CHECK (tipo IN ('compra', 'venda')),
+                tipo_veiculo TEXT NOT NULL DEFAULT 'carro' CHECK (tipo_veiculo IN ('carro', 'moto')),
+                avaliador_id INTEGER REFERENCES usuarios(id),
+                km_atual INTEGER,
+                status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_andamento', 'concluida')),
+                observacoes_gerais TEXT DEFAULT '',
+                concluida_em DATETIME,
+                zapsign_doc_token TEXT DEFAULT '',
+                zapsign_signer_token TEXT DEFAULT '',
+                sign_url TEXT DEFAULT '',
+                termo_status TEXT NOT NULL DEFAULT '' CHECK (termo_status IN ('', 'gerado', 'enviado', 'confirmado', 'assinado', 'recusado')),
+                termo_assinado_em DATETIME,
+                termo_ciente_token TEXT DEFAULT '',
+                termo_ciente_enviado_em DATETIME,
+                termo_ciente_ip TEXT DEFAULT '',
+                termo_ciente_user_agent TEXT DEFAULT '',
+                termo_ciente_ressalva TEXT DEFAULT '',
+                drive_file_id TEXT DEFAULT '',
+                arquivo_url TEXT DEFAULT '',
+                created_by INTEGER REFERENCES usuarios(id),
+                created_at DATETIME DEFAULT (datetime('now','localtime')),
+                updated_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $dbFresh->exec("
+            INSERT INTO veiculo_avaliacoes_novo (id, oportunidade_id, venda_id, tipo, tipo_veiculo, avaliador_id,
+                km_atual, status, observacoes_gerais, concluida_em, zapsign_doc_token, zapsign_signer_token,
+                sign_url, termo_status, termo_assinado_em, drive_file_id, arquivo_url, created_by, created_at, updated_at)
+            SELECT id, oportunidade_id, venda_id, tipo, tipo_veiculo, avaliador_id,
+                km_atual, status, observacoes_gerais, concluida_em, zapsign_doc_token, zapsign_signer_token,
+                sign_url, termo_status, termo_assinado_em, drive_file_id, arquivo_url, created_by, created_at, updated_at
+            FROM veiculo_avaliacoes
+        ");
+        $dbFresh->exec('DROP TABLE veiculo_avaliacoes');
+        $dbFresh->exec('ALTER TABLE veiculo_avaliacoes_novo RENAME TO veiculo_avaliacoes');
+        $dbFresh->exec('CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_oportunidade ON veiculo_avaliacoes(oportunidade_id)');
+        $dbFresh->exec('CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_venda ON veiculo_avaliacoes(venda_id)');
+        $dbFresh->exec('CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_avaliador ON veiculo_avaliacoes(avaliador_id)');
+        $dbFresh->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_termo_ciente_token ON veiculo_avaliacoes(termo_ciente_token) WHERE termo_ciente_token != ''");
+        $dbFresh->exec('COMMIT');
+        echo "✅ veiculo_avaliacoes: CHECK reconstruída ('confirmado') + colunas do Termo Ciente adicionadas\n";
+    } else {
+        echo "⏭️  veiculo_avaliacoes: já tinha o Termo Ciente\n";
+    }
+} catch (Throwable $e) {
+    try { $dbFresh->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ veiculo_avaliacoes CHECK/Termo Ciente: {$e->getMessage()}\n";
+} finally {
+    $dbFresh = null;
+}
+
 echo "\n🎉 Migração concluída.\n";
