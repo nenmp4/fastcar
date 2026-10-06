@@ -552,17 +552,46 @@ function gerarPdfContratoVenda(array $c): string {
     }
     _pdfLinhaResumo($pdf, 'Natureza do gravame/restrição', 'Alienação fiduciária em favor da instituição financeira indicada abaixo');
     _pdfLinhaResumo($pdf, 'Instituição financeira/credor vinculado', $c['banco_financiamento']);
-    _pdfLinhaResumo($pdf, 'Contrato financeiro / referência', $c['contrato_financiamento_numero']);
+    // 06/10/2026 — "removermos campos não preenchido" (venda #32, print do
+    // Quadro-Resumo real mostrando várias linhas em branco/"--"): os campos
+    // abaixo já tinham o próprio input removido do formulário de
+    // "Condições da venda" (admin/venda.php, mesmo dia, "não sabemos" —
+    // consultor nunca sabe esses dados na hora de registrar a venda), mas
+    // o Quadro-Resumo continuava imprimindo a linha mesmo vazia (com
+    // fallback tipo "não informado"/"—" ou literalmente em branco) — pura
+    // poluição visual num contrato que ninguém mais vai preencher. Agora
+    // cada linha só aparece quando o dado existe de verdade; nunca decide
+    // isso pela ausência de pergunta no formulário, só pelo valor real no
+    // banco — então se um dia alguém preencher via outro caminho (ex:
+    // "Contrato financeiro/referência", que vem do lado de COMPRA, não
+    // foi removido de formulário nenhum), a linha volta a aparecer sozinha.
+    if (!empty($c['contrato_financiamento_numero'])) {
+        _pdfLinhaResumo($pdf, 'Contrato financeiro / referência', $c['contrato_financiamento_numero']);
+    }
     _pdfLinhaResumo($pdf, 'Saldo estimado do financiamento na contratação', _fmtMoeda($c['saldo_financiamento_atual']));
     _pdfLinhaResumo($pdf, 'Responsável pela dívida perante a instituição', 'FASTCAR');
     _pdfLinhaResumo($pdf, 'Prazo máximo para quitação/baixa', "Até " . _mesesComExtenso((int)$c['prazo_quitacao_meses']) . ", contado da assinatura deste contrato");
-    _pdfLinhaResumo($pdf, 'Data-limite objetiva', $c['data_limite_quitacao'] ?: 'a definir conforme prazo acima');
-    _pdfLinhaResumo($pdf, 'Prestação de contas de andamento', $c['prestacao_contas_texto']);
-    _pdfLinhaResumo($pdf, 'Seguro/proteção durante o período intermediário', $c['seguro_texto']);
-    _pdfLinhaResumo($pdf, 'IPVA/licenciamento após entrega', $c['ipva_responsavel_texto']);
-    _pdfLinhaResumo($pdf, 'Multas após entrega', $c['multas_texto']);
-    _pdfLinhaResumo($pdf, 'Rastreador', $c['rastreador_texto'] ?: 'não informado');
-    _pdfLinhaResumo($pdf, 'Prazo para transferência após baixa', $c['prazo_transferencia_dias'] !== null ? $c['prazo_transferencia_dias'] . ' dias úteis, observadas exigências do órgão de trânsito' : '—');
+    if (!empty($c['data_limite_quitacao'])) {
+        _pdfLinhaResumo($pdf, 'Data-limite objetiva', $c['data_limite_quitacao']);
+    }
+    if (!empty($c['prestacao_contas_texto'])) {
+        _pdfLinhaResumo($pdf, 'Prestação de contas de andamento', $c['prestacao_contas_texto']);
+    }
+    if (!empty($c['seguro_texto'])) {
+        _pdfLinhaResumo($pdf, 'Seguro/proteção durante o período intermediário', $c['seguro_texto']);
+    }
+    if (!empty($c['ipva_responsavel_texto'])) {
+        _pdfLinhaResumo($pdf, 'IPVA/licenciamento após entrega', $c['ipva_responsavel_texto']);
+    }
+    if (!empty($c['multas_texto'])) {
+        _pdfLinhaResumo($pdf, 'Multas após entrega', $c['multas_texto']);
+    }
+    if (!empty($c['rastreador_texto'])) {
+        _pdfLinhaResumo($pdf, 'Rastreador', $c['rastreador_texto']);
+    }
+    if ($c['prazo_transferencia_dias'] !== null) {
+        _pdfLinhaResumo($pdf, 'Prazo para transferência após baixa', $c['prazo_transferencia_dias'] . ' dias úteis, observadas exigências do órgão de trânsito');
+    }
     _pdfLinhaResumo($pdf, 'Penalidade por atraso imputável à FASTCAR', $c['penalidade_atraso_texto'] ?: 'a definir entre as partes');
 
     foreach (clausulasContratoVenda((int)$c['prazo_quitacao_meses']) as [$titulo, $corpo]) {
