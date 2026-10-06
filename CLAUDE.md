@@ -10240,7 +10240,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 |------|-------------------|--------|
 | `cron/followup.php` | a cada 30 min | Três papéis: (1) alerta pro responsável quando `oportunidades.proxima_acao_em` está no passado e a etapa ainda está ativa — dedup de 4h por oportunidade via `config.alerta_atraso_{id}`, só marca como enviado se `zapiEnviarTexto()` retornar sucesso; (2) **lead "quente" parado** (15/09/2026, "fazer followup de lead quente... se não agir rápido") — `temperatura_lead='quente'` ainda em `crm_preenchido` (acabou de cair pro consultor, ainda não avançou) há mais de `IA_QUENTE_MINUTOS_LIMITE` (20min) — cobre o buraco que o alerta (1) sozinho deixava: lead recém-qualificado geralmente ainda não tem `proxima_acao_em` marcada, então nunca cairia lá mesmo sendo o caso mais urgente; dedup de 1h via `config.alerta_quente_{id}` (mais apertado que o de atraso, urgência real de financiamento atrasado); (3) reengajamento de lead esfriando: oportunidade ainda em `whatsapp`/`qualificacao_ia`, sem responsável assumido, cuja última mensagem `in` foi há 30-120 min sem resposta nossa depois — mesma janela do `followup_leads.php` do JurídicoSaaS, dedup de 24h por telefone via `config.reeng_sent_{telefone}` (não é permanente — um mesmo telefone pode esfriar de novo numa oportunidade futura, ex: 2º veículo meses depois — bug real corrigido); mensagem de reengajamento fica registrada em `whatsapp_mensagens` (`out`, `enviado_por_ia=1`) igual qualquer outra mensagem ao cliente, pro consultor que assumir depois ver a pergunta que gerou a resposta. Testado (2): 4 cenários simulados — quente parado 30min (dispara), quente parado só 5min (não dispara, dentro do limite), morno parado 30min (não dispara, só quente), quente já avançado pra `negociacao` (não dispara, consultor já agiu) — só o 1º caso alertou, e rodando o cron de novo imediatamente o dedup de 1h bloqueou reenvio. |
 | `cron/leads_sem_resposta.php` | 1x/dia (6h) | Encerra automaticamente (marca `perdido`) oportunidade ainda em `whatsapp`/`qualificacao_ia` cujo cliente não respondeu NADA há mais de `LEADS_DIAS_SILENCIO_ENCERRAR` (7 dias) — 21/09/2026, achado real: "Fizemos folowap ontem uns 25 leais sem nome ainda não caiu na qualificação os clientes não responderam", confirmado "7 dias de silêncio". Ver `encerrarLeadsSemResposta()` (`includes/oportunidades.php`) — diferente do reengajamento do `cron/followup.php` (que só olha 30-120min e exige `responsavel_id IS NULL`), aqui o critério é só "cliente sumiu de vez", qualquer lead na entrada do funil, com ou sem responsável. Referência é sempre a última mensagem `in` do cliente (nunca conta reengajamento nosso nem qualquer outra mensagem `out`); sem nenhuma mensagem `in` registrada (não deveria acontecer, mas cobre o caso), usa `created_at` da oportunidade. Nunca marca `sem_perfil` (cliente pode ter perfil genuíno, só sumiu) — e se ele voltar a escrever meses depois, `criarOuAbrirOportunidade()` abre oportunidade NOVA (só reaproveita etapa em `ETAPAS_ATIVAS`, `perdido` não está nessa lista), então nada é perdido de verdade, só sai da fila de pendências do consultor. Testado em banco isolado (assertions reais, `-d zend.assertions=1 -d assert.exception=1` — o padrão do sandbox tem `zend.assertions=-1`, que faz `assert()` virar no-op silencioso): lead com 10 dias de silêncio fecha com motivo certo ("não respondeu por 10 dias"); lead com 3 dias continua intocado; lead com oportunidade antiga mas resposta de ontem continua ativo (usa a mensagem mais recente, não a idade da oportunidade); lead já em `crm_preenchido` (fora do escopo) nunca é tocado mesmo com 20 dias de silêncio; lead exatamente no limite (8 dias, > 7) fecha; cliente que sumiu e depois volta a escrever abre oportunidade nova, nunca reaproveita a fechada. |
-| `cron/zapsign_sync.php` | a cada 30 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook da ZapSign não chegue) — frequência menor que o antigo `assinafy_sync.php` (que era a cada 1 min): assinatura eletrônica não é tão sensível a atraso de minutos quanto lead esfriando |
+| `cron/zapsign_sync.php` | a cada 5 min | Polling de status dos contratos ainda `enviado`/`visualizado` (fallback caso o webhook da ZapSign não chegue) — 06/10/2026, "30 minutos é muito" (achado real: consultor via a ZapSign confirmando "2/4" assinaturas enquanto o sistema ainda mostrava "0/4"), reduzido de 30 pra 5 min; volume de contrato pendente é baixo, sem risco real de sobrecarregar a API da ZapSign nesse ritmo. Ver bullet "Assinaturas por signatário" na seção de módulos (compra/venda) pro botão manual "🔄 Atualizar status" que complementa isso sob demanda |
 | — | | **`install/diagnosticar_leads_mudos.php` (não é cron, script CLI de diagnóstico só-leitura)** — 21/09/2026, achado real: print de `admin/index.php?etapa=whatsapp` mostrando dezenas de leads "(sem nome)" parados em `etapa='whatsapp'`, todos criados na mesma janela de minutos em 20/09/2026 — à primeira vista parecia o mesmo padrão do incidente de flood antigo (`install/limpar_leads_invalidos.php`), mas os telefones eram válidos (formato real, não IDs de evento de 15 dígitos), diferente do flood. Investigado com o usuário: causa real confirmada foi uma campanha/followup de reengajamento manual disparada pra leads antigos ("foi followup"), que gerou uma leva de respostas reais de clientes voltando ao mesmo tempo — não é bug. `install/diagnosticar_leads_mudos.php` (novo, só leitura, nunca apaga/altera nada) separa dentro de `etapa='whatsapp'` quem já respondeu pelo menos 1 mensagem real (segue o funil normal) de quem está genuinamente mudo desde a entrada (só esses caem no fechamento automático do `cron/leads_sem_resposta.php` acima, 7 dias de silêncio) — lista os mudos com quantos dias cada um já está parado. Testado antes contra banco isolado simulando os 3 cenários (respondeu / mudo há 10 dias / mudo há 1 dia / oportunidade em outra etapa) — contagem e filtro batendo certo nos 4 casos. |
 | `cron/asaas_sync.php` | a cada 30 min | **18/09/2026, achado real: "tenho que sicornizar assas manual as cobranças de parcela dos carros"** — o script já existia no código desde 17/09/2026, mas nunca tinha sido cadastrado em `install/setup_crontab.sh` (arquivo que a própria cabeça do script declara como "fonte de verdade dos horários", mas ficou desatualizado — `resumo_produtividade.php`, linha abaixo, tinha o mesmo problema, também corrigido agora), então nunca rodou sozinho na VPS; e mesmo rodando, só resincronizava STATUS de cobrança já importada, nunca trazia cobrança NOVA criada direto no painel do Asaas — só o clique manual em "Importar cobranças" (`admin/financeiro-asaas.php`) fazia isso. Corrigido em 2 frentes: (1) `cron/asaas_sync.php` passou a chamar `asaasImportarCobrancas()` (mesma função do botão manual, dedup por `asaas_payment_id`, importa novas E atualiza status de todas numa passada) antes de `asaasSincronizarPendentes()` (mantido, mais barato pro caso comum de só status mudando); (2) linha nova em `install/setup_crontab.sh`, junto com a linha de `resumo_produtividade.php` que também estava faltando lá. Testado em banco isolado contra servidor Asaas fake local: 1 cobrança nova (`pay_novo123`, `PENDING`) + 1 já existente (`pay_existente456`, `pendente` no banco) — rodar o cron importa a nova (`status='pendente'`) e atualiza a existente pro status real vindo da API (`RECEIVED`→`pago`, `data_pagamento` preenchida), rodando de novo mostra "0 nova(s)" (dedup funcionando, não duplica). |
 | `cron/fila_horario_expediente.php` | a cada 5 min | Liga/desliga a fila de leads sozinha nos horários configurados (padrão 10:00/19:20) — 22/09/2026, "Colocar usuarios para ficar off line as 19:20 ... online 10 horas da manha", confirmado como regra permanente todo dia. Ver `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`, bullet completo na seção da fila de leads) — dedup por dia, nunca liga de volta quem está marcado `faltou_em`=hoje. |
@@ -11062,6 +11062,93 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `salvar_testemunha2` (mesmo guard de sempre, "só acompanha") + `php -l`
   + `tests/smoke.php` limpos. Sem migração de schema (reaproveita as
   colunas já criadas no bullet acima).
+- **Disparo automático do ZapSign (e-mail/WhatsApp) não chegava nem pro
+  cliente nem pras testemunhas + status por SIGNATÁRIO (não só agregado)**
+  (06/10/2026, "disparos de email para as tesmunhas e whatsap pela
+  instacia zpi também não enviando cliente da conferida" — contexto
+  crítico: "antes dessa mundança agente ja tinha enviado cliente e as
+  tesmunhas ja assinaram", ou seja, o problema era real e já afetava
+  contrato em produção). 2 bugs reais se somando em
+  `_zapsignMontarSigner()` (`includes/zapsign.php`), desde que a função
+  foi criada (13/09/2026): (1) `send_automatic_email`/
+  `send_automatic_whatsapp` **nunca eram mandados** no payload — a
+  ZapSign nunca disparava nada sozinha, mesmo com telefone/e-mail
+  presentes (confirmado via busca na documentação pública, domínio
+  bloqueado pra leitura direta neste sandbox, 2 buscas independentes
+  corroborando o exemplo de JSON real); (2) **mais grave** — o `if` que
+  decidia incluir `phone_number` sempre esperava telefone BRUTO (10/11
+  dígitos), mas todo caller real passa telefone já com DDI via
+  `normalizarTelefone()` (12/13 dígitos) — `phone_number` **nunca** era
+  incluído pra NENHUM signatário, confirmado testando contra fake server
+  ("só name/email chegavam, nunca telefone"); esse bug já estava
+  sinalizado como pendência conhecida desde 21/09/2026 (CLAUDE.md,
+  "Achado em passagem, não corrigido aqui" no módulo de vistoria), nunca
+  corrigido até agora. Corrigido descascando o `55` antes de medir o
+  tamanho (aceita também telefone bruto sem DDI, se algum dia alguém
+  mandar assim) + os 2 flags adicionados, cada um só quando o dado
+  correspondente de fato está presente (nunca manda flag sozinho sem o
+  dado, nunca inventa contato que o signatário não tem). Testado: payload
+  capturado contra fake server confirmando `phone_country`/`phone_number`/
+  `send_automatic_whatsapp` presentes com telefone real (antes do fix,
+  ausentes); `send_automatic_email` presente com e-mail real. ⚠️ Ainda
+  não confirmado contra uma conta ZapSign real — mesma ressalva de
+  sempre pra campo de API só validado via busca.
+  **E-mail/telefone do vendedor adicionados ao contrato de COMPRA**
+  (pedido de acompanhamento no mesmo dia: "adicionar dados do cliente no
+  contrato de compra o email do cliente não aparece") —
+  `montarCamposContratoCompra()` ganhou `vendedor_telefone`/
+  `vendedor_email` (`includes/contratos.php`), interpolados na cláusula
+  de qualificação das partes de `gerarPdfContratoCompra()`
+  (`includes/contratos_pdf.php`): "...telefone/WhatsApp {X}, e-mail {Y},
+  doravante VENDEDOR/PROPRIETÁRIO REGISTRAL...". Testado: PDF real
+  gerado e decodificado confirmando e-mail/telefone do vendedor presentes
+  no texto renderizado.
+  **Status POR SIGNATÁRIO, não só o agregado** (pergunta direta
+  "como saber quem ja assinou contrato") — até então a tela só mostrava
+  o status AGREGADO (`contratos.status`, só vira `'assinado'` quando
+  TODO MUNDO termina) e uma lista estática "também precisa assinar" —
+  sem nenhum jeito de saber QUEM especificamente já tinha ido, mesmo com
+  cliente/testemunhas já tendo assinado de verdade antes dessa mudança
+  existir. Nova `zapsignAtualizarDetalhePorSignatario()`
+  (`includes/contratos.php`) — chamada de dentro de
+  `zapsignSincronizarContrato()`, ANTES do early-return de sempre (nunca
+  perde progresso parcial numa resincronização que não muda o status
+  agregado) — casa cada `signers[].token` da resposta da ZapSign com a
+  chave certa (`_principal`/`fastcar`/`testemunha1`/`testemunha2`, via
+  `zapsign_signer_token`/`zapsign_signers_extra_json`) e grava
+  `status`/`assinado_em` individual de cada um, sem nunca sobrescrever
+  `sign_url` já salvo. Nova `contratoSignatariosComStatus()` monta a
+  lista final pra tela. `admin/oportunidade.php`/`admin/venda.php`: bloco
+  "Também precisa assinar" substituído por "Assinaturas:" — cada
+  signatário com ✅ (quando assinado, com data/hora) ou ⏳ (quando não,
+  com link direto pra assinar). Testado: cenário real reproduzido em
+  banco isolado contra fake ZapSign — 4 signatários, API reportando 2
+  "signed"/1 "new"/1 "link-opened" — `contratoSignatariosComStatus()`
+  confirmado refletindo exatamente isso, status agregado continua
+  `'enviado'` (nem todo mundo assinou ainda) + `php -l` +
+  `tests/smoke.php` limpos.
+  **Botão manual "🔄 Atualizar status" + cron de 5 em 5 min** (achado via
+  2 screenshots: a própria ZapSign confirmando "Assinaturas 2/4" pra uma
+  venda real enquanto a tela continuava mostrando "0/4" — "tem
+  sicronizar hook" confirmou que o webhook já existe e está correto,
+  `api/zapsign_webhook.php`, mas depende de configuração no painel da
+  ZapSign fora do nosso código; só o cron de 30min
+  `cron/zapsign_sync.php` cobria o resto). Botão novo (ação
+  `sincronizar_contrato_zapsign`, chama `zapsignSincronizarContrato()`
+  sob demanda) em `admin/venda.php`/`admin/oportunidade.php`, junto do
+  bloco "Assinaturas:" — só aparece enquanto o contrato tem doc_token e
+  ainda não está `'assinado'`, escondido do supervisor (mesma trava de
+  "só acompanha"). Depois, "30 minutos é muito" → intervalo do cron
+  reduzido de 30 pra 5 min (`install/setup_crontab.sh`) — volume de
+  contrato pendente é baixo, sem risco real de sobrecarregar a API da
+  ZapSign nesse ritmo. ⚠️ Mudar o intervalo aqui só atualiza o script —
+  precisa rodar `bash install/setup_crontab.sh` de novo na VPS (ou editar
+  a crontab manualmente) pra valer de verdade em produção. Testado:
+  cenário exato reproduzido em banco isolado (0/4 antes de chamar a
+  sincronização, 2/4 depois — bate com o "2/4" real da ZapSign) + `php
+  -l` + `tests/smoke.php` limpos. Sem migração de schema (reaproveita
+  `zapsign_signers_extra_json`, já existente desde a feature de
+  testemunhas dinâmicas acima).
 - **Aviso de duplicidade por PLACA ao cadastrar veículo manualmente**
   (06/10/2026, "temos problema de subir mesmo carro... carro veio da
   oportunidade" / "como evitar duplicar veiculo") — mesma classe de bug já

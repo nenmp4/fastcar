@@ -4,9 +4,9 @@
  * Reconsulta a ZapSign pra todo contrato ainda em 'enviado' — cobre o caso
  * do webhook não chegar (rede, configuração, etc).
  *
- * Cron sugerido: a cada 30-60 min (não precisa de tanta frequência quanto
- * o followup.php — assinatura eletrônica não é tão sensível a atraso de
- * minutos quanto lead esfriando).
+ * Cron sugerido: a cada 5 min (06/10/2026, "30 minutos é muito" — ajustado
+ * de 30 pra 5 min; volume de contrato pendente é baixo, sem risco real de
+ * sobrecarregar a API da ZapSign nesse ritmo).
  */
 
 define('ROOT', dirname(__DIR__));
