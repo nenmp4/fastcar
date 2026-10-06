@@ -336,6 +336,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $erro = $resultadoReenvio['erro'];
                 }
+            } elseif ($acao === 'sincronizar_contrato_zapsign') {
+                // 06/10/2026 — achado real: consultor assinou de verdade
+                // (ZapSign mostrando "2/4"), mas a tela continuava "0/4"
+                // porque só a ZapSign (webhook) ou o cron de 30min
+                // (cron/zapsign_sync.php) atualizavam o status — nunca a
+                // própria tela, que só lê o que já está no banco. Botão
+                // "🔄 Atualizar status" chama a MESMA função do webhook/
+                // cron, sob demanda, pra não precisar esperar.
+                zapsignSincronizarContrato((int)($_POST['contrato_id'] ?? 0));
+                $sucesso = 'Status do contrato atualizado com a ZapSign.';
             } elseif ($acao === 'enviar_link_documentos_venda') {
                 // 19/09/2026, "espelhar compra - subir os documentos
                 // preencher tudo ter link igual de compra" — mesmo padrão
@@ -1145,6 +1155,14 @@ function adicionarParteEntrada() {
                                         <?php endif; ?>
                                     <?php endforeach; ?>
                                 </div>
+                                <?php if ($ct['zapsign_doc_token'] && $ct['status'] !== 'assinado' && $_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                                    <form method="post" style="display:inline-block;margin-top:4px">
+                                        <?= csrfField() ?>
+                                        <input type="hidden" name="acao" value="sincronizar_contrato_zapsign">
+                                        <input type="hidden" name="contrato_id" value="<?= (int)$ct['id'] ?>">
+                                        <button type="submit" class="chip-acao">🔄 Atualizar status</button>
+                                    </form>
+                                <?php endif; ?>
                             <?php endif; ?>
 
                             <?php if ($ct['status'] === 'assinado'): ?>
