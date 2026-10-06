@@ -87,6 +87,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $vendedorNomePost = 'Veículo recuperado pela Fastcar (sem vendedor identificado)';
                     }
                 }
+                // 06/10/2026, "como evitar duplicar veiculo" — mesmo
+                // racional já aplicado em admin/veiculos.php/vendas.php:
+                // placa já na frota quase sempre é o mesmo carro
+                // duplicado; nunca cria a 2ª linha, manda buscar o veículo
+                // existente na busca do modal (mesma função que já mostra
+                // "esse veículo já passou pela Fastcar antes").
+                $duplicidadePlaca = buscarVeiculoAtivoPorPlaca((string)($_POST['veiculo_placa'] ?? ''));
+                if ($duplicidadePlaca) {
+                    throw new RuntimeException(
+                        "Essa placa já está cadastrada na frota — oportunidade #{$duplicidadePlaca['id']} " .
+                        "({$duplicidadePlaca['veiculo_marca']} {$duplicidadePlaca['veiculo_modelo']}). " .
+                        'Desmarque "cadastrar veículo novo" e busque esse veículo acima.'
+                    );
+                }
                 $novoVeiculo = criarVeiculoManualFrota(
                     $vendedorNomePost,
                     $vendedorTelefonePost,

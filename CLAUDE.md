@@ -11062,6 +11062,54 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `salvar_testemunha2` (mesmo guard de sempre, "só acompanha") + `php -l`
   + `tests/smoke.php` limpos. Sem migração de schema (reaproveita as
   colunas já criadas no bullet acima).
+- **Aviso de duplicidade por PLACA ao cadastrar veículo manualmente**
+  (06/10/2026, "temos problema de subir mesmo carro... carro veio da
+  oportunidade" / "como evitar duplicar veiculo") — mesma classe de bug já
+  documentada em `excluirVeiculoFrota()` (23/09/2026, 2 cadastros
+  duplicados de "Bianca", mesma placa/chassi, vindos da importação do CRM
+  antigo): `criarVeiculoManualFrota()` (`includes/oportunidades.php`)
+  nunca checava placa/chassi, só telefone do vendedor — cadastrar o MESMO
+  carro manualmente de novo (já existente como oportunidade/venda) criava
+  uma 2ª linha em `oportunidades` sem nenhum aviso, em QUALQUER um dos 3
+  pontos do sistema que criam veículo manualmente. Nova
+  `buscarVeiculoAtivoPorPlaca(string $placa): ?array`
+  (`includes/oportunidades.php`, ao lado de
+  `buscarOportunidadeAtivaPorTelefone()`) — mesma normalização já usada em
+  `listarVistoriasPorPlaca()` (maiúsculo, sem hífen/espaço), placa curta
+  demais (<6, formato brasileiro mínimo) nunca dispara query, escopo só
+  `etapa='fechado'` (o veículo precisa já estar DE VERDADE na frota, não
+  uma oportunidade ainda em negociação). Aplicada diferente em cada ponto,
+  conforme o formulário de cada um:
+  (1) **`admin/veiculos.php`** ("➕ Adicionar veículo manualmente") — soft
+  warn-then-confirm, mesmo padrão já usado pro telefone duplicado
+  (`$avisoDuplicidadePlaca`, reaproveita o MESMO campo oculto
+  `confirmar_duplicidade` dos dois avisos juntos — 1 confirmação cobre os
+  dois) — nunca bloqueia de verdade (regra #3, pode ser erro de digitação
+  na placa já cadastrada), só exige clique explícito "⚠️ Cadastrar mesmo
+  assim".
+  (2) **`admin/vendas.php`** (modal "Vender na Promissória", checkbox
+  "cadastrar veículo novo") e (3) **`admin/avaliacoes.php`** (modal de
+  nova vistoria, mesmo checkbox) — recusa dura (`RuntimeException`,
+  reabre o modal com a mensagem de erro, nunca cria a 2ª linha) em vez de
+  warn-then-confirm: os dois fluxos já têm a saída certa natural (dropdown
+  da frota / busca do modal já existente pra selecionar o veículo
+  EXISTENTE em vez de criar um novo), então um confirm-override a mais
+  só adicionaria complexidade sem necessidade real — o consultor/avaliador
+  só desmarca o checkbox e seleciona o carro certo. Testado: 7 asserções
+  de `buscarVeiculoAtivoPorPlaca()` em banco isolado (match exato, match
+  normalizado maiúsculo/minúsculo/sem hífen/com espaço, placa diferente
+  nunca acha, placa curta/vazia nunca dispara query, oportunidade ainda
+  não `fechado` nunca conta como "na frota") + HTTP ponta a ponta real
+  contra `admin/veiculos.php` (sessão primed, servidor PHP embutido,
+  banco isolado): 1ª tentativa com placa duplicada mostra o aviso e NÃO
+  cria nada (confirmado via query direta no banco — só a linha original
+  continua existindo); 2ª tentativa com `confirmar_duplicidade=1` cria o
+  2º cadastro normalmente (redirect 302 pro `veiculo_midias.php` do novo
+  id) — confirma que o override funciona de verdade quando é
+  deliberado; mensagem de erro dos outros 2 pontos (vendas/avaliações)
+  testada isolada, formatando certo com o id/marca/modelo da oportunidade
+  encontrada + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema.
 
 ## Pendências (aguardando definição antes de codar mais)
 

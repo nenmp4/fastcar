@@ -330,6 +330,40 @@ function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
 }
 
 /**
+ * Acha outra oportunidade JÁ na frota (etapa='fechado') com a MESMA placa —
+ * 06/10/2026, "temos problema de subir mesmo carro... carro veio da
+ * oportunidade" / "como evitar duplicar veiculo". Achado real: mesma
+ * classe de bug já documentada em excluirVeiculoFrota() (23/09/2026, 2
+ * cadastros duplicados de "Bianca", mesma placa/chassi, vindos da
+ * importação do CRM antigo) — criarVeiculoManualFrota() nunca checava
+ * placa/chassi, só telefone do vendedor, então cadastrar o MESMO carro
+ * manualmente de novo (ex: já veio de uma oportunidade/venda existente e
+ * alguém recadastra sem saber) criava uma 2ª linha em `oportunidades`
+ * sem nenhum aviso. Mesma normalização já usada em
+ * listarVistoriasPorPlaca() (maiúsculo, sem hífen/espaço) — placa curta
+ * demais (<6, formato brasileiro mínimo) nunca dispara query, nunca
+ * falso positivo. Nunca bloqueia (regra #3 — decisão sempre humana, pode
+ * ser carro legitimamente parecido ou erro de digitação na placa já
+ * cadastrada), só avisa — quem chama decide pedir confirmação explícita
+ * antes de prosseguir, mesmo padrão de buscarOportunidadeAtivaPorTelefone()
+ * acima.
+ */
+function buscarVeiculoAtivoPorPlaca(string $placa): ?array {
+    $placaNorm = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $placa));
+    if ($placaNorm === '' || strlen($placaNorm) < 6) return null;
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT o.id, o.etapa, o.veiculo_marca, o.veiculo_modelo, c.nome
+        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ? AND o.etapa = 'fechado'
+        ORDER BY o.id DESC LIMIT 1
+    ");
+    $stmt->execute([$placaNorm]);
+    $r = $stmt->fetch();
+    return $r ?: null;
+}
+
+/**
  * Cria uma oportunidade MANUALMENTE, sem passar pelo WhatsApp — 05/10/2026,
  * "opçao adcionar uma opotunidade manual". Cobre o lead que chegou por
  * ligação, indicação ou presencial — o consultor/admin já tem o contato (e,

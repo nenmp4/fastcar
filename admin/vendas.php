@@ -52,6 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
             $oportunidadeIdEscolhida = (int)($_POST['oportunidade_id'] ?? 0);
 
             if (!empty($_POST['cadastrar_veiculo_novo'])) {
+                // 06/10/2026, "como evitar duplicar veiculo" — mesmo
+                // racional já aplicado em admin/veiculos.php: cadastrar
+                // "veículo novo" com uma placa que JÁ está na frota quase
+                // sempre é o mesmo carro duplicado (não é passível de
+                // "confirmar mesmo assim" nesse modal — o próprio fluxo já
+                // tem a saída certa: selecionar o veículo EXISTENTE no
+                // dropdown da frota, nunca cadastrar de novo) — recusa com
+                // mensagem clara, nunca cria a 2ª linha.
+                $duplicidadePlaca = buscarVeiculoAtivoPorPlaca((string)($_POST['veiculo_placa'] ?? ''));
+                if ($duplicidadePlaca) {
+                    throw new RuntimeException(
+                        "Essa placa já está cadastrada na frota — oportunidade #{$duplicidadePlaca['id']} " .
+                        "({$duplicidadePlaca['veiculo_marca']} {$duplicidadePlaca['veiculo_modelo']}). " .
+                        'Desmarque "cadastrar veículo novo" e selecione esse veículo direto no dropdown da frota.'
+                    );
+                }
                 $novoVeiculo = criarVeiculoManualFrota(
                     (string)($_POST['vendedor_nome'] ?? ''),
                     (string)($_POST['vendedor_telefone'] ?? ''),
