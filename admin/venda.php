@@ -105,12 +105,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 26/09/2026 é sempre a soma das partes da entrada
                 // (ação salvar_entrada_partes, ver includes/vendas.php),
                 // pra não ter 2 formulários competindo pelo mesmo campo.
+                //
+                // 06/10/2026, achado real via screenshot (venda #31) — "remover
+                // campos onde esta seta... não sabemos": 6 campos removidos do
+                // formulário (data_limite_quitacao/prestacao_contas_texto/
+                // seguro_texto/ipva_responsavel_texto/multas_texto/
+                // rastreador_texto/prazo_transferencia_dias — 7 no total,
+                // confirmado via mensagem de acompanhamento "Penalidade por
+                // atrazo essa fica" que excluiu só esse 1 da lista) — o
+                // consultor nunca sabe esses dados na hora de registrar a
+                // venda. Tirados também desta UPDATE (nunca mais sobrescritos
+                // com string vazia a cada salvamento — preserva o que já
+                // estava, mesma disciplina de nunca apagar dado existente só
+                // porque o campo saiu da tela) — as colunas continuam no
+                // schema, só sem jeito de editar por aqui. `montarCamposContratoVenda()`/
+                // `gerarPdfContratoVenda()` (includes/contratos.php/
+                // contratos_pdf.php) nunca foram tocados — o Quadro-Resumo do
+                // contrato continua mostrando essas linhas com o mesmo
+                // fallback de sempre ("a definir...", "não informado", "—").
                 $db->prepare("
                     UPDATE vendas
                     SET km_entrega = ?, preco_venda = ?, forma_pagamento = ?,
-                        saldo_preco_devido = ?, prazo_quitacao_meses = ?, data_limite_quitacao = ?,
-                        prestacao_contas_texto = ?, seguro_texto = ?, ipva_responsavel_texto = ?, multas_texto = ?,
-                        rastreador_texto = ?, prazo_transferencia_dias = ?, penalidade_atraso_texto = ?,
+                        saldo_preco_devido = ?, prazo_quitacao_meses = ?, penalidade_atraso_texto = ?,
                         updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -119,13 +135,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['forma_pagamento'] ?? '')),
                     valorMonetario((string)($_POST['saldo_preco_devido'] ?? '')),
                     $_POST['prazo_quitacao_meses'] !== '' ? min(24, (int)$_POST['prazo_quitacao_meses']) : 24,
-                    $_POST['data_limite_quitacao'] !== '' ? (string)$_POST['data_limite_quitacao'] : null,
-                    clean((string)($_POST['prestacao_contas_texto'] ?? '')),
-                    clean((string)($_POST['seguro_texto'] ?? '')),
-                    clean((string)($_POST['ipva_responsavel_texto'] ?? '')),
-                    clean((string)($_POST['multas_texto'] ?? '')),
-                    clean((string)($_POST['rastreador_texto'] ?? '')),
-                    $_POST['prazo_transferencia_dias'] !== '' ? (int)$_POST['prazo_transferencia_dias'] : null,
                     clean((string)($_POST['penalidade_atraso_texto'] ?? '')),
                     $id,
                 ]);
@@ -966,22 +975,8 @@ function adicionarParteEntrada() {
                 <input type="number" step="0.01" name="saldo_preco_devido" value="<?= e((string)($v['saldo_preco_devido'] ?? '')) ?>">
                 <label>Prazo máximo pra quitação do financiamento (meses, até 24)</label>
                 <input type="number" max="24" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">
-                <label>Data-limite objetiva</label>
-                <input type="date" name="data_limite_quitacao" value="<?= e($v['data_limite_quitacao'] ?? '') ?>">
             </div>
             <div>
-                <label>Prestação de contas de andamento</label>
-                <input type="text" name="prestacao_contas_texto" value="<?= e($v['prestacao_contas_texto'] ?? '') ?>" placeholder="Ex: a cada 3 meses">
-                <label>Seguro/proteção durante o período intermediário</label>
-                <input type="text" name="seguro_texto" value="<?= e($v['seguro_texto'] ?? '') ?>">
-                <label>IPVA/licenciamento após entrega</label>
-                <input type="text" name="ipva_responsavel_texto" value="<?= e($v['ipva_responsavel_texto'] ?? '') ?>">
-                <label>Multas após entrega</label>
-                <input type="text" name="multas_texto" value="<?= e($v['multas_texto'] ?? '') ?>">
-                <label>Rastreador</label>
-                <input type="text" name="rastreador_texto" value="<?= e($v['rastreador_texto'] ?? '') ?>" placeholder="Sim, regras no Anexo VIII / Não">
-                <label>Prazo pra transferência após baixa (dias úteis)</label>
-                <input type="number" name="prazo_transferencia_dias" value="<?= e((string)($v['prazo_transferencia_dias'] ?? '')) ?>">
                 <label>Penalidade por atraso imputável à Fastcar</label>
                 <input type="text" name="penalidade_atraso_texto" value="<?= e($v['penalidade_atraso_texto'] ?? '') ?>">
             </div>

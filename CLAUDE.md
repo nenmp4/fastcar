@@ -3978,6 +3978,44 @@ segue no schema sem uso novo, não removida sem ganho real),
   "AUTORIZA", "12.4", "retirada", "extrajudicial", "preposto",
   "notifica", "10 (dez) dias" e "reaver o ve[ículo]" no texto renderizado
   + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  **7 campos do card "Condições da venda" removidos do formulário**
+  (06/10/2026, screenshot da venda #31 com setas vermelhas apontando pros
+  campos + "removercampos onde esta seta... não sabemos", seguido de
+  "Penalidade por atrazo essa fica") — o consultor nunca sabe esses dados
+  na hora de registrar a venda (prestação de contas de andamento,
+  seguro/proteção durante o período intermediário, IPVA/licenciamento
+  após entrega, multas após entrega, rastreador, prazo pra transferência
+  após baixa, data-limite objetiva) — ficavam só preenchidos vazios/
+  chutados ou nunca preenchidos de verdade. Removidos os 7 `<label>`+
+  `<input>` do formulário (`admin/venda.php`) — "Penalidade por atraso
+  imputável à Fastcar" ficou de fora da remoção, confirmado explicitamente
+  pelo usuário ("essa fica"), continua editável normal. Colunas **nunca
+  removidas do schema** (regra de sempre, nunca apaga dado) — só tiradas
+  da própria `UPDATE` de `atualizar_condicoes`: antes, salvar o formulário
+  sempre sobrescrevia TODOS os campos (nunca fill-if-empty, é formulário
+  de edição direta) — se continuassem na UPDATE sem input correspondente
+  no form, cada salvamento gravaria string/null vazio por cima de qualquer
+  valor que já existisse (ex: venda importada do CRM antigo com esses
+  dados preenchidos). Tirar as 7 colunas da UPDATE preserva o que já
+  estava lá, pra sempre, mesmo salvando o formulário repetidas vezes.
+  `montarCamposContratoVenda()`/`gerarPdfContratoVenda()`
+  (`includes/contratos.php`/`includes/contratos_pdf.php`) **nunca foram
+  tocados** — o Quadro-Resumo do contrato continua mostrando essas 7
+  linhas com os mesmos fallbacks de sempre ("a definir conforme prazo
+  acima", "não informado", "—", ou vazio pros 3 que não tinham fallback
+  nenhum — `prestacao_contas_texto`/`seguro_texto`/`ipva_responsavel_texto`/
+  `multas_texto`) — mudar prosa/linha do Quadro-Resumo de um contrato já
+  aprovado é risco desproporcional ao pedido, que era só sobre o
+  FORMULÁRIO ficar pedindo dado que ninguém sabe preencher, nunca sobre
+  reescrever o contrato em si; fica sinalizado aqui se o usuário quiser
+  essas linhas revisadas também numa próxima rodada. Testado em banco
+  isolado: venda semeada com os 7 campos JÁ preenchidos (simulando dado
+  histórico) — salvar o formulário (só com os campos que sobraram:
+  km/preço/forma de pagamento/saldo/prazo de quitação/penalidade) deixa
+  os 7 removidos **intocados** (confirmado valor a valor), enquanto
+  "Penalidade por atraso" e os demais campos mantidos atualizam
+  normalmente com o valor novo enviado + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:
