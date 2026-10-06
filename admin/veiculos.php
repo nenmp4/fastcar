@@ -163,6 +163,16 @@ $condIncompletoImportAntigo = "(
 )";
 $mostrarIncompletos = ($_GET['incompletos'] ?? '') === '1';
 
+// 06/10/2026, "no finaceiro da exibir cads carros comprados esses mes" —
+// vem do card "🚗 Carros comprados" em admin/financeiro.php. Filtra pela
+// MESMA referência já usada em ref_posse/$refPosseExpr (assinatura do
+// contrato de compra, caindo pra data_compra/updated_at sem contrato
+// assinado) — "valor baseado no contrato assinado", nunca data_compra
+// crua, pedido explícito do usuário.
+$fDe = (string)($_GET['de'] ?? '');
+$fAte = (string)($_GET['ate'] ?? '');
+$filtroDataAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fAte);
+
 $where = "WHERE o.etapa = 'fechado'";
 $params = [];
 if ($busca !== '') {
@@ -173,6 +183,11 @@ if ($busca !== '') {
 if (isset($faixasPrazo[(string)$fPrazo])) {
     [$diasMin, $diasMax] = $faixasPrazo[(string)$fPrazo];
     $where .= " AND o.financiamento_quitado = 0 AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
+}
+if ($filtroDataAtivo) {
+    $where .= " AND date({$refPosseExpr}) BETWEEN ? AND ?";
+    $params[] = $fDe;
+    $params[] = $fAte;
 }
 if (!$mostrarIncompletos) {
     $where .= " AND NOT {$condIncompletoImportAntigo}";
@@ -273,6 +288,13 @@ function mesesComAFastcar(?string $refPosse): int {
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
+<?php if ($filtroDataAtivo): ?>
+<div class="alerta-info">
+    📅 Mostrando compras entre <strong><?= date('d/m/Y', strtotime($fDe)) ?></strong> e
+    <strong><?= date('d/m/Y', strtotime($fAte)) ?></strong> (pela data de assinatura do contrato, quando
+    assinado; senão a data de fechamento) — <a href="/admin/veiculos.php<?= $busca !== '' ? '?busca=' . urlencode($busca) : '' ?>">ver frota inteira</a>
+</div>
+<?php endif; ?>
 <div class="card">
     <h2>🚗 Veículos comprados</h2>
     <p><small>Frota atual da Fastcar — todo veículo com negócio fechado (bloco 8). Busca por placa, chassi, marca/
@@ -387,7 +409,7 @@ function lerCrlvManual() {
 <div class="stat-grid">
     <div class="stat-card">
         <div class="valor"><?= $totalVeiculos ?></div>
-        <div class="rotulo">Veículos na frota</div>
+        <div class="rotulo">Veículos<?= $filtroDataAtivo ? ' comprados no período' : ' na frota' ?></div>
     </div>
     <div class="stat-card sucesso">
         <div class="valor">R$ <?= number_format($totalPago, 2, ',', '.') ?></div>

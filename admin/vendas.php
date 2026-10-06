@@ -193,6 +193,25 @@ $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
 
+// 06/10/2026, "no finaceiro da exibir cads... carros vendidos esses mes"
+// — vem do card "🚙 Carros vendidos" em admin/financeiro.php. Mesma lógica
+// de ref_posse já usada em admin/veiculos.php pro lado de compra: "valor
+// baseado no contrato assinado" — prefere a data de assinatura do
+// contrato de VENDA (contratos.tipo='venda', amarrado por venda_id — um
+// mesmo veículo pode ter mais de 1 linha em `vendas` ao longo do tempo),
+// cai pra data_venda só quando não existe contrato assinado ainda.
+$joinContratoVendaAssinado = "
+    LEFT JOIN (
+        SELECT venda_id, MAX(assinado_em) AS assinado_em
+        FROM contratos WHERE tipo = 'venda' AND venda_id IS NOT NULL AND assinado_em IS NOT NULL
+        GROUP BY venda_id
+    ) ctrv ON ctrv.venda_id = v.id
+";
+$refVendaExpr = "COALESCE(ctrv.assinado_em, v.data_venda)";
+$fDe = (string)($_GET['de'] ?? '');
+$fAte = (string)($_GET['ate'] ?? '');
+$filtroDataVendaAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fAte);
+
 // 19/09/2026, "aproveita adciona dasbord também em vendas igual de compras
 // etapas igual de compras" — mesmo padrão de admin/index.php: nav sempre
 // limitada a ETAPAS_VENDA_ATIVAS não deixava achar/buscar negociação já
@@ -226,12 +245,17 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like);
 }
+if ($filtroDataVendaAtivo) {
+    $where .= " AND date({$refVendaExpr}) BETWEEN ? AND ?";
+    $params[] = $fDe;
+    $params[] = $fAte;
+}
 
 // LEFT JOIN — desde 17/09/2026 uma negociação pode não ter veículo
 // vinculado ainda (lead recém-entrado pelo WhatsApp, ver
 // includes/vendas.php::criarOuAbrirVendaLead()), diferente do JOIN
 // original (que assumia oportunidade_id sempre preenchido).
-$stmtTotal = $db->prepare("SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$where}");
+$stmtTotal = $db->prepare("SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where}");
 $stmtTotal->execute($params);
 $totalFiltrado = (int)$stmtTotal->fetchColumn();
 
@@ -241,6 +265,7 @@ $sql = "
     FROM vendas v
     LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
     LEFT JOIN usuarios u ON u.id = v.responsavel_id
+    {$joinContratoVendaAssinado}
     {$where}
     ORDER BY CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
              (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC
@@ -346,6 +371,13 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> negociação(ões) cancelada(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
 <?php elseif (isset($_GET['bulk_erro'])): ?>
     <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
+<?php endif; ?>
+<?php if ($filtroDataVendaAtivo): ?>
+<div class="alerta-info">
+    📅 Mostrando vendas entre <strong><?= date('d/m/Y', strtotime($fDe)) ?></strong> e
+    <strong><?= date('d/m/Y', strtotime($fAte)) ?></strong> (pela data de assinatura do contrato, quando
+    assinado; senão a data de venda) — <a href="/admin/vendas.php?etapa=<?= e($etapaFiltro) ?>">ver todas</a>
+</div>
 <?php endif; ?>
 
 <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">

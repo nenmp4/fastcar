@@ -145,6 +145,51 @@ $contasVencer7 = $contasVencer7->fetchAll(PDO::FETCH_ASSOC);
 
 $contasAtrasadas = (int)$db->query("SELECT COUNT(*) FROM fin_lancamentos WHERE status='atrasado'")->fetchColumn();
 $asaasPendenteImportar = asaasConfigured();
+
+/**
+ * 06/10/2026, "no finaceiro da exibir cads carros comprados esses mes
+ * carros vendidos clica neles exibi a lista" — "valor basedo no contrato
+ * assinado". Mesma referência de data já usada em admin/veiculos.php
+ * (compra, ref_posse) e agora espelhada em admin/vendas.php (venda,
+ * refVendaExpr): prioriza a data de ASSINATURA do contrato — quando já
+ * assinado — em vez de data_compra/data_venda crua, porque é o momento
+ * real em que o negócio se tornou definitivo (contrato ainda sem
+ * assinatura pode cair, mesmo já marcado fechado/vendido no sistema).
+ * Cai pra data_compra/data_venda só quando não existe contrato assinado
+ * ainda (ex: veículo cadastrado manualmente na frota, cf.
+ * criarVeiculoManualFrota()). Clicar no card manda pros mesmos
+ * admin/veiculos.php / admin/vendas.php com `?de=&ate=` — a mesma janela
+ * do período selecionado aqui (mês fechado OU últimos 30/60/90 dias),
+ * não um filtro próprio novo; os dois já aplicam esse filtro na mesma
+ * referência de data (ver $refPosseExpr/$refVendaExpr nesses arquivos).
+ */
+$stmtCarrosComprados = $db->prepare("
+    SELECT COUNT(*) AS qtd, COALESCE(SUM(o.valor_final),0) AS total
+    FROM oportunidades o
+    LEFT JOIN (
+        SELECT oportunidade_id, MAX(assinado_em) AS assinado_em
+        FROM contratos WHERE tipo = 'compra' AND assinado_em IS NOT NULL
+        GROUP BY oportunidade_id
+    ) ctr ON ctr.oportunidade_id = o.id
+    WHERE o.etapa = 'fechado'
+      AND date(COALESCE(ctr.assinado_em, o.data_compra, o.updated_at)) BETWEEN ? AND ?
+");
+$stmtCarrosComprados->execute([$inicioMes, $fimMes]);
+$carrosComprados = $stmtCarrosComprados->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, 'total' => 0];
+
+$stmtCarrosVendidos = $db->prepare("
+    SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total
+    FROM vendas v
+    LEFT JOIN (
+        SELECT venda_id, MAX(assinado_em) AS assinado_em
+        FROM contratos WHERE tipo = 'venda' AND venda_id IS NOT NULL AND assinado_em IS NOT NULL
+        GROUP BY venda_id
+    ) ctrv ON ctrv.venda_id = v.id
+    WHERE v.etapa = 'vendido'
+      AND date(COALESCE(ctrv.assinado_em, v.data_venda)) BETWEEN ? AND ?
+");
+$stmtCarrosVendidos->execute([$inicioMes, $fimMes]);
+$carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, 'total' => 0];
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -248,6 +293,16 @@ $asaasPendenteImportar = asaasConfigured();
   <a class="card" href="/admin/financeiro-lancamentos.php?origem=comissao_venda&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #ea580c">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600">🤝 Comissões pagas aos vendedores</div>
     <div style="font-size:1.6rem;font-weight:800;color:#ea580c">R$ <?= number_format($totalComissoesVendedores, 2, ',', '.') ?></div>
+  </a>
+  <a class="card" href="/admin/veiculos.php?de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #16a34a">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">🚗 Carros comprados <?= $fPeriodo ? "(últimos {$fPeriodo} dias)" : 'este mês' ?></div>
+    <div style="font-size:1.6rem;font-weight:800;color:#16a34a"><?= (int)$carrosComprados['qtd'] ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">R$ <?= number_format((float)$carrosComprados['total'], 2, ',', '.') ?> — valor baseado no contrato assinado</div>
+  </a>
+  <a class="card" href="/admin/vendas.php?etapa=vendido&de=<?= e($inicioMes) ?>&ate=<?= e($fimMes) ?>" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #ea580c">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">🚙 Carros vendidos <?= $fPeriodo ? "(últimos {$fPeriodo} dias)" : 'este mês' ?></div>
+    <div style="font-size:1.6rem;font-weight:800;color:#ea580c"><?= (int)$carrosVendidos['qtd'] ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">R$ <?= number_format((float)$carrosVendidos['total'], 2, ',', '.') ?> — valor baseado no contrato assinado</div>
   </a>
 </div>
 

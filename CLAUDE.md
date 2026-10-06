@@ -5310,6 +5310,59 @@ segue no schema sem uso novo, não removida sem ganho real),
   vírgula certo — R$3.500,50; editar via POST muda status e persiste;
   excluir via POST remove só a linha certa, conferido direto na tabela) +
   `php -l` + `tests/smoke.php` limpos.
+- **Cards "Carros comprados"/"Carros vendidos este mês" no dashboard
+  financeiro, valor baseado no contrato assinado** (06/10/2026, "no
+  finaceiro da exibir cads carros comprados esses mes carros vendidos
+  clica neles exibi a lista" + "VEICULOS" + "VALOR BASEDO NO CONTRATO
+  ASSINADO") — 2 cards novos em `admin/financeiro.php`, logo depois das
+  comissões, no MESMO período já selecionado na tela (mês fechado via
+  `?mes=` ou `?periodo=30|60|90`). Contagem/valor nunca usam
+  `data_compra`/`data_venda` cru — seguem a MESMA referência já
+  documentada em `admin/veiculos.php` (`ref_posse`,
+  `COALESCE(ctr.assinado_em, o.data_compra, o.updated_at)`): preferem a
+  data de ASSINATURA do contrato quando já existe um assinado, caindo pra
+  `data_compra`/`data_venda` só quando não há contrato assinado ainda (ex:
+  veículo cadastrado manualmente na frota, nunca passou pelo funil
+  normal). Racional de negócio: um negócio marcado `fechado`/`vendido` no
+  sistema mas cujo contrato ainda não foi assinado pode cair, então o mês
+  que "conta" de verdade é o da assinatura, não o da marcação interna.
+  `admin/vendas.php` ganhou o mesmo mecanismo que `admin/veiculos.php` já
+  tinha pro lado de compra — `$joinContratoVendaAssinado`/`$refVendaExpr`
+  (`COALESCE(ctrv.assinado_em, v.data_venda)`, amarrado por `venda_id`
+  — nunca `oportunidade_id`, porque um mesmo veículo pode ter mais de 1
+  negociação de venda ao longo do tempo, cf. devolução/revenda já
+  documentada). Clicar no card manda pra `admin/veiculos.php?de=&ate=` /
+  `admin/vendas.php?etapa=vendido&de=&ate=` — os dois ganharam suporte a
+  `?de=&ate=` (`YYYY-MM-DD`, filtrando pela MESMA referência de contrato
+  assinado) com um banner "📅 Mostrando compras/vendas entre..." e link
+  pra "ver todos"; nunca um filtro/listagem nova, reaproveita as 2 telas
+  que já existiam pra essa exata finalidade (Frota e pipeline de vendas).
+  Testado: 6 asserções em banco isolado (cenário central —
+  oportunidade/venda com `data_compra`/`data_venda` FORA do mês mas
+  contrato assinado DENTRO do mês conta no card; o inverso — data dentro
+  do mês mas contrato assinado fora — NÃO conta; sem contrato nenhum cai
+  no fallback pela data crua; etapa diferente de `fechado`/`vendido`
+  nunca conta — confirmando que o card conta certo mesmo quando a data de
+  assinatura "puxa" o registro pra dentro ou fora do mês contra o que a
+  data crua sugeriria) + HTTP ponta a ponta real (sessão `super_admin`
+  primed, servidor PHP embutido contra banco isolado): os 2 cards
+  renderizam a contagem/valor certos; `admin/veiculos.php?de=&ate=` e
+  `admin/vendas.php?etapa=vendido&de=&ate=` filtrados mostram exatamente
+  as mesmas linhas que compõem o total do card, nem mais nem menos; perfil
+  `financeiro` carrega `admin/financeiro.php` normal com os 2 cards
+  visíveis + `php -l` + `tests/smoke.php` limpos. Sem migração de schema
+  (`contratos.assinado_em`/`venda_id` já existiam). ⚠️ **Limitação
+  conhecida, não resolvida nesta rodada**: clicar nos cards como perfil
+  `financeiro` redireciona de volta pra `financeiro.php` (302) — nem
+  `admin/veiculos.php` (`requireSuperAdmin()`) nem `admin/vendas.php`
+  (`requireAcessoVendas()`, que não inclui `financeiro`) liberam esse
+  perfil hoje, mesma trava de sempre, nunca relaxada aqui por decisão
+  deliberada (evitar expandir permissão sensível sem pedido explícito) —
+  na prática o card só abre a lista de verdade pra `super_admin`. Se a
+  equipe quiser que `financeiro` também veja a lista ao clicar, dá pra
+  espelhar o mesmo padrão já usado pra `clientes.php`/`cliente_detalhe.php`
+  (18/09/2026, "financeiro tem ter acesso ao clientes" — acesso só-leitura,
+  todo POST bloqueado pro perfil).
 - **WhatsApp Cloud API (Meta oficial) — canal principal, Fase 1** (25/09/2026,
   "os dois vamos usar api oficial") — depois dos DOIS números Z-API
   (principal e fallback) serem bloqueados de novo no mesmo incidente (ver
