@@ -77,13 +77,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // é edição manual direta, sobrescreve sempre.
             $novoRg = clean((string)($_POST['rg'] ?? ''));
             $novoCnh = clean((string)($_POST['cnh'] ?? ''));
+            // 06/10/2026, "preciso remover esses campos ja se repete" —
+            // "Cidade"/"Estado" saíram do FORMULÁRIO (redundante na prática:
+            // "Endereço completo" já traz cidade/UF embutidos no texto digitado/
+            // confirmado pelo cliente) — nunca tiradas do UPDATE `clientes.*`
+            // nem da coluna no schema (nunca apaga dado já existente, mesma
+            // disciplina do "7 campos removidos" do card de venda em
+            // 06/10/2026): a coluna continua recebendo preenchimento
+            // automático via IA de qualificação (fill-if-empty,
+            // includes/ia_qualificacao.php) e seguindo exibida (read-only,
+            // "Cidade/UF") em admin/oportunidade.php — só parou de ser
+            // editável manualmente por aqui.
             $db->prepare("
-                UPDATE clientes SET nome = ?, cidade = ?, estado = ?, cpf = ?, email = ?, endereco = ?,
+                UPDATE clientes SET nome = ?, cpf = ?, email = ?, endereco = ?,
                     rg = ?, cnh = ?, nacionalidade = ?, estado_civil = ?, profissao = ? WHERE id = ?
             ")->execute([
                 clean((string)($_POST['nome'] ?? '')),
-                clean((string)($_POST['cidade'] ?? '')),
-                clean((string)($_POST['estado'] ?? '')),
                 $novoCpf,
                 $novoEmail,
                 $novoEndereco,
@@ -201,10 +210,6 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
                 <small>Usado também pra ZapSign avisar por e-mail quando mandar o contrato pra assinatura.</small>
             </div>
             <div>
-                <label>Cidade</label>
-                <input type="text" name="cidade" value="<?= e($cliente['cidade']) ?>">
-                <label>Estado</label>
-                <input type="text" name="estado" value="<?= e($cliente['estado']) ?>">
                 <label>Endereço completo</label>
                 <input type="text" name="endereco" value="<?= e($cliente['endereco'] ?? '') ?>">
                 <label>Nacionalidade</label>

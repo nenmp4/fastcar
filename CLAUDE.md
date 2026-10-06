@@ -11062,6 +11062,27 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `salvar_testemunha2` (mesmo guard de sempre, "só acompanha") + `php -l`
   + `tests/smoke.php` limpos. Sem migração de schema (reaproveita as
   colunas já criadas no bullet acima).
+- **Campos "Cidade"/"Estado" removidos do formulário de
+  `admin/cliente_detalhe.php`** (06/10/2026, "preciso remover esses
+  campos ja se repete" → "endereço" → "endereço completo ja tem") —
+  achado real num cadastro de cliente real (Marcela Bizarro Bondezan):
+  "Endereço completo" já traz cidade/UF embutidos no texto ("R TOREIROS
+  90 CS 1 - VILA CARMOSINA - SAO PAULO/SP..."), enquanto os campos
+  separados "Cidade"/"Estado" ficavam em branco — redundante digitar de
+  novo o que o endereço completo já mostra. Removidos só do FORMULÁRIO
+  (`<label>`/`<input>`) e do `UPDATE clientes` — nunca da coluna no
+  schema, mesma disciplina de nunca apagar dado existente já usada no
+  "7 campos removidos" do card de venda no mesmo dia: `clientes.cidade`/
+  `estado` continuam recebendo preenchimento automático via IA de
+  qualificação (`includes/ia_qualificacao.php`, fill-if-empty — "onde o
+  cliente está", sinal distinto do endereço digitado, usado de verdade
+  na negociação) e seguem exibidos **read-only** como "Cidade/UF" em
+  `admin/oportunidade.php` — só pararam de ser editáveis manualmente por
+  aqui. Testado em banco isolado: UPDATE sem `cidade`/`estado` no array
+  de parâmetros preserva os valores já salvos intactos (nunca sobrescreve
+  com vazio) enquanto os outros campos (nome/CPF/endereço/RG/
+  nacionalidade) continuam salvando normal + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 - **Disparo automático do ZapSign (e-mail/WhatsApp) não chegava nem pro
   cliente nem pras testemunhas + status por SIGNATÁRIO (não só agregado)**
   (06/10/2026, "disparos de email para as tesmunhas e whatsap pela
