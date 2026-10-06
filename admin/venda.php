@@ -118,15 +118,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // com string vazia a cada salvamento — preserva o que já
                 // estava, mesma disciplina de nunca apagar dado existente só
                 // porque o campo saiu da tela) — as colunas continuam no
-                // schema, só sem jeito de editar por aqui. `montarCamposContratoVenda()`/
-                // `gerarPdfContratoVenda()` (includes/contratos.php/
-                // contratos_pdf.php) nunca foram tocados — o Quadro-Resumo do
-                // contrato continua mostrando essas linhas com o mesmo
-                // fallback de sempre ("a definir...", "não informado", "—").
+                // schema, só sem jeito de editar por aqui.
+                //
+                // Mesmo dia, pedido de acompanhamento — "Penalidade por
+                // atraso imputável à Fastcar" (que tinha ficado de fora da
+                // remoção acima) saiu também: "remover esse campo pois não
+                // [é a] favor da fastcar... multa por atraso nas parcelas
+                // acho fica melhor" — esse campo protegia o COMPRADOR de a
+                // FASTCAR atrasar a quitação (Cláusula 13.4), nunca a
+                // empresa. Substituído por `multa_atraso_parcelas_texto`,
+                // do lado oposto — multa sobre a parcela do COMPRADOR em
+                // atraso (Cláusula 12.5, includes/contratos_pdf.php), mesma
+                // disciplina de texto livre/nunca preenchido sozinho.
+                // `penalidade_atraso_texto` nunca saiu do schema (dado já
+                // gravado preservado), só parou de ser editado/exibido —
+                // `montarCamposContratoVenda()`/`gerarPdfContratoVenda()`
+                // (includes/contratos.php/contratos_pdf.php) refletem os 2
+                // campos removidos do formulário: linha some do Quadro-
+                // Resumo quando vazia, em vez do fallback de sempre.
                 $db->prepare("
                     UPDATE vendas
                     SET km_entrega = ?, preco_venda = ?, forma_pagamento = ?,
-                        saldo_preco_devido = ?, prazo_quitacao_meses = ?, penalidade_atraso_texto = ?,
+                        saldo_preco_devido = ?, prazo_quitacao_meses = ?, multa_atraso_parcelas_texto = ?,
                         updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -135,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['forma_pagamento'] ?? '')),
                     valorMonetario((string)($_POST['saldo_preco_devido'] ?? '')),
                     $_POST['prazo_quitacao_meses'] !== '' ? max(1, (int)$_POST['prazo_quitacao_meses']) : 24,
-                    clean((string)($_POST['penalidade_atraso_texto'] ?? '')),
+                    clean((string)($_POST['multa_atraso_parcelas_texto'] ?? '')),
                     $id,
                 ]);
                 $sucesso = 'Condições da venda atualizadas.';
@@ -1008,8 +1021,8 @@ function adicionarParteEntrada() {
                 <input type="number" min="1" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">
             </div>
             <div>
-                <label>Penalidade por atraso imputável à Fastcar</label>
-                <input type="text" name="penalidade_atraso_texto" value="<?= e($v['penalidade_atraso_texto'] ?? '') ?>">
+                <label>Multa por atraso nas parcelas do comprador</label>
+                <input type="text" name="multa_atraso_parcelas_texto" value="<?= e($v['multa_atraso_parcelas_texto'] ?? '') ?>" placeholder="ex: 2% + 1% ao mês de mora sobre a parcela em atraso">
             </div>
         </div>
 

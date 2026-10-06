@@ -796,7 +796,13 @@ CREATE TABLE IF NOT EXISTS vendas (
     multas_texto TEXT DEFAULT 'COMPRADOR, na extensão legal aplicável',
     rastreador_texto TEXT DEFAULT '',
     prazo_transferencia_dias INTEGER,
-    penalidade_atraso_texto TEXT DEFAULT '',
+    penalidade_atraso_texto TEXT DEFAULT '',    -- coluna legada, sem edição/exibição nova desde 06/10/2026 — ver multa_atraso_parcelas_texto
+    -- 06/10/2026 — substitui penalidade_atraso_texto (multa que protegia o
+    -- COMPRADOR de atraso da FASTCAR) por uma multa do lado oposto
+    -- (protege a FASTCAR de atraso do COMPRADOR nas próprias parcelas,
+    -- Cláusula 12.5 em includes/contratos_pdf.php) — texto livre, nunca
+    -- vem preenchido sozinho (regra #3, "consultor decide caso a caso").
+    multa_atraso_parcelas_texto TEXT DEFAULT '',
 
     -- Bem recebido como parte do pagamento da entrada (26/09/2026, "Jean
     -- quer em módulos promissórias vendas" — réplica do fluxo do sistema

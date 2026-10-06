@@ -480,7 +480,10 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         'multas_texto'                  => $v['multas_texto'] ?: '',
         'rastreador_texto'              => $v['rastreador_texto'] ?: '',
         'prazo_transferencia_dias'      => $v['prazo_transferencia_dias'] !== null ? (int)$v['prazo_transferencia_dias'] : null,
-        'penalidade_atraso_texto'       => $v['penalidade_atraso_texto'] ?: '',
+        // 06/10/2026 — substitui 'penalidade_atraso_texto' (penalidade
+        // imputável à FASTCAR, nunca editado/exibido desde essa data —
+        // ver admin/venda.php) pela multa do lado do COMPRADOR.
+        'multa_atraso_parcelas_texto'   => $v['multa_atraso_parcelas_texto'] ?: '',
         // Entrada em partes via PIX + bem de troca + termos do
         // parcelamento persistidos (26/09/2026, réplica do sistema antigo
         // — ver includes/vendas.php). '_entrada_partes' nunca substitui

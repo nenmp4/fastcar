@@ -1882,4 +1882,23 @@ if (!colunaExiste($db, 'vendas', 'testemunha2_usuario_id')) {
     echo "⏭️  vendas.testemunha2_usuario_id: já existia\n";
 }
 
+// 06/10/2026 — "remover esse campo pois não [é a] favor da fastcar...
+// multa por atraso nas parcelas acho fica melhor": substitui
+// penalidade_atraso_texto (multa que protegia o COMPRADOR, caso a
+// FASTCAR atrasasse a quitação — cláusula 13.4) por um campo NOVO, do
+// lado oposto (protege a FASTCAR do atraso do COMPRADOR nas próprias
+// parcelas — cláusula 12.5, ver includes/contratos_pdf.php). Coluna
+// antiga nunca removida (nunca apaga dado já gravado), só parou de ser
+// editada/exibida.
+if (!colunaExiste($db, 'vendas', 'multa_atraso_parcelas_texto')) {
+    try {
+        $db->exec("ALTER TABLE vendas ADD COLUMN multa_atraso_parcelas_texto TEXT DEFAULT ''");
+        echo "✅ vendas.multa_atraso_parcelas_texto: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ vendas.multa_atraso_parcelas_texto: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  vendas.multa_atraso_parcelas_texto: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";
