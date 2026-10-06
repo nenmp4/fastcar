@@ -10693,6 +10693,36 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   de dev real confirmado intocado (testado 100% via scripts em arquivo
   desta vez) + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema.
+- **Procuração (compra) — novo tipo de documento, opcional** (06/10/2026,
+  "adicionar mais um documentos em clientes procuração na compra") — nem
+  toda compra tem procurador (só quando o vendedor não comparece/assina
+  pessoalmente, alguém mais age em nome dele com poderes) — adicionado a
+  `TIPOS_DOCUMENTOS_FECHAMENTO` (`includes/documentos.php`, só do lado de
+  COMPRA, nunca `venda_documentos`) e junto em
+  `TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS` — mesmo espírito de
+  `comprovante_pagamento`/`laudo_avaliacao`, nunca trava o checklist de
+  fechamento (regra #7) por um documento que a maioria das compras nem
+  chega a ter. Zero código novo em `admin/oportunidade.php` — a tabela de
+  documentos e o `<select>` de "Anexar documento manualmente" já iteram
+  `TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO` direto da
+  constante, mesmo padrão já documentado pro CRLV ("automaticamente
+  aparece... sem precisar de mudança nenhuma lá"). Nunca entra no wizard
+  público (`public/documentos.php` tem seu próprio `ORDEM_ETAPAS`
+  hardcoded, independente dessas 2 constantes — confirmado lendo o
+  arquivo antes de editar) e nunca ganha extração por IA
+  (`EXTRACAO_DOCUMENTO_CAMPOS[$tipo] ?? []` já é vazio pra qualquer tipo
+  sem entrada própria, mesmo comportamento de `comprovante_pagamento`/
+  `laudo_avaliacao` — `extrairDadosDocumentoComIA()` só é chamada em
+  `admin/oportunidade.php` quando `isset(TIPOS_DOCUMENTOS_CLIENTE[$tipo])`,
+  nunca pra tipo de `TIPOS_DOCUMENTOS_FECHAMENTO`). **Sem migração de
+  schema/backfill** — `garantirLinhasDocumentosObrigatorios()` já roda a
+  cada carregamento de `admin/oportunidade.php` (via
+  `getOuCriarTokenDocumentos()`, chamada incondicional desde o fix do
+  botão "📋 Copiar link" de 30/09/2026) e faz `INSERT OR IGNORE` — a
+  linha nova (`obrigatorio=0`) se auto-cria sozinha na próxima vez que
+  qualquer consultor abrir qualquer oportunidade, mesmo self-heal já
+  documentado pro item "câmbio" do checklist de vistoria. `php -l` +
+  `tests/smoke.php` limpos.
 - **FASTCAR + as 2 testemunhas viram signatários REAIS na ZapSign**
   (02/10/2026, usuário mandou o PDF do contrato antigo — sistema legado
   `fastcar.site`, "4 de 4 Assinaturas", FASTCAR+CEDENTE+2 testemunhas

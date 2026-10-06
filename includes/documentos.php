@@ -33,23 +33,33 @@ const TIPOS_DOCUMENTOS_FECHAMENTO = [
     'contrato_compra'        => 'Contrato de compra (Fastcar)',
     'comprovante_pagamento'  => 'Comprovante de pagamento',
     'laudo_avaliacao'        => 'Laudo de avaliação do veículo',
+    // 06/10/2026, "adicionar mais um documentos em clientes procuração na
+    // compra" — nem toda compra tem procurador (só quando o vendedor não
+    // comparece/assina pessoalmente, alguém mais age em nome dele com
+    // poderes); fica opcional (ver TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS
+    // abaixo), mesmo espírito de comprovante_pagamento/laudo_avaliacao —
+    // nunca trava o fechamento (regra #7) por um documento que a maioria
+    // das compras nem chega a ter.
+    'procuracao'             => 'Procuração (quando o vendedor é representado por procurador)',
 ];
 
 /**
- * 2 dos 6 tipos de documento nunca bloqueiam o checklist de fechamento
+ * 3 dos 8 tipos de documento nunca bloqueiam o checklist de fechamento
  * (regra #7 do CLAUDE.md) — pedido direto (17/09/2026, "vamos deixar
  * opcional o laudo e comprovante de pagamento opcional para fechar
  * pasta"), motivo de negócio explicado no mesmo dia: "como ficou
  * obrigatório pagamento as vezes pix outro pix nem todo veiculo laudo" —
  * a forma de pagamento varia (PIX de contas diferentes, sem padrão fixo
  * pra anexar comprovante) e nem todo veículo passa por avaliação formal
- * com laudo, então travar o fechamento por esses 2 documentos específicos
- * não reflete como a operação funciona de verdade. `contrato_compra`
- * continua obrigatório — é o único documento realmente essencial da pasta
- * fechada em si (os outros 3 obrigatórios são os que o cliente sobe no
- * wizard: CNH/comprovante de endereço/contrato de financiamento/CRLV).
+ * com laudo, então travar o fechamento por esses documentos específicos
+ * não reflete como a operação funciona de verdade. `procuracao` entrou na
+ * mesma lista em 06/10/2026, pelo mesmo motivo — maioria das compras não
+ * tem procurador nenhum. `contrato_compra` continua obrigatório — é o
+ * único documento realmente essencial da pasta fechada em si (os outros 4
+ * obrigatórios são os que o cliente sobe no wizard: CNH/comprovante de
+ * endereço/contrato de financiamento/CRLV).
  */
-const TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS = ['comprovante_pagamento', 'laudo_avaliacao'];
+const TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS = ['comprovante_pagamento', 'laudo_avaliacao', 'procuracao'];
 
 define('UPLOADS_DIR', dirname(__DIR__) . '/storage/uploads');
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10MB
