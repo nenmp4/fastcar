@@ -286,20 +286,43 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfLinhaResumo($pdf, 'Valor FIPE de referência na contratação', _fmtMoeda($c['valor_fipe_referencia']));
     _pdfLinhaResumo($pdf, 'Percentual pago pela FASTCAR ao VENDEDOR', $c['percentual_fipe'] . '% da FIPE, limitado contratualmente a 25%');
     _pdfLinhaResumo($pdf, 'Valor pago ao VENDEDOR', _fmtMoeda($c['valor_pago_vendedor']));
-    _pdfLinhaResumo($pdf, 'Chave PIX do VENDEDOR para pagamento', $c['pix_pagamento_cedente'] ?: 'a informar');
-    _pdfLinhaResumo($pdf, 'Instituição financeira/credor', $c['banco_financiamento']);
-    _pdfLinhaResumo($pdf, 'Contrato de financiamento nº', $c['contrato_financiamento_numero']);
+    // 06/10/2026 — mesmo pedido já aplicado no Quadro-Resumo da VENDA
+    // ("no de compras campos vazio não gerar também"): campo opcional sem
+    // dado real no banco nunca mais imprime linha vazia/com fallback tipo
+    // "a informar"/"a indicar" — some sozinho, só aparece quando alguém de
+    // fato preencheu. Campos centrais do negócio (veículo, FIPE, valor
+    // pago ao vendedor, prazo de quitação — já obrigatório pra gerar o
+    // contrato) nunca entram nessa checagem, continuam sempre impressos.
+    if (!empty($c['pix_pagamento_cedente'])) {
+        _pdfLinhaResumo($pdf, 'Chave PIX do VENDEDOR para pagamento', $c['pix_pagamento_cedente']);
+    }
+    if (!empty($c['banco_financiamento'])) {
+        _pdfLinhaResumo($pdf, 'Instituição financeira/credor', $c['banco_financiamento']);
+    }
+    if (!empty($c['contrato_financiamento_numero'])) {
+        _pdfLinhaResumo($pdf, 'Contrato de financiamento nº', $c['contrato_financiamento_numero']);
+    }
     _pdfLinhaResumo($pdf, 'Saldo estimado do financiamento na data', _fmtMoeda($c['saldo_financiamento_atual']));
-    _pdfLinhaResumo($pdf, 'Responsável registral perante o credor', $c['responsavel_registral']);
+    if (!empty($c['responsavel_registral'])) {
+        _pdfLinhaResumo($pdf, 'Responsável registral perante o credor', $c['responsavel_registral']);
+    }
     _pdfLinhaResumo($pdf, 'Prazo pra quitação do financiamento', "Fica ajustado, entretanto, que o prazo supracitado será de até " .
         "{$c['prazo_quitacao_meses']} (" . _extensoMeses((int)$c['prazo_quitacao_meses']) . ") meses, contado de {$c['data_entrega_posse']}, " .
         "podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses.");
-    _pdfLinhaResumo($pdf, 'Terceiro indicado pela FASTCAR para a quitação', $c['terceiro_quitacao'] ?: 'a indicar');
-    _pdfLinhaResumo($pdf, 'Posse física entregue à FASTCAR em', $c['data_entrega_posse']);
+    if (!empty($c['terceiro_quitacao'])) {
+        _pdfLinhaResumo($pdf, 'Terceiro indicado pela FASTCAR para a quitação', $c['terceiro_quitacao']);
+    }
+    if (!empty($c['data_entrega_posse'])) {
+        _pdfLinhaResumo($pdf, 'Posse física entregue à FASTCAR em', $c['data_entrega_posse']);
+    }
     _pdfLinhaResumo($pdf, 'Exploração econômica pela FASTCAR', 'Autorizada, inclusive locação a terceiros, nos limites contratuais');
     _pdfLinhaResumo($pdf, 'Transferência final', 'Após quitação/baixa do gravame e cumprimento das formalidades legais');
-    _pdfLinhaResumo($pdf, 'Seguro/proteção durante posse FASTCAR', $c['seguro_texto']);
-    _pdfLinhaResumo($pdf, 'IPVA/licenciamento/multas após entrega', $c['encargos_texto']);
+    if (!empty($c['seguro_texto'])) {
+        _pdfLinhaResumo($pdf, 'Seguro/proteção durante posse FASTCAR', $c['seguro_texto']);
+    }
+    if (!empty($c['encargos_texto'])) {
+        _pdfLinhaResumo($pdf, 'IPVA/licenciamento/multas após entrega', $c['encargos_texto']);
+    }
 
     foreach (clausulasContratoCompra((int)$c['prazo_quitacao_meses']) as [$titulo, $corpo]) {
         _pdfTituloClausula($pdf, $titulo);
