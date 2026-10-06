@@ -68,15 +68,64 @@ function zapsignRequest(string $method, string $endpoint, array $data = []): arr
     return ['code' => $httpCode, 'data' => $decoded ?? []];
 }
 
-/** Monta o objeto 'signer' pro payload da ZapSign a partir de nome/telefone/email — usado pelo signatário principal e por cada extra. */
+/**
+ * Monta o objeto 'signer' pro payload da ZapSign a partir de nome/telefone/
+ * email — usado pelo signatário principal e por cada extra (FASTCAR/
+ * testemunhas).
+ *
+ * 06/10/2026 — achado real: "disparos de email para as testemunhas e
+ * whatsap pela instacia zpi também não enviando[,] cliente da conferida"
+ * (nenhum signatário, nem a contraparte principal, nem FASTCAR/testemunha,
+ * jamais recebeu nada automaticamente da ZapSign desde que a integração
+ * foi criada em 13/09/2026). Causa raiz: `send_automatic_email`/
+ * `send_automatic_whatsapp` NUNCA foram mandados no payload — confirmado
+ * via busca na documentação pública da ZapSign (docs.zapsign.com.br,
+ * domínio bloqueado pra leitura direta neste sandbox, mesma limitação de
+ * sempre — confirmado via 2 buscas independentes com exemplo de JSON real
+ * batendo): são campos booleanos, **por signatário** (dentro de cada
+ * objeto em `signers[]`, nunca no nível do documento), **falsos por
+ * padrão** — a própria doc diz explicitamente: "se `false` (o padrão),
+ * você é responsável por compartilhar o link de assinatura manualmente
+ * (WhatsApp, SMS, e-mail, etc)". Batia exatamente com o sintoma: todo o
+ * fluxo de "copiar link"/"reenviar por WhatsApp" (admin/oportunidade.php,
+ * admin/venda.php) sempre foi um WORKAROUND manual pra um envio
+ * automático que nunca existiu de verdade.
+ * Corrigido mandando os 2 flags sempre que o respectivo dado existe —
+ * `send_automatic_email` só quando `email` foi de fato incluído,
+ * `send_automatic_whatsapp` só quando `phone_number` foi de fato incluído
+ * (a própria doc exige o dado correspondente presente) — nunca manda o
+ * flag sozinho sem o dado, e nunca inventa contato que o signatário não
+ * tem. ⚠️ Ainda não confirmado contra uma conta ZapSign real (mesma
+ * ressalva de sempre pra essa integração) — validar no próximo contrato
+ * de verdade que uma testemunha/FASTCAR/cliente recebe a mensagem sem
+ * ninguém precisar clicar em nada.
+ */
 function _zapsignMontarSigner(string $nome, string $telefone = '', string $email = ''): array {
     $signer = ['name' => $nome ?: 'Signatário'];
     if ($telefone) {
         $tel = preg_replace('/\D/', '', $telefone);
+        // 06/10/2026 — 2º achado no mesmo diagnóstico, bug JÁ documentado em
+        // 21/09/2026 mas nunca corrigido ("fora do escopo... sinalizado
+        // como tarefa separada"): todo caller daqui (montarCamposContratoCompra()/
+        // Venda(), via $op['telefone']/_telefone) passa o telefone já
+        // normalizado por normalizarTelefone() — SEMPRE com o DDI 55 na
+        // frente (12 ou 13 dígitos), nunca o formato bruto de 10/11 que
+        // este `if` abaixo sempre esperou. Resultado real: phone_number
+        // NUNCA era incluído no payload pra NENHUM signatário (confirmado
+        // testando contra fake server — "só name/email chegavam, nunca
+        // telefone") — explica o "whatsapp... não enviando" reportado
+        // agora, concretamente, não só a falta do flag send_automatic_whatsapp
+        // (ver comentário da função acima). Descasca o 55 antes de medir
+        // o tamanho; aceita também o formato bruto (sem DDI) de quem
+        // porventura já mandar assim.
+        if (strlen($tel) >= 12 && str_starts_with($tel, '55')) {
+            $tel = substr($tel, 2);
+        }
         if (strlen($tel) === 11 || strlen($tel) === 10) {
             // ZapSign quer DDD e número separados do código do país.
             $signer['phone_country'] = '55';
             $signer['phone_number']  = $tel;
+            $signer['send_automatic_whatsapp'] = true;
         }
     }
     // E-mail (14/09/2026, pedido do José/Jean — "vamos enviar no email dele
@@ -86,6 +135,7 @@ function _zapsignMontarSigner(string $nome, string $telefone = '', string $email
     // o envio do contrato por falta desse dado.
     if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $signer['email'] = $email;
+        $signer['send_automatic_email'] = true;
     }
     return $signer;
 }
