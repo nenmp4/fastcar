@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     valorMonetario((string)($_POST['preco_venda'] ?? '')),
                     clean((string)($_POST['forma_pagamento'] ?? '')),
                     valorMonetario((string)($_POST['saldo_preco_devido'] ?? '')),
-                    $_POST['prazo_quitacao_meses'] !== '' ? min(24, (int)$_POST['prazo_quitacao_meses']) : 24,
+                    $_POST['prazo_quitacao_meses'] !== '' ? max(1, (int)$_POST['prazo_quitacao_meses']) : 24,
                     clean((string)($_POST['penalidade_atraso_texto'] ?? '')),
                     $id,
                 ]);
@@ -1004,8 +1004,8 @@ function adicionarParteEntrada() {
                 <input type="text" name="forma_pagamento" value="<?= e($v['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas...">
                 <label>Saldo de preço devido pelo comprador (R$) — deixe em branco se inexistente</label>
                 <input type="number" step="0.01" name="saldo_preco_devido" value="<?= e((string)($v['saldo_preco_devido'] ?? '')) ?>">
-                <label>Prazo máximo pra quitação do financiamento (meses, até 24)</label>
-                <input type="number" max="24" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">
+                <label>Prazo máximo pra quitação do financiamento (meses)</label>
+                <input type="number" min="1" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">
             </div>
             <div>
                 <label>Penalidade por atraso imputável à Fastcar</label>

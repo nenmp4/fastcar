@@ -216,11 +216,14 @@ function _fmtMoeda(?float $v): string {
 }
 
 /**
- * Número por extenso (1-24) pro padrão jurídico "18 (dezoito) meses" —
- * faixa fechada, só cobre o intervalo de prazo_quitacao_meses (nunca > 24,
- * regra travada em includes/contratos.php/admin/oportunidade.php).
+ * Número por extenso (1-24) pro padrão jurídico "18 (dezoito) meses" — cobre
+ * o prazo de quitação da COMPRA, que segue travado em até 24 meses (regra de
+ * negócio confirmada, includes/contratos.php/admin/oportunidade.php). O
+ * prazo da VENDA deixou de ter teto em 06/10/2026 ("deixar valor aberto",
+ * admin/venda.php) — fora da faixa 1-24, devolve null (nunca um número
+ * repetido tipo "48 (48)"); quem chama decide o formato final sem extenso.
  */
-function _extensoMeses(int $n): string {
+function _extensoMeses(int $n): ?string {
     $numeros = [
         1 => 'um', 2 => 'dois', 3 => 'três', 4 => 'quatro', 5 => 'cinco', 6 => 'seis',
         7 => 'sete', 8 => 'oito', 9 => 'nove', 10 => 'dez', 11 => 'onze', 12 => 'doze',
@@ -228,7 +231,17 @@ function _extensoMeses(int $n): string {
         18 => 'dezoito', 19 => 'dezenove', 20 => 'vinte', 21 => 'vinte e um', 22 => 'vinte e dois',
         23 => 'vinte e três', 24 => 'vinte e quatro',
     ];
-    return $numeros[$n] ?? (string)$n;
+    return $numeros[$n] ?? null;
+}
+
+/**
+ * "N (extenso) meses" quando N tem extenso conhecido (1-24), senão só "N
+ * meses" — nunca repete o número tipo "48 (48)". Usado pelo prazo de
+ * quitação da VENDA, que não tem mais teto fixo.
+ */
+function _mesesComExtenso(int $n): string {
+    $extenso = _extensoMeses($n);
+    return $extenso !== null ? "{$n} ({$extenso}) meses" : "{$n} meses";
 }
 
 /**
@@ -542,7 +555,7 @@ function gerarPdfContratoVenda(array $c): string {
     _pdfLinhaResumo($pdf, 'Contrato financeiro / referência', $c['contrato_financiamento_numero']);
     _pdfLinhaResumo($pdf, 'Saldo estimado do financiamento na contratação', _fmtMoeda($c['saldo_financiamento_atual']));
     _pdfLinhaResumo($pdf, 'Responsável pela dívida perante a instituição', 'FASTCAR');
-    _pdfLinhaResumo($pdf, 'Prazo máximo para quitação/baixa', "Até {$c['prazo_quitacao_meses']} meses, contado da assinatura deste contrato, nunca superior a 24 meses");
+    _pdfLinhaResumo($pdf, 'Prazo máximo para quitação/baixa', "Até " . _mesesComExtenso((int)$c['prazo_quitacao_meses']) . ", contado da assinatura deste contrato");
     _pdfLinhaResumo($pdf, 'Data-limite objetiva', $c['data_limite_quitacao'] ?: 'a definir conforme prazo acima');
     _pdfLinhaResumo($pdf, 'Prestação de contas de andamento', $c['prestacao_contas_texto']);
     _pdfLinhaResumo($pdf, 'Seguro/proteção durante o período intermediário', $c['seguro_texto']);
@@ -552,7 +565,7 @@ function gerarPdfContratoVenda(array $c): string {
     _pdfLinhaResumo($pdf, 'Prazo para transferência após baixa', $c['prazo_transferencia_dias'] !== null ? $c['prazo_transferencia_dias'] . ' dias úteis, observadas exigências do órgão de trânsito' : '—');
     _pdfLinhaResumo($pdf, 'Penalidade por atraso imputável à FASTCAR', $c['penalidade_atraso_texto'] ?: 'a definir entre as partes');
 
-    foreach (clausulasContratoVenda() as [$titulo, $corpo]) {
+    foreach (clausulasContratoVenda((int)$c['prazo_quitacao_meses']) as [$titulo, $corpo]) {
         _pdfTituloClausula($pdf, $titulo);
         _pdfCorpo($pdf, $corpo);
     }
@@ -603,7 +616,8 @@ function gerarPdfContratoVenda(array $c): string {
  * compra (endereço real da sede — o modelo original trazia Santana de
  * Parnaíba/SP genérico, mesma correção já aplicada em clausulasContratoCompra()).
  */
-function clausulasContratoVenda(): array {
+function clausulasContratoVenda(int $prazoMeses): array {
+    $prazoTexto = _mesesComExtenso($prazoMeses);
     return [
         ['CLÁUSULA 1ª – OBJETO, PREÇO E NATUREZA DA OPERAÇÃO',
             "1.1. A FASTCAR vende ao COMPRADOR o veículo identificado no Quadro-Resumo, com entrega da posse direta nas condições deste contrato e obrigação de promover a futura regularização necessária à transferência registral definitiva.\n\n" .
@@ -616,11 +630,11 @@ function clausulasContratoVenda(): array {
             "2.3. A FASTCAR declara possuir legitimidade contratual e documental suficiente para celebrar esta operação e entregar a posse, devendo indicar no Anexo III a origem de sua legitimidade quando o titular registral for terceiro.\n\n" .
             "2.4. O COMPRADOR não poderá ser induzido a acreditar que o gravame já foi baixado quando isso ainda não tiver ocorrido."],
         ['CLÁUSULA 3ª – OBRIGAÇÃO DE QUITAÇÃO FUTURA PELA FASTCAR',
-            "3.1. A FASTCAR obriga-se a negociar com a instituição financeira/credor, promover a quitação do saldo e adotar as providências necessárias à baixa do gravame no prazo indicado no Quadro-Resumo, limitado a 24 (vinte e quatro) meses contados da assinatura/entrega.\n\n" .
+            "3.1. A FASTCAR obriga-se a negociar com a instituição financeira/credor, promover a quitação do saldo e adotar as providências necessárias à baixa do gravame no prazo indicado no Quadro-Resumo, de {$prazoTexto} contados da assinatura/entrega.\n\n" .
             "3.2. A forma de negociação com o credor poderá envolver liquidação antecipada, acordo, renegociação ou cumprimento do contrato financeiro, desde que não imponha ao COMPRADOR obrigação não expressamente assumida e não exponha o veículo a risco evitável de retomada por inadimplemento da FASTCAR.\n\n" .
             "3.3. A FASTCAR deverá manter a obrigação financeira em situação regular ou formalmente negociada durante o período intermediário e preservar documentos capazes de demonstrar o andamento.\n\n" .
             "3.4. A obrigação de quitar e viabilizar a transferência é obrigação própria da FASTCAR perante o COMPRADOR e não fica afastada pelo simples fato de a instituição financeira adotar procedimentos internos, exigir documentos ou modificar condições de negociação.\n\n" .
-            "3.5. Ocorrendo impedimento extraordinário não imputável à FASTCAR, as partes deverão documentá-lo e definir providência proporcional, sem prorrogação automática além de 24 meses se isso esvaziar a finalidade econômica do contrato."],
+            "3.5. Ocorrendo impedimento extraordinário não imputável à FASTCAR, as partes deverão documentá-lo e definir providência proporcional, sem prorrogação automática além do prazo indicado no Quadro-Resumo se isso esvaziar a finalidade econômica do contrato."],
         ['CLÁUSULA 4ª – INFORMAÇÃO, PRESTAÇÃO DE CONTAS E COMPROVAÇÃO',
             "4.1. A FASTCAR fornecerá ao COMPRADOR, na periodicidade prevista no Quadro-Resumo e também quando houver evento relevante, informação objetiva sobre o status da quitação: documento/consulta de saldo ou situação do financiamento quando disponível; comprovantes de pagamentos, acordos ou liquidação relevantes quando aplicável; informação sobre eventual atraso, renegociação, restrição adicional ou risco que possa afetar o veículo; e comprovante de baixa do gravame quando concluída.\n\n" .
             "4.2. Dados sigilosos estranhos à operação poderão ser protegidos, desde que isso não impeça o COMPRADOR de verificar o cumprimento da obrigação relativa ao veículo."],

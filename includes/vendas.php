@@ -542,7 +542,7 @@ function registrarVendaPromissoria(array $dados, int $responsavelId): array {
 
     $db = getDB();
     $prazoMeses = isset($dados['prazo_quitacao_meses']) && $dados['prazo_quitacao_meses'] !== null && $dados['prazo_quitacao_meses'] !== ''
-        ? min(24, max(1, (int)$dados['prazo_quitacao_meses'])) : 24;
+        ? max(1, (int)$dados['prazo_quitacao_meses']) : 24;
     $db->prepare("
         UPDATE vendas
         SET comprador_nome = ?, comprador_telefone = ?, comprador_cpf = ?, comprador_rg = ?, comprador_email = ?,
