@@ -232,6 +232,16 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'vendedor_cpf'                  => $op['cpf'] ?: '',
         'vendedor_cnh'                  => $op['cnh'] ?: '',
         'vendedor_endereco'             => $op['endereco'] ?: '',
+        // 06/10/2026 — "adicionar dados do cliente no contrato de compra, o
+        // email do cliente não aparece": o lado de VENDA já inclui
+        // telefone/e-mail do COMPRADOR na cláusula de qualificação das
+        // partes (comprador_telefone/comprador_email, ver abaixo) desde a
+        // criação do módulo, mas o lado de COMPRA nunca expôs os
+        // equivalentes do VENDEDOR sob esse nome — só existiam como
+        // `_telefone`/`_email` (campos "internos", usados só pra
+        // ZapSign/e-mail complementar, nunca interpolados no PDF).
+        'vendedor_telefone'             => $op['telefone'] ?: '',
+        'vendedor_email'                => $op['email'] ?: '',
         'veiculo_marca'                 => $op['veiculo_marca'] ?: '',
         'veiculo_modelo'                => $op['veiculo_modelo'] ?: '',
         'veiculo_ano'                   => $op['veiculo_ano'] ?: '',

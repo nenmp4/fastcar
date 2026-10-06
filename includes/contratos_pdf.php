@@ -271,7 +271,8 @@ function gerarPdfContratoCompra(array $c): string {
         "Barueri/SP, CEP 06473-073, doravante " .
         "denominada COMPRADORA/FASTCAR; e, de outro lado, {$c['vendedor_nome']}, {$c['vendedor_nacionalidade']}, " .
         "{$c['vendedor_estado_civil']}, {$c['vendedor_profissao']}, RG nº {$c['vendedor_rg']}, CPF nº {$c['vendedor_cpf']}, " .
-        "CNH nº {$c['vendedor_cnh']}, residente em {$c['vendedor_endereco']}, doravante VENDEDOR/PROPRIETÁRIO " .
+        "CNH nº {$c['vendedor_cnh']}, residente em {$c['vendedor_endereco']}, telefone/WhatsApp " .
+        "{$c['vendedor_telefone']}, e-mail {$c['vendedor_email']}, doravante VENDEDOR/PROPRIETÁRIO " .
         "REGISTRAL, firmam o presente contrato."
     ));
 
