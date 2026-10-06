@@ -3940,6 +3940,25 @@ segue no schema sem uso novo, não removida sem ganho real),
   do comprador filtra certo; aba "Todas as vendas" continua funcionando
   sem regressão + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema.
+  **Campo "Prazo pra quitar o saldo" removido do modal** (06/10/2026,
+  "o que preço ajustado" seguido de "pode remover campo prazmo maximo
+  para quitação na promissória não precisa pois ja tem as condições do
+  financiamento") — o modal "📋 Condições da venda" tinha
+  `prazo_quitacao_meses` (número de meses, padrão 24) junto de "Saldo de
+  preço devido", redundante com a seção "📆 Parcelamento do saldo
+  (opcional)" logo abaixo (qtd/valor/data de cada parcela — dado bem mais
+  preciso do financiamento real do que um simples teto em meses). Campo
+  removido do `<form>`+preview JS; `registrarVendaPromissoria()`
+  (`includes/vendas.php`) nunca precisou mudar — já caía sozinha pro
+  padrão de 24 meses quando `prazo_quitacao_meses` não vem no array.
+  Campo "Prazo máximo pra quitação do financiamento" do card "Condições
+  da venda" em `admin/venda.php` (edição pós-criação, usado pelo
+  Quadro-Resumo do contrato — cláusula 5ª) continua existindo normal,
+  nunca foi tocado — só saiu do MODAL de criação. "Preço ajustado (R$)"
+  nunca foi tocado/removido — é `preco_venda`, campo opcional no modal
+  também, só ficou vazio na venda #31 porque ninguém preencheu na hora de
+  criar (dá pra completar depois em "Condições da venda"). `php -l`
+  limpo. Sem migração de schema.
   **Cláusula de retirada extrajudicial do veículo após 60 dias de
   inadimplência (só VENDA)** (26/09/2026, pedido direto: "no contrato de
   de venda tem anexo com autorização de retirado veiculo após 60 dias de
@@ -4016,6 +4035,55 @@ segue no schema sem uso novo, não removida sem ganho real),
   "Penalidade por atraso" e os demais campos mantidos atualizam
   normalmente com o valor novo enviado + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
+  **"Gerar cobrança real no Asaas" virou botão pós-assinatura, separado do
+  "gerar no sistema"** (06/10/2026, mesmo dia, "adicionar gerar
+  parcelamentos no assas botão depois que gerar no sistam poi confere
+  assina contrato depois aparece botão gerar no assas", confirmado logo
+  em seguida: "aparecer botão de gerar parcelamentos no assas depois que
+  contrato tiver assinado não faz sentindo ele aparecer antes") — até
+  então o único formulário de parcelamento (card "💳 Financeiro — plano
+  de parcelamento") tinha um checkbox "Cobrar de verdade pelo Asaas",
+  marcado por padrão, disponível já na 1ª geração do plano — ou seja,
+  antes mesmo do contrato ser assinado o sistema já podia criar cobrança
+  real (boleto/Pix/cartão) pro comprador. Checkbox removido; a ação
+  `gerar_parcelamento` (`admin/venda.php`) agora é **sempre** local
+  (`finGerarPlanoParcelamentoVenda()`), só pra conferir os números antes
+  de assinar. Nova ação `gerar_asaas_pos_assinatura` — botão "💳 Gerar
+  cobrança real no Asaas" só aparece (e só é aceito no servidor, nunca só
+  escondido na tela) quando `vendas.etapa === 'vendido'` (contrato já
+  assinado) **e** existe parcela local ainda não convertida — converte o
+  plano já gerado/conferido usando os MESMOS termos já salvos em
+  `vendas.parcelamento_valor_parcela/_qtd_parcelas/_primeira_parcela_data`
+  (gravados por `salvarParcelamentoTermosVenda()` na geração local, nunca
+  pede pra digitar de novo). Nova `finCancelarParcelasPendentesVenda()`
+  (`includes/financeiro.php`) cancela só as PARCELAS locais pendentes
+  (`parcela_numero > 0`) — **nunca a entrada** (`parcela_numero = 0`),
+  que segue o racional de sempre ("entrada NÃO entra aqui — Asaas parcela
+  o SALDO", já documentado em `asaasGerarCobrancaParceladaVenda()`) —
+  antes de chamar `asaasGerarCobrancaParceladaVenda()`, que recria as
+  mesmas parcelas como cobrança de verdade (`origem='asaas'`). O guard
+  interno dessa função (`includes/asaas.php`) mudou de "nenhum lançamento
+  ativo" pra "nenhuma PARCELA ativa" (`parcela_numero > 0`) — com o guard
+  antigo, a entrada (sempre ativa, nunca cancelada nesse fluxo) bloquearia
+  pra sempre a geração; o outro caller
+  (`finGerarReceitaVendaAssinatura()`, disparo automático de
+  `mudarEtapaVenda()` ao assinar) nunca é afetado, porque seu próprio
+  guard (`finContarLancamentosVenda($vendaId) > 0`) já desiste ANTES de
+  chegar aqui assim que existe qualquer lançamento — e é exatamente essa
+  desistência automática (plano local pré-existente = zero geração
+  automática via Asaas) que deixava a lacuna que este botão manual
+  cobre. Testado em banco isolado + servidor Asaas fake local: tentar
+  converter com o contrato ainda `contrato_enviado` (não assinado) é
+  recusado; assinando (`etapa='vendido'`) e convertendo, a entrada (R$
+  5.000, pendente, `parcelamento_venda`) fica **intocada**, as 3 parcelas
+  locais antigas viram `cancelado`, e 3 parcelas novas nascem
+  `origem='asaas'`/`pendente` com `asaas_payment_id`/`asaas_customer_id`
+  reais capturados do payload do fake server; depois da conversão,
+  `temParcelaLocalParaConverter` corretamente vira falso (botão some);
+  tentando chamar a geração Asaas de novo sem cancelar nada antes (dupla
+  cobrança acidental) o guard bloqueia com "já tem parcela(s) ativa(s)" —
+  nunca gera 2x + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema.
 - **Paginação nas listagens do admin** — `includes/paginacao.php`
   (13/09/2026, pergunta direta "quantas negociações ficar na tela, já
   pensou nisso?"; resposta honesta foi não, e achou de quebra um bug real:

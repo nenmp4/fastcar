@@ -186,33 +186,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sucesso = 'Bem recebido como parte da entrada atualizado.';
             } elseif ($acao === 'gerar_parcelamento') {
                 // Fastcar vende veículo da frota financiado pro comprador —
-                // entrada + parcelas (pedido José/Jean, 17/09/2026). Cobra
-                // de verdade via Asaas quando o comprador já tem cliente
-                // Asaas vinculado (ver admin/financeiro-asaas.php) e a
-                // integração está configurada; senão gera só o registro
-                // LOCAL no financeiro (finGerarPlanoParcelamentoVenda) —
-                // nunca bloqueia a operação por falta de Asaas.
+                // entrada + parcelas (pedido José/Jean, 17/09/2026). Até
+                // 06/10/2026 tinha um checkbox aqui pra já cobrar de verdade
+                // via Asaas — removido ("aparecer botão de gerar
+                // parcelamentos no assas depois que contrato tiver
+                // assinado... não faz sentindo ele aparecer antes"): esta
+                // ação agora é SEMPRE o registro LOCAL (pra conferir os
+                // números antes de assinar o contrato) — o botão de Asaas
+                // de verdade só aparece DEPOIS do contrato assinado, ação
+                // 'gerar_asaas_pos_assinatura' logo abaixo.
                 $valorEntrada = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor_entrada'] ?? '0')));
                 $numParcelas = (int)($_POST['num_parcelas'] ?? 0);
                 $valorParcela = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor_parcela'] ?? '0')));
                 $primeiraParcela = (string)($_POST['primeira_parcela_data'] ?? '');
-                $usarAsaas = !empty($_POST['usar_asaas']) && asaasConfigured();
 
                 if (!$primeiraParcela) {
                     $erro = 'Informe a data de vencimento da 1ª parcela.';
-                } elseif ($usarAsaas) {
-                    $asaasCustomerId = asaasCriarClienteSeNecessario((string)$v['comprador_nome'], (string)$v['comprador_cpf'], (string)$v['comprador_telefone'], (string)$v['comprador_email']);
-                    if (!$asaasCustomerId) {
-                        $erro = 'Não foi possível criar/localizar o cliente no Asaas — confira os dados do comprador (nome/CPF) e a chave da API.';
-                    } else {
-                        $r = asaasGerarCobrancaParceladaVenda($id, $asaasCustomerId, $valorParcela, $numParcelas, $primeiraParcela, "Venda #{$id} — " . trim((string)$v['veiculo_marca'] . ' ' . $v['veiculo_modelo']));
-                        if ($r['ok']) {
-                            salvarParcelamentoTermosVenda($id, $valorParcela, $numParcelas, $primeiraParcela);
-                            $sucesso = "Cobrança parcelada criada no Asaas — {$r['criadas']} parcela(s).";
-                        } else {
-                            $erro = 'Falha ao gerar cobrança no Asaas: ' . $r['erro'];
-                        }
-                    }
                 } else {
                     $r = finGerarPlanoParcelamentoVenda($id, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela, null, (string)$v['comprador_nome'], (int)$_SESSION['admin_id']);
                     if ($r['ok']) {
@@ -220,6 +209,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $sucesso = "Plano de parcelamento gerado no financeiro — {$r['criadas']} lançamento(s).";
                     } else {
                         $erro = $r['erro'];
+                    }
+                }
+            } elseif ($acao === 'gerar_asaas_pos_assinatura') {
+                // 06/10/2026, "adicionar gerar parcelamentos no assas botão
+                // depois que gerar no sistema poi confere assina contrato
+                // depois aparece botão gerar no assas" — confirmado
+                // ("não faz sentindo ele aparecer antes"): o botão só
+                // aparece com o contrato JÁ assinado (etapa='vendido'),
+                // nunca antes — checado aqui no servidor também, nunca só
+                // escondendo o botão na tela. Converte o plano LOCAL já
+                // gerado/conferido (ação 'gerar_parcelamento' acima) em
+                // cobrança real: cancela só as PARCELAS pendentes locais
+                // (finCancelarParcelasPendentesVenda() — nunca mexe na
+                // entrada, que nunca passa por Asaas) e recria via
+                // asaasGerarCobrancaParceladaVenda() com os MESMOS termos já
+                // salvos (vendas.parcelamento_*, gravados quando o plano
+                // local foi gerado) — nunca pede pra digitar os números de
+                // novo. finGerarReceitaVendaAssinatura() (gatilho automático
+                // de quando a venda assina) nunca roda nesse caso — seu
+                // próprio guard já desiste assim que vê o plano local já
+                // existente, é exatamente essa lacuna que este botão cobre.
+                if ($v['etapa'] !== 'vendido') {
+                    $erro = 'Só dá pra gerar cobrança real no Asaas depois do contrato assinado.';
+                } elseif (!asaasConfigured()) {
+                    $erro = 'Chave da API Asaas não configurada em Configurações.';
+                } elseif (!$v['parcelamento_qtd_parcelas'] || !$v['parcelamento_valor_parcela'] || !$v['parcelamento_primeira_parcela_data']) {
+                    $erro = 'Nenhum plano de parcelamento local pra converter — gere um acima primeiro.';
+                } else {
+                    $asaasCustomerId = asaasCriarClienteSeNecessario((string)$v['comprador_nome'], (string)$v['comprador_cpf'], (string)$v['comprador_telefone'], (string)$v['comprador_email']);
+                    if (!$asaasCustomerId) {
+                        $erro = 'Não foi possível criar/localizar o cliente no Asaas — confira os dados do comprador (nome/CPF) e a chave da API.';
+                    } else {
+                        finCancelarParcelasPendentesVenda($id);
+                        $r = asaasGerarCobrancaParceladaVenda(
+                            $id, $asaasCustomerId, (float)$v['parcelamento_valor_parcela'], (int)$v['parcelamento_qtd_parcelas'],
+                            (string)$v['parcelamento_primeira_parcela_data'], "Venda #{$id} — " . trim((string)$v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])
+                        );
+                        if ($r['ok']) {
+                            $sucesso = "Cobrança parcelada criada no Asaas — {$r['criadas']} parcela(s). A entrada continua como lançamento local, intocada.";
+                        } else {
+                            $erro = 'Falha ao gerar cobrança no Asaas: ' . $r['erro'];
+                        }
                     }
                 }
             } elseif ($acao === 'cancelar_parcelamento') {
@@ -1140,6 +1171,12 @@ function adicionarParteEntrada() {
         // nunca conta aqui (mesmo critério de finContarLancamentosAtivosVenda(),
         // calculado em PHP pra não bater no banco de novo com o que já veio).
         $lancamentosAtivosVenda = array_filter($lancamentosVenda, fn($l) => $l['status'] !== 'cancelado');
+        // 06/10/2026 — parcela local (parcela_numero>0, nunca a entrada)
+        // ainda não convertida pro Asaas (origem != 'asaas'), ainda ativa —
+        // existir isso + contrato já assinado é o gatilho do botão "Gerar
+        // cobrança real no Asaas" mais abaixo.
+        $temParcelaLocalParaConverter = (bool)array_filter($lancamentosAtivosVenda, fn($l) => (int)$l['parcela_numero'] > 0 && $l['origem'] !== 'asaas');
+        $podeGerarAsaasPosAssinatura = $v['etapa'] === 'vendido' && asaasConfigured() && $temParcelaLocalParaConverter;
     ?>
     <?php if ($lancamentosVenda): ?>
         <table class="tabela-oportunidades">
@@ -1167,6 +1204,18 @@ function adicionarParteEntrada() {
             <input type="hidden" name="acao" value="cancelar_parcelamento">
             <button type="submit" class="chip-acao perigo">🚫 Cancelar parcelamento atual (pra gerar outro)</button>
         </form>
+        <?php if ($podeGerarAsaasPosAssinatura): ?>
+            <p style="margin-top:14px">
+                <small>Contrato já assinado — agora dá pra transformar as parcelas acima em cobrança real,
+                   que o comprador paga por boleto/Pix/cartão. A entrada continua como está, nunca passa por
+                   aqui.</small>
+            </p>
+            <form method="post" onsubmit="return confirmarAcao(this, 'Gerar cobrança real no Asaas? Isso cancela as parcelas locais ainda pendentes e recria as mesmas como cobrança de verdade (boleto/Pix/cartão) no Asaas. A entrada continua local, intocada.')">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="gerar_asaas_pos_assinatura">
+                <button type="submit">💳 Gerar cobrança real no Asaas</button>
+            </form>
+        <?php endif; ?>
     <?php elseif (!$v['oportunidade_id']): ?>
         <p><small>⏳ Vincule um veículo da frota antes de gerar o parcelamento.</small></p>
     <?php else: ?>
@@ -1190,11 +1239,8 @@ function adicionarParteEntrada() {
                     <input type="date" name="primeira_parcela_data" required>
                 </div>
             </div>
-            <?php if (asaasConfigured()): ?>
-                <label><input type="checkbox" name="usar_asaas" value="1" checked style="width:auto;display:inline-block"> Cobrar de verdade pelo Asaas (cria cliente + cobrança parcelada lá)</label>
-            <?php else: ?>
-                <p><small>ℹ️ Asaas não configurado — o plano fica só registrado no financeiro do CRM, sem cobrar de verdade.</small></p>
-            <?php endif; ?>
+            <p><small>Isso gera só o registro local, pra conferir os números antes de assinar o contrato.
+               <?= asaasConfigured() ? 'A cobrança real pelo Asaas (boleto/Pix/cartão) fica disponível depois que o contrato for assinado.' : 'Asaas não configurado — fica só registrado no financeiro do CRM.' ?></small></p>
             <button type="submit">Gerar plano de parcelamento</button>
         </form>
     <?php endif; ?>

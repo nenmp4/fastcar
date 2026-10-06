@@ -488,6 +488,43 @@ function finCancelarLancamentosPendentesVenda(int $vendaId): array {
     }
 }
 
+/**
+ * Cancela só as PARCELAS pendentes de uma venda (parcela_numero > 0),
+ * nunca a entrada (parcela_numero = 0) — 06/10/2026, "aparecer botão de
+ * gerar parcelamentos no assas depois que contrato tiver assinado": passo
+ * 1 do fluxo novo "💳 Gerar cobrança real no Asaas" em admin/venda.php
+ * (etapa já `vendido`, substitui o plano local — que já foi conferido
+ * antes de assinar — por cobrança real do Asaas). Diferente de
+ * finCancelarLancamentosPendentesVenda() (cancela TUDO, usada na devolução
+ * de veículo/correção de parcelamento) — aqui a entrada continua
+ * intocada de propósito, porque nunca passa por Asaas (mesmo racional do
+ * docblock de asaasGerarCobrancaParceladaVenda()). Só cancela parcela
+ * ainda LOCAL (`origem != 'asaas'`) — nunca mexe numa já convertida antes.
+ * Parcela já marcada 'pago' manualmente também nunca é tocada (só
+ * `status='pendente')`.
+ */
+function finCancelarParcelasPendentesVenda(int $vendaId): array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT id FROM fin_lancamentos
+            WHERE venda_id = ? AND status = 'pendente' AND parcela_numero > 0 AND origem != 'asaas'
+        ");
+        $stmt->execute([$vendaId]);
+        $pendentes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$pendentes) return ['canceladas' => 0];
+
+        $db->prepare("
+            UPDATE fin_lancamentos SET status = 'cancelado', updated_at = datetime('now','localtime')
+            WHERE venda_id = ? AND status = 'pendente' AND parcela_numero > 0 AND origem != 'asaas'
+        ")->execute([$vendaId]);
+
+        return ['canceladas' => count($pendentes)];
+    } catch (Throwable $e) {
+        return ['canceladas' => 0];
+    }
+}
+
 function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $dataVenda = null): void {
     try {
         if (finContarLancamentosVenda($vendaId) > 0) return;

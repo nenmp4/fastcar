@@ -107,7 +107,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
                 'preco_venda' => valorMonetario((string)($_POST['preco_venda'] ?? '')),
                 'forma_pagamento' => (string)($_POST['forma_pagamento'] ?? ''),
                 'saldo_preco_devido' => valorMonetario((string)($_POST['saldo_preco_devido'] ?? '')),
-                'prazo_quitacao_meses' => $_POST['prazo_quitacao_meses'] !== '' ? (int)$_POST['prazo_quitacao_meses'] : null,
+                // 06/10/2026, "pode remover campo prazo máximo para quitação na
+                // promissória não precisa, pois já tem as condições do
+                // financiamento" — o campo saiu do formulário (era redundante
+                // com a seção "Parcelamento do saldo" logo abaixo, que já
+                // captura os termos reais de forma mais precisa: qtd/valor/data
+                // de cada parcela). registrarVendaPromissoria() já cai pro
+                // padrão de 24 meses sozinha quando esse dado não vem — nunca
+                // precisou de valor aqui.
                 'entrada_partes' => $entradaPartesPost,
                 'bem_troca' => $bemTrocaPost,
                 'parcelamento' => $parcelamentoPost,
@@ -500,8 +507,6 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             <div>
                 <label>Saldo de preço devido depois da entrada (R$)</label>
                 <input type="number" step="0.01" inputmode="decimal" name="saldo_preco_devido" value="<?= e((string)($postVp['saldo_preco_devido'] ?? '')) ?>">
-                <label>Prazo pra quitar o saldo (meses, até 24)</label>
-                <input type="number" name="prazo_quitacao_meses" value="<?= e((string)($postVp['prazo_quitacao_meses'] ?? '24')) ?>" min="1" max="24">
             </div>
         </div>
 
@@ -685,7 +690,6 @@ function vpRevisar() {
     if (vpFmtMoeda(vpVal('preco_venda'))) condicoes.push('Preço: ' + vpFmtMoeda(vpVal('preco_venda')));
     if (vpVal('forma_pagamento')) condicoes.push('Forma: ' + vpEsc(vpVal('forma_pagamento')));
     if (vpFmtMoeda(vpVal('saldo_preco_devido'))) condicoes.push('Saldo devido: ' + vpFmtMoeda(vpVal('saldo_preco_devido')));
-    if (vpVal('prazo_quitacao_meses')) condicoes.push('Prazo: ' + vpEsc(vpVal('prazo_quitacao_meses')) + ' meses');
     if (condicoes.length) linhas.push('<p><strong>📋 Condições:</strong> ' + condicoes.join(' · ') + '</p>');
 
     // Entrada em partes

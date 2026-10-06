@@ -375,11 +375,32 @@ function asaasCriarClienteSeNecessario(string $nome, string $cpfCnpj, string $te
  * 1ª parcela com um id de grupo em `installment` — busca as demais em
  * seguida. Cada parcela retornada vira 1 linha fin_lancamentos
  * (origem='asaas'), vinculada à venda.
+ *
+ * 06/10/2026, "aparecer botão de gerar parcelamentos no assas depois que
+ * contrato tiver assinado" — o caminho real agora (admin/venda.php, botão
+ * "💳 Gerar cobrança real no Asaas") chama esta função DEPOIS que o plano
+ * LOCAL (entrada + parcelas, `finGerarPlanoParcelamentoVenda()`) já existe
+ * há um tempo — a entrada (parcela_numero=0) continua ativa de propósito
+ * (nunca passa por Asaas, mesmo docblock acima), só as parcelas pendentes
+ * são canceladas antes de chamar esta função
+ * (`finCancelarParcelasPendentesVenda()`). Por isso o guard aqui olha só
+ * PARCELA ativa (`parcela_numero > 0`), nunca a entrada — checar "qualquer
+ * lançamento ativo" bloquearia sempre nesse fluxo, já que a entrada é
+ * sempre ativa. Pro outro caller (`finGerarReceitaVendaAssinatura()`),
+ * que só chama isto quando NENHUM lançamento existe ainda pra venda
+ * — guard próprio dela, antes desta função — o comportamento não muda:
+ * zero lançamentos de qualquer tipo, logo zero parcela ativa também.
  */
 function asaasGerarCobrancaParceladaVenda(int $vendaId, string $asaasCustomerId, float $valorParcela, int $numParcelas, string $primeiraParcelaData, string $descricao): array {
     if (!asaasConfigured()) return ['ok' => false, 'erro' => 'Chave da API Asaas não configurada.'];
-    if (finContarLancamentosAtivosVenda($vendaId) > 0) {
-        return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros ativos — cancele o plano atual antes de gerar outro.'];
+    $db = getDB();
+    $stmtParcelasAtivas = $db->prepare("
+        SELECT COUNT(*) FROM fin_lancamentos
+        WHERE venda_id = ? AND status != 'cancelado' AND (parcela_numero IS NULL OR parcela_numero > 0)
+    ");
+    $stmtParcelasAtivas->execute([$vendaId]);
+    if ((int)$stmtParcelasAtivas->fetchColumn() > 0) {
+        return ['ok' => false, 'erro' => 'Esta venda já tem parcela(s) ativa(s) — cancele o plano atual antes de gerar outro.'];
     }
 
     $r = asaasRequest('POST', '/payments', [
