@@ -11110,6 +11110,38 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   testada isolada, formatando certo com o id/marca/modelo da oportunidade
   encontrada + `php -l` + `tests/smoke.php` limpos. Sem migração de
   schema.
+  **4º ponto: card "Dados do veículo" de `admin/oportunidade.php`**
+  (mesmo dia, achado real via 2 screenshots sem texto — Venda #31 já com
+  a placa TDA5F68, comprado de "Levy", em negociação com Cristiane, e a
+  Oportunidade #272 ATIVA mostrando a MESMA placa/RENAVAM/chassi no
+  próprio card de edição) — os 3 pontos acima só cobrem quem CRIA
+  veículo manualmente; aqui a oportunidade já existe (entrou pelo
+  telefone do lead, via WhatsApp normal) e a placa só é preenchida DEPOIS
+  (pela IA de qualificação ou pelo consultor nesse card) — ponto cego
+  real, diferente dos outros 3. `buscarVeiculoAtivoPorPlaca()` ganhou
+  parâmetro opcional `?int $excluirOportunidadeId` — sem isso, uma
+  oportunidade já `fechado` resalvando a PRÓPRIA placa (nada mudou)
+  acharia duplicidade contra si mesma, falso positivo. Ação
+  `atualizar_veiculo` virou warn-then-confirm (mesmo padrão de
+  `admin/veiculos.php`, campo oculto `confirmar_duplicidade_veiculo`) —
+  nunca bloqueia, nunca sobrescreve o que o consultor digitou (reexibido
+  via `$formularioVeiculoRepetir` enquanto espera confirmação). Como a
+  oportunidade #272 do achado real **ainda está ativa** (lead genuíno,
+  não forçosamente duplicata de cadastro — pode ser reclamação pós-venda
+  ou lead confuso sobre um carro que já foi vendido), a decisão de
+  mesclar/encerrar continua sempre humana — este aviso só impede SALVAR
+  a placa sem o consultor perceber a colisão, nunca decide nada sozinho
+  por conta própria. Testado: 3 cenários de `buscarVeiculoAtivoPorPlaca()`
+  com o parâmetro novo (oportunidade ativa tentando salvar a placa de uma
+  já fechada → acha; a própria já-fechada resalvando a si mesma → nunca
+  acha; comportamento antigo sem excluir nenhum id, intocado pros 3
+  outros call sites) + HTTP ponta a ponta real contra
+  `admin/oportunidade.php` (1ª tentativa com placa duplicada mostra o
+  aviso, confirmado no banco que NADA foi salvo — `veiculo_placa`
+  continua vazia; 2ª tentativa com `confirmar_duplicidade_veiculo=1`
+  salva normal; oportunidade já-fechada resalvando a própria placa sem
+  nenhuma mudança NUNCA mostra o aviso, "Dados do veículo atualizados"
+  direto) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
 
 ## Pendências (aguardando definição antes de codar mais)
 

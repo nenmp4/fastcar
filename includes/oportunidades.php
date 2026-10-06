@@ -347,8 +347,18 @@ function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
  * cadastrada), só avisa — quem chama decide pedir confirmação explícita
  * antes de prosseguir, mesmo padrão de buscarOportunidadeAtivaPorTelefone()
  * acima.
+ *
+ * $excluirOportunidadeId (06/10/2026, achado real — oportunidade #272
+ * ativa com a MESMA placa de um veículo já fechado/revendido como
+ * Venda #31) — além dos 3 pontos que CRIAM veículo manualmente, o card
+ * "Dados do veículo" de admin/oportunidade.php (ação `atualizar_veiculo`)
+ * também precisava checar: aqui a oportunidade já EXISTE (criada pelo
+ * telefone do lead, não pela placa), e o consultor/IA só está preenchendo
+ * a placa depois — sem excluir a própria oportunidade da busca, salvar a
+ * placa de um carro já fechado nela mesma (ex: resalvando sem mudar nada)
+ * geraria um falso positivo de "duplicado" contra si mesma.
  */
-function buscarVeiculoAtivoPorPlaca(string $placa): ?array {
+function buscarVeiculoAtivoPorPlaca(string $placa, ?int $excluirOportunidadeId = null): ?array {
     $placaNorm = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $placa));
     if ($placaNorm === '' || strlen($placaNorm) < 6) return null;
     $db = getDB();
@@ -356,9 +366,10 @@ function buscarVeiculoAtivoPorPlaca(string $placa): ?array {
         SELECT o.id, o.etapa, o.veiculo_marca, o.veiculo_modelo, c.nome
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
         WHERE UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ? AND o.etapa = 'fechado'
+              AND o.id != ?
         ORDER BY o.id DESC LIMIT 1
     ");
-    $stmt->execute([$placaNorm]);
+    $stmt->execute([$placaNorm, $excluirOportunidadeId ?? -1]);
     $r = $stmt->fetch();
     return $r ?: null;
 }

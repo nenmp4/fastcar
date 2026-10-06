@@ -30,6 +30,8 @@ if (!$op) {
 $erro = '';
 $sucesso = '';
 $marcaFeedback = null; // resultado de fipeValidarMarca() após salvar dados do veículo
+$avisoDuplicidadeVeiculo = null; // buscarVeiculoAtivoPorPlaca() — 06/10/2026, ver bullet "evitar duplicar veiculo"
+$formularioVeiculoRepetir = null; // preserva o que foi digitado enquanto espera confirmação
 
 // Tipo de consulta ZapCar é configurável (22/09/2026, "da para deixar uma
 // chave escolher tipo de consulta api mais em configurações") — nome/preço
@@ -51,44 +53,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $acao = (string)($_POST['acao'] ?? '');
         try {
             if ($acao === 'atualizar_veiculo') {
-                $marca = clean((string)($_POST['veiculo_marca'] ?? ''));
-                $tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
-                $tipoVeiculoPost = (string)($_POST['tipo_veiculo'] ?? '');
-                $tipoVeiculo = in_array($tipoVeiculoPost, $tiposVeiculoValidos, true) ? $tipoVeiculoPost : null;
-                $db->prepare("
-                    UPDATE oportunidades
-                    SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, veiculo_placa = ?,
-                        veiculo_renavam = ?, veiculo_chassi = ?, tipo_veiculo = ?, banco_financiamento = ?,
-                        valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
-                        debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?, debitos_veiculo_obs = ?,
-                        updated_at = datetime('now','localtime')
-                    WHERE id = ?
-                ")->execute([
-                    $marca,
-                    clean((string)($_POST['veiculo_modelo'] ?? '')),
-                    clean((string)($_POST['veiculo_ano'] ?? '')),
-                    clean((string)($_POST['veiculo_placa'] ?? '')),
-                    clean((string)($_POST['veiculo_renavam'] ?? '')),
-                    clean((string)($_POST['veiculo_chassi'] ?? '')),
-                    $tipoVeiculo,
-                    clean((string)($_POST['banco_financiamento'] ?? '')),
-                    valorMonetario($_POST['valor_parcela'] ?? null),
-                    $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
-                    $_POST['parcelas_atraso'] !== '' ? (int)$_POST['parcelas_atraso'] : 0,
-                    valorMonetario($_POST['valor_pretendido'] ?? null),
-                    valorMonetario($_POST['debito_ipva'] ?? null),
-                    valorMonetario($_POST['debito_licenciamento'] ?? null),
-                    valorMonetario($_POST['debito_multas'] ?? null),
-                    clean((string)($_POST['debitos_veiculo_obs'] ?? '')),
-                    $id,
-                ]);
-                // Só um sinal visual pro consultor — nunca sobrescreve o que
-                // foi digitado (regra do Jean: não inventar/corrigir por
-                // conta própria), a marca salva acima é sempre a literal.
-                if ($marca !== '') {
-                    $marcaFeedback = fipeValidarMarca($marca);
+                // 06/10/2026, achado real (screenshot) — oportunidade #272
+                // ativa com a MESMA placa de um veículo já fechado/revendido
+                // (Venda #31) — nenhum dos 3 pontos de CRIAR veículo cobria
+                // isso, porque aqui a oportunidade já existe (veio por
+                // telefone) e só a PLACA está sendo preenchida/salva depois.
+                // Mesmo padrão warn-then-confirm de admin/veiculos.php —
+                // nunca bloqueia (regra #3), só avisa; excluirOportunidadeId=$id
+                // evita falso positivo contra a própria oportunidade.
+                $placaPostVerificar = (string)($_POST['veiculo_placa'] ?? '');
+                $duplicidadeVeiculoAchada = buscarVeiculoAtivoPorPlaca($placaPostVerificar, $id);
+                if ($duplicidadeVeiculoAchada && empty($_POST['confirmar_duplicidade_veiculo'])) {
+                    $avisoDuplicidadeVeiculo = $duplicidadeVeiculoAchada;
+                    $formularioVeiculoRepetir = $_POST;
+                } else {
+                    $marca = clean((string)($_POST['veiculo_marca'] ?? ''));
+                    $tiposVeiculoValidos = ['carro', 'moto', 'caminhao', 'outro'];
+                    $tipoVeiculoPost = (string)($_POST['tipo_veiculo'] ?? '');
+                    $tipoVeiculo = in_array($tipoVeiculoPost, $tiposVeiculoValidos, true) ? $tipoVeiculoPost : null;
+                    $db->prepare("
+                        UPDATE oportunidades
+                        SET veiculo_marca = ?, veiculo_modelo = ?, veiculo_ano = ?, veiculo_placa = ?,
+                            veiculo_renavam = ?, veiculo_chassi = ?, tipo_veiculo = ?, banco_financiamento = ?,
+                            valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
+                            debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?, debitos_veiculo_obs = ?,
+                            updated_at = datetime('now','localtime')
+                        WHERE id = ?
+                    ")->execute([
+                        $marca,
+                        clean((string)($_POST['veiculo_modelo'] ?? '')),
+                        clean((string)($_POST['veiculo_ano'] ?? '')),
+                        clean((string)($_POST['veiculo_placa'] ?? '')),
+                        clean((string)($_POST['veiculo_renavam'] ?? '')),
+                        clean((string)($_POST['veiculo_chassi'] ?? '')),
+                        $tipoVeiculo,
+                        clean((string)($_POST['banco_financiamento'] ?? '')),
+                        valorMonetario($_POST['valor_parcela'] ?? null),
+                        $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
+                        $_POST['parcelas_atraso'] !== '' ? (int)$_POST['parcelas_atraso'] : 0,
+                        valorMonetario($_POST['valor_pretendido'] ?? null),
+                        valorMonetario($_POST['debito_ipva'] ?? null),
+                        valorMonetario($_POST['debito_licenciamento'] ?? null),
+                        valorMonetario($_POST['debito_multas'] ?? null),
+                        clean((string)($_POST['debitos_veiculo_obs'] ?? '')),
+                        $id,
+                    ]);
+                    // Só um sinal visual pro consultor — nunca sobrescreve o que
+                    // foi digitado (regra do Jean: não inventar/corrigir por
+                    // conta própria), a marca salva acima é sempre a literal.
+                    if ($marca !== '') {
+                        $marcaFeedback = fipeValidarMarca($marca);
+                    }
+                    $sucesso = 'Dados do veículo atualizados.';
                 }
-                $sucesso = 'Dados do veículo atualizados.';
             } elseif ($acao === 'atualizar_contrato') {
                 $db->prepare("
                     UPDATE oportunidades
@@ -586,27 +603,39 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
 <div class="card">
     <h3>Dados do veículo <small>(marca é conferida contra a lista oficial da FIPE ao salvar)</small></h3>
+    <?php if ($avisoDuplicidadeVeiculo): ?>
+        <div class="alerta-erro">
+            ⚠️ Essa placa já está cadastrada na frota (<strong>já fechado</strong>, veículo diferente desta
+            oportunidade) — #<?= (int)$avisoDuplicidadeVeiculo['id'] ?>
+            (<?= e(trim($avisoDuplicidadeVeiculo['veiculo_marca'] . ' ' . $avisoDuplicidadeVeiculo['veiculo_modelo'])) ?: 'sem marca/modelo' ?>,
+            vendedor <?= e($avisoDuplicidadeVeiculo['nome'] ?: '(sem nome)') ?>).
+            <a href="/admin/oportunidade.php?id=<?= (int)$avisoDuplicidadeVeiculo['id'] ?>" target="_blank">Abrir essa oportunidade →</a><br>
+            Quase certamente é o MESMO carro — confere antes de salvar. Se for mesmo um carro diferente
+            (placa digitada errada antes em algum dos dois), pode salvar normalmente.
+        </div>
+    <?php endif; ?>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="atualizar_veiculo">
+        <?php if ($avisoDuplicidadeVeiculo): ?><input type="hidden" name="confirmar_duplicidade_veiculo" value="1"><?php endif; ?>
         <div class="grid-2">
             <div>
                 <label>Tipo de veículo</label>
                 <select name="tipo_veiculo">
                     <option value="">— pendente —</option>
-                    <option value="carro" <?= ($op['tipo_veiculo'] ?? '') === 'carro' ? 'selected' : '' ?>>🚗 Carro</option>
-                    <option value="moto" <?= ($op['tipo_veiculo'] ?? '') === 'moto' ? 'selected' : '' ?>>🏍️ Moto</option>
-                    <option value="caminhao" <?= ($op['tipo_veiculo'] ?? '') === 'caminhao' ? 'selected' : '' ?>>🚚 Caminhão</option>
-                    <option value="outro" <?= ($op['tipo_veiculo'] ?? '') === 'outro' ? 'selected' : '' ?>>🚙 Outro</option>
+                    <option value="carro" <?= ($formularioVeiculoRepetir['tipo_veiculo'] ?? $op['tipo_veiculo'] ?? '') === 'carro' ? 'selected' : '' ?>>🚗 Carro</option>
+                    <option value="moto" <?= ($formularioVeiculoRepetir['tipo_veiculo'] ?? $op['tipo_veiculo'] ?? '') === 'moto' ? 'selected' : '' ?>>🏍️ Moto</option>
+                    <option value="caminhao" <?= ($formularioVeiculoRepetir['tipo_veiculo'] ?? $op['tipo_veiculo'] ?? '') === 'caminhao' ? 'selected' : '' ?>>🚚 Caminhão</option>
+                    <option value="outro" <?= ($formularioVeiculoRepetir['tipo_veiculo'] ?? $op['tipo_veiculo'] ?? '') === 'outro' ? 'selected' : '' ?>>🚙 Outro</option>
                 </select>
                 <label>Marca</label>
-                <input type="text" id="veiculo_marca" name="veiculo_marca" value="<?= e($op['veiculo_marca'] ?? '') ?>" placeholder="Ex: Toyota">
+                <input type="text" id="veiculo_marca" name="veiculo_marca" value="<?= e($formularioVeiculoRepetir['veiculo_marca'] ?? $op['veiculo_marca'] ?? '') ?>" placeholder="Ex: Toyota">
                 <label>Modelo</label>
-                <input type="text" id="veiculo_modelo" name="veiculo_modelo" value="<?= e($op['veiculo_modelo'] ?? '') ?>" placeholder="Ex: Corolla">
+                <input type="text" id="veiculo_modelo" name="veiculo_modelo" value="<?= e($formularioVeiculoRepetir['veiculo_modelo'] ?? $op['veiculo_modelo'] ?? '') ?>" placeholder="Ex: Corolla">
                 <label>Ano</label>
-                <input type="text" id="veiculo_ano" name="veiculo_ano" value="<?= e($op['veiculo_ano'] ?? '') ?>" placeholder="Ex: 2019">
+                <input type="text" id="veiculo_ano" name="veiculo_ano" value="<?= e($formularioVeiculoRepetir['veiculo_ano'] ?? $op['veiculo_ano'] ?? '') ?>" placeholder="Ex: 2019">
                 <label>Placa</label>
-                <input type="text" name="veiculo_placa" value="<?= e($op['veiculo_placa'] ?? '') ?>">
+                <input type="text" name="veiculo_placa" value="<?= e($formularioVeiculoRepetir['veiculo_placa'] ?? $op['veiculo_placa'] ?? '') ?>">
                 <label>RENAVAM</label>
                 <input type="text" name="veiculo_renavam" value="<?= e($op['veiculo_renavam'] ?? '') ?>">
                 <label>Chassi</label>
