@@ -6024,6 +6024,58 @@ segue no schema sem uso novo, não removida sem ganho real),
   rejeitado sem sincronizar nada; acesso sem sessão redireciona (302)
   antes mesmo do guard de perfil + `php -l` + `tests/smoke.php` limpos.
   Sem migração de schema.
+  **Gasto do tráfego pago passou a lançar sozinho no Financeiro**
+  (06/10/2026, "Fazer lançamento com tráfego pago custo no financeiro",
+  confirmado via AskUserQuestion: automatizar, não manual) — até aqui o
+  gasto real do Meta Ads só aparecia neste relatório de CPL, nunca no
+  dashboard/DRE/Extrato do módulo financeiro. Nova
+  `finRegistrarDespesaTrafegoPago(string $contaId, string $data, float
+  $valor)` (`includes/financeiro.php`) — 1 DESPESA por (conta de
+  anúncio, dia), categoria "Marketing" (já seedada desde a criação do
+  módulo financeiro, `grupo_dre='marketing'`, nunca precisou de
+  categoria nova), nasce `status='pago'` (é gasto já cobrado pela
+  própria Meta, nunca previsão). UPSERT manual (`SELECT`→`UPDATE`/
+  `INSERT`, nunca `ON CONFLICT` contra o índice único — ver abaixo —,
+  que exigiria repetir a cláusula `WHERE` no `ON CONFLICT` pra casar com
+  um índice parcial, nunca validado neste projeto) por
+  `(meta_ads_conta_id, meta_ads_data)`, colunas novas em
+  `fin_lancamentos` — sempre ATUALIZA pro total mais recente (nunca soma
+  em cima do anterior), porque a Meta ajusta gasto retroativamente e o
+  cron sempre reprocessa hoje + últimos 3 dias. Chamada de dentro de
+  `metaAdsSincronizarConta()` (`includes/meta_ads.php`) — mesma função
+  compartilhada entre `cron/meta_insights.php` e o botão manual
+  "🔄 Sincronizar agora" acima, então os dois disparam igual, sem
+  duplicar lógica — agregando por dia (`$gastoPorDia`, soma o `spend` de
+  todos os ads daquela conta nesse dia) ANTES de chamar a função, nunca
+  1 lançamento por anúncio (um ad set pode ter dezenas de anúncios,
+  viraria ruído no Financeiro) — só quando `!$dryRun` (mesma guarda de
+  `metaAdsSalvarGastoDiario()`, nunca grava nada em modo teste). `origem`
+  ganhou o valor `'trafego_pago'` (mesma técnica de reconstrução de CHECK
+  das migrações anteriores de `fin_lancamentos` — essa reconstrução
+  específica usou conexão PRÓPRIA, `$dbFresh`, diferente das 4 anteriores
+  nessa mesma tabela que usavam `$db` compartilhado — mesma lição real já
+  documentada na reconstrução de `contratos`/`veiculo_avaliacoes`: quanto
+  mais migrações já rodaram antes no mesmo script, maior o risco de
+  "database table is locked" usando a conexão compartilhada). Índice
+  único PARCIAL `(meta_ads_conta_id, meta_ads_data) WHERE
+  meta_ads_conta_id IS NOT NULL` fica como rede de segurança a nível de
+  banco, mesmo a aplicação já garantindo isso via `SELECT` antes de
+  escrever. `admin/financeiro-lancamentos.php` ganhou `'trafego_pago'`
+  na whitelist de `?origem=` e o rótulo "📣 tráfego pago (Meta Ads,
+  automático)" (mesmo padrão de `comissao_compra`/`comissao_venda`).
+  Testado: 17 asserções em banco isolado contra servidor Graph API fake
+  local — função isolada (1ª chamada cria com categoria/status/origem/
+  natureza certos; reprocessar o mesmo dia nunca duplica, sempre
+  atualiza pro valor novo; valor zero/negativo nunca grava; conta
+  diferente no mesmo dia cria linha separada, a chave é conta+dia, não
+  só dia) + integração real via `metaAdsSincronizarConta()` (gasto
+  agregado por dia bate exato — 2 anúncios num dia somados num só
+  lançamento, outro dia em lançamento separado; `anuncio_gasto_diario`
+  continua gravando igual, sem regressão no CPL; resincronizar os mesmos
+  dias — cron reprocessando — nunca duplica o lançamento financeiro;
+  dry-run nunca grava nada) + migração testada no banco de dev real
+  (idempotente, confirmada rodando 2x, estrutura/categoria confirmadas
+  com `PRAGMA table_info`) + `php -l` + `tests/smoke.php` limpos.
 - **Scripts CLI de recuperação pontual, 25/09/2026** — mesmo incidente do
   bloqueio duplo de Z-API acima, achados/pedidos avulsos resolvidos com
   scripts dry-run/`--confirmar` (mesmo padrão de sempre):

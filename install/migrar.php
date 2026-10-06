@@ -1066,6 +1066,106 @@ try {
     echo "❌ fin_lancamentos.origem (CHECK comissao_venda): {$e->getMessage()}\n";
 }
 
+// 06/10/2026, "Fazer lançamento com tráfego pago custo no financeiro" —
+// confirmado automatizar (não manual): sempre que cron/meta_insights.php
+// sincroniza o gasto diário de anúncio (anuncio_gasto_diario), também
+// registra/atualiza sozinho 1 DESPESA por (conta de anúncio, dia) em
+// Financeiro → Lançamentos, categoria "Marketing" — ver
+// finRegistrarDespesaTrafegoPago() (includes/financeiro.php). Até aqui o
+// gasto real só aparecia no relatório de CPL (admin/relatorio_cpl.php),
+// nunca no DRE/Extrato/dashboard financeiro. `origem` ganha o valor
+// 'trafego_pago' — mesma técnica de reconstrução de CHECK das migrações
+// acima, idempotente — e a tabela ganha 2 colunas novas
+// (`meta_ads_conta_id`/`meta_ads_data`) que formam a chave natural do
+// UPSERT (nunca duplica reprocessando o mesmo dia — a Meta ajusta gasto
+// retroativamente e o cron sempre reprocessa hoje + últimos 3 dias).
+//
+// Conexão PRÓPRIA (`$dbFresh`), mesmo motivo já documentado nas
+// reconstruções mais recentes (`contratos`/`veiculo_avaliacoes`):
+// reconstruir usando o `$db` compartilhado — que a essa altura do script
+// já rodou dezenas de outras migrações — arriscava "database table is
+// locked"; isolada num processo/conexão próprio sempre funciona (WAL
+// permite as duas conexões ao mesmo arquivo sem problema). As 4
+// reconstruções ANTERIORES de `fin_lancamentos` acima usaram `$db` direto
+// (escritas antes dessa lição real) — nunca precisaram mudar, só a
+// reconstrução NOVA segue o padrão mais seguro.
+try {
+    $dbFresh = new PDO('sqlite:' . DB_PATH);
+    $dbFresh->exec('PRAGMA busy_timeout=15000');
+    $sqlAtual = (string)$dbFresh->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='fin_lancamentos'")->fetchColumn();
+    if ($sqlAtual && !str_contains($sqlAtual, "'trafego_pago'")) {
+        $dbFresh->exec('BEGIN');
+        $dbFresh->exec("
+            CREATE TABLE fin_lancamentos_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo TEXT NOT NULL DEFAULT 'despesa' CHECK (tipo IN ('receita','despesa')),
+                categoria_id INTEGER DEFAULT NULL REFERENCES fin_categorias(id),
+                descricao TEXT NOT NULL,
+                valor REAL NOT NULL DEFAULT 0,
+                natureza TEXT DEFAULT '',
+                data_vencimento TEXT DEFAULT NULL,
+                data_pagamento TEXT DEFAULT NULL,
+                status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','pago','atrasado','cancelado')),
+                cliente_id INTEGER DEFAULT NULL REFERENCES clientes(id),
+                cliente_nome_manual TEXT DEFAULT '',
+                oportunidade_id INTEGER DEFAULT NULL REFERENCES oportunidades(id),
+                venda_id INTEGER DEFAULT NULL REFERENCES vendas(id),
+                parcela_numero INTEGER DEFAULT NULL,
+                parcela_total INTEGER DEFAULT NULL,
+                funcionario_id INTEGER DEFAULT NULL REFERENCES fin_colaboradores(id),
+                fornecedor_id INTEGER DEFAULT NULL REFERENCES fin_fornecedores(id),
+                forma_pagamento TEXT DEFAULT '',
+                recorrente INTEGER DEFAULT 0,
+                recorrencia_intervalo TEXT DEFAULT '',
+                recorrencia_origem_id INTEGER DEFAULT NULL,
+                drive_file_id TEXT DEFAULT '',
+                arquivo_url TEXT DEFAULT '',
+                observacoes TEXT DEFAULT '',
+                origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa','comissao_compra','comissao_venda','trafego_pago')),
+                asaas_payment_id TEXT DEFAULT NULL,
+                asaas_customer_id TEXT DEFAULT NULL,
+                meta_ads_conta_id TEXT DEFAULT NULL,
+                meta_ads_data TEXT DEFAULT NULL,
+                created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
+                created_at DATETIME DEFAULT (datetime('now','localtime')),
+                updated_at DATETIME DEFAULT (datetime('now','localtime'))
+            )
+        ");
+        $dbFresh->exec("
+            INSERT INTO fin_lancamentos_novo (id, tipo, categoria_id, descricao, valor, natureza, data_vencimento, data_pagamento, status,
+                   cliente_id, cliente_nome_manual, oportunidade_id, venda_id, parcela_numero, parcela_total,
+                   funcionario_id, fornecedor_id, forma_pagamento, recorrente, recorrencia_intervalo, recorrencia_origem_id,
+                   drive_file_id, arquivo_url, observacoes, origem, asaas_payment_id, asaas_customer_id, created_by,
+                   created_at, updated_at)
+            SELECT id, tipo, categoria_id, descricao, valor, natureza, data_vencimento, data_pagamento, status,
+                   cliente_id, cliente_nome_manual, oportunidade_id, venda_id, parcela_numero, parcela_total,
+                   funcionario_id, fornecedor_id, forma_pagamento, recorrente, recorrencia_intervalo, recorrencia_origem_id,
+                   drive_file_id, arquivo_url, observacoes, origem, asaas_payment_id, asaas_customer_id, created_by,
+                   created_at, updated_at
+            FROM fin_lancamentos
+        ");
+        $dbFresh->exec('DROP TABLE fin_lancamentos');
+        $dbFresh->exec('ALTER TABLE fin_lancamentos_novo RENAME TO fin_lancamentos');
+        $dbFresh->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_venda ON fin_lancamentos(venda_id)");
+        $dbFresh->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_oportunidade ON fin_lancamentos(oportunidade_id)");
+        $dbFresh->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status)");
+        $dbFresh->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_vencimento ON fin_lancamentos(status, data_vencimento)");
+        $dbFresh->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL");
+        $dbFresh->exec("CREATE INDEX IF NOT EXISTS idx_fin_lanc_data_efetiva ON fin_lancamentos(COALESCE(data_pagamento, data_vencimento, created_at))");
+        $dbFresh->exec("CREATE INDEX IF NOT EXISTS idx_fin_lanc_data_pgto_venc ON fin_lancamentos(COALESCE(data_pagamento, data_vencimento))");
+        $dbFresh->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_meta_ads ON fin_lancamentos(meta_ads_conta_id, meta_ads_data) WHERE meta_ads_conta_id IS NOT NULL");
+        $dbFresh->exec('COMMIT');
+        echo "✅ fin_lancamentos: CHECK reconstruída ('trafego_pago') + colunas meta_ads_conta_id/meta_ads_data\n";
+    } else {
+        echo "⏭️  fin_lancamentos: já tinha 'trafego_pago'\n";
+    }
+} catch (Throwable $e) {
+    try { $dbFresh->exec('ROLLBACK'); } catch (Throwable $e2) { /* nada em aberto pra desfazer */ }
+    echo "❌ fin_lancamentos.origem (CHECK trafego_pago): {$e->getMessage()}\n";
+} finally {
+    $dbFresh = null;
+}
+
 // Categorias padrão do financeiro Fastcar — só insere as que ainda não
 // existem (por nome), mesmo padrão idempotente do JurídicoSaaS original.
 try {

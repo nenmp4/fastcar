@@ -698,6 +698,59 @@ function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = nul
 }
 
 /**
+ * Despesa automática de "tráfego pago" — 06/10/2026, "Fazer lançamento
+ * com tráfego pago custo no financeiro" (confirmado automatizar, não
+ * manual): 1 lançamento por CONTA de anúncio por DIA, sincronizado
+ * sempre que `metaAdsSincronizarConta()` roda de verdade (cron de 3h
+ * `cron/meta_insights.php` OU o botão manual "🔄 Sincronizar agora" de
+ * `admin/relatorio_cpl.php` — os dois chamam a mesma função, então os
+ * dois disparam isso igual). Até aqui o gasto real do Meta Ads só
+ * aparecia no relatório de CPL (`admin/relatorio_cpl.php`), nunca no
+ * DRE/Extrato/dashboard do módulo financeiro.
+ *
+ * UPSERT manual por `(meta_ads_conta_id, meta_ads_data)` — nunca via
+ * `ON CONFLICT` contra o índice único PARCIAL (`WHERE meta_ads_conta_id
+ * IS NOT NULL`), que exigiria repetir essa mesma cláusula `WHERE` no
+ * `ON CONFLICT` pra casar com o índice e nunca foi validado nesse
+ * projeto — mesmo padrão de SELECT-então-INSERT/UPDATE já usado no
+ * resto deste arquivo (ex: `finRegistrarComissaoVendaFechada()` acima).
+ * SEMPRE atualiza pro total mais recente (nunca soma em cima do
+ * anterior) — a Meta ajusta gasto retroativamente e o cron sempre
+ * reprocessa hoje + últimos 3 dias, então o mesmo dia pode chegar aqui
+ * várias vezes com o valor final diferente de antes. Categoria
+ * "Marketing" (já seedada, `grupo_dre='marketing'`). Nasce `status='pago'`
+ * — é gasto já cobrado pela própria Meta, nunca uma previsão/pendente.
+ */
+function finRegistrarDespesaTrafegoPago(string $contaId, string $data, float $valor): void {
+    if ($contaId === '' || $data === '' || $valor <= 0) return;
+    try {
+        $db = getDB();
+        $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Marketing'")->fetchColumn();
+        $descricao = 'Tráfego pago (Meta Ads) — conta ' . $contaId . ' — ' . date('d/m/Y', strtotime($data));
+
+        $existente = $db->prepare("SELECT id FROM fin_lancamentos WHERE meta_ads_conta_id = ? AND meta_ads_data = ?");
+        $existente->execute([$contaId, $data]);
+        $idExistente = $existente->fetchColumn();
+
+        if ($idExistente) {
+            $db->prepare("
+                UPDATE fin_lancamentos SET valor = ?, descricao = ?, categoria_id = ?, updated_at = datetime('now','localtime')
+                WHERE id = ?
+            ")->execute([$valor, $descricao, $categoriaId ?: null, $idExistente]);
+        } else {
+            $db->prepare("
+                INSERT INTO fin_lancamentos
+                    (tipo, categoria_id, descricao, valor, natureza, data_vencimento, data_pagamento, status,
+                     meta_ads_conta_id, meta_ads_data, origem)
+                VALUES ('despesa', ?, ?, ?, 'variavel', ?, ?, 'pago', ?, ?, 'trafego_pago')
+            ")->execute([$categoriaId ?: null, $descricao, $valor, $data, $data, $contaId, $data]);
+        }
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a sincronização do gasto do Meta Ads
+    }
+}
+
+/**
  * Gera automaticamente a próxima ocorrência mensal de toda despesa FIXA
  * (`natureza='fixa'`) que ainda não tenha um lançamento pro mês corrente —
  * 19/09/2026, pedido direto: "todas despesas fixas pode lançar todo mês

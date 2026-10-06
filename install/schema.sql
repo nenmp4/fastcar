@@ -1197,11 +1197,19 @@ CREATE TABLE IF NOT EXISTS fin_lancamentos (
     -- finRegistrarComissaoCompraFechada(), includes/financeiro.php) /
     -- 'comissao_venda' (comissão automática do vendedor ao fechar uma
     -- venda, 24/09/2026, 5% fixo do valor da entrada — ver
-    -- finRegistrarComissaoVendaFechada(), includes/financeiro.php)
+    -- finRegistrarComissaoVendaFechada(), includes/financeiro.php) /
+    -- 'trafego_pago' (despesa automática por conta de anúncio/dia,
+    -- 06/10/2026, sincronizada junto do gasto do Meta Ads — ver
+    -- finRegistrarDespesaTrafegoPago(), includes/financeiro.php)
     -- — ver nota (5) acima.
-    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa','comissao_compra','comissao_venda')),
+    origem TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('manual','parcelamento_venda','asaas','fechamento_compra','recorrencia_fixa','comissao_compra','comissao_venda','trafego_pago')),
     asaas_payment_id TEXT DEFAULT NULL,
     asaas_customer_id TEXT DEFAULT NULL,
+    -- Chave natural do UPSERT de tráfego pago — 1 lançamento por conta de
+    -- anúncio por dia, nunca duplica quando cron/meta_insights.php
+    -- reprocessa o mesmo dia (a Meta ajusta gasto retroativamente).
+    meta_ads_conta_id TEXT DEFAULT NULL,
+    meta_ads_data TEXT DEFAULT NULL,
     created_by INTEGER DEFAULT NULL REFERENCES usuarios(id),
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
@@ -1215,6 +1223,7 @@ CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_status ON fin_lancamentos(status)
 -- índice, full table scan a cada visita dessas 3 telas.
 CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_vencimento ON fin_lancamentos(status, data_vencimento);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_asaas_payment ON fin_lancamentos(asaas_payment_id) WHERE asaas_payment_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lancamentos_meta_ads ON fin_lancamentos(meta_ads_conta_id, meta_ads_data) WHERE meta_ads_conta_id IS NOT NULL;
 -- 29/09/2026, 2ª rodada de performance ("melhore o carregamento das
 -- páginas") — 2 índices de EXPRESSÃO (SQLite suporta index em expressão
 -- exata desde 3.9+), confirmados via EXPLAIN QUERY PLAN virando SCAN de

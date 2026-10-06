@@ -21,6 +21,7 @@
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/financeiro.php'; // finRegistrarDespesaTrafegoPago()
 
 function metaAdsBaseUrl(): string {
     return defined('META_ADS_BASE_URL') ? META_ADS_BASE_URL : 'https://graph.facebook.com/v21.0';
@@ -275,12 +276,27 @@ function metaAdsSincronizarConta(string $conta, string $desde, string $ate, bool
     }
 
     $gasto = 0.0;
+    $gastoPorDia = []; // 'YYYY-MM-DD' => soma do spend de todos os ads desse dia nesta conta
     foreach ($resultado['linhas'] as $linha) {
         $gasto += $linha['spend'];
+        $gastoPorDia[$linha['data']] = ($gastoPorDia[$linha['data']] ?? 0.0) + $linha['spend'];
         if (!$dryRun) {
             metaAdsSalvarGastoDiario($conta, $linha);
         }
     }
+
+    // 06/10/2026, "Fazer lançamento com tráfego pago custo no financeiro"
+    // — 1 despesa por (conta, dia) em Financeiro, sempre que o gasto de
+    // verdade é gravado (nunca em dry-run, mesmo espírito de
+    // metaAdsSalvarGastoDiario() acima). Ver finRegistrarDespesaTrafegoPago()
+    // (includes/financeiro.php) — idempotente, sempre atualiza pro total
+    // mais recente do dia.
+    if (!$dryRun) {
+        foreach ($gastoPorDia as $data => $valorDia) {
+            finRegistrarDespesaTrafegoPago($conta, $data, $valorDia);
+        }
+    }
+
     return ['ok' => true, 'erro' => '', 'erro_code' => null, 'linhas' => $resultado['linhas'], 'gasto' => $gasto];
 }
 
