@@ -750,7 +750,8 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                         }
                     }
                 } else {
-                    if ($etapaAtual === 'whatsapp') {
+                    $primeiraMensagem = ($etapaAtual === 'whatsapp');
+                    if ($primeiraMensagem) {
                         mudarEtapa($oportunidade['oportunidade_id'], 'qualificacao_ia', null, 'IA iniciou qualificação');
                     }
                     // Debounce (ver aguardarSilencioOuAbortar) — se chegar mensagem
@@ -758,7 +759,16 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                     // nova vai responder pelas duas juntas.
                     if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
                         try {
-                            $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone, $instancia['canal'] ?? null);
+                            // 06/10/2026 — modelo híbrido (menu fixo nas 3
+                            // primeiras perguntas, ver iaHibridoProcessarTurno())
+                            // configurável em Configurações → IA, padrão
+                            // continua 'livre' (iaProcessarTurno() de sempre,
+                            // comportamento intocado).
+                            if (iaQualificacaoModeloAtivo() === 'hibrido') {
+                                $iaResultado = iaHibridoProcessarTurno($oportunidade['oportunidade_id'], $phone, $primeiraMensagem, $instancia['canal'] ?? null);
+                            } else {
+                                $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone, $instancia['canal'] ?? null);
+                            }
                         } catch (Throwable $e) {
                             // Nunca deixa uma falha da IA quebrar o resto do webhook —
                             // mensagem do cliente já está salva, oportunidade já existe.

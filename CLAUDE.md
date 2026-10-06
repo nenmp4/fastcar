@@ -1667,6 +1667,87 @@ segue no schema sem uso novo, não removida sem ganho real),
   Mudança de prompt (o roteiro em si, julgamento de IA) não é testável
   contra servidor fake — validação real só na próxima conversa de
   verdade.
+  **Modelo de qualificação configurável: "Livre" x "Híbrido" (menu fixo +
+  IA)** (06/10/2026, "se quisermos voltar modelo 1 qualificaçãi ia
+  modelo 2 qualificaão hibirdo posso selecionar em configurações seria
+  interessante experimentar") — nasce de uma conversa anterior sobre o
+  número principal estar com histórico de bloqueio/shadowban na Z-API:
+  um padrão citado pelo usuário de uma integração antiga via n8n ("tinha
+  os menus não caia") usava menu numerado fixo nas primeiras perguntas,
+  reduzindo o volume de texto GERADO pela IA (cada resposta livre tem
+  "assinatura" própria, menu fixo é sempre o mesmo texto, menos sinal de
+  automação variável). Simulado antes num mockup visual (Design Artifact,
+  nunca código real) pra alinhar o fluxo com o usuário antes de
+  implementar. Implementado como **2 modelos selecionáveis**, nunca
+  substituindo um pelo outro — `iaQualificacaoModeloAtivo()`
+  (`includes/ia_qualificacao.php`, lê `config.ia_qualificacao_modelo`,
+  cai pro padrão `'livre'` em qualquer valor ausente/desconhecido, nunca
+  trava no `'hibrido'` por engano). **Modelo 1 — Livre**: comportamento
+  de sempre, `iaProcessarTurno()` **intocado**, zero mudança de
+  comportamento quando a config não existe ou está em `'livre'`.
+  **Modelo 2 — Híbrido**: as 3 primeiras perguntas da qualificação saem
+  como menu numerado FIXO (texto sempre idêntico, nunca gerado por IA) —
+  saudação+aviso LGPD+menu (vender financiado / só dúvida / outro
+  assunto) → tipo de veículo (carro/moto/caminhão-van/outro) → situação
+  do financiamento (em dia/atrasado/não sei) — e só depois da 3ª resposta
+  entrega pro fluxo livre de sempre (`iaProcessarTurno()`), com o cliente
+  já "aquecido" na conversa. `iaHibridoProcessarTurno()` (novo, mesmo
+  arquivo) orquestra isso; estado efêmero do menu (`menu_hibrido_etapa`)
+  guardado na coluna `whatsapp_sessoes.extras` (JSON, já existia no
+  schema desde o início, reservada pra "estado efêmero da conversa" e
+  nunca usada até agora — nenhuma migração precisou). `iaHibridoParseOpcao()`
+  só reconhece resposta EXATA de 1 dígito dentro do intervalo
+  (`"1"`/`" 2 "`/`"3."`/`"4)"`), nunca tenta adivinhar número solto dentro
+  de texto livre — qualquer coisa fora disso (texto livre, opção fora do
+  intervalo, ou escolher "2 — só tenho uma dúvida" na 1ª pergunta)
+  **abandona o menu na hora** e cai no fluxo livre a partir daquele mesmo
+  turno, nunca insiste tentando reencaixar o cliente num menu que ele já
+  não está seguindo. Resposta da 2ª pergunta grava `tipo_veiculo`
+  (fill-if-empty, nunca sobrescreve se a oportunidade já tinha um tipo
+  definido antes — mesma disciplina de sempre) e a da 3ª grava
+  `temperatura_lead` inicial (`'quente'` se atrasado, `'frio'` se em dia
+  — reavaliado depois pela IA livre normalmente, nunca fica travado nesse
+  valor). Prompt (`IA_QUALIFICACAO_PROMPT_SISTEMA`) ganhou um parágrafo
+  avisando a IA pra nunca se apresentar/repetir o aviso de LGPD de novo
+  quando o histórico já mostrar que a conversa veio do menu híbrido — só
+  interpretar a última resposta numérica no contexto da pergunta anterior
+  e seguir com uma pergunta aberta de verdade. Toggle em Configurações →
+  IA ("🔢 Modelo de qualificação"), 2 radios, salva em
+  `config.ia_qualificacao_modelo`. **Bug real achado no teste isolado,
+  antes de qualquer teste HTTP**: a 1ª versão do handoff da 3ª pergunta
+  gravava `temperatura_lead` com `WHERE ... AND temperatura_lead IS NULL`
+  — nunca batia, porque `oportunidades.temperatura_lead` é
+  `TEXT DEFAULT ''` (string vazia), **nunca** `NULL`, desde o schema
+  original — corrigido pra `WHERE ... AND (temperatura_lead IS NULL OR
+  temperatura_lead = '')`, com comentário no código documentando o
+  gotcha pra não repetir. Testado em 2 camadas: função isolada (29
+  assertions — parse de opção em todas as variações/rejeições, round-trip
+  de `iaHibridoSetMenuEtapa()`/`iaHibridoMenuEtapa()`, fluxo completo
+  Q1→Q2→Q3→handoff com `tipo_veiculo`/`temperatura_lead` gravados certo,
+  fallback de texto livre e de opção "só dúvida" abandonando o menu,
+  `iaQualificacaoModeloAtivo()` com default/override/valor inválido,
+  fill-if-empty do `tipo_veiculo` nunca sobrescrevendo valor já salvo) +
+  **webhook HTTP real** (`processarMensagemZapi()` chamado de ponta a
+  ponta, nunca função isolada só — servidor Z-API fake local via
+  `php -S`+`ZAPI_BASE_URL`): modelo `'livre'` confirmado comportando-se
+  IDÊNTICO a antes (regressão — zero menu, cai direto no
+  `iaProcessarTurno()` de sempre); modelo `'hibrido'` confirmado mandando
+  Q1/Q2/Q3 DE VERDADE pro fake Z-API (payload capturado byte a byte
+  batendo com o texto exato de cada constante), avançando a sessão a cada
+  turno real do webhook, gravando `tipo_veiculo`/`temperatura_lead` no
+  banco via o fluxo HTTP completo (não só a função chamada direto), e
+  nunca reenviando Q1/Q2/Q3 nos turnos pós-handoff; dedup de `messageId`
+  e opt-out por palavra-chave (`"sair"`) confirmados funcionando
+  igual dentro do modelo híbrido, sem nenhuma interferência entre os 2
+  mecanismos (os 2 guards — opt-out/exclusão de dados — rodam sempre
+  ANTES do despacho híbrido-x-livre, nunca depois) — + `php -l` nos 4
+  arquivos tocados (`includes/ia_qualificacao.php`,
+  `chatbot-whatsapp/includes/mensagens.php`, `admin/_bootstrap.php`,
+  `admin/configuracoes.php`) + `tests/smoke.php` limpo. Sem migração de
+  schema (reaproveita `whatsapp_sessoes.extras`, já existente). ⚠️
+  Mudança de PROMPT (o parágrafo novo avisando a IA sobre o contexto do
+  menu híbrido) não é testável contra servidor fake — validação real só
+  na próxima conversa de verdade rodando com o modelo híbrido ativo.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)

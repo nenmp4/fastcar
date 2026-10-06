@@ -312,6 +312,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setConfig('gemini_model', trim((string)($_POST['gemini_model'] ?? '')) ?: 'gemini-3.5-flash-lite');
             setConfig('openai_model', trim((string)($_POST['openai_model'] ?? '')) ?: 'gpt-4o-mini');
             $sucesso = 'Configurações de IA salvas.';
+        } elseif ($acao === 'salvar_ia_qualificacao_modelo') {
+            $modelo = (string)($_POST['ia_qualificacao_modelo'] ?? 'livre');
+            setConfig('ia_qualificacao_modelo', $modelo === 'hibrido' ? 'hibrido' : 'livre');
+            $sucesso = 'Modelo de qualificação agora é: ' . (getConfig('ia_qualificacao_modelo') === 'hibrido' ? 'Híbrido (menu + IA)' : 'Livre (IA desde o início)');
         } elseif ($acao === 'testar_ia') {
             $apiKey = getConfig('gemini_api_key') ?: '';
             if (!$apiKey) {
@@ -1083,6 +1087,36 @@ unset($fv);
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="testar_ia">
         <button type="submit" <?= getConfig('gemini_api_key') ? '' : 'disabled' ?>>Testar conexão</button>
+    </form>
+
+    <?php
+    // 06/10/2026, "se quisermos voltar modelo 1 qualificação ia modelo 2
+    // qualificação hibrido posso selecionar em configurações seria
+    // interessante experimentar" — modelo 1 (livre, sempre foi assim) x
+    // modelo 2 (híbrido: menu fixo nas 3 primeiras perguntas, reduz texto
+    // variado da IA saindo logo no início de toda conversa, hand-off pra
+    // IA livre a partir da 4ª troca — ver includes/ia_qualificacao.php::
+    // iaHibridoProcessarTurno()). Só o funil de COMPRA.
+    $modeloQualificacaoAtual = iaQualificacaoModeloAtivo();
+    ?>
+    <hr style="margin:16px 0;border:none;border-top:1px solid var(--borda)">
+    <h3 style="margin:0 0 6px">🔢 Modelo de qualificação (bloco 3, só funil de compra)</h3>
+    <p><small>"Livre" é como sempre funcionou — a IA conduz a conversa inteira do zero. "Híbrido" manda as 3
+       primeiras perguntas como menu fixo (texto pronto, nunca gerado pela IA) — reduz o volume de texto variado
+       saindo logo na entrada de toda conversa — e a partir da 4ª troca entrega pra IA livre normalmente. Quem
+       responder texto livre em vez do número do menu cai direto na IA livre também, nunca trava.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_ia_qualificacao_modelo">
+        <label>
+            <input type="radio" name="ia_qualificacao_modelo" value="livre" <?= $modeloQualificacaoAtual === 'livre' ? 'checked' : '' ?>>
+            Modelo 1 — Livre (IA desde o início, padrão de sempre)
+        </label>
+        <label>
+            <input type="radio" name="ia_qualificacao_modelo" value="hibrido" <?= $modeloQualificacaoAtual === 'hibrido' ? 'checked' : '' ?>>
+            Modelo 2 — Híbrido (menu fixo nas 3 primeiras perguntas + IA livre depois)
+        </label>
+        <button type="submit">Salvar</button>
     </form>
 </div>
 

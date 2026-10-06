@@ -48,7 +48,16 @@ emendar a próxima pergunta, escreva num português solto de WhatsApp
 roteiro). Nunca ofereça menu ou opção numerada — é sempre conversa livre,
 a pessoa responde com as próprias palavras.
 
-Assim que a conversa começar, se apresente rapidinho, pergunte com quem
+Se as primeiras mensagens da conversa já foram uma saudação com aviso de
+LGPD e um menu numerado (1/2/3...) que o cliente respondeu com só um número
+— isso é o "modelo híbrido" de qualificação, não uma mensagem sua: não se
+apresente de novo nem repita o aviso de LGPD, só interprete a resposta
+numérica no contexto da pergunta de menu feita antes dela (ex: se a
+pergunta era "tá com parcela atrasada? 1 Não 2 Sim" e o cliente respondeu
+"2", entenda que a parcela está atrasada) e continue a qualificação a
+partir daí, com uma pergunta aberta de verdade.
+
+Assim que a conversa começar (sem ter passado pelo menu acima), se apresente rapidinho, pergunte com quem
 está falando e já puxe assunto sobre o carro — no espírito de "Oi! Aqui é
 da Fastcar 🚗 Com quem eu falo? E me conta rapidinho: qual é o modelo e o
 ano do carro que você quer vender?" (adapte as palavras, não repita sempre
@@ -590,4 +599,178 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
     }
 
     return $resultado;
+}
+
+/**
+ * Modelo híbrido de qualificação (06/10/2026, "se quisermos voltar modelo 1
+ * qualificação ia modelo 2 qualificação hibrido posso selecionar em
+ * configurações seria interessante experimentar") — as 3 primeiras
+ * perguntas saem como menu numerado fixo (texto canned, nunca gerado pela
+ * IA) em vez de a IA escrever uma frase livre pra cada uma; a partir da
+ * 3ª resposta, entrega pro fluxo de sempre (iaProcessarTurno(), 100%
+ * intocado). Objetivo: reduzir o volume de texto variado saindo em
+ * sequência rápida bem no início de toda conversa — justamente onde o
+ * volume por lead é maior —, sem perder a qualificação livre que já
+ * funciona bem depois. Só o funil de COMPRA (bloco 3); o de vendas
+ * (includes/ia_qualificacao_vendas.php) não foi pedido e continua 100%
+ * livre.
+ *
+ * Nunca trava quem prefere escrever: resposta que não bate com nenhuma
+ * opção do menu (texto livre, ou opção "2"/"3" da 1ª pergunta — não é
+ * quem quer vender financiado) abandona o menu na hora e entrega esse
+ * mesmo turno pro iaProcessarTurno() de verdade, nunca insiste "digite 1,
+ * 2 ou 3". Estado efêmero (em que pergunta do menu está) fica em
+ * whatsapp_sessoes.extras (JSON, coluna já existia reservada pra isso,
+ * nunca usada até agora) — nunca precisou de coluna nova.
+ */
+const IA_HIBRIDO_MSG_Q1 = "Oi! 😊 Sou da Fastcar — antes de começar, só um aviso rápido: seus dados aqui servem só pra avaliar a proposta do seu veículo, protegidos pela LGPD, e você pode parar de receber mensagem por aqui quando quiser, só escrever \"sair\".\n\nPra eu te ajudar certo:\n1️⃣ Quero vender meu veículo financiado\n2️⃣ Só tenho uma dúvida\n3️⃣ Outro assunto";
+
+const IA_HIBRIDO_MSG_Q2 = "Perfeito! Qual tipo de veículo é?\n1️⃣ Carro\n2️⃣ Moto\n3️⃣ Caminhão / Van\n4️⃣ Outro";
+
+const IA_HIBRIDO_MSG_Q3 = "E o financiamento, tá com alguma parcela atrasada?\n1️⃣ Não, em dia\n2️⃣ Sim, atrasado\n3️⃣ Não sei dizer agora";
+
+/** 'livre' (padrão, modelo 1) ou 'hibrido' (modelo 2) — Configurações → IA. */
+function iaQualificacaoModeloAtivo(): string {
+    $modelo = (string)(getConfig('ia_qualificacao_modelo') ?: 'livre');
+    return $modelo === 'hibrido' ? 'hibrido' : 'livre';
+}
+
+/** Em qual pergunta do menu híbrido esse telefone está — null = fora do menu (livre, ou já terminou). */
+function iaHibridoMenuEtapa(string $telefone): ?int {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT extras FROM whatsapp_sessoes WHERE telefone = ?");
+    $stmt->execute([normalizarTelefone($telefone)]);
+    $extras = json_decode((string)($stmt->fetchColumn() ?: '{}'), true);
+    $etapa = is_array($extras) ? ($extras['menu_hibrido_etapa'] ?? null) : null;
+    return is_int($etapa) ? $etapa : null;
+}
+
+/** Upsert em whatsapp_sessoes.extras preservando outras chaves que já existam ali (merge, nunca overwrite cru). */
+function iaHibridoSetMenuEtapa(string $telefone, ?int $etapa): void {
+    $db = getDB();
+    $telNorm = normalizarTelefone($telefone);
+    $stmt = $db->prepare("SELECT extras FROM whatsapp_sessoes WHERE telefone = ?");
+    $stmt->execute([$telNorm]);
+    $extras = json_decode((string)($stmt->fetchColumn() ?: '{}'), true);
+    if (!is_array($extras)) $extras = [];
+    if ($etapa === null) {
+        unset($extras['menu_hibrido_etapa']);
+    } else {
+        $extras['menu_hibrido_etapa'] = $etapa;
+    }
+    $json = json_encode($extras, JSON_UNESCAPED_UNICODE);
+    $db->prepare("
+        INSERT INTO whatsapp_sessoes (telefone, extras, updated_at)
+        VALUES (?, ?, datetime('now','localtime'))
+        ON CONFLICT(telefone) DO UPDATE SET extras = excluded.extras, updated_at = datetime('now','localtime')
+    ")->execute([$telNorm, $json]);
+}
+
+/**
+ * Interpreta a resposta como escolha de menu — só reconhece um ÚNICO
+ * dígito dentro do intervalo, com no máximo pontuação solta ao redor
+ * ("2", "2.", "2)"); qualquer outra coisa (texto livre, 2 números, frase)
+ * retorna null de propósito — melhor cair no fallback de texto livre do
+ * que arriscar interpretar errado uma resposta ambígua.
+ */
+function iaHibridoParseOpcao(string $texto, int $max): ?int {
+    if (!preg_match('/^\s*(\d)\s*[.\-)]?\s*$/u', $texto, $m)) return null;
+    $n = (int)$m[1];
+    return ($n >= 1 && $n <= $max) ? $n : null;
+}
+
+/** Última mensagem recebida do cliente (direcao='in') — usada pra interpretar a resposta ao menu. */
+function iaHibridoUltimaMensagemCliente(string $telefone): string {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT mensagem FROM whatsapp_mensagens
+        WHERE telefone = ? AND direcao = 'in'
+        ORDER BY id DESC LIMIT 1
+    ");
+    $stmt->execute([normalizarTelefone($telefone)]);
+    return (string)($stmt->fetchColumn() ?: '');
+}
+
+/**
+ * Orquestra 1 turno no modelo híbrido — chamada no lugar de iaProcessarTurno()
+ * quando iaQualificacaoModeloAtivo()==='hibrido' e ainda estamos nas 3
+ * primeiras perguntas. $primeiraMensagem (a oportunidade acabou de sair de
+ * 'whatsapp' nesse mesmo turno) decide se começa o menu agora; nos turnos
+ * seguintes, o estado salvo em whatsapp_sessoes.extras decide. Devolve o
+ * MESMO formato de iaProcessarTurno() (chamador não precisa saber qual dos
+ * dois rodou) — nos passos do menu em si, a maior parte dos campos fica
+ * zerada/false, só 'resposta'/'enviada' têm valor de verdade.
+ */
+function iaHibridoProcessarTurno(int $oportunidadeId, string $telefone, bool $primeiraMensagem, ?string $canalOrigem = null): array {
+    $vazio = [
+        'resposta' => '', 'enviada' => false, 'sem_perfil' => false,
+        'qualificacao_completa' => false, 'escalado_sem_avanco' => false,
+        'reclamacao_pos_venda' => false, 'pedido_atendente_humano' => false,
+    ];
+
+    $enviarCanned = function (string $msg) use ($telefone, $canalOrigem, $vazio): array {
+        $enviada = zapiEnviarTextoPeloCanal($telefone, $msg, $canalOrigem);
+        if ($enviada) registrarMensagem($telefone, 'out', $msg, null, true);
+        return array_merge($vazio, ['resposta' => $msg, 'enviada' => $enviada]);
+    };
+
+    if ($primeiraMensagem) {
+        iaHibridoSetMenuEtapa($telefone, 1);
+        return $enviarCanned(IA_HIBRIDO_MSG_Q1);
+    }
+
+    $etapaMenu = iaHibridoMenuEtapa($telefone);
+    if ($etapaMenu === null) {
+        // Menu já tinha terminado (ou abandonado) num turno anterior —
+        // segue 100% pelo fluxo livre de sempre.
+        return iaProcessarTurno($oportunidadeId, $telefone, $canalOrigem);
+    }
+
+    $textoCliente = iaHibridoUltimaMensagemCliente($telefone);
+
+    if ($etapaMenu === 1) {
+        $opcao = iaHibridoParseOpcao($textoCliente, 3);
+        if ($opcao === 1) {
+            iaHibridoSetMenuEtapa($telefone, 2);
+            return $enviarCanned(IA_HIBRIDO_MSG_Q2);
+        }
+        // Opção 2 ("só dúvida")/3 ("outro assunto") ou texto livre — não é
+        // quem veio vender financiado pelo roteiro, abandona o menu e
+        // entrega esse mesmo turno pra IA livre entender de verdade.
+        iaHibridoSetMenuEtapa($telefone, null);
+        return iaProcessarTurno($oportunidadeId, $telefone, $canalOrigem);
+    }
+
+    if ($etapaMenu === 2) {
+        $opcao = iaHibridoParseOpcao($textoCliente, 4);
+        if ($opcao !== null) {
+            $tiposPorOpcao = [1 => 'carro', 2 => 'moto', 3 => 'caminhao', 4 => 'outro'];
+            getDB()->prepare("UPDATE oportunidades SET tipo_veiculo = ? WHERE id = ? AND tipo_veiculo IS NULL")
+                ->execute([$tiposPorOpcao[$opcao], $oportunidadeId]);
+            iaHibridoSetMenuEtapa($telefone, 3);
+            return $enviarCanned(IA_HIBRIDO_MSG_Q3);
+        }
+        iaHibridoSetMenuEtapa($telefone, null);
+        return iaProcessarTurno($oportunidadeId, $telefone, $canalOrigem);
+    }
+
+    // $etapaMenu === 3 (última pergunta) — responder ou não, o menu
+    // termina aqui (3 perguntas é o teto combinado), sempre entrega pra IA
+    // livre no mesmo turno.
+    $opcao = iaHibridoParseOpcao($textoCliente, 3);
+    if ($opcao !== null) {
+        // Sinal leve (nunca sobrescreve se por algum motivo já tiver algo —
+        // não deveria, é o 1º sinal de temperatura dessa oportunidade); a
+        // IA livre reavalia isso de verdade turno a turno depois.
+        $temperaturaInicial = [1 => 'frio', 2 => 'quente'][$opcao] ?? null;
+        if ($temperaturaInicial) {
+            // oportunidades.temperatura_lead é DEFAULT '' (nunca NULL) — "ainda
+            // não avaliado" é string vazia, não NULL (achado real testando
+            // isso: WHERE ... IS NULL nunca batia).
+            getDB()->prepare("UPDATE oportunidades SET temperatura_lead = ? WHERE id = ? AND (temperatura_lead IS NULL OR temperatura_lead = '')")
+                ->execute([$temperaturaInicial, $oportunidadeId]);
+        }
+    }
+    iaHibridoSetMenuEtapa($telefone, null);
+    return iaProcessarTurno($oportunidadeId, $telefone, $canalOrigem);
 }
