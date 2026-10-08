@@ -99,6 +99,14 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
    elimina o risco de detecção pela assinatura técnica da conexão em si
    (fora do nosso controle enquanto o canal principal for Z-API/
    não-oficial) — ver ressalva completa no bullet da seção de módulos.
+   **Revertido pra 24h, 08/10/2026** ("qual horário bot está qualificando,
+   precisamos deixar 24 horas novamente") — o PADRÃO do código (usado só
+   quando a config nunca foi salva) caiu de 08:00-20:00 pra 00:00-23:59,
+   cobrindo o dia inteiro; o mecanismo/gate em si nunca foi removido
+   (continua configurável, nunca reintroduzir resposta fora de horário
+   SEM passar por `config.ia_qualificacao_horario_*`), só a janela
+   padrão voltou a ser irrestrita. Ver bullet completo na seção de
+   módulos.
 
 ---
 
@@ -10758,6 +10766,33 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   nunca foi tocado (sempre via script em ARQUIVO com `auto_prepend_file`,
   nunca `php -r` inline) + `php -l` + `tests/smoke.php` limpos. Sem
   migração de schema (as 2 chaves novas vivem em `config`, livre).
+  **Revertido pra 24h, 08/10/2026** ("qual horário bot está qualificando,
+  precisamos deixar 24 horas novamente") — pedido direto, sem
+  justificativa nova por escrito. O mecanismo/gate em si (as 2 funções,
+  o card em Configurações, a validação HH:MM, o aviso curto deduplicado
+  quando fora de janela) **não foi removido** — só o PADRÃO caiu de
+  08:00-20:00 pra **00:00-23:59** nos 2 pontos
+  (`iaQualificacaoDentroHorarioComercial()`/`iaQualificacaoMsgForaHorario()`,
+  `includes/whatsapp_config.php`) e no valor pré-preenchido do próprio
+  card em `admin/configuracoes.php` — cobre o dia inteiro, mesma lógica
+  já testada antes como "janela 00:00–23:59 sempre `true` independente
+  da hora real". **Importante**: o padrão do código só vale pra
+  `config.ia_qualificacao_horario_*` NUNCA ter sido salva — se alguém já
+  passou pela tela de Configurações e salvou 08:00/20:00 explicitamente
+  (plausível, já que o card foi testado ponta a ponta em produção
+  quando criado), o valor salvo no banco continua valendo até alguém
+  entrar em Configurações → Fila → card "IA qualifica das... até" e
+  trocar pra `00:00`/`23:59` manualmente — não tenho acesso ao banco de
+  produção da VPS pra confirmar/corrigir esse valor daqui. Testado:
+  função isolada confirmando que sem config salva o resultado já é
+  sempre `true` (dentro do horário, qualquer hora testada) e que uma
+  config explícita antiga (08:00/20:00) continua sendo respeitada até
+  ser trocada — comportamento intencional, nunca sobrescreve valor já
+  salvo por humano + `php -l` + `tests/smoke.php` limpos. Sem migração
+  de schema. ⚠️ Nenhuma decisão nova de mitigação de risco de banimento
+  foi tomada aqui — isso reintroduz exatamente o padrão "responde 24h"
+  que a pesquisa original apontou como sinal de detecção de automação
+  (ver rule #9); decisão consciente do usuário, não sugestão minha.
 - **Pedido de exclusão de dados (LGPD) detectado no webhook do WhatsApp**
   (01/10/2026, "vamos implementar mensagem lgp para exlusão do dados") —
   já existia uma página pública (`exclusao-dados.php`, 29/09/2026) com o

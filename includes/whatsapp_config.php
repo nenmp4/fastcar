@@ -805,13 +805,23 @@ function automacaoDentroHorarioComercial(): bool {
  * corte muito justo/preciso pode parecer mais "programado" que uma janela
  * comercial comum. Compartilhada entre compra (mensagens.php) e vendas
  * (mensagens_vendas.php).
+ *
+ * 08/10/2026 — "qual horário bot está qualificando, precisamos deixar 24
+ * horas novamente": pedido direto pra reverter. O PADRÃO (usado só quando
+ * `config.ia_qualificacao_horario_*` nunca foi salvo) caiu de 08:00-20:00
+ * pra 00:00-23:59 — cobre o dia inteiro, já que `$agora < '23:59'` é
+ * verdadeiro em qualquer minuto exceto o próprio 23:59 (mesmo
+ * comportamento já testado no CLAUDE.md como "sempre true"). Quem já
+ * tinha a janela salva explicitamente em Configurações (card "IA
+ * qualifica das... até") precisa trocar o valor lá também — o padrão do
+ * código só vale pra config vazia, nunca sobrescreve valor já salvo.
  */
 function iaQualificacaoDentroHorarioComercial(): bool {
     $agora = date('H:i');
     $abertura = getConfig('ia_qualificacao_horario_abertura');
-    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '08:00';
+    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '00:00';
     $fechamento = getConfig('ia_qualificacao_horario_fechamento');
-    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '20:00';
+    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '23:59';
     return $agora >= $abertura && $agora < $fechamento;
 }
 
@@ -820,9 +830,9 @@ function iaQualificacaoDentroHorarioComercial(): bool {
  *  qualificação completa (regra #3, nunca "finge" estar atendendo). */
 function iaQualificacaoMsgForaHorario(): string {
     $abertura = getConfig('ia_qualificacao_horario_abertura');
-    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '08:00';
+    $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '00:00';
     $fechamento = getConfig('ia_qualificacao_horario_fechamento');
-    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '20:00';
+    $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '23:59';
     return "Oi! Recebemos sua mensagem 🙂 Nosso atendimento funciona das {$abertura} às {$fechamento}. "
         . "Assim que abrirmos, te respondemos certinho!";
 }

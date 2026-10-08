@@ -1410,9 +1410,9 @@ unset($fv);
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_horario_ia_qualificacao">
         <label>IA qualifica das</label>
-        <input type="time" name="ia_qualificacao_horario_abertura" value="<?= e(getConfig('ia_qualificacao_horario_abertura') ?: '08:00') ?>" style="width:110px;display:inline-block">
+        <input type="time" name="ia_qualificacao_horario_abertura" value="<?= e(getConfig('ia_qualificacao_horario_abertura') ?: '00:00') ?>" style="width:110px;display:inline-block">
         <label>até</label>
-        <input type="time" name="ia_qualificacao_horario_fechamento" value="<?= e(getConfig('ia_qualificacao_horario_fechamento') ?: '20:00') ?>" style="width:110px;display:inline-block">
+        <input type="time" name="ia_qualificacao_horario_fechamento" value="<?= e(getConfig('ia_qualificacao_horario_fechamento') ?: '23:59') ?>" style="width:110px;display:inline-block">
         <button type="submit" style="margin-top:0">Salvar horário</button>
         <small style="display:block;color:#666">03/10/2026 — fora dessa janela, a IA não qualifica (manda 1 aviso curto
            avisando o horário e espera reabrir) — reduz o padrão "bot respondendo 24h" logo depois de um bloqueio real
