@@ -12135,6 +12135,47 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   real — revisitar se "database is locked" continuar aparecendo depois
   desse fix, já com `grep` apontando pra um file:line DIFERENTE desses 4.
 
+- **Por que o JurídicoSaaS nunca teve ESSE bug específico — comparação
+  real, 08/10/2026** ("poque juridico sass nunca caiu da uma olhda no
+  padra") — repositório irmão (`nenmp4/iabadvocaciaboutique`) anexado e
+  lido direto (`includes/db.php`, `includes/config.php`,
+  `admin/layout.php`, `api/kanban.php`/`clientes.php`) pra comparar de
+  verdade, não só por documentação. **Resposta honesta, em 2 partes**:
+  (1) a premissa "nunca caiu" **não é bem verdade** — o próprio
+  CLAUDE.md de lá documenta uma saga real de "database is locked", só
+  que por um MECANISMO diferente (colisão de cron + dezenas de conexões
+  SQLite em `chatbot-whatsapp/` sem `busy_timeout` nenhum, achado
+  investigando `artigos_automaticos.php` falhando 2 dias seguidos nos
+  mesmos horários, 09/2026) — é de lá, aliás, que vem a disciplina de
+  `busy_timeout` que o Fastcar herdou desde o 1º dia (ver bullet "O que
+  reaproveitar do JurídicoSaaS" acima); (2) o `includes/db.php` de lá é
+  estruturalmente **mais simples/menos defensivo** que o do Fastcar hoje
+  — `busy_timeout=5000` (nunca subido pra 15000 como aqui) e **nenhum**
+  `set_exception_handler()`/`register_shutdown_function()` global, então
+  não é "o db.php deles é melhor". A causa real de nunca ter sofrido
+  ESSE incidente específico (escrita de cache de UI sem try/catch,
+  disparando em toda carga de página) é **arquitetural, não
+  defensiva**: o header compartilhado de lá (`admin/layout.php::adminHeader()`,
+  incluído por toda página admin, equivalente ao papel que
+  `admin/_zapi_status.php`/`_notify.php` cumprem aqui) só faz `SELECT`
+  (contagem de badge, `getConfig('logo_url')`), sempre dentro do próprio
+  try/catch, **nunca** um `setConfig()`/escrita condicionada só a TTL de
+  60s — o padrão exato que criou o bug aqui. Todo `setConfig()` real do
+  JurídicoSaaS (grep completo) é disparado só por ação explícita
+  (`$_POST` de formulário) ou por cron, nunca por carga de página GET.
+  Eles também não têm 1 função central tipo `mudarEtapa()` chamada de
+  ~15 lugares — cada endpoint (`api/kanban.php`/`clientes.php`) já nasce
+  com o próprio try/catch (dezenas por arquivo), espalhado em vez de
+  concentrado num handler global. **Conclusão prática**: o Fastcar não
+  "copiou errado" nada do JurídicoSaaS — simplesmente construiu uma
+  feature (badge de status de conexão ao vivo, com cache por escrita)
+  que o JurídicoSaaS nunca teve; o jeito de nunca repetir isso aqui é o
+  mesmo da seção "Fica como possível próxima rodada" do bullet acima:
+  qualquer escrita condicionada só por expiração de cache/TTL, chamada
+  de um include compartilhado por muitas páginas, precisa de try/catch
+  próprio — nunca confiar só no `busy_timeout`/handler global pra cobrir
+  o caso mais frequente do sistema.
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
