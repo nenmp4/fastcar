@@ -11892,6 +11892,43 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   leitura). ⚠️ Ainda não rodado contra produção — falta o usuário rodar
   via SSH e mandar a saída (ou já agir sozinho conforme a orientação do
   rodapé, se o motivo for "sem colaborador vinculado").
+  **Bug real confirmado pelo próprio usuário, mesmo dia** — "parece que
+  comissão está lannçando sobre valor pago pro cliente": a fórmula de
+  `finRegistrarComissaoCompraFechada()` (`includes/financeiro.php`)
+  implementada em 23/09/2026 calculava sobre `valor_final` (o que foi
+  pago ao vendedor, em 2 faixas — até 20% da FIPE = 1,5%, acima = 1%),
+  apesar do pedido original já falar em "% da fipe". Corrigido conforme
+  instrução direta ("calculo tem ser em cima fipe de referencia 1 por
+  cento" / "sempre pela fipe referência, a comissão de 1 por cento"): a
+  comissão de compra agora é **sempre 1% do `valor_fipe_referencia`**,
+  nunca mais a faixa de 1,5%/1% nem calculada sobre o valor pago —
+  `$valorFinal` continua só como guard ("teve de fato um valor pago,
+  negócio real"), nunca mais como base de cálculo. Comissão de VENDA
+  (5% da entrada) nunca foi tocada — bug era só do lado de compra.
+  **`install/corrigir_comissao_compra_valor.php`** (novo, CLI, dry-run
+  por padrão, `--confirmar` pra aplicar) corrige retroativamente o que
+  já tinha sido lançado com a fórmula velha — recalcula
+  `fin_lancamentos.valor`/`descricao` de todo `origem='comissao_compra'`
+  ativo (nunca `status='cancelado'`) a partir do
+  `valor_fipe_referencia` real da própria oportunidade (regra #3, nunca
+  chuta); lançamento sem FIPE preenchida (não deveria existir, mas fica
+  como rede de segurança) nunca é "corrigido" com valor inventado, fica
+  listado à parte pra revisão manual. Avisa no próprio cabeçalho: se
+  algum consultor já recebeu o valor ERRADO de verdade, corrigir só o
+  registro no sistema não ajusta o que já foi pago fisicamente — decisão
+  do financeiro, fora do escopo do script. Testado em banco isolado
+  (rodado como subprocess real via `auto_prepend_file`, nunca `include`
+  direto — o script chama `exit()` internamente, que mataria um harness
+  de teste que o incluísse no mesmo processo): 7 cenários (geração nova
+  já sai certa com 1% da FIPE; idempotência da geração; dry-run lista a
+  divergência sem alterar nada; `--confirmar` corrige valor+descrição de
+  verdade; rodar `--confirmar` de novo confirma nada mais a corrigir;
+  lançamento sem FIPE nunca é tocado/chutado; lançamento `cancelado`
+  nunca é tocado) + `php -l` + `tests/smoke.php` limpos. Sem migração de
+  schema. ⚠️ Ainda não rodado contra produção — falta o usuário rodar
+  `install/diagnosticar_comissao_nao_lancada.php` (pra achar quem nunca
+  gerou comissão) e `install/corrigir_comissao_compra_valor.php`
+  `--confirmar` (pra corrigir o valor de quem já gerou errado) via SSH.
 
 ## Pendências (aguardando definição antes de codar mais)
 

@@ -296,16 +296,22 @@ function finRegistrarDespesaCompraFechada(int $oportunidadeId, float $valorFinal
  * pedido direto: "fazer lançamentos da comissões do consultores
  * automaticos no financeiro - após assinatura do contrato de comprar -
  * se consultor fechar ate 20 da fipe 1,5 porcento se ele fechar ate 25
- * ou mais 1 porcento". Confirmado via 3 perguntas diretas antes de
- * implementar: (1) o percentual incide sobre o VALOR PAGO ao vendedor
- * (valor_final), não sobre a FIPE em si; (2) só 2 faixas de verdade —
- * quanto o valor pago representa da FIPE (valor_final /
- * valor_fipe_referencia × 100): até 20% dela = 1,5% de comissão; acima
- * de 20% = 1% (quanto MENOR a fração da FIPE que a Fastcar pagou, melhor
- * o negócio, maior a comissão — o "25" do pedido original era só um
- * exemplo de "acima de 20", não uma 3ª faixa); (3) o lançamento nasce já
- * `status='pago'`, mesmo espírito de finRegistrarDespesaCompraFechada()
- * logo acima (gatilho automático, sem passo extra de confirmação).
+ * ou mais 1 porcento".
+ *
+ * **Corrigido em 08/10/2026** — achado real do usuário ("parece que
+ * comissão está lannçando sobre valor pago pro cliente") confirmando que
+ * a 1ª implementação (acima) calculava sobre o VALOR PAGO ao vendedor
+ * (`valor_final`), nunca sobre a FIPE de verdade, apesar do pedido
+ * original já falar em "% da fipe". Corrigido conforme instrução direta
+ * ("calculo tem ser em cima fipe de referencia 1 por cento" / "sempre
+ * pela fipe referência, a comissão de 1 por cento"): a comissão agora é
+ * **sempre 1% do `valor_fipe_referencia`**, nunca mais a faixa de
+ * 1,5%/1% nem calculada sobre `valor_final` — o parâmetro `$valorFinal`
+ * continua existindo só como guard ("teve de fato um valor pago,
+ * negócio real") e pra exibição no descritivo de outras telas, nunca
+ * mais como base de cálculo. O lançamento nasce já `status='pago'`,
+ * mesmo espírito de finRegistrarDespesaCompraFechada() logo acima
+ * (gatilho automático, sem passo extra de confirmação).
  *
  * Comissão de VENDEDOR (revenda) fica de fora de propósito — o próprio
  * usuário confirmou que ainda não tem percentual definido pra esse lado
@@ -355,16 +361,23 @@ function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFina
         $colaboradorId = $stmtColab->fetchColumn();
         if (!$colaboradorId) return;
 
-        $percentualFipe = ($valorFinal / (float)$op['valor_fipe_referencia']) * 100;
-        $taxa = $percentualFipe <= 20 ? 1.5 : 1.0;
-        $valorComissao = round($valorFinal * $taxa / 100, 2);
+        // 08/10/2026, correção direta do usuário ("calculo tem ser em cima
+        // fipe de referencia 1 por cento" / "parece que comissão está
+        // lannçando sobre valor pago pro cliente" — bug confirmado: a
+        // versão anterior calculava sobre $valorFinal (o que foi pago ao
+        // vendedor), nunca sobre a FIPE / "sempre pela fipe referência, a
+        // comissão de 1 por cento") — SEMPRE 1% do valor FIPE de
+        // referência, nunca mais faixa de 1,5%/1% nem base em valorFinal.
+        $valorFipe = (float)$op['valor_fipe_referencia'];
+        $taxa = 1.0;
+        $valorComissao = round($valorFipe * $taxa / 100, 2);
         if ($valorComissao <= 0) return;
 
         $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Comissão de consultor/vendedor'")->fetchColumn();
         $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) ?: 'veículo';
         $descricao = sprintf(
-            'Comissão de compra — %s — %s (oportunidade #%d) — %.1f%% do valor pago (fechou a %.1f%% da FIPE)',
-            $veiculo, $op['cliente_nome'], $oportunidadeId, $taxa, $percentualFipe
+            'Comissão de compra — %s — %s (oportunidade #%d) — %.1f%% do valor FIPE de referência (R$ %s)',
+            $veiculo, $op['cliente_nome'], $oportunidadeId, $taxa, number_format($valorFipe, 2, ',', '.')
         );
 
         $data = $dataCompra ?: date('Y-m-d');
