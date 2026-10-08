@@ -37,6 +37,35 @@ if (isset($_GET['historico'])) {
         'url'        => $n['url'],
         'created_at' => $n['created_at'],
     ], listarNotificacoes($meuId, 30));
+
+    // 08/10/2026, "ai tem vim os carros atribuidos... deixa uns 7 ultimos"
+    // — achado real: pro perfil avaliador, o sino nunca tinha NADA
+    // aplicável (o "novo_lead" acima só olha oportunidades.responsavel_id,
+    // nunca atribuído a avaliador; "documentos_confirmados" só vai pro
+    // responsável consultor/vendedor + super_admin/supervisor, ver
+    // destinatariosNotificacao() em includes/notificacoes.php) — a tela
+    // sempre mostrava "Nenhuma notificação ainda.", mesmo com vistoria
+    // de verdade esperando. Mesclado aqui igual ao mecanismo de "lead
+    // novo" (computado AO VIVO, nunca persistido em `notificacoes` — não
+    // é um evento pontual, é um ESTADO atual: "o que está atribuído a
+    // mim agora"), com as 7 atribuições mais recentes.
+    if ($perfil === 'avaliador') {
+        $pendentesAval = array_slice(array_reverse(listarAvaliacoesPendentes($meuId)), 0, 7);
+        foreach ($pendentesAval as $a) {
+            $veiculo = trim(($a['veiculo_marca'] ?? '') . ' ' . ($a['veiculo_modelo'] ?? ''));
+            $emoji = ($a['tipo_veiculo'] ?? '') === 'moto' ? '🏍️' : '🚗';
+            $itens[] = [
+                'id'         => (int)$a['id'],
+                'tipo'       => 'vistoria_atribuida',
+                'titulo'     => $emoji . ' Vistoria atribuída',
+                'mensagem'   => ($a['cliente_nome'] ?: '(sem nome)') . ($veiculo !== '' ? ' — ' . $veiculo : ''),
+                'url'        => '/admin/avaliacao.php?id=' . (int)$a['id'],
+                'created_at' => $a['created_at'],
+            ];
+        }
+        usort($itens, fn($x, $y) => strcmp($y['created_at'], $x['created_at']));
+    }
+
     echo json_encode(['itens' => $itens]);
     exit;
 }

@@ -72,7 +72,19 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         'veiculo_crlv_ajax.php',
         // 29/09/2026 — impersonamento: super_admin impersonando um
         // vendedor precisa conseguir voltar (ver admin/parar_impersonar.php).
-        'parar_impersonar.php'];
+        'parar_impersonar.php',
+        // 08/10/2026 — achado real: o sino de notificação e o badge de
+        // status da Z-API (includes em TODA página cheia, _notify.php/
+        // _zapi_status.php) chamam esses 2 endpoints via fetch() — sem
+        // estar no allowlist, o guard deste bloco redirecionava (302) a
+        // chamada pra vendas.php, o navegador seguia o redirect e tentava
+        // fazer JSON.parse() do HTML da página — daí o sino sempre
+        // mostrando "Falha ao carregar." e o badge nunca atualizando pra
+        // esse perfil. Mesma classe de bug já documentada aqui outras
+        // vezes ("relaxar o guard dentro do arquivo não basta sem
+        // atualizar o allowlist central") — ver mesma correção nos guards
+        // de avaliador/financeiro abaixo.
+        'notificacoes.php', 'zapi_status_ajax.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -98,6 +110,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
         'financeiro-empresa.php', 'meu_perfil.php', 'logout.php',
         // 29/09/2026 — impersonamento (ver nota equivalente no guard do vendedor acima).
         'parar_impersonar.php',
+        // 08/10/2026 — sino de notificação + badge de status Z-API (ver
+        // nota completa no guard do vendedor acima, mesmo bug/mesma correção).
+        'notificacoes.php', 'zapi_status_ajax.php',
     ];
     if (!in_array($paginaAtualFin, $permitidasFin, true)) {
         header('Location: /admin/financeiro.php');
@@ -126,7 +141,10 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // pro racional completo.
         'veiculo_midias.php', 'ver_midia_revenda.php',
         // 29/09/2026 — impersonamento (ver nota equivalente no guard do vendedor acima).
-        'parar_impersonar.php'];
+        'parar_impersonar.php',
+        // 08/10/2026 — sino de notificação + badge de status Z-API (ver
+        // nota completa no guard do vendedor acima, mesmo bug/mesma correção).
+        'notificacoes.php', 'zapi_status_ajax.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

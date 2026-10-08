@@ -411,6 +411,37 @@ if (!str_contains((string)file_get_contents($root . '/includes/whatsapp_conformi
     ok('[envio-ativo-sem-gate-conformidade] podeEnviarAtivo() presente em includes/whatsapp_conformidade.php');
 }
 
+// allowlist-silo-sem-notificacoes guard — 08/10/2026, achado real: o sino
+// (admin/_notify.php) e o badge de status Z-API (admin/_zapi_status.php)
+// são incluídos em TODA página cheia do admin e fazem fetch() pra
+// admin/notificacoes.php/zapi_status_ajax.php — mas os 3 perfis siloed
+// (avaliador/vendedor/financeiro, cada um com allowlist central própria
+// em admin/_bootstrap.php) nunca tinham esses 2 arquivos na lista; o
+// guard de página redirecionava (302) a chamada AJAX pra home do perfil,
+// o fetch seguia o redirect, e JSON.parse() do HTML devolvido estourava —
+// sino sempre mostrando "Falha ao carregar.", badge nunca atualizando.
+// Mesma classe de bug já documentada aqui outras vezes ("relaxar o guard
+// dentro do arquivo não basta sem atualizar o allowlist central").
+$bootstrapSrc = (string)file_get_contents($root . '/admin/_bootstrap.php');
+if (preg_match_all('/\$(permitidasVendedor|permitidasFin|permitidasAval)\s*=\s*\[(.*?)\];/s', $bootstrapSrc, $mArrays, PREG_SET_ORDER)) {
+    $siloFaltando = [];
+    foreach ($mArrays as $match) {
+        [, $nomeVar, $corpo] = $match;
+        foreach (['notificacoes.php', 'zapi_status_ajax.php'] as $endpoint) {
+            if (!str_contains($corpo, "'{$endpoint}'")) {
+                $siloFaltando[] = "\${$nomeVar} sem '{$endpoint}'";
+            }
+        }
+    }
+    if ($siloFaltando) {
+        falha('[allowlist-silo-sem-notificacoes] sino/badge vão quebrar pra esse perfil — ' . implode(', ', $siloFaltando));
+    } else {
+        ok('[allowlist-silo-sem-notificacoes] limpo (notificacoes.php + zapi_status_ajax.php nos 3 allowlists siloed)');
+    }
+} else {
+    falha('[allowlist-silo-sem-notificacoes] não achou os 3 arrays $permitidasVendedor/$permitidasFin/$permitidasAval em admin/_bootstrap.php — guard desatualizado?');
+}
+
 // version.json precisa ser JSON válido e semver
 $vj = json_decode((string)@file_get_contents($root . '/version.json'), true);
 if (!$vj || empty($vj['version']) || !preg_match('/^\d+\.\d+\.\d+$/', $vj['version'])) {

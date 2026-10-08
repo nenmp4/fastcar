@@ -37,8 +37,8 @@ $formularioVeiculoRepetir = null; // preserva o que foi digitado enquanto espera
 // chave escolher tipo de consulta api mais em configurações") — nome/preço
 // exibidos no card sempre refletem o que está escolhido em Configurações,
 // nunca hardcoded "Consulta Veicular".
-$zapcarServicoNomeAtivo = zapcarConfigured() ? zapcarNomeServico(zapcarServicoAtivo()) : '';
-$zapcarPrecoAtivo = zapcarConfigured() ? zapcarPrecoServico(zapcarServicoAtivo()) : null;
+$zapcarServicoNomeAtivo = zapcarAtivo() ? zapcarNomeServico(zapcarServicoAtivo()) : '';
+$zapcarPrecoAtivo = zapcarAtivo() ? zapcarPrecoServico(zapcarServicoAtivo()) : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -704,7 +704,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
 </div>
 
-<?php if (zapcarConfigured()): ?>
+<?php if (zapcarAtivo()): ?>
 <div class="card" id="zapcar-card">
     <h3>🔎 Consulta veicular (ZapCar) — <?= e($zapcarServicoNomeAtivo) ?></h3>
     <p><small>22/09/2026 — consulta paga (desconta do saldo da conta ZapCar): restrições, débitos, sinistro, leilão
@@ -1295,7 +1295,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </script>
 <?php endif; ?>
 
-<?php if (zapcarConfigured()): ?>
+<?php if (zapcarAtivo()): ?>
 <script>
 (function () {
     // Consulta veicular ZapCar — proprietário, restrições, gravame e

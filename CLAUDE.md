@@ -2109,6 +2109,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   ferramenta reutilizável pra qualquer suspeita parecida no futuro
   (compara `veiculo` normalizado x `dados` cru direto no banco, sem
   precisar baixar PDF).
+  **Desativada temporariamente, 08/10/2026** ("zapcar api deles está
+  puxando valores errados divergentes não está atendendo a fastcar,
+  desabilitar, caso resolvemos retornar agente volta") — consequência
+  direta do achado acima ("Valor de débito suspeito"), confirmado real
+  (não hipótese): o provedor continua devolvendo valor divergente.
+  Nova `zapcarDesativadoManualmente()`/`zapcarAtivo()`
+  (`includes/zapcar.php`) — `zapcarAtivo() = zapcarConfigured() &&
+  !zapcarDesativadoManualmente()`, gate que substituiu `zapcarConfigured()`
+  nos 2 pontos que de fato ligam/desligam a feature pro consultor
+  (card "🔎 Consulta veicular" em `admin/oportunidade.php`, nos 2 blocos —
+  HTML e `<script>` — + `zapcarIniciarConsulta()`, que agora recusa com
+  mensagem própria "desativada temporariamente" antes de tentar qualquer
+  rede). `admin/configuracoes.php` continua usando `zapcarConfigured()`
+  puro (nunca o novo gate) — a tela de config/teste de conexão precisa
+  continuar acessível mesmo desativado, pra poder confirmar se o
+  provedor já corrigiu antes de religar. Checkbox novo "⏸️ Desativado
+  temporariamente" no mesmo form de salvar a chave
+  (`config.zapcar_desativado`), badge de status com o 3º estado. **Nunca
+  toca na chave salva** — reativar é só desmarcar o checkbox, sem
+  precisar recolar credencial nenhuma. **Desativado por padrão quando a
+  flag nunca foi salva** (`$v === null || $v === '' || $v === '1'`,
+  de propósito — nunca consigo alterar o `config` do banco de produção
+  direto daqui, então o código precisa nascer desligado sozinho depois
+  do deploy, sem nenhuma ação extra do usuário; só liga se alguém
+  explicitamente desmarcar o checkbox depois). Dado já salvo
+  (`oportunidades.zapcar_resumo_texto`/consultas antigas em
+  `zapcar_consultas`) nunca é apagado — só para de gerar consulta NOVA.
+  Testado em banco isolado: sem chave nenhuma → desativado; chave
+  presente sem a flag nunca ter sido salva → nasce desativado (cenário
+  real de produção depois deste deploy); desmarcar o checkbox → ativa;
+  marcar de novo → desativa; `zapcarIniciarConsulta()` com a flag ligada
+  recusa com a mensagem certa sem nenhuma chamada de rede + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema (`config` é livre,
+  key/value).
 - **Débitos do veículo (IPVA/licenciamento/multas)** (22/09/2026, "campo
   de preencher - debitos do veilucos como ipva linciamento e multoas") —
   confirmado com o usuário (2 perguntas diretas): 3 campos numéricos
@@ -9947,6 +9981,63 @@ segue no schema sem uso novo, não removida sem ganho real),
   do merge; mescla com evento persistido real ordena certo (mais recente
   primeiro); cap de 20 itens nunca estoura; storage bloqueado nunca
   lança — + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  **Sino 100% quebrado pros 3 perfis siloed (avaliador/vendedor/
+  financeiro) — "Falha ao carregar.", 08/10/2026** (achado real via
+  screenshot do avaliador no celular: painel do sino mostrando "Falha ao
+  carregar." + "Nenhuma vistoria pendente atribuída a você no momento.")
+  — `admin/_notify.php`/`admin/_zapi_status.php` são incluídos em TODA
+  página cheia do admin e fazem `fetch()` pra
+  `admin/notificacoes.php`/`admin/zapi_status_ajax.php`, mas o guard
+  central de allowlist por perfil (`admin/_bootstrap.php`, criado pros
+  perfis `vendedor`/`financeiro`/`avaliador` — cada um só acessa as
+  próprias ~10 páginas, qualquer outra redireciona) nunca tinha esses 2
+  arquivos na lista de nenhum dos três. Resultado: o `fetch()` recebia um
+  302 pra home do perfil, o navegador seguia o redirect sozinho (padrão
+  do `fetch`), e a resposta final virava o HTML inteiro daquela página —
+  `.then(r => r.json())` estourava `SyntaxError` tentando fazer JSON.parse
+  de HTML, capturado pelo `.catch()` que só sabia mostrar "Falha ao
+  carregar." — e o mesmo bug silenciava o POLLING normal (sem erro
+  visível, só o contador nunca atualizava) e o badge de status da Z-API
+  (nunca saía do estado inicial). Mesma classe de bug já documentada
+  várias vezes neste arquivo ("relaxar o guard dentro do arquivo não
+  basta sem atualizar o allowlist central") — reproduzido isolado via
+  HTTP real (banco de teste + servidor PHP embutido, sessão primed por
+  perfil) confirmando o 302 nos 3 perfis antes do fix e 200 OK/JSON
+  válido depois, pros 2 endpoints, nos 3 perfis — `notificacoes.php` +
+  `zapi_status_ajax.php` adicionados ao allowlist central dos 3
+  (`$permitidasVendedor`/`$permitidasFin`/`$permitidasAval`,
+  `admin/_bootstrap.php`). Guard novo em `tests/smoke.php`
+  (`allowlist-silo-sem-notificacoes`) — sanity-check confirmado removendo
+  uma entrada de volta e vendo o guard falhar com a mensagem certa antes
+  de restaurar.
+  **"Carros atribuídos" no painel, pro avaliador** (mesmo achado,
+  pedido de acompanhamento: "ai tem vim os carros atribuidos... deixa
+  uns 7 ultimos") — mesmo corrigido o 302, o painel do avaliador
+  continuava vazio ("Nenhuma notificação ainda.") porque nenhum dos 2
+  tipos de evento hoje é aplicável a esse perfil: "novo_lead" só olha
+  `oportunidades.responsavel_id` (nunca é o avaliador) e
+  "documentos_confirmados" só vai pro responsável
+  consultor/vendedor + `super_admin`/`supervisor`
+  (`destinatariosNotificacao()`, `includes/notificacoes.php`) — o sino
+  nunca tinha NENHUM conteúdo pensado pra esse perfil. `admin/notificacoes.php`
+  (`?historico=1`) ganhou, só quando `$perfil === 'avaliador'`, as 7
+  vistorias mais recentes ainda atribuídas a ele
+  (`listarAvaliacoesPendentes($meuId)`, já existente, mesma função usada
+  por `admin/avaliacoes.php` — `array_slice(array_reverse(...), 0, 7)`),
+  mescladas com o que já vem da tabela `notificacoes` e reordenadas por
+  `created_at` — mesmo espírito de "lead novo" (computado AO VIVO, nunca
+  persistido: não é um evento pontual, é um ESTADO atual — "o que está
+  atribuído a mim agora"), nunca um tipo de evento novo na tabela.
+  `tipo: 'vistoria_atribuida'`, título com o emoji certo por tipo de
+  veículo (🏍️/🚗, mesma convenção já usada na própria tabela de
+  avaliacoes.php), link direto pra `admin/avaliacao.php?id=X`. Testado:
+  função isolada confirmando que SÓ o perfil `avaliador` recebe os itens
+  mesclados (mesmo passando o mesmo `usuario_id` pros outros 5 perfis,
+  nenhum item de vistoria aparece) + cenário com 12 vistorias atribuídas
+  confirmando o corte em exatamente 7, ordenadas da mais recente pra mais
+  antiga + HTTP ponta a ponta real (banco com 2 vistorias semeadas pro
+  avaliador, `historico=1` devolve as 2 certas) — + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 - **Página trava rolagem lá no topo depois de qualquer "Salvar"**
   (30/09/2026, achado real: "quando abrimos cliente tem ficar rolando pra
   baixo... preencho algo ainda rola pra baixo, [tenho que] voltar") —

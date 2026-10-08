@@ -84,6 +84,31 @@ function zapcarConfigured(): bool {
     return zapcarApiKey() !== '';
 }
 
+/**
+ * 08/10/2026 — "zapcar api deles está puxando valores errados divergentes
+ * não está atendendo a fastcar, desabilitar, caso resolvemos retornar a
+ * gente volta" — achado real documentado em CLAUDE.md (bullet "Valor de
+ * débito suspeito", 24/09/2026): o endpoint JSON da ZapCar já devolveu um
+ * valor de débito 100x maior que o próprio PDF oficial deles pra mesma
+ * consulta, confirmado comparando os dois documentos lado a lado — bug
+ * do provedor, nunca do nosso código. Desliga a feature inteira (card +
+ * criação de consulta nova) sem tocar na chave/credencial salva — religar
+ * depois é só desmarcar o checkbox em Configurações → ZapCar, nunca
+ * precisa recolar o token. Nunca configurado ainda (deploy novo desta
+ * mudança) = DESATIVADO por padrão, de propósito: não consigo alterar o
+ * `config` do banco de produção direto daqui, então o código precisa
+ * nascer já desligado pra valer sem nenhuma ação extra do usuário.
+ */
+function zapcarDesativadoManualmente(): bool {
+    $v = getConfig('zapcar_desativado');
+    return $v === null || $v === '' || $v === '1';
+}
+
+/** Gate real de uso (card visível + consulta nova permitida) — chave configurada E não desativado manualmente. */
+function zapcarAtivo(): bool {
+    return zapcarConfigured() && !zapcarDesativadoManualmente();
+}
+
 /** Slug do serviço escolhido em Configurações (config.zapcar_servico_slug) — fallback pro padrão se nunca configurado. */
 function zapcarServicoAtivo(): string {
     $slug = trim((string)(getConfig('zapcar_servico_slug') ?? ''));
@@ -307,6 +332,9 @@ function zapcarUltimaConsultaDaOportunidade(int $oportunidadeId): ?array {
 function zapcarIniciarConsulta(int $oportunidadeId, string $placaBruta, int $usuarioId): array {
     if (!zapcarConfigured()) {
         return ['ok' => false, 'erro' => 'Chave da API ZapCar não configurada. Configure em Configurações → ZapCar.'];
+    }
+    if (zapcarDesativadoManualmente()) {
+        return ['ok' => false, 'erro' => 'Consulta ZapCar desativada temporariamente (dados divergentes do provedor). Reative em Configurações → ZapCar quando confirmado que resolveram.'];
     }
     $placa = zapcarLimparPlaca($placaBruta);
     if ($placa === '') {

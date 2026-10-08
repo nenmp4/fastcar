@@ -374,6 +374,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($servicoPost !== '' && preg_match('/^[a-z0-9-]+$/', $servicoPost)) {
                 setConfig('zapcar_servico_slug', $servicoPost);
             }
+            // 08/10/2026, "zapcar deles está puxando valores errados...
+            // desabilitar" — checkbox junto do resto da config, nunca
+            // apaga a chave salva (ver zapcarDesativadoManualmente(),
+            // includes/zapcar.php).
+            setConfig('zapcar_desativado', isset($_POST['zapcar_desativado']) ? '1' : '0');
             $sucesso = 'Configurações da ZapCar salvas.';
         } elseif ($acao === 'testar_zapcar') {
             // GET /v1/servicos e /v1/saldo são grátis (não cobram) — testa
@@ -1223,9 +1228,13 @@ unset($fv);
        do saldo da conta ZapCar. Chave gerada no Portal do Cliente ZapCar → API → Chaves.</small></p>
     <p>
         Status:
-        <span class="badge <?= getConfig('zapcar_api_key') ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= getConfig('zapcar_api_key') ? '✅ configurado' : '⏳ ainda não configurado' ?>
-        </span>
+        <?php if (zapcarDesativadoManualmente()): ?>
+            <span class="badge badge-aviso">⏸️ desativado temporariamente</span>
+        <?php elseif (getConfig('zapcar_api_key')): ?>
+            <span class="badge badge-ok">✅ ativo</span>
+        <?php else: ?>
+            <span class="badge badge-atraso">⏳ ainda não configurado</span>
+        <?php endif; ?>
     </p>
     <form method="post" autocomplete="off">
         <?= csrfField() ?>
@@ -1236,6 +1245,11 @@ unset($fv);
                    value="<?= e(getConfig($chave) ?? '') ?>" autocomplete="off"
                    placeholder="<?= getConfig($chave) ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
+            <input type="checkbox" name="zapcar_desativado" value="1" style="width:auto"
+                   <?= zapcarDesativadoManualmente() ? 'checked' : '' ?>>
+            ⏸️ Desativado temporariamente (dados divergentes vindo da ZapCar — reative quando confirmarem a correção)
+        </label>
         <label for="zapcar_servico_slug">Tipo de consulta</label>
         <?php if ($zapcarListaServicos): ?>
             <select id="zapcar_servico_slug" name="zapcar_servico_slug">
