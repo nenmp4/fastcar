@@ -77,13 +77,31 @@ require_once __DIR__ . '/auditoria.php'; // auditoriaClienteIp() — usada em co
 // dois, só o texto ficou neutro o bastante pra fazer sentido nos dois
 // casos (a `item` (chave) nunca mudou, então nenhuma avaliação já criada
 // precisa de migração).
+// Itens novos de 08/10/2026 ("lista de intens na avaliação" — farol/setas/
+// pneus/fechaduras/ar-condicionado-multimídia-som/step/chave reserva/
+// macaco-chave de roda, seguido de "vidro manual ou elétrico se está
+// funcionando") — checklist de carro era bem mais curto que o de moto,
+// sem nenhum item elétrico/conforto/kit de ferramentas; 'pneus' também
+// tapou um buraco real (o carro nunca tinha esse item, só a moto).
+// Self-heal automático via garantirItensAvaliacao() — avaliação já criada
+// antes desta mudança ganha as linhas novas sozinha na próxima vez que
+// a tela for aberta, nenhuma migração precisou.
 const VEICULO_AVALIACAO_ITENS_CARRO = [
-    'avarias'    => 'Avarias (lataria/carenagem/pintura/amassados/riscos)',
-    'motor'      => 'Motor',
-    'cambio'     => 'Câmbio',
-    'suspensao'  => 'Suspensão',
-    'vazamentos' => 'Vazamentos (óleo/água/fluidos)',
-    'estofado'   => 'Banco/estofado',
+    'avarias'         => 'Avarias (lataria/carenagem/pintura/amassados/riscos)',
+    'motor'           => 'Motor',
+    'cambio'          => 'Câmbio',
+    'suspensao'       => 'Suspensão',
+    'vazamentos'      => 'Vazamentos (óleo/água/fluidos)',
+    'estofado'        => 'Banco/estofado',
+    'pneus'           => 'Pneus',
+    'farol'           => 'Farol (alto/baixo)',
+    'setas'           => 'Setas e iluminação completa (lanternas, freio, ré)',
+    'vidros'          => 'Vidros (manual ou elétrico) — funcionando',
+    'fechaduras'      => 'Fechaduras das portas',
+    'ar_multimidia'   => 'Ar-condicionado / som / multimídia',
+    'step'            => 'Estepe (step)',
+    'chave_reserva'   => 'Chave reserva',
+    'kit_ferramentas' => 'Macaco e chave de roda',
 ];
 
 // 22/09/2026, "avaliação tem ter opção de moto carro", confirmado com o
@@ -94,16 +112,26 @@ const VEICULO_AVALIACAO_ITENS_CARRO = [
 // do carro (avarias/motor/cambio/suspensao/vazamentos), pra
 // veiculoAvaliacaoRotuloItem() nunca precisar saber o tipo pra resolver o
 // texto de um item compartilhado.
+// Ganhou farol/setas/chave_reserva em 08/10/2026, junto do pacote de itens
+// novos do carro acima — fazem sentido pra moto também (as 2 primeiras
+// com o MESMO texto do carro, de propósito, mesmo espírito de
+// 'motor'/'cambio' compartilhados). Vidros/fechaduras/ar-condicionado-
+// multimídia/step/macaco-chave de roda ficam só no carro — moto não tem
+// porta/janela/AC/multimídia padrão, e kit de troca de pneu de moto não
+// é o mesmo macaco+chave de roda do carro.
 const VEICULO_AVALIACAO_ITENS_MOTO = [
-    'motor'      => 'Motor',
-    'cambio'     => 'Câmbio',
-    'corrente'   => 'Corrente/relação (transmissão)',
-    'freios'     => 'Freios (dianteiro/traseiro)',
-    'pneus'      => 'Pneus',
-    'suspensao'  => 'Suspensão (dianteira/traseira)',
-    'eletrica'   => 'Elétrica/painel',
-    'vazamentos' => 'Vazamentos (óleo/fluidos)',
-    'avarias'    => 'Avarias (carenagem/pintura/amassados/riscos)',
+    'motor'         => 'Motor',
+    'cambio'        => 'Câmbio',
+    'corrente'      => 'Corrente/relação (transmissão)',
+    'freios'        => 'Freios (dianteiro/traseiro)',
+    'pneus'         => 'Pneus',
+    'suspensao'     => 'Suspensão (dianteira/traseira)',
+    'eletrica'      => 'Elétrica/painel',
+    'vazamentos'    => 'Vazamentos (óleo/fluidos)',
+    'avarias'       => 'Avarias (carenagem/pintura/amassados/riscos)',
+    'farol'         => 'Farol (alto/baixo)',
+    'setas'         => 'Setas e iluminação completa (lanternas, freio, ré)',
+    'chave_reserva' => 'Chave reserva',
 ];
 
 /** Lista de itens do checklist certa pro tipo de veículo — 'carro' é o fallback padrão (mesmo default da coluna). */

@@ -2514,6 +2514,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   removido usando a lista do tipo certo — + `php -l` + `tests/smoke.php`
   limpos + migração idempotente rodada 2x contra o banco de
   desenvolvimento real (2ª rodada mostra "já existia", sem erro).
+  **9 itens novos no checklist de carro + 3 de moto** (08/10/2026, "lista
+  de intens na avaliação - Farol alto baixo / iluminação completa setas /
+  Pneus / fechaduras nas portas / Ar condicionar muti midia ou som / step
+  / chave reserva / macado chave roda" seguido de "vidro manual ou
+  eletrio se está funcioannd") — checklist de carro tinha só 6 itens
+  (avarias/motor/câmbio/suspensão/vazamentos/estofado), nenhum
+  elétrico/conforto/kit de ferramentas; `pneus` nem existia pro carro,
+  apesar da moto já ter (gap real, corrigido de brinde). Adicionados ao
+  carro: `pneus`, `farol` (alto/baixo), `setas` (+ iluminação completa —
+  lanternas/freio/ré), `vidros` (manual ou elétrico, funcionando),
+  `fechaduras` (das portas), `ar_multimidia` (ar-condicionado/som/
+  multimídia), `step` (estepe), `chave_reserva`, `kit_ferramentas`
+  (macaco e chave de roda). Pra moto, só os 3 que fazem sentido de
+  verdade (`farol`/`setas`/`chave_reserva`, texto idêntico ao do carro,
+  mesmo espírito de `motor`/`cambio` já compartilhados) — vidros/
+  fechaduras/ar-condicionado-multimídia/step/kit de ferramentas ficaram
+  só no carro (moto não tem porta/janela/AC/multimídia padrão, e o kit
+  de troca de pneu de moto não é macaco+chave de roda). Só mudança nas 2
+  constantes (`VEICULO_AVALIACAO_ITENS_CARRO`/`_MOTO`,
+  `includes/veiculo_avaliacoes.php`) — nenhum outro arquivo tem item
+  hardcoded (confirmado via grep), e `garantirItensAvaliacao()`/
+  `listarItensAvaliacao()` já cobrem self-heal (item novo aparece sozinho
+  numa vistoria JÁ criada antes desta mudança, na próxima vez que a tela
+  abrir) e ordenação pela posição declarada na constante — nenhuma
+  migração de schema precisou. Testado em banco isolado: vistoria de
+  carro simulando "criada antes desta mudança" (só com os 6 itens
+  antigos) ganha os 9 novos sozinha ao chamar `listarItensAvaliacao()`,
+  na ordem certa; vistoria de moto (oportunidade separada, pra não
+  reaproveitar a de carro) sai com exatamente 12 itens, incluindo
+  farol/setas/chave_reserva e SEM vidros/ar_multimidia/step/
+  kit_ferramentas/fechaduras; rótulos conferidos (`veiculoAvaliacaoRotuloItem()`);
+  `atualizarItemAvaliacao()` aceita o item novo sem nenhuma mudança nela
+  (já valida contra os 2 dicionários); `veiculoAvaliacaoScore()` conta os
+  15 itens do carro certo + `php -l` + `tests/smoke.php` limpos.
   **Duplo clique criava 2 vistorias do mesmo veículo** (22/09/2026, achado
   real de produção via screenshot — 2 vistorias "Honda ADV 2022"
   idênticas, mesmo avaliador, criadas 5 minutos uma da outra; confirmado
