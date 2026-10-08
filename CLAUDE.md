@@ -12176,6 +12176,44 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   próprio — nunca confiar só no `busy_timeout`/handler global pra cobrir
   o caso mais frequente do sistema.
 
+- **Entrada da venda nascia 'pendente' no caminho 100% local — só o
+  Asaas marcava 'pago' na hora** (08/10/2026, achado real: "todos
+  lançamentos contrato de vende de veiclo entra com pendente melhor
+  forma" → "pois fica mais façil concilia") — confirmado com o usuário
+  o fluxo bancário real: a ENTRADA de uma venda (dinheiro do comprador
+  na hora de assinar) cai direto na conta **C6 Bank**, nunca passa pelo
+  Asaas; só as PARCELAS do saldo financiado são geradas/cobradas de
+  verdade pelo Asaas (boleto/Pix/cartão), cujo status já sincroniza
+  sozinho via webhook/`cron/asaas_sync.php`. `finGerarReceitaVendaAssinatura()`
+  (`includes/financeiro.php`) já tratava isso certo no caminho VIA
+  ASAAS (a entrada já nascia com `status='pago'` direto no `INSERT`,
+  nunca pelo Asaas) — mas o caminho 100% LOCAL (fallback quando o Asaas
+  não está configurado ou falha ao criar o cliente, aparentemente o
+  caso mais comum em produção hoje) tinha uma inconsistência real: a
+  entrada nascia `'pendente'`, igual às parcelas, e só virava `'pago'`
+  quando a chamada era RETROATIVA (`$dataVenda` explícito, pelos
+  scripts de backfill) — no gatilho em TEMPO REAL (venda assinando de
+  verdade agora, `mudarEtapaVenda()` → `'vendido'`), a condição
+  `if ($dataVenda && ...)` nunca disparava, deixando a entrada igual a
+  uma parcela futura, forçando o financeiro a marcar na mão toda vez
+  pra bater com o extrato. Corrigido removendo a restrição `$dataVenda
+  &&` — agora SEMPRE marca a entrada como `'pago'` com a data certa
+  (`$dataVenda ?: date('Y-m-d')`) assim que `finGerarPlanoParcelamentoVenda()`
+  cria o plano, seja em tempo real ou retroativo — nunca mais afeta o
+  botão MANUAL de preview em `admin/venda.php` (chama
+  `finGerarPlanoParcelamentoVenda()` direto, sem passar por essa
+  checagem — a venda pode nem estar `'vendido'` ainda nesse ponto,
+  então a entrada seguir `'pendente'` ali continua certo). Parcelas
+  continuam sempre `'pendente'` (vencem no futuro, nunca chutado —
+  regra #3). Testado em banco isolado, 3 cenários: gatilho em tempo
+  real sem Asaas confirma entrada `'pago'` na hora (parcelas intactas
+  em `'pendente'`); botão manual de preview (venda ainda
+  `'negociacao'`) confirma entrada continuando `'pendente'`, sem
+  regressão; retroativo (`$dataVenda` explícito) confirma `'pago'` com
+  a DATA REAL da venda, nunca "hoje" — os 3 passaram + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema (mudança só na
+  condição que decide o status).
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS

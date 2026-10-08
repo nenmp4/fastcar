@@ -608,21 +608,31 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $
                 $categoriaParcelaId ?: null, (string)($v['comprador_nome'] ?? ''), (int)$criadoPor,
                 $categoriaEntradaId ?: null, $dataVenda
             );
-            // Retroativo: a entrada de uma venda já concluída há tempos já
-            // foi recebida de verdade (mesmo racional de
-            // finRegistrarDespesaCompraFechada() nascer 'pago') — o
-            // fallback local sempre cria como 'pendente' (comportamento
-            // certo pro botão manual/gatilho em tempo real, onde ainda não
-            // se sabe se o dinheiro já entrou). As parcelas seguem
-            // 'pendente' — status individual de cada uma no passado é
-            // incerto sem registro de pagamento real (regra #3, nunca
-            // chuta), fica pro financeiro marcar manualmente as que já
-            // sabe que foram pagas.
-            if ($dataVenda && $valorEntrada > 0 && ($r['ok'] ?? false)) {
+            // 08/10/2026, achado real: "todos lançamentos contrato de venda
+            // de veiculo entra com pendente... fica mais fácil conciliar" —
+            // a entrada NUNCA deveria nascer 'pendente' aqui: por definição
+            // (`valor_pago_contratacao`, "valor PAGO na contratação") ela já
+            // foi recebida de verdade no momento em que a venda chegou em
+            // 'vendido' — mesmo instante em que ESTA função roda, seja no
+            // gatilho em tempo real (assinatura confirmada) ou retroativo
+            // ($dataVenda). O caminho via Asaas (bloco acima) já marcava
+            // 'pago' direto; só este fallback local deixava a entrada
+            // igual às parcelas ('pendente') no caso em TEMPO REAL — a
+            // condição `$dataVenda &&` restringia esse acerto só ao script
+            // retroativo, inconsistência nunca intencional (mesmo racional
+            // de `finRegistrarDespesaCompraFechada()` nascer 'pago' direto).
+            // Nunca afeta o botão MANUAL de preview em admin/venda.php (que
+            // chama `finGerarPlanoParcelamentoVenda()` direto, sem passar
+            // por aqui) — ali a venda pode ainda nem estar 'vendido', então
+            // a entrada correndo como 'pendente' continua certo. As
+            // parcelas seguem 'pendente' — vencem no futuro, status
+            // individual de cada uma só o financeiro confirma (regra #3,
+            // nunca chuta pagamento que ainda não aconteceu).
+            if ($valorEntrada > 0 && ($r['ok'] ?? false)) {
                 $db->prepare("
                     UPDATE fin_lancamentos SET status = 'pago', data_pagamento = ?
                     WHERE venda_id = ? AND parcela_numero = 0 AND origem = 'parcelamento_venda'
-                ")->execute([$dataVenda, $vendaId]);
+                ")->execute([$dataVenda ?: date('Y-m-d'), $vendaId]);
             }
         }
     } catch (Throwable $e) {
