@@ -608,31 +608,30 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $
                 $categoriaParcelaId ?: null, (string)($v['comprador_nome'] ?? ''), (int)$criadoPor,
                 $categoriaEntradaId ?: null, $dataVenda
             );
-            // 08/10/2026, achado real: "todos lançamentos contrato de venda
-            // de veiculo entra com pendente... fica mais fácil conciliar" —
-            // a entrada NUNCA deveria nascer 'pendente' aqui: por definição
-            // (`valor_pago_contratacao`, "valor PAGO na contratação") ela já
-            // foi recebida de verdade no momento em que a venda chegou em
-            // 'vendido' — mesmo instante em que ESTA função roda, seja no
-            // gatilho em tempo real (assinatura confirmada) ou retroativo
-            // ($dataVenda). O caminho via Asaas (bloco acima) já marcava
-            // 'pago' direto; só este fallback local deixava a entrada
-            // igual às parcelas ('pendente') no caso em TEMPO REAL — a
-            // condição `$dataVenda &&` restringia esse acerto só ao script
-            // retroativo, inconsistência nunca intencional (mesmo racional
-            // de `finRegistrarDespesaCompraFechada()` nascer 'pago' direto).
-            // Nunca afeta o botão MANUAL de preview em admin/venda.php (que
-            // chama `finGerarPlanoParcelamentoVenda()` direto, sem passar
-            // por aqui) — ali a venda pode ainda nem estar 'vendido', então
-            // a entrada correndo como 'pendente' continua certo. As
-            // parcelas seguem 'pendente' — vencem no futuro, status
-            // individual de cada uma só o financeiro confirma (regra #3,
-            // nunca chuta pagamento que ainda não aconteceu).
-            if ($valorEntrada > 0 && ($r['ok'] ?? false)) {
+            // 08/10/2026, REVERTIDO no mesmo dia — ver CLAUDE.md ("Entrada
+            // da venda nasce SEMPRE 'pendente'..."). Chegou a ficar
+            // 'pago' direto no gatilho em tempo real por algumas horas
+            // (commit f40ae6f), mas o usuário confirmou via pergunta
+            // direta que quer o INVERSO: entrada sempre 'pendente', como
+            // qualquer lançamento, mesmo sabendo que já caiu no C6 — só
+            // confirma 'pago' depois, na conciliação manual contra o
+            // extrato bancário (sem automação que assuma dinheiro
+            // recebido só porque o CRM mudou de etapa). Só o caso
+            // RETROATIVO ($dataVenda explícito, scripts de backfill)
+            // continua marcando 'pago' — comportamento original, nunca
+            // alterado por esse vai-e-volta, porque ali o dinheiro de uma
+            // venda já concluída há meses é fato consumado, não uma
+            // promessa recém-feita. Nunca afeta o botão MANUAL de preview
+            // em admin/venda.php (chama `finGerarPlanoParcelamentoVenda()`
+            // direto, sem passar por aqui). Parcelas seguem 'pendente' —
+            // vencem no futuro, status individual de cada uma só o
+            // financeiro confirma (regra #3, nunca chuta pagamento que
+            // ainda não aconteceu).
+            if ($dataVenda && $valorEntrada > 0 && ($r['ok'] ?? false)) {
                 $db->prepare("
                     UPDATE fin_lancamentos SET status = 'pago', data_pagamento = ?
                     WHERE venda_id = ? AND parcela_numero = 0 AND origem = 'parcelamento_venda'
-                ")->execute([$dataVenda ?: date('Y-m-d'), $vendaId]);
+                ")->execute([$dataVenda, $vendaId]);
             }
         }
     } catch (Throwable $e) {

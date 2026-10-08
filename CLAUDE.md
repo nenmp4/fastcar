@@ -12214,6 +12214,44 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `tests/smoke.php` limpos. Sem migração de schema (mudança só na
   condição que decide o status).
 
+- **Revertido no MESMO dia — entrada da venda volta a nascer sempre
+  'pendente'** (08/10/2026, "somente os parcelamentos - contrato de
+  venda no sistema lançar como pedente depois ai subimos extrato do
+  c6") — o bullet acima ("Entrada da venda nascia 'pendente'...")
+  durou só algumas horas em produção (commit `f40ae6f`). Perguntado
+  direto (`AskUserQuestion`) pra não adivinhar errado numa coisa
+  financeira, o usuário confirmou que quer o **inverso** do que tinha
+  acabado de pedir: a entrada da venda continua sempre `'pendente'`
+  como qualquer lançamento, **mesmo sabendo** que o dinheiro já caiu no
+  C6 — nunca assume "pago" só porque o CRM mudou de etapa; a
+  confirmação de verdade vem depois, manualmente, conferindo contra o
+  extrato real do banco (ainda sem feature de **upload/importação do
+  extrato do C6** — hoje é só o Asaas que importa extrato de verdade,
+  do lado das parcelas; subir extrato de banco pra reconciliar despesa/
+  receita manual é ideia nova, não implementada, ficaria como próximo
+  pedido se vier). `finGerarReceitaVendaAssinatura()`
+  (`includes/financeiro.php`) voltou exatamente ao texto de antes do
+  commit de hoje — `if ($dataVenda && $valorEntrada > 0 && ($r['ok'] ??
+  false))`, `execute([$dataVenda, $vendaId])` — ou seja, só o caminho
+  **retroativo** (`$dataVenda` explícito, scripts de backfill) continua
+  marcando `'pago'`; o gatilho em TEMPO REAL volta a deixar a entrada
+  `'pendente'`, igual a uma parcela qualquer. **Inconsistência que
+  sobra, sinalizada mas NUNCA tocada sem pedido explícito**: o caminho
+  "via Asaas" desta mesma função (quando `asaasCriarClienteSeNecessario()`
+  funciona) grava a entrada com `status='pago'` direto no próprio
+  `INSERT` (linhas ~590-602) — isso é comportamento ANTERIOR a esta
+  sessão (19-24/09/2026), nunca fez parte do vai-e-volta de hoje, e o
+  usuário já tinha dito antes "Asaas tá certo, não mexe" — então, por
+  ora, fica como está: só o caminho 100% local foi revertido. Se o
+  princípio "entrada sempre pendente, só confirma manual" valer também
+  pra esse caminho via Asaas, precisa de confirmação explícita numa
+  próxima rodada. Testado: mesmos 3 cenários do bullet anterior,
+  reconfirmados com a expectativa invertida — gatilho em tempo real sem
+  Asaas agora `'pendente'` (era `'pago'`), botão manual de preview
+  continua `'pendente'` (sem mudança), retroativo continua `'pago'`
+  com a data real (sem mudança) — + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema.
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
