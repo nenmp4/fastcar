@@ -12013,6 +12013,52 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   falta o usuário rodar via SSH (dry-run primeiro, revisar com o
   financeiro, depois `--confirmar`).
 
+- **Liberar bloqueio TEMPORÁRIO de login antes do prazo (15min)** (08/10/2026,
+  "usuario digitou errada senha bloqueio 15 minutos consiso liberar ele
+  antes") — achado real: `admin/usuarios.php` já tinha botão pra
+  bloqueio MANUAL/permanente (`usuarios.bloqueado`, checkbox no form de
+  edição), mas nenhum jeito de liberar o bloqueio TEMPORÁRIO automático
+  (5 senhas erradas seguidas, `usuarios.tentativas_falhas`/
+  `bloqueado_ate`, ver bullet "2º fator obrigatório no login" mais acima)
+  antes dos 15 minutos passarem sozinhos — a única função que já fazia
+  isso (`resetarTentativasLogin()`, `includes/usuarios.php`) só era
+  chamada de dentro de `autenticar()` quando a senha certa é digitada,
+  nunca manualmente por um super_admin. Ação nova `liberar_tentativas`
+  (`admin/usuarios.php`, mesmo guard de CSRF/`requireSuperAdmin()` do
+  resto da tela) chama a MESMA `resetarTentativasLogin()` — nenhuma
+  lógica nova de negócio, só exposição administrativa de uma função já
+  existente. Listagem ganhou `tentativas_falhas`/`bloqueado_ate` no
+  `SELECT`; badge "🔒 login bloqueado até HH:MM" (classe `badge-aviso`,
+  com o número de tentativas no `title`) + botão "🔓 Liberar agora" só
+  aparecem enquanto `bloqueado_ate` ainda está no futuro — passado o
+  prazo, o próprio login já libera sozinho na próxima tentativa, sem
+  precisar de botão, então o badge nem aparece (nunca mostra um botão
+  "morto"). Evento novo `usuario_tentativas_liberadas` em
+  `includes/auditoria.php`. Testado ponta a ponta via HTTP real (sessão
+  primed por perfil, servidor PHP embutido, banco isolado): usuário com
+  `bloqueado_ate` no futuro mostra o badge/botão certo, usuário com
+  `bloqueado_ate` já expirado (mesmo com `tentativas_falhas=5`) nunca
+  mostra o botão; clicar "Liberar agora" zera `tentativas_falhas`/
+  `bloqueado_ate` de verdade, banner de sucesso certo, evento de
+  auditoria gravado com o nome/e-mail certos; POST forjado de um
+  `consultor` (sessão primed, CSRF roubado da própria página) recebe 403
+  tanto no GET quanto no POST — banco confirmado sem nenhuma alteração,
+  `requireSuperAdmin()` já cobre a página inteira, nunca precisou de
+  guard novo. **Achado lateral no processo de teste, não do código do
+  projeto**: 2 comandos `php -r 'código inline'` usados pra inspecionar
+  o banco durante o teste — mesma pegadinha já documentada várias vezes
+  neste arquivo (`auto_prepend_file` é silenciosamente ignorado nesse
+  modo, mesmo passando `-d auto_prepend_file=...` junto do `-r`) —
+  escreveram sem querer 1 linha de teste no banco de DEV LOCAL
+  (`database/fastcar.db`, gitignorado, nunca produção, que só existe na
+  VPS); descoberto pelo próprio sintoma, corrigido resetando o banco de
+  dev pro estado limpo de sempre (`rm` + `getDB()` recria vazio sozinho)
+  e refazendo a checagem só com script em ARQUIVO
+  (`-d auto_prepend_file=prepend.php check.php`, nunca mais `-r`). Nenhum
+  dado de produção foi afetado. `php -l` + `tests/smoke.php` limpos. Sem
+  migração de schema (`tentativas_falhas`/`bloqueado_ate` já existiam
+  desde o 2FA).
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS

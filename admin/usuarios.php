@@ -132,11 +132,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($acao === 'liberar_tentativas') {
+            // 08/10/2026, pedido direto: "usuario digitou errada senha
+            // bloqueio 15 minutos consiso liberar ele antes" — até aqui não
+            // existia NENHUM jeito de liberar esse bloqueio TEMPORÁRIO
+            // (5 senhas erradas seguidas, usuarios.tentativas_falhas/
+            // bloqueado_ate, ver includes/usuarios.php::registrarTentativaLoginFalha())
+            // antes dos 15 minutos passarem sozinhos — só existia o botão pro
+            // bloqueio MANUAL/permanente (usuarios.bloqueado). Chama a MESMA
+            // resetarTentativasLogin() que já roda sozinha quando a senha
+            // certa é digitada, só que disparada manualmente pelo super_admin.
+            $id = (int)($_POST['id'] ?? 0);
+            $alvo = buscarUsuario($id);
+            if (!$alvo) {
+                $erro = 'Usuário não encontrado.';
+            } else {
+                resetarTentativasLogin($id);
+                auditoriaRegistrar('usuario_tentativas_liberadas', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'usuario', $id, "{$alvo['nome']} ({$alvo['email']}).");
+                $sucesso = "Bloqueio temporário de {$alvo['nome']} liberado — já pode tentar logar de novo.";
+            }
         }
     }
 }
 
-$usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, disponivel FROM usuarios ORDER BY (perfil = 'super_admin') DESC, perfil, nome")->fetchAll();
+$usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, disponivel, tentativas_falhas, bloqueado_ate FROM usuarios ORDER BY (perfil = 'super_admin') DESC, perfil, nome")->fetchAll();
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
 
@@ -240,6 +259,25 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                         <span class="badge badge-atraso">🚫 bloqueado</span>
                     <?php else: ?>
                         <span class="badge badge-ok">✅ ativo</span>
+                    <?php endif; ?>
+                    <?php
+                        // Bloqueio TEMPORÁRIO por senha errada repetida (5x,
+                        // 15min — distinto do bloqueio manual acima) — só
+                        // mostra enquanto bloqueado_ate ainda está no futuro
+                        // (passado o prazo, o próprio login já libera sozinho
+                        // na próxima tentativa, sem precisar de botão).
+                        $aindaBloqueadoPorTentativas = !empty($u['bloqueado_ate']) && strtotime($u['bloqueado_ate']) > time();
+                    ?>
+                    <?php if ($aindaBloqueadoPorTentativas): ?>
+                        <br>
+                        <span class="badge badge-aviso" title="<?= (int)$u['tentativas_falhas'] ?> senha(s) errada(s) seguida(s)">🔒 login bloqueado até <?= date('H:i', strtotime($u['bloqueado_ate'])) ?></span>
+                        <form method="post" style="display:inline-block;margin-top:4px"
+                              onsubmit="return confirmarAcao(this, 'Liberar o bloqueio de senha de <?= e(addslashes($u['nome'])) ?> antes do prazo? A pessoa já pode tentar logar de novo na hora.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="liberar_tentativas">
+                            <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+                            <button type="submit" class="btn-texto">🔓 Liberar agora</button>
+                        </form>
                     <?php endif; ?>
                 </td>
                 <td><?= $u['disponivel'] ? '🟢 disponível' : '⚪ offline' ?></td>
