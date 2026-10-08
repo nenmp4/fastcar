@@ -442,6 +442,22 @@ if (preg_match_all('/\$(permitidasVendedor|permitidasFin|permitidasAval)\s*=\s*\
     falha('[allowlist-silo-sem-notificacoes] não achou os 3 arrays $permitidasVendedor/$permitidasFin/$permitidasAval em admin/_bootstrap.php — guard desatualizado?');
 }
 
+// Bug real 08/10/2026 ("Arrumar formato em reais dos fomularios"): vários
+// formulários parseavam valor monetário digitado à mão com
+// `(float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $x))` —
+// pra um valor BR típico com separador de milhar ("1.380,50") isso vira
+// "1.380.50" (2 pontos), e o cast (float) para no 1º ponto extra, dando
+// 1.38 em vez de 1380.50 — mesmo bug já documentado e corrigido em
+// admin/oportunidade.php (01/10/2026). Sempre usar valorMonetario()
+// (includes/security.php), que trata vírgula como decimal de verdade e
+// ponto seguido de 3 dígitos como separador de milhar.
+guard(
+    'parse-monetario-manual-sem-valorMonetario',
+    '/\(float\)\s*str_replace\(\s*\',\'\s*,\s*\'\.\'\s*,\s*preg_replace/',
+    ['includes/security.php', 'tests/'],
+    'Parse manual de valor monetário fora de valorMonetario() — quebra com separador de milhar BR (ex: "1.380,50" vira 1.38)'
+);
+
 // version.json precisa ser JSON válido e semver
 $vj = json_decode((string)@file_get_contents($root . '/version.json'), true);
 if (!$vj || empty($vj['version']) || !preg_match('/^\d+\.\d+\.\d+$/', $vj['version'])) {

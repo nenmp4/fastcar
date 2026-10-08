@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'importa
             (string)($_POST['veiculo_placa'] ?? ''),
             (string)($_POST['veiculo_chassi'] ?? ''),
             (string)($_POST['veiculo_renavam'] ?? ''),
-            $valorPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorPost)) : null,
+            valorMonetario($valorPost),
             (string)($_POST['data_assinatura'] ?? ''),
             (int)$_SESSION['admin_id']
         );
@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'importa
             (int)($_POST['oportunidade_id'] ?? 0),
             (string)($_POST['comprador_nome'] ?? ''),
             (string)($_POST['comprador_telefone'] ?? ''),
-            $precoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $precoPost)) : null,
+            valorMonetario($precoPost),
             (string)($_POST['data_assinatura'] ?? ''),
             (int)$_SESSION['admin_id']
         );

@@ -23,8 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($_POST['id'] ?? 0);
             $categoria = array_key_exists($_POST['categoria'] ?? '', PATRIMONIO_CATEGORIAS) ? $_POST['categoria'] : 'outros';
             $nome = clean((string)($_POST['nome'] ?? ''));
-            $valorBruto = trim((string)($_POST['valor_aquisicao'] ?? ''));
-            $valor = $valorBruto === '' ? null : (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorBruto));
+            // 08/10/2026, "Arrumar formato em reais dos fomularios" — mesma
+            // correção de admin/financeiro-lancamentos.php: regex antiga
+            // quebrava valor com separador de milhar BR ("1.380,50" virava
+            // 1.38). valorMonetario() já devolve null pra string vazia,
+            // preservando o "sem valor = pendente, nunca chuta" (regra #3).
+            $valor = valorMonetario((string)($_POST['valor_aquisicao'] ?? ''));
             $dataAquisicao = trim((string)($_POST['data_aquisicao'] ?? '')) ?: null;
             $local = clean((string)($_POST['local_responsavel'] ?? ''));
             $status = array_key_exists($_POST['status'] ?? '', PATRIMONIO_STATUS) ? $_POST['status'] : 'ativo';

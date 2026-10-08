@@ -11929,6 +11929,45 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `install/diagnosticar_comissao_nao_lancada.php` (pra achar quem nunca
   gerou comissão) e `install/corrigir_comissao_compra_valor.php`
   `--confirmar` (pra corrigir o valor de quem já gerou errado) via SSH.
+- **Parse de valor em R$ quebrado em vários formulários (não só
+  `admin/oportunidade.php`)** (08/10/2026, "Arrumar formato em reais dos
+  fomularios" — screenshot mostrando "Saldo do financiamento atual"
+  digitado como `36652,14` corretamente salvo, mas confirmando a
+  suspeita de que outras telas repetiam o padrão quebrado) — a correção
+  de 01/10/2026 (`valorMonetario()`, `includes/security.php`) só tinha
+  sido aplicada nos 8 campos de `admin/oportunidade.php`; varredura no
+  repo inteiro achou o MESMO padrão bugado repetido (ad-hoc,
+  `(float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $x))`) em
+  mais 7 pontos, todos campo de texto livre onde um humano digita valor
+  em R$: `admin/financeiro-lancamentos.php` (Valor do lançamento),
+  `admin/patrimonio.php` (Valor de aquisição), `admin/zapsign_importar.php`
+  (valor final/preço de venda na importação de contrato antigo),
+  `admin/veiculos.php` (valor pago no cadastro manual de veículo),
+  `admin/financeiro-colaboradores.php` (salário base),
+  `admin/venda.php` (entrada/parcela do parcelamento local) e
+  `public/documentos.php` (valor da parcela, wizard PÚBLICO — o próprio
+  cliente digita). Mesmo bug em todos: com vírgula E ponto de milhar
+  juntos (ex: "1.380,50", digitação natural de brasileiro), o
+  `str_replace` trocava só a vírgula por ponto, sobrava 2 pontos na
+  string, e o cast `(float)` parava no 1º ponto extra — `1380,50` virava
+  `1.38`, não `1380.50`. Todos trocados por `valorMonetario()`, mesma
+  função já validada; `admin/patrimonio.php`/`public/documentos.php`
+  preservam o "vazio = `null`, nunca chuta" (regra #3) que já tinham
+  antes, só a lógica de parsing mudou. Guard novo em `tests/smoke.php`
+  (`parse-monetario-manual-sem-valorMonetario`) proíbe o padrão regex
+  antigo em qualquer `.php` novo do repo — sanity-check confirmado
+  reintroduzindo o padrão temporariamente num arquivo e vendo o guard
+  falhar com a mensagem certa antes de restaurar. Testado:
+  `valorMonetario()` conferida linha a linha contra os casos reais
+  (`"1.380,50"→1380.5`, `"36652,14"→36652.14` — o valor exato do
+  screenshot —, `"850,00"→850.0`, `""→null`, `"1.38"→1.38` sem falso
+  positivo de milhar) + `php -l` nos 7 arquivos + `tests/smoke.php`
+  limpos. Sem migração de schema. **Fora do escopo** (não são campo de
+  formulário, são pipeline de IA/import, mesmo `str_replace(',', '.')`
+  sem o `preg_replace`/sem o mesmo risco de milhar duplo — deixados como
+  estão): `includes/ia_qualificacao_vendas.php` (extração da IA),
+  `includes/extracao_documentos.php` (OCR de documento),
+  `includes/importar_crm_antigo.php` (CSV do CRM antigo).
 
 ## Pendências (aguardando definição antes de codar mais)
 

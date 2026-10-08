@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
                     (string)($_POST['veiculo_placa'] ?? ''),
                     (string)($_POST['veiculo_chassi'] ?? ''),
                     (string)($_POST['veiculo_renavam'] ?? ''),
-                    $valorPagoPost !== '' ? (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', $valorPagoPost)) : null,
+                    valorMonetario($valorPagoPost),
                     (int)$_SESSION['admin_id'],
                     !empty($_POST['responsavel_id']) ? (int)$_POST['responsavel_id'] : null
                 );

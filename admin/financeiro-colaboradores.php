@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nome = clean((string)($_POST['nome'] ?? ''));
             $cargo = clean((string)($_POST['cargo'] ?? ''));
             $tipoVinculo = clean((string)($_POST['tipo_vinculo'] ?? 'clt'));
-            $salario = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['salario_base'] ?? ''))) ?: null;
+            $salario = valorMonetario((string)($_POST['salario_base'] ?? '')) ?: null;
             $periodicidade = in_array($_POST['periodicidade_pagamento'] ?? '', ['mensal', 'quinzenal'], true) ? $_POST['periodicidade_pagamento'] : 'mensal';
             $obs = clean((string)($_POST['observacoes'] ?? ''));
             if (!$nome) {

@@ -187,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['veiculo_placa'] ?? '')),
                     clean((string)($_POST['veiculo_renavam'] ?? '')),
                     clean((string)($_POST['veiculo_chassi'] ?? '')),
-                    $_POST['valor_parcela'] !== '' ? (float)str_replace(',', '.', (string)$_POST['valor_parcela']) : null,
+                    valorMonetario((string)($_POST['valor_parcela'] ?? '')),
                     $_POST['parcelas_restantes'] !== '' ? (int)$_POST['parcelas_restantes'] : null,
                     clean((string)($_POST['contrato_financiamento_numero'] ?? '')),
                     (int)$op['oportunidade_id'],

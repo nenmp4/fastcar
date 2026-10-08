@@ -31,7 +31,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tipo = in_array($_POST['tipo'] ?? '', ['receita', 'despesa'], true) ? $_POST['tipo'] : 'despesa';
                 $categoriaId = (int)($_POST['categoria_id'] ?? 0) ?: null;
                 $descricao = clean((string)($_POST['descricao'] ?? ''));
-                $valor = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor'] ?? '0')));
+                // 08/10/2026, "Arrumar formato em reais dos fomularios" — a lógica
+                // antiga (strip + troca de vírgula por ponto) quebrava valor com
+                // separador de milhar BR, ex: "1.380,50" virava "1.380.50" (2
+                // pontos) e o cast (float) parava no 1º, dando 1.38 em vez de
+                // 1380.50 — mesmo bug já corrigido em admin/oportunidade.php com
+                // valorMonetario(), reaproveitado aqui.
+                $valor = valorMonetario((string)($_POST['valor'] ?? '0')) ?? 0.0;
                 $natureza = in_array($_POST['natureza'] ?? '', ['fixa', 'variavel'], true) ? $_POST['natureza'] : '';
                 $vencimento = trim((string)($_POST['data_vencimento'] ?? '')) ?: null;
                 $pagamento = trim((string)($_POST['data_pagamento'] ?? '')) ?: null;

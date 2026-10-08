@@ -208,9 +208,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // números antes de assinar o contrato) — o botão de Asaas
                 // de verdade só aparece DEPOIS do contrato assinado, ação
                 // 'gerar_asaas_pos_assinatura' logo abaixo.
-                $valorEntrada = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor_entrada'] ?? '0')));
+                // 08/10/2026, "Arrumar formato em reais dos fomularios" — regex
+                // antiga quebrava valor com separador de milhar BR ("1.380,50"
+                // virava 1.38), trocado por valorMonetario() (includes/security.php).
+                $valorEntrada = valorMonetario((string)($_POST['valor_entrada'] ?? '0')) ?? 0.0;
                 $numParcelas = (int)($_POST['num_parcelas'] ?? 0);
-                $valorParcela = (float)str_replace(',', '.', preg_replace('/[^\d,.-]/', '', (string)($_POST['valor_parcela'] ?? '0')));
+                $valorParcela = valorMonetario((string)($_POST['valor_parcela'] ?? '0')) ?? 0.0;
                 $primeiraParcela = (string)($_POST['primeira_parcela_data'] ?? '');
 
                 if (!$primeiraParcela) {
