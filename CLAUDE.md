@@ -2548,6 +2548,66 @@ segue no schema sem uso novo, não removida sem ganho real),
   `atualizarItemAvaliacao()` aceita o item novo sem nenhuma mudança nela
   (já valida contra os 2 dicionários); `veiculoAvaliacaoScore()` conta os
   15 itens do carro certo + `php -l` + `tests/smoke.php` limpos.
+  **Botão self-atribuído "➕ Nova vistoria" removido de
+  `admin/avaliacoes.php`** (08/10/2026, "Vamos remover botão de nova
+  vistoria- pois está confudindo") — a 1ª versão (28/09/2026, ver bullet
+  "Avaliador cria a própria vistoria" abaixo) deixava o avaliador buscar
+  qualquer veículo/negociação do sistema e se autoatribuir, sem passar
+  por consultor/vendedor — gerava confusão real sobre quem é responsável
+  por criar a vistoria. Confirmado com o usuário via várias perguntas
+  diretas (AskUserQuestion) que a intenção era **manter** os 2 caminhos
+  de consultor/vendedor (`admin/oportunidade.php`/`admin/venda.php`,
+  "+ Nova vistoria de recebimento"/"+ Nova vistoria de entrega ao
+  comprador") e remover **só** o self-service do avaliador — e, junto
+  disso ("opção manual quem tem que atriubur e consultor e vendendor" /
+  "só aparecer quando atribuir"), que uma vistoria nunca mais devia
+  nascer "não atribuída ainda": a atribuição do avaliador passou a ser
+  **obrigatória** na hora de criar, não mais opcional.
+  Removidos de `admin/avaliacoes.php`: o botão + `<dialog>` + todo o
+  `<script>` do modal (busca de veículo/negociação, cadastro de veículo
+  novo com leitura de CRLV/placa FIPE, histórico por placa), os 2
+  endpoints AJAX que só ele usava (`?ajax=buscar`, `?ajax=historico_placa`)
+  e o handler POST `criar_vistoria_avaliador` — `$souAvaliador` continua
+  existindo no arquivo, mas agora só controla o FILTRO da fila (cada
+  avaliador vendo só a própria carteira), nunca mais uma ação de criar.
+  3 funções que só esse modal usava, confirmadas sem nenhum outro
+  caller (`grep` no projeto inteiro), removidas por completo:
+  `buscarCandidatosVistoria()`/`listarVistoriasPorPlaca()`
+  (`includes/veiculo_avaliacoes.php`) e
+  `gerarTelefonePlaceholderVeiculoRecuperado()` (`includes/oportunidades.php`)
+  — `criarVeiculoManualFrota()` nunca dependia dessas 3 por dentro, só o
+  CALLER (o modal) é que gerava o placeholder antes de chamá-la; os
+  outros caminhos de "cadastrar veículo manual" do sistema (Frota,
+  "Vender na Promissória") continuam exigindo vendedor/telefone reais,
+  sem mudança. `veiculo_crlv_ajax.php` tirado do allowlist central do
+  perfil `avaliador` (`admin/_bootstrap.php`) — único uso dele pra esse
+  perfil era o modal removido; `veiculo_midias.php`/`ver_midia_revenda.php`
+  (catálogo de fotos de revenda) continuam liberados, feature
+  independente.
+  **`avaliador_id` obrigatório em `criar_avaliacao`** — nos 2 handlers
+  (`admin/oportunidade.php`/`admin/venda.php`), servidor rejeita com
+  "Escolha um avaliador antes de criar a vistoria." quando vazio, nunca
+  confia só no `required` do `<select>`; a opção "— não atribuído ainda —"
+  saiu do HTML (virou "— escolha um avaliador —"), e sem nenhum avaliador
+  cadastrado no sistema o formulário mostra um aviso em vez do campo
+  (nunca trava silenciosamente num select vazio). Efeito colateral
+  correto: toda vistoria criada por aqui agora já nasce `status='em_andamento'`
+  (`criarAvaliacao()` já decidia isso sozinha pela presença de
+  `avaliador_id`, nenhuma mudança precisou lá) — nunca mais passa por
+  `'pendente'`/sem dono. Testado ponta a ponta via HTTP real (sessão
+  primed por perfil, servidor PHP embutido, banco isolado, nos 2 lados —
+  compra com `consultor` e venda com `vendedor`): GET renderiza o select
+  `required` sem a opção vazia, populado com o avaliador real cadastrado;
+  POST sem `avaliador_id` rejeitado com a mensagem certa, banco confirmado
+  sem nenhuma linha nova; POST com `avaliador_id` cria de verdade (302,
+  `status='em_andamento'`, avaliador certo); sessão de `avaliador` em
+  `admin/avaliacoes.php` confirmada SEM nenhum resquício de "Nova
+  vistoria"/"modal-vistoria"/"criar_vistoria_avaliador" no HTML, vendo
+  normalmente a própria vistoria atribuída na fila; POST direto da ação
+  antiga (`criar_vistoria_avaliador`, simulando replay de request velha)
+  confirmado 100% inerte — 200, zero linha nova no banco, nenhum
+  `elseif` bate mais nesse nome + `php -l` nos 6 arquivos tocados +
+  `tests/smoke.php` limpo. Sem migração de schema.
   **Duplo clique criava 2 vistorias do mesmo veículo** (22/09/2026, achado
   real de produção via screenshot — 2 vistorias "Honda ADV 2022"
   idênticas, mesmo avaliador, criadas 5 minutos uma da outra; confirmado

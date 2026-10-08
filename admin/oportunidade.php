@@ -402,13 +402,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sucesso = 'Pendência reaberta.';
             } elseif ($acao === 'criar_avaliacao') {
                 // Checklist de vistoria (compra) — includes/veiculo_avaliacoes.php.
-                // Consultor responsável já pode escolher um avaliador na hora
-                // de criar (mesmo padrão "responsável" do resto do projeto).
                 // 22/09/2026, "avaliação tem ter opção de moto carro" —
                 // tipo de veículo escolhido aqui, checklist muda de verdade
                 // conforme a escolha; nunca derivado sozinho (oportunidades
                 // não guarda tipo de veículo hoje).
+                // 08/10/2026, "só aparecer quando atribuir" — avaliador_id
+                // virou OBRIGATÓRIO (nunca mais nasce "não atribuído ainda");
+                // consultor é sempre quem escolhe o avaliador na hora de
+                // criar, nunca confia só no `required` do HTML.
                 $novoAvaliadorId = (int)($_POST['avaliador_id'] ?? 0) ?: null;
+                if (!$novoAvaliadorId) {
+                    throw new RuntimeException('Escolha um avaliador antes de criar a vistoria.');
+                }
                 $tipoVeiculoAvaliacao = ($_POST['tipo_veiculo'] ?? 'carro') === 'moto' ? 'moto' : 'carro';
                 $novaAvaliacaoId = criarAvaliacao($id, 'compra', null, $novoAvaliadorId, (int)$_SESSION['admin_id'], $tipoVeiculoAvaliacao);
                 header('Location: /admin/avaliacao.php?id=' . $novaAvaliacaoId);
@@ -1636,14 +1641,18 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <option value="carro">🚗 Carro</option>
                 <option value="moto">🏍️ Moto</option>
             </select>
-            <label>Atribuir a (opcional)</label>
-            <select name="avaliador_id">
-                <option value="">— não atribuído ainda —</option>
+            <?php if ($avaliadoresDisponiveis): ?>
+            <label>Atribuir a</label>
+            <select name="avaliador_id" required>
+                <option value="">— escolha um avaliador —</option>
                 <?php foreach ($avaliadoresDisponiveis as $u): ?>
                     <option value="<?= (int)$u['id'] ?>"><?= e($u['nome']) ?></option>
                 <?php endforeach; ?>
             </select>
             <button type="submit">+ Nova vistoria de recebimento</button>
+            <?php else: ?>
+            <p><small>⚠️ Nenhum avaliador cadastrado ainda — cadastre um usuário com perfil Avaliador em Usuários antes de criar a vistoria.</small></p>
+            <?php endif; ?>
         </form>
     <?php endif; ?>
 </div>

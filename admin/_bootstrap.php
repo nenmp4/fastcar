@@ -116,10 +116,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // ver_avaliacao_foto.php, acima).
         'ver_assinatura_retirada.php',
         'meu_perfil.php', 'logout.php',
-        // 28/09/2026 — leitura de CRLV por IA no modal "Nova vistoria"
-        // (admin/avaliacoes.php, "cadastrar veículo novo"/CRLV como
-        // fallback da busca por placa).
-        'veiculo_crlv_ajax.php',
+        // 'veiculo_crlv_ajax.php' tirado em 08/10/2026 — só era usado pelo
+        // modal "Nova vistoria" (self-atribuída), removido junto; avaliador
+        // não tem mais nenhum caminho que precise ler CRLV por IA.
         // 28/09/2026 — catálogo de fotos/vídeos de revenda do veículo
         // (admin/veiculo_midias.php), achado real: avaliador batendo 403
         // tentando adicionar foto do veículo que acabou de cadastrar pela
