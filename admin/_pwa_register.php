@@ -14,11 +14,28 @@ if ('serviceWorker' in navigator) {
 // heurística do navegador, o próprio clique já conta como sinal de
 // engajamento), iOS mostra instrução manual.
 (function () {
+    // 08/10/2026 ("não aparece [o banner] no ifhone") — achado real: os 2
+    // checks de saída precoce (já instalado / já dispensado) estavam no
+    // MESMO try/catch, e `catch (e) { return; }` abortava o banner inteiro
+    // se QUALQUER um dos dois lançasse — incluindo `localStorage.getItem()`,
+    // que o Safari no iPhone pode rejeitar (Navegação Privada, ou "Impedir
+    // rastreamento entre sites" em certas condições de armazenamento) sem
+    // nenhum erro visível pro usuário. Resultado: no iPhone afetado, o
+    // banner nunca aparecia, silenciosamente, sempre — mesmo na 1ª visita,
+    // nunca realmente dispensado. Corrigido separando os 2 checks em
+    // try/catch próprios — falha de leitura do localStorage agora só
+    // significa "não sei se já foi dispensado antes", nunca "aborta tudo".
+    var jaInstalado = false;
     try {
-        var jaInstalado = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-        if (jaInstalado) return;
-        if (localStorage.getItem('fastcar_pwa_banner_dispensado') === '1') return;
-    } catch (e) { return; }
+        jaInstalado = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    } catch (e) {}
+    if (jaInstalado) return;
+
+    var jaDispensado = false;
+    try {
+        jaDispensado = localStorage.getItem('fastcar_pwa_banner_dispensado') === '1';
+    } catch (e) {}
+    if (jaDispensado) return;
 
     var deferredPrompt = null;
     var ehIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;

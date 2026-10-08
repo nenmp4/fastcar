@@ -5501,6 +5501,28 @@ segue no schema sem uso novo, não removida sem ganho real),
   erro de JS; caminho Android, disparando um `beforeinstallprompt`
   sintético, mostra o botão "Instalar" sem erro de JS — os 2 sem nenhuma
   exceção no console. `php -l` + `tests/smoke.php` limpos.
+  **Banner nunca aparecia no iPhone, 08/10/2026** ("ifhone") — achado real:
+  os 2 checks de saída precoce (já instalado / já dispensado antes)
+  estavam dentro do MESMO `try { ... } catch (e) { return; }` — qualquer
+  exceção em QUALQUER um dos dois abortava o banner inteiro, inclusive uma
+  falha de `localStorage.getItem()` (Safari no iPhone pode rejeitar acesso
+  a `localStorage` em Navegação Privada, ou com "Impedir rastreamento
+  entre sites" em certas condições de armazenamento, sem erro visível pro
+  usuário) — no aparelho afetado o banner nunca aparecia, nem na 1ª
+  visita, silenciosamente, sem ninguém nunca ter "dispensado" de verdade.
+  Corrigido separando os 2 checks em `try/catch` próprios — falha ao ler
+  `localStorage` agora só significa "não sei se já foi dispensado antes"
+  (trata como não-dispensado, mostra o banner mesmo assim), nunca mais
+  aborta o mecanismo inteiro. Testado com Chromium headless real
+  (`/opt/pw-browsers`) simulando exatamente esse cenário — User-Agent de
+  iPhone + `localStorage.getItem()` forçado a lançar: a versão ANTIGA do
+  script confirmadamente nunca criava o banner nesse caso (prova de que o
+  bug era real); a versão corrigida cria o banner normal, com o texto de
+  instrução certo do iOS. Regressão confirmada nos outros 2 casos: já
+  dispensado antes (com `localStorage` funcionando normal) continua nunca
+  mostrando; 1ª visita normal no iPhone (sem bloqueio de armazenamento)
+  continua mostrando igual sempre foi. `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema (mudança só em JS client-side).
 - **Smoke test** — `tests/smoke.php` (rodar antes de todo commit: `php
   tests/smoke.php`) + `version.json` (changelog semver) — mesmo padrão do
   JurídicoSaaS (LINT + GUARDS de regressão + SCHEMA), guards codificando os
