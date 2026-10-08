@@ -40,6 +40,19 @@ function dashboardConsultor(int $usuarioId): array {
     $stmt->execute([$usuarioId]);
     $recebidasSemana = (int)$stmt->fetchColumn();
 
+    // 08/10/2026, "card clicavel leads de hoje leads de ontem... para
+    // consultores" — mesmos 2 contadores que dashboardSuperAdmin() já
+    // tinha (abaixo), só escopados à carteira do próprio consultor
+    // (responsavel_id), pro card novo em admin/index.php. Mesma restrição
+    // a ETAPAS_ATIVAS de lá — nunca conta lead já fechado/perdido/
+    // sem_perfil, pra bater exatamente com o que ?filtro=hoje/ontem lista.
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt->execute([$usuarioId, ...ETAPAS_ATIVAS]);
+    $novasHoje = (int)$stmt->fetchColumn();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt->execute([$usuarioId, ...ETAPAS_ATIVAS]);
+    $novasOntem = (int)$stmt->fetchColumn();
+
     $stmt = $db->prepare("SELECT disponivel, posicao_fila, plantao_fim_expediente FROM usuarios WHERE id = ?");
     $stmt->execute([$usuarioId]);
     $eu = $stmt->fetch() ?: ['disponivel' => 0, 'posicao_fila' => null, 'plantao_fim_expediente' => 0];
@@ -75,6 +88,8 @@ function dashboardConsultor(int $usuarioId): array {
     return [
         'ativas'              => $ativas,
         'atrasadas'           => $atrasadas,
+        'novas_hoje'          => $novasHoje,
+        'novas_ontem'         => $novasOntem,
         'recebidas_semana'    => $recebidasSemana,
         'disponivel'          => (bool)$eu['disponivel'],
         'plantao'             => (bool)$eu['plantao_fim_expediente'],

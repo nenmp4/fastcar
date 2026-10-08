@@ -681,6 +681,14 @@ if ($filtroEspecialLabel !== ''): ?>
             <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
             <div class="rotulo">Atrasadas</div>
         </a>
+        <a class="stat-card alerta" href="/admin/index.php?filtro=hoje">
+            <div class="valor"><?= (int)$stats['novas_hoje'] ?></div>
+            <div class="rotulo">Meus leads de hoje</div>
+        </a>
+        <a class="stat-card azul-forte" href="/admin/index.php?filtro=ontem">
+            <div class="valor"><?= (int)$stats['novas_ontem'] ?></div>
+            <div class="rotulo">Meus leads de ontem</div>
+        </a>
         <a class="stat-card neutro" href="/admin/index.php?filtro=semana">
             <div class="valor"><?= (int)$stats['recebidas_semana'] ?></div>
             <div class="rotulo">Recebidas nos últimos 7 dias</div>

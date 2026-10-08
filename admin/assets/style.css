@@ -571,6 +571,11 @@ a.stat-card:hover { border-left-color: var(--azul-escuro); }
 .stat-card.sucesso { border-left-color: var(--verde); }
 .stat-card.sucesso .valor { color: var(--verde); }
 .stat-card.neutro { border-left-color: #cbd5e1; }
+/* 08/10/2026, cards "Leads de hoje/ontem" do consultor — vermelho pra
+   hoje (reaproveita .alerta) e azul forte pra ontem (classe nova, mesmo
+   tom --azul-escuro já usado no resto do projeto). */
+.stat-card.azul-forte { border-left-color: var(--azul-escuro); }
+.stat-card.azul-forte .valor { color: var(--azul-escuro); }
 
 .funil-barra { margin: 12px 0 4px; }
 .funil-linha { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }

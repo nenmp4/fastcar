@@ -6905,6 +6905,44 @@ segue no schema sem uso novo, não removida sem ganho real),
   novo só reprocessa os 2 que ficaram sem sinal (idempotência) + `php -l`
   + `tests/smoke.php` limpos. Sem migração de schema (`tipo_veiculo` já
   existia).
+  **Cards "Meus leads de hoje/ontem" clicáveis, com cor própria por dia**
+  (08/10/2026, "depois vamos adcionar card clicavel leads de hoje leads
+  de ontem deixr na cores vermeljo hoje - azul forte ontem" + "para
+  consultores") — o dashboard já tinha `?filtro=hoje`/`?filtro=ontem`
+  funcionando desde 18/09/2026 (bullet "Filtro 'ontem' + badge de status
+  por etapa + PDF do relatório"), mas só com card clicável pro
+  super_admin/supervisor (`admin/index.php`, cards "Leads novos
+  hoje"/"Leads novos ontem") — o consultor nunca tinha um atalho
+  equivalente pra própria carteira, só a nav de etapas/busca.
+  `dashboardConsultor()` (`includes/dashboard.php`) ganhou `novas_hoje`/
+  `novas_ontem` (2 `COUNT(*)` novos, escopados por `responsavel_id = ?
+  AND etapa IN (ETAPAS_ATIVAS) AND date(created_at) = date('now',
+  'localtime'[,'-1 day'])` — mesma disciplina de só contar etapa ATIVA já
+  usada em `novasHoje`/`novasOntem` do `dashboardSuperAdmin()`, nunca
+  lead já fechado/perdido/sem_perfil). 2 `<a class="stat-card">` novos em
+  `admin/index.php`, no bloco do perfil `consultor`, entre o card
+  "Atrasadas" e "Recebidas nos últimos 7 dias": "Meus leads de hoje"
+  (classe `.alerta`, vermelho — já existia) → `?filtro=hoje`, e "Meus
+  leads de ontem" (classe nova `.azul-forte`) → `?filtro=ontem`. Classe
+  `.stat-card.azul-forte` nova em `admin/assets/style.css`
+  (`border-left-color`/`.valor` em `var(--azul-escuro)`, mesmo token já
+  usado noutro canto do design system — nunca hex solto), ao lado das
+  variantes `.alerta`/`.sucesso`/`.neutro` já existentes. **Zero mudança
+  no backend de filtro** — o mecanismo `$filtroEspecial`
+  (`admin/index.php`, switch que monta `$etapasEscopo`/`$extraWhere`) já
+  é sempre combinado com `$souDono` (que sempre acrescenta `AND
+  o.responsavel_id = ?` ao `$where` pra todo consultor, independente do
+  filtro ativo) — os 2 cards só precisavam de UI e contador, o filtro em
+  si já funcionava certo pra carteira do consultor desde que foi criado.
+  Testado ponta a ponta via HTTP real (sessão primed, servidor PHP
+  embutido, banco isolado): 2 consultores semeados — 2 leads de HOJE + 1
+  de ONTEM do consultor-alvo, 1 lead de hoje do OUTRO consultor (nunca
+  deve contar) e 1 lead de hoje do próprio consultor-alvo mas JÁ
+  `etapa='fechado'` (nunca deve contar) — os 2 cards mostraram
+  exatamente 2/1 certos; clicar em cada um abriu a listagem filtrada só
+  com os leads certos, sem vazar o lead do outro consultor nem o já
+  fechado; cor vermelha/azul-forte conferida nos 2 cards + `php -l` +
+  `tests/smoke.php` limpos (0 avisos). Sem migração de schema.
 - **Rebrand visual do admin** (13/09/2026, José achou o visual anterior
   "pobre" comparado ao JurídicoSaaS) — `admin/assets/style.css` trocou o
   roxo/indigo genérico pela paleta real da marca (`--azul: #2f6fed`,
