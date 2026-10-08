@@ -272,20 +272,37 @@ function salvarUploadDocumento(int $oportunidadeId, string $tipo, array $arquivo
     // diferentes do que foi confirmado, então volta pra 0 (força revisão
     // de novo). Nunca reseta o que já tinha sido extraído/gravado nos
     // campos de clientes/oportunidades — só o "confirmei que tá certo".
-    $db->prepare("
-        INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, dados_confirmados, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, datetime('now','localtime'))
-        ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
-            arquivo_url = excluded.arquivo_url,
-            drive_file_id = excluded.drive_file_id,
-            enviado_pelo_cliente = excluded.enviado_pelo_cliente,
-            dados_confirmados = 0,
-            updated_at = datetime('now','localtime')
-    ")->execute([$oportunidadeId, $tipo, $relativoLocal, $driveFileId, $enviadoPeloCliente ? 1 : 0]);
+    //
+    // 08/10/2026, achado real: esta escrita roda SEM try/catch em
+    // public/documentos.php (wizard público do CLIENTE, sem o try/catch
+    // global que o webhook já tem) — um "database is locked" aqui
+    // (contenção real de escrita, confirmada em storage/logs/php_errors.log)
+    // crashava o wizard inteiro com "Erro interno" bem depois do arquivo já
+    // ter sido salvo no Drive/disco — o cliente perdia o lugar no wizard por
+    // causa de uma contenção passageira. Envolvido pra devolver o mesmo
+    // formato de erro que o caller já trata (['ok'=>false,'erro'=>...]),
+    // nunca um crash cru — o cliente só vê "tente de novo", nada se perde
+    // de verdade (o arquivo físico já está salvo, só a linha do banco não
+    // confirmou; reenviar o mesmo tipo de documento sobrescreve de novo sem
+    // duplicar nada).
+    try {
+        $db->prepare("
+            INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, dados_confirmados, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0, datetime('now','localtime'))
+            ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET
+                arquivo_url = excluded.arquivo_url,
+                drive_file_id = excluded.drive_file_id,
+                enviado_pelo_cliente = excluded.enviado_pelo_cliente,
+                dados_confirmados = 0,
+                updated_at = datetime('now','localtime')
+        ")->execute([$oportunidadeId, $tipo, $relativoLocal, $driveFileId, $enviadoPeloCliente ? 1 : 0]);
 
-    $stmtId = $db->prepare("SELECT id FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?");
-    $stmtId->execute([$oportunidadeId, $tipo]);
-    $docId = (int)$stmtId->fetchColumn();
+        $stmtId = $db->prepare("SELECT id FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?");
+        $stmtId->execute([$oportunidadeId, $tipo]);
+        $docId = (int)$stmtId->fetchColumn();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'erro' => 'Erro temporário ao salvar — tente enviar o arquivo de novo em alguns segundos.'];
+    }
 
     // documento_id vai pro chamador poder disparar a extração por IA
     // (includes/extracao_documentos.php) — que relê os bytes de volta via

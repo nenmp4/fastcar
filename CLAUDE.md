@@ -12059,6 +12059,82 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   migração de schema (`tentativas_falhas`/`bloqueado_ate` já existiam
   desde o 2FA).
 
+- **"database is locked" crashando a página inteira — nunca relacionado
+  ao WhatsApp "cair" de verdade** (08/10/2026, "tem uma coisa toda vez da
+  erro bd cai zpi" → "tem alguma relação") — achado real investigando o
+  `storage/logs/php_errors.log` de produção (via `grep "database is
+  locked" ... | tail -5`, pedido direto): 4 das últimas 5 ocorrências
+  apontavam pra `includes/db.php:167` (dentro de `setConfig()`), 1 pra
+  `includes/venda_documentos.php:219`. A resposta honesta pro usuário:
+  **não existe relação causal entre os dois** (o badge "Z-API
+  desconectado" vem de uma chamada LIVE à API da própria Z-API,
+  `zapiStatusPrincipalCache()`, independente de qualquer coisa no banco
+  local) — mas os dois sintomas vêm da MESMA causa raiz, e isso explica
+  por que pareciam acontecer juntos. `admin/_zapi_status.php` (incluído
+  SEM proteção em praticamente toda página do admin — ~35 arquivos,
+  rodando a cada carregamento) chama `canalPrincipalStatusCache()` →
+  `zapiStatusPrincipalCache()`/`oficialStatusCache()`
+  (`includes/whatsapp_config.php`/`whatsapp_oficial.php`) — essas 2
+  funções fazem o check ao vivo na Z-API/Meta E gravam o resultado num
+  cache de 60s via `setConfig()` (`includes/db.php:167`), **sem nenhum
+  try/catch em NENHUM ponto da cadeia** (nem na própria função, nem no
+  include que a chama). Resultado: sempre que o cache de 60s expira
+  (o que acontece sozinho, não tem como evitar), QUALQUER página do admin
+  carregada nesse instante bate numa escrita no banco — e, numa VPS
+  pequena (pendência #1) com webhook/cron/outro admin escrevendo junto,
+  essa escrita específica é hoje a MAIS FREQUENTE de todo o sistema
+  (roda em toda página, não só a cada 30min de um cron) — então é também
+  a que mais sofre contenção de escrita real. Quando trava além do
+  `busy_timeout` (15000ms), a `PDOException` sobe sem nada pra pegar,
+  crashando a PÁGINA INTEIRA (não só o badge) via o handler global
+  (`set_exception_handler()`, `includes/db.php`) — mostra "Erro interno"
+  no lugar do conteúdo real. O usuário nunca estava vendo "o WhatsApp
+  caiu" de verdade — estava vendo a tela inteira falhar bem na hora em
+  que o SISTEMA tentava atualizar um badge de UI, e isso "parecia" os 2
+  problemas juntos porque são o mesmo código disparando os 2 sintomas ao
+  mesmo tempo (a contenção também torna mais provável que a chamada
+  LIVE à Z-API em si (timeout de 4s/3s) falhe por lentidão geral do
+  servidor no mesmo instante — reforçando a aparência de correlação sem
+  nunca ser causalidade). Achado o mesmo padrão exato (escrita sem
+  try/catch) em mais 2 lugares, igualmente reais: `salvarUploadDocumento()`
+  (compra, `includes/documentos.php`) e `salvarUploadDocumentoVenda()`
+  (venda, `includes/venda_documentos.php:219` — o 2º caso do grep),
+  ambas chamadas pelos wizards PÚBLICOS (`public/documentos.php`/
+  `public/documentos_venda.php`), que não têm a proteção try/catch que o
+  webhook já tem — um cliente tentando subir um documento numa contenção
+  travava com "Erro interno" crua, perdendo o lugar no wizard.
+  Corrigido nos 4 pontos, sempre seguindo o estilo já usado no resto do
+  projeto (try/catch local, nunca um helper compartilhado de retry):
+  (1)/(2) `zapiStatusPrincipalCache()`/`oficialStatusCache()` — a escrita
+  de cache nunca pode derrubar a página só por falhar; numa falha, segue
+  sem persistir o cache e devolve o resultado JÁ COMPUTADO normalmente
+  (a página renderiza certo mesmo assim, só não guarda pra próxima
+  request); (3)/(4) `salvarUploadDocumento()`/`salvarUploadDocumentoVenda()`
+  — a escrita (INSERT/UPDATE do documento) envolvida em try/catch,
+  devolvendo o mesmo formato de erro `['ok'=>false,'erro'=>...]` que os
+  2 wizards já tratam graciosamente (nunca um contrato novo, só fecha uma
+  lacuna que já existia). Testado com contenção REAL (não simulada),
+  2 conexões de verdade disputando o lock — `includes/db.php` sempre numa
+  conexão própria segurando `BEGIN IMMEDIATE` por 60s enquanto a função
+  sob teste tentava escrever: confirmado ANTES do fix que
+  `zapiStatusPrincipalCache()` crasha de verdade com
+  `SQLSTATE[HY000]: General error: 5 database is locked` (exit 1, mesmo
+  texto do log de produção) e que `salvarUploadDocumentoVenda()` crasha
+  com HTTP 500 "Erro interno..." (via servidor `php -S` real + upload
+  multipart de verdade, já que `move_uploaded_file()` exige um upload
+  HTTP genuíno — não dá pra simular em CLI puro); DEPOIS do fix, as duas
+  esperam o mesmo tempo de contenção (confirmado pela duração ~15s,
+  batendo o busy_timeout) mas devolvem resultado graciosamente — a
+  1ª com o status computado normal, a 2ª com HTTP 200 e o erro amigável
+  — nos dois casos sem crash, prova de ponta a ponta, não só leitura de
+  código. `php -l` + `tests/smoke.php` limpos. Sem migração de schema —
+  mudança só de tratamento de erro, nenhum dado novo.
+  ⚠️ **Fica como possível próxima rodada, não implementado aqui**: o
+  mesmo padrão (escrita de cache/UI sem try/catch, rodando em toda
+  página) pode existir em outros pontos ainda não grepados contra o log
+  real — revisitar se "database is locked" continuar aparecendo depois
+  desse fix, já com `grep` apontando pra um file:line DIFERENTE desses 4.
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS

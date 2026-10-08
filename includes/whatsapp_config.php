@@ -79,7 +79,24 @@ function zapiStatusPrincipalCache(bool $forcar = false): array {
         }
     }
 
-    setConfig('zapi_status_cache', time() . '|' . json_encode($resultado));
+    // 08/10/2026, achado real: esta função roda SEM try/catch nenhum em
+    // admin/_zapi_status.php, incluído sem proteção em praticamente toda
+    // página do admin (~35 arquivos) — é a escrita de MAIOR frequência do
+    // projeto inteiro (mais frequente que qualquer cron). Gravar o cache
+    // nunca pode travar a página inteira: um "database is locked" aqui
+    // (contenção real, confirmada em storage/logs/php_errors.log — 4 das
+    // últimas 5 ocorrências vinham exatamente desta linha) propagava sem
+    // nada pegar, crashando com "Erro interno" a página inteira (não só o
+    // badge) — parecendo, pra quem está usando o sistema, que "deu erro no
+    // banco e o WhatsApp caiu junto", quando na verdade os dois eram só
+    // efeito colateral da MESMA escrita de cache de UI falhando. Falhar em
+    // cachear não é motivo pra não mostrar o status computado NESTA
+    // request — só não persiste pro próximo carregamento, que tenta de novo.
+    try {
+        setConfig('zapi_status_cache', time() . '|' . json_encode($resultado));
+    } catch (Throwable $e) {
+        // nunca deixa a página inteira cair por causa de um cache de badge
+    }
     return $resultado;
 }
 

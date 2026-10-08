@@ -207,20 +207,34 @@ function salvarUploadDocumentoVenda(int $vendaId, string $tipo, array $arquivo, 
 
     // Reenvio substitui o arquivo — se já tinha sido confirmado antes, volta
     // pra 0 (força revisão de novo), mesma regra do lado de compra.
-    $db->prepare("
-        INSERT INTO venda_documentos (venda_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, dados_confirmados, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, datetime('now','localtime'))
-        ON CONFLICT(venda_id, tipo) DO UPDATE SET
-            arquivo_url = excluded.arquivo_url,
-            drive_file_id = excluded.drive_file_id,
-            enviado_pelo_cliente = excluded.enviado_pelo_cliente,
-            dados_confirmados = 0,
-            updated_at = datetime('now','localtime')
-    ")->execute([$vendaId, $tipo, $relativoLocal, $driveFileId, $enviadoPeloCliente ? 1 : 0]);
+    //
+    // 08/10/2026, achado real em produção (grep em
+    // storage/logs/php_errors.log — "database is locked" em
+    // includes/venda_documentos.php:219): esta escrita roda SEM try/catch
+    // em public/documentos_venda.php (wizard público do COMPRADOR, sem o
+    // try/catch global que o webhook já tem) — uma contenção real de
+    // escrita aqui crashava o wizard inteiro com "Erro interno" bem depois
+    // do arquivo já ter sido salvo no Drive/disco. Mesmo fix do lado de
+    // compra (includes/documentos.php::salvarUploadDocumento()): devolve o
+    // mesmo formato de erro que o caller já trata, nunca um crash cru.
+    try {
+        $db->prepare("
+            INSERT INTO venda_documentos (venda_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, dados_confirmados, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0, datetime('now','localtime'))
+            ON CONFLICT(venda_id, tipo) DO UPDATE SET
+                arquivo_url = excluded.arquivo_url,
+                drive_file_id = excluded.drive_file_id,
+                enviado_pelo_cliente = excluded.enviado_pelo_cliente,
+                dados_confirmados = 0,
+                updated_at = datetime('now','localtime')
+        ")->execute([$vendaId, $tipo, $relativoLocal, $driveFileId, $enviadoPeloCliente ? 1 : 0]);
 
-    $stmtId = $db->prepare("SELECT id FROM venda_documentos WHERE venda_id = ? AND tipo = ?");
-    $stmtId->execute([$vendaId, $tipo]);
-    $docId = (int)$stmtId->fetchColumn();
+        $stmtId = $db->prepare("SELECT id FROM venda_documentos WHERE venda_id = ? AND tipo = ?");
+        $stmtId->execute([$vendaId, $tipo]);
+        $docId = (int)$stmtId->fetchColumn();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'erro' => 'Erro temporário ao salvar — tente enviar o arquivo de novo em alguns segundos.'];
+    }
 
     return ['ok' => true, 'erro' => null, 'documento_id' => $docId];
 }

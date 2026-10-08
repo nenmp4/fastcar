@@ -509,7 +509,15 @@ function oficialStatusCache(bool $forcar = false, string $canal = 'principal'): 
         $resultado = ['estado' => 'desconectado', 'verificado_em' => time()]; // token inválido/expirado
     }
 
-    setConfig($chaveCache, time() . '|' . json_encode($resultado));
+    // 08/10/2026, mesmo fix de zapiStatusPrincipalCache() (includes/whatsapp_config.php)
+    // — essa função também roda sem proteção em toda página do admin via
+    // canalPrincipalStatusCache(); gravar o cache nunca pode crashar a
+    // página inteira por causa de contenção real do SQLite.
+    try {
+        setConfig($chaveCache, time() . '|' . json_encode($resultado));
+    } catch (Throwable $e) {
+        // nunca deixa a página inteira cair por causa de um cache de badge
+    }
     return $resultado;
 }
 
