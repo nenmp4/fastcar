@@ -462,12 +462,12 @@ function lerCrlvManual() {
             <tr>
                 <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th>
                 <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
-                <th>Contrato compra</th><th>Financiamento</th><th>Fotos/vídeos</th><th>Venda</th><th></th><th></th>
+                <th>Contrato compra</th><th>Financiamento</th><th>Condição</th><th>Fotos/vídeos</th><th>Venda</th><th></th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="12"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="13"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <?php
@@ -517,6 +517,22 @@ function lerCrlvManual() {
                             <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
                             <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11px">✅ Marcar quitado</button>
                         </form>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php
+                        // 08/10/2026, "condiçõs do veliuculos de 0 100 para
+                        // revenda" — score da vistoria concluída mais
+                        // recente, reaproveitando veiculoAvaliacaoScore()
+                        // (único cálculo, nunca duplicado em SQL).
+                        $scoreFrota = buscarScoreVistoriaRecente((int)$v['id']);
+                    ?>
+                    <?php if ($scoreFrota && $scoreFrota['percentual'] !== null):
+                        $classeScoreFrota = $scoreFrota['percentual'] >= 80 ? 'badge-ok' : ($scoreFrota['percentual'] >= 50 ? 'badge-aviso' : 'badge-atraso');
+                    ?>
+                        <span class="badge <?= $classeScoreFrota ?>" title="<?= e($scoreFrota['resumo']) ?>"><?= (int)$scoreFrota['percentual'] ?>/100</span>
+                    <?php else: ?>
+                        <small>— sem vistoria concluída</small>
                     <?php endif; ?>
                 </td>
                 <td><a href="/admin/veiculo_midias.php?id=<?= (int)$v['id'] ?>">📸 <?= (int)$v['total_midias'] ?></a></td>

@@ -353,6 +353,38 @@ function listarAvaliacoesDoVeiculo(int $oportunidadeId): array {
     return $stmt->fetchAll();
 }
 
+/**
+ * Score da vistoria mais recente CONCLUÍDA de um veículo (qualquer tipo —
+ * compra ou venda, o que for mais recente) — 08/10/2026, "após conclusão
+ * do avaliador não tem score do veiculo e resulmo e condiçõs do veliuculos
+ * de 0 100 para revenda": o score já existia (veiculoAvaliacaoScore(),
+ * usado no termo/página pública/tela do próprio avaliador), mas nunca
+ * aparecia pra quem decide sobre a revenda — a Frota (admin/veiculos.php)
+ * e o card de histórico de vistoria em admin/oportunidade.php/venda.php só
+ * mostravam Tipo/Status/Avaliador, sem nenhum score/condição visível.
+ *
+ * NUNCA recalcula a conta em SQL cru — reaproveita veiculoAvaliacaoScore(),
+ * única fonte de verdade (regra #3: nunca duplicar lógica de negócio em 2
+ * lugares). Retorna `null` quando não existe NENHUMA vistoria concluída
+ * pra esse veículo ainda — nunca inventa condição sem avaliação real
+ * concluída (mesma disciplina de `percentual=null` dentro do próprio
+ * veiculoAvaliacaoScore() quando nada foi verificado).
+ */
+function buscarScoreVistoriaRecente(int $oportunidadeId): ?array {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT id FROM veiculo_avaliacoes
+        WHERE oportunidade_id = ? AND status = 'concluida'
+        ORDER BY concluida_em DESC LIMIT 1
+    ");
+    $stmt->execute([$oportunidadeId]);
+    $avaliacaoId = $stmt->fetchColumn();
+    if (!$avaliacaoId) {
+        return null;
+    }
+    return veiculoAvaliacaoScore(listarItensAvaliacao((int)$avaliacaoId));
+}
+
 // buscarCandidatosVistoria()/listarVistoriasPorPlaca() (busca de veículo e
 // histórico por placa pro modal self-atribuído do avaliador) removidas em
 // 08/10/2026 junto com o botão "➕ Nova vistoria" de admin/avaliacoes.php

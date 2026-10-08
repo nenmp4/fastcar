@@ -1616,12 +1616,24 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
     <?php if ($avaliacoesVeiculo): ?>
         <table>
-            <thead><tr><th>Tipo</th><th>Status</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Status</th><th>Condição</th><th>Avaliador</th><th>Criada em</th><th></th></tr></thead>
             <tbody>
-            <?php foreach ($avaliacoesVeiculo as $a): ?>
+            <?php foreach ($avaliacoesVeiculo as $a):
+                $scoreLinha = veiculoAvaliacaoScore(listarItensAvaliacao((int)$a['id']));
+            ?>
                 <tr>
                     <td><?= $a['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?></td>
                     <td><?= match ($a['status']) { 'concluida' => '✅ Concluída', 'em_andamento' => '🔧 Em andamento', default => '⏳ Pendente' } ?></td>
+                    <td>
+                        <?php if ($scoreLinha['percentual'] !== null):
+                            $classeScore = $scoreLinha['percentual'] >= 80 ? 'badge-ok' : ($scoreLinha['percentual'] >= 50 ? 'badge-aviso' : 'badge-atraso');
+                        ?>
+                            <span class="badge <?= $classeScore ?>" title="<?= e($scoreLinha['resumo']) ?>"><?= (int)$scoreLinha['percentual'] ?>/100</span>
+                            <?php if ($scoreLinha['problema'] > 0): ?><br><small>⚠️ <?= (int)$scoreLinha['problema'] ?> item(ns) com ressalva</small><?php endif; ?>
+                        <?php else: ?>
+                            <small>—</small>
+                        <?php endif; ?>
+                    </td>
                     <td><?= $a['avaliador_nome'] ? e($a['avaliador_nome']) : '<em>não atribuído</em>' ?></td>
                     <td><?= date('d/m/Y H:i', strtotime($a['created_at'])) ?></td>
                     <td><a href="/admin/avaliacao.php?id=<?= (int)$a['id'] ?>">Abrir →</a></td>

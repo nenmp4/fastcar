@@ -3299,6 +3299,51 @@ segue no schema sem uso novo, não removida sem ganho real),
   intacto, CHECK nova rejeitando valor fora da lista de verdade,
   idempotente numa 2ª rodada) + `php -l` nos 6 arquivos tocados +
   `tests/smoke.php` limpo.
+  **Score/condição do veículo (0-100) visível depois da conclusão, pra
+  quem decide sobre revenda** (08/10/2026, "após conclusão do avaliador
+  não tem score do veiculo e resulmo e condiçõs do veliuculos de 0 100
+  para revenda") — achado real investigando o código: `veiculoAvaliacaoScore()`
+  (06/10/2026, "coloca toda lista completa dos intens depois resumo e
+  score do veiculo") já existia e já era usado no termo de entrega/página
+  pública e dentro da própria tela de edição do avaliador
+  (`admin/avaliacao.php`, logo abaixo de "📋 Checklist de vistoria") — mas
+  **nunca** chegava pra quem realmente decide sobre a revenda: a tabela
+  "🔍 Checklist de vistoria do veículo" em `admin/oportunidade.php`/
+  `admin/venda.php` só mostrava Tipo/Status/Avaliador/Criada em, e a Frota
+  (`admin/veiculos.php`, a própria tela de "veículos pra revenda") nunca
+  tinha NENHUMA coluna de condição — avaliador concluía a vistoria e o
+  score ficava enterrado, só visível reabrindo a vistoria específica.
+  Nova `buscarScoreVistoriaRecente(int $oportunidadeId): ?array`
+  (`includes/veiculo_avaliacoes.php`) — score da vistoria **concluída**
+  mais recente (qualquer tipo, compra ou venda, a mais recente das duas,
+  igual já faz `listarAvaliacoesDoVeiculo()`), NUNCA recalcula a conta em
+  SQL cru (regra #3, única fonte de verdade é `veiculoAvaliacaoScore()`,
+  só reaproveitada); devolve `null` quando nenhuma vistoria ainda foi
+  concluída pra esse veículo — nunca inventa condição. Aplicado em 3
+  pontos: (1) a tabela de vistoria de `admin/oportunidade.php`/
+  `admin/venda.php` ganhou coluna "Condição" própria, calculada POR
+  LINHA (`veiculoAvaliacaoScore(listarItensAvaliacao($a['id']))`, não só
+  a mais recente — mostra o score de CADA vistoria já feita, inclusive a
+  antiga), badge colorido (verde ≥80/amarelo 50-79/vermelho <50, `title=`
+  com o resumo completo) + contagem de itens com ressalva quando houver;
+  (2) a Frota (`admin/veiculos.php`) ganhou coluna "Condição" nova (entre
+  "Financiamento" e "Fotos/vídeos"), usando `buscarScoreVistoriaRecente()`
+  — exatamente a tela de gestão de resale onde "0-100 para revenda" faz
+  mais sentido, mostrando "— sem vistoria concluída" quando nenhuma
+  vistoria terminou ainda. Testado: função isolada em banco isolado (4
+  cenários — sem vistoria nenhuma retorna `null`; vistoria em_andamento
+  com itens já marcados mas NÃO concluída também retorna `null`, só conta
+  concluída; vistoria concluída com 2 ok + 1 problema calcula 67%
+  corretamente; 2ª vistoria concluída depois, 100%, confirmado que pega a
+  MAIS RECENTE, não a mais antiga) + HTTP ponta a ponta real (sessão
+  primed de super_admin, servidor PHP embutido, banco isolado): as 2
+  vistorias (67% e 100%) renderizam certo nas 2 tabelas de histórico
+  (`admin/oportunidade.php`/`admin/venda.php`, cada linha com o badge e a
+  contagem de ressalva certos) e a Frota mostra "100/100" (a mais
+  recente) pro veículo com vistoria, e "— sem vistoria concluída" pro
+  veículo sem nenhuma + `php -l` nos 4 arquivos tocados +
+  `tests/smoke.php` limpo. Sem migração de schema (só leitura em cima de
+  dado já existente).
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de
