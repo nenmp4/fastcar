@@ -11969,6 +11969,50 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   `includes/extracao_documentos.php` (OCR de documento),
   `includes/importar_crm_antigo.php` (CSV do CRM antigo).
 
+- **Comissão presa por vínculo de colaborador criado DEPOIS do negócio
+  fechar** (08/10/2026, achado real rodando
+  `install/diagnosticar_comissao_nao_lancada.php` em produção pela
+  primeira vez: 2 vendas do Jean Jesus de Souza — Honda Start 160/Pedro
+  Henrique e BYD KING GS DM/Cabeça — marcadas "⚠️ DEVERIA ter gerado
+  comissão (passou em todas as travas) mas não gerou") — **nunca foi bug
+  nas funções em si**: `finRegistrarComissaoCompraFechada()`/
+  `finRegistrarComissaoVendaFechada()` só disparam de dentro de
+  `mudarEtapa()`/`mudarEtapaVenda()`, no instante exato da transição pra
+  `fechado`/`vendido` — se o vendedor/consultor AINDA não tinha
+  colaborador vinculado (`fin_colaboradores.usuario_id`) naquele momento,
+  a trava bloqueou corretamente e nunca mais dispara sozinha depois,
+  mesmo o vínculo sendo criado em seguida (nada re-chama a função quando
+  o colaborador é vinculado — só a transição de etapa chama). O
+  diagnóstico só vê o estado ATUAL (colaborador já vinculado agora), por
+  isso reporta "passou em todas as travas" mesmo sabendo que na hora real
+  da transição a trava bateu. **Os 2 scripts retroativos já existentes
+  (`gerar_lancamentos_fechados_retroativos.php`/
+  `gerar_lancamentos_vendas_retroativos.php`) não cobrem esse caso** — o
+  critério de candidata deles é "zero lançamento financeiro nenhum"
+  (pensado pra negócio importado que nunca passou por
+  `mudarEtapa()`/`mudarEtapaVenda()`, tipo importação de contrato antigo
+  da ZapSign); uma venda que já tem receita lançada normalmente (só
+  falta a COMISSÃO) nunca aparece como candidata lá. Novo
+  `install/gerar_comissao_pendente.php` (CLI, dry-run por padrão,
+  `--confirmar` pra aplicar) reproduz as MESMAS travas que
+  `includes/financeiro.php` já checa pros dois lados (compra
+  `etapa='fechado'`/venda `etapa='vendido'`, valor>0, colaborador ATIVO
+  vinculado, lançamento `comissao_compra`/`comissao_venda` ainda
+  inexistente) e chama as MESMAS funções de produção só pra quem passa em
+  TODAS as travas — idempotente por natureza (as próprias funções já
+  checam isso antes de inserir), sempre com a data REAL do
+  fechamento/venda, nunca "hoje". Testado em banco isolado reproduzindo
+  o cenário exato do print (Jean com colaborador ativo + compra Honda
+  CG160 sem comissão + venda Pedro Henrique + venda Cabeça, mais 3
+  negativos — consultor sem colaborador, vendedor com colaborador
+  inativo, venda que já tinha comissão lançada): as 3 candidatas certas
+  geradas com a data real (não hoje), os 3 casos negativos corretamente
+  de fora, comissão pré-existente nunca tocada/duplicada, rodar
+  `--confirmar` de novo confirma "nada pendente" (idempotência) + `php
+  -l` + `tests/smoke.php` limpos. ⚠️ Ainda não rodado em produção —
+  falta o usuário rodar via SSH (dry-run primeiro, revisar com o
+  financeiro, depois `--confirmar`).
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
