@@ -11850,6 +11850,48 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   salva normal; oportunidade já-fechada resalvando a própria placa sem
   nenhuma mudança NUNCA mostra o aviso, "Dados do veículo atualizados"
   direto) + `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+- **Script de diagnóstico: comissão automática não lançada**
+  (08/10/2026, "as comissões do consultores parece que não está sendo
+  lanaçada") — este sandbox de dev nunca tem acesso ao banco de produção
+  (só a VPS tem), então não dá pra confirmar/negar o caso real direto
+  daqui. Relendo `finRegistrarComissaoCompraFechada()`/
+  `finRegistrarComissaoVendaFechada()` (`includes/financeiro.php`), as 2
+  travas de sempre (regra #3, nunca chuta) continuam lá: sem
+  `valor_fipe_referencia`/`valor_pago_contratacao` (entrada), ou sem o
+  consultor/vendedor ter um colaborador **ativo** em `fin_colaboradores`
+  vinculado por `usuario_id`, a comissão simplesmente não gera, sem erro
+  nenhum — bem fácil de cair nessa sem perceber: um colaborador cadastrado
+  pelo card "➕ Novo colaborador (manual)" em
+  `admin/financeiro-colaboradores.php` **nunca** grava `usuario_id`
+  (só o botão "🔗 Adicionar a partir de um usuário do sistema" grava) —
+  se um consultor foi cadastrado como colaborador digitando o nome à mão
+  em vez de puxar da lista de usuários, a comissão automática dele nunca
+  vai sair, pra sempre, mesmo fechando negócio todo dia. Novo
+  `install/diagnosticar_comissao_nao_lancada.php` (CLI, só leitura, nunca
+  altera nada, mesmo molde de `install/diagnosticar_lead_duplicado_consultores.php`)
+  — roda na VPS via SSH (`php install/diagnosticar_comissao_nao_lancada.php
+  [dias]`, padrão 30 dias) e lista: (1) todo colaborador cadastrado,
+  destacando quem é `✍️ MANUAL — sem usuario_id` (nunca gera comissão
+  automática) ou `⛔ inativo`; (2) cada compra fechada/venda concluída no
+  período, com ✅ "comissão já lançada" ou ❌ o motivo EXATO (qual das
+  travas bateu — sem FIPE/sem entrada, sem colaborador vinculado,
+  colaborador inativo, ou — caso raro que indicaria bug de verdade na
+  própria função — nenhum motivo aparente, "deveria ter gerado"). Rodapé
+  do script já orienta o próximo passo: vincular o colaborador (card
+  "🔗 Adicionar a partir de um usuário do sistema") nunca gera retroativo
+  sozinho — pra negócio já fechado sem comissão, usar
+  `install/gerar_lancamentos_fechados_retroativos.php`/
+  `gerar_lancamentos_vendas_retroativos.php` depois de criar o vínculo.
+  Testado em banco isolado (nunca o de dev real — sempre via script em
+  ARQUIVO com `auto_prepend_file`, nunca `php -r` inline, mesma disciplina
+  de sempre): 8 oportunidades + 3 vendas cobrindo os 2 lados × os 2 motivos
+  de bloqueio cada (sem FIPE/entrada, manual sem usuario_id, colaborador
+  inativo, sem colaborador nenhum) + 2 casos já com comissão lançada —
+  os 11 cenários identificados certos, nenhum falso positivo/negativo +
+  `php -l` + `tests/smoke.php` limpos. Sem migração de schema (script só
+  leitura). ⚠️ Ainda não rodado contra produção — falta o usuário rodar
+  via SSH e mandar a saída (ou já agir sozinho conforme a orientação do
+  rodapé, se o motivo for "sem colaborador vinculado").
 
 ## Pendências (aguardando definição antes de codar mais)
 
