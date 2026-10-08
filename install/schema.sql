@@ -982,6 +982,18 @@ CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
     -- checklist original, só acrescenta o que o destinatário quis
     -- registrar na hora do aceite.
     termo_ciente_ressalva TEXT DEFAULT '',
+    -- 08/10/2026, assinatura presencial na retirada do veículo —
+    -- "possivel cleinte assinar retirada do veiculo no celular mesmo
+    -- campo assinar tela... o avalista mostra abre campo ele assina".
+    -- Canal COMPLEMENTAR ao link por e-mail (confirmarTermoCiente()):
+    -- o avaliador mostra a tela e o comprador desenha a assinatura com
+    -- o dedo direto em admin/avaliacao.php, sem precisar de e-mail.
+    -- Mesmo resultado final (termo_status='confirmado'), só o canal e a
+    -- prova mudam — 'link' = IP/navegador de quem clicou, 'presencial'
+    -- = a imagem da assinatura em si, abaixo.
+    termo_ciente_canal TEXT DEFAULT '' CHECK (termo_ciente_canal IN ('', 'link', 'presencial')),
+    termo_ciente_assinatura_drive_file_id TEXT DEFAULT '',
+    termo_ciente_assinatura_arquivo_url TEXT DEFAULT '',
     drive_file_id TEXT DEFAULT '',
     arquivo_url TEXT DEFAULT '',
     created_by INTEGER REFERENCES usuarios(id),

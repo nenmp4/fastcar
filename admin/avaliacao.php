@@ -83,6 +83,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'aprovar_foto' && $podeAprovarFoto) {
             $resultado = aprovarFotoParaCatalogo((int)($_POST['foto_id'] ?? 0), $meuId);
             if ($resultado['ok']) { $sucesso = 'Foto aprovada — já disponível no catálogo de vendas.'; } else { $erro = $resultado['erro']; }
+        } elseif ($acao === 'confirmar_assinatura_presencial' && $podeEditarChecklist) {
+            $resultado = confirmarTermoCientePresencial($id, (string)($_POST['assinatura_dados'] ?? ''), $meuId);
+            if ($resultado['ok']) {
+                $sucesso = '✍️ Assinatura registrada — retirada confirmada.';
+            } else {
+                $erro = $resultado['erro'];
+            }
         } elseif ($acao === 'gerar_termo' && $podeEditarChecklist) {
             $resultado = gerarEEnviarTermoAvaliacao($id);
             if ($resultado['ok']) {
@@ -362,17 +369,21 @@ function avTermoStatusLabel(string $status): string {
 
 <?php if ($av['tipo'] === 'venda'): ?>
 <div class="card">
-    <h3>📄 Termo Ciente — entrega e vistoria</h3>
-    <p><small>Registro interno, sem assinatura eletrônica — o comprador só confirma com 1 clique no link
-       recebido por e-mail que está de acordo com o estado do veículo na entrega.</small></p>
+    <h3>📄 Confirmação de entrega — Termo Ciente</h3>
+    <p><small>Registro interno, sem assinatura eletrônica — o comprador confirma que está de acordo com o estado
+       do veículo na entrega, assinando direto na tela (presencial) ou confirmando por um link recebido por
+       e-mail.</small></p>
     <?php if ($av['termo_status']): ?>
         <p><?= avTermoStatusLabel($av['termo_status']) ?>
             <?php if ($av['termo_status'] === 'confirmado' && $av['termo_assinado_em']): ?>
-                <small>— <?= date('d/m/Y H:i', strtotime($av['termo_assinado_em'])) ?></small>
+                <small>— <?= date('d/m/Y H:i', strtotime($av['termo_assinado_em'])) ?><?= $av['termo_ciente_canal'] === 'presencial' ? ' · assinado presencialmente na tela' : (($av['termo_ciente_canal'] ?? '') === 'link' ? ' · confirmado pelo link enviado por e-mail' : '') ?></small>
             <?php elseif ($av['termo_ciente_enviado_em']): ?>
                 <small>— link enviado em <?= date('d/m/Y H:i', strtotime($av['termo_ciente_enviado_em'])) ?></small>
             <?php endif; ?>
         </p>
+        <?php if ($av['termo_status'] === 'confirmado' && $av['termo_ciente_canal'] === 'presencial' && ($av['termo_ciente_assinatura_drive_file_id'] || $av['termo_ciente_assinatura_arquivo_url'])): ?>
+            <p><img src="/admin/ver_assinatura_retirada.php?id=<?= (int)$av['id'] ?>" alt="Assinatura do comprador" style="max-width:280px;border:1px solid #e2e4ea;border-radius:10px;background:#fff;padding:8px"></p>
+        <?php endif; ?>
         <?php if (($av['termo_ciente_ressalva'] ?? '') !== ''): ?>
             <p class="alerta-info">💬 Observação do comprador: <?= e($av['termo_ciente_ressalva']) ?></p>
         <?php endif; ?>
@@ -387,18 +398,41 @@ function avTermoStatusLabel(string $status): string {
             </p>
         <?php endif; ?>
     <?php else: ?>
-        <p><small>Nenhum termo gerado ainda.</small></p>
+        <p><small>Nenhum termo confirmado ainda.</small></p>
     <?php endif; ?>
+
     <?php if ($podeEditarChecklist && $av['termo_status'] !== 'confirmado'): ?>
-        <form method="post" onsubmit="return confirmarAcao(this, 'Gerar o termo e mandar o link de ciência pro comprador agora?');">
-            <?= csrfField() ?>
-            <input type="hidden" name="acao" value="gerar_termo">
-            <button type="submit" style="min-height:48px;font-size:15px">
-                <?= $av['termo_status'] ? '📧 Gerar de novo e reenviar o link' : '📧 Gerar e enviar o link por e-mail' ?>
-            </button>
-        </form>
-        <p><small>Manda pro e-mail do comprador (dados da negociação) — sem e-mail cadastrado, o link ainda é
-           gerado pra copiar e mandar manualmente.</small></p>
+        <div class="av-assinatura-presencial" style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e4ea">
+            <h4 style="margin:0 0 6px">✍️ Assinar na tela agora (presencial)</h4>
+            <p><small>Mostre esta tela pro comprador e peça pra assinar com o dedo — mais rápido que esperar o
+               link por e-mail, útil quando ele já está na sua frente.</small></p>
+            <div style="position:relative;max-width:360px">
+                <canvas id="assinatura-pad" style="display:block;width:100%;height:180px;background:#fff;border:2px dashed #d7dae2;border-radius:12px;touch-action:none"></canvas>
+                <div id="assinatura-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8891a3;font-size:14px;pointer-events:none">✍️ Toque e assine aqui</div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:10px;max-width:360px">
+                <button type="button" id="assinatura-limpar" style="flex:1;min-height:44px">🗑️ Limpar</button>
+                <button type="button" id="assinatura-confirmar" disabled style="flex:1.4;min-height:44px">✅ Confirmar assinatura</button>
+            </div>
+            <form method="post" id="form-assinatura-presencial">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="confirmar_assinatura_presencial">
+                <input type="hidden" name="assinatura_dados" id="assinatura-dados">
+            </form>
+        </div>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid #e2e4ea">
+            <p style="margin:0 0 6px"><strong>Ou envie por e-mail (comprador remoto):</strong></p>
+            <form method="post" onsubmit="return confirmarAcao(this, 'Gerar o termo e mandar o link de ciência pro comprador agora?');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="gerar_termo">
+                <button type="submit" style="min-height:48px;font-size:15px">
+                    <?= $av['termo_status'] ? '📧 Gerar de novo e reenviar o link' : '📧 Gerar e enviar o link por e-mail' ?>
+                </button>
+            </form>
+            <p><small>Manda pro e-mail do comprador (dados da negociação) — sem e-mail cadastrado, o link ainda é
+               gerado pra copiar e mandar manualmente.</small></p>
+        </div>
     <?php endif; ?>
 </div>
 <?php else: ?>
@@ -434,6 +468,81 @@ function copiarTextoFallback(texto, callback) {
     try { document.execCommand('copy'); callback(); } catch (e) {}
     document.body.removeChild(ta);
 }
+
+// 08/10/2026, assinatura presencial na retirada do veículo — o
+// avaliador mostra esta tela pro comprador, que desenha a assinatura
+// com o dedo direto no <canvas>; "Confirmar" joga o PNG (base64) num
+// campo oculto e submete o form normal (mesmo padrão do resto da tela,
+// sem AJAX/SPA). Dimensão do canvas é sempre medida do tamanho real
+// renderizado (nunca um px fixo) — o mesmo card roda em telas bem
+// diferentes (celular do avaliador, tablet, desktop de teste).
+(function () {
+    var canvas = document.getElementById('assinatura-pad');
+    if (!canvas) return;
+    var placeholder = document.getElementById('assinatura-placeholder');
+    var btnLimpar = document.getElementById('assinatura-limpar');
+    var btnConfirmar = document.getElementById('assinatura-confirmar');
+    var inputDados = document.getElementById('assinatura-dados');
+    var form = document.getElementById('form-assinatura-presencial');
+
+    var rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    var ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#151722';
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    var desenhando = false;
+    var temTraco = false;
+
+    function posicao(e) {
+        var r = canvas.getBoundingClientRect();
+        var t = (e.touches && e.touches.length) ? e.touches[0] : e;
+        return { x: t.clientX - r.left, y: t.clientY - r.top };
+    }
+    function iniciar(e) {
+        e.preventDefault();
+        desenhando = true;
+        var p = posicao(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        if (!temTraco) {
+            temTraco = true;
+            placeholder.style.display = 'none';
+            btnConfirmar.disabled = false;
+        }
+    }
+    function mover(e) {
+        if (!desenhando) return;
+        e.preventDefault();
+        var p = posicao(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+    }
+    function parar() { desenhando = false; }
+
+    canvas.addEventListener('mousedown', iniciar);
+    canvas.addEventListener('mousemove', mover);
+    window.addEventListener('mouseup', parar);
+    canvas.addEventListener('touchstart', iniciar, { passive: false });
+    canvas.addEventListener('touchmove', mover, { passive: false });
+    canvas.addEventListener('touchend', parar);
+
+    btnLimpar.addEventListener('click', function () {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        temTraco = false;
+        placeholder.style.display = 'flex';
+        btnConfirmar.disabled = true;
+    });
+
+    btnConfirmar.addEventListener('click', function () {
+        if (!temTraco) return;
+        inputDados.value = canvas.toDataURL('image/png');
+        if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+    });
+})();
 </script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>

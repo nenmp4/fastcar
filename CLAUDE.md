@@ -3087,6 +3087,90 @@ segue no schema sem uso novo, não removida sem ganho real),
   limpos. ⚠️ Mesma ressalva de sempre pro canal de e-mail (Gmail API,
   já validado em produção pra outros e-mails transacionais do projeto)
   — o link em si nunca depende dele pra existir/funcionar.
+  **Assinatura presencial na retirada do veículo — complementa o Termo
+  Ciente por link** (08/10/2026, "possivel cleinte assinar retirada do
+  veiculo no celular mesmo campo assinar tela" → "mockop" (mockup feito
+  antes de codar, mesmo padrão de sempre pra feature de assinatura/fluxo
+  sensível) → "manda braza / vamos implementar") — até aqui o Termo
+  Ciente só tinha 1 jeito de confirmar: o comprador recebia um link por
+  e-mail e clicava "estou ciente" (nunca uma assinatura de verdade,
+  decisão explícita de 06/10/2026). Pedido novo: quando o avaliador tem
+  o comprador NA FRENTE (retirada presencial), mostrar a própria tela do
+  celular/tablet e deixar ele desenhar a assinatura com o dedo, direto
+  ali, sem precisar do passo de e-mail. `confirmarTermoCientePresencial()`
+  (novo, `includes/veiculo_avaliacoes.php`) — mesmo resultado final que
+  `confirmarTermoCiente()` (`termo_status='confirmado'`), só o CANAL e a
+  prova mudam: coluna nova `termo_ciente_canal` (`''`/`'link'`/`'presencial'`,
+  CHECK) distingue os dois; em vez de só IP/navegador de quem clicou um
+  link, grava a IMAGEM da assinatura desenhada de verdade (PNG, 2 colunas
+  novas `termo_ciente_assinatura_drive_file_id`/`_arquivo_url`, mesmo
+  destino Drive/local de toda mídia da vistoria,
+  `salvarArquivoGeradoComoDocumento()`) — nunca decodifica/aceita nada
+  além de `data:image/png;base64,...` genuíno (`preg_match` + `base64_decode`
+  com `strict=true`, rejeita silenciosamente qualquer coisa corrompida).
+  **Sempre gera o PDF do termo igual ao fluxo por link** — nunca existiu
+  geração separada pro canal presencial, é o MESMO documento
+  (`gerarPdfTermoAvaliacao()`, `includes/veiculo_avaliacoes_pdf.php`,
+  ganhou 4º parâmetro opcional `$assinaturaPngPath` — `null` mantém o PDF
+  **exatamente** como antes, zero regressão no fluxo por link), só que
+  agora embute a imagem desenhada de verdade (`$pdf->Image()`, bloco
+  "ASSINATURA DO COMPRADOR (coletada na tela, presencialmente)") e troca
+  o texto de "SOBRE A CONFIRMAÇÃO DESTE DOCUMENTO" pra citar o canal
+  presencial em vez do link por e-mail — o PDF nunca pode sugerir
+  visualmente um canal que não foi o usado de verdade. UI em
+  `admin/avaliacao.php`: `<canvas>` com `mousedown`/`touchstart` reais
+  (funciona com mouse ou toque), "🗑️ Limpar"/"✅ Confirmar assinatura"
+  (desabilitado até o 1º traço), confirmar joga o PNG (`canvas.toDataURL()`)
+  num campo oculto e submete um `<form>` normal (mesmo padrão de sempre
+  do projeto, nunca AJAX/SPA) — canvas dimensionado dinamicamente pelo
+  tamanho real renderizado (`getBoundingClientRect()`), nunca um px fixo,
+  já que a mesma tela roda em celular/tablet/desktop de teste. Card novo
+  "✍️ Assinar na tela agora (presencial)" fica ACIMA do card antigo "Ou
+  envie por e-mail (remoto)" — o fluxo in-person é o caminho principal
+  agora, o e-mail vira alternativa pra quando o comprador não está
+  fisicamente presente. Estado confirmado mostra a imagem da assinatura
+  inline (`admin/ver_assinatura_retirada.php`, novo — mesma trava de
+  `admin/ver_avaliacao_foto.php`, `requireAcessoAvaliacoes()`, servida via
+  `servirArquivoDriveOuLocal()`) e o texto "assinado presencialmente na
+  tela" ou "confirmado pelo link enviado por e-mail" conforme o canal real.
+  `admin/_bootstrap.php`: endpoint novo adicionado ao allowlist central dos
+  perfis `avaliador` E `vendedor` (mesma classe de bug já documentada 2x
+  nesta sessão — "relaxar o guard dentro do arquivo não basta sem
+  atualizar o allowlist central"). **Mesma disciplina de "regra #3, nunca
+  chuta"**: sem `comprador_nome` cadastrado na venda, nunca confirma;
+  avaliação `tipo='compra'` sempre rejeitada (recusa dura, server-side,
+  nunca confia só em esconder a UI); confirmar 2x bloqueado com a data da
+  1ª confirmação. Testado: 18 asserções de função em banco isolado (tipo
+  compra rejeitado; data URL mal formada e base64 corrompido rejeitados —
+  **achado real no próprio teste**: um piso arbitrário de "mínimo 100
+  bytes" na 1ª versão rejeitava PNG minúsculo mas genuinamente válido
+  — 1x1 real, 68 bytes —, removido em favor de só checar
+  decode bem-sucedido, a aplicação de verdade (canvas vazio nunca chega a
+  habilitar o botão) já acontece no cliente; sucesso grava canal/imagem/
+  PDF/IP/data certos, bytes da assinatura salva conferidos idênticos byte
+  a byte aos originais; confirmar 2x bloqueado; sem nome do comprador
+  bloqueado; avaliação inexistente bloqueada; fluxo por link, regressão,
+  continua funcionando e passou a gravar canal='link' também) + PDF real
+  gerado e decodificado (`gzuncompress` dos content streams) confirmando
+  texto condicional certo nos 2 canais, um XObject `/Image` de verdade
+  presente só quando há assinatura, e vistoria de compra nunca ganhando o
+  bloco mesmo passando o path por engano (defesa redundante) + HTTP ponta
+  a ponta real (sessão primed por perfil, servidor PHP embutido, banco
+  isolado): GET mostra o canvas/botões; POST do avaliador confirma de
+  verdade (banco conferido: `termo_status`/`canal`/IP certos); download da
+  imagem via `ver_assinatura_retirada.php` bate byte a byte com o
+  original; reenviar na mesma avaliação já confirmada mostra a mensagem
+  certa de "já confirmado"; supervisor tentando confirmar uma vistoria
+  (nunca atribuída a ele) recebe "Ação não permitida" com o banco
+  confirmado intocado; `ver_assinatura_retirada.php` de uma avaliação
+  ainda sem assinatura dá 404; CSRF forjado rejeitado — + migração testada
+  contra schema anterior a esta mudança (`git show HEAD:install/schema.sql`,
+  as 3 colunas confirmadas ausentes antes, `ALTER TABLE` aplicado com
+  sucesso, dado pré-existente — `termo_status`/`token`/`ressalva` de uma
+  avaliação já confirmada por link ANTES dessa mudança — preservado
+  intacto, CHECK nova rejeitando valor fora da lista de verdade,
+  idempotente numa 2ª rodada) + `php -l` nos 6 arquivos tocados +
+  `tests/smoke.php` limpo.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

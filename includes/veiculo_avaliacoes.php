@@ -7,6 +7,7 @@ require_once __DIR__ . '/zapsign.php'; // só pro histórico de termo já enviad
 require_once __DIR__ . '/veiculo_avaliacoes_pdf.php';
 require_once __DIR__ . '/email_templates.php'; // emailLayout()/emailBotao()/appBaseUrl()
 require_once __DIR__ . '/mail.php'; // enviarEmail()
+require_once __DIR__ . '/auditoria.php'; // auditoriaClienteIp() — usada em confirmarTermoCientePresencial()
 
 /**
  * Módulo de checklist de vistoria/avaliação do veículo — 21/09/2026,
@@ -887,12 +888,115 @@ function confirmarTermoCiente(string $token, string $ressalva, string $ip, strin
     $db->prepare("
         UPDATE veiculo_avaliacoes
         SET termo_status = 'confirmado', termo_assinado_em = datetime('now','localtime'),
-            termo_ciente_ip = ?, termo_ciente_user_agent = ?, termo_ciente_ressalva = ?,
+            termo_ciente_ip = ?, termo_ciente_user_agent = ?, termo_ciente_ressalva = ?, termo_ciente_canal = 'link',
             updated_at = datetime('now','localtime')
         WHERE id = ?
     ")->execute([clean($ip), clean(mb_substr($userAgent, 0, 255)), clean($ressalva), $av['id']]);
 
     return ['ok' => true, 'erro' => null, 'avaliacao' => buscarAvaliacaoPorTermoCienteToken($token)];
+}
+
+/**
+ * Confirma o Termo Ciente DIRETO NO ADMIN, com assinatura desenhada na
+ * tela — 08/10/2026, "possivel cleinte assinar retirada do veiculo no
+ * celular mesmo campo assinar tela... o avalista mostra abre campo ele
+ * assina". Canal PRESENCIAL, complementar ao link por e-mail
+ * (confirmarTermoCiente() acima): o avaliador tem o comprador na frente,
+ * mostra o celular/tablet e ele desenha a assinatura com o dedo direto
+ * na tela de admin/avaliacao.php — sem precisar do passo de e-mail.
+ *
+ * Mesmo resultado final que o link (termo_status='confirmado'), só o
+ * CANAL (termo_ciente_canal) e a prova mudam: em vez de só IP/navegador
+ * de quem clicou um link, grava a IMAGEM da assinatura desenhada de
+ * verdade (PNG, mesmo destino Drive/local de toda mídia da vistoria,
+ * salvarArquivoGeradoComoDocumento()). Sempre gera o PDF do termo igual
+ * ao fluxo por link — nunca existiu geração separada pro canal
+ * presencial, é o MESMO documento, só a confirmação em si muda de forma
+ * (ver gerarPdfTermoAvaliacao(), parâmetro $assinaturaPngPath).
+ *
+ * $assinaturaDataUrl é sempre o canvas.toDataURL('image/png') cru, vindo
+ * do navegador do avaliador — nunca confia em mais nada do POST pra
+ * decidir qual avaliação, só o $avaliacaoId que o próprio admin já
+ * validou (diferente do fluxo por link, onde o id nunca é confiável
+ * vindo de fora e só o token resolve isso — aqui quem está mandando é
+ * sempre uma sessão de admin autenticada, igual qualquer outra ação da
+ * tela de vistoria).
+ */
+function confirmarTermoCientePresencial(int $avaliacaoId, string $assinaturaDataUrl, int $confirmadoPor): array {
+    $av = buscarAvaliacao($avaliacaoId);
+    if (!$av) {
+        return ['ok' => false, 'erro' => 'Avaliação não encontrada.'];
+    }
+    if ($av['tipo'] !== 'venda') {
+        return ['ok' => false, 'erro' => 'Assinatura na retirada é exclusiva das vistorias de venda.'];
+    }
+    if ($av['termo_status'] === 'confirmado') {
+        return ['ok' => false, 'erro' => 'Esse termo já foi confirmado em ' . date('d/m/Y H:i', strtotime((string)$av['termo_assinado_em'])) . '.'];
+    }
+
+    $nomeDestinatario = trim((string)$av['comprador_nome']);
+    if ($nomeDestinatario === '') {
+        return ['ok' => false, 'erro' => 'Preencha os dados do comprador na venda antes de confirmar a retirada.'];
+    }
+
+    if (!preg_match('#^data:image/png;base64,(.+)$#', $assinaturaDataUrl, $m)) {
+        return ['ok' => false, 'erro' => 'Assinatura inválida — peça pro cliente assinar de novo e confirme.'];
+    }
+    $bytes = base64_decode($m[1], true);
+    if ($bytes === false || strlen($bytes) < 1) {
+        return ['ok' => false, 'erro' => 'Assinatura vazia — peça pro cliente desenhar antes de confirmar.'];
+    }
+
+    $tmpAssinatura = tempnam(sys_get_temp_dir(), 'assinatura_retirada_') . '.png';
+    file_put_contents($tmpAssinatura, $bytes);
+
+    $itens = listarItensAvaliacao($avaliacaoId);
+    $score = veiculoAvaliacaoScore($itens);
+    $pdfPath = gerarPdfTermoAvaliacao($av, $itens, $score, $tmpAssinatura);
+    if (!$pdfPath) {
+        @unlink($tmpAssinatura);
+        return ['ok' => false, 'erro' => 'Falha ao gerar o PDF do termo.'];
+    }
+
+    $db = getDB();
+    $stmtCli = $db->prepare("SELECT c.id, c.nome FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?");
+    $stmtCli->execute([$av['oportunidade_id']]);
+    $cli = $stmtCli->fetch();
+
+    $copiaPdf = ['drive_file_id' => '', 'arquivo_url' => ''];
+    $copiaAssinatura = ['drive_file_id' => '', 'arquivo_url' => ''];
+    if ($cli) {
+        $copiaPdf = salvarArquivoGeradoComoDocumento(
+            (int)$cli['id'], $cli['nome'] ?: "Cliente #{$cli['id']}", $pdfPath,
+            'termo_vistoria_' . $avaliacaoId . '.pdf', 'application/pdf', 'vistoria'
+        );
+        $copiaAssinatura = salvarArquivoGeradoComoDocumento(
+            (int)$cli['id'], $cli['nome'] ?: "Cliente #{$cli['id']}", $tmpAssinatura,
+            'assinatura_retirada_' . $avaliacaoId . '.png', 'image/png', 'vistoria'
+        );
+    }
+    @unlink($pdfPath);
+    @unlink($tmpAssinatura);
+
+    $ip = auditoriaClienteIp();
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+
+    $db->prepare("
+        UPDATE veiculo_avaliacoes
+        SET termo_status = 'confirmado', termo_assinado_em = datetime('now','localtime'),
+            termo_ciente_ip = ?, termo_ciente_user_agent = ?, termo_ciente_canal = 'presencial',
+            drive_file_id = ?, arquivo_url = ?,
+            termo_ciente_assinatura_drive_file_id = ?, termo_ciente_assinatura_arquivo_url = ?,
+            updated_at = datetime('now','localtime')
+        WHERE id = ?
+    ")->execute([
+        clean($ip), clean(mb_substr($ua, 0, 255)),
+        $copiaPdf['drive_file_id'], $copiaPdf['arquivo_url'],
+        $copiaAssinatura['drive_file_id'], $copiaAssinatura['arquivo_url'],
+        $avaliacaoId,
+    ]);
+
+    return ['ok' => true, 'erro' => null];
 }
 
 /**

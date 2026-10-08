@@ -62,6 +62,10 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     // uma negociação específica).
     $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
         'avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
+        // 08/10/2026 — assinatura presencial na retirada do veículo,
+        // serve a imagem desenhada na tela (mesma trava de
+        // ver_avaliacao_foto.php, acima).
+        'ver_assinatura_retirada.php',
         'promissorias.php', 'meu_perfil.php', 'logout.php',
         // 26/09/2026 — leitura de CRLV por IA no modal "Vender na
         // Promissória" (admin/vendas.php, "cadastrar veículo novo").
@@ -106,7 +110,12 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
 // técnica de allowlist central dos guards de `vendedor`/`financeiro` acima.
 if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
     $paginaAtualAval = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasAval = ['avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php', 'meu_perfil.php', 'logout.php',
+    $permitidasAval = ['avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
+        // 08/10/2026 — assinatura presencial na retirada do veículo,
+        // serve a imagem desenhada na tela (mesma trava de
+        // ver_avaliacao_foto.php, acima).
+        'ver_assinatura_retirada.php',
+        'meu_perfil.php', 'logout.php',
         // 28/09/2026 — leitura de CRLV por IA no modal "Nova vistoria"
         // (admin/avaliacoes.php, "cadastrar veículo novo"/CRLV como
         // fallback da busca por placa).

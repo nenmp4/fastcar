@@ -27,8 +27,16 @@ function _avaliacaoStatusLabel(string $status): string {
  * score do veiculo"): resumo/contagem de `veiculoAvaliacaoScore()`,
  * sempre calculado em cima do checklist já marcado pelo avaliador,
  * nunca um julgamento novo da IA (regra #3).
+ *
+ * `$assinaturaPngPath` opcional — 08/10/2026, assinatura presencial na
+ * retirada do veículo (`confirmarTermoCientePresencial()`): caminho de
+ * um PNG já salvo em disco com a assinatura desenhada de verdade na
+ * tela. Presente, embute a imagem no PDF e ajusta o texto de
+ * "confirmação" pra refletir o canal presencial, nunca o link por
+ * e-mail; `null` (padrão, usado pelo fluxo de e-mail de sempre)
+ * mantém o PDF EXATAMENTE como antes — zero regressão nesse caminho.
  */
-function gerarPdfTermoAvaliacao(array $av, array $itens, ?array $score = null): string {
+function gerarPdfTermoAvaliacao(array $av, array $itens, ?array $score = null, ?string $assinaturaPngPath = null): string {
     $score = $score ?? veiculoAvaliacaoScore($itens);
     $pdf = _pdfNovo();
     $subtitulo = $av['tipo'] === 'venda'
@@ -93,20 +101,51 @@ function gerarPdfTermoAvaliacao(array $av, array $itens, ?array $score = null): 
           'condições descritas neste checklist, no estado em que se encontra.'
     );
 
+    // 08/10/2026, assinatura presencial — quando o comprador assinou
+    // direto na tela do avaliador (em vez do link por e-mail), embute a
+    // imagem desenhada de verdade no PDF, como prova visual a mais além
+    // do IP/data já registrados. Nunca trava a geração do PDF se a
+    // imagem estiver corrompida/ilegível pro FPDF, mesma defesa já usada
+    // pra logo em _pdfCabecalho().
+    if ($av['tipo'] === 'venda' && $assinaturaPngPath && is_file($assinaturaPngPath)) {
+        try {
+            $dimensoes = @getimagesize($assinaturaPngPath);
+            if ($dimensoes) {
+                $larguraMm = 70;
+                $alturaMm = $larguraMm * ($dimensoes[1] / $dimensoes[0]);
+                if ($pdf->GetY() + $alturaMm + 14 > 277) { // nunca deixa a assinatura partir ao meio entre 2 páginas
+                    $pdf->AddPage();
+                }
+                $pdf->Ln(6);
+                _pdfTituloClausula($pdf, 'ASSINATURA DO COMPRADOR (coletada na tela, presencialmente)');
+                $pdf->Image($assinaturaPngPath, $pdf->GetX(), $pdf->GetY(), $larguraMm, $alturaMm);
+                $pdf->Ln($alturaMm + 4);
+            }
+        } catch (Throwable $e) {
+            // assinatura corrompida/formato que o FPDF não lê — segue sem a imagem.
+        }
+    }
+
     // 06/10/2026, Termo Ciente — nunca mais um bloco de "assinatura"
     // física (as 2 linhas tracejadas antigas): esse documento deixou de
     // ser assinatura eletrônica via ZapSign, é um registro INTERNO cuja
-    // confirmação acontece por fora (link único por e-mail, 1 clique) —
-    // o PDF nunca deve sugerir visualmente algo que não é mais verdade.
+    // confirmação acontece por fora — link único por e-mail (1 clique)
+    // ou, desde 08/10/2026, assinatura desenhada presencialmente na tela
+    // do avaliador — o PDF nunca deve sugerir visualmente algo que não
+    // é mais verdade.
     if ($av['tipo'] === 'venda') {
         $pdf->Ln(10);
         _pdfTituloClausula($pdf, 'SOBRE A CONFIRMAÇÃO DESTE DOCUMENTO');
-        _pdfCorpo($pdf,
-            'Este é um documento de controle INTERNO da FASTCAR SOLUTIONS, sem valor de assinatura eletrônica/' .
-            'contrato — o contrato de venda em si já foi assinado separadamente. A confirmação de recebimento pelo ' .
-            "comprador ({$nomeParte}) é feita por um link único enviado por e-mail, com data/hora e demais dados " .
-            'de acesso registrados no sistema da FASTCAR no momento da confirmação.'
-        );
+        $textoConfirmacao = $assinaturaPngPath
+            ? 'Este é um documento de controle INTERNO da FASTCAR SOLUTIONS, sem valor de assinatura eletrônica/' .
+              'contrato — o contrato de venda em si já foi assinado separadamente. A confirmação de recebimento pelo ' .
+              "comprador ({$nomeParte}) foi feita PRESENCIALMENTE, assinando direto na tela do avaliador no momento " .
+              'da entrega, com data/hora e demais dados de acesso registrados no sistema da FASTCAR.'
+            : 'Este é um documento de controle INTERNO da FASTCAR SOLUTIONS, sem valor de assinatura eletrônica/' .
+              'contrato — o contrato de venda em si já foi assinado separadamente. A confirmação de recebimento pelo ' .
+              "comprador ({$nomeParte}) é feita por um link único enviado por e-mail, com data/hora e demais dados " .
+              'de acesso registrados no sistema da FASTCAR no momento da confirmação.';
+        _pdfCorpo($pdf, $textoConfirmacao);
     }
 
     $pdf->Ln(6);

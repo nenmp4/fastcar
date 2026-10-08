@@ -2085,4 +2085,27 @@ try {
     $dbFresh = null;
 }
 
+// 08/10/2026, assinatura presencial na retirada do veículo — "possivel
+// cleinte assinar retirada do veiculo no celular mesmo campo assinar
+// tela... o avalista mostra abre campo ele assina". Complementa o Termo
+// Ciente por link (ver includes/veiculo_avaliacoes.php::confirmarTermoCientePresencial()):
+// o avaliador mostra a tela e o comprador desenha a assinatura com o
+// dedo direto em admin/avaliacao.php, sem precisar de e-mail.
+foreach ([
+    ['termo_ciente_canal', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_ciente_canal TEXT DEFAULT '' CHECK (termo_ciente_canal IN ('', 'link', 'presencial'))"],
+    ['termo_ciente_assinatura_drive_file_id', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_ciente_assinatura_drive_file_id TEXT DEFAULT ''"],
+    ['termo_ciente_assinatura_arquivo_url', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_ciente_assinatura_arquivo_url TEXT DEFAULT ''"],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'veiculo_avaliacoes', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ veiculo_avaliacoes.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ veiculo_avaliacoes.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  veiculo_avaliacoes.{$coluna}: já existia\n";
+    }
+}
+
 echo "\n🎉 Migração concluída.\n";
