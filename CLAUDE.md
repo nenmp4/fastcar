@@ -3344,6 +3344,41 @@ segue no schema sem uso novo, não removida sem ganho real),
   veículo sem nenhuma + `php -l` nos 4 arquivos tocados +
   `tests/smoke.php` limpo. Sem migração de schema (só leitura em cima de
   dado já existente).
+  **Faltava exatamente onde o usuário olhava + sugestão legível pra
+  decisão (0-100 → "pronto pra revenda"/"fazer manutenção")**
+  (08/10/2026, screenshot real do celular — `admin/avaliacoes.php?aba=concluidas`,
+  "Jac J3 TURIN 2012... STATUS: ✅ Concluída... AVALIADOR: Gildasio
+  Batista" — sem NENHUM score visível; "Mostra os score sugestão pronto
+  para revenda, Fazer Manutenção") — achado real: a rodada acima cobriu
+  3 telas (Frota, `admin/oportunidade.php`, `admin/venda.php`), mas
+  esqueceu a tela que o usuário estava de fato olhando — `admin/avaliacoes.php`
+  (a fila/listagem de vistorias, home do perfil `avaliador`), que nunca
+  tinha sido tocada. Coluna "Condição" nova aí também, mesmo padrão das
+  outras 3 — só calcula o score quando `status==='concluida'` (nunca
+  chuta progresso parcial numa vistoria ainda em andamento).
+  Rodando o cenário de verdade (vistoria concluída SEM clicar em nenhum
+  botão de status do checklist — todos os itens ficam `nao_verificado`
+  por padrão), reproduzi exatamente o sintoma do screenshot: as 4 telas
+  já mostravam "⚠️ concluída sem item verificado"/"—" nesse caso, nunca
+  um score inventado (regra #3) — explica por que "não estou achando o
+  score" mesmo com a vistoria já concluída: o avaliador concluiu sem
+  marcar nenhum item do checklist como ✅/⚠️, só km/fotos/observações.
+  **Sugestão de revenda** — 2 funções novas, únicas fontes de verdade,
+  reaproveitadas nas 4 telas (nunca duplicadas uma por uma):
+  `veiculoAvaliacaoClasseBadgeScore(?int)` (mesmas 3 faixas de cor já
+  usadas — ≥80 verde/50-79 amarelo/<50 vermelho) e
+  `veiculoAvaliacaoSugestaoRevenda(?int)` (≥80 "✅ Pronto pra revenda",
+  50-79 "⚠️ Revisar antes de revender", <50 "🔧 Fazer manutenção") —
+  ambas em `includes/veiculo_avaliacoes.php`, aplicadas junto do badge
+  numérico nas 4 telas (Frota, `admin/oportunidade.php`/`admin/venda.php`,
+  e agora `admin/avaliacoes.php`). Testado ponta a ponta: 3 cenários
+  reais (vistoria concluída com 13 ok + 2 problema → 87%/badge-ok/"Pronto
+  pra revenda"; vistoria concluída sem NENHUM item tocado — reproduzindo
+  o caso exato do screenshot, placa/marca iguais — → "concluída/sem item
+  verificado" nas 4 telas; veículo sem vistoria nenhuma → "— sem vistoria
+  concluída") via HTTP real (sessão primed, servidor PHP embutido, banco
+  isolado) contra as 4 telas + `php -l` nos 5 arquivos tocados +
+  `tests/smoke.php` limpo. Sem migração de schema.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

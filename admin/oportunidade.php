@@ -1625,11 +1625,12 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     <td><?= $a['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?></td>
                     <td><?= match ($a['status']) { 'concluida' => '✅ Concluída', 'em_andamento' => '🔧 Em andamento', default => '⏳ Pendente' } ?></td>
                     <td>
-                        <?php if ($scoreLinha['percentual'] !== null):
-                            $classeScore = $scoreLinha['percentual'] >= 80 ? 'badge-ok' : ($scoreLinha['percentual'] >= 50 ? 'badge-aviso' : 'badge-atraso');
-                        ?>
-                            <span class="badge <?= $classeScore ?>" title="<?= e($scoreLinha['resumo']) ?>"><?= (int)$scoreLinha['percentual'] ?>/100</span>
+                        <?php if ($scoreLinha['percentual'] !== null): ?>
+                            <span class="badge <?= veiculoAvaliacaoClasseBadgeScore($scoreLinha['percentual']) ?>" title="<?= e($scoreLinha['resumo']) ?>"><?= (int)$scoreLinha['percentual'] ?>/100</span>
+                            <br><small><?= e(veiculoAvaliacaoSugestaoRevenda($scoreLinha['percentual'])) ?></small>
                             <?php if ($scoreLinha['problema'] > 0): ?><br><small>⚠️ <?= (int)$scoreLinha['problema'] ?> item(ns) com ressalva</small><?php endif; ?>
+                        <?php elseif ($a['status'] === 'concluida'): ?>
+                            <small title="<?= e($scoreLinha['resumo']) ?>">⚠️ concluída sem item verificado</small>
                         <?php else: ?>
                             <small>—</small>
                         <?php endif; ?>

@@ -527,10 +527,11 @@ function lerCrlvManual() {
                         // (único cálculo, nunca duplicado em SQL).
                         $scoreFrota = buscarScoreVistoriaRecente((int)$v['id']);
                     ?>
-                    <?php if ($scoreFrota && $scoreFrota['percentual'] !== null):
-                        $classeScoreFrota = $scoreFrota['percentual'] >= 80 ? 'badge-ok' : ($scoreFrota['percentual'] >= 50 ? 'badge-aviso' : 'badge-atraso');
-                    ?>
-                        <span class="badge <?= $classeScoreFrota ?>" title="<?= e($scoreFrota['resumo']) ?>"><?= (int)$scoreFrota['percentual'] ?>/100</span>
+                    <?php if ($scoreFrota && $scoreFrota['percentual'] !== null): ?>
+                        <span class="badge <?= veiculoAvaliacaoClasseBadgeScore($scoreFrota['percentual']) ?>" title="<?= e($scoreFrota['resumo']) ?>"><?= (int)$scoreFrota['percentual'] ?>/100</span>
+                        <br><small><?= e(veiculoAvaliacaoSugestaoRevenda($scoreFrota['percentual'])) ?></small>
+                    <?php elseif ($scoreFrota): ?>
+                        <small title="<?= e($scoreFrota['resumo']) ?>">⚠️ concluída sem item verificado</small>
                     <?php else: ?>
                         <small>— sem vistoria concluída</small>
                     <?php endif; ?>

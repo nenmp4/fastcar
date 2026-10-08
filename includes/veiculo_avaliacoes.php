@@ -370,6 +370,29 @@ function listarAvaliacoesDoVeiculo(int $oportunidadeId): array {
  * concluída (mesma disciplina de `percentual=null` dentro do próprio
  * veiculoAvaliacaoScore() quando nada foi verificado).
  */
+/**
+ * Classe de badge + rótulo de sugestão pra revenda, a partir do score
+ * (0-100) — 08/10/2026, "Mostra os score sugestão pronto para revenda,
+ * Fazer Manutenção": tradução direta do percentual numa recomendação
+ * legível, sem inventar nada além do que o próprio score já representa
+ * (mesmas 3 faixas já usadas nos badges de condição — ≥80 verde, 50-79
+ * amarelo, <50 vermelho). Únicas fontes de verdade — reaproveitadas nas
+ * 4 telas que mostram condição de vistoria (Frota, oportunidade, venda,
+ * fila de vistorias), nunca duplicadas uma por uma.
+ */
+function veiculoAvaliacaoClasseBadgeScore(?int $percentual): string {
+    if ($percentual === null) return 'badge-aviso';
+    if ($percentual >= 80) return 'badge-ok';
+    if ($percentual >= 50) return 'badge-aviso';
+    return 'badge-atraso';
+}
+function veiculoAvaliacaoSugestaoRevenda(?int $percentual): string {
+    if ($percentual === null) return '';
+    if ($percentual >= 80) return '✅ Pronto pra revenda';
+    if ($percentual >= 50) return '⚠️ Revisar antes de revender';
+    return '🔧 Fazer manutenção';
+}
+
 function buscarScoreVistoriaRecente(int $oportunidadeId): ?array {
     $db = getDB();
     $stmt = $db->prepare("

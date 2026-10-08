@@ -104,14 +104,29 @@ function avStatusBadge(string $status): string {
     <?php else: ?>
         <div style="overflow-x:auto">
         <table>
-            <thead><tr><th>Veículo</th><th>Placa</th><th>Tipo</th><th>Status</th><th>Avaliador</th><th><?= $aba === 'concluidas' ? 'Concluída em' : 'Criada em' ?></th><th></th></tr></thead>
+            <thead><tr><th>Veículo</th><th>Placa</th><th>Tipo</th><th>Status</th><th>Condição</th><th>Avaliador</th><th><?= $aba === 'concluidas' ? 'Concluída em' : 'Criada em' ?></th><th></th></tr></thead>
             <tbody>
-            <?php foreach ($lista as $a): ?>
+            <?php foreach ($lista as $a):
+                // 08/10/2026, "Mostra os score sugestão pronto para
+                // revenda, Fazer Manutenção" — score só faz sentido
+                // depois de concluída; antes disso nunca chuta.
+                $scoreLinha = $a['status'] === 'concluida' ? veiculoAvaliacaoScore(listarItensAvaliacao((int)$a['id'])) : null;
+            ?>
                 <tr>
                     <td><?= $a['tipo_veiculo'] === 'moto' ? '🏍️' : '🚗' ?> <?= e(trim($a['veiculo_marca'] . ' ' . $a['veiculo_modelo'])) ?: '—' ?> <?= e((string)($a['veiculo_ano'] ?? '')) ?><br><small><?= e($a['cliente_nome']) ?></small></td>
                     <td><?= e($a['veiculo_placa'] ?: '—') ?></td>
                     <td><?= avTipoPill($a['tipo']) ?></td>
                     <td><?= avStatusBadge($a['status']) ?></td>
+                    <td>
+                        <?php if ($scoreLinha && $scoreLinha['percentual'] !== null): ?>
+                            <span class="badge <?= veiculoAvaliacaoClasseBadgeScore($scoreLinha['percentual']) ?>" title="<?= e($scoreLinha['resumo']) ?>"><?= (int)$scoreLinha['percentual'] ?>/100</span>
+                            <br><small><?= e(veiculoAvaliacaoSugestaoRevenda($scoreLinha['percentual'])) ?></small>
+                        <?php elseif ($scoreLinha): ?>
+                            <small title="<?= e($scoreLinha['resumo']) ?>">⚠️ sem item verificado</small>
+                        <?php else: ?>
+                            <small>—</small>
+                        <?php endif; ?>
+                    </td>
                     <td><?= $a['avaliador_nome'] ? e($a['avaliador_nome']) : '<em>não atribuído</em>' ?></td>
                     <td><?php
                         $dataLinha = $aba === 'concluidas' ? ($a['concluida_em'] ?: $a['created_at']) : $a['created_at'];
