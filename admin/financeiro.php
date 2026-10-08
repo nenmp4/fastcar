@@ -147,6 +147,32 @@ $contasAtrasadas = (int)$db->query("SELECT COUNT(*) FROM fin_lancamentos WHERE s
 $asaasPendenteImportar = asaasConfigured();
 
 /**
+ * 08/10/2026, "criar card para essa finalidade receitas de pagamento de
+ * entra de veicluos nele listar" — card dedicado pra ENTRADA de venda de
+ * veículo (a parcela_numero=0 de uma venda, `origem='parcelamento_venda'`
+ * — critério fixo, igual ao que finGerarReceitaVendaAssinatura()/
+ * finGerarPlanoParcelamentoVenda() sempre gravam pra entrada, nos 2
+ * caminhos — Asaas ou local — nunca depende do nome da categoria).
+ * Direto ligado ao bullet de hoje (entrada sempre nasce 'pendente',
+ * confirmação é manual contra o extrato do C6) — aqui é exatamente a FILA
+ * de conciliação: lista toda entrada ainda pendente, com ação "✅ Marcar
+ * pago" na própria linha. Sem filtro de período de propósito (diferente
+ * dos cards do grid acima) — uma entrada de 2 meses atrás que ainda não
+ * foi conciliada não pode sumir da lista só porque o mês mudou, mesmo
+ * raciocínio do card "⏰ Contas atrasadas" (todos_periodos).
+ */
+$entradasVendaPendentes = $db->query("
+    SELECT l.id, l.valor, l.data_vencimento, l.cliente_nome_manual, l.venda_id,
+           v.comprador_nome, o.veiculo_marca, o.veiculo_modelo
+    FROM fin_lancamentos l
+    LEFT JOIN vendas v ON v.id = l.venda_id
+    LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+    WHERE l.origem = 'parcelamento_venda' AND l.parcela_numero = 0 AND l.status = 'pendente'
+    ORDER BY l.data_vencimento ASC, l.id ASC
+")->fetchAll(PDO::FETCH_ASSOC);
+$totalEntradasVendaPendentes = array_sum(array_column($entradasVendaPendentes, 'valor'));
+
+/**
  * 06/10/2026, "no finaceiro da exibir cads carros comprados esses mes
  * carros vendidos clica neles exibi a lista" — "valor basedo no contrato
  * assinado". Mesma referência de data já usada em admin/veiculos.php
@@ -320,6 +346,41 @@ $carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, '
           <td><a href="/admin/financeiro-lancamentos.php?action=edit&id=<?= (int)$c['id'] ?>"><?= e($c['descricao']) ?></a></td>
           <td><?= e(($c['icone'] ?? '') . ' ' . ($c['categoria_nome'] ?? '—')) ?></td>
           <td style="font-weight:600"><?= $c['tipo'] === 'receita' ? '+' : '-' ?> R$ <?= number_format((float)$c['valor'], 2, ',', '.') ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  <?php endif; ?>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">💰 Entrada de venda de veículo — a conciliar</h2>
+  <p style="color:var(--muted);font-size:.85rem;margin-top:-.5rem">
+    Entrada nasce sempre <strong>pendente</strong> (dinheiro cai direto no C6, nunca passa pelo Asaas) —
+    confirme aqui depois de bater com o extrato do banco. Total pendente: <strong>R$ <?= number_format($totalEntradasVendaPendentes, 2, ',', '.') ?></strong>
+    (<?= count($entradasVendaPendentes) ?> entrada<?= count($entradasVendaPendentes) === 1 ? '' : 's' ?>).
+  </p>
+  <?php if (!$entradasVendaPendentes): ?>
+    <p style="color:var(--muted);font-size:.85rem">Nenhuma entrada de venda pendente de conciliação. 🎉</p>
+  <?php else: ?>
+    <table class="tabela-oportunidades">
+      <thead><tr><th>Vencimento</th><th>Venda</th><th>Comprador</th><th>Veículo</th><th>Valor</th><th>Ações</th></tr></thead>
+      <tbody>
+      <?php foreach ($entradasVendaPendentes as $e): ?>
+        <tr>
+          <td><?= $e['data_vencimento'] ? date('d/m/Y', strtotime($e['data_vencimento'])) : '—' ?></td>
+          <td><?= $e['venda_id'] ? '<a href="/admin/venda.php?id=' . (int)$e['venda_id'] . '">#' . (int)$e['venda_id'] . '</a>' : '—' ?></td>
+          <td><?= e($e['comprador_nome'] ?: $e['cliente_nome_manual'] ?: '—') ?></td>
+          <td><?= e(trim(($e['veiculo_marca'] ?? '') . ' ' . ($e['veiculo_modelo'] ?? '')) ?: '—') ?></td>
+          <td style="font-weight:700;color:#0ea5e9">R$ <?= number_format((float)$e['valor'], 2, ',', '.') ?></td>
+          <td>
+            <form method="POST" action="/admin/financeiro-lancamentos.php" style="display:inline">
+              <?= csrfField() ?>
+              <input type="hidden" name="acao" value="marcar_pago">
+              <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
+              <button type="submit" class="btn-texto" title="Marcar pago (confirmado no extrato do C6)">✅ Marcar pago</button>
+            </form>
+          </td>
         </tr>
       <?php endforeach; ?>
       </tbody>

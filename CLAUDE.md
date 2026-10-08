@@ -12252,6 +12252,38 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   com a data real (sem mudança) — + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema.
 
+- **Card "💰 Entrada de venda de veículo — a conciliar" no dashboard
+  financeiro** (08/10/2026, "criar card para essa finalidade receitas
+  de pagamento de entra de veicluos nele listar" / pedido de
+  acompanhamento: "forma de agente listar as vendas de veiculos e
+  valor da entrada que lança pendente") — fila de conciliação direta
+  do bullet acima (entrada sempre nasce `'pendente'`, confirmação é
+  manual contra o extrato do C6). Novo em `admin/financeiro.php`,
+  logo depois do card "⏰ Contas a vencer nos próximos 7 dias": lista
+  toda entrada de venda ainda pendente (critério fixo —
+  `origem='parcelamento_venda' AND parcela_numero=0 AND status='pendente'`,
+  nunca depende do nome da categoria, bate exatamente com o que
+  `finGerarReceitaVendaAssinatura()`/`finGerarPlanoParcelamentoVenda()`
+  sempre gravam pra entrada, nos 2 caminhos — Asaas ou local). Cada
+  linha mostra vencimento/venda (linkada pra `admin/venda.php`)/
+  comprador/veículo/valor + botão "✅ Marcar pago" direto na linha
+  (mesma ação `marcar_pago` já existente em
+  `admin/financeiro-lancamentos.php`, só o `<form>` postando de uma
+  página pra outra — CSRF é por sessão, não por página, funciona sem
+  nenhuma mudança no handler). **Sem filtro de período** de propósito
+  (diferente dos cards do grid acima) — mesmo raciocínio do card
+  "⏰ Contas atrasadas": uma entrada de 2 meses atrás ainda não
+  conciliada não pode sumir da fila só porque o mês mudou no seletor.
+  Testado: query isolada em banco de teste (venda com entrada
+  retroativa — já `'pago'` — corretamente de fora da lista, só a
+  pendente de verdade aparece) + HTTP ponta a ponta real (servidor PHP
+  embutido, sessão de super_admin): card renderiza a linha certa com
+  total/contagem corretos; clicar "Marcar pago" (POST real com CSRF)
+  marca de verdade e a linha desaparece no próximo carregamento,
+  mostrando o estado vazio ("🎉") — + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema (só leitura em cima de coluna já
+  existente).
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
