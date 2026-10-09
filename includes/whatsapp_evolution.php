@@ -134,10 +134,21 @@ function _evolutionHeaders(string $apiKey, bool $json = true): array {
     return $h;
 }
 
-/** Extrai uma mensagem de erro legível de uma resposta JSON da Evolution — formato de erro nunca confirmado, tenta os campos mais prováveis. */
-function _evolutionErroDeResposta($json, int $httpCode): string {
+/**
+ * Extrai uma mensagem de erro legível de uma resposta JSON da Evolution —
+ * formato de erro nunca confirmado, tenta os campos mais prováveis.
+ * `$redirectUrl` (de CURLINFO_REDIRECT_URL, funciona mesmo sem
+ * CURLOPT_FOLLOWLOCATION) aparece junto num 3xx — diagnóstico direto de
+ * "URL base" errada (http em vez de https, IP em vez do host certo etc),
+ * sem precisar adivinhar.
+ */
+function _evolutionErroDeResposta($json, int $httpCode, ?string $redirectUrl = null): string {
     $erro = $json['message'] ?? $json['error'] ?? $json['response']['message'] ?? "HTTP {$httpCode}";
-    return is_array($erro) ? json_encode($erro, JSON_UNESCAPED_UNICODE) : (string)$erro;
+    $erro = is_array($erro) ? json_encode($erro, JSON_UNESCAPED_UNICODE) : (string)$erro;
+    if ($httpCode >= 300 && $httpCode < 400 && $redirectUrl) {
+        $erro .= " — redirecionado pra: {$redirectUrl} (confira protocolo/host/porta em \"URL base\")";
+    }
+    return $erro;
 }
 
 /**
@@ -170,6 +181,7 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
     ]);
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
     $curlErr = curl_error($ch);
     curl_close($ch);
 
@@ -182,7 +194,7 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
         return true;
     }
     $json = json_decode((string)$resp, true);
-    _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode) . ' — resposta: ' . substr((string)$resp, 0, 500));
+    _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode, $redirectUrl) . ' — resposta: ' . substr((string)$resp, 0, 500));
     return false;
 }
 
@@ -261,6 +273,7 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
     ]);
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
     $curlErr = curl_error($ch);
     curl_close($ch);
 
@@ -273,7 +286,7 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
         return true;
     }
     $json = json_decode((string)$resp, true);
-    _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode) . ' — resposta: ' . substr((string)$resp, 0, 500));
+    _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode, $redirectUrl) . ' — resposta: ' . substr((string)$resp, 0, 500));
     return false;
 }
 
@@ -329,6 +342,7 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
     ]);
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
     $curlErr = curl_error($ch);
     curl_close($ch);
 
@@ -341,7 +355,7 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
         return true;
     }
     $json = json_decode((string)$resp, true);
-    _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode) . ' — resposta: ' . substr((string)$resp, 0, 500));
+    _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode, $redirectUrl) . ' — resposta: ' . substr((string)$resp, 0, 500));
     return false;
 }
 
@@ -365,6 +379,7 @@ function evolutionTestarConexao(?array $override = null): string {
     ]);
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
     $curlErr = curl_error($ch);
     curl_close($ch);
 
@@ -374,7 +389,7 @@ function evolutionTestarConexao(?array $override = null): string {
     $json = json_decode((string)$resp, true);
     $estado = $json['instance']['state'] ?? $json['state'] ?? null;
     if ($httpCode !== 200 || !$estado) {
-        throw new RuntimeException('Evolution respondeu com erro: ' . _evolutionErroDeResposta($json, $httpCode));
+        throw new RuntimeException('Evolution respondeu com erro: ' . _evolutionErroDeResposta($json, $httpCode, $redirectUrl));
     }
     $rotulo = match ($estado) {
         'open' => 'conectado (pareado)',
