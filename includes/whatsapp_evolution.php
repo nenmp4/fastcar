@@ -112,6 +112,32 @@ function evolutionConfigured(): bool {
 }
 
 /**
+ * ⚠️ Ignora verificação de certificado SSL pro host da Evolution — opt-in
+ * explícito (`config.evolution_ignorar_ssl==='1'`), NUNCA ligado por
+ * padrão (só existe pra cobrir a janela em que a VPS própria ainda não
+ * tem domínio/certificado válido, só autoassinado — ver card em
+ * Configurações, 09/10/2026, "SSL certificate problem: self-signed
+ * certificate"). Nunca usar isso contra host de terceiro — aqui é
+ * sempre a VPS que o próprio super_admin controla.
+ */
+function evolutionIgnorarSsl(): bool {
+    return getConfig('evolution_ignorar_ssl') === '1';
+}
+
+/**
+ * Opções de SSL pra injetar nos curl_setopt_array() que falam DIRETO com a
+ * Evolution (nunca em _evolutionResolverBytes(), que baixa de URL
+ * arbitrária — ali a verificação de certificado sempre tem que valer).
+ */
+function _evolutionCurlSslOpts(): array {
+    if (!evolutionIgnorarSsl()) return [];
+    return [
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ];
+}
+
+/**
  * Canal principal usa Evolution? — mesmo papel de oficialEhProviderPrincipal().
  * Default 'zapi' (nunca muda comportamento sozinho) até o usuário escolher
  * explicitamente em Configurações.
@@ -178,7 +204,7 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
         ]),
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 20,
-    ]);
+    ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
@@ -270,7 +296,7 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
         CURLOPT_POSTFIELDS => $campos,
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey, false), // multipart — nunca Content-Type manual, o cURL monta o boundary sozinho
         CURLOPT_TIMEOUT => 40,
-    ]);
+    ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
@@ -339,7 +365,7 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
         ],
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey, false),
         CURLOPT_TIMEOUT => 30,
-    ]);
+    ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
@@ -376,7 +402,7 @@ function evolutionTestarConexao(?array $override = null): string {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 15,
-    ]);
+    ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
@@ -426,7 +452,7 @@ function evolutionStatusCache(bool $forcar = false): array {
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 4,
         CURLOPT_CONNECTTIMEOUT => 3,
-    ]);
+    ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
     $err = curl_error($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);

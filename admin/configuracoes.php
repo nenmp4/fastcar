@@ -295,6 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach (array_keys($camposEvolution) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
             }
+            setConfig('evolution_ignorar_ssl', isset($_POST['evolution_ignorar_ssl']) ? '1' : '0');
             $sucesso = 'Configurações da Evolution API salvas.';
         } elseif ($acao === 'testar_evolution') {
             try {
@@ -649,6 +650,7 @@ foreach (array_keys($camposEvolution) as $chave) {
     $valoresEvolution[$chave] = getConfig($chave) ?? '';
 }
 $configuradoEvolution = $valoresEvolution['evolution_base_url'] && $valoresEvolution['evolution_instance_name'] && $valoresEvolution['evolution_api_key'];
+$evolutionIgnorarSslAtual = getConfig('evolution_ignorar_ssl') === '1';
 $providerPrincipalAtual = getConfig('whatsapp_provider_principal') ?: 'zapi';
 $valoresOficialVendas = [];
 foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
@@ -924,6 +926,11 @@ unset($fv);
             <input type="<?= $chave === 'evolution_api_key' ? 'password' : 'text' ?>" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
                    value="<?= e($valoresEvolution[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresEvolution[$chave] ? '••••••••' : 'não configurado' ?>">
         <?php endforeach; ?>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal">
+            <input type="checkbox" name="evolution_ignorar_ssl" value="1" <?= $evolutionIgnorarSslAtual ? 'checked' : '' ?>>
+            ⚠️ Ignorar verificação de certificado SSL (só pra VPS própria ainda sem domínio/certificado
+            válido — autoassinado — nunca marcar se a URL base não for a sua própria VPS)
+        </label>
         <button type="submit">Salvar configurações</button>
     </form>
 
