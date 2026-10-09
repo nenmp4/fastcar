@@ -12331,6 +12331,34 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   30/09/2026 — "pedido de reconsideração já enviado"), ou aceitar que
   qualquer canal de WhatsApp automatizado pra este projeto carrega esse
   risco embutido, não eliminável só por código.
+  **Hipótese de acompanhamento do usuário, mesmo dia** ("eu acho zpi tá
+  queimada esma" — "acho que a Z-API está queimada, [a] mesma [conta]") —
+  variante mais específica da hipótese acima: não é só "número novo sem
+  aquecimento", é a própria CONTA/instância Z-API (infraestrutura/pool de
+  IP que a Z-API atribui a essa conta) que já pode estar marcada pela
+  Meta, depois de 3 números distintos (principal, reserva, e o número da
+  tentativa anterior) serem banidos em sucessão sob a MESMA conta — padrão
+  consistente com detecção de rede/infraestrutura da Meta (ela correlaciona
+  não só comportamento do número, mas também de onde/como a sessão se
+  conecta), não só reputação do número isolado.
+  **Confirmado no mesmo dia, reforça a hipótese**: "acabe de conectar biba
+  ja elvis" — um 4º número ("Biba") conectado na MESMA conta Z-API e
+  banido quase instantaneamente de novo ("já é Elvis", gíria = já
+  morreu/já era). Padrão empírico agora, não só teoria: 4 números
+  distintos, mesma conta Z-API, todos banidos rapidíssimo — reforça forte
+  que o problema está na CONTA/infraestrutura, não em cada número
+  individual (um número "sem aquecimento" sozinho explicaria 1 banimento
+  ocasional, não 4 seguidos todos quase instantâneos). **Sem jeito de
+  confirmar isso de dentro do código/deste ambiente** — a atribuição de
+  IP/pool de servidor é inteiramente interna da Z-API, nenhum log nosso
+  alcança isso. Recomendação prática diante desse padrão: **parar de
+  conectar número novo nesta MESMA conta Z-API** — a cada tentativa, o
+  mais provável é continuar sendo banido na hora, sem ganhar nenhuma
+  informação nova; só testaria a hipótese de verdade abrindo conta Z-API
+  **genuinamente nova** (CNPJ/cadastro diferente do já usado) — e mesmo
+  assim sem garantia, porque a correlação pode ser por IP/datacenter
+  compartilhado entre contas da própria Z-API, não só por conta
+  individual.
 
 ## Pendências
 
