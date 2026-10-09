@@ -415,7 +415,7 @@ function evolutionTestarConexao(?array $override = null): string {
     $json = json_decode((string)$resp, true);
     $estado = $json['instance']['state'] ?? $json['state'] ?? null;
     if ($httpCode !== 200 || !$estado) {
-        throw new RuntimeException('Evolution respondeu com erro: ' . _evolutionErroDeResposta($json, $httpCode, $redirectUrl));
+        throw new RuntimeException('Evolution respondeu com erro: ' . _evolutionErroDeResposta($json, $httpCode, $redirectUrl) . ' — resposta: ' . substr((string)$resp, 0, 400));
     }
     $rotulo = match ($estado) {
         'open' => 'conectado (pareado)',
