@@ -30,17 +30,20 @@
  * ajudar com a hipótese de "conta/infraestrutura compartilhada marcada",
  * mas não é garantia nenhuma.
  *
- * **Formato confirmado contra a documentação real** (09/10/2026, usuário
- * achou e colou `docs.evolutionfoundation.com.br` — o portal oficial do
- * produto que a HostGator empacotou; confirmado via WebSearch, domínio
- * bloqueado pra leitura direta neste sandbox, mesma limitação de sempre —
- * nunca a doc inteira, só os trechos que a busca devolveu):
+ * **Formato real desta instância, confirmado contra a API de verdade**
+ * (09/10/2026) — a doc pública (`docs.evolutionfoundation.com.br`,
+ * confirmada só via WebSearch, domínio bloqueado neste sandbox) sugeria
+ * um corpo ANINHADO pro sendText, mas a instância REAL rejeitou com
+ * `"instance requires property \"text\""` assim que testada de verdade —
+ * prova de que a doc (ou a versão dela) não bate com este deploy
+ * (v2.3.7). Corrigido pro formato que o próprio servidor exige:
  *
  *   - Auth: header `apikey` (global ou da instância).
- *   - `POST /message/sendText/{instance}` — JSON, corpo
- *     `{number, textMessage: {text, ...}, delay?, linkPreview?, mentioned?}`
- *     — **NUNCA** `{number, text}` flat (1ª versão deste arquivo errou
- *     isso, corrigido antes de qualquer teste/uso real).
+ *   - `POST /message/sendText/{instance}` — JSON, corpo **FLAT**:
+ *     `{number, text}` — **NUNCA** `{number, textMessage: {text}}`
+ *     aninhado (a doc sugeria isso, mas a API real desta instância
+ *     rejeita — confirmado pelo erro literal do servidor, não por
+ *     documentação de terceiro).
  *   - `POST /message/sendMedia/{instance}` — **multipart/form-data**, NÃO
  *     JSON (2 buscas independentes confirmaram, nenhuma mostrou opção de
  *     base64/URL em texto) — campos `number`, `mediatype`
@@ -200,7 +203,7 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode([
             'number' => $phoneNorm,
-            'textMessage' => ['text' => $msg],
+            'text' => $msg,
         ]),
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 20,
