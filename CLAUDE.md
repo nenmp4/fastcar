@@ -12491,12 +12491,112 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   (`CONNECTION_UPDATE`) ignorado graciosamente — + `php -l` nos 4 arquivos
   tocados + `tests/smoke.php` (210 arquivos, 0 avisos) limpo. Sem migração
   de schema — todas as chaves novas vivem em `config` (livre, key/value).
-  ⚠️ **Nunca confirmado contra a instância real** — VPS ainda "Em
-  configuração" na HostGator no momento desta implementação; validar assim
-  que a instância subir: testar conexão em Configurações, conectar o QR
-  code, mandar e receber mensagem real, e só então marcar o toggle de
-  canal principal pra `'evolution'` de propósito (nunca pré-setado por
-  código).
+  ⚠️ **Nesta versão, nunca confirmado contra a instância real** — VPS
+  ainda "Em configuração" na HostGator no momento desta implementação —
+  ver bullet seguinte pra tudo que foi corrigido/confirmado contra a
+  instância de verdade logo depois, no mesmo dia/dia seguinte.
+- **✅ Evolution API confirmada funcionando ponta a ponta em produção**
+  (09-10/10/2026, direto na instância real da VPS — não mais só servidor
+  fake local) — a doc/suposição genérica usada pra escrever o bullet
+  anterior errou em 3 pontos reais, cada um achado e corrigido em ordem
+  olhando o ERRO LITERAL devolvido pela instância, nunca por mais
+  documentação de terceiro (a mesma disciplina usada o resto do projeto
+  pra todo provedor externo novo).
+  **(1) Identificador de instância** — nem o hash/API key em destaque no
+  painel do Evolution Manager (`BECF1272F2AF-447F-8A46-0BDDF3BD21CF`) nem
+  o UUID da própria URL do Manager (`c7b270d7-8888-4b8f-8d32-1297e1300648`)
+  eram aceitos como `{instance}` nas rotas — os dois davam
+  `"The \"X\" instance does not exist"`. Resolvido com
+  `evolutionListarInstancias()` (novo, `GET /instance/fetchInstances` —
+  diagnóstico manual, nunca usado em fluxo automático) em vez de continuar
+  adivinhando: o identificador real é o campo **`name`** da instância —
+  `"Fastacar Solutions"` (⚠️ com o typo "Fastacar" sem o 2º "s" de
+  "Fastcar", e com espaço no meio — nunca normalizar/corrigir isso no
+  código, é o nome real cadastrado no Evolution Manager). Botão "🔎 Listar
+  instâncias (diagnóstico)" novo em Configurações, só precisa de URL
+  base+API key (não do nome da instância) — útil pra qualquer futuro "nome
+  errado"/"instance does not exist" sem precisar adivinhar de novo.
+  **(2) Certificado SSL autoassinado** — a VPS (`143.95.172.53`) ainda não
+  tinha domínio/certificado válido; PHP cURL rejeita isso por padrão
+  (`CURLOPT_SSL_VERIFYPEER`). Resolvido com opt-in explícito
+  `evolution_ignorar_ssl` (checkbox em Configurações, nunca ligado por
+  padrão, nunca deveria ser usado contra host de terceiro — só a própria
+  VPS que o super_admin controla). O subdomínio `evolution.fastcar.solutions`
+  cogitado como alternativa (Cloudflare "Full", sem precisar ignorar SSL)
+  ficou bloqueado por HSTS (a zona `fastcar.solutions` já tem HSTS do
+  certificado válido de `sistema.fastcar.solutions`, que impede o
+  navegador de aceitar um cert autoassinado em QUALQUER subdomínio dela) —
+  abandonado em favor do IP cru + toggle de SSL, pode ser revisitado depois
+  pra um setup mais limpo.
+  **(3) `sendText` é corpo FLAT, não aninhado** — a 1ª versão (bullet
+  anterior) assumia `{number, textMessage: {text}}` baseada numa doc
+  pública (`docs.evolutionfoundation.com.br`, só confirmada via snippet de
+  busca, nunca a página inteira). A instância real rejeitou com o erro
+  literal `"instance requires property \"text\""` — essa versão (v2.3.7)
+  quer o campo **direto no corpo**: `{number, text}`. Achado só porque uma
+  mensagem de erro genérica e enganosa (`"Falha ao enviar pelo Z-API —
+  confira a instância em Configurações."`, hardcoded em 3 arquivos desde
+  antes da Evolution existir — `includes/whatsapp_inbox.php` ×3,
+  `vendas_inbox.php`, `financeiro_inbox.php`) escondia o erro real mesmo
+  com o badge do topbar já mostrando "🟣 Evolution conectado" — o usuário
+  percebeu a inconsistência ("inbox tá pela zpi", "precisa usar hook da
+  evolution") antes de eu mesmo notar. Corrigido com
+  `whatsappDetalheUltimoErro()` (novo, `includes/whatsapp_config.php`) —
+  lê `evolutionUltimoErro()`/`oficialUltimoErro()` e anexa o detalhe real
+  à mensagem genérica, nos 5 call sites — foi essa correção que revelou o
+  erro `"instance requires property..."` de verdade, permitindo corrigir o
+  `sendText` imediatamente depois.
+  **(4) `sendMedia`/`sendWhatsAppAudio` também são JSON flat, nunca
+  multipart** — mesma lição do (3), aplicada preventivamente antes de
+  esperar outro erro real: a doc sugeria multipart/form-data com upload de
+  arquivo de verdade (`media`/`audio` como `CURLStringFile`), mas dado o
+  padrão já confirmado 2x (texto simples venceu a complexidade da doc) e o
+  mesmo padrão JSON+URL/base64 já validado em produção pra Z-API/Meta
+  neste projeto, reescrito pra `{number, mediatype, media: <URL pública ou
+  base64 cru, sem prefixo data:mime;base64,>, mimetype?, caption?,
+  fileName?}` / `{number, audio: <URL ou base64 cru>}` —
+  `_evolutionBase64DeDataUri()` (novo) só separa mime+base64 do data URI,
+  nunca baixa/decodifica bytes (`_evolutionResolverBytes()`/
+  `CURLStringFile`, da 1ª versão, removidos). ⚠️ Este ponto específico
+  ainda não teve confirmação via erro real da instância (só testado contra
+  servidor fake local) — se a aposta estiver errada, o mesmo mecanismo do
+  item (3) (`whatsappDetalheUltimoErro()`) revela o formato certo.
+  **(5) Busca de foto/nome de contato nunca existia pra Evolution** —
+  "tem funcionar... foto do perfil" (pedido direto, mesmo dia) — até aqui
+  `zapiBuscarContato()` só sabia falar com Z-API, então a sidebar do
+  WhatsApp Box ficava sem foto/nome puxado com o canal principal migrado.
+  Nova `evolutionBuscarContato()` (`includes/whatsapp_evolution.php`,
+  `POST /chat/fetchProfilePictureUrl/{instance}` + `POST
+  /chat/findContacts/{instance}`, mesma prioridade foto-principal/
+  nome-de-findContacts/foto-fallback já confirmada em produção pro padrão
+  Z-API — nunca confirmado contra doc/instância real ainda, mesma
+  ressalva estrutural de endpoint não-testado) — `zapiBuscarContato()`
+  virou dispatcher (`_zapiBuscarContatoViaZapi()` é o corpo antigo,
+  renomeado) que escolhe o provedor certo sozinho, mesmo padrão de
+  `zapiEnviarTexto()`; nunca despacha pra Meta oficial (ela não expõe esse
+  dado pra número arbitrário, limitação de plataforma documentada desde a
+  migração pro Meta).
+  **✅ Fim a fim confirmado em produção**: mensagem de teste real mandada
+  pro número (`5511958347764`, agora pareado na Evolution) processada,
+  qualificação por IA rodando, e resposta chegando de volta no celular de
+  teste ("testei menssagem chegou" → ajustado o erro genérico → corrigido
+  o `sendText` → "conectou" → "respondeu" → "a qualificação vai seguir
+  normal"). Canal principal (funil de compra) 100% migrado de Z-API pra
+  Evolution self-hosted, com o item (4) (mídia) como única ponta solta —
+  validar na próxima vez que um anexo/áudio for mandado de verdade pela
+  caixa, usando o mesmo mecanismo de erro detalhado pra corrigir se
+  precisar.
+  Testado: suíte de função isolada nova contra servidor Evolution fake
+  local — `sendMedia`/`sendWhatsAppAudio` com corpo JSON exato (URL pública
+  e data URI nos dois, conferido byte a byte no log do fake server, nunca
+  mais multipart); `evolutionBuscarContato()` com foto+nome via
+  `findContacts`, foto priorizando `fetchProfilePictureUrl`, fallback pra
+  `profilePicUrl` quando o 1º endpoint falha, nome "online" rejeitado
+  (`nomeWhatsappPareceValido()`, mesma proteção já validada pra Z-API),
+  telefone sem nenhum dado retorna `null`; dispatch de `zapiBuscarContato()`
+  confirmado indo pra Evolution só quando ela é o provider principal,
+  nunca vazando pra Z-API/Evolution por engano — + `php -l` nos 3 arquivos
+  tocados + `tests/smoke.php` (0 avisos) limpo. Sem migração de schema.
 
 ## Pendências
 
