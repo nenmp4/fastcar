@@ -194,7 +194,7 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
         return false;
     }
 
-    $ch = curl_init("{$base}/message/sendText/{$instance}");
+    $ch = curl_init("{$base}/message/sendText/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
@@ -289,7 +289,7 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
         $campos['caption'] = $legenda;
     }
 
-    $ch = curl_init("{$base}/message/sendMedia/{$instance}");
+    $ch = curl_init("{$base}/message/sendMedia/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
@@ -355,7 +355,7 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
         return false;
     }
 
-    $ch = curl_init("{$base}/message/sendWhatsAppAudio/{$instance}");
+    $ch = curl_init("{$base}/message/sendWhatsAppAudio/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
@@ -397,7 +397,7 @@ function evolutionTestarConexao(?array $override = null): string {
     if (!$base || !$instance || !$apiKey) {
         throw new RuntimeException('URL/instância/API key não configurados.');
     }
-    $ch = curl_init("{$base}/instance/connectionState/{$instance}");
+    $ch = curl_init("{$base}/instance/connectionState/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
@@ -485,7 +485,7 @@ function evolutionStatusCache(bool $forcar = false): array {
     }
 
     $resultado = ['estado' => 'erro', 'verificado_em' => time()];
-    $ch = curl_init("{$base}/instance/connectionState/{$instance}");
+    $ch = curl_init("{$base}/instance/connectionState/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
