@@ -29,10 +29,12 @@
  * `zapiEnviarImagem()` etc, `includes/whatsapp_config.php`), nunca como
  * canal PRINCIPAL de vendas/financeiro (isso exigiria phone_number_id
  * dedicado por módulo, fora de escopo aqui). **Busca de nome/foto de
- * perfil (`zapiBuscarContato()`) permanece Z-API-only, sem equivalente —
- * a Cloud API oficial não expõe esse dado pra número arbitrário (limitação
- * de privacidade da própria plataforma, não uma lacuna de código; nunca
- * dá pra "portar" isso pro Meta).**
+ * perfil (`zapiBuscarContato()`) continua SEM equivalente na Meta oficial**
+ * (10/10/2026: ganhou dispatch pra Evolution também — `evolutionBuscarContato()`,
+ * `includes/whatsapp_evolution.php` — mas nunca Meta) — a Cloud API
+ * oficial não expõe esse dado pra número arbitrário (limitação de
+ * privacidade da própria plataforma, não uma lacuna de código; nunca dá
+ * pra "portar" isso pro Meta).**
  *
  * **Regra crítica, diferente da Z-API**: só é permitido mandar mensagem de
  * texto LIVRE pra um número que escreveu pra gente nas últimas 24h — fora

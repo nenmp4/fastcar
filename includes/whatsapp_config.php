@@ -683,7 +683,24 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
 }
 
 /**
- * Busca nome/foto de perfil do WhatsApp pra um telefone — 2 chamadas em
+ * Busca nome/foto de perfil do WhatsApp pra um telefone — DISPATCHER
+ * (10/10/2026, "tem funcionar... foto do perfil", mesmo padrão de
+ * `zapiEnviarTexto()`): canal principal Evolution → `evolutionBuscarContato()`;
+ * senão cai pro caminho Z-API de sempre (`_zapiBuscarContatoViaZapi()`,
+ * nunca a Meta oficial — a Cloud API não expõe esse dado pra número
+ * arbitrário, ver CLAUDE.md "Ficou de fora, de propósito — limitação de
+ * PLATAFORMA"). Chamada de `admin/whatsapp_inbox.php`/`vendas_inbox.php`
+ * sem precisar saber qual provedor está ativo.
+ */
+function zapiBuscarContato(string $phone): ?array {
+    if (evolutionEhProviderPrincipal()) {
+        return evolutionBuscarContato($phone);
+    }
+    return _zapiBuscarContatoViaZapi($phone);
+}
+
+/**
+ * Busca nome/foto de perfil do WhatsApp via Z-API — 2 chamadas em
  * paralelo (curl_multi), confirmadas contra produção no repo irmão
  * JurídicoSaaS (`nenmp4/iabadvocaciaboutique`, `api/clientes.php` ação
  * `foto_wpp` — lido direto de lá em 16/09/2026, "vai no inbox do iab tem
@@ -701,14 +718,14 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
  * mensagem (às vezes vazio, às vezes só um apelido esquisito tipo "." ou
  * "$"), nunca a foto de perfil de verdade.
  *
- * Ainda não confirmado contra uma instância REAL da Fastcar (só copiado
- * do formato já validado em produção no projeto irmão) — se algum campo
- * vier diferente, loga o corpo cru em storage/logs/whatsapp_contato_debug.log
- * (mesmo padrão de logDiagnosticoMidiaZapi()) em vez de falhar em
- * silêncio. Nunca lança — busca de nome/foto é sempre melhor esforço,
- * nunca pode travar a criação do lead.
+ * Confirmado contra a instância Z-API real da Fastcar antes da migração
+ * pra Evolution (10/07/2026-09/10/2026). Se algum campo vier diferente,
+ * loga o corpo cru em storage/logs/whatsapp_contato_debug.log (mesmo
+ * padrão de logDiagnosticoMidiaZapi()) em vez de falhar em silêncio.
+ * Nunca lança — busca de nome/foto é sempre melhor esforço, nunca pode
+ * travar a criação do lead.
  */
-function zapiBuscarContato(string $phone): ?array {
+function _zapiBuscarContatoViaZapi(string $phone): ?array {
     $inst = _chatbot_getConfig('zapi_instance_id');
     $tok  = _chatbot_getConfig('zapi_token');
     $ctok = _chatbot_getConfig('zapi_client_token');

@@ -44,14 +44,16 @@
  *     aninhado (a doc sugeria isso, mas a API real desta instância
  *     rejeita — confirmado pelo erro literal do servidor, não por
  *     documentação de terceiro).
- *   - `POST /message/sendMedia/{instance}` — **multipart/form-data**, NÃO
- *     JSON (2 buscas independentes confirmaram, nenhuma mostrou opção de
- *     base64/URL em texto) — campos `number`, `mediatype`
- *     (image|video|audio|document), `media` (o ARQUIVO de verdade, upload
- *     binário via `@arquivo` no curl), `caption?`, `fileName?`. Diferente
- *     de Z-API/Meta (que aceitam URL pública OU base64 em texto),
- *     `_evolutionEnviarMidia()` sempre RESOLVE os bytes primeiro — baixa a
- *     URL ou decodifica o data URI — antes de montar o multipart.
+ *   - `POST /message/sendMedia/{instance}` — **JSON**, NÃO multipart
+ *     (10/10/2026, corrigido pela MESMA lição do sendText — a doc inicial
+ *     sugeria multipart/arquivo, mas é a Evolution que segue o padrão
+ *     simples já confirmado em produção pra Z-API/Meta neste projeto):
+ *     `{number, mediatype: image|video|document, media: <URL pública OU
+ *     base64 cru, sem o prefixo data:mime;base64,>, mimetype?, caption?,
+ *     fileName?}` — `_evolutionBase64DeDataUri()` só separa mime+base64,
+ *     nunca baixa/decodifica bytes.
+ *   - `POST /message/sendWhatsAppAudio/{instance}` — **JSON**, mesmo
+ *     padrão: `{number, audio: <URL ou base64 cru>}`.
  *   - `GET /instance/connectionState/{instance}` — `{instance: {state:
  *     open|close|connecting}}`.
  *   - Webhook: evento `MESSAGES_UPSERT` (confirmado na doc de configuração
@@ -75,20 +77,28 @@
  * **IMPORTANTE — existem DOIS produtos distintos** sob a marca Evolution:
  * "Evolution API" (o clássico, JS/TS, Baileys) e "Evolution Go" (mais
  * novo, Go, formato de API bem diferente — `/send/media` em vez de
- * `/message/sendMedia/...`, JSON em vez de multipart). Este arquivo
- * assume **Evolution API** (o clássico) — é o que o addon "Evolution API
- * Whats" da HostGator parece instalar pelo próprio nome; se a VPS vier
- * com Evolution Go, os endpoints aqui não batem e precisam de revisão.
+ * `/message/sendMedia/...`). Este arquivo assume **Evolution API** (o
+ * clássico) — é o que o addon "Evolution API Whats" da HostGator parece
+ * instalar pelo próprio nome; se a VPS vier com Evolution Go, os
+ * endpoints aqui não batem e precisam de revisão.
  *
- * **Ainda sem confirmação nenhuma** (nem documentação nem instância real):
- * (1) RECEBIMENTO de mídia — Baileys normalmente exige decriptar usando
- * chaves (`mediaKey`) que vêm dentro da própria mensagem; nenhuma fonte
- * consultada aqui confirmou como a Evolution API expõe isso (base64 direto
- * no webhook? endpoint de download à parte?) — deixado de fora de
- * propósito nesta 1ª versão, cai no mesmo caminho gracioso "mídia não
- * processada" que o projeto já tem; (2) endpoint `sendWhatsAppAudio`
- * (nota de voz/PTT) só confirmado via busca genérica do projeto original,
- * nunca contra esta doc específica — mantido como aposta mais provável.
+ * **Ainda sem confirmação contra a instância real** (10/10/2026):
+ * (1) sendMedia/sendWhatsAppAudio com o corpo JSON acima — corrigido pela
+ * MESMA lição do sendText (doc dizia uma coisa, servidor real exigiu
+ * outra), mas ainda não exercitado contra o servidor de verdade; (2)
+ * busca de foto/nome de contato (`evolutionBuscarContato()`,
+ * `POST /chat/fetchProfilePictureUrl/{instance}` +
+ * `POST /chat/findContacts/{instance}`) — endpoints só da minha própria
+ * familiaridade com o projeto EvolutionAPI original, nunca confirmados
+ * contra doc nem instância real desta VPS; (3) RECEBIMENTO de mídia —
+ * Baileys normalmente exige decriptar usando chaves (`mediaKey`) que vêm
+ * dentro da própria mensagem; nenhuma fonte consultada aqui confirmou
+ * como a Evolution API expõe isso (base64 direto no webhook? endpoint de
+ * download à parte?) — deixado de fora de propósito nesta 1ª versão, cai
+ * no mesmo caminho gracioso "mídia não processada" que o projeto já tem.
+ * Qualquer um desses 3 pode falhar como o sendText falhou — a mensagem de
+ * erro detalhada (`evolutionUltimoErro()`/`whatsappDetalheUltimoErro()`)
+ * é o que revela o formato real, não suposição de doc.
  */
 
 require_once __DIR__ . '/db.php';
@@ -129,8 +139,8 @@ function evolutionIgnorarSsl(): bool {
 
 /**
  * Opções de SSL pra injetar nos curl_setopt_array() que falam DIRETO com a
- * Evolution (nunca em _evolutionResolverBytes(), que baixa de URL
- * arbitrária — ali a verificação de certificado sempre tem que valer).
+ * Evolution (nunca pra download de URL arbitrária de terceiro — essa
+ * verificação de certificado sempre tem que valer).
  */
 function _evolutionCurlSslOpts(): array {
     if (!evolutionIgnorarSsl()) return [];
@@ -181,9 +191,8 @@ function _evolutionErroDeResposta($json, int $httpCode, ?string $redirectUrl = n
 }
 
 /**
- * POST /message/sendText/{instance} — JSON, corpo aninhado
- * {number, textMessage: {text}} (confirmado contra a doc real, ver
- * docblock do topo do arquivo).
+ * POST /message/sendText/{instance} — JSON, corpo FLAT {number, text}
+ * (confirmado contra o erro real da instância, ver docblock do topo).
  */
 function evolutionEnviarTexto(string $phone, string $msg, ?array $override = null): bool {
     [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
@@ -228,41 +237,25 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
 }
 
 /**
- * Resolve `$urlOuDataUri` pros bytes de verdade + mime — baixa a URL (http/
- * https) ou decodifica o data URI base64. Necessário porque, diferente de
- * Z-API/Meta, o sendMedia da Evolution API quer o ARQUIVO em si no
- * multipart, nunca uma URL/base64 em campo de texto. `null` em qualquer
- * falha (nunca lança — quem chama decide o que fazer).
+ * Separa um data URI (`data:mime;base64,...`) em mime + base64 CRU (sem o
+ * prefixo) — nunca decodifica pra bytes: a Evolution (como Z-API/Meta já
+ * confirmados em produção neste projeto) quer o campo `media`/`audio`
+ * como STRING (URL pública ou base64), nunca upload de arquivo. `null`
+ * quando não é um data URI reconhecível (quem chama trata como URL cru).
  */
-function _evolutionResolverBytes(string $urlOuDataUri): ?array {
+function _evolutionBase64DeDataUri(string $urlOuDataUri): ?array {
     if (preg_match('#^data:([a-zA-Z0-9/+.\-]+);base64,(.+)$#s', $urlOuDataUri, $m)) {
-        $bytes = base64_decode($m[2], true);
-        if ($bytes === false) return null;
-        return ['mime' => $m[1], 'bytes' => $bytes];
-    }
-    if (preg_match('#^https?://#i', $urlOuDataUri)) {
-        $ch = curl_init($urlOuDataUri);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_FOLLOWLOCATION => true,
-        ]);
-        $bytes = curl_exec($ch);
-        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $mime = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-        curl_close($ch);
-        if ($bytes === false || $http < 200 || $http >= 300 || $bytes === '') return null;
-        return ['mime' => $mime !== '' ? $mime : 'application/octet-stream', 'bytes' => $bytes];
+        return ['mime' => $m[1], 'base64' => $m[2]];
     }
     return null;
 }
 
 /**
- * Imagem/vídeo/documento — POST /message/sendMedia/{instance},
- * multipart/form-data (confirmado contra a doc real — ver docblock do
- * topo). `$urlOuDataUri` sempre resolvido pros bytes antes do upload
- * (`_evolutionResolverBytes()`) — nunca manda URL/base64 em texto, a
- * Evolution quer o arquivo de verdade.
+ * Imagem/vídeo/documento — POST /message/sendMedia/{instance}, **JSON**
+ * (10/10/2026, corrigido depois do mesmo erro real já achado no sendText
+ * — doc sugeria multipart/arquivo, mas a Evolution segue o MESMO padrão
+ * simples que Z-API/Meta já usam neste projeto: campo `media` como string,
+ * URL pública OU base64 cru, nunca upload de arquivo de verdade).
  */
 function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, string $legenda, string $nomeArquivo, ?array $override = null): bool {
     [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
@@ -276,28 +269,26 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
         return false;
     }
 
-    $resolvido = _evolutionResolverBytes($urlOuDataUri);
-    if ($resolvido === null) {
-        _evolutionSetUltimoErro('Não consegui resolver o arquivo (URL inacessível ou data URI inválido).');
-        return false;
-    }
-
-    $campos = [
+    $corpo = _evolutionBase64DeDataUri($urlOuDataUri);
+    $body = [
         'number' => $phoneNorm,
         'mediatype' => in_array($tipo, ['image', 'video', 'document'], true) ? $tipo : 'image',
-        'media' => new CURLStringFile($resolvido['bytes'], $nomeArquivo, $resolvido['mime']),
+        'media' => $corpo !== null ? $corpo['base64'] : $urlOuDataUri,
         'fileName' => $nomeArquivo,
     ];
+    if ($corpo !== null && $corpo['mime'] !== '') {
+        $body['mimetype'] = $corpo['mime'];
+    }
     if ($legenda !== '') {
-        $campos['caption'] = $legenda;
+        $body['caption'] = $legenda;
     }
 
     $ch = curl_init("{$base}/message/sendMedia/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $campos,
-        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey, false), // multipart — nunca Content-Type manual, o cURL monta o boundary sozinho
+        CURLOPT_POSTFIELDS => json_encode($body),
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 40,
     ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
@@ -332,13 +323,10 @@ function evolutionEnviarDocumento(string $phone, string $documentoUrlOuDataUri, 
 }
 
 /**
- * Áudio (nota de voz) — endpoint PRÓPRIO (`sendWhatsAppAudio`, só
- * confirmado via busca genérica do projeto original — nunca contra esta
- * doc específica, ver docblock do topo), também multipart (mesmo
- * raciocínio de `_evolutionEnviarMidia()` — nunca confirmado se esse
- * endpoint específico aceita JSON com base64 em vez de arquivo, mas
- * manter o mesmo padrão de sendMedia é a aposta mais segura). Sem
- * legenda — WhatsApp não aceita caption em áudio.
+ * Áudio (nota de voz) — endpoint PRÓPRIO (`sendWhatsAppAudio`), **JSON**
+ * (10/10/2026, mesma correção de `_evolutionEnviarMidia()` — campo
+ * `audio` como string, URL pública ou base64 cru, nunca upload de
+ * arquivo). Sem legenda — WhatsApp não aceita caption em áudio.
  */
 function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $override = null): bool {
     [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
@@ -352,21 +340,17 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
         return false;
     }
 
-    $resolvido = _evolutionResolverBytes($audioDataUriOuUrl);
-    if ($resolvido === null) {
-        _evolutionSetUltimoErro('Não consegui resolver o áudio (URL inacessível ou data URI inválido).');
-        return false;
-    }
+    $corpo = _evolutionBase64DeDataUri($audioDataUriOuUrl);
 
     $ch = curl_init("{$base}/message/sendWhatsAppAudio/" . rawurlencode($instance));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => [
+        CURLOPT_POSTFIELDS => json_encode([
             'number' => $phoneNorm,
-            'audio' => new CURLStringFile($resolvido['bytes'], 'audio.ogg', $resolvido['mime']),
-        ],
-        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey, false),
+            'audio' => $corpo !== null ? $corpo['base64'] : $audioDataUriOuUrl,
+        ]),
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 30,
     ] + _evolutionCurlSslOpts());
     $resp = curl_exec($ch);
@@ -466,6 +450,109 @@ function evolutionListarInstancias(?array $override = null): array {
         throw new RuntimeException('Evolution respondeu com erro: ' . _evolutionErroDeResposta($json, $httpCode, $redirectUrl) . ' — resposta: ' . substr((string)$resp, 0, 800));
     }
     return is_array($json) ? $json : [];
+}
+
+/**
+ * Busca nome + foto de perfil do WhatsApp via Evolution (10/10/2026,
+ * "tem funcionar... foto do perfil" — paridade com zapiBuscarContato(),
+ * nunca confirmado contra doc/instância real, mesma ressalva do resto
+ * deste arquivo) — 2 chamadas em paralelo, mesmo padrão de prioridade já
+ * confirmado em produção pra Z-API:
+ *   1. POST /chat/fetchProfilePictureUrl/{instance} {number} — foto em
+ *      si.
+ *   2. POST /chat/findContacts/{instance} {where:{id:"{jid}"}} — nome
+ *      (`pushName`) + foto como FALLBACK (`profilePicUrl`/`imgUrl`) só
+ *      se a 1ª não trouxe nada.
+ * Nunca lança — busca de nome/foto é sempre melhor esforço, nunca pode
+ * travar a criação do lead. Campo não reconhecido loga o corpo cru em
+ * storage/logs/whatsapp_contato_debug.log (mesmo arquivo/formato da
+ * versão Z-API, reaproveita `_zapiLogDiagnosticoContato()` —
+ * `includes/whatsapp_config.php`, carregado depois deste arquivo mas já
+ * definido na hora em que esta função roda de verdade).
+ */
+function evolutionBuscarContato(string $phone): ?array {
+    [$base, $instance, $apiKey] = evolutionCredenciais();
+    if (!$base || !$instance || !$apiKey || !$phone) return null;
+
+    $phoneNorm = normalizarTelefone($phone);
+    if (strlen($phoneNorm) < 12) return null;
+
+    try {
+        $headers = _evolutionHeaders($apiKey);
+
+        $chFoto = curl_init("{$base}/chat/fetchProfilePictureUrl/" . rawurlencode($instance));
+        curl_setopt_array($chFoto, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['number' => $phoneNorm]),
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 10,
+        ] + _evolutionCurlSslOpts());
+
+        $chContato = curl_init("{$base}/chat/findContacts/" . rawurlencode($instance));
+        curl_setopt_array($chContato, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['where' => ['id' => "{$phoneNorm}@s.whatsapp.net"]]),
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 10,
+        ] + _evolutionCurlSslOpts());
+
+        $mh = curl_multi_init();
+        curl_multi_add_handle($mh, $chFoto);
+        curl_multi_add_handle($mh, $chContato);
+        do {
+            $status = curl_multi_exec($mh, $ativo);
+            if ($ativo) curl_multi_select($mh);
+        } while ($ativo && $status === CURLM_OK);
+
+        $respFoto = curl_multi_getcontent($chFoto);
+        $codeFoto = curl_getinfo($chFoto, CURLINFO_HTTP_CODE);
+        $respContato = curl_multi_getcontent($chContato);
+        $codeContato = curl_getinfo($chContato, CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($mh, $chFoto);
+        curl_multi_remove_handle($mh, $chContato);
+        curl_multi_close($mh);
+
+        $foto = '';
+        $nome = '';
+        $brutoParaDiagnostico = [];
+
+        if ($codeFoto >= 200 && $codeFoto < 300 && $respFoto) {
+            $j = json_decode($respFoto, true);
+            $brutoParaDiagnostico['fetchProfilePictureUrl'] = $j;
+            if (is_array($j)) {
+                $candidatoFoto = $j['profilePictureUrl'] ?? $j['url'] ?? $j['link'] ?? '';
+                if (_zapiUrlFotoValida($candidatoFoto)) $foto = $candidatoFoto;
+            }
+        }
+        if ($codeContato >= 200 && $codeContato < 300 && $respContato) {
+            $j2 = json_decode($respContato, true);
+            $brutoParaDiagnostico['findContacts'] = $j2;
+            $item = (is_array($j2) && isset($j2[0]) && is_array($j2[0])) ? $j2[0] : $j2;
+            if (is_array($item)) {
+                foreach (['pushName', 'notify', 'name', 'short'] as $campo) {
+                    if (!empty($item[$campo]) && is_string($item[$campo]) && nomeWhatsappPareceValido($item[$campo])) {
+                        $nome = trim($item[$campo]);
+                        break;
+                    }
+                }
+                if (!$foto) {
+                    $candidatoFoto = $item['profilePicUrl'] ?? $item['imgUrl'] ?? '';
+                    if (_zapiUrlFotoValida($candidatoFoto)) $foto = $candidatoFoto;
+                }
+            }
+        }
+
+        if (!$nome && !$foto) {
+            _zapiLogDiagnosticoContato($phoneNorm, $brutoParaDiagnostico);
+            return null;
+        }
+
+        return ['nome' => $nome, 'foto_url' => (string)$foto];
+    } catch (Throwable $e) {
+        return null;
+    }
 }
 
 /**
