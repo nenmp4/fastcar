@@ -304,6 +304,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) {
                 $erro = 'Falha ao testar: ' . $e->getMessage();
             }
+        } elseif ($acao === 'listar_instancias_evolution') {
+            try {
+                $instancias = evolutionListarInstancias();
+                $sucesso = 'Resposta de /instance/fetchInstances: ' .
+                    substr(json_encode($instancias, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 0, 1800);
+            } catch (Throwable $e) {
+                $erro = 'Falha ao listar instâncias: ' . $e->getMessage();
+            }
         } elseif ($acao === 'salvar_whatsapp_oficial_vendas') {
             foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -947,6 +955,17 @@ unset($fv);
         <?php if (!$configuradoEvolution): ?>
             <p><small>Preencha e salve a URL/instância/API key acima antes de testar.</small></p>
         <?php endif; ?>
+    </form>
+
+    <?php $podeListarInstancias = $valoresEvolution['evolution_base_url'] && $valoresEvolution['evolution_api_key']; ?>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="listar_instancias_evolution">
+        <button type="submit" <?= $podeListarInstancias ? '' : 'disabled' ?>>🔎 Listar instâncias (diagnóstico)</button>
+        <p><small>Pergunta direto pro servidor quais instâncias existem de verdade
+           (<code>GET /instance/fetchInstances</code>) — use se "Nome da instância" estiver
+           errado e o teste de conexão disser "instance does not exist". Só precisa de
+           URL base + API key, não do nome da instância.</small></p>
     </form>
 </div>
 

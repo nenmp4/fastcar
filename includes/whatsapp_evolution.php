@@ -427,6 +427,45 @@ function evolutionTestarConexao(?array $override = null): string {
 }
 
 /**
+ * GET /instance/fetchInstances — lista TODA instância cadastrada de
+ * verdade nesse servidor. Diagnóstico manual, não usado em nenhum fluxo
+ * automático: 09/10/2026, achado real — nem o valor mostrado com destaque
+ * no painel do Manager (hash/API key da instância) nem o UUID que aparece
+ * na própria URL do Manager eram aceitos como `instanceName` pelo
+ * `/instance/connectionState/{instance}` ("instance does not exist" nos
+ * dois) — só esse endpoint diz com certeza qual é o nome real, sem ficar
+ * adivinhando valor por valor. Normalmente exige a API key GLOBAL (não a
+ * de 1 instância específica) — se a chave salva for só da instância, pode
+ * vir 401/403 aqui mesmo com a chave "funcionando" pra outros endpoints.
+ */
+function evolutionListarInstancias(?array $override = null): array {
+    [$base, , $apiKey] = $override ?? evolutionCredenciais();
+    if (!$base || !$apiKey) {
+        throw new RuntimeException('URL base/API key não configurados.');
+    }
+    $ch = curl_init("{$base}/instance/fetchInstances");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_TIMEOUT => 15,
+    ] + _evolutionCurlSslOpts());
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($resp === false) {
+        throw new RuntimeException("Falha de conexão: {$curlErr}");
+    }
+    $json = json_decode((string)$resp, true);
+    if ($httpCode !== 200) {
+        throw new RuntimeException('Evolution respondeu com erro: ' . _evolutionErroDeResposta($json, $httpCode, $redirectUrl) . ' — resposta: ' . substr((string)$resp, 0, 800));
+    }
+    return is_array($json) ? $json : [];
+}
+
+/**
  * Status cacheado (60s TTL, mesmo padrão exato de zapiStatusPrincipalCache()/
  * oficialStatusCache()) — pro badge do topbar.
  */
