@@ -328,6 +328,25 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
 }
 
 /**
+ * Detalhe do ÚLTIMO erro de envio, não importa qual provider de fato
+ * rodou — 09/10/2026, achado real: as telas de envio manual (WhatsApp
+ * Box de compra/vendas/financeiro) sempre mostravam um texto FIXO
+ * ("Falha ao enviar pelo Z-API...") mesmo quando quem de fato tentou e
+ * falhou era Evolution ou Meta oficial (canal principal já trocado) —
+ * escondia a causa real tanto do usuário quanto de quem for debugar
+ * depois. Z-API em si (`_zapiEnviarTextoBruto()`) não expõe erro
+ * detalhado — nesse caso volta string vazia, cai no texto genérico de
+ * quem chamou.
+ */
+function whatsappDetalheUltimoErro(): string {
+    $evo = evolutionUltimoErro();
+    if ($evo !== null && $evo !== '') return " Evolution: {$evo}";
+    $ofi = oficialUltimoErro();
+    if ($ofi !== null && $ofi !== '') return " Meta: {$ofi}";
+    return '';
+}
+
+/**
  * Manda texto respeitando o CANAL de onde a mensagem do CLIENTE chegou
  * (`$canal`: 'zapi'|'oficial'|null) — não o toggle global. 29/09/2026,
  * achado real logo depois de virar `whatsapp_provider_principal` pra

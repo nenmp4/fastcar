@@ -139,7 +139,7 @@ function enviarMensagemManualFinanceiro(string $telefone, string $texto, int $us
     $nome = trim((string)($usuario['nome'] ?? ''));
     $textoAssinado = $nome !== '' ? "*{$nome}:*\n{$texto}" : $texto;
     if (!zapiEnviarTexto($telNorm, $textoAssinado, zapiCredenciaisFinanceiro())) {
-        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância do financeiro em Configurações.'];
+        return ['ok' => false, 'erro' => 'Falha ao enviar — confira a instância do financeiro (ou o fallback Meta) em Configurações.' . whatsappDetalheUltimoErro()];
     }
     $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
     return ['ok' => true, 'id' => $id];

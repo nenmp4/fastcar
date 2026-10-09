@@ -297,7 +297,7 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
     $nomeConsultor = trim((string)($usuario['nome'] ?? ''));
     $textoAssinado = $nomeConsultor !== '' ? "*{$nomeConsultor}:*\n{$texto}" : $texto;
     if (!zapiEnviarTexto($telNorm, $textoAssinado)) {
-        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância em Configurações.'];
+        return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }
     $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
     pausarIA($telNorm);
@@ -337,7 +337,7 @@ function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string
     }
 
     if (!zapiEnviarAudio($telNorm, 'data:' . $mime . ';base64,' . $audioBase64)) {
-        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância em Configurações.'];
+        return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }
 
     $id = registrarMensagem($telNorm, 'out', '🎤 Áudio', null, false, 'audio', $usuarioId);
@@ -407,7 +407,7 @@ function enviarAnexoManualWhatsapp(string $telefone, string $conteudoBase64, str
         $ok = zapiEnviarDocumento($telNorm, $dataUri, $nomeArquivo, $extensao);
     }
     if (!$ok) {
-        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância em Configurações.'];
+        return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }
 
     $tipoRegistro = $ehImagem ? 'image' : 'document';

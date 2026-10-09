@@ -100,7 +100,7 @@ function enviarMensagemManualVendas(string $telefone, string $texto, int $usuari
     $nomeVendedor = trim((string)($usuario['nome'] ?? ''));
     $textoAssinado = $nomeVendedor !== '' ? "*{$nomeVendedor}:*\n{$texto}" : $texto;
     if (!zapiEnviarTexto($telNorm, $textoAssinado, zapiCredenciaisVendas())) {
-        return ['ok' => false, 'erro' => 'Falha ao enviar pelo Z-API — confira a instância de vendas em Configurações.'];
+        return ['ok' => false, 'erro' => 'Falha ao enviar — confira a instância de vendas (ou o fallback Meta) em Configurações.' . whatsappDetalheUltimoErro()];
     }
     $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
     pausarIA($telNorm);
