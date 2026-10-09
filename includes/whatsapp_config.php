@@ -10,6 +10,7 @@
 define('BASE_PATH', dirname(__DIR__));
 require_once BASE_PATH . '/includes/db.php';
 require_once BASE_PATH . '/includes/whatsapp_oficial.php';
+require_once BASE_PATH . '/includes/whatsapp_evolution.php';
 
 define('BOT_DEBUG', false);
 
@@ -101,15 +102,22 @@ function zapiStatusPrincipalCache(bool $forcar = false): array {
 }
 
 /**
- * Status do CANAL PRINCIPAL de verdade — Z-API ou Meta oficial, conforme
- * `whatsapp_provider_principal` (o mesmo gate que zapiEnviarTexto() usa
- * pra decidir por onde a resposta sai). 29/09/2026, achado real: o badge
- * do topbar sempre mostrava status da Z-API mesmo depois do toggle já
- * estar em 'oficial' — "mudei mais dica zpi bolinha". Retorna o mesmo
- * formato de zapiStatusPrincipalCache()/oficialStatusCache() + 'provider'
- * ('zapi'|'oficial'), pro badge escolher o rótulo certo.
+ * Status do CANAL PRINCIPAL de verdade — Z-API, Meta oficial ou Evolution,
+ * conforme `whatsapp_provider_principal` (o mesmo gate que
+ * zapiEnviarTexto() usa pra decidir por onde a resposta sai). 29/09/2026,
+ * achado real: o badge do topbar sempre mostrava status da Z-API mesmo
+ * depois do toggle já estar em 'oficial' — "mudei mais dica zpi bolinha".
+ * Retorna o mesmo formato de zapiStatusPrincipalCache()/
+ * oficialStatusCache()/evolutionStatusCache() + 'provider'
+ * ('zapi'|'oficial'|'evolution'), pro badge escolher o rótulo certo.
+ * 09/10/2026 — Evolution checada primeiro (só UM provider ativa por vez
+ * via o valor único salvo em `whatsapp_provider_principal`, a ordem de
+ * checagem aqui nunca muda o resultado).
  */
 function canalPrincipalStatusCache(): array {
+    if (evolutionEhProviderPrincipal()) {
+        return evolutionStatusCache() + ['provider' => 'evolution'];
+    }
     if (oficialEhProviderPrincipal()) {
         return oficialStatusCache() + ['provider' => 'oficial'];
     }
@@ -255,6 +263,17 @@ function zapiEnviarTextoInterno(string $phone, string $msg): bool {
             return true;
         }
     }
+
+    // 09/10/2026 — Evolution API (self-hosted, Baileys) também não tem
+    // janela de 24h (restrição é específica da Cloud API oficial da Meta,
+    // nunca existiu no protocolo não-oficial) — tentada antes do Meta pelo
+    // mesmo motivo que a Z-API já era: mensagem interna nunca depende do
+    // canal ATIVO (toggle), só tenta o que estiver disponível, Meta por
+    // último (único com restrição real de janela).
+    if (evolutionConfigured() && evolutionEnviarTexto($phone, $msg)) {
+        return true;
+    }
+
     if (oficialConfigured()) {
         return oficialEnviarTexto($phone, $msg);
     }
@@ -264,6 +283,10 @@ function zapiEnviarTextoInterno(string $phone, string $msg): bool {
 function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
     $canal = $instanciaOverride[3] ?? null;
+
+    if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
+        return evolutionEnviarTexto($phone, $msg);
+    }
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarTexto($phone, $msg);
@@ -330,6 +353,9 @@ function zapiEnviarTextoPeloCanal(string $phone, string $msg, ?string $canal): b
     if ($canal === 'oficial') {
         return oficialConfigured() ? oficialEnviarTexto($phone, $msg) : false;
     }
+    if ($canal === 'evolution') {
+        return evolutionConfigured() ? evolutionEnviarTexto($phone, $msg) : false;
+    }
     if ($canal === 'zapi') {
         $inst = _chatbot_getConfig('zapi_instance_id');
         $tok = _chatbot_getConfig('zapi_token');
@@ -383,6 +409,10 @@ function _zapiEnviarTextoBruto(string $phone, string $msg, string $inst, string 
 function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
     $canal = $instanciaOverride[3] ?? null;
+
+    if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
+        return evolutionEnviarImagem($phone, $imagemUrl, $legenda);
+    }
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarImagem($phone, $imagemUrl, $legenda);
@@ -443,6 +473,10 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?ar
 function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
     $canal = $instanciaOverride[3] ?? null;
+
+    if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
+        return evolutionEnviarVideo($phone, $videoUrl, $legenda);
+    }
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarVideo($phone, $videoUrl, $legenda);
@@ -510,6 +544,10 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $insta
     $usandoPrincipal = $instanciaOverride === null;
     $canal = $instanciaOverride[3] ?? null;
 
+    if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
+        return evolutionEnviarAudio($phone, $audioDataUriOuUrl);
+    }
+
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarAudio($phone, $audioDataUriOuUrl);
     }
@@ -574,6 +612,10 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $insta
 function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, string $fileName, string $extensao, ?array $instanciaOverride = null): bool {
     $usandoPrincipal = $instanciaOverride === null;
     $canal = $instanciaOverride[3] ?? null;
+
+    if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
+        return evolutionEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
+    }
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);

@@ -13,12 +13,12 @@
  * marcada pela Meta (ver CLAUDE.md, bullets "Novo número banido pela Meta
  * imediatamente ao conectar na Z-API..."/"Hipótese de acompanhamento do
  * usuário"). Decisão do usuário: trocar o canal PRINCIPAL pra uma instância
- * Evolution API self-hosted, numa VPS própria (HostGator, "Evolution API
- * Whats", ainda "Em configuração" no momento desta implementação — ver
- * pendência no final deste arquivo). Z-API e Meta oficial NUNCA removidas
- * do código (regra de sempre deste projeto: nunca apaga integração
- * funcional), só deixam de ser o canal ATIVO "por enquanto" — reversível a
- * qualquer momento trocando o radio em Configurações.
+ * Evolution API self-hosted, numa VPS própria (HostGator, addon "Evolution
+ * API Whats", ainda "Em configuração" no momento desta implementação). Z-API
+ * e Meta oficial NUNCA removidas do código (regra de sempre deste projeto:
+ * nunca apaga integração funcional), só deixam de ser o canal ATIVO "por
+ * enquanto" — reversível a qualquer momento trocando o radio em
+ * Configurações.
  *
  * **Risco estrutural, não eliminado**: Evolution API também é construída
  * em cima do Baileys (WhatsApp Web/multi-device não-oficial) — trocar de
@@ -30,42 +30,62 @@
  * ajudar com a hipótese de "conta/infraestrutura compartilhada marcada",
  * mas não é garantia nenhuma.
  *
- * **Construído a partir da documentação pública** do projeto Evolution API
- * (github.com/EvolutionAPI/evolution-api; o domínio oficial dos docs,
- * mintlify.com/EvolutionAPI, está bloqueado pra leitura direta neste
- * sandbox — confirmado só via WebSearch/snippets de terceiros, nunca a
- * doc oficial inteira). NUNCA confirmado contra uma instância real — mesma
- * ressalva "a validar em produção" de todo provedor novo deste projeto
- * (Asaas, ZapCar, PlacaFIPE, Meta Cloud API passaram pela mesma fase).
+ * **Formato confirmado contra a documentação real** (09/10/2026, usuário
+ * achou e colou `docs.evolutionfoundation.com.br` — o portal oficial do
+ * produto que a HostGator empacotou; confirmado via WebSearch, domínio
+ * bloqueado pra leitura direta neste sandbox, mesma limitação de sempre —
+ * nunca a doc inteira, só os trechos que a busca devolveu):
  *
- * Formato assumido (API v2, auth por header `apikey` — chave da instância,
- * mesmo nível de credencial único que Z-API/Meta já usam aqui):
- *   POST /message/sendText/{instance}          — {number, text}
- *   POST /message/sendMedia/{instance}         — {number, mediatype, media, caption?, fileName?}
- *   POST /message/sendWhatsAppAudio/{instance} — {number, audio} (nota de voz, sem legenda)
- *   GET  /instance/connectionState/{instance}  — {instance: {state: open|close|connecting}}
- *   Webhook (configurado na criação/edição da instância, evento
- *   messages.upsert): {event, instance, data: {key: {remoteJid, fromMe, id},
- *   pushName, message: {conversation}}, apikey, server_url, date_time}
+ *   - Auth: header `apikey` (global ou da instância).
+ *   - `POST /message/sendText/{instance}` — JSON, corpo
+ *     `{number, textMessage: {text, ...}, delay?, linkPreview?, mentioned?}`
+ *     — **NUNCA** `{number, text}` flat (1ª versão deste arquivo errou
+ *     isso, corrigido antes de qualquer teste/uso real).
+ *   - `POST /message/sendMedia/{instance}` — **multipart/form-data**, NÃO
+ *     JSON (2 buscas independentes confirmaram, nenhuma mostrou opção de
+ *     base64/URL em texto) — campos `number`, `mediatype`
+ *     (image|video|audio|document), `media` (o ARQUIVO de verdade, upload
+ *     binário via `@arquivo` no curl), `caption?`, `fileName?`. Diferente
+ *     de Z-API/Meta (que aceitam URL pública OU base64 em texto),
+ *     `_evolutionEnviarMidia()` sempre RESOLVE os bytes primeiro — baixa a
+ *     URL ou decodifica o data URI — antes de montar o multipart.
+ *   - `GET /instance/connectionState/{instance}` — `{instance: {state:
+ *     open|close|connecting}}`.
+ *   - Webhook: evento `MESSAGES_UPSERT` (confirmado na doc de configuração
+ *     de webhook — maiúsculo/underscore, não o `messages.upsert` minúsculo/
+ *     ponto que a busca genérica inicial tinha sugerido; aceito os dois
+ *     formatos no adaptador, por segurança). **Nunca confirmado contra
+ *     esta doc específica**: o formato exato do corpo de
+ *     `data.key.remoteJid`/`data.message.conversation`/`data.pushName` —
+ *     só confirmado contra a doc genérica do projeto EvolutionAPI original
+ *     (github.com/EvolutionAPI/evolution-api, via mintlify.com, mesmo
+ *     código-base que a Evolution Foundation distribui) — mantido como
+ *     suposição mais provável, mas nunca validado contra ESTE produto
+ *     específico.
+ *   - "Webhook by events": a doc menciona um modo onde cada evento vai pra
+ *     uma URL própria (`/webhook/messages-upsert`) — este projeto assume
+ *     o modo SIMPLES (1 URL só, `event` no corpo decide o tipo), mesmo
+ *     padrão de toda outra integração daqui (Z-API/Meta também usam 1 URL
+ *     única) — instruir o usuário a NUNCA ligar "Webhook By Events" na
+ *     hora de configurar a instância.
  *
- * **Pontos nunca confirmados**, sinalizados aqui pra quando a VPS estiver
- * pronta: (1) se `number` aceita só dígitos (DDI+DDD+número, mesmo formato
- * que `normalizarTelefone()` já produz) ou exige sufixo `@s.whatsapp.net`
- * — assumido que não precisa, já que os exemplos encontrados usam número
- * puro; (2) se o campo `media` aceita data URI base64 direto (assumido que
- * sim — Baileys lida com base64 nativamente, e outro provedor Baileys-based
- * já confirmado em produção, a Z-API, aceita os dois formatos) ou exige
- * upload prévio tipo a Cloud API da Meta; (3) se o webhook de fato inclui
- * `apikey` no corpo — por isso a validação de origem no webhook usa o nome
- * da `instance`, não o `apikey` (campo com confirmação mais fraca); (4)
- * RECEBIMENTO de mídia fica DE FORA desta 1ª versão de propósito — Baileys
- * normalmente exige decriptar a mídia usando chaves (`mediaKey`) que vêm
- * dentro da própria mensagem, mecanismo que nenhuma fonte consultada aqui
- * confirmou como a Evolution API expõe (base64 direto no webhook, com
- * `webhook_base64` ligado? endpoint `/chat/getBase64FromMediaMessage`?) —
- * sem confirmação nenhuma, melhor deixar sem tentar do que inventar um
- * endpoint errado; mídia recebida cai no mesmo caminho gracioso "mídia não
- * processada" que o projeto já tem (mimeType sem bytes/URL resolvível).
+ * **IMPORTANTE — existem DOIS produtos distintos** sob a marca Evolution:
+ * "Evolution API" (o clássico, JS/TS, Baileys) e "Evolution Go" (mais
+ * novo, Go, formato de API bem diferente — `/send/media` em vez de
+ * `/message/sendMedia/...`, JSON em vez de multipart). Este arquivo
+ * assume **Evolution API** (o clássico) — é o que o addon "Evolution API
+ * Whats" da HostGator parece instalar pelo próprio nome; se a VPS vier
+ * com Evolution Go, os endpoints aqui não batem e precisam de revisão.
+ *
+ * **Ainda sem confirmação nenhuma** (nem documentação nem instância real):
+ * (1) RECEBIMENTO de mídia — Baileys normalmente exige decriptar usando
+ * chaves (`mediaKey`) que vêm dentro da própria mensagem; nenhuma fonte
+ * consultada aqui confirmou como a Evolution API expõe isso (base64 direto
+ * no webhook? endpoint de download à parte?) — deixado de fora de
+ * propósito nesta 1ª versão, cai no mesmo caminho gracioso "mídia não
+ * processada" que o projeto já tem; (2) endpoint `sendWhatsAppAudio`
+ * (nota de voz/PTT) só confirmado via busca genérica do projeto original,
+ * nunca contra esta doc específica — mantido como aposta mais provável.
  */
 
 require_once __DIR__ . '/db.php';
@@ -108,8 +128,10 @@ function _evolutionSetUltimoErro(?string $msg): void {
     $GLOBALS['_evolution_ultimo_erro'] = $msg;
 }
 
-function _evolutionHeaders(string $apiKey): array {
-    return ['apikey: ' . $apiKey, 'Content-Type: application/json'];
+function _evolutionHeaders(string $apiKey, bool $json = true): array {
+    $h = ['apikey: ' . $apiKey];
+    if ($json) $h[] = 'Content-Type: application/json';
+    return $h;
 }
 
 /** Extrai uma mensagem de erro legível de uma resposta JSON da Evolution — formato de erro nunca confirmado, tenta os campos mais prováveis. */
@@ -118,6 +140,11 @@ function _evolutionErroDeResposta($json, int $httpCode): string {
     return is_array($erro) ? json_encode($erro, JSON_UNESCAPED_UNICODE) : (string)$erro;
 }
 
+/**
+ * POST /message/sendText/{instance} — JSON, corpo aninhado
+ * {number, textMessage: {text}} (confirmado contra a doc real, ver
+ * docblock do topo do arquivo).
+ */
 function evolutionEnviarTexto(string $phone, string $msg, ?array $override = null): bool {
     [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
     if (!$base || !$instance || !$apiKey || !$phone) {
@@ -134,7 +161,10 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode(['number' => $phoneNorm, 'text' => $msg]),
+        CURLOPT_POSTFIELDS => json_encode([
+            'number' => $phoneNorm,
+            'textMessage' => ['text' => $msg],
+        ]),
         CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
         CURLOPT_TIMEOUT => 20,
     ]);
@@ -156,14 +186,42 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
     return false;
 }
 
-function _evolutionMediaTypeDe(string $tipo): string {
-    return in_array($tipo, ['image', 'video', 'document'], true) ? $tipo : 'image';
+/**
+ * Resolve `$urlOuDataUri` pros bytes de verdade + mime — baixa a URL (http/
+ * https) ou decodifica o data URI base64. Necessário porque, diferente de
+ * Z-API/Meta, o sendMedia da Evolution API quer o ARQUIVO em si no
+ * multipart, nunca uma URL/base64 em campo de texto. `null` em qualquer
+ * falha (nunca lança — quem chama decide o que fazer).
+ */
+function _evolutionResolverBytes(string $urlOuDataUri): ?array {
+    if (preg_match('#^data:([a-zA-Z0-9/+.\-]+);base64,(.+)$#s', $urlOuDataUri, $m)) {
+        $bytes = base64_decode($m[2], true);
+        if ($bytes === false) return null;
+        return ['mime' => $m[1], 'bytes' => $bytes];
+    }
+    if (preg_match('#^https?://#i', $urlOuDataUri)) {
+        $ch = curl_init($urlOuDataUri);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => true,
+        ]);
+        $bytes = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $mime = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+        if ($bytes === false || $http < 200 || $http >= 300 || $bytes === '') return null;
+        return ['mime' => $mime !== '' ? $mime : 'application/octet-stream', 'bytes' => $bytes];
+    }
+    return null;
 }
 
 /**
- * Imagem/vídeo/documento — POST /message/sendMedia/{instance}. Aceita URL
- * pública ou data URI base64 direto no campo `media` (assumido, nunca
- * confirmado — ver docblock do topo do arquivo).
+ * Imagem/vídeo/documento — POST /message/sendMedia/{instance},
+ * multipart/form-data (confirmado contra a doc real — ver docblock do
+ * topo). `$urlOuDataUri` sempre resolvido pros bytes antes do upload
+ * (`_evolutionResolverBytes()`) — nunca manda URL/base64 em texto, a
+ * Evolution quer o arquivo de verdade.
  */
 function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri, string $legenda, string $nomeArquivo, ?array $override = null): bool {
     [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
@@ -177,22 +235,28 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
         return false;
     }
 
-    $body = [
+    $resolvido = _evolutionResolverBytes($urlOuDataUri);
+    if ($resolvido === null) {
+        _evolutionSetUltimoErro('Não consegui resolver o arquivo (URL inacessível ou data URI inválido).');
+        return false;
+    }
+
+    $campos = [
         'number' => $phoneNorm,
-        'mediatype' => _evolutionMediaTypeDe($tipo),
-        'media' => $urlOuDataUri,
+        'mediatype' => in_array($tipo, ['image', 'video', 'document'], true) ? $tipo : 'image',
+        'media' => new CURLStringFile($resolvido['bytes'], $nomeArquivo, $resolvido['mime']),
         'fileName' => $nomeArquivo,
     ];
     if ($legenda !== '') {
-        $body['caption'] = $legenda;
+        $campos['caption'] = $legenda;
     }
 
     $ch = curl_init("{$base}/message/sendMedia/{$instance}");
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($body),
-        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_POSTFIELDS => $campos,
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey, false), // multipart — nunca Content-Type manual, o cURL monta o boundary sozinho
         CURLOPT_TIMEOUT => 40,
     ]);
     $resp = curl_exec($ch);
@@ -226,9 +290,13 @@ function evolutionEnviarDocumento(string $phone, string $documentoUrlOuDataUri, 
 }
 
 /**
- * Áudio (nota de voz) — endpoint PRÓPRIO (sendWhatsAppAudio), diferente de
- * sendMedia — sem legenda, WhatsApp não aceita caption em áudio (mesma
- * limitação já documentada pro lado Z-API/Meta).
+ * Áudio (nota de voz) — endpoint PRÓPRIO (`sendWhatsAppAudio`, só
+ * confirmado via busca genérica do projeto original — nunca contra esta
+ * doc específica, ver docblock do topo), também multipart (mesmo
+ * raciocínio de `_evolutionEnviarMidia()` — nunca confirmado se esse
+ * endpoint específico aceita JSON com base64 em vez de arquivo, mas
+ * manter o mesmo padrão de sendMedia é a aposta mais segura). Sem
+ * legenda — WhatsApp não aceita caption em áudio.
  */
 function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $override = null): bool {
     [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
@@ -242,12 +310,21 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
         return false;
     }
 
+    $resolvido = _evolutionResolverBytes($audioDataUriOuUrl);
+    if ($resolvido === null) {
+        _evolutionSetUltimoErro('Não consegui resolver o áudio (URL inacessível ou data URI inválido).');
+        return false;
+    }
+
     $ch = curl_init("{$base}/message/sendWhatsAppAudio/{$instance}");
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode(['number' => $phoneNorm, 'audio' => $audioDataUriOuUrl]),
-        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_POSTFIELDS => [
+            'number' => $phoneNorm,
+            'audio' => new CURLStringFile($resolvido['bytes'], 'audio.ogg', $resolvido['mime']),
+        ],
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey, false),
         CURLOPT_TIMEOUT => 30,
     ]);
     $resp = curl_exec($ch);
@@ -361,7 +438,7 @@ function evolutionStatusCache(bool $forcar = false): array {
 }
 
 /**
- * Adapta 1 payload de webhook Evolution (evento messages.upsert) pro MESMO
+ * Adapta 1 payload de webhook Evolution (evento MESSAGES_UPSERT) pro MESMO
  * formato que processarMensagemZapi() já sabe processar — mesmo papel de
  * oficialAdaptarPayloadParaZapi() (includes/whatsapp_oficial.php).
  *
@@ -369,15 +446,22 @@ function evolutionStatusCache(bool $forcar = false): array {
  * seja messages.upsert (connection.update, qrcode.updated, etc) ou um
  * messages.upsert sem `data.key.remoteJid` resolvível.
  *
- * Mídia recebida: nunca preenche bytes/URL de propósito (ver docblock do
- * topo do arquivo, ponto 4) — só o mimeType, quando disponível. Cai no
- * mesmo caminho gracioso "mídia não processada" que o projeto já tem pra
- * qualquer bloco sem URL/mediaId resolvível (tipoMidia()==='desconhecido'
- * ou extrairUrlMidia() não acha nada).
+ * Nome do evento aceito nos 2 formatos vistos em fontes diferentes:
+ * `MESSAGES_UPSERT` (confirmado na doc de configuração de webhook do
+ * produto real) e `messages.upsert` (formato da doc genérica do projeto
+ * original) — nunca custa aceitar os dois.
+ *
+ * Mídia recebida: nunca preenche bytes/URL de propósito (recebimento de
+ * mídia não tem confirmação nenhuma, ver docblock do topo do arquivo) — só
+ * o mimeType, quando disponível. Cai no mesmo caminho gracioso "mídia não
+ * processada" que o projeto já tem pra qualquer bloco sem URL/mediaId
+ * resolvível (tipoMidia()==='desconhecido' ou extrairUrlMidia() não acha
+ * nada).
  */
 function evolutionAdaptarPayloadParaZapi(array $body): ?array {
-    $evento = strtolower((string)($body['event'] ?? ''));
-    if (!in_array($evento, ['messages.upsert', 'messages_upsert'], true)) {
+    $evento = strtoupper((string)($body['event'] ?? ''));
+    $evento = str_replace('.', '_', $evento);
+    if ($evento !== 'MESSAGES_UPSERT') {
         return null;
     }
     $data = $body['data'] ?? null;

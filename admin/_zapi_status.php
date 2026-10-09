@@ -48,6 +48,12 @@ $zapiPodeVerSaude = ($_SESSION['admin_perfil'] ?? '') === 'super_admin';
             desconectado: ['🔴', 'Meta (oficial) — token inválido'],
             erro: ['🟡', 'Meta (oficial) — erro ao verificar'],
             nao_configurado: ['⚪', 'Meta (oficial) não configurado']
+        },
+        evolution: {
+            conectado: ['🟣', 'Evolution conectado'],
+            desconectado: ['🔴', 'Evolution desconectado'],
+            erro: ['🟡', 'Evolution — erro ao verificar'],
+            nao_configurado: ['⚪', 'Evolution não configurado']
         }
     };
 

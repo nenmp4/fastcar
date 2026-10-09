@@ -60,6 +60,19 @@ $camposWhatsappOficial = [
     'whatsapp_oficial_verify_token'    => 'Verify Token (você inventa, cola igual no painel da Meta)',
 ];
 
+// Evolution API (self-hosted) — 09/10/2026, "vamos implementa evolution
+// desativa met zpi [por enquanto]": depois de 4 números seguidos banidos
+// na mesma conta Z-API (um deles sem nenhuma automação rodando), decisão
+// de trocar o canal PRINCIPAL pra uma instância Evolution API self-hosted
+// (VPS própria, nunca compartilhada com infraestrutura de terceiro — ver
+// includes/whatsapp_evolution.php pro contexto completo). Z-API/Meta
+// oficial nunca removidas, só deixam de ser o canal ATIVO "por enquanto".
+$camposEvolution = [
+    'evolution_base_url'     => 'URL base da instância (ex: https://vpsbr-XXXXX.vpshostgator.com.br:8080)',
+    'evolution_instance_name' => 'Nome da instância',
+    'evolution_api_key'      => 'API Key (da instância, ou a global)',
+];
+
 // 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só
 // permite mais um numero no aplicativo aprovado" → confirmado: só VENDAS
 // ganha o número Meta oficial extra (financeiro fica de fora, não existe
@@ -275,8 +288,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($acao === 'salvar_provider_principal') {
             $provider = (string)($_POST['whatsapp_provider_principal'] ?? 'zapi');
-            setConfig('whatsapp_provider_principal', in_array($provider, ['zapi', 'oficial'], true) ? $provider : 'zapi');
-            $sucesso = 'Canal principal agora usa: ' . (getConfig('whatsapp_provider_principal') === 'oficial' ? 'API oficial (Meta)' : 'Z-API');
+            setConfig('whatsapp_provider_principal', in_array($provider, ['zapi', 'oficial', 'evolution'], true) ? $provider : 'zapi');
+            $providerSalvo = getConfig('whatsapp_provider_principal');
+            $sucesso = 'Canal principal agora usa: ' . ($providerSalvo === 'oficial' ? 'API oficial (Meta)' : ($providerSalvo === 'evolution' ? 'Evolution API (self-hosted)' : 'Z-API'));
+        } elseif ($acao === 'salvar_evolution') {
+            foreach (array_keys($camposEvolution) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da Evolution API salvas.';
+        } elseif ($acao === 'testar_evolution') {
+            try {
+                $confirmado = evolutionTestarConexao();
+                $sucesso = "Evolution respondeu: {$confirmado} — conexão funcionando.";
+            } catch (Throwable $e) {
+                $erro = 'Falha ao testar: ' . $e->getMessage();
+            }
         } elseif ($acao === 'salvar_whatsapp_oficial_vendas') {
             foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -618,6 +644,11 @@ foreach (array_keys($camposWhatsappOficial) as $chave) {
     $valoresOficial[$chave] = getConfig($chave) ?? '';
 }
 $configuradoOficial = $valoresOficial['whatsapp_oficial_phone_number_id'] && $valoresOficial['whatsapp_oficial_access_token'];
+$valoresEvolution = [];
+foreach (array_keys($camposEvolution) as $chave) {
+    $valoresEvolution[$chave] = getConfig($chave) ?? '';
+}
+$configuradoEvolution = $valoresEvolution['evolution_base_url'] && $valoresEvolution['evolution_instance_name'] && $valoresEvolution['evolution_api_key'];
 $providerPrincipalAtual = getConfig('whatsapp_provider_principal') ?: 'zapi';
 $valoresOficialVendas = [];
 foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
@@ -626,6 +657,7 @@ foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
 $configuradoOficialVendas = $valoresOficialVendas['whatsapp_oficial_vendas_phone_number_id'] && $valoresOficialVendas['whatsapp_oficial_vendas_access_token'];
 $providerVendasAtual = getConfig('whatsapp_provider_vendas') ?: 'zapi';
 $urlWebhookOficial = (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'sistema.fastcar.solutions') . '/chatbot-whatsapp/webhook/whatsapp_oficial.php';
+$urlWebhookEvolution = (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'sistema.fastcar.solutions') . '/chatbot-whatsapp/webhook/whatsapp_evolution.php';
 $fila = listarFilaConsultores();
 foreach ($fila as &$f) {
     $f['leads_ativas'] = contarOportunidadesAtivas((int)$f['id']);
@@ -867,6 +899,51 @@ unset($fv);
 </div>
 
 <div class="card">
+    <h2>🟣 Evolution API (self-hosted) — Canal principal</h2>
+    <p><small>09/10/2026, depois de 4 números seguidos banidos na mesma conta Z-API (um deles sem
+       nenhuma automação rodando) — instância Evolution API própria, numa VPS dedicada, sem
+       compartilhar infraestrutura com outras contas de terceiro. Mesmo risco estrutural de qualquer
+       protocolo não-oficial (Baileys/WhatsApp Web, mesma categoria da Z-API — trocar de provedor
+       nunca elimina esse risco), mas sem o risco adicional de infraestrutura compartilhada.</small></p>
+    <p><small>⚠️ <strong>Nunca confirmado contra a instância real ainda</strong> — construído a partir
+       da documentação pública, mesma ressalva "a validar em produção" de todo provedor novo deste
+       projeto. Teste a conexão antes de ativar como canal principal.</small></p>
+
+    <p>
+        Status Evolution API:
+        <span class="badge <?= $configuradoEvolution ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoEvolution ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_evolution">
+        <?php foreach ($camposEvolution as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="<?= $chave === 'evolution_api_key' ? 'password' : 'text' ?>" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresEvolution[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresEvolution[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>URL do webhook — cola na configuração de webhook da instância (evento
+       <code>MESSAGES_UPSERT</code>, modo simples, nunca "Webhook By Events"):</small></p>
+    <p><code style="word-break:break-all"><?= e($urlWebhookEvolution) ?></code></p>
+
+    <hr>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_evolution">
+        <button type="submit" <?= $configuradoEvolution ? '' : 'disabled' ?>>Testar conexão</button>
+        <?php if (!$configuradoEvolution): ?>
+            <p><small>Preencha e salve a URL/instância/API key acima antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
     <h2>🟢 WhatsApp Cloud API (Meta oficial)</h2>
     <p><small>25/09/2026, depois dos dois números Z-API (principal e fallback) serem bloqueados de novo —
        migração do canal PRINCIPAL de entrada de lead pra API oficial da Meta, que não sofre banimento por
@@ -913,7 +990,8 @@ unset($fv);
 
     <hr>
     <p><small><strong>Canal que o funil de compra usa pra mandar/receber mensagem agora</strong> — só muda
-       depois de testar a conexão acima com sucesso; nunca troca sozinho.</small></p>
+       depois de testar a conexão com sucesso (Evolution acima, ou Meta neste card); nunca troca
+       sozinho.</small></p>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_provider_principal">
@@ -924,6 +1002,10 @@ unset($fv);
         <label>
             <input type="radio" name="whatsapp_provider_principal" value="oficial" <?= $providerPrincipalAtual === 'oficial' ? 'checked' : '' ?> <?= $configuradoOficial ? '' : 'disabled' ?>>
             API oficial (Meta) — canal principal
+        </label>
+        <label>
+            <input type="radio" name="whatsapp_provider_principal" value="evolution" <?= $providerPrincipalAtual === 'evolution' ? 'checked' : '' ?> <?= $configuradoEvolution ? '' : 'disabled' ?>>
+            Evolution API (self-hosted) — canal principal
         </label>
         <button type="submit">Salvar</button>
     </form>

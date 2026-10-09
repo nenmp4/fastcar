@@ -12360,6 +12360,144 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   compartilhado entre contas da própria Z-API, não só por conta
   individual.
 
+- **WhatsApp — Evolution API (self-hosted) como canal principal, substituindo
+  Z-API "por enquanto"** (09/10/2026, "vamos implementa evolution desativa
+  met zpi por enquanto") — consequência direta do incidente documentado
+  acima (4 números Z-API banidos em sequência na mesma conta, um deles sem
+  nenhuma automação rodando): decisão de trocar o canal PRINCIPAL (funil de
+  compra) pra uma instância **Evolution API self-hosted**, numa VPS própria
+  (HostGator, addon "Evolution API Whats", "Em configuração" no momento
+  desta implementação — nunca testado contra a instância real ainda). **Z-API
+  e Meta oficial NUNCA removidas do código** — regra de sempre deste
+  projeto, mesma disciplina já aplicada quando a Z-API fallback foi removida
+  em 28/09/2026 (essa sim removida por completo, por decisão explícita
+  diferente desta) — só deixam de ser o canal ATIVO, reversível a qualquer
+  momento trocando o radio em Configurações.
+  **Risco estrutural, nunca eliminado**: Evolution API também é construída
+  em cima do Baileys (WhatsApp Web/multi-device não-oficial) — trocar de
+  PROVEDOR muda só quem hospeda a conexão, nunca elimina o risco do
+  protocolo em si (mesma ressalva já registrada na memória global sobre o
+  WA-AKG — "mesma categoria de risco de shadowban/banimento que a Z-API,
+  nunca menor"). Self-hosted dá um controle que a Z-API nunca deu (infra/IP
+  próprios, sem compartilhar pool com outras contas de terceiro) — pode
+  ajudar com a hipótese de "conta/infraestrutura Z-API compartilhada já
+  marcada", mas não é garantia nenhuma.
+  **Dois produtos distintos sob a marca Evolution**: "Evolution API" (o
+  clássico, JS/TS, Baileys, endpoints `/message/sendText`) e "Evolution Go"
+  (mais novo, Go, formato de API bem diferente — `/send/media`, JSON em vez
+  de multipart) — este projeto assume **Evolution API** (o clássico), pelo
+  próprio nome do addon da HostGator; se a VPS vier com Evolution Go, os
+  endpoints implementados aqui não batem e precisam de revisão.
+  `includes/whatsapp_evolution.php` (novo) — mesmo papel de
+  `includes/whatsapp_oficial.php`: `evolutionCredenciais()`/
+  `evolutionConfigured()`/`evolutionEhProviderPrincipal()` (mesmo gate
+  único via `config.whatsapp_provider_principal`, agora aceitando
+  `'zapi'`\|`'oficial'`\|`'evolution'`), `evolutionEnviarTexto()`/
+  `Imagem()`/`Video()`/`Audio()`/`Documento()`, `evolutionTestarConexao()`,
+  `evolutionStatusCache()` (60s TTL, mesmo padrão exato de
+  `zapiStatusPrincipalCache()`/`oficialStatusCache()`) e
+  `evolutionAdaptarPayloadParaZapi()` (adapta o payload de webhook pro MESMO
+  formato que `processarMensagemZapi()` já processa, mesmo papel de
+  `oficialAdaptarPayloadParaZapi()`, reaproveitando 100% da lógica de
+  dedup/qualificação/IA já testada).
+  **Construído a partir da documentação pública real**
+  (`docs.evolutionfoundation.com.br` — o usuário achou e colou o link;
+  domínio bloqueado pra leitura direta neste sandbox, confirmado só via
+  WebSearch/snippets, mesma limitação de sempre com documentação externa
+  deste projeto) — 2 correções reais feitas em cima da 1ª versão (que tinha
+  sido escrita só com snippets genéricos de busca, antes do usuário achar a
+  doc certa):
+  (1) **sendText** é `{number, textMessage: {text, ...}}` — corpo ANINHADO,
+  nunca `{number, text}` flat como a 1ª versão assumia;
+  (2) **sendMedia** é `multipart/form-data`, **nunca JSON** — `media` é o
+  ARQUIVO de verdade (upload binário), diferente de Z-API/Meta (que aceitam
+  URL pública OU base64 em texto) — `_evolutionResolverBytes()` (novo)
+  sempre resolve os bytes ANTES de montar o multipart: baixa a URL (se
+  `http(s)://`) ou decodifica o data URI base64, nunca manda URL/base64
+  como campo de texto. `CURLStringFile` (PHP 8.1+, mesmo mecanismo já usado
+  em `oficialUploadMedia()` pro Meta) monta o multipart sem precisar
+  escrever arquivo temporário em disco.
+  Evento de webhook `MESSAGES_UPSERT` (maiúsculo/underscore, confirmado na
+  doc de configuração de webhook do produto real — `evolutionAdaptarPayloadParaZapi()`
+  aceita os dois formatos, maiúsculo e o `messages.upsert` minúsculo/ponto
+  da doc genérica do projeto original, por segurança). **Ainda sem
+  confirmação nenhuma** (nem doc nem instância real): formato exato do
+  corpo (`data.key.remoteJid`/`data.message.conversation`/`data.pushName`,
+  só confirmado contra a doc GENÉRICA do projeto EvolutionAPI original via
+  mintlify.com, nunca contra esta doc/produto específico); RECEBIMENTO de
+  mídia (Baileys normalmente exige decriptar com `mediaKey` que vem dentro
+  da própria mensagem — nenhuma fonte consultada confirmou como a Evolution
+  API expõe isso, deixado de fora de propósito, cai no mesmo caminho
+  gracioso "mídia não processada" que o projeto já tem); endpoint
+  `sendWhatsAppAudio` (nota de voz) só confirmado via busca genérica do
+  projeto original, nunca contra esta doc específica.
+  `chatbot-whatsapp/webhook/whatsapp_evolution.php` (novo) — endpoint
+  SEPARADO dos outros 2 webhooks (formato de payload `{event, instance,
+  data}`, nunca roteável pela mesma URL), só POST (Evolution não exige
+  handshake de verificação GET como a Cloud API da Meta). Validação de
+  origem pelo **nome da `instance`** no corpo do payload (sempre presente
+  no envelope, confirmado), nunca pelo campo `apikey` — uma fonte sugeriu
+  que o webhook também carrega `apikey` no corpo, mas isso nunca foi
+  confirmado contra a doc real, e validar por um campo não confirmado
+  arriscaria rejeitar 100% do tráfego real, **mesmo erro já cometido uma
+  vez neste projeto com o Client-Token da Z-API** (ver bullet "checagem de
+  client-token no header REMOVIDA" mais abaixo) — lição aplicada aqui de
+  propósito, pra não repetir.
+  **Dispatch** (`includes/whatsapp_config.php`) — `evolutionEhProviderPrincipal()`
+  adicionado ANTES do check de `oficialEhProviderPrincipal()` nos 5
+  dispatchers (`zapiEnviarTexto()`/`Imagem()`/`Video()`/`Audio()`/
+  `Documento()`) — mesmo padrão de sempre, só 1 provider ativa por vez via
+  o valor único em `whatsapp_provider_principal`, a ordem de checagem nunca
+  muda o resultado. `canalPrincipalStatusCache()` (badge do topbar) e
+  `zapiEnviarTextoPeloCanal()` (resposta no MESMO turno, respeitando de
+  onde a mensagem do cliente veio) ganharam o branch `'evolution'`.
+  `zapiEnviarTextoInterno()` (notificação pro WhatsApp PESSOAL de staff,
+  nunca depende do toggle) ganhou uma 2ª tentativa com Evolution ANTES de
+  cair pro Meta — raciocínio: Evolution (self-hosted, Baileys) não tem a
+  janela de 24h que é restrição ESPECÍFICA da Cloud API oficial da Meta,
+  nunca existiu no protocolo não-oficial, então mensagem interna pode
+  preferir Evolution sobre Meta pelo mesmo motivo que já preferia Z-API.
+  `admin/configuracoes.php` — card novo "🟣 Evolution API (self-hosted) —
+  Canal principal" (URL base/nome da instância/API key + teste de conexão
+  só-leitura + URL do webhook pronta pra copiar, com aviso explícito pra
+  NUNCA ligar "Webhook By Events" no painel da instância — este projeto
+  assume o modo simples, 1 URL só, `event` no corpo decide o tipo, mesmo
+  padrão de Z-API/Meta) + radio de "canal principal" ganhou a 3ª opção,
+  **desabilitada até testar com sucesso** (mesmo texto/disciplina do card
+  Meta: "só muda depois de testar a conexão com sucesso; nunca troca
+  sozinho") — **nunca forçado a 'evolution' via código**, só fica disponível
+  pro próprio super_admin escolher explicitamente quando a VPS estiver
+  pronta e a instância testada. `admin/_zapi_status.php` ganhou o rótulo 🟣
+  pro provider `'evolution'` nos 4 estados (conectado/desconectado/erro/não
+  configurado).
+  Testado: 36 asserções de função isoladas contra servidor Evolution fake
+  local (sendText com corpo aninhado certo, nunca o formato flat antigo;
+  sendMedia/sendWhatsAppAudio confirmados como multipart de verdade — bytes
+  exatos conferidos por sha1, tanto vindo de data URI quanto baixados de
+  uma URL pública antes do upload; connectionState nos 3 estados
+  open/close/401; adaptador de webhook com mensagem de texto/grupo/evento
+  não-mensagem/mídia recebida nunca inventando bytes) + 7 asserções de
+  dispatch (`zapiEnviarTexto()`/`zapiEnviarTextoPeloCanal()`/
+  `canalPrincipalStatusCache()`/`zapiEnviarTextoInterno()` confirmados
+  roteando pra Evolution quando é o provider principal, com Z-API/Meta
+  **sem nenhuma credencial configurada** no teste — garantindo que um
+  sucesso só podia ter vindo da Evolution, nunca de rede batendo em porta
+  morta por coincidência) + **webhook ponta a ponta via HTTP real**
+  (`php -S` servindo o app de verdade contra banco isolado): payload
+  `MESSAGES_UPSERT` real cria cliente+oportunidade+mensagem corretos
+  (telefone/nome/texto conferidos direto no banco), reenviar o MESMO
+  `messageId` confirmado NÃO duplicando nada (dedup funcionando); instância
+  desconhecida no payload rejeitada com 401; evento que não é mensagem
+  (`CONNECTION_UPDATE`) ignorado graciosamente — + `php -l` nos 4 arquivos
+  tocados + `tests/smoke.php` (210 arquivos, 0 avisos) limpo. Sem migração
+  de schema — todas as chaves novas vivem em `config` (livre, key/value).
+  ⚠️ **Nunca confirmado contra a instância real** — VPS ainda "Em
+  configuração" na HostGator no momento desta implementação; validar assim
+  que a instância subir: testar conexão em Configurações, conectar o QR
+  code, mandar e receber mensagem real, e só então marcar o toggle de
+  canal principal pra `'evolution'` de propósito (nunca pré-setado por
+  código).
+
 ## Pendências
 
 ## Pendências (aguardando definição antes de codar mais)
