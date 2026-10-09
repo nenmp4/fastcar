@@ -12284,6 +12284,56 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   limpos. Sem migração de schema (só leitura em cima de coluna já
   existente).
 
+- **Novo número banido pela Meta imediatamente ao conectar na Z-API, SEM
+  nenhuma automação rodando** (09/10/2026, "nen liguei anuncios nada só
+  pluguei zpi caiu" / "impressionante acabei criar conta do watSapp eu
+  conectei zpi meta ja bloqueio" / "tá queimada instancia do zpi" /
+  "automação não autorizada pela meta") — incidente NOVO, categoria
+  diferente dos já documentados (flood de mensagem duplicada, shadowban
+  por padrão de envio, banimento da conta Meta Business oficial em
+  30/09/2026): aqui não tinha NENHUM envio automático acontecendo — número
+  criado do zero, só pareado na Z-API (QR code/multi-device), sem anúncio
+  rodando, sem lead chegando, sem cron disparando nada — e a Meta já
+  bloqueou citando "automação não autorizada". Investigado o webhook
+  (`chatbot-whatsapp/webhook/whatsapp.php`) antes de supor qualquer coisa:
+  confirmado que ele só processa evento que chega com `phone`+conteúdo de
+  mensagem de verdade (roteado pra `processarMensagemZapi()`/
+  `VendasZapi()`/`FinanceiroZapi()`) — não existe NENHUM caminho de código
+  que dispare mensagem sozinho a partir de um evento de conexão/status/QR
+  pareado (esses já são filtrados desde o fix do incidente de flood de
+  15/09/2026, `tipoMidia()==='desconhecido'` ignorado). Ou seja: **não foi
+  o nosso código que causou isso** — nenhuma automação de envio sequer
+  teve chance de rodar antes do bloqueio acontecer.
+  **Hipótese do próprio usuário, plausível e consistente com o já
+  documentado**: "se tivesse só whatsapp sem conectar a conta não tinha
+  ido para análise" — a suspeita (impossível confirmar com certeza, é
+  decisão interna da Meta) é que o bloqueio aconteceu na camada de
+  CONEXÃO em si (pareamento multi-device via cliente não-oficial, IP de
+  datacenter/VPS em vez de celular, número sem nenhum histórico de uso
+  humano real antes de ser automatizado), não por volume/conteúdo de
+  mensagem — mesma categoria de risco já registrada na memória global
+  (`~/.claude/CLAUDE.md`) sobre o WA-AKG/Baileys: "protocolo não-oficial
+  WhatsApp Web/multi-device, mesma categoria de risco de shadowban/
+  banimento que a Z-API, nunca menor" — e a mesma Z-API, no material
+  oficial deles já revisado nesta sessão (ver bullet "Removida por
+  completo, 28/09/2026" acima), nunca garante que só respeitar
+  horário/consentimento no ENVIO elimina o risco — isso reduz só o que
+  está sob nosso controle (comportamento), nunca a assinatura técnica da
+  conexão em si, que é externa. **Nenhuma mudança de código feita aqui**
+  — não há bug pra corrigir, é risco estrutural do protocolo não-oficial,
+  o mesmo mecanismo que levou à migração (revertida depois) pra API
+  oficial da Meta e ao banimento permanente de LÁ também. Pendência real,
+  sem decisão tomada ainda: se vale a pena insistir em número novo + Z-API
+  de novo (com "aquecimento" — uso humano normal por dias/semanas antes de
+  parear em qualquer API — e evitar linkar direto de IP de VPS, se for
+  possível rodar de outro lugar), tentar reabertura/recurso com a própria
+  Meta (mesmo processo já usado com sucesso parcial pro banimento de
+  30/09/2026 — "pedido de reconsideração já enviado"), ou aceitar que
+  qualquer canal de WhatsApp automatizado pra este projeto carrega esse
+  risco embutido, não eliminável só por código.
+
+## Pendências
+
 ## Pendências (aguardando definição antes de codar mais)
 
 1. **Hospedagem/deploy** — **em andamento (12/09/2026):** decidido ir de VPS
