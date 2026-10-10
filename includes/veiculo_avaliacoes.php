@@ -408,13 +408,106 @@ function buscarScoreVistoriaRecente(int $oportunidadeId): ?array {
     return veiculoAvaliacaoScore(listarItensAvaliacao((int)$avaliacaoId));
 }
 
-// buscarCandidatosVistoria()/listarVistoriasPorPlaca() (busca de veículo e
-// histórico por placa pro modal self-atribuído do avaliador) removidas em
-// 08/10/2026 junto com o botão "➕ Nova vistoria" de admin/avaliacoes.php
-// ("está confudindo" — consultor/vendedor continuam os únicos que criam e
-// atribuem a vistoria, ver criarAvaliacao() e os cards de
-// admin/oportunidade.php/admin/venda.php, agora com avaliador_id sempre
-// obrigatório na criação).
+/**
+ * Busca veículo/negociação já cadastrado — 10/10/2026, botão "Nova
+ * vistoria (manual)" revivido em admin/avaliacoes.php (removido em
+ * 08/10/2026 por "estar confundindo", trazido de volta com a regra nova:
+ * placa já cadastrada obriga selecionar o existente, nunca deixa criar
+ * duplicata — ver verificarPlacaDuplicadaVistoria() mais abaixo).
+ * Função original, intocada: busca por nome/telefone/placa/marca/modelo,
+ * `tipo='compra'` varre `oportunidades`+`clientes` (excluindo
+ * `perdido`/`sem_perfil`), `tipo='venda'` varre `vendas`+`oportunidades`
+ * (exige `oportunidade_id IS NOT NULL` — vistoria de venda precisa do
+ * veículo já vinculado à negociação). LIMIT 15, nunca decide sozinha qual
+ * é o candidato certo (regra #3) — só lista, o avaliador escolhe.
+ */
+function buscarCandidatosVistoria(string $tipo, string $termo): array {
+    $db = getDB();
+    $termo = trim($termo);
+    if ($termo === '') return [];
+    $like = '%' . $termo . '%';
+
+    if ($tipo === 'venda') {
+        $stmt = $db->prepare("
+            SELECT v.id AS venda_id, v.oportunidade_id,
+                   o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+                   v.comprador_nome AS pessoa_nome, v.comprador_telefone AS pessoa_telefone
+            FROM vendas v
+            JOIN oportunidades o ON o.id = v.oportunidade_id
+            WHERE v.oportunidade_id IS NOT NULL
+              AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ?
+                   OR o.veiculo_placa LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)
+            ORDER BY v.created_at DESC
+            LIMIT 15
+        ");
+    } else {
+        $stmt = $db->prepare("
+            SELECT o.id AS oportunidade_id, NULL AS venda_id,
+                   o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+                   c.nome AS pessoa_nome, c.telefone AS pessoa_telefone
+            FROM oportunidades o
+            JOIN clientes c ON c.id = o.cliente_id
+            WHERE o.etapa NOT IN ('perdido', 'sem_perfil')
+              AND (c.nome LIKE ? OR c.telefone LIKE ?
+                   OR o.veiculo_placa LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ?)
+            ORDER BY o.created_at DESC
+            LIMIT 15
+        ");
+    }
+    $stmt->execute([$like, $like, $like, $like, $like]);
+    $linhas = $stmt->fetchAll();
+
+    $candidatos = [];
+    foreach ($linhas as $l) {
+        $veiculo = trim(($l['veiculo_marca'] ?: '') . ' ' . ($l['veiculo_modelo'] ?: '')) ?: 'Veículo sem marca/modelo';
+        $ano = $l['veiculo_ano'] ? ' ' . $l['veiculo_ano'] : '';
+        $placa = $l['veiculo_placa'] ? ' — ' . $l['veiculo_placa'] : '';
+        $pessoa = $l['pessoa_nome'] ?: 'Sem nome';
+        $candidatos[] = [
+            'oportunidade_id' => (int)$l['oportunidade_id'],
+            'venda_id' => $l['venda_id'] !== null ? (int)$l['venda_id'] : null,
+            'label' => "{$veiculo}{$ano}{$placa} — {$pessoa} ({$l['pessoa_telefone']})",
+            'placa' => $l['veiculo_placa'] ?: '',
+        ];
+    }
+    return $candidatos;
+}
+
+/**
+ * Histórico COMPLETO de vistorias de um veículo pela PLACA — "registro de
+ * todas as vistoria no veículo feito com data e tudo... pois ele pode
+ * retornar fastcar". Diferente de listarAvaliacoesDoVeiculo() (escopada a
+ * 1 `oportunidade_id` só): um mesmo carro físico pode ter passado por MAIS
+ * de uma negociação de compra ao longo do tempo (comprado, revendido,
+ * devolvido, comprado de novo — cada ciclo pode virar uma oportunidade
+ * NOVA, com id diferente) — essa função busca por TODAS as oportunidades
+ * que já tiveram essa placa, não só a atual, cruzando com
+ * `veiculo_avaliacoes` (compra E venda) pra nunca deixar passar batido que
+ * o carro já esteve na Fastcar antes.
+ *
+ * Normaliza a placa (maiúsculo, sem espaço/hífen) dos dois lados da
+ * comparação — nunca falha só por formatação diferente (ex: "ABC-1234"
+ * salvo antigo x "ABC1234" digitado agora).
+ */
+function listarVistoriasPorPlaca(string $placa): array {
+    $placaNorm = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $placa));
+    if ($placaNorm === '' || strlen($placaNorm) < 6) return [];
+
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT va.id, va.tipo, va.status, va.created_at, va.km_atual,
+               o.id AS oportunidade_id, o.etapa AS oportunidade_etapa,
+               c.nome AS cliente_nome, u.nome AS avaliador_nome
+        FROM veiculo_avaliacoes va
+        JOIN oportunidades o ON o.id = va.oportunidade_id
+        JOIN clientes c ON c.id = o.cliente_id
+        LEFT JOIN usuarios u ON u.id = va.avaliador_id
+        WHERE UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
+        ORDER BY va.created_at DESC, va.id DESC
+    ");
+    $stmt->execute([$placaNorm]);
+    return $stmt->fetchAll();
+}
 
 /** Fila de trabalho de um avaliador (ou de todas, pra super_admin/supervisor) — pendente/em_andamento primeiro. */
 function listarAvaliacoesPendentes(?int $avaliadorId): array {

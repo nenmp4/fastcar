@@ -2642,6 +2642,61 @@ segue no schema sem uso novo, não removida sem ganho real),
   confirmado 100% inerte — 200, zero linha nova no banco, nenhum
   `elseif` bate mais nesse nome + `php -l` nos 6 arquivos tocados +
   `tests/smoke.php` limpo. Sem migração de schema.
+  **Botão "Nova vistoria (manual)" REVIVIDO em `admin/avaliacoes.php`,
+  agora com placa obrigando selecionar o existente** (10/10/2026, "Coloque
+  botão vistoria manual mais se placa tiver no sistema usuário obrigatório
+  seleciona") — pedido que reabre o mesmo fluxo removido 2 dias antes
+  (bullet acima). Confirmado com o usuário via AskUserQuestion (2
+  perguntas diretas) antes de codar: (1) volta pro mesmo lugar de antes,
+  `admin/avaliacoes.php`, self-atribuída pelo `avaliador`; (2) "obrigatório
+  seleciona" = **bloqueia e mostra o existente, nunca deixa prosseguir**
+  — mesmo padrão já usado em `admin/vendas.php`/na versão original deste
+  modal pro cenário de "cadastrar veículo novo" (nunca o padrão soft-warn
+  de `admin/veiculos.php`/`admin/oportunidade.php`, que permite confirmar
+  "mesmo assim"). Revivido **mais enxuto** que a versão original, de
+  propósito — removida a leitura de CRLV por IA e a busca automática de
+  FIPE por placa (não confirmadas como testadas de verdade pro perfil
+  `avaliador` na versão anterior, e fora do escopo do pedido), mantido só
+  o essencial: busca por nome/telefone/placa/marca/modelo
+  (`buscarCandidatosVistoria()`, revivida sem mudança) + cadastro manual
+  pela placa (só pra `tipo=compra`, venda continua exigindo
+  comprador/negociação já existente) + histórico de vistorias por placa
+  (`listarVistoriasPorPlaca()`, revivida sem mudança, "pode retornar
+  fastcar"). **A parte nova de verdade**: a checagem de placa duplicada
+  (`buscarVeiculoAtivoPorPlaca()`, já existente, usada em 3 outros pontos
+  do sistema) deixou de ser só um erro-ao-submeter — agora dispara
+  PROATIVAMENTE ao sair do campo "Placa" (`?ajax=verificar_placa`, novo,
+  devolve o match E o histórico na mesma chamada), e quando acha
+  duplicidade o JS **esconde os campos de cadastro por completo** (nunca
+  dá a opção de "cadastrar mesmo assim") e seleciona o veículo existente
+  sozinho, como se tivesse vindo da busca normal — o avaliador só confirma
+  clicando "Criar vistoria". Servidor **nunca confia só na checagem do
+  JS** — `buscarVeiculoAtivoPorPlaca()` é revalidada de novo dentro do
+  handler POST (`criar_vistoria_avaliador`), mesmo bloqueio duro
+  (`RuntimeException`) de sempre, defesa em profundidade contra um POST
+  forjado que pule a tela. 3 funções revividas sem nenhuma mudança
+  (`buscarCandidatosVistoria()`/`listarVistoriasPorPlaca()`,
+  `includes/veiculo_avaliacoes.php`, e
+  `gerarTelefonePlaceholderVeiculoRecuperado()`, `includes/oportunidades.php`
+  — mesmo caso de veículo recuperado sem vendedor, nome/telefone opcionais).
+  Testado: função isolada em banco isolado (`buscarVeiculoAtivoPorPlaca()`
+  acha a placa já na frota e ignora placa livre; `buscarCandidatosVistoria()`
+  acha por placa e por nome; `listarVistoriasPorPlaca()` vazio antes de
+  qualquer vistoria e preenchido depois; telefone placeholder sempre DDD
+  `00`; ciclo completo veículo-novo→vistoria→a MESMA placa agora detectada
+  como duplicada) + HTTP ponta a ponta real (sessão primed por perfil,
+  servidor PHP embutido, banco isolado): botão só aparece pro avaliador
+  (ausente pro consultor); `?ajax=buscar`/`?ajax=verificar_placa`
+  respondem certo (duplicado + histórico); POST criando vistoria via
+  seleção existente funciona (302); POST forjado com placa JÁ duplicada
+  (bypassando o JS de propósito) bloqueado no servidor com a mensagem
+  certa, banco confirmado sem nenhuma linha nova; POST com placa livre
+  cria o veículo+vistoria de verdade; consultor tentando forjar o mesmo
+  POST (`$souAvaliador` falso) fica inerte (200, nada criado); a placa
+  recém-cadastrada é detectada como duplicada na checagem seguinte,
+  fechando o ciclo ponta a ponta + `php -l` + `tests/smoke.php` (0
+  avisos) limpos. Sem migração de schema (todas as colunas/tabelas já
+  existiam).
   **Duplo clique criava 2 vistorias do mesmo veículo** (22/09/2026, achado
   real de produção via screenshot — 2 vistorias "Honda ADV 2022"
   idênticas, mesmo avaliador, criadas 5 minutos uma da outra; confirmado

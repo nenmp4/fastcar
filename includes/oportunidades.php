@@ -295,6 +295,32 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
  * Nunca bloqueia sozinho (regra #1 permite +1 veículo de verdade por
  * cliente) — só avisa, decisão de prosseguir é sempre humana.
  */
+
+/**
+ * Gera um telefone PLACEHOLDER único pra `criarVeiculoManualFrota()`
+ * quando não existe vendedor de verdade pra registrar — reaproveitada em
+ * 10/10/2026 pelo botão "Nova vistoria (manual)" revivido em
+ * admin/avaliacoes.php (removida em 08/10/2026 junto do resto daquele
+ * modal, trazida de volta pro mesmo caso: veículo RECUPERADO pela Fastcar
+ * — retomada, devolução sem contato ativo — sem ninguém pra cadastrar
+ * como vendedor. `clientes.telefone` é `UNIQUE` e `criarVeiculoManualFrota()`
+ * sempre exige um valor válido — inventar um número que PARECE real seria
+ * dado falso (regra #3); em vez disso usa o DDD `00` (nunca existe de
+ * verdade no Brasil, reconhecidamente placeholder pra quem olhar o
+ * cadastro depois) + 9 dígitos aleatórios, com retry contra a UNIQUE pra
+ * nunca colidir com um placeholder anterior.
+ */
+function gerarTelefonePlaceholderVeiculoRecuperado(): string {
+    $db = getDB();
+    for ($tentativa = 0; $tentativa < 5; $tentativa++) {
+        $candidato = '00' . str_pad((string)random_int(0, 999999999), 9, '0', STR_PAD_LEFT);
+        $stmt = $db->prepare('SELECT 1 FROM clientes WHERE telefone = ?');
+        $stmt->execute([normalizarTelefone($candidato)]);
+        if (!$stmt->fetch()) return $candidato;
+    }
+    throw new RuntimeException('Não consegui gerar um telefone placeholder único — tente de novo.');
+}
+
 function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
     $telNorm = normalizarTelefone($telefone);
     if (!$telNorm) return null;
