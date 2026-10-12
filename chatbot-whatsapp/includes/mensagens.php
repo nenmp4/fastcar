@@ -11,6 +11,7 @@ require_once dirname(__DIR__, 2) . '/includes/oportunidades.php';
 require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_oficial.php'; // oficialBaixarMidiaRecebida() — mídia recebida via canal Meta
+require_once dirname(__DIR__, 2) . '/includes/whatsapp_evolution.php'; // evolutionBaixarMidiaRecebida() — mídia recebida via canal Evolution
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao.php';
 require_once dirname(__DIR__, 2) . '/includes/documentos.php'; // salvarArquivoGeradoComoDocumento() — mídia recebida (áudio/imagem/vídeo)
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_conformidade.php'; // whatsappTextoEhOptOut()/registrarOptOut()
@@ -620,6 +621,23 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                     $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
                 } else {
                     logDiagnosticoMidiaZapi($tipoBruto, 'meta_media_falhou', ['mediaId' => $bloco['mediaId']]);
+                }
+            } elseif (($instancia['canal'] ?? '') === 'evolution') {
+                // Mídia recebida via Evolution API (12/10/2026, achado real:
+                // "[image]" aparecendo no lugar da foto) — a Evolution nunca
+                // entrega URL/base64 direto no payload do webhook, diferente
+                // da Z-API; usa o próprio id da mensagem pra baixar via
+                // getBase64FromMediaMessage (ver evolutionBaixarMidiaRecebida(),
+                // includes/whatsapp_evolution.php).
+                $resultadoEvolution = evolutionBaixarMidiaRecebida($messageId, $tipoBruto);
+                if ($resultadoEvolution !== null) {
+                    $bytesMidia = $resultadoEvolution['bytes'];
+                    $mime = $resultadoEvolution['mime'] !== '' ? $resultadoEvolution['mime'] : (string)($bloco['mimeType'] ?: $mimeDefault);
+                    $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
+                } else {
+                    logDiagnosticoMidiaZapi($tipoBruto, 'evolution_media_falhou', [
+                        'messageId' => $messageId, 'erro' => evolutionUltimoErro(),
+                    ]);
                 }
             } else {
                 $url = extrairUrlMidia($payload, $tipoBruto);

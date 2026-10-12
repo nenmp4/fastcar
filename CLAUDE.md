@@ -12652,6 +12652,76 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   confirmado indo pra Evolution só quando ela é o provider principal,
   nunca vazando pra Z-API/Evolution por engano — + `php -l` nos 3 arquivos
   tocados + `tests/smoke.php` (0 avisos) limpo. Sem migração de schema.
+- **Evolution API — mídia RECEBIDA do cliente não carregava, mostrava
+  "[image]" cru no WhatsApp Box** (12/10/2026, achado real via
+  screenshot: cliente mandou foto da moto, a tela mostrava o texto
+  literal "[image]" duas vezes no lugar das fotos) — consequência direta
+  de uma lacuna já sinalizada desde a 1ª versão da integração (ver bullet
+  acima, "Formato real desta instância": *"RECEBIMENTO de mídia... nunca
+  confirmou como a Evolution API expõe isso... deixado de fora de
+  propósito nesta 1ª versão"*). Causa raiz:
+  `evolutionAdaptarPayloadParaZapi()` (`includes/whatsapp_evolution.php`)
+  nunca preenchia `url`/`mediaId` no bloco de mídia adaptado — a Evolution
+  não entrega isso no payload do próprio webhook, diferente da Z-API —
+  então `extrairUrlMidia()` (`chatbot-whatsapp/includes/mensagens.php`)
+  nunca achava nada pra baixar, `$bytesMidia` ficava `null`,
+  `salvarMidiaWhatsappRecebida()` nunca rodava, e a mensagem caía no
+  mesmo placeholder gracioso de sempre pra mídia-não-processada —
+  exatamente o texto cru visto na tela (`tipoMidiaMensagemWhatsapp()`,
+  `includes/whatsapp_inbox.php`, exige `drive_file_id`/`arquivo_url`
+  preenchidos pra renderizar `<img>`/`<audio>`/`<video>`; sem isso, mostra
+  o texto da mensagem direto).
+  Nova `evolutionBaixarMidiaRecebida($messageId, $tipo)`
+  (`includes/whatsapp_evolution.php`) — usa o endpoint de conveniência que
+  o próprio EvolutionAPI expõe pra decriptar a mídia do Baileys por conta
+  própria (`POST /chat/getBase64FromMediaMessage/{instance}`, corpo
+  `{"message":{"key":{"id":"<messageId>"}}, "convertToMp4":false}`,
+  resposta esperada `{"base64":"...","mimetype":"..."}`) — nunca
+  implementado manualmente aqui (`mediaKey`/`directPath` do Baileys
+  continuam fora de alcance de propósito, mesma disciplina de sempre
+  deste projeto: nunca reimplementar cripto que o provedor já resolve por
+  conta própria). **Nunca confirmado contra esta instância real** — mesma
+  ressalva estrutural do resto da integração Evolution; se o formato
+  estiver errado, `evolutionUltimoErro()` revela a resposta real do
+  servidor, mesmo mecanismo que corrigiu `sendText`/`sendMedia` antes.
+  `chatbot-whatsapp/includes/mensagens.php::processarMensagemZapi()`
+  ganhou um 3º ramo no dispatch de mídia (ao lado do `mediaId` do Meta e
+  da `extrairUrlMidia()` da Z-API): quando `$instancia['canal'] ===
+  'evolution'`, chama `evolutionBaixarMidiaRecebida($messageId,
+  $tipoBruto)` usando o próprio id da mensagem (`$adaptado['messageId']`,
+  já propagado pelo adaptador) — nunca precisa de URL nem de `mediaId`.
+  Download falhando (ou sem credencial configurada) cai no mesmo
+  placeholder gracioso de sempre, nunca derruba o webhook — log de
+  diagnóstico (`evolution_media_falhou`,
+  `storage/logs/whatsapp_midia_debug.log`, mesmo arquivo/formato dos
+  outros 2 canais) grava o erro real pra investigar se persistir.
+  Guard novo em `tests/smoke.php`
+  (`evolution-media-recebida-nao-wired`) garante que esse branch nunca
+  seja removido num refactor futuro sem ninguém perceber (mesmo espírito
+  do guard de `referral`/CPL acima — sem ele, a regressão não gera erro
+  nenhum, só volta a cair no placeholder silenciosamente).
+  Testado: função isolada (`evolutionBaixarMidiaRecebida()` contra
+  servidor Evolution fake local — sucesso decodifica os bytes reais do
+  JPEG, confere o corpo exato mandado pro servidor
+  (`message.key.id`/`convertToMp4`), falha 404 devolve `null` com o erro
+  detalhado capturado, `messageId` vazio nunca tenta rede) + **ponta a
+  ponta via `processarMensagemZapi()` real** (nunca função isolada só):
+  payload simulando cliente mandando foto (`MESSAGES_UPSERT` com
+  `imageMessage`) processado de verdade — mensagem grava `tipo='image'`
+  com `arquivo_url`/`drive_file_id` preenchidos (mídia de verdade SALVA,
+  não só descrita), e `tipoMidiaMensagemWhatsapp()`/
+  `renderizarMidiaWhatsapp()` (a função real da UI do WhatsApp Box)
+  confirmados produzindo uma tag `<img>` de verdade em cima dessa linha —
+  prova de que o bug relatado está corrigido, não só a função isolada;
+  cenário de falha (download retornando 404) confirmado caindo no mesmo
+  placeholder "[image]" de sempre, sem crash, com o diagnóstico gravado —
+  + `php -l` nos 3 arquivos tocados + `tests/smoke.php` (0 avisos,
+  incluindo o guard novo) limpo. Sem migração de schema. Mesma ressalva
+  estrutural do item (4) acima — recebimento de áudio/vídeo/documento
+  passa pelo MESMO endpoint (`evolutionBaixarMidiaRecebida()` é
+  compartilhada pelos 4 tipos), mas só testado de verdade pra imagem;
+  validar os outros 3 tipos na próxima vez que o cliente mandar um de
+  verdade.
 
 ## Pendências
 

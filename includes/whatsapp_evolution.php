@@ -90,15 +90,25 @@
  * `POST /chat/fetchProfilePictureUrl/{instance}` +
  * `POST /chat/findContacts/{instance}`) — endpoints só da minha própria
  * familiaridade com o projeto EvolutionAPI original, nunca confirmados
- * contra doc nem instância real desta VPS; (3) RECEBIMENTO de mídia —
- * Baileys normalmente exige decriptar usando chaves (`mediaKey`) que vêm
- * dentro da própria mensagem; nenhuma fonte consultada aqui confirmou
- * como a Evolution API expõe isso (base64 direto no webhook? endpoint de
- * download à parte?) — deixado de fora de propósito nesta 1ª versão, cai
- * no mesmo caminho gracioso "mídia não processada" que o projeto já tem.
- * Qualquer um desses 3 pode falhar como o sendText falhou — a mensagem de
- * erro detalhada (`evolutionUltimoErro()`/`whatsappDetalheUltimoErro()`)
- * é o que revela o formato real, não suposição de doc.
+ * contra doc nem instância real desta VPS.
+ *
+ * **RECEBIMENTO de mídia — implementado em 12/10/2026, achado real em
+ * produção** ("Não está carregando a foto enviada pelo usuário na
+ * instância evolution" — cliente mandava foto, WhatsApp Box mostrava o
+ * texto literal "[image]" em vez da imagem, porque o adaptador nunca
+ * preenchia bytes/URL de propósito). `evolutionBaixarMidiaRecebida()`
+ * (`POST /chat/getBase64FromMediaMessage/{instance}`, usando só o id da
+ * mensagem) decripta a mídia do Baileys do lado da própria Evolution API —
+ * nunca implementado manualmente aqui (`mediaKey`/`directPath` continuam
+ * fora de alcance de propósito, mesma disciplina de sempre deste projeto:
+ * nunca reimplementar cripto que o provedor já resolve por conta própria).
+ * **Também nunca confirmado contra esta instância** — mesma mensagem de
+ * erro detalhada revela o formato real se a aposta estiver errada.
+ *
+ * Qualquer um desses pontos pode falhar como o sendText falhou — a
+ * mensagem de erro detalhada (`evolutionUltimoErro()`/
+ * `whatsappDetalheUltimoErro()`) é o que revela o formato real, não
+ * suposição de doc.
  */
 
 require_once __DIR__ . '/db.php';
@@ -556,6 +566,100 @@ function evolutionBuscarContato(string $phone): ?array {
 }
 
 /**
+ * Baixa mídia recebida (áudio/imagem/vídeo) — 12/10/2026, achado real em
+ * produção: "[image]" aparecendo no lugar da foto no WhatsApp Box, porque
+ * evolutionAdaptarPayloadParaZapi() nunca preenchia bytes/URL de propósito
+ * (ver docblock do topo, ponto (3) — Baileys exige decriptar com `mediaKey`,
+ * nunca implementado manualmente aqui, mesma disciplina de sempre deste
+ * projeto: nunca reimplementar cripto que o próprio provedor já resolve).
+ *
+ * Usa o endpoint de conveniência que o EvolutionAPI expõe pra decriptar a
+ * mídia do Baileys por conta própria (nunca precisa de mediaKey/directPath
+ * aqui, só o id da mensagem):
+ *
+ *   POST /chat/getBase64FromMediaMessage/{instance}
+ *   body: {"message": {"key": {"id": "<messageId>"}}, "convertToMp4": false}
+ *   resposta esperada: {"base64": "...", "mimetype": "image/jpeg", ...}
+ *
+ * **Nunca confirmado contra doc/instância real desta VPS** — mesma
+ * familiaridade com o projeto EvolutionAPI original que já guiou
+ * evolutionBuscarContato() (ver docblock do topo, ponto (2)); se o formato
+ * estiver errado, `evolutionUltimoErro()` revela a resposta real do
+ * servidor, mesmo mecanismo que corrigiu sendText/sendMedia antes.
+ *
+ * Retorna ['bytes'=>string, 'mime'=>string] ou null — nunca lança, mesmo
+ * contrato de oficialBaixarMidiaRecebida()/baixarMidiaZapi().
+ */
+function evolutionBaixarMidiaRecebida(string $messageId, string $tipo): ?array {
+    [$base, $instance, $apiKey] = evolutionCredenciais();
+    if (!$base || !$instance || !$apiKey || !$messageId) {
+        _evolutionSetUltimoErro('Sem URL/instância/API key configurados, ou messageId vazio.');
+        return null;
+    }
+
+    try {
+        $ch = curl_init("{$base}/chat/getBase64FromMediaMessage/" . rawurlencode($instance));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode([
+                'message' => ['key' => ['id' => $messageId]],
+                'convertToMp4' => false,
+            ]),
+            CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+            CURLOPT_TIMEOUT => $tipo === 'video' ? 40 : 20,
+        ] + _evolutionCurlSslOpts());
+        $resp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null;
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($resp === false) {
+            _evolutionSetUltimoErro("Falha de conexão ao baixar mídia: {$curlErr}");
+            return null;
+        }
+        $json = json_decode((string)$resp, true);
+        if ($httpCode < 200 || $httpCode >= 300 || !is_array($json)) {
+            _evolutionSetUltimoErro('Evolution respondeu com erro ao baixar mídia: '
+                . _evolutionErroDeResposta($json, $httpCode, $redirectUrl)
+                . ' — resposta: ' . substr((string)$resp, 0, 500));
+            return null;
+        }
+
+        // Nome de campo nunca confirmado contra esta instância — tenta os
+        // mais prováveis (base64 direto na raiz, ou aninhado).
+        $base64 = $json['base64'] ?? $json['media']['base64'] ?? $json['result']['base64'] ?? null;
+        if (!is_string($base64) || $base64 === '') {
+            _evolutionSetUltimoErro('Resposta sem campo base64 reconhecível: ' . substr((string)$resp, 0, 500));
+            return null;
+        }
+        // Alguns formatos devolvem com o prefixo data:mime;base64, — nunca
+        // assume, sempre separa se existir.
+        $separado = _evolutionBase64DeDataUri($base64);
+        $base64Cru = $separado['base64'] ?? $base64;
+        $mime = (string)($json['mimetype'] ?? $json['mimeType'] ?? $separado['mime'] ?? '');
+
+        $bytes = base64_decode($base64Cru, true);
+        if ($bytes === false || $bytes === '') {
+            _evolutionSetUltimoErro('Falha ao decodificar base64 da mídia.');
+            return null;
+        }
+        $maxBytes = defined('WHATSAPP_MIDIA_MAX_BYTES') ? WHATSAPP_MIDIA_MAX_BYTES : (20 * 1024 * 1024);
+        if (strlen($bytes) >= $maxBytes) {
+            _evolutionSetUltimoErro('Mídia maior que o limite permitido.');
+            return null;
+        }
+
+        _evolutionSetUltimoErro(null);
+        return ['bytes' => $bytes, 'mime' => $mime];
+    } catch (Throwable $e) {
+        _evolutionSetUltimoErro('Exceção ao baixar mídia: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
  * Status cacheado (60s TTL, mesmo padrão exato de zapiStatusPrincipalCache()/
  * oficialStatusCache()) — pro badge do topbar.
  */
@@ -621,12 +725,14 @@ function evolutionStatusCache(bool $forcar = false): array {
  * produto real) e `messages.upsert` (formato da doc genérica do projeto
  * original) — nunca custa aceitar os dois.
  *
- * Mídia recebida: nunca preenche bytes/URL de propósito (recebimento de
- * mídia não tem confirmação nenhuma, ver docblock do topo do arquivo) — só
- * o mimeType, quando disponível. Cai no mesmo caminho gracioso "mídia não
- * processada" que o projeto já tem pra qualquer bloco sem URL/mediaId
- * resolvível (tipoMidia()==='desconhecido' ou extrairUrlMidia() não acha
- * nada).
+ * Mídia recebida: o bloco (`image`/`audio`/`video`/`document`) só guarda
+ * `caption`/`mimeType` — nunca bytes/URL (a Evolution não entrega isso no
+ * payload do webhook, diferente da Z-API). Quem baixa de verdade é
+ * `chatbot-whatsapp/includes/mensagens.php::processarMensagemZapi()`, que
+ * reconhece `$instancia['canal']==='evolution'` e chama
+ * `evolutionBaixarMidiaRecebida($messageId, $tipo)` — mesmo papel que
+ * `mediaId` desempenha pro ramo Meta oficial, só que aqui o id da própria
+ * mensagem (`$adaptado['messageId']`, já setado abaixo) é suficiente.
  */
 function evolutionAdaptarPayloadParaZapi(array $body): ?array {
     $evento = strtoupper((string)($body['event'] ?? ''));

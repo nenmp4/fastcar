@@ -202,6 +202,24 @@ foreach (['install/schema.sql', 'install/migrar.php'] as $arquivoCpl) {
     }
 }
 
+// Bug real 12/10/2026: "[image]" aparecendo no lugar da foto no WhatsApp
+// Box pra quem conversa via Evolution API — evolutionAdaptarPayloadParaZapi()
+// nunca preenche URL/mediaId no bloco de mídia (a Evolution não entrega
+// isso no payload do webhook), então sem esse branch explícito o download
+// nunca acontece de verdade, silenciosamente — cai sempre no placeholder.
+// Guard evita que um refactor futuro remova a chamada sem ninguém perceber
+// (mesmo espírito do guard de referral/Meta acima, nenhum erro aparente).
+if (file_exists($mensagensPath)) {
+    $conteudoMensagens = (string)file_get_contents($mensagensPath);
+    if (!str_contains($conteudoMensagens, 'evolutionBaixarMidiaRecebida(')) {
+        falha('[evolution-media-recebida-nao-wired] mensagens.php não chama evolutionBaixarMidiaRecebida() — mídia do canal Evolution cai sempre no placeholder "[tipo]"');
+    } else {
+        ok('[evolution-media-recebida-nao-wired] limpo');
+    }
+} else {
+    aviso('chatbot-whatsapp/includes/mensagens.php não encontrado — guard de mídia Evolution pulado');
+}
+
 // 30/09/2026, achado real: "contrato foi assinado mais não teve mensagem
 // de notificação sistema... no e-mail do consultor chegou certinho" —
 // notificações INTERNAS (aviso de contrato assinado, 2FA por WhatsApp,
