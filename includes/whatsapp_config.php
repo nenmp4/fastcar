@@ -24,6 +24,32 @@ function zapiBaseUrl(): string {
 }
 
 /**
+ * Kill switch — Z-API e Meta oficial DESATIVADOS em todo o sistema (canal
+ * principal, vendas, financeiro, notificação interna, busca de contato).
+ * 12/10/2026, "vamos desativar definitivo zpi... desabilitar meta zpi",
+ * depois do histórico real de banimento documentado em CLAUDE.md (4
+ * números Z-API seguidos banidos na mesma conta, incluindo um sem nenhuma
+ * automação rodando, e a conta WhatsApp Business oficial da Meta já tinha
+ * sido desabilitada permanentemente em 30/09/2026).
+ *
+ * **Desativado é o padrão quando a flag nunca foi salva** — mesmo
+ * raciocínio já usado em `zapcarDesativadoManualmente()`
+ * (`includes/zapcar.php`): nunca consigo alterar o `config` de produção
+ * direto daqui, então o comportamento certo precisa nascer sozinho depois
+ * do deploy, sem nenhuma ação extra do super_admin; só volta a permitir
+ * Z-API/Meta se alguém desmarcar o checkbox em Configurações
+ * explicitamente (`$v === '0'`).
+ *
+ * Nunca remove nenhuma credencial salva nem o código de integração em si
+ * (regra de sempre deste projeto) — só faz as funções de envio/busca
+ * TRATAREM Z-API e Meta como indisponíveis, reversível a qualquer momento
+ * desmarcando o checkbox.
+ */
+function whatsappZapiMetaDesativado(): bool {
+    return getConfig('whatsapp_zapi_meta_desativado') !== '0';
+}
+
+/**
  * Status (conectado/desconectado) da instância Z-API PRINCIPAL (compra/
  * leads), com cache curto — 23/09/2026, "tem como colocar status da
  * instancia topo zpi conectado em destaque ai eu não preciso ir no saude
@@ -161,11 +187,20 @@ function zapiCredenciaisVendas(): array {
  * separado da instância principal (compra) e da de vendas. Retorna
  * [instance_id, token, client_token], '' se ainda não configurada.
  */
+/**
+ * 12/10/2026 — 4º elemento 'financeiro' (mesmo papel do 'vendas' em
+ * zapiCredenciaisVendas()): identifica o CANAL pros dispatchers
+ * (zapiEnviarTexto()/etc) decidirem entre a Evolution DEDICADA do
+ * financeiro e a Z-API dedicada de sempre. Nunca muda os 3 primeiros
+ * elementos — os ~3 call sites existentes que desestruturam só
+ * `[$inst, $tok, $ctok]` continuam funcionando sem mudança.
+ */
 function zapiCredenciaisFinanceiro(): array {
     return [
         _chatbot_getConfig('zapi_instancia_financeiro_id'),
         _chatbot_getConfig('zapi_instancia_financeiro_token'),
         _chatbot_getConfig('zapi_instancia_financeiro_client_token'),
+        'financeiro',
     ];
 }
 
@@ -254,6 +289,20 @@ function zapiCredenciaisFinanceiro(): array {
  * do que deixar sem nenhum aviso saindo.
  */
 function zapiEnviarTextoInterno(string $phone, string $msg): bool {
+    // 12/10/2026 — "coloca evolution como padrão para todas notificações
+    // do sistema": Evolution tentada SEMPRE primeiro agora (nunca tem
+    // janela de 24h, mesmo motivo que a Z-API já era preferida antes dela
+    // existir). Z-API/Meta só entram quando whatsappZapiMetaDesativado()
+    // for false — ver essa função pro racional completo do kill switch
+    // (desativado por padrão desde esta mudança).
+    if (evolutionConfigured() && evolutionEnviarTexto($phone, $msg)) {
+        return true;
+    }
+
+    if (whatsappZapiMetaDesativado()) {
+        return false;
+    }
+
     $inst = _chatbot_getConfig('zapi_instance_id');
     $tok = _chatbot_getConfig('zapi_token');
     $ctok = _chatbot_getConfig('zapi_client_token');
@@ -262,16 +311,6 @@ function zapiEnviarTextoInterno(string $phone, string $msg): bool {
         if (strlen($phoneNorm) >= 12 && _zapiEnviarTextoBruto($phoneNorm, $msg, $inst, $tok, $ctok)) {
             return true;
         }
-    }
-
-    // 09/10/2026 — Evolution API (self-hosted, Baileys) também não tem
-    // janela de 24h (restrição é específica da Cloud API oficial da Meta,
-    // nunca existiu no protocolo não-oficial) — tentada antes do Meta pelo
-    // mesmo motivo que a Z-API já era: mensagem interna nunca depende do
-    // canal ATIVO (toggle), só tenta o que estiver disponível, Meta por
-    // último (único com restrição real de janela).
-    if (evolutionConfigured() && evolutionEnviarTexto($phone, $msg)) {
-        return true;
     }
 
     if (oficialConfigured()) {
@@ -286,6 +325,29 @@ function zapiEnviarTexto(string $phone, string $msg, ?array $instanciaOverride =
 
     if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
         return evolutionEnviarTexto($phone, $msg);
+    }
+
+    // 12/10/2026 — Evolution DEDICADA de vendas/financeiro (ver
+    // includes/whatsapp_evolution.php::evolutionCredenciaisVendas()/
+    // Financeiro()) sempre preferida quando configurada, independente do
+    // kill switch — ela é o novo caminho PADRÃO pra esses canais agora,
+    // não só um fallback de emergência (mesmo raciocínio de
+    // whatsappZapiMetaDesativado()).
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && evolutionConfiguredVendas()) {
+            return evolutionEnviarTexto($phone, $msg, evolutionCredenciaisVendas());
+        }
+        if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) {
+            return evolutionEnviarTexto($phone, $msg, evolutionCredenciaisFinanceiro());
+        }
+    }
+
+    // Kill switch — Z-API e Meta oficial NUNCA tentados daqui pra baixo
+    // enquanto estiver ligado (ver whatsappZapiMetaDesativado()). Sem
+    // Evolution configurada pro canal pedido, o envio simplesmente falha
+    // — nunca cai pra um provedor "desativado".
+    if (whatsappZapiMetaDesativado()) {
+        return false;
     }
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
@@ -369,6 +431,14 @@ function whatsappDetalheUltimoErro(): string {
  * cai no comportamento de sempre — zapiEnviarTexto() decidindo pelo toggle.
  */
 function zapiEnviarTextoPeloCanal(string $phone, string $msg, ?string $canal): bool {
+    // 12/10/2026 — com o kill switch ligado, um cliente que ainda está
+    // numa conversa antiga pelo canal 'zapi'/'oficial' (webhook de uma
+    // instância que tecnicamente ainda pode receber, mesmo "desativada"
+    // pro ENVIO) nunca pode ficar sem resposta só por isso — responde pelo
+    // Evolution em vez de tentar um provedor desativado ou falhar calado.
+    if (whatsappZapiMetaDesativado() && in_array($canal, ['zapi', 'oficial'], true)) {
+        return evolutionConfigured() ? evolutionEnviarTexto($phone, $msg) : false;
+    }
     if ($canal === 'oficial') {
         return oficialConfigured() ? oficialEnviarTexto($phone, $msg) : false;
     }
@@ -433,6 +503,21 @@ function zapiEnviarImagem(string $phone, string $imagemUrl, string $legenda, ?ar
         return evolutionEnviarImagem($phone, $imagemUrl, $legenda);
     }
 
+    // 12/10/2026, mesmo padrão novo de zapiEnviarTexto() — Evolution
+    // dedicada de vendas/financeiro sempre preferida quando configurada.
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && evolutionConfiguredVendas()) {
+            return evolutionEnviarImagem($phone, $imagemUrl, $legenda, evolutionCredenciaisVendas());
+        }
+        if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) {
+            return evolutionEnviarImagem($phone, $imagemUrl, $legenda, evolutionCredenciaisFinanceiro());
+        }
+    }
+
+    if (whatsappZapiMetaDesativado()) {
+        return false;
+    }
+
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarImagem($phone, $imagemUrl, $legenda);
     }
@@ -495,6 +580,20 @@ function zapiEnviarVideo(string $phone, string $videoUrl, string $legenda, ?arra
 
     if ($usandoPrincipal && evolutionEhProviderPrincipal()) {
         return evolutionEnviarVideo($phone, $videoUrl, $legenda);
+    }
+
+    // 12/10/2026, mesmo padrão novo de zapiEnviarTexto().
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && evolutionConfiguredVendas()) {
+            return evolutionEnviarVideo($phone, $videoUrl, $legenda, evolutionCredenciaisVendas());
+        }
+        if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) {
+            return evolutionEnviarVideo($phone, $videoUrl, $legenda, evolutionCredenciaisFinanceiro());
+        }
+    }
+
+    if (whatsappZapiMetaDesativado()) {
+        return false;
     }
 
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
@@ -567,6 +666,20 @@ function zapiEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $insta
         return evolutionEnviarAudio($phone, $audioDataUriOuUrl);
     }
 
+    // 12/10/2026, mesmo padrão novo de zapiEnviarTexto().
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && evolutionConfiguredVendas()) {
+            return evolutionEnviarAudio($phone, $audioDataUriOuUrl, evolutionCredenciaisVendas());
+        }
+        if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) {
+            return evolutionEnviarAudio($phone, $audioDataUriOuUrl, evolutionCredenciaisFinanceiro());
+        }
+    }
+
+    if (whatsappZapiMetaDesativado()) {
+        return false;
+    }
+
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarAudio($phone, $audioDataUriOuUrl);
     }
@@ -636,6 +749,20 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
         return evolutionEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
     }
 
+    // 12/10/2026, mesmo padrão novo de zapiEnviarTexto().
+    if (!$usandoPrincipal) {
+        if ($canal === 'vendas' && evolutionConfiguredVendas()) {
+            return evolutionEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName, evolutionCredenciaisVendas());
+        }
+        if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) {
+            return evolutionEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName, evolutionCredenciaisFinanceiro());
+        }
+    }
+
+    if (whatsappZapiMetaDesativado()) {
+        return false;
+    }
+
     if ($usandoPrincipal && oficialEhProviderPrincipal()) {
         return oficialEnviarDocumento($phone, $documentoDataUriOuUrl, $fileName);
     }
@@ -695,6 +822,12 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
 function zapiBuscarContato(string $phone): ?array {
     if (evolutionEhProviderPrincipal()) {
         return evolutionBuscarContato($phone);
+    }
+    // 12/10/2026 — kill switch também cobre busca de contato: nunca bate
+    // na Z-API (desativada) só porque a Evolution principal ainda não foi
+    // configurada de verdade.
+    if (whatsappZapiMetaDesativado()) {
+        return null;
     }
     return _zapiBuscarContatoViaZapi($phone);
 }

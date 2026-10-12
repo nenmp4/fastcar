@@ -135,6 +135,75 @@ function evolutionConfigured(): bool {
 }
 
 /**
+ * Credenciais da instância Evolution DEDICADA de vendas — 12/10/2026,
+ * "adcona evlotion instancias adccionas vendas e financeiro". Mesmo
+ * servidor self-hosted da principal (evolutionBaseUrl() compartilhada —
+ * é a mesma VPS, só com outra instância/número pareado nela), nome de
+ * instância + API key PRÓPRIOS (mesmo padrão de zapiCredenciaisVendas()).
+ * [base_url, instance_name, api_key], '' se ainda não configurada.
+ */
+function evolutionCredenciaisVendas(): array {
+    return [
+        evolutionBaseUrl(),
+        getConfig('evolution_vendas_instance_name') ?: '',
+        getConfig('evolution_vendas_api_key') ?: '',
+    ];
+}
+function evolutionConfiguredVendas(): bool {
+    [$base, $instance, $key] = evolutionCredenciaisVendas();
+    return $base !== '' && $instance !== '' && $key !== '';
+}
+
+/** Mesmo padrão acima, instância DEDICADA do financeiro. */
+function evolutionCredenciaisFinanceiro(): array {
+    return [
+        evolutionBaseUrl(),
+        getConfig('evolution_financeiro_instance_name') ?: '',
+        getConfig('evolution_financeiro_api_key') ?: '',
+    ];
+}
+function evolutionConfiguredFinanceiro(): bool {
+    [$base, $instance, $key] = evolutionCredenciaisFinanceiro();
+    return $base !== '' && $instance !== '' && $key !== '';
+}
+
+/**
+ * Identifica de qual instância Evolution veio um webhook, pelo nome da
+ * instância (campo `instance` no envelope do payload) — mesmo papel de
+ * zapiIdentificarInstancia() (includes/zapi_instancias.php), só que
+ * Evolution identifica por NOME, não por um instanceId numérico. Checado
+ * ANTES de processar qualquer coisa (chatbot-whatsapp/webhook/whatsapp_evolution.php)
+ * — nunca processa origem que não reconhecemos, mesma disciplina de
+ * sempre.
+ *
+ * Retorno no mesmo formato de zapiIdentificarInstancia(): ['tipo' =>
+ * 'principal'|'vendas'|'financeiro'|'desconhecida', 'usuario_id' => null,
+ * 'client_token' => null, 'canal' => 'evolution'] — Evolution não tem
+ * conceito de instância por consultor nem de client_token, por isso
+ * sempre null nesses 2 campos (presentes só pra manter o mesmo shape que
+ * processarMensagemZapi()/mensagens_vendas.php/mensagens_financeiro.php
+ * já esperam ler de `$instancia`).
+ */
+function evolutionIdentificarCanal(string $instanceName): array {
+    if ($instanceName === '') {
+        return ['tipo' => 'desconhecida', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
+    }
+    [, $instPrincipal] = evolutionCredenciais();
+    if ($instPrincipal !== '' && $instanceName === $instPrincipal) {
+        return ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
+    }
+    [, $instVendas] = evolutionCredenciaisVendas();
+    if ($instVendas !== '' && $instanceName === $instVendas) {
+        return ['tipo' => 'vendas', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
+    }
+    [, $instFinanceiro] = evolutionCredenciaisFinanceiro();
+    if ($instFinanceiro !== '' && $instanceName === $instFinanceiro) {
+        return ['tipo' => 'financeiro', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
+    }
+    return ['tipo' => 'desconhecida', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
+}
+
+/**
  * ⚠️ Ignora verificação de certificado SSL pro host da Evolution — opt-in
  * explícito (`config.evolution_ignorar_ssl==='1'`), NUNCA ligado por
  * padrão (só existe pra cobrir a janela em que a VPS própria ainda não
@@ -166,7 +235,19 @@ function _evolutionCurlSslOpts(): array {
  * explicitamente em Configurações.
  */
 function evolutionEhProviderPrincipal(): bool {
-    return getConfig('whatsapp_provider_principal') === 'evolution' && evolutionConfigured();
+    if (!evolutionConfigured()) return false;
+    if (getConfig('whatsapp_provider_principal') === 'evolution') return true;
+    // 12/10/2026 — "desativa definitivo zpi... evolution como padrão pra
+    // todas notificações, desabilitar meta zpi": com o kill switch ligado
+    // (whatsappZapiMetaDesativado(), includes/whatsapp_config.php, mesmo
+    // arquivo que já requer este, resolvida em tempo de chamada — late
+    // binding do PHP, nunca precisa estar definida na hora em que ESTE
+    // arquivo é parseado, só na hora em que a função é de fato chamada),
+    // Evolution assume o canal principal sozinha mesmo que o radio em
+    // Configurações nunca tenha sido movido explicitamente pra 'evolution'
+    // — nunca deixa o sistema sem canal nenhum só porque 1 toggle
+    // específico ficou pra trás.
+    return function_exists('whatsappZapiMetaDesativado') && whatsappZapiMetaDesativado();
 }
 
 $GLOBALS['_evolution_ultimo_erro'] = null;

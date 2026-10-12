@@ -73,6 +73,21 @@ $camposEvolution = [
     'evolution_api_key'      => 'API Key (da instância, ou a global)',
 ];
 
+// Instâncias Evolution DEDICADAS de vendas/financeiro — 12/10/2026,
+// "adcona evlotion instancias adccionas vendas e financeiro". Mesmo
+// servidor self-hosted da principal (URL base compartilhada, lida de
+// evolution_base_url acima — é a mesma VPS, só com outro número pareado
+// nela), nome de instância + API key PRÓPRIOS, mesmo padrão das
+// instâncias Z-API dedicadas de vendas/financeiro já existentes.
+$camposEvolutionVendas = [
+    'evolution_vendas_instance_name' => 'Nome da instância (vendas)',
+    'evolution_vendas_api_key'       => 'API Key (vendas — da instância, ou a global)',
+];
+$camposEvolutionFinanceiro = [
+    'evolution_financeiro_instance_name' => 'Nome da instância (financeiro)',
+    'evolution_financeiro_api_key'       => 'API Key (financeiro — da instância, ou a global)',
+];
+
 // 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só
 // permite mais um numero no aplicativo aprovado" → confirmado: só VENDAS
 // ganha o número Meta oficial extra (financeiro fica de fora, não existe
@@ -312,6 +327,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) {
                 $erro = 'Falha ao listar instâncias: ' . $e->getMessage();
             }
+        } elseif ($acao === 'salvar_evolution_vendas') {
+            foreach (array_keys($camposEvolutionVendas) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da Evolution API (vendas) salvas.';
+        } elseif ($acao === 'testar_evolution_vendas') {
+            try {
+                $confirmado = evolutionTestarConexao(evolutionCredenciaisVendas());
+                $sucesso = "Evolution respondeu (vendas): {$confirmado} — conexão funcionando.";
+            } catch (Throwable $e) {
+                $erro = 'Falha ao testar: ' . $e->getMessage();
+            }
+        } elseif ($acao === 'salvar_evolution_financeiro') {
+            foreach (array_keys($camposEvolutionFinanceiro) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da Evolution API (financeiro) salvas.';
+        } elseif ($acao === 'testar_evolution_financeiro') {
+            try {
+                $confirmado = evolutionTestarConexao(evolutionCredenciaisFinanceiro());
+                $sucesso = "Evolution respondeu (financeiro): {$confirmado} — conexão funcionando.";
+            } catch (Throwable $e) {
+                $erro = 'Falha ao testar: ' . $e->getMessage();
+            }
+        } elseif ($acao === 'salvar_whatsapp_zapi_meta_desativado') {
+            // 12/10/2026, "vamos desativar definitivo zpi... desabilitar
+            // meta zpi" — kill switch único cobrindo Z-API e Meta oficial
+            // em todo o sistema (ver whatsappZapiMetaDesativado(),
+            // includes/whatsapp_config.php, desativado por padrão mesmo
+            // sem passar por aqui).
+            setConfig('whatsapp_zapi_meta_desativado', isset($_POST['whatsapp_zapi_meta_desativado']) ? '1' : '0');
+            $sucesso = whatsappZapiMetaDesativado()
+                ? 'Z-API e Meta oficial desativados — Evolution é o único canal usado agora.'
+                : 'Z-API e Meta oficial reativados como fallback.';
         } elseif ($acao === 'salvar_whatsapp_oficial_vendas') {
             foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -660,6 +709,17 @@ foreach (array_keys($camposEvolution) as $chave) {
 $configuradoEvolution = $valoresEvolution['evolution_base_url'] && $valoresEvolution['evolution_instance_name'] && $valoresEvolution['evolution_api_key'];
 $evolutionIgnorarSslAtual = getConfig('evolution_ignorar_ssl') === '1';
 $providerPrincipalAtual = getConfig('whatsapp_provider_principal') ?: 'zapi';
+$valoresEvolutionVendas = [];
+foreach (array_keys($camposEvolutionVendas) as $chave) {
+    $valoresEvolutionVendas[$chave] = getConfig($chave) ?? '';
+}
+$configuradoEvolutionVendas = $valoresEvolution['evolution_base_url'] && $valoresEvolutionVendas['evolution_vendas_instance_name'] && $valoresEvolutionVendas['evolution_vendas_api_key'];
+$valoresEvolutionFinanceiro = [];
+foreach (array_keys($camposEvolutionFinanceiro) as $chave) {
+    $valoresEvolutionFinanceiro[$chave] = getConfig($chave) ?? '';
+}
+$configuradoEvolutionFinanceiro = $valoresEvolution['evolution_base_url'] && $valoresEvolutionFinanceiro['evolution_financeiro_instance_name'] && $valoresEvolutionFinanceiro['evolution_financeiro_api_key'];
+$zapiMetaDesativadoAtual = whatsappZapiMetaDesativado();
 $valoresOficialVendas = [];
 foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
     $valoresOficialVendas[$chave] = getConfig($chave) ?? '';
@@ -738,6 +798,11 @@ unset($fv);
        o atendimento humano a partir do bloco 5, que agora acontece pelo
        <a href="/admin/whatsapp_inbox.php">WhatsApp Box</a> dentro do CRM, nunca mais por instância própria de
        consultor.</small></p>
+    <?php if ($zapiMetaDesativadoAtual): ?>
+        <p><span class="badge badge-atraso">🔌 Z-API desativada (ver card "Desativar Z-API e Meta oficial" mais
+           abaixo)</span> <small>— credenciais seguem salvas aqui, nunca apagadas, mas não são mais usadas pra
+           enviar/buscar nada enquanto o kill switch estiver ligado.</small></p>
+    <?php endif; ?>
 
     <p>
         Status Z-API:
@@ -776,6 +841,12 @@ unset($fv);
 
 <div class="card">
     <h2>🛒 Instância Z-API — Vendas</h2>
+    <?php if ($zapiMetaDesativadoAtual): ?>
+        <p><span class="badge badge-atraso">🔌 Desativada</span> <small>— enquanto o kill switch (card
+           "Desativar Z-API e Meta oficial" mais abaixo) estiver ligado, o canal de vendas usa a instância
+           Evolution dedicada (card "🟣 Evolution API — Vendas") quando configurada; esta instância Z-API
+           fica guardada, mas não é mais usada.</small></p>
+    <?php endif; ?>
     <p><small>Instância DEDICADA do módulo de vendas (17/09/2026) — número/webhook PRÓPRIO, separado da instância
        principal acima (sempre a de compra): comprador entrando pelo WhatsApp cai direto na qualificação por IA de
        vendas (<a href="/admin/vendas_inbox.php">WhatsApp Vendas</a>), sem se misturar com o funil de compra. Mesmo
@@ -816,6 +887,12 @@ unset($fv);
 
 <div class="card">
     <h2>💳 Instância Z-API — Financeiro</h2>
+    <?php if ($zapiMetaDesativadoAtual): ?>
+        <p><span class="badge badge-atraso">🔌 Desativada</span> <small>— enquanto o kill switch (card
+           "Desativar Z-API e Meta oficial" mais abaixo) estiver ligado, o canal do financeiro usa a
+           instância Evolution dedicada (card "🟣 Evolution API — Financeiro") quando configurada; esta
+           instância Z-API fica guardada, mas não é mais usada.</small></p>
+    <?php endif; ?>
     <p><small>Instância DEDICADA de gestão de cobrança (18/09/2026) — número/webhook PRÓPRIO, separado das instâncias
        de compra e vendas acima: conversa com cliente em atraso acontece pelo
        <a href="/admin/financeiro_inbox.php">WhatsApp Financeiro</a>, sem se misturar com os outros funis. Mesma
@@ -970,7 +1047,128 @@ unset($fv);
 </div>
 
 <div class="card">
+    <h2>🟣 Evolution API (self-hosted) — Vendas</h2>
+    <p><small>12/10/2026, "adcona evlotion instancias adccionas vendas e financeiro" — mesmo servidor
+       self-hosted da instância principal acima (mesma <strong>URL base</strong>, lida do card principal),
+       só com um nome de instância + API key PRÓPRIOS (número dedicado de vendas pareado separadamente
+       no mesmo servidor).</small></p>
+
+    <p>
+        Status Evolution API (vendas):
+        <span class="badge <?= $configuradoEvolutionVendas ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoEvolutionVendas ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+        <?php if (!$valoresEvolution['evolution_base_url']): ?>
+            <br><small>Preencha e salve a "URL base" no card da instância principal primeiro.</small>
+        <?php endif; ?>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_evolution_vendas">
+        <?php foreach ($camposEvolutionVendas as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="<?= str_ends_with($chave, '_api_key') ? 'password' : 'text' ?>" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresEvolutionVendas[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresEvolutionVendas[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Webhook — mesma URL do card principal acima (a Evolution identifica a instância pelo
+       próprio nome dentro do payload, nunca precisa de uma 2ª URL cadastrada no servidor).</small></p>
+
+    <hr>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_evolution_vendas">
+        <button type="submit" <?= $configuradoEvolutionVendas ? '' : 'disabled' ?>>Testar conexão</button>
+        <?php if (!$configuradoEvolutionVendas): ?>
+            <p><small>Preencha e salve o nome da instância/API key acima (e a URL base no card
+               principal) antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🟣 Evolution API (self-hosted) — Financeiro</h2>
+    <p><small>Mesmo padrão do card de vendas acima — mesma URL base da instância principal, nome de
+       instância + API key PRÓPRIOS do número dedicado de cobrança.</small></p>
+
+    <p>
+        Status Evolution API (financeiro):
+        <span class="badge <?= $configuradoEvolutionFinanceiro ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $configuradoEvolutionFinanceiro ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
+        </span>
+        <?php if (!$valoresEvolution['evolution_base_url']): ?>
+            <br><small>Preencha e salve a "URL base" no card da instância principal primeiro.</small>
+        <?php endif; ?>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_evolution_financeiro">
+        <?php foreach ($camposEvolutionFinanceiro as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="<?= str_ends_with($chave, '_api_key') ? 'password' : 'text' ?>" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresEvolutionFinanceiro[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresEvolutionFinanceiro[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+
+    <hr>
+    <p><small>Webhook — mesma URL dos cards acima.</small></p>
+
+    <hr>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_evolution_financeiro">
+        <button type="submit" <?= $configuradoEvolutionFinanceiro ? '' : 'disabled' ?>>Testar conexão</button>
+        <?php if (!$configuradoEvolutionFinanceiro): ?>
+            <p><small>Preencha e salve o nome da instância/API key acima (e a URL base no card
+               principal) antes de testar.</small></p>
+        <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🔌 Desativar Z-API e Meta oficial (definitivo)</h2>
+    <p><small>12/10/2026, "vamos desativar definitivo zpi... coloca evoltion como padrão para todas
+       notificações do sistema... desabilitar meta zpi" — depois do histórico real de banimento
+       (4 números Z-API seguidos banidos na mesma conta, um deles sem nenhuma automação rodando, e a
+       própria conta WhatsApp Business oficial da Meta já tinha sido desabilitada permanentemente antes
+       disso, ver CLAUDE.md).</small></p>
+    <p><small>Com esta chave <strong>ligada</strong> (padrão desde esta mudança, mesmo sem salvar nada
+       aqui — nunca precisa de ação extra pra ficar seguro), Z-API e Meta oficial NUNCA são tentados em
+       NENHUM canal (principal, vendas, financeiro, notificação interna, busca de foto/nome de contato)
+       — só a Evolution API. Credenciais salvas nos cards acima/abaixo continuam guardadas, nunca
+       apagadas — reversível a qualquer momento desmarcando o checkbox.</small></p>
+
+    <p>
+        Estado atual:
+        <span class="badge <?= $zapiMetaDesativadoAtual ? 'badge-ok' : 'badge-atraso' ?>">
+            <?= $zapiMetaDesativadoAtual ? '🔌 Z-API e Meta oficial desativados' : '⚠️ Z-API/Meta ainda habilitados como fallback' ?>
+        </span>
+    </p>
+
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_whatsapp_zapi_meta_desativado">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal">
+            <input type="checkbox" name="whatsapp_zapi_meta_desativado" <?= $zapiMetaDesativadoAtual ? 'checked' : '' ?>>
+            Manter Z-API e Meta oficial desativados (recomendado)
+        </label>
+        <button type="submit">Salvar</button>
+    </form>
+</div>
+
+<div class="card">
     <h2>🟢 WhatsApp Cloud API (Meta oficial)</h2>
+    <?php if ($zapiMetaDesativadoAtual): ?>
+        <p><span class="badge badge-atraso">🔌 Desativada</span> <small>— kill switch ligado (card
+           "Desativar Z-API e Meta oficial" acima), Evolution é o único canal usado agora; credenciais
+           ficam guardadas aqui, nunca apagadas.</small></p>
+    <?php endif; ?>
     <p><small>25/09/2026, depois dos dois números Z-API (principal e fallback) serem bloqueados de novo —
        migração do canal PRINCIPAL de entrada de lead pra API oficial da Meta, que não sofre banimento por
        padrão de mensagem do jeito que a Z-API (protocolo não oficial) sofre.</small></p>
@@ -1017,7 +1215,12 @@ unset($fv);
     <hr>
     <p><small><strong>Canal que o funil de compra usa pra mandar/receber mensagem agora</strong> — só muda
        depois de testar a conexão com sucesso (Evolution acima, ou Meta neste card); nunca troca
-       sozinho.</small></p>
+       sozinho.
+       <?php if ($zapiMetaDesativadoAtual): ?>
+           <br>⚠️ Com o kill switch ligado (card "Desativar Z-API e Meta oficial"), a Evolution assume o
+           canal principal automaticamente mesmo que o rádio abaixo continue em "Z-API" — nunca deixa o
+           sistema sem canal nenhum só por causa deste rádio específico.
+       <?php endif; ?></small></p>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_provider_principal">

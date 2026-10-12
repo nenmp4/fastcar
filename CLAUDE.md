@@ -12762,6 +12762,125 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   update pontual). ⚠️ Ainda não rodado contra produção — falta o usuário
   rodar via SSH (`php install/corrigir_midia_evolution_antiga.php`,
   revisar o resultado, depois `--confirmar` se valer a pena).
+- **Z-API e Meta oficial desativados por completo — Evolution API vira
+  padrão pra TODA notificação do sistema (compra, vendas, financeiro)**
+  (12/10/2026, "vamos desativar definitivo zpi coloca evoltion como
+  padrão para todas notificações do sistema - adcona evlotion instancias
+  adccionas vendas e financeiro - coloca ni saude - desabilitar meta
+  zpi") — fecha de vez a sequência de incidentes de banimento já
+  documentada (conta WhatsApp Business da Meta desabilitada
+  permanentemente em 30/09/2026; e, bem mais recente, 4 números Z-API
+  distintos banidos em sequência na MESMA conta, um deles sem nenhuma
+  automação rodando, ver bullet "Novo número banido pela Meta
+  imediatamente ao conectar na Z-API" — padrão apontando pra
+  conta/infraestrutura Z-API já marcada, não só número isolado). Decisão
+  do usuário: nunca mais depender de Z-API/Meta pra nada, Evolution
+  self-hosted vira o único canal de verdade nos 3 módulos (principal,
+  vendas, financeiro) — igualando o que só valia pro canal principal
+  desde 09-12/10/2026.
+  **Kill switch único** — `whatsappZapiMetaDesativado(): bool`
+  (`includes/whatsapp_config.php`), lê `config.whatsapp_zapi_meta_desativado`
+  e **nasce `true`** quando a config nunca foi salva (`!== '0'`) — mesmo
+  padrão já usado por `zapcarDesativadoManualmente()` ("nasce desativado,
+  nunca precisa de ação extra depois do deploy"). Ligado, bloqueia
+  QUALQUER chamada real a Z-API/Meta oficial em qualquer um dos 8 pontos
+  de envio/busca do projeto: `zapiEnviarTexto()`/`Imagem()`/`Video()`/
+  `Audio()`/`Documento()`, `zapiEnviarTextoInterno()` (notificação pro
+  WhatsApp pessoal de staff), `zapiBuscarContato()` (foto/nome de
+  perfil) e `zapiEnviarTextoPeloCanal()` (resposta no mesmo turno,
+  respeitando de onde o cliente escreveu). **Nunca remove nenhuma
+  credencial/config salva** (regra de sempre deste projeto — Z-API e
+  Meta continuam 100% reversíveis, só desligadas; religar é trocar o
+  valor de volta em Configurações, sem precisar recadastrar nada).
+  **Assimetria deliberada entre canal principal e vendas/financeiro** —
+  pro PRINCIPAL, Evolution só assume automaticamente quando o kill
+  switch está ligado OU quando o radio já existente
+  `whatsapp_provider_principal` está explicitamente em `'evolution'`
+  (`evolutionEhProviderPrincipal()`, `includes/whatsapp_evolution.php` —
+  nunca força esse radio por cima de uma escolha explícita anterior,
+  mesmo mecanismo "nunca troca sozinho" já documentado nas tasks #53-56);
+  pra VENDAS/FINANCEIRO, Evolution (quando configurada) é **sempre**
+  preferida sobre Z-API/Meta, independente do estado do kill switch —
+  não existe radio explícito concorrente nesse nível, então "configurada
+  = usa" é a regra mais simples e correta.
+  **Instâncias dedicadas de vendas/financeiro** — `evolutionCredenciaisVendas()`/
+  `evolutionConfiguredVendas()` e o par `_Financeiro()` (novo,
+  `includes/whatsapp_evolution.php`), mesmo padrão exato de
+  `zapiCredenciaisVendas()`/`zapiCredenciaisFinanceiro()`. Nova
+  `evolutionIdentificarCanal(string $instanceName): array` — espelha
+  `zapiIdentificarInstancia()`, mas chaveada pelo **nome** da instância
+  Evolution (não um `instanceId` numérico como a Z-API — a Evolution não
+  tem esse conceito) — devolve `tipo` (`principal`/`vendas`/`financeiro`/
+  `desconhecida`) + `canal: 'evolution'`.
+  `chatbot-whatsapp/webhook/whatsapp_evolution.php` passou de
+  "só processa o principal" pra multiplexar os 3 canais, igual o webhook
+  Z-API já fazia: extrai `instance` do payload, resolve o tipo via
+  `evolutionIdentificarCanal()` (instância desconhecida → 401, nunca
+  processa), e despacha via `match($instancia['tipo'])` pra
+  `processarMensagemVendasZapi()`/`processarMensagemFinanceiroZapi()`/
+  `processarMensagemZapi()` (default) — reaproveitando 100% da lógica de
+  dedup/qualificação já validada em produção nos 2 outros canais, sem
+  duplicar nada.
+  `admin/configuracoes.php` ganhou 3 cards novos: "🟣 Evolution API —
+  Vendas" e "🟣 Evolution API — Financeiro" (URL/instância/API key +
+  teste de conexão, mesmo padrão dos cards Z-API dedicados que
+  substituem) e "🔌 Z-API e Meta oficial — desativados" (o próprio kill
+  switch, checkbox único, texto explicando que isso nunca apaga
+  credencial nenhuma). Os 4 cards antigos (Z-API única, Z-API Vendas,
+  Z-API Financeiro, Meta oficial) ganharam um badge condicional "🔌
+  Desativado" quando o kill switch está ligado — nunca escondidos, só
+  marcados, porque as credenciais continuam lá pra quem quiser
+  reconferir/religar.
+  `admin/saude.php` ganhou a seção "3b. WHATSAPP EVOLUTION" (canal
+  ativo agora + status de cada uma das 3 instâncias via
+  `GET /instance/connectionState/{instance}`, mesmo `curl_multi` paralelo
+  já usado pra Z-API) e a seção 3 (Z-API) passou a mostrar
+  "🔌 Desativado" em vez de tentar medir conexão quando o kill switch
+  está ligado — nunca bate na Z-API de propósito só pra reportar um
+  status que não importa mais.
+  Testado: suíte isolada de 20 cenários (`test_dispatch.php`, banco de
+  teste + fake server multiplexando Z-API/Evolution/Meta no mesmo
+  processo `php -S`, log de toda chamada de rede pra confirmar não só o
+  retorno mas QUEM foi de fato contatado) — kill switch default `true`;
+  ligado + Evolution principal configurada → Evolution, nunca Z-API/Meta
+  (confirmado pelo log, não só pelo retorno); canal vendas/financeiro com
+  Evolution dedicada configurada → vai pra lá, nunca pro principal nem
+  pra Z-API; canal vendas sem Evolution dedicada configurada → `false`,
+  log de rede vazio (nunca cai pro Z-API mesmo ela estando configurada —
+  comportamento correto, nunca um fallback de risco); kill switch
+  desligado + Evolution principal não configurada → regressão confirmada
+  voltando pra Z-API normal; kill switch desligado + radio nunca setado
+  pra `'evolution'` → continua Z-API (nunca força a troca por cima de
+  uma escolha explícita que nunca existiu — achado no processo: a 1ª
+  versão do teste esperava Evolution aqui, errado — corrigido o teste,
+  não o código, depois de confirmar que a assimetria documentada acima é
+  intencional); radio explicitamente `'evolution'` → Evolution, mecanismo
+  pré-existente intocado; `zapiEnviarTextoInterno()`/`zapiBuscarContato()`/
+  `zapiEnviarTextoPeloCanal()` nos 2 estados do kill switch, incluindo o
+  caso "canal zapi/oficial só porque o kill switch religou o roteamento
+  pra Evolution"; `evolutionIdentificarCanal()` nos 5 casos (vazio,
+  principal, vendas, financeiro, desconhecida) — 47/47 asserções. +
+  teste HTTP ponta a ponta real (`php -S`, 5 cenários: vendas, financeiro,
+  principal, instância desconhecida, reenvio do mesmo `messageId` em
+  vendas) confirmando status HTTP certo em cada um e, via consulta direta
+  ao banco, exatamente 1 linha em `vendas`, exatamente 1 em
+  `oportunidades`/`clientes`, exatamente 3 (nunca 4) em
+  `whatsapp_mensagens` — prova de que o dedup funciona entre canais e
+  não há vazamento cruzado. Guard novo em `tests/smoke.php`
+  (`[kill-switch-zapi-meta-ausente]`/`[kill-switch-zapi-meta-sem-gate]`/
+  `[kill-switch-evolution-principal-sem-gate]`) extrai o corpo de cada
+  uma das 8 funções por balanceamento de chaves e confirma que todas
+  referenciam o kill switch (ou já desviam pra Evolution antes de
+  chegar nele) — nunca deixa um refactor futuro remover a checagem sem
+  ninguém perceber, mesmo sem gerar erro nenhum em produção se isso
+  acontecer. `php -l` nos 5 arquivos tocados + `tests/smoke.php` (0
+  avisos) limpo. Sem migração de schema (todas as chaves novas vivem em
+  `config`, livre, key/value). Confirmado durante todo o processo de
+  teste que o banco de dev real (`database/fastcar.db`) nunca foi
+  tocado — timestamp conferido intacto antes/depois, só scripts
+  file-based com `auto_prepend_file` apontando pra bancos de teste
+  isolados, nunca `php -r` inline nem teste direto contra o banco
+  principal.
 
 ## Pendências
 

@@ -17,9 +17,14 @@
  * mesmo erro já cometido uma vez neste projeto com o Client-Token da Z-API
  * (ver CLAUDE.md, "checagem de client-token no header REMOVIDA").
  *
- * Escopo desta 1ª versão: só o canal PRINCIPAL (compra/qualificação de
- * lead) — mesma decisão de escopo que a migração pra Meta oficial também
- * teve na Fase 1. Vendas/financeiro continuam na Z-API dedicada de sempre.
+ * 12/10/2026 — "adcona evlotion instancias adccionas vendas e financeiro":
+ * MESMA URL agora atende as 3 instâncias (principal/vendas/financeiro,
+ * cada uma pareada separadamente no mesmo servidor self-hosted) —
+ * `evolutionIdentificarCanal()` (includes/whatsapp_evolution.php) resolve
+ * qual é qual pelo nome da instância no payload, mesmo papel que
+ * `zapiIdentificarInstancia()` já cumpre pro webhook Z-API
+ * (chatbot-whatsapp/webhook/whatsapp.php) — roteamento espelhado 1:1
+ * daquele arquivo.
  */
 
 define('ROOT', dirname(__DIR__, 2));
@@ -31,6 +36,8 @@ require_once ROOT . '/includes/oportunidades.php';
 require_once ROOT . '/includes/vendas.php';
 require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens_vendas.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens_financeiro.php';
 
 header('Content-Type: application/json');
 
@@ -50,12 +57,13 @@ if (!is_array($body)) {
     exit;
 }
 
-// Valida que o evento veio da instância configurada — nunca processa
-// origem que não reconhecemos (mesma disciplina do instanceId/
-// phone_number_id desconhecido nos outros 2 webhooks).
+// Identifica de qual instância veio (principal/vendas/financeiro/
+// desconhecida) pelo nome no payload — nunca processa origem que não
+// reconhecemos, mesma disciplina do instanceId/phone_number_id
+// desconhecido nos outros 2 webhooks.
 $instanceNoPayload = (string)($body['instance'] ?? '');
-[, $instanceEsperada] = evolutionCredenciais();
-if ($instanceEsperada === '' || $instanceNoPayload !== $instanceEsperada) {
+$instancia = evolutionIdentificarCanal($instanceNoPayload);
+if ($instancia['tipo'] === 'desconhecida') {
     log_webhook_evolution("Instância desconhecida/não configurada, rejeitando webhook: \"{$instanceNoPayload}\"");
     http_response_code(401);
     echo json_encode(['ok' => false, 'ignored' => 'unknown_instance']);
@@ -77,14 +85,19 @@ if ($payloadAdaptado === null) {
     exit;
 }
 
-// 'canal' => 'evolution' — usado por iaProcessarTurno()/
-// enviarTelefoneConsultorAoCliente() (via zapiEnviarTextoPeloCanal()) pra
-// garantir que a resposta do MESMO turno saia pelo MESMO canal que o
-// cliente usou, nunca pelo toggle global sozinho.
-$instancia = ['tipo' => 'principal', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
-
+// Instância de vendas/financeiro tem processador PRÓPRIO — mesmo
+// roteamento de chatbot-whatsapp/webhook/whatsapp.php (Z-API), só que
+// identificado pelo NOME da instância Evolution em vez de instanceId.
+// 'canal' => 'evolution' (já vem em $instancia) usado por
+// iaProcessarTurno()/enviarTelefoneConsultorAoCliente() (via
+// zapiEnviarTextoPeloCanal()) pra garantir que a resposta do MESMO turno
+// saia pelo MESMO canal que o cliente usou.
 try {
-    $resultado = processarMensagemZapi($payloadAdaptado, $instancia);
+    $resultado = match ($instancia['tipo']) {
+        'vendas' => processarMensagemVendasZapi($payloadAdaptado, $instancia),
+        'financeiro' => processarMensagemFinanceiroZapi($payloadAdaptado, $instancia),
+        default => processarMensagemZapi($payloadAdaptado, $instancia),
+    };
 } catch (Throwable $e) {
     log_webhook_evolution('Erro ao processar mensagem (' . get_class($e) . '): ' . $e->getMessage());
     http_response_code(500);
@@ -94,6 +107,9 @@ try {
 
 if (!empty($resultado['erro_oportunidade'])) {
     log_webhook_evolution("Erro ao criar/abrir oportunidade ({$resultado['telefone']}): {$resultado['erro_oportunidade']}");
+}
+if (!empty($resultado['erro_venda'])) {
+    log_webhook_evolution("Erro ao criar/abrir lead de venda ({$resultado['telefone']}): {$resultado['erro_venda']}");
 }
 
 echo json_encode(['ok' => true]);

@@ -625,6 +625,68 @@ if ($comAntiPadrao) {
     ok('[whatsapp-inbox-subquery-correlacionada] limpo (os 3 inboxes usam JOIN por índice, não subquery correlacionada)');
 }
 
+// Kill switch Z-API/Meta desativados, 12/10/2026 ("desativar definitivo
+// zpi... desabilitar meta zpi") — whatsappZapiMetaDesativado()
+// (includes/whatsapp_config.php) é o portão único que bloqueia QUALQUER
+// chamada real a Z-API/Meta oficial (principal, vendas, financeiro,
+// notificação interna, resposta do mesmo turno, busca de contato) assim
+// que ligado — default 'true' quando a config nunca foi salva, mesmo
+// padrão já usado por zapcarDesativadoManualmente(). Guard garante que
+// nenhum refactor futuro remova a checagem de dentro de uma dessas
+// funções sem ninguém perceber — sem o guard, a regressão nunca gera
+// erro nenhum, só volta a bater silenciosamente em Z-API/Meta.
+function _smokeExtrairCorpoFuncao(string $conteudo, string $nomeFuncao): ?string {
+    if (!preg_match('/function\s+' . preg_quote($nomeFuncao, '/') . '\s*\([^)]*\)[^{]*\{/', $conteudo, $m, PREG_OFFSET_CAPTURE)) {
+        return null;
+    }
+    $inicioCorpo = $m[0][1] + strlen($m[0][0]);
+    $profundidade = 1;
+    $len = strlen($conteudo);
+    for ($i = $inicioCorpo; $i < $len; $i++) {
+        if ($conteudo[$i] === '{') $profundidade++;
+        elseif ($conteudo[$i] === '}') {
+            $profundidade--;
+            if ($profundidade === 0) {
+                return substr($conteudo, $inicioCorpo, $i - $inicioCorpo);
+            }
+        }
+    }
+    return null;
+}
+$whatsappConfigPath = $root . '/includes/whatsapp_config.php';
+$whatsappEvolutionPath = $root . '/includes/whatsapp_evolution.php';
+if (!file_exists($whatsappConfigPath) || !str_contains((string)file_get_contents($whatsappConfigPath), 'function whatsappZapiMetaDesativado(')) {
+    falha('[kill-switch-zapi-meta-ausente] whatsappZapiMetaDesativado() não existe mais em includes/whatsapp_config.php');
+} else {
+    ok('[kill-switch-zapi-meta-ausente] whatsappZapiMetaDesativado() presente');
+}
+if (file_exists($whatsappConfigPath)) {
+    $conteudoWhatsappConfig = (string)file_get_contents($whatsappConfigPath);
+    $funcoesComGate = [
+        'zapiEnviarTexto', 'zapiEnviarImagem', 'zapiEnviarVideo', 'zapiEnviarAudio',
+        'zapiEnviarDocumento', 'zapiEnviarTextoInterno', 'zapiBuscarContato', 'zapiEnviarTextoPeloCanal',
+    ];
+    $semGate = [];
+    foreach ($funcoesComGate as $nomeFuncaoGate) {
+        $corpo = _smokeExtrairCorpoFuncao($conteudoWhatsappConfig, $nomeFuncaoGate);
+        if ($corpo === null) {
+            $semGate[] = $nomeFuncaoGate . ' (função não encontrada)';
+        } elseif (!str_contains($corpo, 'whatsappZapiMetaDesativado(') && !str_contains($corpo, 'evolutionEhProviderPrincipal(') && !str_contains($corpo, 'evolutionConfigured')) {
+            $semGate[] = $nomeFuncaoGate;
+        }
+    }
+    if ($semGate) {
+        falha('[kill-switch-zapi-meta-sem-gate] função(ões) sem checagem do kill switch/Evolution: ' . implode(', ', $semGate));
+    } else {
+        ok('[kill-switch-zapi-meta-sem-gate] todas as 8 funções de envio/busca respeitam o kill switch ou já desviam pra Evolution');
+    }
+}
+if (!file_exists($whatsappEvolutionPath) || !str_contains((string)file_get_contents($whatsappEvolutionPath), 'whatsappZapiMetaDesativado()')) {
+    falha('[kill-switch-evolution-principal-sem-gate] evolutionEhProviderPrincipal() não referencia mais whatsappZapiMetaDesativado() em includes/whatsapp_evolution.php');
+} else {
+    ok('[kill-switch-evolution-principal-sem-gate] evolutionEhProviderPrincipal() continua checando o kill switch');
+}
+
 // ─────────────────────────────────────────────────────────────
 echo "\n══════════════════════════════════\n";
 if ($falhas) {

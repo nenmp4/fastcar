@@ -72,33 +72,82 @@ check('Servidor', 'storage/ gravável', is_writable($basePath . '/storage') ? 'o
 check('Servidor', 'database/ gravável', is_writable($basePath . '/database') ? 'ok' : 'error', is_writable($basePath . '/database') ? 'Gravável' : 'SEM PERMISSÃO', '');
 
 // ── 3. WHATSAPP Z-API (instância principal) ──────────────────────────────
+// 12/10/2026 — "desativa definitivo zpi... desabilitar meta zpi": quando o
+// kill switch (whatsappZapiMetaDesativado(), includes/whatsapp_config.php)
+// está ligado, Z-API nunca é usada pra enviar/buscar nada — os checks
+// deste grupo viram 'info' (nunca 'warn'/'error', não é mais um problema
+// real não ter instância conectada) e o ping HTTP ao vivo (seção 11
+// abaixo) é pulado por completo, pra não bater numa conta provavelmente
+// banida à toa.
 $zapiInst = getConfig('zapi_instance_id') ?: '';
 $zapiTok  = getConfig('zapi_token') ?: '';
 $zapiCli  = getConfig('zapi_client_token') ?: '';
-if (!$zapiInst || !$zapiTok) {
+$zapiMetaDesativado = whatsappZapiMetaDesativado();
+if ($zapiMetaDesativado) {
+    check('WhatsApp (Z-API)', 'Provedor', 'info', '🔌 Desativado', 'Evolution é o único canal usado agora — ver grupo "WhatsApp (Evolution)" abaixo. Configurações → Desativar Z-API e Meta oficial');
+} elseif (!$zapiInst || !$zapiTok) {
     check('WhatsApp (Z-API)', 'Instância principal', 'warn', 'Não configurada', 'Configurações → Z-API principal');
 } else {
     check('WhatsApp (Z-API)', 'Instância principal', 'ok', 'Configurada', "ID: " . substr($zapiInst, 0, 8) . '...');
 }
 
+// Grupo PRÓPRIO (não "Z-API") — whatsapp_mensagens é a mesma tabela
+// compartilhada por todo canal (Z-API, Meta oficial, Evolution), reflete
+// tráfego real independente de qual provedor está ativo no momento.
 try {
     $ultimaMsg = $db->query("SELECT direcao, created_at FROM whatsapp_mensagens ORDER BY created_at DESC LIMIT 1")->fetch();
     if ($ultimaMsg) {
-        check('WhatsApp (Z-API)', 'Última mensagem', 'info', tempoAtras(strtotime($ultimaMsg['created_at'])), $ultimaMsg['direcao'] === 'in' ? 'Recebida' : 'Enviada');
+        check('WhatsApp (mensagens)', 'Última mensagem', 'info', tempoAtras(strtotime($ultimaMsg['created_at'])), $ultimaMsg['direcao'] === 'in' ? 'Recebida' : 'Enviada');
     } else {
-        check('WhatsApp (Z-API)', 'Última mensagem', 'info', 'Nenhuma ainda', '');
+        check('WhatsApp (mensagens)', 'Última mensagem', 'info', 'Nenhuma ainda', '');
     }
     $in24h  = (int)$db->query("SELECT COUNT(*) FROM whatsapp_mensagens WHERE direcao='in'  AND created_at >= datetime('now','-24 hours','localtime')")->fetchColumn();
     $out24h = (int)$db->query("SELECT COUNT(*) FROM whatsapp_mensagens WHERE direcao='out' AND created_at >= datetime('now','-24 hours','localtime')")->fetchColumn();
-    check('WhatsApp (Z-API)', 'Mensagens (24h)', ($in24h + $out24h) > 0 ? 'ok' : 'info', ($in24h + $out24h) . ' mensagens', "↓ recebidas: {$in24h} · ↑ enviadas: {$out24h}");
+    check('WhatsApp (mensagens)', 'Mensagens (24h)', ($in24h + $out24h) > 0 ? 'ok' : 'info', ($in24h + $out24h) . ' mensagens', "↓ recebidas: {$in24h} · ↑ enviadas: {$out24h}");
 } catch (Throwable $e) {
-    check('WhatsApp (Z-API)', 'Mensagens', 'warn', 'Erro ao consultar', $e->getMessage());
+    check('WhatsApp (mensagens)', 'Mensagens', 'warn', 'Erro ao consultar', $e->getMessage());
 }
 
-try {
-    $instancias = $db->query("SELECT COUNT(*) AS total, SUM(ativo) AS ativas FROM zapi_instancias_consultores")->fetch();
-    check('WhatsApp (Z-API)', 'Instâncias de consultores', 'info', (int)($instancias['ativas'] ?? 0) . ' ativa(s)', (int)($instancias['total'] ?? 0) . ' cadastrada(s) no total');
-} catch (Throwable $e) {}
+if (!$zapiMetaDesativado) {
+    try {
+        $instancias = $db->query("SELECT COUNT(*) AS total, SUM(ativo) AS ativas FROM zapi_instancias_consultores")->fetch();
+        check('WhatsApp (Z-API)', 'Instâncias de consultores', 'info', (int)($instancias['ativas'] ?? 0) . ' ativa(s)', (int)($instancias['total'] ?? 0) . ' cadastrada(s) no total');
+    } catch (Throwable $e) {}
+}
+
+// ── 3b. WHATSAPP EVOLUTION (self-hosted) ─────────────────────────────────
+// 12/10/2026, "coloca ni saude" — mesmo raciocínio do grupo Z-API acima,
+// um check por instância configurada (principal/vendas/financeiro), status
+// de conexão ao vivo preenchido na seção 11 (curl_multi, mesmo padrão já
+// usado pro Z-API).
+[$evoBase, $evoInstPrincipal, $evoKeyPrincipal] = evolutionCredenciais();
+check('WhatsApp (Evolution)', 'Canal ativo agora',
+    evolutionEhProviderPrincipal() ? 'ok' : 'info',
+    evolutionEhProviderPrincipal() ? '🟣 Evolution' : 'outro provedor', '');
+if (!$evoBase) {
+    check('WhatsApp (Evolution)', 'Instância principal', $zapiMetaDesativado ? 'error' : 'warn', 'Não configurada', 'Configurações → Evolution API');
+} elseif (!$evoInstPrincipal || !$evoKeyPrincipal) {
+    check('WhatsApp (Evolution)', 'Instância principal', $zapiMetaDesativado ? 'error' : 'warn', 'URL preenchida, instância/API key faltando', 'Configurações → Evolution API');
+} else {
+    check('WhatsApp (Evolution)', 'Instância principal', 'ok', 'Configurada', "Instância: {$evoInstPrincipal}");
+}
+
+[, $evoInstVendas, $evoKeyVendas] = evolutionCredenciaisVendas();
+if ($evoInstVendas && $evoKeyVendas) {
+    check('WhatsApp (Evolution)', 'Instância vendas', 'ok', 'Configurada', "Instância: {$evoInstVendas}");
+} else {
+    // Sem Z-API/Meta como alternativa (kill switch ligado), vendas sem
+    // Evolution dedicada fica sem canal funcional — warn de verdade, não
+    // só informativo.
+    check('WhatsApp (Evolution)', 'Instância vendas', $zapiMetaDesativado ? 'warn' : 'info', 'Não configurada', $zapiMetaDesativado ? 'Vendas sem canal funcional — Z-API/Meta desativados, Evolution vendas não configurada' : 'Configurações → Evolution API — Vendas');
+}
+
+[, $evoInstFinanceiro, $evoKeyFinanceiro] = evolutionCredenciaisFinanceiro();
+if ($evoInstFinanceiro && $evoKeyFinanceiro) {
+    check('WhatsApp (Evolution)', 'Instância financeiro', 'ok', 'Configurada', "Instância: {$evoInstFinanceiro}");
+} else {
+    check('WhatsApp (Evolution)', 'Instância financeiro', $zapiMetaDesativado ? 'warn' : 'info', 'Não configurada', $zapiMetaDesativado ? 'Financeiro sem canal funcional — Z-API/Meta desativados, Evolution financeiro não configurada' : 'Configurações → Evolution API — Financeiro');
+}
 
 // ── 4. IA (Gemini + fallback OpenAI) ─────────────────────────────────────
 $geminiKey = getConfig('gemini_api_key') ?: '';
@@ -288,10 +337,22 @@ $addReq = function (string $key, string $url, array $opts = []) use (&$mh, &$req
     $reqs[$key] = $ch;
 };
 
-if ($zapiInst && $zapiTok) {
+if (!$zapiMetaDesativado && $zapiInst && $zapiTok) {
     $headers = ['Content-Type: application/json'];
     if ($zapiCli) $headers[] = 'client-token: ' . $zapiCli;
     $addReq('zapi', zapiBaseUrl() . "/instances/{$zapiInst}/token/{$zapiTok}/status", [CURLOPT_HTTPHEADER => $headers]);
+}
+if ($evoBase && $evoInstPrincipal && $evoKeyPrincipal) {
+    $addReq('evolution_principal', $evoBase . '/instance/connectionState/' . rawurlencode($evoInstPrincipal),
+        [CURLOPT_HTTPHEADER => ['apikey: ' . $evoKeyPrincipal]] + _evolutionCurlSslOpts());
+}
+if ($evoBase && $evoInstVendas && $evoKeyVendas) {
+    $addReq('evolution_vendas', $evoBase . '/instance/connectionState/' . rawurlencode($evoInstVendas),
+        [CURLOPT_HTTPHEADER => ['apikey: ' . $evoKeyVendas]] + _evolutionCurlSslOpts());
+}
+if ($evoBase && $evoInstFinanceiro && $evoKeyFinanceiro) {
+    $addReq('evolution_financeiro', $evoBase . '/instance/connectionState/' . rawurlencode($evoInstFinanceiro),
+        [CURLOPT_HTTPHEADER => ['apikey: ' . $evoKeyFinanceiro]] + _evolutionCurlSslOpts());
 }
 if ($geminiKey) {
     $addReq('gemini', geminiBaseUrl() . '/models?key=' . $geminiKey);
@@ -317,6 +378,18 @@ if (isset($resultados['zapi'])) {
     elseif ($r['code'] === 200 && !empty($d['connected'])) check('WhatsApp (Z-API)', 'Status da instância', 'ok', 'Conectado', !empty($d['smartphoneConnected']) ? 'Smartphone vinculado' : '');
     elseif ($r['code'] === 200) check('WhatsApp (Z-API)', 'Status da instância', 'error', 'Desconectado', 'Reconecte no painel Z-API (QR Code)');
     else check('WhatsApp (Z-API)', 'Status da instância', 'warn', "HTTP {$r['code']}", '');
+}
+foreach (['evolution_principal' => 'principal', 'evolution_vendas' => 'vendas', 'evolution_financeiro' => 'financeiro'] as $evoKey => $evoLabel) {
+    if (!isset($resultados[$evoKey])) continue;
+    $r = $resultados[$evoKey];
+    $d = json_decode($r['resp'] ?: '{}', true);
+    $estado = $d['instance']['state'] ?? $d['state'] ?? null;
+    if ($r['err']) check('WhatsApp (Evolution)', "Status da instância ({$evoLabel})", 'error', 'Erro de conexão', $r['err']);
+    elseif ($estado === 'open') check('WhatsApp (Evolution)', "Status da instância ({$evoLabel})", 'ok', 'Conectado (pareado)', '');
+    elseif ($estado === 'connecting') check('WhatsApp (Evolution)', "Status da instância ({$evoLabel})", 'warn', 'Aguardando QR code', '');
+    elseif ($r['code'] === 200) check('WhatsApp (Evolution)', "Status da instância ({$evoLabel})", 'error', 'Desconectado', "Estado: " . ($estado ?: 'desconhecido'));
+    elseif (in_array($r['code'], [401, 403], true)) check('WhatsApp (Evolution)', "Status da instância ({$evoLabel})", 'error', 'API key inválida', '');
+    else check('WhatsApp (Evolution)', "Status da instância ({$evoLabel})", 'warn', "HTTP {$r['code']}", '');
 }
 if (isset($resultados['gemini'])) {
     $r = $resultados['gemini'];
