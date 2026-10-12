@@ -12722,6 +12722,46 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   compartilhada pelos 4 tipos), mas só testado de verdade pra imagem;
   validar os outros 3 tipos na próxima vez que o cliente mandar um de
   verdade.
+  **Script de recuperação pra mídia antiga (anterior ao fix)** (12/10/2026,
+  achado real: screenshot da conversa com "Clebeson" mostrando 3 fotos + 1
+  áudio ainda como `[image]`/`[audio]` cru, datados de 11/10 13:56-57 — um
+  dia ANTES do commit do fix acima (`2aea7aa`, 12/10 10:01 UTC) existir) —
+  confirmado via `git log` que são mensagens genuinamente anteriores ao
+  deploy, nunca passaram pelo caminho novo, e não existe backfill
+  automático (mesma limitação já avisada). Novo
+  `install/corrigir_midia_evolution_antiga.php` (CLI, mesmo molde
+  dry-run/`--confirmar` de todo script de correção pontual deste projeto)
+  — acha `whatsapp_mensagens` com `direcao='in'`, `tipo IN ('image','audio',
+  'video','document')`, sem `drive_file_id`/`arquivo_url` e com
+  `zapi_message_id` preenchido (`--dias=N`, padrão 2, controla a janela);
+  pra cada candidata, chama `evolutionBaixarMidiaRecebida()` (o MESMO
+  endpoint do fix em tempo real) — nunca assume o provedor de origem (não
+  existe coluna de "canal" por mensagem), então uma mensagem que veio de
+  Z-API/Meta só falha graciosamente aqui (messageId não reconhecido pela
+  Evolution), sem risco de corromper nada. Dry-run **já tenta o download
+  de verdade** (é leitura contra a Evolution, zero escrita no banco) —
+  mostra por mensagem se recuperou ou não, com o erro real
+  (`evolutionUltimoErro()`), antes de decidir se vale `--confirmar`.
+  `--confirmar` repete o download e persiste via
+  `salvarMidiaWhatsappRecebida()` (mesma função do fluxo em tempo real,
+  nenhuma lógica nova de persistência). ⚠️ **Sem garantia** — avisado
+  explicitamente no topo do script: o WhatsApp/Baileys normalmente só
+  mantém a mídia disponível no servidor por um tempo limitado; passado
+  quase 1 dia é bem possível que a Evolution já não tenha mais os bytes.
+  Testado em banco isolado contra servidor Evolution fake local (5
+  cenários: imagem recuperável, áudio recuperável — confirma que o fix já
+  cobria os dois, não só imagem —, mídia "expirada" — 404 simulado, falha
+  graciosamente sem travar o resto do lote —, mensagem já com mídia salva
+  — corretamente fora da lista de candidatas —, mensagem fora da janela de
+  dias — corretamente fora): dry-run não persiste nada mesmo achando
+  recuperável; `--confirmar` persiste de verdade (`arquivo_url`/bytes
+  reais conferidos em disco); rodar `--confirmar` uma 2ª vez confirma
+  idempotência — só a mensagem "expirada" continua como candidata, as 2
+  já recuperadas somem da lista, nunca reprocessadas + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema (script só leitura +
+  update pontual). ⚠️ Ainda não rodado contra produção — falta o usuário
+  rodar via SSH (`php install/corrigir_midia_evolution_antiga.php`,
+  revisar o resultado, depois `--confirmar` se valer a pena).
 
 ## Pendências
 
