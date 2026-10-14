@@ -220,6 +220,32 @@ if (file_exists($mensagensPath)) {
     aviso('chatbot-whatsapp/includes/mensagens.php não encontrado — guard de mídia Evolution pulado');
 }
 
+// Bug real 14/10/2026: "pessoal está com dificuldade de gravar enviar
+// áudio" — _evolutionBase64DeDataUri()/_oficialParseDataUri() usavam uma
+// classe de caractere restrita (`[a-zA-Z0-9/+.\-]+`) pro mime do data URI,
+// que falha pra QUALQUER áudio gravado pelo MediaRecorder do WhatsApp Box
+// (mime sempre vem como "audio/webm;codecs=opus"/"audio/ogg;codecs=opus"
+// — o ";codecs=" corta o match antes de achar o ";base64," literal) — o
+// código caía no fallback "não é data URI" e mandava a string crua
+// (prefixo + payload juntos) pro campo audio/media, que a Evolution
+// rejeitava com 400 "Owned media must be a url, base64, or valid file
+// with buffer" (reproduzido byte a byte contra o código antigo antes de
+// corrigir). Corrigido pra `[^,]*` (aceita qualquer parâmetro extra no
+// mime, ancora só no `;base64,` literal antes da única vírgula do data
+// URI). Guard evita um refactor futuro reintroduzir a classe restrita sem
+// ninguém perceber — sem o guard, a regressão nunca gera erro nenhum, só
+// volta a quebrar silenciosamente todo áudio gravado de novo.
+foreach (['includes/whatsapp_evolution.php', 'includes/whatsapp_oficial.php'] as $arquivoDataUri) {
+    $caminhoDataUri = $root . '/' . $arquivoDataUri;
+    if (!file_exists($caminhoDataUri)) { aviso("{$arquivoDataUri} não encontrado — guard de data URI pulado"); continue; }
+    $conteudoDataUri = (string)file_get_contents($caminhoDataUri);
+    if (preg_match('/preg_match\(\'#\^data:\(\[a-zA-Z0-9/', $conteudoDataUri)) {
+        falha("[data-uri-mime-classe-restrita] {$arquivoDataUri} voltou a usar a classe de caractere restrita no parsing do data URI — quebra áudio gravado com ';codecs=opus' no mime");
+    } else {
+        ok("[data-uri-mime-classe-restrita] {$arquivoDataUri} limpo");
+    }
+}
+
 // 30/09/2026, achado real: "contrato foi assinado mais não teve mensagem
 // de notificação sistema... no e-mail do consultor chegou certinho" —
 // notificações INTERNAS (aviso de contrato assinado, 2FA por WhatsApp,

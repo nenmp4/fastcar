@@ -12929,6 +12929,62 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   cache) — não elimina a chamada ao provedor de WhatsApp em si (Evolution/
   Z-API/Meta, sempre necessária) nem o upload do arquivo pro Drive
   (sempre precisa subir os bytes), só a autenticação redundante.
+  **Causa real de verdade: áudio gravado falhava 100% das vezes via
+  Evolution, 400 "Owned media must be a url, base64, or valid file with
+  buffer"** (14/10/2026, print real do erro em produção, logo depois do
+  fix do cache acima — "parece que estava certo operação não parou
+  mais" confirmou que a lentidão sumiu, mas o print mostrou que o envio
+  em si ainda podia falhar de vez). Achado lendo
+  `_evolutionBase64DeDataUri()`/`_oficialParseDataUri()`
+  (`includes/whatsapp_evolution.php`/`whatsapp_oficial.php`): o regex que
+  separa `data:{mime};base64,{...}` em mime+base64 usava uma classe de
+  caractere restrita pro mime (`[a-zA-Z0-9/+.\-]+`) — mas o
+  `MediaRecorder` do WhatsApp Box (`admin/whatsapp_inbox.php`, gravador
+  de áudio) sempre produz mime com parâmetro extra,
+  `audio/ogg;codecs=opus`/`audio/webm;codecs=opus` (os 2 primeiros
+  candidatos testados, suportados por praticamente todo navegador
+  moderno — na prática, quase TODO áudio gravado batia nisso), nunca um
+  mime "limpo". O `;codecs=opus` cortava o match do regex antes de achar
+  o `;base64,` literal, o regex inteiro falhava, e o código caía no
+  fallback "não reconheci como data URI" — mandando a STRING INTEIRA
+  (prefixo `data:audio/ogg;codecs=opus;base64,` + payload, tudo junto,
+  nunca válido como URL/base64/buffer) crua pro campo `audio`, que a
+  Evolution rejeitava com exatamente esse 400. Confirmado por
+  reprodução real: rodando o código ANTIGO (antes deste fix) contra um
+  fake server local que reimplementa a mesma validação da Evolution, o
+  erro capturado bateu BYTE A BYTE com o print do usuário
+  (`{"status":400,"error":"Bad Request","response":{"message":["Owned
+  media must be a url, base64, or valid file with buffer"]}}`) —
+  confirma que não era hipótese, era o bug de verdade. Corrigido nos 2
+  arquivos (mesmo bug, mesmo padrão, Meta oficial nunca confirmado em
+  produção ainda mas corrigido junto por consistência — regra de sempre
+  "achou um bug de padrão, corrige em TODO o repo"): regex trocado pra
+  `[^,]*` — aceita qualquer parâmetro extra dentro do mime, ancora só no
+  `;base64,` literal logo antes da ÚNICA vírgula que um data URI tem (o
+  alfabeto base64 nunca contém vírgula, então nunca confunde com o meio
+  do payload); mime devolvido pras 2 funções passou a ser só a parte
+  antes do 1º `;` (nunca mais carrega `;codecs=opus` junto pro campo
+  `mimetype` que a Evolution espera limpo, no caminho de imagem/vídeo/
+  documento — áudio em si nem usa esse campo). Testado em 2 camadas:
+  (1) função isolada (12 asserções — áudio `ogg`/`webm` com
+  `;codecs=opus` agora reconhecidos nos 2 arquivos, mime devolvido
+  limpo, base64 extraído sem sobra do prefixo, imagem/documento/URL
+  pública sem regressão); (2) ponta a ponta via HTTP real contra fake
+  server Evolution local reproduzindo a MESMA validação (não só
+  simulando sucesso) — `evolutionEnviarAudio()` com o áudio real
+  (`;codecs=opus`) confirmado funcionando de ponta a ponta, payload
+  capturado no fake server confirma o campo `audio` como o base64 PURO
+  (bytes decodificados batendo exatamente com o áudio original, nunca
+  sobra do prefixo `data:...`), `evolutionEnviarImagem()` confirmado sem
+  regressão (mimetype limpo, `image/jpeg`). Guard novo em
+  `tests/smoke.php` (`[data-uri-mime-classe-restrita]`, 1 por arquivo) —
+  sanity-check confirmado reintroduzindo a classe restrita de propósito
+  e vendo o guard falhar antes de restaurar. `php -l` + `tests/smoke.php`
+  (0 avisos) limpos. Sem migração de schema. Confirmado que o banco de
+  dev real (`database/fastcar.db`, nem chegou a existir nesta sessão)
+  nunca foi tocado — todo teste rodou via script em ARQUIVO com
+  `auto_prepend_file` apontando pra banco isolado, nunca `php -r`
+  inline.
 
 ## Pendências
 

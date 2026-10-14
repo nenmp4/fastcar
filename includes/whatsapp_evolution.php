@@ -333,10 +333,28 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
  * confirmados em produção neste projeto) quer o campo `media`/`audio`
  * como STRING (URL pública ou base64), nunca upload de arquivo. `null`
  * quando não é um data URI reconhecível (quem chama trata como URL cru).
+ *
+ * `[^,]*` (NÃO a classe de caractere restrita que existia antes) — achado
+ * real, 14/10/2026: áudio gravado pelo WhatsApp Box sempre sai como
+ * `audio/webm;codecs=opus`/`audio/ogg;codecs=opus` (`MediaRecorder`,
+ * `admin/whatsapp_inbox.php`, os 2 primeiros candidatos testados — quase
+ * sempre o que o navegador escolhe), nunca um mime "limpo" — a classe
+ * restrita de antes (`[a-zA-Z0-9/+.\-]+`) cortava o match bem no primeiro
+ * `;` (de "codecs=opus"), nunca achava o `;base64,` literal logo depois, e
+ * TODO áudio gravado caía no fallback "não reconheci como data URI",
+ * mandando a STRING INTEIRA (prefixo `data:...;base64,` + payload juntos,
+ * nunca válido como URL/base64/buffer) crua pro campo `audio`/`media` —
+ * a Evolution rejeitava com 400 `"Owned media must be a url, base64, or
+ * valid file with buffer"` (print real de erro em produção). `[^,]*` é
+ * guloso mas faz backtrack até achar `;base64,` literal bem antes da
+ * ÚNICA vírgula do data URI (o alfabeto base64 nunca tem vírgula, então
+ * nunca confunde com a vírgula do meio do payload) — aceita qualquer
+ * parâmetro extra dentro do mime (`codecs=`, `charset=` etc.), sempre
+ * cortado pro mime "limpo" (só a parte antes do 1º `;`) na saída.
  */
 function _evolutionBase64DeDataUri(string $urlOuDataUri): ?array {
-    if (preg_match('#^data:([a-zA-Z0-9/+.\-]+);base64,(.+)$#s', $urlOuDataUri, $m)) {
-        return ['mime' => $m[1], 'base64' => $m[2]];
+    if (preg_match('#^data:([^,]*);base64,(.+)$#s', $urlOuDataUri, $m)) {
+        return ['mime' => explode(';', $m[1], 2)[0], 'base64' => $m[2]];
     }
     return null;
 }

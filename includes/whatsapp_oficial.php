@@ -222,16 +222,23 @@ function oficialEnviarTexto(string $phone, string $msg, ?array $override = null)
  * Se `$s` for um data URI base64 (`data:{mime};base64,{...}`), devolve
  * `['mime'=>string,'bytes'=>string]` — senão `null`. Helper puro, sem
  * chamada de rede.
+ *
+ * `[^,]*` em vez da classe de caractere restrita de antes — mesmo fix de
+ * `_evolutionBase64DeDataUri()` (`includes/whatsapp_evolution.php`, achado
+ * real 14/10/2026): precisa aceitar parâmetro extra dentro do mime (ex:
+ * `audio/webm;codecs=opus`, o que o `MediaRecorder` do WhatsApp Box sempre
+ * produz pra áudio gravado) sem falhar o match inteiro e cair no fallback
+ * errado.
  */
 function _oficialParseDataUri(string $s): ?array {
-    if (!preg_match('#^data:([a-zA-Z0-9/+.\-]+);base64,(.+)$#s', $s, $m)) {
+    if (!preg_match('#^data:([^,]*);base64,(.+)$#s', $s, $m)) {
         return null;
     }
     $bytes = base64_decode($m[2], true);
     if ($bytes === false) {
         return null;
     }
-    return ['mime' => $m[1], 'bytes' => $bytes];
+    return ['mime' => explode(';', $m[1], 2)[0], 'bytes' => $bytes];
 }
 
 /**
