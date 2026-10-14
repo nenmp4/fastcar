@@ -9677,6 +9677,24 @@ segue no schema sem uso novo, não removida sem ganho real),
   (`-d auto_prepend_file=prepend.php script.php`), nunca mais `-r`.
   Nenhum dado de produção foi afetado (só existe na VPS, fora de alcance
   deste sandbox).
+  **Virou skill, 14/10/2026** ("precisamos manter esse padrão como fazer
+  um skill pois quando fazemos atualizações novas") — todo o runbook das
+  5 rodadas acima (achar query quente via `EXPLAIN QUERY PLAN`, nunca
+  adivinhar índice; os 3 PRAGMAs de leitura; índice composto filtro+
+  ordenação; escrita em lote em transação; guard em `tests/smoke.php`)
+  consolidado em `.claude/skills/performance-php-sqlite/SKILL.md`
+  (**dentro do repo, versionado no git** — não só em `~/.claude/skills/`,
+  que é por-container e já se mostrou não sobreviver a um reset de
+  sessão, mesmo com o CLAUDE.md documentando que a skill existia antes).
+  Gatilho ampliado de propósito: não é só reativo ("melhora performance")
+  — toda feature nova que adiciona tela/query de alto tráfego (dashboard,
+  listagem paginada, polling) ou toca tabela com mais de uma centena de
+  linhas passa a checar `EXPLAIN QUERY PLAN` ANTES de considerar pronta,
+  junto do `php -l`/`tests/smoke.php` já obrigatórios de sempre — nunca
+  em vez deles, só mais um item do mesmo checklist. Se a skill algum dia
+  não aparecer listada numa sessão nova, a cópia de verdade é a deste
+  repo — copiar de volta pra `~/.claude/skills/performance-php-sqlite/`,
+  nunca reescrever do zero.
 - **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
   admin deixar offline usuario que faltar e pegar os lead que chegar") —
   o lado de COMPRA já tinha isso desde 22/09/2026
