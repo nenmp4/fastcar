@@ -687,6 +687,30 @@ if (!file_exists($whatsappEvolutionPath) || !str_contains((string)file_get_conte
     ok('[kill-switch-evolution-principal-sem-gate] evolutionEhProviderPrincipal() continua checando o kill switch');
 }
 
+// Cache do access_token do Google Drive, 12/10/2026 ("pessoal está com
+// dificuldade de gravar enviar áudio - está demorando enviar") —
+// GoogleDrive::authenticate() roda em TODA operação de Drive (upload de
+// áudio/foto/documento no WhatsApp Box, download, criar pasta...); sem
+// cache, cada chamada paga um round-trip inteiro novo pro OAuth do Google
+// mesmo o token anterior ainda valendo por até 1h. Guard garante que um
+// refactor futuro não remova a checagem de cache de dentro do corpo de
+// authenticate() sem ninguém perceber — sem o guard, a regressão nunca
+// gera erro nenhum, só volta a deixar todo envio de mídia mais lento.
+$googleDrivePath = $root . '/includes/google_drive.php';
+if (!file_exists($googleDrivePath)) {
+    falha('[google-drive-token-sem-cache] includes/google_drive.php não existe mais');
+} else {
+    $conteudoGoogleDrive = (string)file_get_contents($googleDrivePath);
+    $corpoAuthenticate = _smokeExtrairCorpoFuncao($conteudoGoogleDrive, 'authenticate');
+    if ($corpoAuthenticate === null) {
+        falha('[google-drive-token-sem-cache] GoogleDrive::authenticate() não encontrada');
+    } elseif (!str_contains($corpoAuthenticate, 'tokenCacheKey') || !str_contains($corpoAuthenticate, 'getConfig($chaveCache)')) {
+        falha('[google-drive-token-sem-cache] authenticate() voltou a bater no OAuth do Google sem checar o cache de token primeiro');
+    } else {
+        ok('[google-drive-token-sem-cache] GoogleDrive::authenticate() continua checando o cache antes de gerar token novo');
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 echo "\n══════════════════════════════════\n";
 if ($falhas) {

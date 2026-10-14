@@ -12881,6 +12881,54 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   file-based com `auto_prepend_file` apontando pra bancos de teste
   isolados, nunca `php -r` inline nem teste direto contra o banco
   principal.
+  **Áudio do WhatsApp Box demorando pra enviar** (14/10/2026, "pessoal
+  está com dificuldade de gravar enviar áudio - está demorando enviar")
+  — investigado o fluxo real de `enviarAudioManualWhatsapp()`
+  (`includes/whatsapp_inbox.php`): envia pro provedor (hoje Evolution,
+  1 chamada), **depois** salva a cópia reproduzível na thread via
+  `salvarMidiaWhatsappRecebida()` → `salvarArquivoGeradoComoDocumento()`
+  (`includes/documentos.php`) — e essa cópia, sempre que o Drive está
+  configurado (caso normal de produção), fazia `new
+  GoogleDrive()->authenticate()` **sem nenhum cache**: toda chamada,
+  mesmo repetida segundos depois, assinava um JWT novo e batia de novo
+  no OAuth do Google do zero, mesmo o token anterior ainda valendo por
+  até 1h — um round-trip inteiro extra, pago em TODA operação de Drive
+  (áudio, foto, documento do WhatsApp Box, mas também upload do wizard
+  de documentos, PDF de contrato salvo no Drive, backup — qualquer
+  coisa que chame `authenticate()`), nunca só no áudio. Corrigido em
+  `GoogleDrive::authenticate()` (`includes/google_drive.php`) — cache do
+  `access_token` em `config`, mesmo padrão `"timestamp|json"` já usado
+  por outro cache de API externa deste projeto (`cotacaoUsdBrl()`,
+  `includes/gemini.php`): antes de assinar um JWT novo, checa se já tem
+  um token em cache ainda dentro da validade (margem de 5min antes do
+  `expires_in` real, padrão 3600s do Google) e reaproveita — só
+  autentica de verdade no cache miss ou token vencido. Nunca cacheia a
+  CREDENCIAL (o JSON de service account continua só em disco,
+  `config/google_drive_credentials.json`), só o token de curta duração
+  que ela gera. Chave de cache inclui o e-mail impersonado
+  (`config.email_from`) — trocar isso em Configurações nunca reaproveita
+  por engano um token gerado pro `sub` antigo, cai sozinho pro cache
+  miss. Testado em banco isolado contra servidor OAuth fake local
+  (nunca o banco de dev real — `database/fastcar.db` nem existia nesta
+  sessão): 1ª chamada bate 1x no fake OAuth e grava o cache; uma 2ª
+  chamada com uma instância NOVA de `GoogleDrive` (simulando uma 2ª
+  request de verdade) reaproveita o MESMO token em cache, zero chamada
+  nova; trocar `email_from` gera um token diferente (cache não vaza
+  entre impersonações distintas); cache forçado a expirar (via
+  `setConfig()`, nunca `UPDATE` cru na tabela — `getConfig()` tem cache
+  estático em memória compartilhado com `setConfig()`, escrever por
+  fora disso mascararia o teste) gera uma nova chamada ao OAuth; sem
+  credencial nenhuma, nunca tenta rede. Guard novo em `tests/smoke.php`
+  (`[google-drive-token-sem-cache]`, seção 4 — extrai o corpo de
+  `authenticate()` por balanceamento de chaves, mesma técnica já usada
+  pro guard do kill switch Z-API/Meta) — sanity-check confirmado
+  removendo a checagem de cache temporariamente e vendo o guard falhar
+  antes de restaurar. `php -l` + `tests/smoke.php` (0 avisos) limpos.
+  Sem migração de schema. Isso corta pela metade os round-trips de rede
+  de um envio de áudio pelo WhatsApp Box no caso comum (token já em
+  cache) — não elimina a chamada ao provedor de WhatsApp em si (Evolution/
+  Z-API/Meta, sempre necessária) nem o upload do arquivo pro Drive
+  (sempre precisa subir os bytes), só a autenticação redundante.
 
 ## Pendências
 

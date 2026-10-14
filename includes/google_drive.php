@@ -42,8 +42,44 @@ class GoogleDrive {
         return $j['client_email'] ?? '';
     }
 
+    /**
+     * Chave de cache do access_token em `config` — varia por e-mail
+     * impersonado (12/10/2026): se o admin trocar `email_from` em
+     * Configurações, o token em cache (gerado pro `sub` antigo) nunca é
+     * reaproveitado por engano, cai sozinho pro cache miss e gera um
+     * token novo com o `sub` certo.
+     */
+    private function tokenCacheKey(string $impersonar): string {
+        return 'google_drive_token_cache_' . substr(sha1($this->credentials_path . '|' . $impersonar), 0, 16);
+    }
+
     public function authenticate(): bool {
         if (!$this->hasCredentials()) return false;
+        $impersonar = getConfig('email_from');
+        $chaveCache = $this->tokenCacheKey((string)$impersonar);
+
+        // Cache do access_token (12/10/2026, achado real: "pessoal está com
+        // dificuldade de gravar enviar áudio - está demorando enviar") —
+        // `authenticate()` roda em TODA operação de Drive (upload de
+        // áudio/foto/documento, download, criar pasta...) e sempre fazia um
+        // novo JWT+round-trip pro OAuth do Google do zero, mesmo o token já
+        // emitido ainda valendo por até 1h — um envio de áudio pelo WhatsApp
+        // Box, por exemplo, pagava esse round-trip extra inteiro só pra
+        // depois subir o arquivo em si. Mesmo padrão `"timestamp|json"` já
+        // usado em outros caches de API externa deste projeto (ex:
+        // `cotacaoUsdBrl()`, `includes/gemini.php`) — nunca cacheia a
+        // CREDENCIAL (service account JSON, fica só em disco), só o token de
+        // curta duração que ela gera.
+        $cache = (string)(getConfig($chaveCache) ?: '');
+        if (strpos($cache, '|') !== false) {
+            [$ts, $json] = explode('|', $cache, 2);
+            $dados = json_decode($json, true);
+            if (is_array($dados) && !empty($dados['tok']) && (time() - (int)$ts) < (int)($dados['ttl'] ?? 0)) {
+                $this->token = $dados['tok'];
+                return true;
+            }
+        }
+
         $creds = json_decode(file_get_contents($this->credentials_path), true);
         $now = time();
         $header  = $this->b64u(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
@@ -66,7 +102,6 @@ class GoogleDrive {
         // porque a delegação em todo o domínio já autorizada no Workspace
         // Admin cobre os escopos drive E gmail.send juntos pro mesmo Client
         // ID — não precisa de nenhuma config nova nem autorização adicional.
-        $impersonar = getConfig('email_from');
         if ($impersonar) $payloadArr['sub'] = $impersonar;
         $payload = $this->b64u(json_encode($payloadArr));
         $key = openssl_pkey_get_private($creds['private_key']);
@@ -86,6 +121,13 @@ class GoogleDrive {
             return false;
         }
         $this->token = $data['access_token'];
+
+        // Guarda margem de 5min antes do vencimento real (expires_in, padrão
+        // 3600s) — nunca reaproveita um token já expirado/quase expirando.
+        $ttl = max(0, (int)($data['expires_in'] ?? 3600) - 300);
+        if ($ttl > 0) {
+            setConfig($chaveCache, $now . '|' . json_encode(['tok' => $this->token, 'ttl' => $ttl]));
+        }
         return true;
     }
 
