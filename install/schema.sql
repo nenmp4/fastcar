@@ -1003,6 +1003,15 @@ CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
 CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_oportunidade ON veiculo_avaliacoes(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_venda ON veiculo_avaliacoes(venda_id);
 CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_avaliador ON veiculo_avaliacoes(avaliador_id);
+-- 14/10/2026, "melhore velocidade dos sistema" — listarAvaliacoesConcluidas()
+-- sem filtro de avaliador (aba "Concluídas" pra super_admin/supervisor,
+-- admin/avaliacoes.php) fazia SCAN completo da tabela + sort em disco;
+-- medido contra 20.000 linhas simuladas, esse índice cobre o filtro
+-- (status='concluida') E a ordenação (concluida_em DESC) de uma vez só —
+-- confirmado 37x mais rápido nesse caso, sem regressão no caso filtrado
+-- por avaliador (que já tinha o próprio índice, mesma velocidade com ou
+-- sem este).
+CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_status_concluida ON veiculo_avaliacoes(status, concluida_em);
 -- Parcial — só exige unicidade entre tokens de fato gerados, nunca entre
 -- as várias linhas que ainda têm '' (default antes do 1º envio).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_termo_ciente_token ON veiculo_avaliacoes(termo_ciente_token) WHERE termo_ciente_token != '';

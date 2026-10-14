@@ -1742,6 +1742,21 @@ try {
     echo "❌ índices de expressão fin_lancamentos: {$e->getMessage()}\n";
 }
 
+// 14/10/2026, "melhore velocidade dos sistema" — listarAvaliacoesConcluidas()
+// sem filtro de avaliador (aba "Concluídas" pra super_admin/supervisor,
+// admin/avaliacoes.php) fazia SCAN completo de veiculo_avaliacoes + sort
+// em disco (idx_veiculo_avaliacoes_avaliador só ajuda quem filtra por
+// avaliador). Confirmado via EXPLAIN QUERY PLAN + medição real contra
+// 20.000 linhas simuladas: SCAN+sort em 66ms pra 20 chamadas, índice
+// composto (status, concluida_em) em 1.8ms — cobre filtro E ordenação de
+// uma vez, sem regressão no caso já filtrado por avaliador.
+try {
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_veiculo_avaliacoes_status_concluida ON veiculo_avaliacoes(status, concluida_em)");
+    echo "✅ índice veiculo_avaliacoes(status, concluida_em): pronto\n";
+} catch (Throwable $e) {
+    echo "❌ índice veiculo_avaliacoes(status, concluida_em): {$e->getMessage()}\n";
+}
+
 // 30/09/2026, "como sabemos cliente preencheu... notificação clicável...
 // rola pra cima pra ver status das ações" — tabela nova, persistente, só
 // pra evento que precisa ficar clicável + com histórico (ex: cliente

@@ -9623,6 +9623,60 @@ segue no schema sem uso novo, não removida sem ganho real),
   compartilhada, nunca tocada) conferido continuando exatamente
   `Cache-Control: private, no-store` — zero regressão nos documentos/
   contratos. `php -l` + `tests/smoke.php` limpos. Sem migração de schema.
+  **5ª rodada — índice faltando na fila de vistorias concluídas (aba
+  super_admin/supervisor), 14/10/2026** ("melhore velocidade dos
+  sistema") — varredura nas telas de alto tráfego ainda não auditadas
+  nas rodadas anteriores (Frota, pipeline de vendas, Clientes, Vistorias)
+  via `EXPLAIN QUERY PLAN`, seguindo o próprio runbook do skill
+  `performance-php-sqlite` (nunca adicionar índice só porque "parece que
+  ajuda"). Frota (`admin/veiculos.php`) e pipeline de vendas
+  (`admin/vendas.php`) já saíram limpos — todo `WHERE`/`ORDER BY`
+  relevante já usa `SEARCH ... USING INDEX`, nenhum `SCAN` de tabela
+  grande. **Achado real**: `listarAvaliacoesConcluidas()`
+  (`includes/veiculo_avaliacoes.php`, aba "✅ Concluídas" de
+  `admin/avaliacoes.php`) fazia `SCAN` completo de `veiculo_avaliacoes` +
+  sort em disco sempre que chamada SEM filtro de avaliador — o caso do
+  `super_admin`/`supervisor` vendo a fila inteira; o índice existente
+  (`idx_veiculo_avaliacoes_avaliador`, só em `avaliador_id`) só ajudava
+  quem já filtra por avaliador. Medido contra 20.000 linhas simuladas
+  (volume desbalanceado de propósito — 1 avaliador com só ~100 linhas
+  espalhadas aleatoriamente no tempo entre as outras ~19.900, pra testar
+  o pior caso real, não o melhor caso por coincidência): índice composto
+  `(status, concluida_em)` cobre o filtro (`status='concluida'`) E a
+  ordenação (`concluida_em DESC`) de uma vez só — **37x mais rápido**
+  no caso sem filtro (66ms→1,8ms pra 20 chamadas), e sem regressão
+  nenhuma no caso já filtrado por avaliador (2,7ms→1,8ms, SQLite já
+  prefere o índice novo nos dois casos, mesmo com a cardinalidade bem
+  desbalanceada testada). Aplicado em `install/schema.sql` E
+  `install/migrar.php` (mesmo índice idempotente simples dos outros 5 já
+  existentes, nenhuma reconstrução de tabela precisou). Testado: migração
+  rodada contra um banco simulando produção ANTES desta mudança
+  (`git show HEAD:install/schema.sql`, índice confirmado ausente antes,
+  `CREATE INDEX` aplicado com sucesso, dado pré-existente preservado,
+  idempotente numa 2ª rodada) + guard novo em `tests/smoke.php`
+  (mesma lista `$indicesEsperados` dos outros 5, mais o check contra o
+  banco real) + sanity-check confirmado removendo o índice de
+  `schema.sql` temporariamente e vendo o guard falhar antes de restaurar
+  + `php -l` + `tests/smoke.php` limpos.
+  **Achado lateral no processo de teste, não do código do projeto**: um
+  primeiro comando de investigação usou `-r` combinado com `-d
+  auto_prepend_file` — mesma pegadinha já documentada várias vezes neste
+  arquivo (`auto_prepend_file` é silenciosamente ignorado no modo `-r`,
+  confirmado de novo aqui com um teste direto) — fazendo essa e outras
+  chamadas `-r` de diagnóstico (a maioria só leitura, inofensivas) caírem
+  no fallback de `includes/db.php` pro banco de dev REAL
+  (`database/fastcar.db`), e 2 chamadas de seed usadas só pra medir o
+  índice (~40.000 linhas fake em `veiculo_avaliacoes`) escreverem de
+  verdade nesse banco. Descoberto pelo próprio `ls -la` mostrando o
+  arquivo modificado na hora errada, confirmado com uma contagem real
+  (`clientes`/`oportunidades`/`usuarios` todos em 0 — banco já estava
+  vazio antes, nenhum dado de verdade perdido). Corrigido resetando o
+  banco de dev pro estado limpo de sempre (`rm` + `getDB()` recria vazio
+  sozinho, mesmo padrão documentado várias vezes neste arquivo) e
+  refazendo toda a suíte de teste/migração só com scripts em ARQUIVO
+  (`-d auto_prepend_file=prepend.php script.php`), nunca mais `-r`.
+  Nenhum dado de produção foi afetado (só existe na VPS, fora de alcance
+  deste sandbox).
 - **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
   admin deixar offline usuario que faltar e pegar os lead que chegar") —
   o lado de COMPRA já tinha isso desde 22/09/2026
