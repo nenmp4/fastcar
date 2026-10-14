@@ -12985,6 +12985,43 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   nunca foi tocado — todo teste rodou via script em ARQUIVO com
   `auto_prepend_file` apontando pra banco isolado, nunca `php -r`
   inline.
+  **Instrumentação de timing no envio de áudio** (14/10/2026, achado real:
+  "ao gravar um áudio de 10 segundos demora 18 segundos para enviar") —
+  depois dos 2 fixes acima (cache do token do Drive, bug do parsing de
+  data URI), ainda não tinha NENHUM dado real de ONDE o tempo estava indo
+  nesse caso específico — só hipótese (processamento de áudio self-hosted
+  na VPS do Evolution, recurso limitado, possível conversão de formato
+  ffmpeg do lado do servidor). Em vez de continuar só especulando,
+  `enviarAudioManualWhatsapp()` (`includes/whatsapp_inbox.php`) passou a
+  medir e logar SEMPRE (sucesso ou falha, nunca só em erro) a duração de
+  cada trecho caro separadamente — chamada ao provedor de WhatsApp ativo
+  (Evolution/Z-API/Meta) e upload pro Google Drive — além do tempo total,
+  em `storage/logs/whatsapp_audio_timing.log` (gitignored, mesmo padrão
+  de `whatsapp_contato_debug.log`/`whatsapp_midia_debug.log`). `number_format()`
+  em vez de `round()` na formatação (achado no próprio teste: `round(x,
+  2)` produz um float que o PHP concatena como string SEM casas decimais
+  quando arredonda pra zero — log ficava inconsistente, às vezes "0s", às
+  vezes "1.23s" — `number_format()` sempre mostra as 2 casas). Nunca pode
+  quebrar o envio em si (try/catch, mesmo padrão de todo log de
+  diagnóstico do projeto). Testado em banco isolado contra fake server
+  Evolution local: caminho de sucesso grava `envio_provedor`/`drive`/
+  `total`/`sucesso=1` com os valores certos (drive aparece como tempo
+  numérico ou `n/a` conforme o cliente é encontrado ou não); caminho de
+  falha (telefone inválido) grava `sucesso=0` mesmo sem chegar a tentar o
+  envio de verdade — + `php -l` + `tests/smoke.php` limpos, guard novo
+  (`[audio-sem-timing-log]`) sanity-check confirmado removendo as 2
+  chamadas de propósito e vendo o guard falhar antes de restaurar (1ª
+  tentativa do sanity-check removeu só 1 das 2 chamadas por engano — o
+  guard continuou "OK" porque a outra ainda estava lá, nunca é prova de
+  nada removendo só parte do código; corrigido removendo as 2 de verdade
+  pra confirmar o guard falha igual). Sem migração de schema. ⚠️ **Ainda
+  não confirmado qual trecho é o culpado de verdade** — fica pra próxima
+  reclamação real: conferir `storage/logs/whatsapp_audio_timing.log` via
+  SSH (`tail -20`) já mostra a divisão `envio_provedor` × `drive` × `total`
+  pra separar se é a VPS do Evolution processando o áudio, upload pro
+  Drive, ou outra coisa (rede entre o navegador e o servidor, por
+  exemplo, que esta instrumentação não mede — só começa a contar DEPOIS
+  que o POST já chegou no servidor).
 
 ## Pendências
 

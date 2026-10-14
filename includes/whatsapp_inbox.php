@@ -321,6 +321,7 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
  * usado pro download de mídia recebida, por consistência.
  */
 function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string $mime, int $usuarioId): array {
+    $tInicio = microtime(true);
     $telNorm = normalizarTelefone($telefone);
     if ($audioBase64 === '') {
         return ['ok' => false, 'erro' => 'Nenhum áudio selecionado.'];
@@ -336,22 +337,65 @@ function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string
         return ['ok' => false, 'erro' => 'Áudio maior que o limite de ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
     }
 
-    if (!zapiEnviarAudio($telNorm, 'data:' . $mime . ';base64,' . $audioBase64)) {
+    $tAntesEnvio = microtime(true);
+    $enviouOk = zapiEnviarAudio($telNorm, 'data:' . $mime . ';base64,' . $audioBase64);
+    $tempoEnvio = microtime(true) - $tAntesEnvio;
+    if (!$enviouOk) {
+        _logTimingAudioWhatsapp($telefone, strlen($bytes), $tempoEnvio, null, microtime(true) - $tInicio, false);
         return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }
 
     $id = registrarMensagem($telNorm, 'out', '🎤 Áudio', null, false, 'audio', $usuarioId);
+    $tempoDrive = null;
     if ($id > 0) {
         $db = getDB();
         $stmt = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
         $stmt->execute([$telNorm]);
         $cliente = $stmt->fetch();
         if ($cliente) {
+            $tAntesDrive = microtime(true);
             salvarMidiaWhatsappRecebida($id, $bytes, $mime, 'audio', (int)$cliente['id'], $cliente['nome'] ?: $telNorm);
+            $tempoDrive = microtime(true) - $tAntesDrive;
         }
     }
     pausarIA($telNorm);
+    _logTimingAudioWhatsapp($telefone, strlen($bytes), $tempoEnvio, $tempoDrive, microtime(true) - $tInicio, true);
     return ['ok' => true, 'id' => $id];
+}
+
+/**
+ * Timing do envio de áudio (14/10/2026, achado real: "ao gravar um áudio
+ * de 10 segundos demora 18 segundos para enviar") — depois dos 2 fixes já
+ * aplicados nesta mesma investigação (cache do token do Drive, bug do
+ * parsing de data URI que fazia a Evolution rejeitar com 400), ainda não
+ * tínhamos NENHUM dado real de ONDE o tempo estava indo — só hipótese
+ * (processamento de áudio na VPS self-hosted do Evolution, recurso
+ * limitado). Em vez de continuar só especulando, loga sempre (nunca só em
+ * falha) a duração de cada trecho caro — chamada ao provedor de WhatsApp
+ * (Evolution/Z-API/Meta, o que estiver ativo) e upload pro Google Drive —
+ * separado do tempo total, pra próxima vez que alguém reclamar de
+ * demora a gente ter o número exato em vez de adivinhar de novo. Mesmo
+ * padrão de `_zapiLogDiagnosticoContato()` (includes/whatsapp_config.php)
+ * — nunca pode quebrar o envio em si, só observa.
+ */
+function _logTimingAudioWhatsapp(string $telefone, int $tamanhoBytes, float $tempoEnvioSeg, ?float $tempoDriveSeg, float $tempoTotalSeg, bool $sucesso): void {
+    try {
+        $dir = dirname(__DIR__) . '/storage/logs';
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        // number_format() (não round()) de propósito — round(0.001, 2) vira
+        // o float 0.0, que o PHP imprime como "0" sem casas decimais na
+        // concatenação de string, deixando o log com formato inconsistente
+        // (às vezes "0s", às vezes "1.23s") dependendo só da magnitude do
+        // valor. number_format() sempre mostra as 2 casas.
+        $linha = '[' . date('Y-m-d H:i:s') . "] telefone={$telefone} bytes={$tamanhoBytes}"
+            . ' envio_provedor=' . number_format($tempoEnvioSeg, 2) . 's'
+            . ' drive=' . ($tempoDriveSeg === null ? 'n/a' : number_format($tempoDriveSeg, 2) . 's')
+            . ' total=' . number_format($tempoTotalSeg, 2) . 's'
+            . ' sucesso=' . ($sucesso ? '1' : '0') . "\n";
+        file_put_contents($dir . '/whatsapp_audio_timing.log', $linha, FILE_APPEND);
+    } catch (Throwable $e) {
+        // diagnóstico nunca pode quebrar o envio de verdade
+    }
 }
 
 /**

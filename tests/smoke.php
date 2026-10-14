@@ -246,6 +246,26 @@ foreach (['includes/whatsapp_evolution.php', 'includes/whatsapp_oficial.php'] as
     }
 }
 
+// Timing do envio de áudio, 14/10/2026 ("ao gravar um áudio de 10
+// segundos demora 18 segundos para enviar") — enviarAudioManualWhatsapp()
+// (includes/whatsapp_inbox.php) grava sempre (sucesso ou falha) a duração
+// da chamada ao provedor de WhatsApp separada da duração do upload pro
+// Drive, em storage/logs/whatsapp_audio_timing.log — sem isso, qualquer
+// reclamação futura de lentidão volta a ser 100% adivinhação, sem dado
+// real pra confirmar onde o tempo está indo. Guard evita um refactor
+// futuro remover a instrumentação sem ninguém perceber.
+$whatsappInboxPath = $root . '/includes/whatsapp_inbox.php';
+if (!file_exists($whatsappInboxPath)) {
+    falha('[audio-sem-timing-log] includes/whatsapp_inbox.php não existe mais');
+} else {
+    $corpoEnviarAudio = _smokeExtrairCorpoFuncao((string)file_get_contents($whatsappInboxPath), 'enviarAudioManualWhatsapp');
+    if ($corpoEnviarAudio === null || !str_contains($corpoEnviarAudio, '_logTimingAudioWhatsapp(')) {
+        falha('[audio-sem-timing-log] enviarAudioManualWhatsapp() não registra mais o timing do envio');
+    } else {
+        ok('[audio-sem-timing-log] enviarAudioManualWhatsapp() continua registrando o timing do envio');
+    }
+}
+
 // 30/09/2026, achado real: "contrato foi assinado mais não teve mensagem
 // de notificação sistema... no e-mail do consultor chegou certinho" —
 // notificações INTERNAS (aviso de contrato assinado, 2FA por WhatsApp,
