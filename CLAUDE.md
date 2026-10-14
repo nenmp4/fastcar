@@ -10802,6 +10802,54 @@ segue no schema sem uso novo, não removida sem ganho real),
   de responsável populado certo e a oportunidade nasce com o consultor
   ESCOLHIDO, não com quem criou + `php -l` + `tests/smoke.php` limpos.
   Sem migração de schema (todas as colunas usadas já existiam).
+- **Botão "🔒 Encerrar atendimento" direto no WhatsApp Box (compra)**
+  (14/10/2026, "pessoal quer botao encerrar atendimento no inbox do
+  whtasapp sem precisar ir no lead pode deixar botão direito" / "ja vai
+  direto para pasta ecerrada") — antes disso, o único jeito de encerrar
+  um lead já tinha sido `admin/oportunidade.php` (campo motivo + botão
+  "Encerrar oportunidade"), obrigando o consultor a sair do inbox,
+  procurar o cliente no funil, abrir a oportunidade, só então encerrar.
+  Nova `encerrarAtendimentoPorTelefone()` (`includes/oportunidades.php`,
+  ao lado de `buscarOportunidadeAtivaPorTelefone()`) — acha a
+  oportunidade ATIVA do telefone (regra #1, pode ter mais de uma; sempre
+  a mais recente, já é o que `buscarOportunidadeAtivaPorTelefone()` faz)
+  e chama `marcarPerdida()` nela — mesmo caminho central de sempre
+  (`mudarEtapa()`, grava `oportunidade_historico`), nunca `UPDATE`
+  direto; cai na aba "❌ Encerradas" do funil na mesma hora, igual pediu.
+  Sem nenhuma oportunidade ativa pra esse telefone (ex: conversa só de
+  reengajamento depois de já ter encerrado antes), devolve erro claro,
+  nunca finge sucesso. `admin/whatsapp_inbox.php` ganhou um
+  `<details>` novo no cabeçalho da conversa (ao lado de "Pausar IA"/
+  "Excluir conversa", mesmo padrão visual — sem JS novo, fecha sozinho
+  igual os outros `<details>` já usados no projeto), com campo de motivo
+  **obrigatório** (mesma disciplina de `marcar_perdida` em
+  `admin/oportunidade.php`) e `confirmarAcao()` antes de submeter (nunca
+  `confirm()` nativo, mesma trava que o guard `confirm-nativo-nao-
+  substituido` do smoke já exige). Nunca aparece pro perfil `supervisor`
+  (mesmo bloqueio de "só acompanha" já existente no topo do arquivo,
+  tanto escondido na tela quanto recusado no servidor — nunca confia só
+  em esconder a UI) nem pra telefone fora da carteira do consultor
+  (reaproveita a MESMA checagem `usuarioPodeVerConversaWhatsapp()` que já
+  protegia enviar mensagem/pausar IA/excluir conversa). Evento novo
+  `atendimento_encerrado_inbox` em `includes/auditoria.php`. Escopo só do
+  inbox de COMPRA nesta rodada — vendas/financeiro não têm o mesmo
+  conceito de "etapa de funil encerrada" do mesmo jeito (vendas usaria
+  `mudarEtapaVenda(..., 'cancelada', ...)`, financeiro é cobrança, sem
+  analogia direta), fica pra confirmar se faz sentido espelhar depois.
+  Testado: função isolada em banco isolado (encerra de verdade com
+  motivo/responsável gravados certo no histórico; telefone já encerrado
+  antes/sem oportunidade nenhuma/inexistente devolve erro claro sem
+  lançar; encerrar 2x o mesmo telefone não reprocessa, idempotente,
+  nunca duplica histórico) + HTTP ponta a ponta real (sessão primed por
+  perfil, servidor PHP embutido, banco isolado): consultor vê o botão,
+  motivo vazio recusado sem alterar nada, motivo preenchido encerra de
+  verdade (etapa vira `perdido`, evento de auditoria gravado com
+  telefone+motivo certos); consultor tentando encerrar telefone de OUTRO
+  consultor é bloqueado pelo guard de responsabilidade já existente,
+  banco intocado; supervisor nunca vê o botão no HTML e um POST forjado
+  com CSRF genuinamente válido pra aquela sessão é rejeitado antes de
+  qualquer ação, banco confirmado intocado + `php -l` + `tests/smoke.php`
+  limpos. Sem migração de schema (reaproveita tudo que já existia).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

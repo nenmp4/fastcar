@@ -146,6 +146,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sucesso = 'IA pausada — só a equipe responde por aqui até reativar.';
             }
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'encerrar_atendimento' && $telPost) {
+            // 09/10/2026, "pessoal quer botao encerrar atendimento no inbox
+            // do whtasapp sem precisar ir no lead" / "ja vai direto para
+            // pasta ecerrada" — mesmo caminho central de sempre
+            // (marcarPerdida() -> mudarEtapa()), nunca UPDATE direto; cai
+            // na aba "❌ Encerradas" do funil na mesma hora.
+            $motivoEncerramento = clean((string)($_POST['motivo'] ?? ''));
+            if ($motivoEncerramento === '') {
+                $erro = 'Motivo é obrigatório pra encerrar o atendimento.';
+                $telefoneAtivo = $telPost;
+            } else {
+                $resultadoEncerrar = encerrarAtendimentoPorTelefone($telPost, $motivoEncerramento, (int)$_SESSION['admin_id']);
+                if ($resultadoEncerrar['ok']) {
+                    auditoriaRegistrar(
+                        'atendimento_encerrado_inbox',
+                        (int)$_SESSION['admin_id'],
+                        (string)$_SESSION['admin_nome'],
+                        'oportunidade',
+                        $resultadoEncerrar['oportunidade_id'],
+                        "Telefone {$telPost}. Motivo: {$motivoEncerramento}"
+                    );
+                    $sucesso = 'Atendimento encerrado — foi pra "❌ Encerradas" no funil.';
+                } else {
+                    $erro = $resultadoEncerrar['erro'];
+                }
+                $telefoneAtivo = $telPost;
+            }
         } elseif ($acao === 'excluir_conversa' && $telPost) {
             // Restrito ao super_admin — ação destrutiva (apaga o histórico de
             // mensagens pra sempre), sem tela de confirmação própria porque o
@@ -234,7 +261,19 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-item .quando { font-size: 11px; color: var(--texto-fraco); white-space: nowrap; }
 .wpp-badge { background: var(--azul); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 1px 7px; min-width: 18px; text-align: center; display: inline-block; }
 .wpp-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; justify-content: space-between; align-items: center; background: var(--superficie); }
+.wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; background: var(--superficie); }
+/* Botão "Encerrar atendimento" (09/10/2026, "pessoal quer botao encerrar
+   atendimento no inbox do whtasapp sem precisar ir no lead") — <details>
+   pra não precisar de JS novo; abre um form compacto com motivo
+   obrigatório, sempre ocupando a linha inteira do cabeçalho (nunca
+   flutuante/position:absolute — mais simples e seguro em mobile). */
+.wpp-encerrar-details { width: 100%; order: 99; }
+.wpp-encerrar-details summary { cursor: pointer; list-style: none; font-size: 12.5px; color: var(--texto-fraco); padding: 6px 12px; min-height: 44px; display: inline-flex; align-items: center; border: 1px solid var(--borda); border-radius: 6px; background: var(--fundo); }
+.wpp-encerrar-details summary::-webkit-details-marker { display: none; }
+.wpp-encerrar-details[open] summary { color: #c0392b; border-color: #c0392b; }
+.wpp-encerrar-details form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.wpp-encerrar-details form input[type="text"] { flex: 1; min-width: 220px; margin: 0; }
+.wpp-encerrar-details form button { margin: 0; white-space: nowrap; }
 .wpp-thread { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background: var(--fundo); }
 .wpp-thread .msg small { display: block; margin-top: 3px; opacity: .65; font-size: 10.5px; }
 .wpp-form { padding: 14px 20px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
@@ -335,6 +374,18 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         </form>
                     <?php endif; ?>
                 </div>
+                <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                    <details class="wpp-encerrar-details">
+                        <summary>🔒 Encerrar atendimento</summary>
+                        <form method="post" onsubmit="return confirmarAcao(this, 'Encerrar o atendimento? Vai pra ❌ Encerradas no funil — pode reabrir depois se precisar.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="encerrar_atendimento">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <input type="text" name="motivo" required placeholder="Motivo (obrigatório): desistiu, sem perfil, fechou por outro canal...">
+                            <button type="submit" class="perigo">Confirmar encerramento</button>
+                        </form>
+                    </details>
+                <?php endif; ?>
             </div>
 
             <div class="wpp-thread wpp-thread-scroll" id="wpp-thread">

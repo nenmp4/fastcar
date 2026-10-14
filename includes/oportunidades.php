@@ -338,6 +338,29 @@ function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
 }
 
 /**
+ * Encerra o atendimento direto do WhatsApp Box (09/10/2026, "pessoal quer
+ * botao encerrar atendimento no inbox do whtasapp sem precisar ir no lead
+ * pode deixar botão direito" / "ja vai direto para pasta ecerrada") — acha
+ * a oportunidade ATIVA do telefone (regra #1, pode ter mais de uma; aqui
+ * sempre a mais recente, buscarOportunidadeAtivaPorTelefone() já ordena
+ * por id DESC) e chama marcarPerdida() nela — mesmo caminho central de
+ * sempre (mudarEtapa(), grava oportunidade_historico), nunca UPDATE
+ * direto; cai na aba "❌ Encerradas" do funil na mesma hora.
+ *
+ * Sem nenhuma oportunidade ativa pra esse telefone (ex: conversa só de
+ * reengajamento depois de já ter encerrado antes), devolve ok=false com
+ * mensagem clara — nunca finge sucesso em cima de nada.
+ */
+function encerrarAtendimentoPorTelefone(string $telefone, string $motivo, int $responsavelId): array {
+    $op = buscarOportunidadeAtivaPorTelefone($telefone);
+    if (!$op) {
+        return ['ok' => false, 'erro' => 'Não existe nenhuma oportunidade ativa pra esse telefone — talvez já tenha sido encerrada antes.'];
+    }
+    marcarPerdida((int)$op['id'], $motivo, $responsavelId);
+    return ['ok' => true, 'oportunidade_id' => (int)$op['id']];
+}
+
+/**
  * Acha outra oportunidade JÁ na frota (etapa='fechado') com a MESMA placa —
  * 06/10/2026, "temos problema de subir mesmo carro... carro veio da
  * oportunidade" / "como evitar duplicar veiculo". Achado real: mesma
