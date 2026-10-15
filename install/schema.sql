@@ -749,6 +749,27 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- ainda nesta conversa.
     midia_sugerida_enviada_para INTEGER REFERENCES oportunidades(id),
 
+    -- Confirmação de visita presencial à Fastcar (15/10/2026, "ajuda
+    -- construir qualificação da ia para venda fazer cliente agentdar
+    -- visita na fastcar") — tri-state igual
+    -- oportunidades.aceita_ligacao_consultor: NULL = ainda não perguntado;
+    -- 1/0 = cliente confirmou/recusou vir ver os veículos pessoalmente.
+    -- Confirmado com o usuário: essa resposta (sim OU não, nunca "ainda
+    -- não respondida") passa a ser EXIGIDA pra qualificacao_completa=true
+    -- — recusar vir não trava nada (o vendedor fecha por telefone, mesmo
+    -- fallback de sempre), só a pergunta nunca feita/respondida trava.
+    aceita_visitar_fastcar INTEGER,
+    -- Dia/horário que o cliente comprometeu, em TEXTO LIVRE exatamente
+    -- como foi dito (ex: "sábado de manhã", "quinta às 15h") — nunca um
+    -- DATE calculado pela própria IA (regra #3: "sábado que vem" resolvido
+    -- errado contra a data de hoje seria pior que deixar em texto livre
+    -- pro vendedor confirmar o dia exato por telefone).
+    visita_dia_horario_texto TEXT DEFAULT '',
+    -- Quando aceita_visitar_fastcar virou 1 de verdade a 1ª vez (nunca
+    -- retroage se a pessoa mudar de ideia depois) — útil pra
+    -- dashboard/métrica futura de taxa de confirmação de visita.
+    visita_confirmada_em DATETIME,
+
     -- Qualificação civil do COMPRADOR — colunas próprias aqui, não
     -- `clientes`: comprador de revenda é um contato diferente do vendedor
     -- original que trouxe o veículo pra Fastcar, e o mesmo telefone

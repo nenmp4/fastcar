@@ -659,6 +659,15 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         </p>
     <?php endif; ?>
     <?php if ($v['urgencia']): ?><p><strong>Urgência:</strong> <?= e($v['urgencia']) ?></p><?php endif; ?>
+    <?php if ($v['aceita_visitar_fastcar'] !== null): ?>
+        <p><strong>Visita presencial:</strong>
+           <?php if ((int)$v['aceita_visitar_fastcar'] === 1): ?>
+               <span class="badge badge-ok">✅ Confirmou vir<?= $v['visita_dia_horario_texto'] ? ' — ' . e($v['visita_dia_horario_texto']) : '' ?></span>
+           <?php else: ?>
+               <span class="badge badge-atraso">🚫 Recusou vir — fechar por telefone</span>
+           <?php endif; ?>
+        </p>
+    <?php endif; ?>
     <?php if ($v['resumo_ia']): ?><p><strong>Resumo da IA:</strong><br><?= nl2br(e($v['resumo_ia'])) ?></p><?php endif; ?>
     <?php if ($v['etapa'] === 'sem_perfil'): ?>
         <p><span class="badge badge-atraso">⚪ Sem perfil de compra<?= $v['motivo_perda'] ? ': ' . e($v['motivo_perda']) : '' ?></span></p>

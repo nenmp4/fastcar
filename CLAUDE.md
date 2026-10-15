@@ -3935,6 +3935,77 @@ segue no schema sem uso novo, não removida sem ganho real),
   "entrada R$ 8.000,00", "parcela até R$ 950,50" formatados certos) +
   migração testada idempotente preservando uma venda já existente sem as
   colunas novas (rodada 2x sem efeito colateral).
+  **Meta da conversa virou confirmar visita presencial à Fastcar + "sem
+  consulta SPC/Serasa" na promissória** (15/10/2026, "ajuda construir
+  qualificação da ia para venda fazer cliente agentdar visita na fastcar
+  pra ver veiculos... temos modalidade carros na promissória sem consulta
+  ao spc serasa... ater confirmação de cliente vim ate fastcar") —
+  confirmado com o usuário via 2 rodadas de perguntas diretas antes de
+  codar (mesma disciplina de sempre): (1) a confirmação de visita (sim
+  OU não, nunca "ainda não respondida") passa a ser **exigida** pra
+  `qualificacao_completa=true`, igual já funciona pra
+  `aceita_ligacao_consultor` do lado de compra — recusar vir não trava
+  nada, o vendedor fecha por telefone, só a pergunta nunca feita/
+  respondida trava; (2) a isenção de SPC/Serasa na promissória vale
+  sempre, sem exceção, pode afirmar sem ressalva — mas **só** pra essa
+  modalidade (regra nova explícita: nunca generalizar pra financiado
+  bancário, que segue o processo normal da instituição); (3) a IA tenta
+  marcar um dia/horário real de verdade, validado contra o MESMO horário
+  comercial já configurado da fila (`filaHorarioAbertura()`/
+  `filaHorarioFechamento()`, `includes/fila_leads.php`, hoje 10h–19h20) —
+  sem controle de vaga/agenda nenhum (confirmado: "é loja/pátio físico,
+  pode vir vários ao mesmo tempo"), nunca checa conflito contra outro
+  cliente.
+  3 colunas novas em `vendas`: `aceita_visitar_fastcar` (tri-state igual
+  `aceita_ligacao_consultor` — NULL=nunca perguntado, 1/0=confirmou/
+  recusou vir, nunca sobrescrito depois de respondido),
+  `visita_dia_horario_texto` (TEXTO LIVRE exatamente como o cliente
+  disse — "sábado de manhã", "quinta às 15h" — **nunca** um `DATE`
+  calculado pela própria IA a partir de texto relativo, regra #3: resolver
+  "sábado que vem" errado contra a data de hoje seria pior que deixar em
+  texto livre pro vendedor confirmar o dia exato por telefone; diferente
+  do tri-state, este campo **sempre sobrescreve** quando o texto muda —
+  cliente pode remarcar — só não conta como "avanço" de novo se for
+  reenviado idêntico) e `visita_confirmada_em` (grava só na 1ª vez que
+  vira 1, nunca retroage, pra métrica futura de taxa de confirmação).
+  Nova `iaVendasContextoDataHoje()` (`includes/ia_qualificacao_vendas.php`)
+  injeta "quinta-feira, 15/10/2026" no prompt de CONVERSA só pra ajudar o
+  raciocínio sobre "sábado que vem" — nunca grava esse cálculo no banco,
+  o dado persistido é sempre o texto literal confirmado. Nova
+  `iaVendasContextoEndereco()` injeta o endereço real
+  (`config.empresa_endereco`, já usado em contrato/wizard/rodapé) quando
+  configurado; sem ele, instrui a IA a dizer que o vendedor confirma o
+  endereço certinho, nunca inventa um. `iaGerarResumoVenda()` (resumo pro
+  vendedor) ganhou uma 3ª linha de fechamento, "📞 FECHAR SÓ POR
+  TELEFONE", pro caso "recusou vir mas o resto está qualificado" — distinto
+  de "🔥 PRONTO PRA FECHAR" (agora exige visita CONFIRMADA, não só
+  interesse) e "🌱 PRECISA DE MAIS CONVERSA". `admin/venda.php` — card "🤖
+  Lead qualificado por IA" ganhou badge "✅ Confirmou vir — {dia/horário}"
+  ou "🚫 Recusou vir — fechar por telefone" (nada aparece enquanto ainda
+  não foi perguntado). Testado: 23 asserções de função em banco isolado
+  (confirmação de visita grava `visita_confirmada_em` na 1ª vez; recusa
+  (0/false) é resposta válida, nunca "vazia", e nunca grava
+  `visita_confirmada_em`; tri-state já respondido NUNCA é sobrescrito por
+  uma extração nova — mesma disciplina de `aceita_ligacao_consultor`;
+  `visita_dia_horario_texto` sempre atualiza quando o texto muda — remarcação
+  — e reenviar o mesmo texto não conta como avanço de novo; prompt de
+  sistema interpola horário/endereço configurados, sem nenhum placeholder
+  cru sobrando, e contém a regra explícita de isenção SPC/Serasa restrita
+  à promissória; sem endereço configurado nunca inventa, diz que o
+  vendedor confirma; prompt de extração tem os 2 campos novos no JSON e o
+  critério de `qualificacao_completa` atualizado;
+  `iaVendasContextoDataHoje()` formata certo) + badge de
+  `admin/venda.php` renderizado isolado nos 4 estados (nunca perguntado/
+  confirmado com horário/confirmado sem horário/recusado), incluindo
+  sanity-check de XSS confirmando que `e()` escapa o texto do cliente +
+  migração testada contra schema anterior a esta mudança (`git show
+  HEAD:install/schema.sql`, as 3 colunas confirmadas ausentes antes,
+  `ALTER TABLE` aplicado com sucesso, dado pré-existente preservado,
+  idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos. ⚠️
+  Mudança de prompt (o texto da conversa em si, julgamento de IA) não é
+  testável contra servidor fake — validação real só na próxima conversa
+  de vendas de verdade, inclusive se o cliente topa mesmo um dia/horário
+  dentro da janela comercial sem a IA prometer algo fora dela.
   **Lead quente/morno/frio + dashboard/etapas completo, igual compra**
   (19/09/2026, 2 pedidos diretos: "crm tem tá preechido igual na compra
   lead quente frio e mornos" e "aproveita adciona dasbord também em

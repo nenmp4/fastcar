@@ -24,6 +24,7 @@ require_once __DIR__ . '/gemini.php';
 require_once __DIR__ . '/openai.php';
 require_once __DIR__ . '/vendas.php';
 require_once __DIR__ . '/ia_qualificacao.php'; // iaMontarHistoricoGemini()/iaChamarComFallback() — genéricos por telefone, reaproveitados aqui
+require_once __DIR__ . '/fila_leads.php'; // filaHorarioAbertura()/filaHorarioFechamento() — 15/10/2026, janela de visita presencial reaproveita o mesmo horário comercial já configurado
 
 const IA_QUALIFICACAO_VENDAS_PROMPT_SISTEMA_BASE = <<<PROMPT
 Você é da equipe Fastcar, empresa que VENDE veículos usados da própria
@@ -61,13 +62,26 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    frota
 3. Forma de pagamento pretendida: à vista, financiado (banco), entrada +
    parcelas diretamente com a Fastcar, ou na promissória — a Fastcar vende
-   nas 4 modalidades
+   nas 4 modalidades. A promissória é SEM CONSULTA ao SPC/Serasa (diferencial
+   real, pode afirmar sem ressalva) — mencione isso com naturalidade quando
+   fizer sentido (ex: pessoa comentou nome sujo/restrição, ou perguntou
+   sobre consulta de crédito), nunca force o assunto se não vier à tona
 4. Se pretende entrada + parcelas ou promissória: quanto ela TEM de entrada
    e quanto CABE no orçamento dela de parcela mensal — pergunte com
    naturalidade ("pra eu já ver o que encaixa: quanto você teria de entrada
    e quanto ficaria tranquilo pagando de parcela por mês?"), nunca insista
    se ela não quiser dizer um valor exato ainda
 5. Se precisa decidir rápido ou pode aguardar (urgência)
+6. Depois que já tiver um veículo em mente (confirmado ou bem próximo) e a
+   pessoa demonstrar interesse real, trabalhe pra CONFIRMAR uma visita
+   presencial à Fastcar pra ela ver o veículo de pertinho — isso é a META
+   principal da conversa, não só coletar dado. Pergunte que dia e horário
+   ficam bons pra ela. Hoje é {hoje}, e a Fastcar recebe visita das
+   {horario_abertura} às {horario_fechamento} — se ela sugerir um
+   dia/horário fora dessa janela, proponha o horário mais próximo dentro
+   dela, nunca prometa um horário fora. Assim que ela confirmar um
+   dia/horário concreto, repita de volta pra confirmar que entendeu certo
+   (ex: "fechado então, te espero sábado de manhã!"). {endereco_info}
 
 TÉCNICA DE NEGOCIAÇÃO (uma vez que já identificou QUAL veículo da lista
 bate com o que a pessoa procura):
@@ -91,13 +105,16 @@ bate com o que a pessoa procura):
   confiança e é proibido.
 - Assim que a pessoa demonstrar interesse real num veículo específico
   (perguntou detalhe, gostou das fotos, perguntou sobre pagamento) — já
-  puxe o fechamento: confirme que um vendedor vai ligar pra fechar os
-  detalhes finais e agendar visita/test drive, sem deixar a conversa
-  esfriar.
+  puxe o fechamento: proponha diretamente marcar a visita presencial pra
+  ela ver o veículo de pertinho (isso é SEU objetivo, não espere o
+  vendedor fazer depois). Depois de confirmar o dia/horário, avise que um
+  vendedor vai ligar só pra reforçar os detalhes finais, sem deixar a
+  conversa esfriar.
 
-Quando sentir que já tem o essencial, feche recapitulando rapidinho o que
-entendeu e avise que um vendedor da equipe vai ligar pra fechar os
-detalhes.
+Quando sentir que já tem o essencial — incluindo a resposta (sim ou não)
+sobre vir até a Fastcar — feche recapitulando rapidinho o que entendeu
+(inclusive o dia/horário combinado, se ela topou vir) e avise que um
+vendedor da equipe vai ligar pra reforçar os detalhes.
 
 REGRAS QUE NÃO PODEM SER QUEBRADAS:
 - Fique sempre no assunto da Fastcar — veículo disponível, condição de
@@ -120,6 +137,9 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   conversa perguntando o que mais ela procura.
 - Nunca invente, arredonde ou prometa preço, desconto ou condição de
   pagamento — quem decide isso é sempre um humano (o vendedor), depois.
+- A isenção de consulta ao SPC/Serasa vale SÓ pra modalidade promissória —
+  nunca diga que financiado bancário ou qualquer outra forma de pagamento
+  também dispensa isso, cada instituição segue o próprio processo normal.
 - Nunca invente urgência/escassez falsa (outro comprador interessado, prazo
   pra decidir, promoção) — só mencione isso se for informação real que
   você recebeu, nunca como técnica de pressão inventada.
@@ -148,7 +168,7 @@ disse explicitamente — nunca invente, deduza ou arredonde. Campo não
 informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
+{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"aceita_visitar_fastcar":null,"visita_dia_horario_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
 
 - nome_comprador: o nome que a própria pessoa deu na conversa. null se ela não disse ainda.
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
@@ -159,9 +179,11 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
 - temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRONTA PRA COMPRAR AGORA (não pergunte isso a ela, é uma leitura sua da conversa). Sinal principal: tem orçamento definido (entrada e/ou parcela mensal) OU forma de pagamento decidida (à vista/financiado/promissória), JÁ identificou um veículo específico da frota que bate com o que procura, e demonstrou urgência real pra decidir = "quente". Ainda só pesquisando, sem orçamento/veículo confirmado, sem pressa nenhuma = "frio" — mesmo respondendo rápido e educadamente. "morno" fica no meio (ex: já sabe o que procura e tem orçamento, mas ainda não bateu com um veículo específico da frota; ou o contrário). Tom/engajamento na conversa é sinal SECUNDÁRIO — desempata dentro da mesma faixa, nunca sozinho vira "quente" sem orçamento/veículo/urgência real. null só se ainda não houver conversa suficiente pra avaliar.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
+- aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
+- visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
 - sem_perfil: true se a pessoa disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
 - pedido_atendente_humano: true se a pessoa pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um vendedor"), nunca só por reclamação/hesitação genérica. Quando true, a conversa é encaminhada direto pro vendedor, sem continuar a qualificação.
-- qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), E a forma de pagamento pretendida. pedido_atendente_humano nunca chega em qualificacao_completa=true.
+- qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), a forma de pagamento pretendida, E a pessoa já respondeu se confirma vir até a Fastcar (aceita_visitar_fastcar não é mais null — recusar vir também conta como resposta válida, o vendedor fecha por telefone nesse caso). pedido_atendente_humano nunca chega em qualificacao_completa=true.
 
 VEÍCULOS DISPONÍVEIS AGORA NA FASTCAR (contexto, com o ID interno de cada um — nunca fale esse número pro comprador, é só referência pra você preencher oportunidade_id_sugerida):
 {frota_com_id}
@@ -211,8 +233,39 @@ function iaVendasMontarResumoFrotaComId(): string {
     return implode("\n", $linhas);
 }
 
+/**
+ * "quinta-feira, 15/10/2026" — contexto de data pra IA conseguir raciocinar
+ * sobre "sábado que vem"/"semana que vem" na CONVERSA com precisão. Nunca
+ * grava nenhum DATE calculado no banco a partir disso — só ajuda o
+ * raciocínio no texto; o dado persistido é sempre o texto literal que o
+ * cliente confirmou (vendas.visita_dia_horario_texto), regra #3.
+ */
+function iaVendasContextoDataHoje(): string {
+    $dias = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+    return $dias[(int)date('w')] . ', ' . date('d/m/Y');
+}
+
+/**
+ * Frase pronta sobre o endereço da Fastcar pra visita — nunca inventa
+ * endereço: sem config.empresa_endereco preenchido (admin/financeiro-empresa.php),
+ * instrui a IA a dizer que o vendedor confirma o endereço certinho, em vez
+ * de chutar.
+ */
+function iaVendasContextoEndereco(): string {
+    $endereco = trim((string)(getConfig('empresa_endereco') ?: ''));
+    if ($endereco === '') {
+        return 'Se perguntarem o endereço, diga que o vendedor confirma certinho ao fechar a visita.';
+    }
+    return "O endereço da Fastcar é: {$endereco}.";
+}
+
 function iaVendasPromptSistema(): string {
-    return str_replace('{frota}', iaVendasMontarResumoFrota(), IA_QUALIFICACAO_VENDAS_PROMPT_SISTEMA_BASE);
+    $prompt = str_replace('{frota}', iaVendasMontarResumoFrota(), IA_QUALIFICACAO_VENDAS_PROMPT_SISTEMA_BASE);
+    $prompt = str_replace('{hoje}', iaVendasContextoDataHoje(), $prompt);
+    $prompt = str_replace('{horario_abertura}', filaHorarioAbertura(), $prompt);
+    $prompt = str_replace('{horario_fechamento}', filaHorarioFechamento(), $prompt);
+    $prompt = str_replace('{endereco_info}', iaVendasContextoEndereco(), $prompt);
+    return $prompt;
 }
 
 function iaVendasPromptExtracao(): string {
@@ -278,20 +331,27 @@ function iaGerarResumoVenda(string $telefone): string {
         . "⚠️ [dado que AINDA falta confirmar/perguntar]\n\n"
         . "Cubra: nome do comprador, o que procura e pra que uso (passeio/aplicativo/utilitário), "
         . "forma de pagamento pretendida (inclusive se mencionou promissória), valor de entrada "
-        . "disponível e de parcela no orçamento (se informados), urgência. "
+        . "disponível e de parcela no orçamento (se informados), urgência, e se a pessoa confirmou "
+        . "vir presencialmente até a Fastcar (com o dia/horário combinado, se tiver) ou se "
+        . "recusou/ainda não respondeu isso. "
         . "Se algum veículo específico da frota bateu com o que a pessoa procura, mencione qual "
         . "(mas deixe claro que é uma sugestão, o vendedor confirma o vínculo), e diga se já viu "
         . "foto/vídeo dele. Termine com uma linha própria: '🔥 PRONTO PRA FECHAR' se a pessoa já "
-        . "confirmou interesse num veículo específico, viu foto/vídeo e tem forma de pagamento "
-        . "definida (é só o vendedor ligar pra fechar); ou '🌱 PRECISA DE MAIS CONVERSA' se ainda "
-        . "falta engajamento/decisão real. "
+        . "CONFIRMOU um dia/horário de visita, viu foto/vídeo e tem forma de pagamento definida "
+        . "(é só o vendedor ligar pra reforçar e confirmar); '📞 FECHAR SÓ POR TELEFONE' se ela "
+        . "recusou vir presencialmente mas o resto está qualificado; ou '🌱 PRECISA DE MAIS "
+        . "CONVERSA' se ainda falta engajamento/decisão real. "
         . "Não invente nenhum dado que não apareceu na conversa.\n\nConversa:\n{$transcript}";
     return iaChamarComFallback($prompt, 400, 0.3);
 }
 
 /**
  * Aplica os dados extraídos na negociação de venda — fill-if-empty, mesma
- * regra de iaAplicarDadosExtraidos() (ia_qualificacao.php).
+ * regra de iaAplicarDadosExtraidos() (ia_qualificacao.php). Exceções com
+ * semântica própria: temperatura_lead (leitura viva, pode mudar de turno
+ * pra turno), aceita_visitar_fastcar (0/false é resposta válida — recusou
+ * —, então checa NULL, não string vazia) e visita_dia_horario_texto
+ * (SEMPRE sobrescreve — a pessoa pode remarcar o dia/horário combinado).
  */
 function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     $db = getDB();
@@ -321,6 +381,33 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         if ($v[$c] === null && isset($dados[$c]) && $dados[$c] !== null && $dados[$c] !== '') {
             $sets[] = "{$c} = ?";
             $params[] = (float)str_replace(',', '.', (string)$dados[$c]);
+            $avancouDadoReal = true;
+        }
+    }
+
+    // aceita_visitar_fastcar: 0/false é resposta legítima ("recusou vir,
+    // prefere fechar por telefone"), não "vazio" — só entra quando ainda
+    // está NULL (nunca foi perguntado/respondido), mesmo tri-state de
+    // oportunidades.aceita_ligacao_consultor. 15/10/2026, "ajuda construir
+    // qualificação da ia para venda fazer cliente agentdar visita".
+    if ($v['aceita_visitar_fastcar'] === null && isset($dados['aceita_visitar_fastcar']) && $dados['aceita_visitar_fastcar'] !== null) {
+        $sets[] = "aceita_visitar_fastcar = ?";
+        $params[] = $dados['aceita_visitar_fastcar'] ? 1 : 0;
+        if ($dados['aceita_visitar_fastcar']) {
+            $sets[] = "visita_confirmada_em = datetime('now','localtime')";
+        }
+        $avancouDadoReal = true;
+    }
+    // visita_dia_horario_texto: diferente dos campos acima, SEMPRE
+    // sobrescreve (nunca fill-if-empty) — a pessoa pode remarcar o dia/
+    // horário no meio da conversa, e o texto mais recente é sempre o que
+    // vale; só grava quando o valor novo é genuinamente diferente do já
+    // salvo, pra não contar reconfirmação do mesmo dia como "avanço" à toa.
+    if (!empty($dados['visita_dia_horario_texto'])) {
+        $novoTexto = clean((string)$dados['visita_dia_horario_texto']);
+        if ($novoTexto !== (string)$v['visita_dia_horario_texto']) {
+            $sets[] = "visita_dia_horario_texto = ?";
+            $params[] = $novoTexto;
             $avancouDadoReal = true;
         }
     }

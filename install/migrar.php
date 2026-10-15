@@ -2123,4 +2123,27 @@ foreach ([
     }
 }
 
+// 15/10/2026, "ajuda construir qualificação da ia para venda fazer
+// cliente agentdar visita na fastcar" — nova meta explícita da
+// qualificação de vendas: confirmar que o comprador vem presencialmente
+// à Fastcar ver os veículos. Mesmo tri-state de aceita_ligacao_consultor
+// (ver includes/ia_qualificacao_vendas.php), nunca CHECK constraint
+// (aceita valor NULL/0/1 cru, igual o original em oportunidades).
+foreach ([
+    ['aceita_visitar_fastcar', 'ALTER TABLE vendas ADD COLUMN aceita_visitar_fastcar INTEGER'],
+    ['visita_dia_horario_texto', "ALTER TABLE vendas ADD COLUMN visita_dia_horario_texto TEXT DEFAULT ''"],
+    ['visita_confirmada_em', 'ALTER TABLE vendas ADD COLUMN visita_confirmada_em DATETIME'],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'vendas', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ vendas.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ vendas.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  vendas.{$coluna}: já existia\n";
+    }
+}
+
 echo "\n🎉 Migração concluída.\n";
