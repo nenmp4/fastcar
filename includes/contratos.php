@@ -818,6 +818,39 @@ function cancelarContratosAnterioresDaNegociacao(string $tipo, int $contratoIdNo
 }
 
 /**
+ * 16/10/2026, "em vendas permita alterar veículo para gerar novo
+ * contrato" — chamada de dentro de vincularVeiculoVenda()
+ * (includes/vendas.php) quando o veículo vinculado à negociação MUDA
+ * (nunca quando é a 1ª vinculação, ou re-selecionar o mesmo veículo):
+ * qualquer contrato já gerado/enviado pra essa venda foi feito pro
+ * veículo ANTERIOR (ou errado), nunca pode continuar vivo/assinável
+ * depois da troca — mesmo risco já corrigido 1x em
+ * cancelarContratosAnterioresDaNegociacao() (02/10/2026, link de
+ * assinatura com dado errado continuando vivo). Diferente daquela
+ * função (que exclui só o contrato novo recém-criado da marcação),
+ * esta roda ANTES de qualquer contrato novo existir — cancela TODOS os
+ * ativos da venda. Rascunho ('gerado', nunca foi enviado pra ninguém)
+ * é excluído de vez, igual excluirContratoPreview(); 'enviado'/
+ * 'visualizado' (já tem link de assinatura circulando) vira
+ * 'cancelado', nunca apagado — mantém o rastro. Nunca toca
+ * 'assinado' (documento legal já fechado) nem um já 'cancelado'.
+ * Best-effort — nunca pode travar a troca de veículo por causa disso.
+ */
+function cancelarContratosAtivosVenda(int $vendaId): void {
+    try {
+        $db = getDB();
+        $db->prepare("DELETE FROM contratos WHERE tipo = 'venda' AND venda_id = ? AND status = 'gerado'")
+           ->execute([$vendaId]);
+        $db->prepare("
+            UPDATE contratos SET status = 'cancelado', updated_at = datetime('now','localtime')
+            WHERE tipo = 'venda' AND venda_id = ? AND status IN ('enviado', 'visualizado')
+        ")->execute([$vendaId]);
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar a troca de veículo
+    }
+}
+
+/**
  * Consulta o status do contrato na ZapSign e sincroniza — usado pelo
  * webhook (api/zapsign_webhook.php) e pelo polling de fallback
  * (cron/zapsign_sync.php). Quando assinado, baixa o PDF final e sobe pra

@@ -42,6 +42,7 @@ require_once __DIR__ . '/fila_vendas.php';
 require_once __DIR__ . '/whatsapp_config.php';
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()/lerConteudoArquivoDocumento() — catálogo de mídia de revenda
 require_once __DIR__ . '/financeiro.php'; // finGerarReceitaVendaAssinatura() — receita automática ao vender
+require_once __DIR__ . '/contratos.php'; // cancelarContratosAtivosVenda() — invalida contrato pendente ao trocar o veículo vinculado (16/10/2026). Circular (contratos.php também requer vendas.php) — seguro, nenhum dos dois chama função do outro fora de corpo de função, só na definição
 
 // 'whatsapp'/'qualificacao_ia'/'sem_perfil' são exclusivas de leads que
 // entraram por origem='whatsapp' — negociação manual nunca passa por elas.
@@ -361,14 +362,31 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
  * decide sozinha: mesmo espírito do widget de FIPE por placa (o sistema
  * nunca aplica o candidato "óbvio" sozinho). Lança se o veículo não
  * estiver disponível (mesma checagem de criarVenda()).
+ *
+ * 16/10/2026, "em vendas permita alterar veículo para gerar novo
+ * contrato" — a mesma função também cobre TROCAR um veículo já
+ * vinculado (não só a 1ª vinculação): quando a `oportunidade_id` de
+ * fato muda, qualquer contrato ainda não assinado pra essa venda foi
+ * gerado pro veículo ERRADO/anterior e nunca pode continuar vivo/
+ * assinável (ver cancelarContratosAtivosVenda(), includes/contratos.php)
+ * — nunca mexe em contrato já assinado. Reselecionar o MESMO veículo
+ * (sem mudança real) nunca cancela nada.
  */
 function vincularVeiculoVenda(int $vendaId, int $oportunidadeId): bool {
     if (!veiculoDisponivelParaVenda($oportunidadeId)) {
         throw new RuntimeException("Veículo #{$oportunidadeId} não está disponível pra venda (não é da frota, ou já tem negociação ativa/concluída).");
     }
     $db = getDB();
+    $stmtAtual = $db->prepare("SELECT oportunidade_id FROM vendas WHERE id = ?");
+    $stmtAtual->execute([$vendaId]);
+    $oportunidadeAnterior = $stmtAtual->fetchColumn();
+
     $db->prepare("UPDATE vendas SET oportunidade_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
        ->execute([$oportunidadeId, $vendaId]);
+
+    if ($oportunidadeAnterior !== false && $oportunidadeAnterior !== null && (int)$oportunidadeAnterior !== $oportunidadeId) {
+        cancelarContratosAtivosVenda($vendaId);
+    }
     return true;
 }
 

@@ -72,12 +72,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Confirma o match entre um lead qualificado pela IA (sem
                 // veículo ainda) e um veículo real da frota — sempre ação
                 // humana, nunca a IA decide sozinha (ver includes/vendas.php).
-                $oportunidadeEscolhida = (int)($_POST['oportunidade_id'] ?? 0);
-                if (!$oportunidadeEscolhida) {
-                    $erro = 'Escolha um veículo da lista.';
+                // 16/10/2026: a mesma ação também TROCA um veículo já
+                // vinculado (card vira "Alterar veículo" nesse caso) — nunca
+                // em negociação já encerrada (vendido/cancelada/sem_perfil),
+                // mesma trava da UI, nunca confia só em esconder o formulário.
+                if (in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)) {
+                    $erro = 'Essa negociação já está encerrada — não dá pra trocar o veículo.';
                 } else {
-                    vincularVeiculoVenda($id, $oportunidadeEscolhida);
-                    $sucesso = 'Veículo vinculado a esta negociação.';
+                    $oportunidadeEscolhida = (int)($_POST['oportunidade_id'] ?? 0);
+                    if (!$oportunidadeEscolhida) {
+                        $erro = 'Escolha um veículo da lista.';
+                    } else {
+                        vincularVeiculoVenda($id, $oportunidadeEscolhida);
+                        $sucesso = $v['oportunidade_id']
+                            ? 'Veículo trocado — gere um novo contrato abaixo (o anterior foi cancelado).'
+                            : 'Veículo vinculado a esta negociação.';
+                    }
                 }
             } elseif ($acao === 'atualizar_comprador') {
                 $db->prepare("
@@ -675,17 +685,24 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 <?php endif; ?>
 
-<?php if (!$v['oportunidade_id'] && !in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
+<?php if (!in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
 <div class="card">
-    <h3>🔗 Vincular veículo da frota</h3>
-    <p><small>Essa negociação ainda não tem um veículo confirmado — o sistema NUNCA vincula sozinho
-       (mesma regra de "decisão crítica sempre humana" do resto do projeto), escolha manualmente entre os
-       disponíveis agora.</small></p>
+    <?php if (!$v['oportunidade_id']): ?>
+        <h3>🔗 Vincular veículo da frota</h3>
+        <p><small>Essa negociação ainda não tem um veículo confirmado — o sistema NUNCA vincula sozinho
+           (mesma regra de "decisão crítica sempre humana" do resto do projeto), escolha manualmente entre os
+           disponíveis agora.</small></p>
+    <?php else: ?>
+        <h3>🔄 Alterar veículo vinculado</h3>
+        <p><small>Veículo atual: <strong><?= e(trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? ''))) ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?></strong>.
+           Trocar aqui cancela qualquer contrato já gerado/enviado pro veículo atual (nunca um já assinado) —
+           gere um contrato novo abaixo depois de trocar.</small></p>
+    <?php endif; ?>
     <?php $frotaDisponivel = listarFrotaDisponivelParaVenda(); ?>
     <?php if (!$frotaDisponivel): ?>
-        <p>Nenhum veículo disponível na frota no momento.</p>
+        <p>Nenhum <?= $v['oportunidade_id'] ? 'outro' : '' ?> veículo disponível na frota no momento.</p>
     <?php else: ?>
-        <form method="post">
+        <form method="post" <?= $v['oportunidade_id'] ? 'onsubmit="return confirmarAcao(this, \'Trocar o veículo desta negociação? Qualquer contrato já gerado/enviado pro veículo atual será cancelado.\');"' : '' ?>>
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="vincular_veiculo">
             <select name="oportunidade_id" required>
@@ -697,7 +714,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                     </option>
                 <?php endforeach; ?>
             </select>
-            <button type="submit">Vincular</button>
+            <button type="submit"<?= $v['oportunidade_id'] ? ' class="secundario"' : '' ?>><?= $v['oportunidade_id'] ? 'Trocar veículo' : 'Vincular' ?></button>
         </form>
     <?php endif; ?>
 </div>

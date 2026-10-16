@@ -9015,6 +9015,43 @@ segue no schema sem uso novo, não removida sem ganho real),
   limpos (rodado contra o banco de dev real, que por acaso ainda estava
   no schema antigo — migração aplicada de verdade, não só testada
   isolada).
+- **Trocar o veículo já vinculado a uma venda, pra gerar outro contrato**
+  (16/10/2026, "em vendas permita alterar veículo para gerar novo
+  contrato") — antes disso, o card "🔗 Vincular veículo da frota" só
+  aparecia enquanto `vendas.oportunidade_id` ainda era `NULL`; depois de
+  vinculado uma vez, não tinha jeito de corrigir um veículo errado sem
+  mexer direto no banco. `vincularVeiculoVenda()` já fazia um `UPDATE`
+  incondicional (nunca exigia que `oportunidade_id` estivesse vazio), só
+  a UI escondia a opção — a função ganhou a parte que faltava: detecta
+  quando o veículo de fato MUDA (nunca quando é a 1ª vinculação nem
+  quando reseleciona o mesmo veículo já vinculado) e chama a nova
+  `cancelarContratosAtivosVenda()` (`includes/contratos.php`, ao lado de
+  `cancelarContratosAnterioresDaNegociacao()`, mesmo racional de
+  02/10/2026 — nunca deixar um link de assinatura vivo apontando pra
+  veículo errado): rascunho (`status='gerado'`) é excluído de vez, igual
+  `excluirContratoPreview()`; `'enviado'`/`'visualizado'` vira
+  `'cancelado'`, nunca apagado; `'assinado'` nunca é tocado. Card em
+  `admin/venda.php` virou "🔄 Alterar veículo vinculado" quando já tem
+  veículo (mostra o atual + aviso que troca cancela contrato pendente,
+  `confirmarAcao()` antes de submeter), visível nas mesmas 2 etapas de
+  sempre (`negociacao`/`contrato_enviado`) — nunca em
+  `vendido`/`cancelada`/`sem_perfil`, trava nova no servidor (não só
+  escondendo o botão) pra essas 3. `includes/vendas.php` ganhou
+  `require_once contratos.php` (contratos.php já requeria vendas.php de
+  volta — circular, mas seguro: nenhum dos dois chama função do outro
+  fora de corpo de função, só na definição, testado isolado antes de
+  commitar). Testado: função isolada em banco de teste (troca cancela
+  'enviado'→'cancelado', exclui rascunho 'gerado', nunca toca 'assinado';
+  reselecionar o próprio veículo já vinculado é bloqueado pela MESMA
+  trava pré-existente de `veiculoDisponivelParaVenda()` — não é
+  regressão, é estrutural: o dropdown nunca lista o veículo que a própria
+  venda já tem) + HTTP ponta a ponta real (sessão vendedor primed, servidor
+  PHP embutido, banco isolado): GET mostra "🔄 Alterar veículo vinculado"
+  com só o OUTRO veículo disponível no select; POST troca de verdade
+  (banco confirmado: `oportunidade_id` mudou, contrato antigo
+  'cancelado'); com a venda marcada `etapa='vendido'`, o card some do HTML
+  e um POST forjado é recusado sem alterar nada no banco + `php -l` +
+  `tests/smoke.php` limpos. Sem migração de schema.
 - **`admin/usuarios.php` permite criar/promover outro `super_admin`**
   (17/09/2026, "coloca no usuarios para adicionar mais super admin") —
   **reverte** a decisão original ("NUNCA cria/promove pra super_admin por
