@@ -714,7 +714,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                     </option>
                 <?php endforeach; ?>
             </select>
-            <button type="submit"<?= $v['oportunidade_id'] ? ' class="secundario"' : '' ?>><?= $v['oportunidade_id'] ? 'Trocar veículo' : 'Vincular' ?></button>
+            <button type="submit"<?= $v['oportunidade_id'] ? ' class="secundario"' : '' ?>><?= $v['oportunidade_id'] ? 'Selecionar outro veículo' : 'Vincular' ?></button>
         </form>
     <?php endif; ?>
 </div>
