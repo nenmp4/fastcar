@@ -246,6 +246,31 @@ foreach (['includes/whatsapp_evolution.php', 'includes/whatsapp_oficial.php'] as
     }
 }
 
+// Bug real 21/10/2026 — "áudios não está carregando" (print mostrando
+// nota de voz só com o texto transcrito, sem nenhum player <audio>
+// embaixo). 3ª ocorrência da MESMA classe de bug acima (mime com
+// parâmetro quebrando lookup exato), agora no RECEBIMENTO:
+// extensaoPorMime() (chatbot-whatsapp/includes/mensagens.php) fazia
+// `$mapa[$mime] ?? 'bin'` direto — nota de voz via WhatsApp/Baileys
+// (Evolution) sempre reporta "audio/ogg; codecs=opus"/"audio/webm;
+// codecs=opus", nunca o mime puro, então o lookup nunca batia e sempre
+// caía em 'bin'; salvarMidiaWhatsappRecebida() grava com essa extensão,
+// e sem o rastro certo o player nunca é renderizado. Corrigido tirando
+// tudo a partir do primeiro ';' antes de procurar no mapa. Guard evita
+// um refactor futuro voltar ao lookup exato sem ninguém perceber — sem
+// ele, a regressão nunca gera erro nenhum, só volta a quebrar o player
+// de áudio/vídeo/imagem silenciosamente de novo.
+if (file_exists($mensagensPath)) {
+    $corpoExtensaoMime = _smokeExtrairCorpoFuncao((string)file_get_contents($mensagensPath), 'extensaoPorMime');
+    if ($corpoExtensaoMime === null || !str_contains($corpoExtensaoMime, "explode(';'")) {
+        falha('[extensao-por-mime-sem-strip-parametro] extensaoPorMime() voltou a fazer lookup exato sem tirar parâmetro do mime — nota de voz (sempre "audio/ogg; codecs=opus") cai em \'bin\' de novo');
+    } else {
+        ok('[extensao-por-mime-sem-strip-parametro] limpo');
+    }
+} else {
+    aviso('chatbot-whatsapp/includes/mensagens.php não encontrado — guard de extensaoPorMime() pulado');
+}
+
 // Timing do envio de áudio, 14/10/2026 ("ao gravar um áudio de 10
 // segundos demora 18 segundos para enviar") — enviarAudioManualWhatsapp()
 // (includes/whatsapp_inbox.php) grava sempre (sucesso ou falha) a duração

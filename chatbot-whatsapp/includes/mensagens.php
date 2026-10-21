@@ -380,7 +380,15 @@ function extensaoPorMime(string $mime): string {
         'text/plain' => 'txt',
         'text/csv' => 'csv',
     ];
-    return $mapa[$mime] ?? 'bin';
+    // 21/10/2026, achado real: nota de voz do WhatsApp/Baileys (Evolution)
+    // sempre reporta o mimetype com parâmetro — "audio/ogg; codecs=opus" —
+    // nunca "audio/ogg" puro; o lookup exato nunca batia, caía sempre em
+    // 'bin'. Mesma classe de bug já corrigida 2x no caminho de ENVIO
+    // (_evolutionBase64DeDataUri()/_oficialParseDataUri(), data URI com
+    // ";codecs=opus" quebrando o parsing) — aqui no RECEBIMENTO. Tira tudo
+    // a partir do primeiro ';' antes de procurar no mapa.
+    $tipoLimpo = trim(explode(';', $mime, 2)[0]);
+    return $mapa[$tipoLimpo] ?? 'bin';
 }
 
 /**
@@ -410,9 +418,23 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
             $db = getDB();
             $db->prepare("UPDATE whatsapp_mensagens SET drive_file_id = ?, arquivo_url = ? WHERE id = ?")
                 ->execute([$copia['drive_file_id'], $copia['arquivo_url'], $mensagemId]);
+        } else {
+            // 21/10/2026, achado real: "áudio não carrega" — a cópia
+            // visível (não só a descrição do Gemini) ficava sem rastro
+            // nenhum quando Drive E o fallback local falhavam juntos (ex:
+            // mime com parâmetro rejeitado, disco sem permissão/espaço) —
+            // nunca tinha log nenhum pra investigar depois.
+            logDiagnosticoMidiaZapi($tipo, 'salvar_midia_recebida_sem_copia', [
+                'mensagemId' => $mensagemId, 'clienteId' => $clienteId, 'mime' => $mime,
+            ]);
         }
     } catch (Throwable $e) {
-        // melhor esforço — mensagem/texto já estão salvos independente disso.
+        // best-effort — mensagem/texto já estão salvos independente disso,
+        // mas a falha fica registrada em vez de desaparecer em silêncio.
+        logDiagnosticoMidiaZapi($tipo, 'salvar_midia_recebida_excecao', [
+            'mensagemId' => $mensagemId, 'clienteId' => $clienteId, 'mime' => $mime,
+            'erro' => $e->getMessage(),
+        ]);
     }
 }
 
