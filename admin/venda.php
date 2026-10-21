@@ -384,7 +384,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($enviado) {
                             $sucesso = 'Link enviado por WhatsApp.';
                         } else {
-                            $erro = "Não deu pra enviar por WhatsApp (confira as credenciais da instância de vendas em Configurações). Link: {$link}";
+                            // 21/10/2026, achado real: mensagem genérica
+                            // nunca dizia POR QUE falhou — achado real do
+                            // usuário já com a Evolution de vendas
+                            // configurada e o envio ainda assim falhando,
+                            // sem nenhuma pista do motivo real.
+                            // whatsappDetalheUltimoErro() já existe desde a
+                            // correção do envio de áudio, só não tinha sido
+                            // aplicada aqui.
+                            $erro = "Não deu pra enviar por WhatsApp (confira as credenciais da instância de vendas em Configurações). Link: {$link}" . whatsappDetalheUltimoErro();
                         }
 
                         // Cópia por e-mail, mesmo padrão do lado de compra —

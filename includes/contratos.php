@@ -1212,7 +1212,10 @@ function reenviarAvisoAssinaturaContratoMeta(int $contratoId): array {
     }
 
     if (!$enviouAlgum) {
-        return ['ok' => false, 'erro' => 'Não deu pra enviar por WhatsApp — confira as credenciais em Configurações (Z-API ou WhatsApp Cloud API, conforme o canal ativo).'];
+        // 21/10/2026, mesma correção aplicada em admin/oportunidade.php/
+        // venda.php — whatsappDetalheUltimoErro() dá o motivo real em vez
+        // de só "confira as credenciais".
+        return ['ok' => false, 'erro' => 'Não deu pra enviar por WhatsApp — confira as credenciais em Configurações (Z-API ou WhatsApp Cloud API, conforme o canal ativo).' . whatsappDetalheUltimoErro()];
     }
 
     _marcarAvisoAssinaturaEnviado($contratoId, true, false);
@@ -1286,7 +1289,10 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
         : zapiEnviarTexto($telefone, $msg);
 
     if (!$enviado) {
-        return ['ok' => false, 'erro' => 'Não deu pra enviar por WhatsApp — confira as credenciais em Configurações (Z-API ou WhatsApp Cloud API, conforme o canal ativo).'];
+        // 21/10/2026, mesma correção aplicada em admin/oportunidade.php/
+        // venda.php — whatsappDetalheUltimoErro() dá o motivo real em vez
+        // de só "confira as credenciais".
+        return ['ok' => false, 'erro' => 'Não deu pra enviar por WhatsApp — confira as credenciais em Configurações (Z-API ou WhatsApp Cloud API, conforme o canal ativo).' . whatsappDetalheUltimoErro()];
     }
 
     return ['ok' => true, 'erro' => null];

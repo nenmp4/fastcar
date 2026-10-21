@@ -231,7 +231,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($enviado) {
                     $sucesso = 'Link enviado por WhatsApp.';
                 } else {
-                    $erro = "Não deu pra enviar por WhatsApp (confira as credenciais em Configurações). Link: {$link}";
+                    // 21/10/2026, achado real: mensagem genérica nunca dizia
+                    // POR QUE falhou (Evolution fora do ar? credencial
+                    // errada? Z-API/Meta desativados pelo kill switch?) —
+                    // whatsappDetalheUltimoErro() já existe desde a correção
+                    // do envio de áudio, só não tinha sido aplicada aqui.
+                    $erro = "Não deu pra enviar por WhatsApp (confira as credenciais em Configurações). Link: {$link}" . whatsappDetalheUltimoErro();
                 }
 
                 // Cópia por e-mail (16/09/2026, "cria todos os templates")

@@ -333,6 +333,33 @@ foreach (['admin/clientes.php', 'admin/cliente_detalhe.php'] as $arquivoFiltroCl
     }
 }
 
+// 21/10/2026, achado real: "venda registrada com sucesso" mas "não deu pra
+// enviar por WhatsApp (confira as credenciais da instância de vendas)" —
+// mesmo DEPOIS do usuário já ter configurado a Evolution dedicada de
+// vendas de verdade. A mensagem de erro nunca dizia POR QUE (Evolution
+// fora do ar? credencial errada? Z-API/Meta desativados pelo kill
+// switch?) — whatsappDetalheUltimoErro() (includes/whatsapp_config.php,
+// já existia desde a correção do envio de áudio) só tinha sido aplicada
+// em enviarAudioManualWhatsapp(), nunca nos outros 4 pontos que mostram
+// "não deu pra enviar por WhatsApp" direto pro usuário. Guard evita um
+// refactor futuro perder essa visibilidade de novo sem ninguém perceber.
+foreach ([
+    'admin/oportunidade.php',
+    'admin/venda.php',
+    'includes/contratos.php',
+] as $arquivoDetalheWpp) {
+    $caminhoDetalheWpp = $root . '/' . $arquivoDetalheWpp;
+    if (!file_exists($caminhoDetalheWpp)) { aviso("{$arquivoDetalheWpp} não encontrado — guard de detalhe de erro WhatsApp pulado"); continue; }
+    $conteudoDetalheWpp = (string)file_get_contents($caminhoDetalheWpp);
+    $ocorrencias = substr_count($conteudoDetalheWpp, "Não deu pra enviar por WhatsApp");
+    $comDetalhe = substr_count($conteudoDetalheWpp, '. whatsappDetalheUltimoErro()');
+    if ($ocorrencias > 0 && $comDetalhe < $ocorrencias) {
+        falha("[erro-whatsapp-sem-detalhe] {$arquivoDetalheWpp} tem {$ocorrencias} mensagem(ns) \"Não deu pra enviar por WhatsApp\" mas só {$comDetalhe} com whatsappDetalheUltimoErro() — volta a esconder o motivo real da falha");
+    } else {
+        ok("[erro-whatsapp-sem-detalhe] {$arquivoDetalheWpp} limpo");
+    }
+}
+
 // Timing do envio de áudio, 14/10/2026 ("ao gravar um áudio de 10
 // segundos demora 18 segundos para enviar") — enviarAudioManualWhatsapp()
 // (includes/whatsapp_inbox.php) grava sempre (sucesso ou falha) a duração
