@@ -317,33 +317,65 @@ function salvarUploadDocumento(int $oportunidadeId, string $tipo, array $arquivo
  * pasta do cliente no Drive, com o mesmo fallback local de
  * salvarUploadDocumento() (storage/uploads/{subpasta}/{nome}). Nunca move
  * nem apaga o arquivo de origem — quem chama decide o que fazer com ele
- * depois. Retorna ['drive_file_id' => string, 'arquivo_url' => string] —
- * sempre um dos dois preenchido e o outro vazio, ou ambos vazios se os
- * dois caminhos falharem (Drive indisponível/falhou E não deu pra gravar
- * local — quem chama decide se isso é erro fatal ou só "sem cópia visível
- * dessa vez", nunca deve travar o fluxo principal por causa disso).
+ * depois. Retorna ['drive_file_id' => string, 'arquivo_url' => string,
+ * 'erro' => string] — sempre drive_file_id OU arquivo_url preenchido e o
+ * outro vazio, ou os dois vazios se ambos os caminhos falharem (Drive
+ * indisponível/falhou E não deu pra gravar local — quem chama decide se
+ * isso é erro fatal ou só "sem cópia visível dessa vez", nunca deve travar
+ * o fluxo principal por causa disso). 'erro' só vem preenchido nesse
+ * último caso — junta o motivo real de cada tentativa (GoogleDrive::$lastError
+ * quando ela rodou, e o motivo específico do fallback local quando ele
+ * também falhou) — 21/10/2026, achado real: "áudio não carrega" (nota de
+ * voz do Joel) tinha o MIME corrigido (bug do extensaoPorMime(), já
+ * resolvido) mas ainda assim os 2 caminhos falharam juntos pra essa
+ * mensagem específica — sem esse campo não dava pra saber qual dos 2 foi
+ * (quota/rate-limit do Drive? disco sem espaço/permissão?), só que
+ * "falhou".
  */
 function salvarArquivoGeradoComoDocumento(int $clienteId, string $nomeCliente, string $caminhoOrigem, string $nomeArquivo, string $mime, string $subpasta): array {
     $driveFileId = '';
     $relativoLocal = '';
+    $errosDrive = [];
+    $erroLocal = '';
 
     $drive = new GoogleDrive();
-    if ($drive->hasCredentials() && $drive->authenticate()) {
-        $pastaId = garantirPastaDriveCliente($drive, $clienteId, $nomeCliente ?: "Cliente #{$clienteId}");
-        if ($pastaId) {
-            $idDrive = $drive->uploadFile($caminhoOrigem, $nomeArquivo, $mime, $pastaId);
-            if ($idDrive) $driveFileId = $idDrive;
+    if ($drive->hasCredentials()) {
+        if (!$drive->authenticate()) {
+            $errosDrive[] = 'auth: ' . ($drive->lastError ?: 'falhou sem detalhe');
+        } else {
+            $pastaId = garantirPastaDriveCliente($drive, $clienteId, $nomeCliente ?: "Cliente #{$clienteId}");
+            if (!$pastaId) {
+                $errosDrive[] = 'pasta: ' . ($drive->lastError ?: 'não conseguiu achar/criar a pasta do cliente');
+            } else {
+                $idDrive = $drive->uploadFile($caminhoOrigem, $nomeArquivo, $mime, $pastaId);
+                if ($idDrive) {
+                    $driveFileId = $idDrive;
+                } else {
+                    $errosDrive[] = 'upload: ' . ($drive->lastError ?: 'falhou sem detalhe');
+                }
+            }
         }
+    } else {
+        $errosDrive[] = 'sem credencial configurada';
     }
 
     if (!$driveFileId) {
         $dir = UPLOADS_DIR . '/' . $subpasta;
-        if ((is_dir($dir) || mkdir($dir, 0755, true)) && copy($caminhoOrigem, $dir . '/' . $nomeArquivo)) {
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            $erroLocal = "não conseguiu criar o diretório local ({$dir})";
+        } elseif (!copy($caminhoOrigem, $dir . '/' . $nomeArquivo)) {
+            $erroLocal = 'copy() falhou (disco sem espaço/permissão, ou origem já não existe mais)';
+        } else {
             $relativoLocal = $subpasta . '/' . $nomeArquivo;
         }
     }
 
-    return ['drive_file_id' => $driveFileId, 'arquivo_url' => $relativoLocal];
+    $erro = '';
+    if (!$driveFileId && !$relativoLocal) {
+        $erro = 'Drive [' . implode(' | ', $errosDrive) . '] — Local [' . ($erroLocal ?: '?') . ']';
+    }
+
+    return ['drive_file_id' => $driveFileId, 'arquivo_url' => $relativoLocal, 'erro' => $erro];
 }
 
 /**

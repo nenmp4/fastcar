@@ -423,9 +423,14 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
             // visível (não só a descrição do Gemini) ficava sem rastro
             // nenhum quando Drive E o fallback local falhavam juntos (ex:
             // mime com parâmetro rejeitado, disco sem permissão/espaço) —
-            // nunca tinha log nenhum pra investigar depois.
+            // nunca tinha log nenhum pra investigar depois. 'erro' (novo em
+            // salvarArquivoGeradoComoDocumento()) carrega o motivo real de
+            // cada tentativa — sem isso só dava pra saber "falhou", nunca
+            // "por quê" (achado no caso real do Joel: download funcionou
+            // certo, só a persistência que falhou nos 2 caminhos).
             logDiagnosticoMidiaZapi($tipo, 'salvar_midia_recebida_sem_copia', [
                 'mensagemId' => $mensagemId, 'clienteId' => $clienteId, 'mime' => $mime,
+                'erro' => $copia['erro'] ?? '',
             ]);
         }
     } catch (Throwable $e) {

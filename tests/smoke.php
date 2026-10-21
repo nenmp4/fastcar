@@ -271,6 +271,36 @@ if (file_exists($mensagensPath)) {
     aviso('chatbot-whatsapp/includes/mensagens.php não encontrado — guard de extensaoPorMime() pulado');
 }
 
+// 21/10/2026, achado real seguindo o anterior: nota de voz do Joel baixou
+// os bytes certo (confirma o fix do MIME acima) mas
+// salvarArquivoGeradoComoDocumento() falhou nos 2 caminhos (Drive E
+// local), e o log antigo só dizia "falhou", nunca "por quê" — sem jeito
+// de diagnosticar à distância (sandbox de dev sem acesso à produção).
+// salvarArquivoGeradoComoDocumento() passou a devolver 'erro' com o
+// motivo real de cada tentativa (GoogleDrive::$lastError + o motivo do
+// fallback local), e salvarMidiaWhatsappRecebida() passou a logar isso.
+// Guard evita um refactor futuro voltar a devolver só drive_file_id/
+// arquivo_url sem o 'erro', apagando essa visibilidade sem ninguém notar.
+$documentosPath = $root . '/includes/documentos.php';
+if (!file_exists($documentosPath)) {
+    falha('[salvar-arquivo-documento-sem-erro-detalhado] includes/documentos.php não existe mais');
+} else {
+    $corpoSalvarArquivo = _smokeExtrairCorpoFuncao((string)file_get_contents($documentosPath), 'salvarArquivoGeradoComoDocumento');
+    if ($corpoSalvarArquivo === null || !str_contains($corpoSalvarArquivo, "'erro' =>") || !str_contains($corpoSalvarArquivo, 'lastError')) {
+        falha('[salvar-arquivo-documento-sem-erro-detalhado] salvarArquivoGeradoComoDocumento() não devolve mais o motivo real da falha (lastError do Drive + motivo do fallback local)');
+    } else {
+        ok('[salvar-arquivo-documento-sem-erro-detalhado] limpo');
+    }
+}
+if (file_exists($mensagensPath)) {
+    $corpoSalvarMidia = _smokeExtrairCorpoFuncao((string)file_get_contents($mensagensPath), 'salvarMidiaWhatsappRecebida');
+    if ($corpoSalvarMidia === null || !str_contains($corpoSalvarMidia, "'erro' => \$copia['erro']")) {
+        falha('[salvar-midia-recebida-sem-erro-no-log] salvarMidiaWhatsappRecebida() não loga mais o erro real de salvarArquivoGeradoComoDocumento()');
+    } else {
+        ok('[salvar-midia-recebida-sem-erro-no-log] limpo');
+    }
+}
+
 // Timing do envio de áudio, 14/10/2026 ("ao gravar um áudio de 10
 // segundos demora 18 segundos para enviar") — enviarAudioManualWhatsapp()
 // (includes/whatsapp_inbox.php) grava sempre (sucesso ou falha) a duração
