@@ -301,6 +301,38 @@ if (file_exists($mensagensPath)) {
     }
 }
 
+// 21/10/2026, achado real: "clientes todos aparece para todos... temos
+// cada consultor tenha seus clientes" — admin/clientes.php e
+// admin/cliente_detalhe.php nunca tiveram nenhum filtro de responsável,
+// qualquer consultor via (e cliente_detalhe.php, editava CPF/RG/endereço
+// de) QUALQUER outro consultor. Corrigido com usuarioPodeVerCliente()
+// (includes/oportunidades.php) — financeiro mantém acesso irrestrito de
+// propósito (confirmado com o usuário). Guard evita um refactor futuro
+// remover a checagem sem ninguém perceber — sem ele, a regressão nunca
+// gera erro nenhum, só volta a vazar dado sensível de cliente entre
+// consultores silenciosamente.
+$oportunidadesPathFiltroCliente = $root . '/includes/oportunidades.php';
+if (!file_exists($oportunidadesPathFiltroCliente)) {
+    falha('[filtro-cliente-por-consultor] includes/oportunidades.php não existe mais');
+} else {
+    $corpoOportunidades = (string)file_get_contents($oportunidadesPathFiltroCliente);
+    if (!str_contains($corpoOportunidades, 'function usuarioPodeVerCliente(')) {
+        falha('[filtro-cliente-por-consultor] usuarioPodeVerCliente() foi removida de includes/oportunidades.php');
+    } else {
+        ok('[filtro-cliente-por-consultor] usuarioPodeVerCliente() presente em includes/oportunidades.php');
+    }
+}
+foreach (['admin/clientes.php', 'admin/cliente_detalhe.php'] as $arquivoFiltroCliente) {
+    $caminhoFiltroCliente = $root . '/' . $arquivoFiltroCliente;
+    if (!file_exists($caminhoFiltroCliente)) { aviso("{$arquivoFiltroCliente} não encontrado — guard de filtro de cliente pulado"); continue; }
+    $conteudoFiltroCliente = (string)file_get_contents($caminhoFiltroCliente);
+    if (!str_contains($conteudoFiltroCliente, '$responsavelFiltro')) {
+        falha("[filtro-cliente-por-consultor] {$arquivoFiltroCliente} não calcula mais \$responsavelFiltro — voltaria a mostrar/abrir cliente de qualquer consultor pra qualquer um");
+    } else {
+        ok("[filtro-cliente-por-consultor] {$arquivoFiltroCliente} limpo");
+    }
+}
+
 // Timing do envio de áudio, 14/10/2026 ("ao gravar um áudio de 10
 // segundos demora 18 segundos para enviar") — enviarAudioManualWhatsapp()
 // (includes/whatsapp_inbox.php) grava sempre (sucesso ou falha) a duração

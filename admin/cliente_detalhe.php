@@ -20,6 +20,23 @@ if (!$cliente) {
     exit('Cliente não encontrado.');
 }
 
+// 21/10/2026, "clientes todos aparece para todos... temos cada consultor
+// tenha seus clientes" — até aqui não existia NENHUM bloqueio aqui: um
+// consultor digitando ?id=X na URL abria (e editava) CPF/RG/endereço de
+// cliente de QUALQUER outro consultor. Mesma regra de admin/clientes.php
+// (usuarioPodeVerCliente(), includes/oportunidades.php) — financeiro
+// mantém acesso irrestrito de propósito, nunca filtrado junto. Bloqueia
+// ANTES de qualquer ramo GET/POST — nunca confia só na listagem filtrada
+// pra impedir acesso direto, mesma disciplina de usuarioPodeVerConversaWhatsapp()
+// no WhatsApp Box.
+$responsavelFiltroCliente = (perfilVeTudo() || ($_SESSION['admin_perfil'] ?? '') === 'financeiro')
+    ? null
+    : (int)$_SESSION['admin_id'];
+if (!usuarioPodeVerCliente((int)$cliente['id'], $responsavelFiltroCliente)) {
+    http_response_code(403);
+    exit('Esse cliente não é da sua carteira.');
+}
+
 $erro = '';
 $sucesso = '';
 

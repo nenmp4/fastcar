@@ -338,6 +338,33 @@ function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
 }
 
 /**
+ * Filtro de "minha carteira" pra admin/clientes.php e admin/cliente_detalhe.php,
+ * 21/10/2026 — achado real: nenhuma das 2 telas tinha filtro de responsável
+ * até agora, QUALQUER consultor via/abria o cadastro de QUALQUER outro
+ * consultor (CPF/RG/endereço incluídos). Mesmo padrão já usado em
+ * usuarioPodeVerConversaWhatsapp() (includes/whatsapp_inbox.php) —
+ * `responsavelId` quem calcula (perfilVeTudo() OU financeiro → null, sem
+ * restrição; consultor → o próprio id). Financeiro mantém acesso
+ * IRRESTRITO de propósito (pedido explícito em 18/09/2026, "financeiro
+ * tem ter acesso ao clientes" — ele nunca é responsavel_id de oportunidade
+ * nenhuma, filtrar junto deixaria o financeiro sem ver cliente nenhum).
+ * "Ser responsável em QUALQUER oportunidade, mesmo já fechada/perdida" —
+ * nunca só a ativa — é de propósito: um consultor que já fechou negócio
+ * com um cliente continua vendo o cadastro dele depois (regra #1 do
+ * projeto permite o mesmo telefone ter mais de uma oportunidade ao longo
+ * do tempo, inclusive com outro consultor responsável na oportunidade
+ * nova — o histórico antigo continua visível pra quem o atendeu).
+ */
+function usuarioPodeVerCliente(int $clienteId, ?int $responsavelFiltro): bool {
+    if ($clienteId <= 0) return false;
+    if ($responsavelFiltro === null) return true;
+    $db = getDB();
+    $stmt = $db->prepare("SELECT EXISTS (SELECT 1 FROM oportunidades WHERE cliente_id = ? AND responsavel_id = ?)");
+    $stmt->execute([$clienteId, $responsavelFiltro]);
+    return (bool)$stmt->fetchColumn();
+}
+
+/**
  * Encerra o atendimento direto do WhatsApp Box (09/10/2026, "pessoal quer
  * botao encerrar atendimento no inbox do whtasapp sem precisar ir no lead
  * pode deixar botão direito" / "ja vai direto para pasta ecerrada") — acha

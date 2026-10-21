@@ -10,18 +10,38 @@ require_once __DIR__ . '/_bootstrap.php';
 $busca = trim((string)($_GET['q'] ?? ''));
 $db = getDB();
 
+// 21/10/2026, "clientes todos aparece para todos... temos cada consultor
+// tenha seus clientes" — até aqui essa tela não tinha NENHUM filtro de
+// responsável, qualquer consultor via a base inteira. Mesmo padrão de
+// "minha carteira" já usado no resto do sistema (perfilVeTudo(), 15/09) —
+// financeiro mantém acesso irrestrito de propósito (confirmado com o
+// usuário: "financeiro continua vendo todos", já tinha acesso explícito
+// desde 18/09 e não é responsável de oportunidade nenhuma).
+$responsavelFiltro = (perfilVeTudo() || ($_SESSION['admin_perfil'] ?? '') === 'financeiro')
+    ? null
+    : (int)$_SESSION['admin_id'];
+
 // Total de clientes que batem com a busca ANTES de paginar — sem isso,
 // LIMIT 100 sozinho (como era antes) simplesmente escondia todo cliente
 // além do 100º (por created_at DESC), sem paginação nenhuma pra ver o
 // resto — bug real achado ("quantas negociações ficar na tela, já pensou
 // nisso?").
-$whereBusca = '';
+$condicoesBusca = [];
 $paramsBusca = [];
 if ($busca) {
-    $whereBusca = " WHERE c.nome LIKE ? OR c.telefone LIKE ? OR c.cidade LIKE ?";
+    $condicoesBusca[] = "(c.nome LIKE ? OR c.telefone LIKE ? OR c.cidade LIKE ?)";
     $like = '%' . $busca . '%';
-    $paramsBusca = [$like, $like, $like];
+    array_push($paramsBusca, $like, $like, $like);
 }
+if ($responsavelFiltro !== null) {
+    // EXISTS, nunca filtrando o JOIN de agregação abaixo — um cliente
+    // continua mostrando o histórico COMPLETO de oportunidades (inclusive
+    // de outro consultor), só a VISIBILIDADE do cliente em si é que exige
+    // ter sido responsável em pelo menos uma, mesmo já fechada/perdida.
+    $condicoesBusca[] = "EXISTS (SELECT 1 FROM oportunidades o2 WHERE o2.cliente_id = c.id AND o2.responsavel_id = ?)";
+    $paramsBusca[] = $responsavelFiltro;
+}
+$whereBusca = $condicoesBusca ? (" WHERE " . implode(' AND ', $condicoesBusca)) : '';
 $stmtTotal = $db->prepare("SELECT COUNT(*) FROM clientes c{$whereBusca}");
 $stmtTotal->execute($paramsBusca);
 $totalClientes = (int)$stmtTotal->fetchColumn();
