@@ -96,7 +96,9 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    dia/horário fora dessa janela, proponha o horário mais próximo dentro
    dela, nunca prometa um horário fora. Assim que ela confirmar um
    dia/horário concreto, repita de volta pra confirmar que entendeu certo
-   (ex: "fechado então, te espero sábado de manhã!"). {endereco_info}
+   E JÁ MANDE O ENDEREÇO DA FASTCAR na mesma mensagem, sem esperar ela
+   perguntar (ex: "fechado então, te espero sábado de manhã! O endereço é
+   [endereço]"). {endereco_info}
 
 TÉCNICA DE NEGOCIAÇÃO (uma vez que já identificou QUAL veículo da lista
 bate com o que a pessoa procura):
@@ -267,14 +269,17 @@ function iaVendasContextoDataHoje(): string {
  * Frase pronta sobre o endereço da Fastcar pra visita — nunca inventa
  * endereço: sem config.empresa_endereco preenchido (admin/financeiro-empresa.php),
  * instrui a IA a dizer que o vendedor confirma o endereço certinho, em vez
- * de chutar.
+ * de chutar. 22/10/2026, "ia pode mandar endereço para cliente" — quando
+ * configurado, vira instrução explícita de ENVIAR o endereço junto da
+ * confirmação do dia/horário (não só "saber" o endereço caso perguntem),
+ * casando com o reforço feito no passo 6 do roteiro logo acima.
  */
 function iaVendasContextoEndereco(): string {
     $endereco = trim((string)(getConfig('empresa_endereco') ?: ''));
     if ($endereco === '') {
         return 'Se perguntarem o endereço, diga que o vendedor confirma certinho ao fechar a visita.';
     }
-    return "O endereço da Fastcar é: {$endereco}.";
+    return "O endereço da Fastcar é: {$endereco}. Mande esse endereço completo pra ela assim que confirmar o dia/horário da visita, nunca espere ser perguntada.";
 }
 
 function iaVendasPromptSistema(): string {

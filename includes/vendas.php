@@ -877,3 +877,68 @@ function notificarVendedorLeadQualificado(int $vendaId, string $motivo = 'Qualif
         // notificação nunca pode travar o fluxo da qualificação
     }
 }
+
+/**
+ * Fim de turno pro lado de VENDAS — 22/10/2026, "em vendas crm preenchido
+ * notificar mesmo do sistema": espelha
+ * notificarLeadsCrmPreenchidoFimTurno() (includes/oportunidades.php),
+ * mesmo mecanismo ("mesmo do sistema" — mesmo horário configurável via
+ * leadsCrmPreenchidoHorarioNotificar(), mesma lista de números em
+ * config.notificacao_leads_whatsapp), só trocando `oportunidades`
+ * (etapa='crm_preenchido') por `vendas` (etapa='negociacao' — o
+ * equivalente de vendas pra "IA já qualificou, esperando o vendedor
+ * assumir de verdade": vendas não tem uma etapa própria tipo
+ * 'crm_preenchido', a transição qualificacao_ia→negociacao já É esse
+ * momento). Complementa, nunca substitui, notificarVendedorLeadQualificado()
+ * (que já avisa o vendedor individualmente NO MOMENTO da qualificação) —
+ * este aqui é o resumo de fim de dia, pra pegar quem passou batido (lead
+ * que chegou com o vendedor sem WhatsApp cadastrado, notificação que
+ * falhou, etc), igual o mecanismo de compra já faz.
+ */
+function notificarVendasEmNegociacaoFimTurno(): array {
+    try {
+        $hoje = date('Y-m-d');
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT v.id, v.comprador_nome, v.comprador_telefone, v.veiculo_interesse_texto,
+                   o.veiculo_marca, o.veiculo_modelo, u.nome AS responsavel_nome
+            FROM vendas v
+            LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+            LEFT JOIN usuarios u ON u.id = v.responsavel_id
+            WHERE v.etapa = 'negociacao' AND date(v.created_at) = ?
+            ORDER BY v.created_at
+        ");
+        $stmt->execute([$hoje]);
+        $leads = $stmt->fetchAll();
+
+        $lista = getConfig('notificacao_leads_whatsapp') ?: '';
+        $numeros = array_filter(array_map('trim', explode(',', $lista)));
+        if (!$numeros) {
+            return ['ok' => false, 'motivo' => 'nenhum número de notificação configurado', 'total' => count($leads)];
+        }
+
+        $baseUrl = getConfig('app_base_url') ?: '';
+        if (!$leads) {
+            $msg = "🛒 Fim de turno (vendas) — nenhum lead qualificado hoje ficou parado em negociação. ✅";
+        } else {
+            $linhas = [];
+            foreach ($leads as $l) {
+                $veiculo = trim(($l['veiculo_marca'] ?? '') . ' ' . ($l['veiculo_modelo'] ?? '')) ?: trim((string)($l['veiculo_interesse_texto'] ?? ''));
+                $link = $baseUrl ? rtrim($baseUrl, '/') . "/admin/venda.php?id={$l['id']}" : "#{$l['id']}";
+                $resp = $l['responsavel_nome'] ? $l['responsavel_nome'] : 'sem responsável';
+                $linhas[] = "• {$l['comprador_nome']} ({$l['comprador_telefone']})" . ($veiculo !== '' ? " — {$veiculo}" : '')
+                          . " — {$resp}\n  {$link}";
+            }
+            $msg = "🛒 Fim de turno (vendas) — " . count($leads) . ' lead(s) qualificado(s) hoje ainda em negociação:' . "\n\n"
+                 . implode("\n\n", $linhas);
+        }
+
+        $enviouAlgum = false;
+        foreach ($numeros as $numero) {
+            if (zapiEnviarTextoInterno($numero, $msg)) $enviouAlgum = true;
+        }
+        return ['ok' => $enviouAlgum, 'total' => count($leads)];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'motivo' => 'erro interno', 'total' => 0];
+    }
+}

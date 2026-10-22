@@ -250,23 +250,52 @@ $filtroDataVendaAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool
 // compra usa 'fechado') como aba especial, e 'encerradas' cobre
 // cancelada+sem_perfil juntos — cada uma monta seu próprio escopo de
 // etapa pro WHERE em vez de sempre ETAPAS_VENDA_ATIVAS.
-$etapasEscopo = match ($etapaFiltro) {
-    'vendido'    => ['vendido'],
-    'encerradas' => ['cancelada', 'sem_perfil'],
-    default      => ETAPAS_VENDA_ATIVAS,
-};
+//
+// 22/10/2026, "em vendas não tem dasbord igual de consultores de compras"
+// — os cards de estatística do vendedor (mais abaixo) sempre foram só
+// <div>, nunca clicáveis; admin/index.php já tinha ?filtro=hoje/ontem/
+// atrasadas/semana pro consultor desde 08/09/2026-21/09/2026. `?filtro=`
+// aqui é o mesmo mecanismo, trimmado pros 4 casos que os cards de vendas
+// de fato mostram — sempre vence sobre `?etapa=` (mesma disciplina de
+// compra, "evita o usuário cair numa combinação impossível").
+$filtroEspecialVendas = (string)($_GET['filtro'] ?? '');
+$extraWhereVendas = '';
+switch ($filtroEspecialVendas) {
+    case 'hoje':
+        $etapasEscopo = ETAPAS_VENDA_ATIVAS;
+        $extraWhereVendas = " AND date(v.created_at) = date('now','localtime')";
+        break;
+    case 'ontem':
+        $etapasEscopo = ETAPAS_VENDA_ATIVAS;
+        $extraWhereVendas = " AND date(v.created_at) = date('now','localtime','-1 day')";
+        break;
+    case 'semana':
+        $etapasEscopo = ETAPAS_VENDA_ATIVAS;
+        $extraWhereVendas = " AND v.created_at >= datetime('now','localtime','-7 days')";
+        break;
+    case 'atrasadas':
+        $etapasEscopo = ETAPAS_VENDA_ATIVAS;
+        $extraWhereVendas = " AND v.proxima_acao_em IS NOT NULL AND v.proxima_acao_em < datetime('now','localtime')";
+        break;
+    default:
+        $etapasEscopo = match ($etapaFiltro) {
+            'vendido'    => ['vendido'],
+            'encerradas' => ['cancelada', 'sem_perfil'],
+            default      => ETAPAS_VENDA_ATIVAS,
+        };
+}
 $placeholders = implode(',', array_fill(0, count($etapasEscopo), '?'));
 
 // Vendas nunca teve um "fechado_por" próprio (diferente de compra) — só
 // responsavel_id existe, então as 3 abas (ativas/vendido/encerradas) usam
 // o mesmo campo de dono, sem distinção.
-$where = "WHERE v.etapa IN ({$placeholders})";
+$where = "WHERE v.etapa IN ({$placeholders}){$extraWhereVendas}";
 $params = $etapasEscopo;
 if ($souDono) {
     $where .= " AND v.responsavel_id = ?";
     $params[] = $meuId;
 }
-if (in_array($etapaFiltro, ETAPAS_VENDA_ATIVAS, true)) {
+if ($filtroEspecialVendas === '' && in_array($etapaFiltro, ETAPAS_VENDA_ATIVAS, true)) {
     $where .= " AND v.etapa = ?";
     $params[] = $etapaFiltro;
 }
@@ -385,14 +414,14 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 </header>
 
 <nav class="etapas-nav">
-    <a href="/admin/vendas.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
+    <a href="/admin/vendas.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
     <?php foreach (ETAPAS_VENDA_ATIVAS as $et): ?>
-        <a href="/admin/vendas.php?etapa=<?= urlencode($et) ?><?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === $et ? 'ativo' : '' ?>">
+        <a href="/admin/vendas.php?etapa=<?= urlencode($et) ?><?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === $et && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">
             <?= e(etapaVendaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
         </a>
     <?php endforeach; ?>
-    <a href="/admin/vendas.php?etapa=vendido<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === 'vendido' ? 'ativo' : '' ?>">✅ Vendidas (<?= $totalVendidas ?>)</a>
-    <a href="/admin/vendas.php?etapa=encerradas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === 'encerradas' ? 'ativo' : '' ?>">❌ Encerradas (<?= $totalEncerradasVenda ?>)</a>
+    <a href="/admin/vendas.php?etapa=vendido<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === 'vendido' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">✅ Vendidas (<?= $totalVendidas ?>)</a>
+    <a href="/admin/vendas.php?etapa=encerradas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === 'encerradas' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">❌ Encerradas (<?= $totalEncerradasVenda ?>)</a>
 </nav>
 
 <main>
@@ -786,20 +815,45 @@ document.getElementById('modal-promissoria').showModal();
 <?php endif; ?>
 </script>
 
+<?php
+// 22/10/2026 — mesmo banner "🔎 Mostrando" de admin/index.php, só pro
+// filtro especial de vendas; nunca aparece junto da aba normal (?etapa=).
+$filtroEspecialVendasLabel = [
+    'hoje'      => 'Meus leads de hoje',
+    'ontem'     => 'Meus leads de ontem',
+    'semana'    => 'Recebidas nos últimos 7 dias',
+    'atrasadas' => 'Atrasadas',
+][$filtroEspecialVendas] ?? '';
+?>
+<?php if ($filtroEspecialVendasLabel !== ''): ?>
+<div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;margin-bottom:14px">
+    <span>🔎 Mostrando: <strong><?= e($filtroEspecialVendasLabel) ?></strong></span>
+    <a href="/admin/vendas.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>">Limpar filtro</a>
+</div>
+<?php endif; ?>
+
 <div class="stat-grid">
-    <div class="stat-card">
+    <a class="stat-card" href="/admin/vendas.php">
         <div class="valor"><?= (int)$stats['ativas'] ?></div>
         <div class="rotulo"><?= $souDono ? 'Minhas' : '' ?> negociações ativas</div>
-    </div>
-    <div class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>">
+    </a>
+    <a class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>" href="/admin/vendas.php?filtro=atrasadas">
         <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
         <div class="rotulo">Atrasadas</div>
-    </div>
+    </a>
     <?php if ($souDono): ?>
-        <div class="stat-card neutro">
+        <a class="stat-card alerta" href="/admin/vendas.php?filtro=hoje">
+            <div class="valor"><?= (int)$stats['novas_hoje'] ?></div>
+            <div class="rotulo">Meus leads de hoje</div>
+        </a>
+        <a class="stat-card azul-forte" href="/admin/vendas.php?filtro=ontem">
+            <div class="valor"><?= (int)$stats['novas_ontem'] ?></div>
+            <div class="rotulo">Meus leads de ontem</div>
+        </a>
+        <a class="stat-card neutro" href="/admin/vendas.php?filtro=semana">
             <div class="valor"><?= (int)$stats['recebidas_semana'] ?></div>
             <div class="rotulo">Recebidas nos últimos 7 dias</div>
-        </div>
+        </a>
         <div class="stat-card <?= $stats['disponivel'] ? 'sucesso' : 'neutro' ?>">
             <div class="valor"><?= $stats['disponivel'] ? '🟢' : '⚪' ?></div>
             <div class="rotulo"><?= $stats['disponivel'] ? 'Disponível pra fila' : ($stats['plantao'] ? 'Offline (plantão)' : 'Offline') ?></div>
@@ -823,10 +877,18 @@ document.getElementById('modal-promissoria').showModal();
 
 <div class="card">
     <form method="get" style="display:flex;gap:8px;align-items:center">
-        <?php if ($etapaFiltro): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
+        <?php if ($filtroEspecialVendas !== ''): ?><input type="hidden" name="filtro" value="<?= e($filtroEspecialVendas) ?>">
+        <?php elseif ($etapaFiltro): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por comprador, telefone ou veículo..." style="flex:1;margin:0">
         <button type="submit" style="margin:0">Buscar</button>
-        <?php if ($busca): ?><a href="/admin/vendas.php<?= $etapaFiltro ? '?etapa=' . urlencode($etapaFiltro) : '' ?>">Limpar</a><?php endif; ?>
+        <?php if ($busca):
+            // 22/10/2026 — mesma disciplina de admin/index.php: "Limpar"
+            // precisa preservar o ?filtro= especial também, nunca só a
+            // ?etapa= normal, senão limpar a busca dentro de "Meus leads
+            // de hoje" jogava de volta pra aba padrão sem querer.
+            $voltarQsVendas = $filtroEspecialVendas !== '' ? '?filtro=' . urlencode($filtroEspecialVendas)
+                             : ($etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '');
+        ?><a href="/admin/vendas.php<?= $voltarQsVendas ?>">Limpar</a><?php endif; ?>
     </form>
 </div>
 

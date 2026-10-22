@@ -130,6 +130,18 @@ function dashboardVendedor(int $usuarioId): array {
     $stmt->execute([$usuarioId]);
     $recebidasSemana = (int)$stmt->fetchColumn();
 
+    // 22/10/2026, "em vendas não tem dasbord igual de consultores de
+    // compras" — dashboardConsultor() já tinha esses 2 contadores desde
+    // 08/10/2026 ("card clicavel leads de hoje leads de ontem"), nunca
+    // tinha sido portado pra vendas. Mesmo cálculo, só trocando
+    // oportunidades/ETAPAS_ATIVAS por vendas/ETAPAS_VENDA_ATIVAS.
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt->execute([$usuarioId, ...ETAPAS_VENDA_ATIVAS]);
+    $novasHoje = (int)$stmt->fetchColumn();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt->execute([$usuarioId, ...ETAPAS_VENDA_ATIVAS]);
+    $novasOntem = (int)$stmt->fetchColumn();
+
     $stmt = $db->prepare("SELECT disponivel, plantao_fim_expediente FROM usuarios WHERE id = ?");
     $stmt->execute([$usuarioId]);
     $eu = $stmt->fetch() ?: ['disponivel' => 0, 'plantao_fim_expediente' => 0];
@@ -156,6 +168,8 @@ function dashboardVendedor(int $usuarioId): array {
         'ativas'            => $ativas,
         'atrasadas'         => $atrasadas,
         'recebidas_semana'  => $recebidasSemana,
+        'novas_hoje'        => $novasHoje,
+        'novas_ontem'       => $novasOntem,
         'disponivel'        => (bool)$eu['disponivel'],
         'plantao'           => (bool)$eu['plantao_fim_expediente'],
         'vendidas_mes'      => (int)$vendidasMes,

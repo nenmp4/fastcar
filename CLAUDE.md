@@ -11224,6 +11224,93 @@ segue no schema sem uso novo, não removida sem ganho real),
   banco de dev real só foi tocado pela migração em si (nunca pelos testes
   de função, sempre via script em ARQUIVO com `auto_prepend_file`
   apontando pra banco isolado).
+- **IA de vendas manda o endereço da Fastcar sozinha, sem esperar ser
+  perguntada** (22/10/2026, "ia pode mandar endereço para cliente") —
+  antes disso, `iaVendasContextoEndereco()` (`includes/ia_qualificacao_vendas.php`)
+  já injetava o endereço real (`config.empresa_endereco`) no prompt como
+  CONTEXTO disponível, mas a instrução do roteiro (passo 6, confirmar
+  visita) só dizia pra confirmar o dia/horário — a IA só mandava o
+  endereço se o cliente perguntasse depois, nunca proativamente. Ajustado
+  o próprio passo 6 pra instruir explicitamente a mandar o endereço
+  completo NA MESMA mensagem que confirma a visita (ex: "fechado então,
+  te espero sábado de manhã! O endereço é [endereço]"), e o retorno de
+  `iaVendasContextoEndereco()` (branch com endereço configurado) ganhou
+  um reforço reafirmando isso. Sem endereço configurado, nunca inventa —
+  mesmo fallback de sempre ("o vendedor confirma o endereço certinho").
+  Testado: função isolada confirmando a substituição do placeholder nos 2
+  estados (configurado/não configurado), presença do endereço real e do
+  reforço de instrução no texto final do prompt + `php -l` limpo. Mudança
+  só de prompt (julgamento de IA) — não testável contra servidor fake,
+  validação real só na próxima conversa de vendas de verdade.
+- **Notificação de fim de turno pro lado de VENDAS** (22/10/2026, "em
+  vendas crm preenchido notificar mesmo do sistema") — espelha
+  `cron/leads_crm_preenchido_fim_turno.php` (compra), mas vendas nunca teve
+  uma etapa própria tipo `crm_preenchido` — a transição
+  `qualificacao_ia`→`negociacao` já É esse momento (lead qualificado pela
+  IA, esperando o vendedor assumir de verdade). Nova
+  `notificarVendasEmNegociacaoFimTurno()` (`includes/vendas.php`) — lista
+  toda `vendas.etapa='negociacao'` criada HOJE, manda pro(s) número(s) de
+  notificação genérica (`config.notificacao_leads_whatsapp`, mesmo
+  mecanismo de sempre) via `zapiEnviarTextoInterno()`; sempre manda algo,
+  mesmo "nenhum lead parado ✅" — confirma que o cron está vivo, mesmo
+  espírito do equivalente de compra. `cron/vendas_negociacao_fim_turno.php`
+  (novo) reaproveita de propósito `leadsCrmPreenchidoHorarioNotificar()`
+  (`includes/oportunidades.php`, config `leads_crm_preenchido_notificar_hora`
+  — "mesmo do sistema" tomado literalmente: 1 horário só configurado em
+  Configurações → Fila, vale pros dois funis) — nunca um config próprio de
+  vendas, mas com dedup (`config.vendas_negociacao_fim_turno_enviado_{data}`)
+  e `flock()` (`storage/vendas_negociacao_fim_turno.lock`) **próprios**,
+  nunca o mesmo arquivo/chave do cron de compra — os dois podem rodar ao
+  mesmo tempo sem disputar nada entre si. Cron sugerido a cada 10min
+  (`install/setup_crontab.sh`, mesma linha do equivalente de compra).
+  Testado em banco isolado: lista certo só os leads de HOJE em
+  `negociacao` (nunca o de ontem/10 dias atrás, nunca etapa diferente);
+  sem número de notificação configurado nunca tenta enviar; sem lead
+  nenhum hoje confirma "total=0" sem erro; cron real testado ponta a
+  ponta — horário no futuro espera, horário já passado tenta enviar
+  (falha graciosamente sem credencial real, sem crash), dedup bloqueia
+  reenvio depois de marcado como enviado, e `flock()` real (lock
+  segurado por outro processo) aborta a rodada concorrente com a
+  mensagem certa — + `php -l` + `tests/smoke.php` (0 avisos) limpos. Sem
+  migração de schema (reaproveita `vendas.etapa`/`created_at` já
+  existentes). Confirmado que o banco de dev real nunca foi tocado
+  durante os testes (sempre script em ARQUIVO com `auto_prepend_file`
+  apontando pro banco isolado, nunca `php -r` inline).
+- **Dashboard do vendedor ganhou os cards clicáveis "Meus leads de hoje/
+  ontem" + `?filtro=`, igual ao consultor de compra** (22/10/2026, "em
+  vendas não tem dasbord igual de consultores" → "de compras") —
+  `admin/index.php` (compra) já tinha isso desde 08-21/09/2026
+  (`?filtro=hoje/ontem/semana/atrasadas`, cards "stat-card" clicáveis),
+  `admin/vendas.php` nunca teve o equivalente — os cards de estatística
+  do vendedor sempre foram só `<div>`. `dashboardVendedor()`
+  (`includes/dashboard.php`) ganhou `novas_hoje`/`novas_ontem` (mesmas 2
+  queries do `dashboardConsultor()`, só trocando `oportunidades`/
+  `ETAPAS_ATIVAS` por `vendas`/`ETAPAS_VENDA_ATIVAS`). `admin/vendas.php`
+  ganhou `$filtroEspecialVendas` (`?filtro=hoje|ontem|semana|atrasadas`),
+  mesmo mecanismo exato de compra — sempre vence sobre `?etapa=` (nunca
+  os dois juntos), monta seu próprio `$etapasEscopo`/`$extraWhereVendas`
+  pro `WHERE` principal; banner "🔎 Mostrando: ..." + 2 cards novos
+  "Meus leads de hoje"/"...de ontem" (classes `alerta`/`azul-forte`,
+  reaproveitadas de compra, nenhum CSS novo) + os 2 já existentes
+  (ativas/atrasadas) virando `<a class="stat-card">` clicáveis. Nav de
+  abas (`<nav class="etapas-nav">`, "Minhas/Todas"/por-etapa/"✅ Vendidas"/
+  "❌ Encerradas") ganhou `&& $filtroEspecialVendas === ''` em todos os 4
+  checks de `'ativo'` — sem isso, clicar num card de filtro deixava a aba
+  "Minhas" com destaque visual errado (stale), mesmo bug que compra já
+  tinha corrigido. Link "Limpar" da busca também passou a preservar
+  `?filtro=` quando ativo (antes só preservava `?etapa=`, perdendo o
+  filtro especial ao limpar a busca dentro dele — mesma disciplina do
+  "Limpar busca" de `admin/index.php`). Contadores da nav
+  (`$totalAtivas`/`$contagemPorEtapa`/`$totalVendidas`/
+  `$totalEncerradasVenda`) continuam em queries PRÓPRIAS, independentes
+  de `$where`/`$etapasEscopo` — nunca afetados pelo filtro especial,
+  sempre mostram o total real. Testado: função isolada
+  (`dashboardVendedor()` com 2 vendas de hoje — 1 de cada vendedor — e 1
+  de ontem, confirmando `novas_hoje`/`novas_ontem` certos por vendedor,
+  nunca vazando entre carteiras) + `EXPLAIN`/leitura de código
+  confirmando que as 4 queries de contagem da nav nunca dependem do novo
+  `$filtroEspecialVendas` + `php -l` + `tests/smoke.php` (0 avisos)
+  limpos. Sem migração de schema.
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
