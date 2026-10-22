@@ -636,6 +636,13 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
                 <input type="date" name="parcelamento_primeira_parcela_data" value="<?= e($postVp['parcelamento_primeira_parcela_data'] ?? '') ?>">
             </div>
         </div>
+        <label>Periodicidade das parcelas</label>
+        <label style="font-weight:normal;display:inline-flex;align-items:center;gap:4px;margin-right:16px">
+            <input type="radio" name="parcelamento_periodicidade" value="mensal" <?= ($postVp['parcelamento_periodicidade'] ?? 'mensal') === 'mensal' ? 'checked' : '' ?>> Mensal
+        </label>
+        <label style="font-weight:normal;display:inline-flex;align-items:center;gap:4px">
+            <input type="radio" name="parcelamento_periodicidade" value="semanal" <?= ($postVp['parcelamento_periodicidade'] ?? '') === 'semanal' ? 'checked' : '' ?>> Semanal
+        </label>
 
         <div style="display:flex;gap:10px;margin-top:1.4rem">
             <button type="button" class="btn-primary" onclick="vpRevisar()">👁️ Revisar antes de registrar</button>
@@ -775,7 +782,9 @@ function vpRevisar() {
     var valorParc = vpFmtMoeda(vpVal('parcelamento_valor_parcela'));
     if (qtdParc && valorParc) {
         var primeiraData = vpFmtData(vpVal('parcelamento_primeira_parcela_data'));
-        linhas.push('<p><strong>📆 Parcelamento do saldo:</strong> ' + vpEsc(qtdParc) + 'x de ' + valorParc +
+        var periodicidadeEl = document.querySelector('input[name="parcelamento_periodicidade"]:checked');
+        var periodicidadeTxt = periodicidadeEl && periodicidadeEl.value === 'semanal' ? ' (semanal)' : '';
+        linhas.push('<p><strong>📆 Parcelamento do saldo:</strong> ' + vpEsc(qtdParc) + 'x de ' + valorParc + periodicidadeTxt +
             (primeiraData ? ', 1ª parcela em ' + primeiraData : '') + '</p>');
     }
 
