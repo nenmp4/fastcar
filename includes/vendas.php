@@ -74,18 +74,45 @@ function etapaVendaLabel(string $etapa): string {
  * índice único parcial idx_vendas_ativa_por_veiculo no schema (defesa em
  * dupla camada: aplicação + banco). "Disponível pra vender" = está na
  * frota E não tem negociação ativa nem já vendido.
+ *
+ * 22/10/2026, "no seletor de veiculo não aparecer veiculos marcado como
+ * vendido" — achado real: o MESMO carro físico pode ter 2 cadastros na
+ * frota (mesma placa, 2 oportunidade_id distintos — já visto antes com
+ * importação duplicada do CRM antigo, ver excluirVeiculoFrota()); se um
+ * deles já tem venda ativa/vendida, o OUTRO (duplicado, sem venda
+ * própria) continua passando a checagem acima sozinho — nunca deveria,
+ * é o mesmo carro. Checagem extra: nenhuma OUTRA oportunidade com a
+ * MESMA placa normalizada pode ter venda ativa/vendida. Placa vazia
+ * nunca dispara essa checagem (cadastro legado sem placa registrada
+ * nunca é "duplicado" por coincidência de string vazia).
  */
 function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     $db = getDB();
-    $stmtOp = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
+    $stmtOp = $db->prepare("SELECT etapa, veiculo_placa FROM oportunidades WHERE id = ?");
     $stmtOp->execute([$oportunidadeId]);
-    if ($stmtOp->fetchColumn() !== 'fechado') return false;
+    $op = $stmtOp->fetch();
+    if (!$op || $op['etapa'] !== 'fechado') return false;
 
     $stmt = $db->prepare("
         SELECT COUNT(*) FROM vendas WHERE oportunidade_id = ? AND etapa IN ('negociacao', 'contrato_enviado', 'vendido')
     ");
     $stmt->execute([$oportunidadeId]);
-    return (int)$stmt->fetchColumn() === 0;
+    if ((int)$stmt->fetchColumn() > 0) return false;
+
+    $placaNorm = strtoupper(preg_replace('/[^A-Z0-9]/i', '', (string)$op['veiculo_placa']));
+    if ($placaNorm !== '') {
+        $stmtDup = $db->prepare("
+            SELECT COUNT(*) FROM oportunidades o2
+            JOIN vendas v2 ON v2.oportunidade_id = o2.id
+            WHERE o2.id != ? AND o2.etapa = 'fechado'
+              AND UPPER(REPLACE(REPLACE(o2.veiculo_placa, '-', ''), ' ', '')) = ?
+              AND v2.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+        ");
+        $stmtDup->execute([$oportunidadeId, $placaNorm]);
+        if ((int)$stmtDup->fetchColumn() > 0) return false;
+    }
+
+    return true;
 }
 
 /**
@@ -335,6 +362,10 @@ function criarOuAbrirVendaLead(string $telefone, string $nome = '', array $orige
  * do CLAUDE.md). Resumo enxuto (id, marca/modelo/ano, valor de referência)
  * — o suficiente pra IA conversar sobre o que tem disponível sem expor
  * dado sensível (placa/chassi/financiamento) pro comprador.
+ *
+ * 22/10/2026, mesma exclusão por placa duplicada de
+ * veiculoDisponivelParaVenda() (ver docblock lá) — direto em SQL aqui,
+ * pra não rodar 1 query extra por linha num bulk listing.
  */
 function listarFrotaDisponivelParaVenda(int $limite = 30): array {
     $db = getDB();
@@ -346,6 +377,17 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
           AND NOT EXISTS (
               SELECT 1 FROM vendas v
               WHERE v.oportunidade_id = o.id AND v.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+          )
+          AND (
+              TRIM(COALESCE(o.veiculo_placa, '')) = ''
+              OR NOT EXISTS (
+                  SELECT 1 FROM oportunidades o2
+                  JOIN vendas v2 ON v2.oportunidade_id = o2.id
+                  WHERE o2.id != o.id AND o2.etapa = 'fechado'
+                    AND UPPER(REPLACE(REPLACE(o2.veiculo_placa, '-', ''), ' ', ''))
+                      = UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', ''))
+                    AND v2.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+              )
           )
         ORDER BY o.data_compra DESC
         LIMIT ?
