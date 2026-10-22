@@ -4006,6 +4006,66 @@ segue no schema sem uso novo, não removida sem ganho real),
   testável contra servidor fake — validação real só na próxima conversa
   de vendas de verdade, inclusive se o cliente topa mesmo um dia/horário
   dentro da janela comercial sem a IA prometer algo fora dela.
+  **IA passou a RESOLVER a data real da visita + botão manual de
+  comparecimento** (22/10/2026, "ideia que ia qualifique faça o
+  agendamento aqui na fastcar" + "vim até local e cliente confirmar") —
+  2 pedidos, confirmados via `AskUserQuestion` com opções distintas,
+  cada um reverte/complementa uma decisão anterior. (1) **"IA resolve a
+  data real (recomendado)"** — reverte, só pra este campo específico, a
+  regra #3 original documentada em `visita_dia_horario_texto` acima
+  ("nunca um DATE calculado pela própria IA"): coluna nova
+  `vendas.visita_data_resolvida` (TEXT, formato AAAA-MM-DD) — a IA agora
+  recebe `{hoje}` também no prompt de EXTRAÇÃO (antes só o de conversa
+  tinha, via `iaVendasContextoDataHoje()` — `iaVendasPromptExtracao()`
+  ganhou o mesmo `str_replace`) e devolve a data calculada a partir do
+  texto livre ("sábado" → próximo sábado de verdade). Nunca confia
+  cegamente na matemática de LLM: `iaVendasDataResolvidaValida()`
+  (`includes/ia_qualificacao_vendas.php`) só aceita formato exato,
+  `checkdate()` de verdade, nunca no passado e nunca mais de 90 dias no
+  futuro — fora disso é quase certamente erro de cálculo, não visita
+  real, e a aplicação (`iaAplicarDadosExtraidosVenda()`) simplesmente
+  não grava nada nesse turno, nunca "corrige" chutando um valor. Mesma
+  disciplina de `visita_dia_horario_texto` — sempre sobrescreve quando
+  muda (remarcação), nunca fill-if-empty — e **nunca substitui** o texto
+  livre, que continua a fonte de verdade do que o cliente disse
+  literalmente; a data resolvida é só auxiliar/derivada, pra relatório/
+  filtro/lembrete futuro. Badge em `admin/venda.php` mostra os dois
+  juntos: "✅ Confirmou vir — sábado de manhã (24/10/2026)". (2)
+  **"Vendedor marca manualmente (recomendado)"** — conceito
+  INDEPENDENTE do anterior, nunca inferido automaticamente de nenhum
+  sinal (nem da confirmação por WhatsApp, nem da data resolvida): coluna
+  nova `vendas.visita_compareceu_em` (DATETIME) + card "📍 Visita
+  presencial" novo em `admin/venda.php`, sempre visível (qualquer
+  origem/etapa da negociação) com botão "✅ Cliente compareceu"/"↩️
+  Desfazer" (mesmo padrão toggle+undo de `financiamento_quitado` em
+  `admin/veiculos.php`) — pode haver comparecimento sem confirmação
+  prévia (cliente apareceu sem combinar) ou confirmação sem
+  comparecimento (combinou e não veio), os dois fatos são registrados
+  separados. Ações novas (`marcar_compareceu`/`desfazer_compareceu`)
+  escondidas do perfil `supervisor` na tela (mesmo padrão de toda outra
+  ação de `admin/venda.php`) e bloqueadas no servidor (403) mesmo com
+  CSRF roubado da própria sessão dele — nunca confia só em esconder a
+  UI. Testado: `iaVendasDataResolvidaValida()` isolada (10 casos — hoje/
+  amanhã/+90 dias válidos, +91 dias/ontem/formato errado/data
+  inexistente/null/vazio/mês-dia zero inválidos); `iaAplicarDadosExtraidosVenda()`
+  isolada (12 asserções — grava os 2 campos juntos, remarcação sobrescreve
+  os dois, data inválida NUNCA sobrescreve a válida anterior, ausência da
+  chave não apaga valor existente, repetir o mesmo valor não conta como
+  avanço, recusa de visita nunca ganha data sozinha); pipeline completo
+  via `processarMensagemVendasZapi()` real contra fake Gemini local (não
+  só função isolada) confirmando turno único qualificando e aplicando
+  tudo junto, e reenvio do mesmo `messageId` nunca duplicando nem venda
+  nem mensagem; HTTP ponta a ponta real (sessão `vendedor`/`supervisor`
+  primed, servidor PHP embutido, banco isolado): vendedor marca/desfaz de
+  verdade (banco conferido), badge mostra a data resolvida junto do texto
+  livre, supervisor nunca vê o form no HTML e um POST forjado com CSRF
+  genuíno da própria sessão dele é rejeitado (403, banco intocado) +
+  migração testada contra schema anterior a esta mudança (`git show
+  HEAD:install/schema.sql`, as 2 colunas confirmadas ausentes antes,
+  `ALTER TABLE` aplicado com sucesso, dado pré-existente preservado,
+  idempotente numa 2ª rodada) + `php -l` + `tests/smoke.php` limpos. Sem
+  mudança nenhuma em `oportunidades`/funil de compra — escopo só do lado
+  de vendas/revenda.
   **Lead quente/morno/frio + dashboard/etapas completo, igual compra**
   (19/09/2026, 2 pedidos diretos: "crm tem tá preechido igual na compra
   lead quente frio e mornos" e "aproveita adciona dasbord também em

@@ -478,6 +478,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $id,
                 ]);
                 $sucesso = 'Próxima ação atualizada.';
+            } elseif ($acao === 'marcar_compareceu') {
+                // 22/10/2026, "vim até local e cliente confirmar" —
+                // confirmado via AskUserQuestion: botão manual do
+                // vendedor, nunca inferido automaticamente de nenhum
+                // sinal (WhatsApp, data resolvida pela IA etc). Sempre
+                // disponível, independente de etapa/origem da negociação.
+                $db->prepare("UPDATE vendas SET visita_compareceu_em = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE id = ?")->execute([$id]);
+                $sucesso = 'Comparecimento registrado.';
+            } elseif ($acao === 'desfazer_compareceu') {
+                $db->prepare("UPDATE vendas SET visita_compareceu_em = NULL, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$id]);
+                $sucesso = 'Comparecimento desfeito.';
             } elseif ($acao === 'mudar_etapa') {
                 $etapaNovaPost = (string)($_POST['etapa_nova'] ?? '');
                 if (in_array($etapaNovaPost, ['contrato_enviado', 'vendido'], true) && !$v['oportunidade_id']) {
@@ -680,7 +691,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php if ($v['aceita_visitar_fastcar'] !== null): ?>
         <p><strong>Visita presencial:</strong>
            <?php if ((int)$v['aceita_visitar_fastcar'] === 1): ?>
-               <span class="badge badge-ok">✅ Confirmou vir<?= $v['visita_dia_horario_texto'] ? ' — ' . e($v['visita_dia_horario_texto']) : '' ?></span>
+               <span class="badge badge-ok">✅ Confirmou vir<?= $v['visita_dia_horario_texto'] ? ' — ' . e($v['visita_dia_horario_texto']) : '' ?><?= $v['visita_data_resolvida'] ? ' (' . date('d/m/Y', strtotime($v['visita_data_resolvida'])) . ')' : '' ?></span>
            <?php else: ?>
                <span class="badge badge-atraso">🚫 Recusou vir — fechar por telefone</span>
            <?php endif; ?>
@@ -692,6 +703,30 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php endif; ?>
 </div>
 <?php endif; ?>
+
+<div class="card">
+    <h3>📍 Visita presencial</h3>
+    <?php if ($v['visita_compareceu_em']): ?>
+        <p><span class="badge badge-ok">✅ Cliente compareceu em <?= date('d/m/Y H:i', strtotime($v['visita_compareceu_em'])) ?></span></p>
+        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post" onsubmit="return confirmarAcao(this, 'Desfazer o registro de comparecimento?');">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="desfazer_compareceu">
+            <button type="submit" class="secundario">↩️ Desfazer</button>
+        </form>
+        <?php endif; ?>
+    <?php else: ?>
+        <p><small>Marque assim que o cliente chegar de verdade na Fastcar — independente de ter confirmado
+           antes por WhatsApp (nunca marcado automaticamente, sempre um clique deliberado seu).</small></p>
+        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="marcar_compareceu">
+            <button type="submit">✅ Cliente compareceu</button>
+        </form>
+        <?php endif; ?>
+    <?php endif; ?>
+</div>
 
 <?php if (!in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
 <div class="card">

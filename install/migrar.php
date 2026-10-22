@@ -2146,4 +2146,27 @@ foreach ([
     }
 }
 
+// 22/10/2026, "ideia que ia qualifique faça o agendamento aqui na
+// fastcar" + "vim até local e cliente confirmar" — 2 campos novos e
+// independentes sobre a visita presencial: visita_data_resolvida (data
+// real calculada pela IA a partir de visita_dia_horario_texto, nunca
+// substitui o texto livre, ver includes/ia_qualificacao_vendas.php) e
+// visita_compareceu_em (marcação manual do vendedor quando o cliente
+// chega de verdade, confirmado via AskUserQuestion como botão manual).
+foreach ([
+    ['visita_data_resolvida', "ALTER TABLE vendas ADD COLUMN visita_data_resolvida TEXT DEFAULT ''"],
+    ['visita_compareceu_em', 'ALTER TABLE vendas ADD COLUMN visita_compareceu_em DATETIME'],
+] as [$coluna, $sql]) {
+    if (!colunaExiste($db, 'vendas', $coluna)) {
+        try {
+            $db->exec($sql);
+            echo "✅ vendas.{$coluna}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ vendas.{$coluna}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  vendas.{$coluna}: já existia\n";
+    }
+}
+
 echo "\n🎉 Migração concluída.\n";

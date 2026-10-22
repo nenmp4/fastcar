@@ -124,7 +124,8 @@ function mostrarResultado(array $r): void {
 function mostrarStatus(string $telefone): void {
     $db = getDB();
     $stmt = $db->prepare("
-        SELECT id, etapa, oportunidade_id, temperatura_lead, aceita_visitar_fastcar
+        SELECT id, etapa, oportunidade_id, temperatura_lead, aceita_visitar_fastcar,
+               visita_dia_horario_texto, visita_data_resolvida, visita_compareceu_em
         FROM vendas WHERE comprador_telefone = ? ORDER BY id DESC LIMIT 1
     ");
     $stmt->execute([normalizarTelefone($telefone)]);
@@ -143,6 +144,9 @@ function mostrarStatus(string $telefone): void {
         echo 'veículo vinculado: ' . ($v['oportunidade_id'] ? "oportunidade #{$v['oportunidade_id']}" : '(ainda não vinculado)') . "\n";
         echo 'temperatura: ' . ($v['temperatura_lead'] ?: '(ainda não avaliada)') . "\n";
         echo 'confirmou visita: ' . ($v['aceita_visitar_fastcar'] === null ? '(ainda não perguntado)' : ($v['aceita_visitar_fastcar'] ? 'sim' : 'não')) . "\n";
+        if ($v['visita_dia_horario_texto']) echo "  dia/horário combinado (texto): {$v['visita_dia_horario_texto']}\n";
+        if ($v['visita_data_resolvida']) echo "  data resolvida pela IA: {$v['visita_data_resolvida']}\n";
+        echo '  compareceu: ' . ($v['visita_compareceu_em'] ? "sim, em {$v['visita_compareceu_em']}" : 'ainda não') . "\n";
     } else {
         echo "nenhuma negociação aberta ainda pra esse telefone.\n";
     }

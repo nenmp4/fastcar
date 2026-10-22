@@ -167,8 +167,10 @@ própria frota) e um comprador em potencial. Extraia SOMENTE o que a pessoa
 disse explicitamente — nunca invente, deduza ou arredonde. Campo não
 informado = null.
 
+Hoje é {hoje} — use essa data como referência pra calcular visita_data_resolvida.
+
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"aceita_visitar_fastcar":null,"visita_dia_horario_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
+{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"aceita_visitar_fastcar":null,"visita_dia_horario_texto":null,"visita_data_resolvida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
 
 - nome_comprador: o nome que a própria pessoa deu na conversa. null se ela não disse ainda.
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
@@ -181,6 +183,7 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
 - visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
+- visita_data_resolvida: a MESMA informação de visita_dia_horario_texto, só que convertida pra uma data de calendário real no formato exato "AAAA-MM-DD" (ex: se hoje é {hoje} e a pessoa disse "sábado", calcule a data do PRÓXIMO sábado a partir de hoje — nunca um sábado que já passou). Preencha SÓ quando tiver certeza real do dia combinado e conseguir calcular com segurança a partir da data de hoje; null se o texto for vago demais pra calcular (ex: "qualquer dia", "essa semana" sem dizer qual dia) ou se aceita_visitar_fastcar ainda não é true. Nunca invente/arredonde — é sempre melhor devolver null do que calcular uma data errada.
 - sem_perfil: true se a pessoa disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
 - pedido_atendente_humano: true se a pessoa pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um vendedor"), nunca só por reclamação/hesitação genérica. Quando true, a conversa é encaminhada direto pro vendedor, sem continuar a qualificação.
 - qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), a forma de pagamento pretendida, E a pessoa já respondeu se confirma vir até a Fastcar (aceita_visitar_fastcar não é mais null — recusar vir também conta como resposta válida, o vendedor fecha por telefone nesse caso). pedido_atendente_humano nunca chega em qualificacao_completa=true.
@@ -269,7 +272,32 @@ function iaVendasPromptSistema(): string {
 }
 
 function iaVendasPromptExtracao(): string {
-    return str_replace('{frota_com_id}', iaVendasMontarResumoFrotaComId(), IA_EXTRACAO_VENDAS_PROMPT_BASE);
+    $prompt = str_replace('{frota_com_id}', iaVendasMontarResumoFrotaComId(), IA_EXTRACAO_VENDAS_PROMPT_BASE);
+    // 22/10/2026 — sem isso, a extração nunca tinha acesso à data de
+    // hoje (só o prompt de CONVERSA tinha, via iaVendasPromptSistema()),
+    // então visita_data_resolvida nunca teria como calcular nada.
+    return str_replace('{hoje}', iaVendasContextoDataHoje(), $prompt);
+}
+
+/**
+ * Valida a data que a IA resolveu pra visita presencial (22/10/2026,
+ * "ideia que ia qualifique faça o agendamento aqui na fastcar") — nunca
+ * confia cegamente em matemática de data feita por LLM: só aceita
+ * formato AAAA-MM-DD, data de calendário real (checkdate), nunca no
+ * passado (hoje conta como válido) e nunca mais de 90 dias no futuro —
+ * fora dessa janela é quase certamente erro de cálculo, não uma visita
+ * de verdade combinada. Retorna null pra qualquer coisa fora disso; a
+ * aplicação então simplesmente não grava nada nesse turno, nunca
+ * "corrige" chutando um valor (mesma regra #3 do projeto).
+ */
+function iaVendasDataResolvidaValida(?string $data): ?string {
+    if (!$data || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $data, $m)) return null;
+    if (!checkdate((int)$m[2], (int)$m[3], (int)$m[1])) return null;
+    $ts = strtotime($data);
+    $hoje = strtotime(date('Y-m-d'));
+    if ($ts === false || $hoje === false) return null;
+    if ($ts < $hoje || $ts > strtotime('+90 days', $hoje)) return null;
+    return $data;
 }
 
 /** Gera a próxima resposta conversacional da IA — '' se falhar ou sem chave configurada. */
@@ -408,6 +436,18 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         if ($novoTexto !== (string)$v['visita_dia_horario_texto']) {
             $sets[] = "visita_dia_horario_texto = ?";
             $params[] = $novoTexto;
+            $avancouDadoReal = true;
+        }
+    }
+    // visita_data_resolvida: mesma disciplina do texto livre acima
+    // (sempre sobrescreve quando muda — remarcação —, nunca
+    // fill-if-empty), mas só grava quando a validação aceita o valor —
+    // nunca confia cegamente na matemática de data da própria IA.
+    if (isset($dados['visita_data_resolvida'])) {
+        $dataValida = iaVendasDataResolvidaValida($dados['visita_data_resolvida']);
+        if ($dataValida !== null && $dataValida !== (string)$v['visita_data_resolvida']) {
+            $sets[] = "visita_data_resolvida = ?";
+            $params[] = $dataValida;
             $avancouDadoReal = true;
         }
     }

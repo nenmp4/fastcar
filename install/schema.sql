@@ -769,6 +769,30 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- retroage se a pessoa mudar de ideia depois) — útil pra
     -- dashboard/métrica futura de taxa de confirmação de visita.
     visita_confirmada_em DATETIME,
+    -- Data real (AAAA-MM-DD) que a IA resolveu a partir do texto livre
+    -- acima, usando a data de hoje como contexto (22/10/2026, "ideia que
+    -- ia qualifique faça o agendamento aqui na fastcar" — reverte, só pra
+    -- este campo, a regra #3 original documentada em
+    -- visita_dia_horario_texto: aqui a IA GERA a data de verdade, em vez
+    -- de deixar só o texto literal). Sempre sobrescreve quando muda
+    -- (igual o texto livre — remarcação), mas só grava quando a IA
+    -- devolve uma data válida e plausível
+    -- (iaVendasDataResolvidaValida(), includes/ia_qualificacao_vendas.php)
+    -- — nunca grava data inválida/no passado/longe demais, pra nunca
+    -- confiar cegamente em matemática de data feita por LLM. NUNCA
+    -- substitui visita_dia_horario_texto, que continua a fonte de
+    -- verdade do que o cliente disse literalmente — esta é só
+    -- auxiliar/derivada, pra relatório/filtro/lembrete futuro.
+    visita_data_resolvida TEXT DEFAULT '',
+    -- Marcado manualmente pelo VENDEDOR quando o cliente chega de
+    -- verdade na Fastcar (22/10/2026, "vim até local e cliente
+    -- confirmar" — confirmado via AskUserQuestion: botão manual, nunca
+    -- inferido automaticamente de nenhum sinal). Conceito independente
+    -- da confirmação por WhatsApp acima (aceita_visitar_fastcar/
+    -- visita_confirmada_em) — pode haver comparecimento sem confirmação
+    -- prévia (cliente apareceu sem combinar antes) ou confirmação sem
+    -- comparecimento (combinou e não veio). NULL = ainda não compareceu.
+    visita_compareceu_em DATETIME,
 
     -- Qualificação civil do COMPRADOR — colunas próprias aqui, não
     -- `clientes`: comprador de revenda é um contato diferente do vendedor
