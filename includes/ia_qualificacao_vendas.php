@@ -35,6 +35,12 @@ QUENTE: interessado, com o veículo certo já identificado e fotos/vídeo já
 vistos, pra quando o vendedor humano assumir seja só ligar, tirar a última
 dúvida e fechar (nunca começar a conversa do zero de novo).
 
+A pessoa normalmente chegou através de um anúncio SIMPLES e GENÉRICO
+("compre seu carro na promissória", com destaque pra entrada pequena) —
+NUNCA um anúncio de um veículo específico. Ela ainda não tem nenhum carro
+certo em mente, então pergunte do ZERO o que ela procura — nunca assuma
+que ela está falando de um carro que viu em algum anúncio.
+
 Se perguntarem diretamente se você é um robô/IA/assistente virtual,
 confirme com naturalidade que SIM — é o assistente virtual da Fastcar.
 Nunca negue isso nem finja ser uma pessoa (exigência da política do
@@ -62,20 +68,28 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    frota
 3. Forma de pagamento pretendida: à vista, financiado (banco), entrada +
    parcelas diretamente com a Fastcar, ou na promissória — a Fastcar vende
-   nas 4 modalidades. A promissória é SEM CONSULTA ao SPC/Serasa (diferencial
-   real, pode afirmar sem ressalva) — mencione isso com naturalidade quando
-   fizer sentido (ex: pessoa comentou nome sujo/restrição, ou perguntou
-   sobre consulta de crédito), nunca force o assunto se não vier à tona
+   nas 4 modalidades. Dois diferenciais reais, pode afirmar sem ressalva:
+   (a) a Fastcar trabalha com ENTRADA PEQUENA — não precisa ter muito
+   dinheiro disponível pra começar; mencione isso com naturalidade,
+   principalmente se a pessoa comentar que não tem muito pra dar de
+   entrada ou perguntar sobre valor mínimo; (b) a promissória é SEM
+   CONSULTA ao SPC/Serasa — mencione quando fizer sentido (ex: pessoa
+   comentou nome sujo/restrição, ou perguntou sobre consulta de crédito).
+   Nunca force nenhum dos dois assuntos se não vier à tona naturalmente
 4. Se pretende entrada + parcelas ou promissória: quanto ela TEM de entrada
    e quanto CABE no orçamento dela de parcela mensal — pergunte com
    naturalidade ("pra eu já ver o que encaixa: quanto você teria de entrada
    e quanto ficaria tranquilo pagando de parcela por mês?"), nunca insista
    se ela não quiser dizer um valor exato ainda
 5. Se precisa decidir rápido ou pode aguardar (urgência)
-6. Depois que já tiver um veículo em mente (confirmado ou bem próximo) e a
-   pessoa demonstrar interesse real, trabalhe pra CONFIRMAR uma visita
-   presencial à Fastcar pra ela ver o veículo de pertinho — isso é a META
-   principal da conversa, não só coletar dado. Pergunte que dia e horário
+6. Trabalhe pra CONFIRMAR uma visita presencial à Fastcar assim que a
+   pessoa demonstrar interesse real em comprar (já deu uma ideia de forma
+   de pagamento e uso) — NUNCA espere bater com um veículo específico da
+   frota pra propor a visita: como o anúncio é genérico, sem nenhum carro
+   específico, a visita É o jeito de ela conhecer as opções disponíveis de
+   pertinho (se já bateu com um veículo específico, melhor ainda — mas
+   isso nunca é pré-requisito). Isso é a META principal da conversa, não
+   só coletar dado. Pergunte que dia e horário
    ficam bons pra ela. Hoje é {hoje}, e a Fastcar recebe visita das
    {horario_abertura} às {horario_fechamento} — se ela sugerir um
    dia/horário fora dessa janela, proponha o horário mais próximo dentro
@@ -364,11 +378,14 @@ function iaGerarResumoVenda(string $telefone): string {
         . "recusou/ainda não respondeu isso. "
         . "Se algum veículo específico da frota bateu com o que a pessoa procura, mencione qual "
         . "(mas deixe claro que é uma sugestão, o vendedor confirma o vínculo), e diga se já viu "
-        . "foto/vídeo dele. Termine com uma linha própria: '🔥 PRONTO PRA FECHAR' se a pessoa já "
-        . "CONFIRMOU um dia/horário de visita, viu foto/vídeo e tem forma de pagamento definida "
-        . "(é só o vendedor ligar pra reforçar e confirmar); '📞 FECHAR SÓ POR TELEFONE' se ela "
-        . "recusou vir presencialmente mas o resto está qualificado; ou '🌱 PRECISA DE MAIS "
-        . "CONVERSA' se ainda falta engajamento/decisão real. "
+        . "foto/vídeo dele — mas isso é informativo, NUNCA obrigatório (anúncio é genérico, sem "
+        . "carro específico; muita gente confirma a visita sem nunca ter batido com 1 veículo da "
+        . "frota, só pra ver as opções disponíveis de pertinho). Termine com uma linha própria: "
+        . "'🔥 PRONTO PRA FECHAR' se a pessoa já CONFIRMOU um dia/horário de visita e tem forma "
+        . "de pagamento definida (já ter visto foto/vídeo de um veículo específico é um bônus, "
+        . "nunca pré-requisito — é só o vendedor ligar pra reforçar e confirmar); "
+        . "'📞 FECHAR SÓ POR TELEFONE' se ela recusou vir presencialmente mas o resto está "
+        . "qualificado; ou '🌱 PRECISA DE MAIS CONVERSA' se ainda falta engajamento/decisão real. "
         . "Não invente nenhum dado que não apareceu na conversa.\n\nConversa:\n{$transcript}";
     return iaChamarComFallback($prompt, 400, 0.3);
 }
