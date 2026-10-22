@@ -1556,6 +1556,6 @@ function copiarTextoFallback(texto, callback) {
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>
-<?php include __DIR__ . '/_zapi_status.php'; ?>
+<?php include __DIR__ . '/_zapi_status_vendas.php'; ?>
 </body>
 </html>

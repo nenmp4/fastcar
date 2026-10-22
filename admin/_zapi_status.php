@@ -3,9 +3,12 @@
  * página cheia do admin (mesmo padrão do _notify.php — position:fixed,
  * sem tocar na estrutura própria de cada página) — 23/09/2026, "tem como
  * colocar status da instancia topo zpi conectado em destaque ai eu não
- * preciso ir no saude ver". Só a principal (compra/leads) — as dedicadas
- * de vendas/financeiro não entram aqui, mesmo espírito de escopo enxuto já
- * documentado no projeto; ver CLAUDE.md se um dia pedirem as 3.
+ * preciso ir no saude ver". Só a principal (compra/leads) — financeiro
+ * ainda não tem badge próprio, mesmo espírito de escopo enxuto já
+ * documentado no projeto. Vendas GANHOU o próprio badge em 22/10/2026
+ * (admin/_zapi_status_vendas.php, canalVendasStatusCache()) — as 4 telas
+ * do módulo de vendas (vendas.php/venda.php/vendas_inbox.php/
+ * promissorias.php) incluem aquele NO LUGAR deste, nunca os dois juntos.
  *
  * 28/09/2026, "vamos remover fallback" — a instância fallback (e o estado
  * `reserva_conectado` que ela alimentava aqui) foi removida do projeto.

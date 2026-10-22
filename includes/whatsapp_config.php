@@ -128,6 +128,90 @@ function zapiStatusPrincipalCache(bool $forcar = false): array {
 }
 
 /**
+ * Status da instância Z-API DEDICADA de vendas — mesmo padrão exato de
+ * zapiStatusPrincipalCache(), só lendo zapiCredenciaisVendas() e com cache
+ * key própria (nunca compartilha o cache da principal, senão trocar uma
+ * credencial zeraria o cache da outra sem motivo). 22/10/2026, "em vendas
+ * precisa mostrar se instancia de vendas está conectada".
+ */
+function zapiStatusVendasCache(bool $forcar = false): array {
+    [$inst, $tok, $cli] = zapiCredenciaisVendas();
+    if (!$inst || !$tok) {
+        return ['estado' => 'nao_configurado', 'verificado_em' => null];
+    }
+
+    $cacheRaw = getConfig('zapi_vendas_status_cache');
+    if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
+        [$ts, $json] = explode('|', $cacheRaw, 2);
+        if ((time() - (int)$ts) < 60) {
+            $d = json_decode($json, true);
+            if (is_array($d) && isset($d['estado'])) return $d;
+        }
+    }
+
+    $headers = ['Content-Type: application/json'];
+    if ($cli) $headers[] = 'client-token: ' . $cli;
+
+    $resultado = ['estado' => 'erro', 'verificado_em' => time()];
+    $ch = curl_init(zapiBaseUrl() . "/instances/{$inst}/token/{$tok}/status");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 4,
+        CURLOPT_CONNECTTIMEOUT => 3,
+    ]);
+    $resp = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if (!$err && $code === 200) {
+        $d = json_decode((string)$resp, true);
+        if (is_array($d)) {
+            $resultado = ['estado' => !empty($d['connected']) ? 'conectado' : 'desconectado', 'verificado_em' => time()];
+        }
+    }
+
+    // Mesmo cuidado de zapiStatusPrincipalCache() — essa função pode rodar
+    // sem try/catch no caller (badge do topbar), gravar o cache nunca pode
+    // crashar a página inteira por causa de contenção real do SQLite.
+    try {
+        setConfig('zapi_vendas_status_cache', time() . '|' . json_encode($resultado));
+    } catch (Throwable $e) {
+        // nunca deixa a página inteira cair por causa de um cache de badge
+    }
+    return $resultado;
+}
+
+/**
+ * Status do CANAL DE VENDAS de verdade — mesma ordem de prioridade que
+ * zapiEnviarTexto()/zapiEnviarImagem() usam pra decidir por onde a
+ * mensagem de vendas sai de fato: Evolution DEDICADA de vendas sempre
+ * primeiro quando configurada (independente do kill switch — ela é o
+ * caminho PADRÃO desse canal, não só fallback de emergência); senão, só
+ * se o kill switch estiver desligado, Meta oficial dedicada de vendas (se
+ * ligada em Configurações) ou, por último, a Z-API dedicada de vendas.
+ * 22/10/2026, "em vendas precisa mostrar se instancia de vendas está
+ * conectada" — mesmo papel de canalPrincipalStatusCache(), só que pro
+ * badge das telas do módulo de vendas (admin/_zapi_status_vendas.php).
+ */
+function canalVendasStatusCache(): array {
+    if (evolutionConfiguredVendas()) {
+        return evolutionStatusCache(false, 'vendas') + ['provider' => 'evolution'];
+    }
+    if (whatsappZapiMetaDesativado()) {
+        // Nenhum provider de vendas disponível com o kill switch ligado —
+        // mostra "Evolution não configurado" (é o caminho recomendado agora),
+        // nunca finge que Z-API/Meta estão em uso.
+        return ['estado' => 'nao_configurado', 'verificado_em' => null, 'provider' => 'evolution'];
+    }
+    if (oficialEhProviderVendas()) {
+        return oficialStatusCache(false, 'vendas') + ['provider' => 'oficial'];
+    }
+    return zapiStatusVendasCache() + ['provider' => 'zapi'];
+}
+
+/**
  * Status do CANAL PRINCIPAL de verdade — Z-API, Meta oficial ou Evolution,
  * conforme `whatsapp_provider_principal` (o mesmo gate que
  * zapiEnviarTexto() usa pra decidir por onde a resposta sai). 29/09/2026,

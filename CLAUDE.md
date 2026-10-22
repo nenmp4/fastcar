@@ -13310,6 +13310,76 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
   Drive, ou outra coisa (rede entre o navegador e o servidor, por
   exemplo, que esta instrumentação não mede — só começa a contar DEPOIS
   que o POST já chegou no servidor).
+- **Qualificação de vendas ajustada pro anúncio real (genérico, sem
+  carro específico) + entrada pequena como diferencial** (22/10/2026,
+  "na verdade os anuncios não vão ser carro - anuncio simples compre seu
+  carro na promissória temos atender esse cliente e trazer ele ate
+  fastcar ele olhar opções ai pode qualificar ele veja como trabalhandos
+  com pequena entrada") — até aqui o prompt da IA de vendas
+  (`includes/ia_qualificacao_vendas.php`) nunca deixava explícito de onde
+  o lead vinha, e só propunha a visita presencial DEPOIS de já ter batido
+  com um veículo específico da frota. Corrigido: (1) novo parágrafo logo
+  na abertura do prompt deixando claro que o lead normalmente vem de um
+  anúncio SIMPLES e GENÉRICO ("compre seu carro na promissória", entrada
+  pequena em destaque) — nunca de um carro específico — instruindo a IA a
+  perguntar do zero o que a pessoa procura, nunca assumir que ela viu
+  algum veículo num anúncio; (2) item 3 do roteiro (forma de pagamento)
+  ganhou "entrada pequena" como 2º diferencial real que a IA pode afirmar
+  sem ressalva, ao lado do já existente "sem consulta SPC/Serasa" — mencionado
+  com naturalidade quando a pessoa comentar que não tem muito dinheiro
+  disponível; (3) item 6 (confirmar visita) deixou de exigir bater com um
+  veículo específico antes de propor a visita — já que o anúncio é
+  genérico, a própria visita é o jeito da pessoa conhecer as opções
+  disponíveis, então a IA propõe assim que vê intenção real de compra
+  (forma de pagamento + uso já esboçados); (4) `iaGerarResumoVenda()`
+  ajustado no mesmo espírito — "🔥 PRONTO PRA FECHAR" não exige mais ter
+  visto foto/vídeo de um veículo específico, só visita confirmada + forma
+  de pagamento definida. `php -l` + `tests/smoke.php` limpos. Mudança só
+  de prompt (julgamento de IA) — não testável contra servidor fake,
+  validação real só na próxima conversa de vendas de verdade.
+- **Badge de status da instância de vendas, nas 4 telas do módulo**
+  (22/10/2026, "em vendadas precisa mostrar se instancia de vendas está
+  conectada") — até aqui `admin/vendas.php`/`venda.php`/`vendas_inbox.php`/
+  `promissorias.php` incluíam o mesmo badge do canal PRINCIPAL
+  (`admin/_zapi_status.php`, compra/leads) — irrelevante pra saber se o
+  número que o vendedor de fato usa pra falar com o comprador está no ar
+  (o próprio docblock do badge principal já dizia isso como escopo
+  enxuto: "as dedicadas de vendas/financeiro não entram aqui... ver
+  CLAUDE.md se um dia pedirem as 3" — hoje é esse dia, só pro lado de
+  vendas). Nova `canalVendasStatusCache()` (`includes/whatsapp_config.php`)
+  espelha `canalPrincipalStatusCache()`, mas com a MESMA ordem de
+  prioridade que `zapiEnviarTexto()` já usa pro canal `'vendas'`: Evolution
+  DEDICADA de vendas sempre primeiro quando configurada (independente do
+  kill switch — ela é o caminho padrão desse canal, não só um fallback de
+  emergência); sem ela, só com o kill switch desligado, cai pra Meta
+  oficial dedicada de vendas (se ligada em Configurações) ou, por último,
+  pra Z-API dedicada de vendas. `evolutionStatusCache()`
+  (`includes/whatsapp_evolution.php`) ganhou parâmetro `$canal` (mesmo
+  papel de `oficialStatusCache()`, que já aceitava — `evolutionCredenciaisVendas()`/
+  `_Financeiro()` quando pedido, cache key própria por canal pra nunca
+  colidir com o cache de 60s da principal) — chamada sem parâmetro continua
+  idêntica a antes, nenhum caller existente precisou mudar. Nova
+  `zapiStatusVendasCache()` (`includes/whatsapp_config.php`), mesmo padrão
+  exato de `zapiStatusPrincipalCache()`, só lendo `zapiCredenciaisVendas()`
+  e com cache key própria (`zapi_vendas_status_cache`). Novo partial
+  `admin/_zapi_status_vendas.php` (mesmo layout/CSS/polling de 45s do
+  badge principal, rótulos com "(vendas)" — ex: "🟣 Evolution (vendas)
+  conectado") + endpoint `admin/zapi_status_vendas_ajax.php` — as 4 telas
+  trocaram o include de `_zapi_status.php` pra este, NO LUGAR (nunca os
+  dois juntos, ruído). `admin/_bootstrap.php`: `zapi_status_vendas_ajax.php`
+  adicionado ao allowlist central do perfil `vendedor` (mesma classe de
+  bug já documentada várias vezes aqui — sem isso o `fetch()` levaria 302
+  pra `vendas.php` e o badge nunca atualizaria pra esse perfil). Testado
+  em banco isolado contra fake Evolution+Z-API locais, 4 cenários: nada
+  configurado → "Evolution não configurado" (nunca finge Z-API/Meta em
+  uso); Evolution vendas configurada com o kill switch no padrão (ligado)
+  → conecta mesmo assim, confirma que Evolution dedicada nunca depende do
+  kill switch; kill switch desligado + Z-API vendas configurada (sem
+  Evolution) → cai pro Z-API, status "conectado" batendo com o fake
+  server; kill switch desligado + nada configurado → "não configurado"
+  com provider `'zapi'` (reflete o caminho que seria tentado). Sem
+  migração de schema (chaves novas vivem em `config`, livre). `php -l` +
+  `tests/smoke.php` limpos.
 
 ## Pendências
 

@@ -84,7 +84,12 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // vezes ("relaxar o guard dentro do arquivo não basta sem
         // atualizar o allowlist central") — ver mesma correção nos guards
         // de avaliador/financeiro abaixo.
-        'notificacoes.php', 'zapi_status_ajax.php'];
+        'notificacoes.php', 'zapi_status_ajax.php',
+        // 22/10/2026 — badge dedicado do canal de vendas (ver
+        // admin/_zapi_status_vendas.php), mesma classe de bug do
+        // comentário acima — precisa estar no allowlist senão o fetch()
+        // leva 302 pra vendas.php.
+        'zapi_status_vendas_ajax.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;

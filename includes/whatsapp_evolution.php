@@ -761,14 +761,29 @@ function evolutionBaixarMidiaRecebida(string $messageId, string $tipo): ?array {
 /**
  * Status cacheado (60s TTL, mesmo padrão exato de zapiStatusPrincipalCache()/
  * oficialStatusCache()) — pro badge do topbar.
+ *
+ * 22/10/2026 — ganhou `$canal` (mesmo papel de oficialStatusCache()), pra
+ * checar a instância DEDICADA de vendas/financeiro em vez da principal.
+ * Omitido (padrão 'principal') continua funcionando igual a antes, nenhum
+ * caller existente precisou mudar.
  */
-function evolutionStatusCache(bool $forcar = false): array {
-    [$base, $instance, $apiKey] = evolutionCredenciais();
+function evolutionStatusCache(bool $forcar = false, string $canal = 'principal'): array {
+    $credenciais = match ($canal) {
+        'vendas' => evolutionCredenciaisVendas(),
+        'financeiro' => evolutionCredenciaisFinanceiro(),
+        default => evolutionCredenciais(),
+    };
+    [$base, $instance, $apiKey] = $credenciais;
     if (!$base || !$instance || !$apiKey) {
         return ['estado' => 'nao_configurado', 'verificado_em' => null];
     }
 
-    $cacheRaw = getConfig('evolution_status_cache');
+    $chaveCache = match ($canal) {
+        'vendas' => 'evolution_vendas_status_cache',
+        'financeiro' => 'evolution_financeiro_status_cache',
+        default => 'evolution_status_cache',
+    };
+    $cacheRaw = getConfig($chaveCache);
     if (!$forcar && $cacheRaw && str_contains($cacheRaw, '|')) {
         [$ts, $json] = explode('|', $cacheRaw, 2);
         if ((time() - (int)$ts) < 60) {
@@ -803,7 +818,7 @@ function evolutionStatusCache(bool $forcar = false): array {
     // canalPrincipalStatusCache(); gravar o cache nunca pode crashar a
     // página inteira por causa de contenção real do SQLite.
     try {
-        setConfig('evolution_status_cache', time() . '|' . json_encode($resultado));
+        setConfig($chaveCache, time() . '|' . json_encode($resultado));
     } catch (Throwable $e) {
         // nunca deixa a página inteira cair por causa de um cache de badge
     }
