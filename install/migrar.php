@@ -1580,6 +1580,7 @@ foreach ([
     ['parcelamento_valor_parcela', 'ALTER TABLE vendas ADD COLUMN parcelamento_valor_parcela REAL'],
     ['parcelamento_qtd_parcelas', 'ALTER TABLE vendas ADD COLUMN parcelamento_qtd_parcelas INTEGER'],
     ['parcelamento_primeira_parcela_data', 'ALTER TABLE vendas ADD COLUMN parcelamento_primeira_parcela_data DATE'],
+    ['parcelamento_periodicidade', "ALTER TABLE vendas ADD COLUMN parcelamento_periodicidade TEXT NOT NULL DEFAULT 'mensal' CHECK (parcelamento_periodicidade IN ('mensal', 'semanal'))"],
 ] as [$coluna, $sql]) {
     if (!colunaExiste($db, 'vendas', $coluna)) {
         try {

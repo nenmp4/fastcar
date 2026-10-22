@@ -1089,6 +1089,31 @@ function marcarPerdida(int $oportunidadeId, string $motivo, ?int $responsavelId 
 }
 
 /**
+ * Reabre uma oportunidade 'perdido'/'sem_perfil' — 22/10/2026, "temos
+ * adcionar uma opção de clientes encerrado para voltar pois ancerram
+ * cliente por engano". Até aqui só existia via CLI
+ * (install/reabrir_lead.php, por telefone, sem botão na tela de
+ * propósito — ver docblock de lá); vira botão direto na aba "❌
+ * Encerradas" do funil (admin/index.php), mesma lógica exata do script:
+ * limpa `motivo_perda` (nunca deixa um motivo de perda velho pendurado
+ * numa oportunidade ativa de novo) e volta pra etapa 'whatsapp' via
+ * mudarEtapa() (regra #6, grava histórico). Nunca reabre quem já está
+ * ativa/fechada — só faz sentido a partir de 'perdido'/'sem_perfil';
+ * chamar fora disso devolve false sem mexer em nada.
+ */
+function reabrirOportunidade(int $oportunidadeId, ?int $responsavelId = null): bool {
+    $db = getDB();
+    $stmt = $db->prepare('SELECT etapa FROM oportunidades WHERE id = ?');
+    $stmt->execute([$oportunidadeId]);
+    $etapaAtual = $stmt->fetchColumn();
+    if (!in_array($etapaAtual, ['perdido', 'sem_perfil'], true)) {
+        return false;
+    }
+    $db->prepare('UPDATE oportunidades SET motivo_perda = NULL WHERE id = ?')->execute([$oportunidadeId]);
+    return mudarEtapa($oportunidadeId, 'whatsapp', $responsavelId, 'Reaberta manualmente — encerrada por engano.');
+}
+
+/**
  * Seleção em massa (29/09/2026, pedido direto: "permitir que selecione em
  * massa os leads pra marcar... desistiu... negocio [pode] retornar") — marca
  * várias oportunidades como perdidas numa passada só, mesmo motivo pra

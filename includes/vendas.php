@@ -486,13 +486,13 @@ function salvarBemTrocaVenda(int $vendaId, array $dados): void {
  * dava pra citar "financiado em Nx de R$Y, vencendo dia Z" no Quadro-
  * Resumo do contrato depois de gerado.
  */
-function salvarParcelamentoTermosVenda(int $vendaId, float $valorParcela, int $qtdParcelas, string $primeiraParcelaData): void {
+function salvarParcelamentoTermosVenda(int $vendaId, float $valorParcela, int $qtdParcelas, string $primeiraParcelaData, string $periodicidade = 'mensal'): void {
     $db = getDB();
     $db->prepare("
         UPDATE vendas SET parcelamento_valor_parcela = ?, parcelamento_qtd_parcelas = ?,
-            parcelamento_primeira_parcela_data = ?, updated_at = datetime('now','localtime')
+            parcelamento_primeira_parcela_data = ?, parcelamento_periodicidade = ?, updated_at = datetime('now','localtime')
         WHERE id = ?
-    ")->execute([$valorParcela, $qtdParcelas, $primeiraParcelaData, $vendaId]);
+    ")->execute([$valorParcela, $qtdParcelas, $primeiraParcelaData, $periodicidade, $vendaId]);
 }
 
 /**
@@ -594,7 +594,11 @@ function registrarVendaPromissoria(array $dados, int $responsavelId): array {
     $parcelamento = null;
     $p = $dados['parcelamento'] ?? null;
     if ($p && (float)($p['valor_parcela'] ?? 0) > 0 && (int)($p['qtd_parcelas'] ?? 0) > 0 && !empty($p['primeira_parcela_data'])) {
-        salvarParcelamentoTermosVenda($vendaId, (float)$p['valor_parcela'], (int)$p['qtd_parcelas'], (string)$p['primeira_parcela_data']);
+        // 22/10/2026, "cliente quer pagar valor semanal mais opção e
+        // condição de venda" — mesma whitelist de admin/venda.php, nunca
+        // confia em valor cru vindo de fora.
+        $periodicidadeP = in_array($p['periodicidade'] ?? '', ['mensal', 'semanal'], true) ? $p['periodicidade'] : 'mensal';
+        salvarParcelamentoTermosVenda($vendaId, (float)$p['valor_parcela'], (int)$p['qtd_parcelas'], (string)$p['primeira_parcela_data'], $periodicidadeP);
         $parcelamento = $p;
     }
 

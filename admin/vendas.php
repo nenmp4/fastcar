@@ -109,8 +109,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
             $vpParcela = valorMonetario((string)($_POST['parcelamento_valor_parcela'] ?? ''));
             $qtdParcelasPost = (int)($_POST['parcelamento_qtd_parcelas'] ?? 0);
             $primeiraParcelaPost = (string)($_POST['parcelamento_primeira_parcela_data'] ?? '');
+            // 22/10/2026, "cliente quer pagar valor semanal mais opção e
+            // condição de venda" — mesma whitelist do card de condições em
+            // admin/venda.php; só persiste o termo aqui (vira a 1ª resposta
+            // mostrada no resumo pós-cadastro), a geração de verdade do
+            // plano financeiro continua sendo o botão "Gerar plano de
+            // parcelamento" em admin/venda.php.
+            $periodicidadePromissoriaPost = in_array($_POST['parcelamento_periodicidade'] ?? '', ['mensal', 'semanal'], true) ? $_POST['parcelamento_periodicidade'] : 'mensal';
             if ($vpParcela && $vpParcela > 0 && $qtdParcelasPost > 0 && $primeiraParcelaPost !== '') {
-                $parcelamentoPost = ['valor_parcela' => $vpParcela, 'qtd_parcelas' => $qtdParcelasPost, 'primeira_parcela_data' => $primeiraParcelaPost];
+                $parcelamentoPost = ['valor_parcela' => $vpParcela, 'qtd_parcelas' => $qtdParcelasPost, 'primeira_parcela_data' => $primeiraParcelaPost, 'periodicidade' => $periodicidadePromissoriaPost];
             }
 
             $resultadoPromissoria = registrarVendaPromissoria([
@@ -959,7 +966,7 @@ function bulkLimparSelecao() {
 </script>
 <?php endif; ?>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
-<?php include __DIR__ . '/_notify.php'; ?>
+<?php $notifModulo = 'vendas'; include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>

@@ -572,7 +572,12 @@ function gerarPdfContratoVenda(array $c): string {
     _pdfLinhaResumo($pdf, 'Forma de pagamento do COMPRADOR', $c['forma_pagamento']);
     _pdfLinhaResumo($pdf, 'Saldo de preço devido pelo COMPRADOR à FASTCAR', $c['saldo_preco_devido'] ? _fmtMoeda($c['saldo_preco_devido']) : 'inexistente');
     if (!empty($c['parcelamento_qtd_parcelas']) && !empty($c['parcelamento_valor_parcela'])) {
-        _pdfLinhaResumo($pdf, 'Parcelamento do saldo remanescente', "{$c['parcelamento_qtd_parcelas']}x de " . _fmtMoeda($c['parcelamento_valor_parcela']) . ", 1ª parcela em {$c['parcelamento_primeira_parcela_data']}");
+        // 22/10/2026, "cliente quer pagar valor semanal" — a cadência
+        // mensal é o padrão implícito de sempre, nunca precisou ser dita
+        // explicitamente aqui; só a semanal ganha o parênteses, pra não
+        // mudar o texto de nenhum contrato já gerado/assinado antes disso.
+        $sufixoPeriodicidade = ($c['parcelamento_periodicidade'] ?? 'mensal') === 'semanal' ? ' (parcela semanal)' : '';
+        _pdfLinhaResumo($pdf, 'Parcelamento do saldo remanescente', "{$c['parcelamento_qtd_parcelas']}x de " . _fmtMoeda($c['parcelamento_valor_parcela']) . ", 1ª parcela em {$c['parcelamento_primeira_parcela_data']}{$sufixoPeriodicidade}");
     }
     _pdfLinhaResumo($pdf, 'Natureza do gravame/restrição', 'Alienação fiduciária em favor da instituição financeira indicada abaixo');
     _pdfLinhaResumo($pdf, 'Instituição financeira/credor vinculado', $c['banco_financiamento']);

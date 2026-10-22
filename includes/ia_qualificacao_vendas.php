@@ -25,6 +25,7 @@ require_once __DIR__ . '/openai.php';
 require_once __DIR__ . '/vendas.php';
 require_once __DIR__ . '/ia_qualificacao.php'; // iaMontarHistoricoGemini()/iaChamarComFallback() — genéricos por telefone, reaproveitados aqui
 require_once __DIR__ . '/fila_leads.php'; // filaHorarioAbertura()/filaHorarioFechamento() — 15/10/2026, janela de visita presencial reaproveita o mesmo horário comercial já configurado
+require_once __DIR__ . '/notificacoes.php'; // notificarVisitaConfirmadaVenda() — 22/10/2026, sino + WhatsApp interno quando aceita_visitar_fastcar vira 1
 
 const IA_QUALIFICACAO_VENDAS_PROMPT_SISTEMA_BASE = <<<PROMPT
 Você é da equipe Fastcar, empresa que VENDE veículos usados da própria
@@ -406,6 +407,7 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     if (!$v) return false;
 
     $avancouDadoReal = false;
+    $visitaConfirmadaAgora = false; // 22/10/2026, notificarVisitaConfirmadaVenda() — ver abaixo
     $campos = ['veiculo_interesse_texto', 'tipo_uso_veiculo', 'forma_pagamento_pretendida', 'urgencia'];
     $sets = [];
     $params = [];
@@ -440,6 +442,7 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         $params[] = $dados['aceita_visitar_fastcar'] ? 1 : 0;
         if ($dados['aceita_visitar_fastcar']) {
             $sets[] = "visita_confirmada_em = datetime('now','localtime')";
+            $visitaConfirmadaAgora = true;
         }
         $avancouDadoReal = true;
     }
@@ -484,6 +487,17 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         $params[] = $vendaId;
         $db->prepare("UPDATE vendas SET " . implode(', ', $sets) . ", updated_at = datetime('now','localtime') WHERE id = ?")
            ->execute($params);
+    }
+
+    // 22/10/2026, "todo crm cliente aceitar vim aqui nas fastcar notificar
+    // whatsapp do sistema notificação" — só DEPOIS do UPDATE commitar, pra
+    // notificarVisitaConfirmadaVenda() (que faz um SELECT fresco) já ler o
+    // visita_dia_horario_texto/visita_confirmada_em recém-gravados. Nunca
+    // dispara de novo numa reconfirmação do mesmo "sim" — $visitaConfirmadaAgora
+    // só fica true na transição NULL→1, mesma guarda de $v['aceita_visitar_fastcar']
+    // === null lá em cima.
+    if ($visitaConfirmadaAgora) {
+        notificarVisitaConfirmadaVenda($vendaId);
     }
 
     return $avancouDadoReal;

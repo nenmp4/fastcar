@@ -172,6 +172,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'atualiz
     exit;
 }
 
+// 22/10/2026, "temos adcionar uma opção de clientes encerrado para voltar
+// pois ancerram cliente por engano" — botão "↩️ Reabrir" na aba "❌
+// Encerradas", chamando reabrirOportunidade() (includes/oportunidades.php).
+// Até aqui só existia via CLI (install/reabrir_lead.php); mesmo guard de
+// supervisor/dono dos outros handlers desta página.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'reabrir_oportunidade') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera oportunidades.');
+    }
+    $idReabrirPost = (int)($_POST['id'] ?? 0);
+    try {
+        if ($souDono) {
+            $stmtDonoReabrir = $db->prepare('SELECT responsavel_id FROM oportunidades WHERE id = ?');
+            $stmtDonoReabrir->execute([$idReabrirPost]);
+            if ((int)$stmtDonoReabrir->fetchColumn() !== $meuId) {
+                throw new RuntimeException('Essa oportunidade não é da sua carteira.');
+            }
+        }
+        reabrirOportunidade($idReabrirPost, $meuId);
+    } catch (Throwable $e) {
+        // best-effort — se falhar (id inválido, não é dono, já estava ativa),
+        // só não reabre; a lista recarrega igual, sem quebrar a página.
+    }
+    header('Location: /admin/index.php?' . http_build_query($_GET));
+    exit;
+}
+
 // 05/10/2026, "opçao adcionar uma opotunidade manual" — pedido pra cobrir o
 // lead que chegou por ligação, indicação ou presencial, sem nenhuma
 // mensagem no WhatsApp pra disparar a entrada normal do funil. Reaproveita
@@ -1107,7 +1139,20 @@ if ($podeSelecionarEmMassa):
                     <small><?= e($op['motivo_perda'] ?: ($op['observacao_manual'] ?? '') ?: '—') ?></small>
                 <?php endif; ?>
             </td>
-            <td><a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">Abrir →</a></td>
+            <td>
+                <a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">Abrir →</a>
+                <?php if ($etapaBuscandoEncerradas && $perfil !== 'supervisor'): ?>
+                    <?php // 22/10/2026, "clientes encerrado para voltar pois
+                          // ancerram cliente por engano" — botão de reabrir
+                          // direto na aba Encerradas, antes só via CLI. ?>
+                    <form method="post" style="display:inline" onsubmit="return confirmarAcao(this, 'Reabrir essa oportunidade? Volta pra etapa WhatsApp, pronta pra atender de novo.');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="reabrir_oportunidade">
+                        <input type="hidden" name="id" value="<?= (int)$op['id'] ?>">
+                        <button type="submit" class="btn-texto" title="Reabrir oportunidade">↩️ Reabrir</button>
+                    </form>
+                <?php endif; ?>
+            </td>
         </tr>
     <?php endforeach; ?>
     </tbody>

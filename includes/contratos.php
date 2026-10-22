@@ -604,6 +604,7 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         'parcelamento_valor_parcela'    => $v['parcelamento_valor_parcela'] !== null ? (float)$v['parcelamento_valor_parcela'] : null,
         'parcelamento_qtd_parcelas'     => $v['parcelamento_qtd_parcelas'] !== null ? (int)$v['parcelamento_qtd_parcelas'] : null,
         'parcelamento_primeira_parcela_data' => $v['parcelamento_primeira_parcela_data'] ? date('d/m/Y', strtotime($v['parcelamento_primeira_parcela_data'])) : '',
+        'parcelamento_periodicidade'    => $v['parcelamento_periodicidade'] ?: 'mensal',
         // Testemunha 1 = responsável ATUAL da venda (vendedor), testemunha
         // 2 = quem ele escolheu — mesma mecânica dinâmica do lado de
         // compra, 02/10/2026, ver contratoCamposTestemunhas() acima.

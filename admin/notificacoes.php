@@ -17,6 +17,19 @@
  *
  * `?historico=1`: painel rolável do sino — últimas N notificações da
  * tabela (lidas+não lidas), marca tudo como lida na mesma chamada.
+ *
+ * `?modulo=vendas` (22/10/2026, "em vendas só aparecer notificações
+ * somente da vendas") — passado pelas 4 telas do módulo de vendas
+ * (admin/vendas.php/venda.php/vendas_inbox.php/promissorias.php, via
+ * `$notifModulo='vendas'` setado antes de incluir admin/_notify.php).
+ * Ausente (todo o resto do admin): comportamento IDÊNTICO a antes desta
+ * feature, nunca muda. Presente: o "lead novo" live vira `vendas` em vez
+ * de `oportunidades` (nova função — nunca existia um feed desse tipo pro
+ * lado de vendas), e os eventos persistidos da tabela `notificacoes`
+ * ficam restritos aos tipos de venda (tiposNotificacaoPorModulo(),
+ * includes/notificacoes.php) — nunca mistura "cliente confirmou
+ * documentos" do funil de COMPRA enquanto o usuário está no módulo de
+ * vendas, mesmo sendo super_admin/supervisor vendo os dois funis.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -26,9 +39,11 @@ header('Cache-Control: no-store');
 $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId  = (int)$_SESSION['admin_id'];
+$modulo = in_array($_GET['modulo'] ?? '', ['vendas'], true) ? $_GET['modulo'] : null;
+$tiposFiltro = tiposNotificacaoPorModulo($modulo);
 
 if (isset($_GET['historico'])) {
-    marcarNotificacoesLidas($meuId);
+    marcarNotificacoesLidas($meuId, $tiposFiltro);
     $itens = array_map(fn($n) => [
         'id'         => (int)$n['id'],
         'tipo'       => $n['tipo'],
@@ -36,7 +51,7 @@ if (isset($_GET['historico'])) {
         'mensagem'   => $n['mensagem'],
         'url'        => $n['url'],
         'created_at' => $n['created_at'],
-    ], listarNotificacoes($meuId, 30));
+    ], listarNotificacoes($meuId, 30, $tiposFiltro));
 
     // 08/10/2026, "ai tem vim os carros atribuidos... deixa uns 7 ultimos"
     // — achado real: pro perfil avaliador, o sino nunca tinha NADA
@@ -79,21 +94,6 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $desde)) {
 }
 $desdeNotifId = (int)($_GET['desde_notif_id'] ?? 0);
 
-if ($perfil === 'super_admin') {
-    $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.created_at
-        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
-        WHERE o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
-    ");
-    $stmt->execute([$desde]);
-} else {
-    $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.updated_at AS created_at
-        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
-        WHERE o.responsavel_id = ? AND o.updated_at > ? ORDER BY o.updated_at ASC LIMIT 20
-    ");
-    $stmt->execute([$meuId, $desde]);
-}
 // 01/10/2026, "notificação marca 1, clico, não guarda histórico" — o painel
 // (?historico=1) só lia a tabela `notificacoes`, nunca "lead novo" (sempre
 // ao vivo, nunca persistido) — clicar o sino depois de um toast de lead
@@ -103,20 +103,83 @@ if ($perfil === 'super_admin') {
 // servidor — nunca precisou virar linha na tabela `notificacoes` (lead
 // novo já tem o próprio badge/contador, duplicar criaria 2 fontes de
 // verdade pro mesmo evento).
-$leads = array_map(fn($o) => [
-    'id'      => (int)$o['id'],
-    'tipo'    => 'novo_lead',
-    'titulo'  => '🚗 Novo lead',
-    'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
-    'url'     => '/admin/oportunidade.php?id=' . $o['id'],
-    'created_at' => $o['created_at'],
-], $stmt->fetchAll());
+if ($modulo === 'vendas') {
+    // 22/10/2026 — nunca existia feed de "lead novo" pro funil de vendas;
+    // criado só aqui, escopado ao módulo, nunca aparecendo misturado com
+    // compra em nenhuma outra tela. perfilVeTudo() (não `$perfil ===
+    // 'super_admin'` puro, diferente do branch de compra abaixo — aqui é
+    // código novo, sem comportamento antigo pra preservar) deixa o
+    // supervisor ver todo lead de venda novo, mesmo padrão "acompanha
+    // tudo" já usado no resto do projeto.
+    if (perfilVeTudo()) {
+        $stmt = $db->prepare("
+            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, v.created_at
+            FROM vendas v WHERE v.created_at > ? ORDER BY v.created_at ASC LIMIT 20
+        ");
+        $stmt->execute([$desde]);
+    } else {
+        $stmt = $db->prepare("
+            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, v.updated_at AS created_at
+            FROM vendas v WHERE v.responsavel_id = ? AND v.updated_at > ? ORDER BY v.updated_at ASC LIMIT 20
+        ");
+        $stmt->execute([$meuId, $desde]);
+    }
+    $leads = array_map(function ($v) use ($db) {
+        $veiculo = trim((string)($v['veiculo_interesse_texto'] ?? ''));
+        if ($v['oportunidade_id']) {
+            $stmtOp = $db->prepare("SELECT veiculo_marca, veiculo_modelo FROM oportunidades WHERE id = ?");
+            $stmtOp->execute([$v['oportunidade_id']]);
+            $op = $stmtOp->fetch();
+            $vinculado = $op ? trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) : '';
+            if ($vinculado !== '') $veiculo = $vinculado;
+        }
+        return [
+            'id'         => (int)$v['id'],
+            'tipo'       => 'novo_lead_venda',
+            'titulo'     => '🛒 Novo lead de venda',
+            'mensagem'   => ($v['comprador_nome'] ?: '(sem nome)') . ($veiculo !== '' ? ' — ' . $veiculo : ''),
+            'url'        => '/admin/venda.php?id=' . $v['id'],
+            'created_at' => $v['created_at'],
+        ];
+    }, $stmt->fetchAll());
+} elseif ($perfil === 'super_admin') {
+    $stmt = $db->prepare("
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.created_at
+        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
+    ");
+    $stmt->execute([$desde]);
+    $leads = array_map(fn($o) => [
+        'id'      => (int)$o['id'],
+        'tipo'    => 'novo_lead',
+        'titulo'  => '🚗 Novo lead',
+        'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
+        'url'     => '/admin/oportunidade.php?id=' . $o['id'],
+        'created_at' => $o['created_at'],
+    ], $stmt->fetchAll());
+} else {
+    $stmt = $db->prepare("
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.updated_at AS created_at
+        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE o.responsavel_id = ? AND o.updated_at > ? ORDER BY o.updated_at ASC LIMIT 20
+    ");
+    $stmt->execute([$meuId, $desde]);
+    $leads = array_map(fn($o) => [
+        'id'      => (int)$o['id'],
+        'tipo'    => 'novo_lead',
+        'titulo'  => '🚗 Novo lead',
+        'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
+        'url'     => '/admin/oportunidade.php?id=' . $o['id'],
+        'created_at' => $o['created_at'],
+    ], $stmt->fetchAll());
+}
 
+[$filtroNotifSql, $filtroNotifParams] = _notificacoesFiltroTipo($tiposFiltro);
 $stmtNotif = $db->prepare("
     SELECT id, tipo, titulo, mensagem, url FROM notificacoes
-    WHERE usuario_id = ? AND id > ? ORDER BY id ASC LIMIT 20
+    WHERE usuario_id = ? AND id > ?{$filtroNotifSql} ORDER BY id ASC LIMIT 20
 ");
-$stmtNotif->execute([$meuId, $desdeNotifId]);
+$stmtNotif->execute(array_merge([$meuId, $desdeNotifId], $filtroNotifParams));
 $eventosLinhas = $stmtNotif->fetchAll();
 $eventos = array_map(fn($n) => [
     'id'       => (int)$n['id'],
@@ -131,5 +194,5 @@ echo json_encode([
     'novos'           => array_merge($leads, $eventos),
     'proximo_desde'   => $agora,
     'proximo_notif_id' => $proximoNotifId,
-    'nao_lidos_notif' => contarNotificacoesNaoLidas($meuId),
+    'nao_lidos_notif' => contarNotificacoesNaoLidas($meuId, $tiposFiltro),
 ]);

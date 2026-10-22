@@ -34,8 +34,20 @@
  * navegador/aparelho, mesmo espírito de conveniência por-viewer já usado
  * no resto do projeto pra estado que não precisa ser 100% confiável/
  * compartilhado entre dispositivos.
+ *
+ * 22/10/2026, "em vendas só aparecer notificações somente da vendas" —
+ * `$notifModulo` opcional, setado pela página ANTES deste include (ex:
+ * `<?php $notifModulo = 'vendas'; include __DIR__ . '/_notify.php'; ?>`).
+ * `null` (as ~32 páginas que nunca setam essa variável) é o padrão de
+ * sempre, intocado. As 4 telas do módulo de vendas
+ * (admin/vendas.php/venda.php/vendas_inbox.php/promissorias.php) setam
+ * 'vendas' — thread do valor até admin/notificacoes.php via `&modulo=`
+ * nas 2 chamadas fetch, que escopa tanto o "lead novo" ao vivo quanto os
+ * eventos persistidos (ver admin/notificacoes.php e
+ * includes/notificacoes.php::tiposNotificacaoPorModulo()).
  */
 $meuId = (int)($_SESSION['admin_id'] ?? 0);
+$notifModulo = $notifModulo ?? null;
 ?>
 <div id="notif-sino" class="notif-sino" title="Notificações" role="button" tabindex="0" aria-expanded="false">
     🔔<span id="notif-contador" class="notif-contador" hidden>0</span>
@@ -48,6 +60,8 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
 
 <script>
 (function () {
+    var MODULO = <?= $notifModulo !== null ? json_encode($notifModulo) : 'null' ?>;
+    var SUFIXO_MODULO = MODULO ? ('&modulo=' + encodeURIComponent(MODULO)) : '';
     var CHAVE = 'fastcar_notif_desde_<?= $meuId ?>';
     var CHAVE_NOTIF_ID = 'fastcar_notif_id_<?= $meuId ?>';
     var CHAVE_LEADS_HIST = 'fastcar_notif_leads_hist_<?= $meuId ?>';
@@ -149,7 +163,7 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
 
     function checar() {
         if (document.hidden) return; // não gasta requisição com aba em segundo plano
-        var url = '/admin/notificacoes.php?desde=' + encodeURIComponent(desde) + '&desde_notif_id=' + desdeNotifId;
+        var url = '/admin/notificacoes.php?desde=' + encodeURIComponent(desde) + '&desde_notif_id=' + desdeNotifId + SUFIXO_MODULO;
         fetch(url, { credentials: 'same-origin' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (data) {
@@ -158,7 +172,9 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
                     mostrarToasts(data.novos);
                     var novosLeads = [];
                     data.novos.forEach(function (n) {
-                        if (n.tipo === 'novo_lead') { naoLidosLeads++; novosLeads.push(n); }
+                        // starts-with, nunca só '===' — cobre 'novo_lead' (compra) E
+                        // 'novo_lead_venda' (22/10/2026) sem precisar listar cada um
+                        if (n.tipo.indexOf('novo_lead') === 0) { naoLidosLeads++; novosLeads.push(n); }
                     });
                     salvarLeadsNoHistoricoLocal(novosLeads);
                 }
@@ -195,7 +211,7 @@ $meuId = (int)($_SESSION['admin_id'] ?? 0);
         painelEl.hidden = false;
         sino.setAttribute('aria-expanded', 'true');
         painelListaEl.innerHTML = '<div class="notif-painel-vazio">Carregando…</div>';
-        fetch('/admin/notificacoes.php?historico=1', { credentials: 'same-origin' })
+        fetch('/admin/notificacoes.php?historico=1' + SUFIXO_MODULO, { credentials: 'same-origin' })
             .then(function (r) { return r.ok ? r.json() : { itens: [] }; })
             .then(function (data) {
                 // Mescla o histórico do servidor (eventos persistidos, ex:

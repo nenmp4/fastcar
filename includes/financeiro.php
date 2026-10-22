@@ -167,6 +167,18 @@ function finResumoLancamentosVenda(int $vendaId): array {
  * real). Só passado explícito por quem grava venda RETROATIVA
  * (install/gerar_lancamentos_vendas_retroativos.php), pra nunca datar a
  * entrada de uma venda de meses atrás como se fosse hoje.
+ *
+ * $periodicidade (novo, 22/10/2026, "cliente quer pagar valor semanal
+ * como fazemos") — `'mensal'` (padrão, comportamento de sempre, intocado)
+ * ou `'semanal'`: vencimentos a cada 7 dias em vez de a cada mês, mesmo
+ * raciocínio de "recalcula a partir da parcela 1, nunca composto sobre a
+ * anterior" de sempre. Escopo confirmado com o usuário (AskUserQuestion):
+ * **só este caminho LOCAL** — `asaasGerarCobrancaParceladaVenda()`
+ * (includes/asaas.php) nunca foi tocada, continua assumindo cadência
+ * mensal (é o que `installmentCount` da própria API do Asaas garante
+ * automaticamente); converter um plano `'semanal'` pra cobrança real do
+ * Asaas é bloqueado explicitamente em admin/venda.php (ação
+ * `gerar_asaas_pos_assinatura`), nunca gera cobrança semanal de verdade.
  */
 function finGerarPlanoParcelamentoVenda(
     int $vendaId,
@@ -178,7 +190,8 @@ function finGerarPlanoParcelamentoVenda(
     string $nomeCompradorManual,
     int $criadoPor,
     ?int $categoriaEntradaId = null,
-    ?string $dataEntrada = null
+    ?string $dataEntrada = null,
+    string $periodicidade = 'mensal'
 ): array {
     if (finContarLancamentosAtivosVenda($vendaId) > 0) {
         return ['ok' => false, 'erro' => 'Esta venda já tem lançamentos financeiros ativos — cancele o plano atual antes de gerar outro.'];
@@ -204,14 +217,30 @@ function finGerarPlanoParcelamentoVenda(
             $ins->execute([$categoriaEntradaId ?? $categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, $dataEntrada ?: date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
             $criadas++;
         }
+        // 22/10/2026, "faz jeito para não ficar lista[gem] e nome de
+        // parcelas mensal" / "parcela semanal" — a descrição do lançamento
+        // é o que aparece em TODA listagem do financeiro (Lançamentos,
+        // Promissórias "Todas as parcelas", tabela de parcelas da própria
+        // venda), então marcar a periodicidade AQUI propaga sozinho pra
+        // todo lugar sem precisar mexer em cada tela separada. Mensal
+        // (padrão de sempre) continua sem sufixo nenhum, nunca muda a
+        // descrição de nenhum lançamento já existente.
+        $sufixoDescricao = $periodicidade === 'semanal' ? ' (semanal)' : '';
+        // A 1ª parcela vence na data escolhida; as seguintes seguem o
+        // incremento da periodicidade a partir DELA — recalcula com base na
+        // parcela 1, não composto sobre a anterior, pra nunca "desalinhar"
+        // (dia do mês, ou dia da semana) com o tempo. 'semanal' incrementa
+        // em blocos de 7 dias por parcela em vez de meses — mesmo
+        // princípio, unidade diferente.
         for ($i = 1; $i <= $numParcelas; $i++) {
-            $vencimento = date('Y-m-d', strtotime("+{$i} months", strtotime($primeiraParcelaData) ?: strtotime('first day of next month')));
-            // A 1ª parcela vence na data escolhida; as seguintes seguem +1 mês
-            // a partir dela — recalcula com base na parcela 1, não composto
-            // sobre a anterior, pra nunca "desalinhar" o dia do mês com o
-            // tempo (mesmo raciocínio de datas mensais do resto do projeto).
-            $vencimento = ($i === 1) ? $primeiraParcelaData : date('Y-m-d', strtotime("+" . ($i - 1) . " months", strtotime($primeiraParcelaData)));
-            $ins->execute([$categoriaId, "Parcela {$i}/{$numParcelas} — venda #{$vendaId}", $valorParcela, $vencimento, $vendaId, $i, $numParcelas, $nomeCompradorManual, $criadoPor]);
+            if ($i === 1) {
+                $vencimento = $primeiraParcelaData;
+            } elseif ($periodicidade === 'semanal') {
+                $vencimento = date('Y-m-d', strtotime('+' . (7 * ($i - 1)) . ' days', strtotime($primeiraParcelaData)));
+            } else {
+                $vencimento = date('Y-m-d', strtotime('+' . ($i - 1) . ' months', strtotime($primeiraParcelaData)));
+            }
+            $ins->execute([$categoriaId, "Parcela {$i}/{$numParcelas}{$sufixoDescricao} — venda #{$vendaId}", $valorParcela, $vencimento, $vendaId, $i, $numParcelas, $nomeCompradorManual, $criadoPor]);
             $criadas++;
         }
 

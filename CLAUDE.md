@@ -11090,6 +11090,140 @@ segue no schema sem uso novo, não removida sem ganho real),
   com CSRF genuinamente válido pra aquela sessão é rejeitado antes de
   qualquer ação, banco confirmado intocado + `php -l` + `tests/smoke.php`
   limpos. Sem migração de schema (reaproveita tudo que já existia).
+- **Sino (notificações) escopado por módulo + visita confirmada de venda
+  notifica WhatsApp+sino + botão de reabrir oportunidade encerrada**
+  (22/10/2026, 3 pedidos diretos: "em vendas só aparecer notificações
+  somente da vendas", "todo crm cliente aceitar vim aqui nas fastcar
+  notificar whatsapp do sistema notificação" e "temos adcionar uma opção
+  de clientes encerrado para voltar pois ancerram cliente por engano") —
+  3 features independentes, mesmo turno.
+  **(1) Sino escopado**: até aqui `admin/notificacoes.php` sempre mesclava
+  tudo que o usuário tinha direito de ver, sem distinguir qual módulo ele
+  está navegando — um super_admin/supervisor olhando o módulo de vendas
+  continuava recebendo toast/histórico de "cliente confirmou documentos"
+  do funil de COMPRA, e nunca existia nenhum feed de "lead novo" pro lado
+  de vendas (só WhatsApp interno, nunca o sino). Nova
+  `tiposNotificacaoPorModulo(?string $modulo): ?array`
+  (`includes/notificacoes.php`) — `null` (padrão, ausente nas ~32 páginas
+  que não passam o parâmetro) nunca filtra nada, comportamento idêntico a
+  antes; `'vendas'` restringe aos tipos
+  `documentos_confirmados_venda`/`visita_confirmada_venda`. As 3 funções
+  que leem/escrevem a tabela (`listarNotificacoes()`/
+  `contarNotificacoesNaoLidas()`/`marcarNotificacoesLidas()`) ganharam
+  `?array $tipos = null` — crítico em `marcarNotificacoesLidas()`: abrir
+  o painel do sino DENTRO do módulo de vendas nunca pode marcar como lida
+  (silenciosamente) um evento de COMPRA que o usuário nem viu, só porque
+  os dois compartilham a mesma linha em `notificacoes`. `admin/notificacoes.php`
+  ganhou `?modulo=vendas` (thread por `admin/_notify.php`, que passa
+  `$notifModulo` — setado só pelas 4 telas do módulo:
+  `admin/vendas.php`/`venda.php`/`vendas_inbox.php`/`promissorias.php`,
+  `<?php $notifModulo = 'vendas'; include __DIR__ . '/_notify.php'; ?>`)
+  e um "lead novo" AO VIVO novo pro lado de vendas (nunca existia —
+  consulta `vendas` em vez de `oportunidades`, usando `perfilVeTudo()`
+  pra "vê tudo" em vez do `$perfil==='super_admin'` puro do branch de
+  compra — decisão só pro código NOVO, nunca mudou o comportamento do
+  branch de compra existente). JS (`admin/_notify.php`) generalizado de
+  `n.tipo === 'novo_lead'` pra `n.tipo.indexOf('novo_lead') === 0`, cobre
+  o tipo novo `novo_lead_venda` sem duplicar a lógica de toast/histórico
+  local.
+  **(2) Visita confirmada notifica** — nova `notificarVisitaConfirmadaVenda()`
+  (`includes/notificacoes.php`, mesmo padrão de
+  `notificarDocumentosConfirmados[Venda]()`: sino pro responsável +
+  `perfilVeTudo()` + WhatsApp interno pro responsável, com fallback pra
+  `config.notificacao_leads_whatsapp` — loop extraído pra
+  `enviarAvisoInternoWhatsapp()` reutilizável), chamada de dentro de
+  `iaAplicarDadosExtraidosVenda()` (`includes/ia_qualificacao_vendas.php`)
+  só na transição `aceita_visitar_fastcar` NULL→1 (nunca de novo numa
+  reconfirmação do mesmo "sim" — mesma guarda que já protegia o campo em
+  si, `$visitaConfirmadaAgora` setado dentro do mesmo `if`, chamado
+  DEPOIS do `UPDATE` executar, pra ler `visita_dia_horario_texto` já
+  gravado no mesmo turno).
+  **(3) Reabrir oportunidade encerrada** — até aqui só existia via CLI
+  (`install/reabrir_lead.php`, por telefone, sem botão de propósito — ver
+  docblock de lá). Nova `reabrirOportunidade(int $oportunidadeId, ?int
+  $responsavelId = null): bool` (`includes/oportunidades.php`, mesma
+  lógica do script: recusa fora de `perdido`/`sem_perfil`, limpa
+  `motivo_perda`, volta pra etapa `whatsapp` via `mudarEtapa()` — regra
+  #6, grava histórico). Botão "↩️ Reabrir" na última coluna da aba "❌
+  Encerradas" de `admin/index.php`, mesmo guard de supervisor/dono (ação
+  `reabrir_oportunidade`) e confirmação estilizada (`confirmarAcao()`,
+  nunca `confirm()` nativo) do resto da tela.
+  Testado: `reabrirOportunidade()` isolada em banco de teste (reabre de
+  verdade, limpa motivo_perda, grava histórico certo; idempotente — 2ª
+  chamada com etapa já `whatsapp` retorna `false` sem alterar nada; id
+  inexistente retorna `false`) + `tiposNotificacaoPorModulo()`/as 3
+  funções com filtro (`listarNotificacoes`/`contarNotificacoesNaoLidas`/
+  `marcarNotificacoesLidas` com 2 notificações seedadas, 1 de cada tipo,
+  confirmando que o filtro `vendas` isola certo a 1 e que marcar lida
+  escopado nunca marca a de compra) + "lead novo" de vendas isolado
+  (vendedor A/B cada um vendo só a própria venda por `responsavel_id`,
+  `super_admin`/`supervisor` vendo as 3 juntas via `perfilVeTudo()`,
+  whitelist de `?modulo=` rejeitando qualquer valor fora de `'vendas'`
+  exato) + `notificarVisitaConfirmadaVenda()` ponta a ponta via
+  `iaAplicarDadosExtraidosVenda()` real (não função isolada): venda
+  seedada com `aceita_visitar_fastcar=NULL`, 1ª chamada confirma e grava
+  a notificação certa (usuário/tipo/mensagem), 2ª chamada (já confirmado)
+  nunca duplica a notificação nem resseta `visita_confirmada_em` — +
+  `php -l` em todos os 10 arquivos tocados + `tests/smoke.php` (0
+  avisos) limpos. Confirmado que o banco de dev real nunca foi tocado
+  durante o teste (sempre via script em ARQUIVO com `auto_prepend_file`
+  apontando pra banco isolado, nunca `php -r` inline). Sem migração de
+  schema (`notificacoes.tipo` já é `TEXT NOT NULL` livre, sem CHECK
+  restringindo valores).
+- **Pagamento semanal como mais uma opção de condição de venda** (22/10/2026,
+  "adicionar uma condição de vendas no contrato que cliente quer pagar
+  valor semanal como fazemos", confirmado via AskUserQuestion: "só local
+  por enquanto" — nunca mexe na cobrança real pelo Asaas). Até aqui o
+  parcelamento do saldo (`finGerarPlanoParcelamentoVenda()`,
+  `includes/financeiro.php`) sempre assumiu cadência mensal, hardcoded —
+  tanto no caminho LOCAL (só registra no CRM) quanto no caminho real pelo
+  Asaas (`asaasGerarCobrancaParceladaVenda()`, `POST /payments` com
+  `installmentCount`, que a própria API do Asaas espaça por mês
+  automaticamente, sem opção de cadência diferente nesse endpoint).
+  Nova coluna `vendas.parcelamento_periodicidade` (`'mensal'`/`'semanal'`,
+  CHECK, default `'mensal'`) + parâmetro `string $periodicidade = 'mensal'`
+  em `finGerarPlanoParcelamentoVenda()` — vencimento da parcela N calculado
+  sempre a partir da 1ª (nunca composto sobre a anterior, mesmo princípio
+  de sempre), só trocando a unidade do incremento: `+(N-1) months` pra
+  mensal, `+(7×(N-1)) days` pra semanal. **Nunca mexe no caminho Asaas** —
+  `asaasGerarCobrancaParceladaVenda()` intocada, continua 100% mensal; o
+  botão "💳 Gerar cobrança real no Asaas" (`admin/venda.php`, ação
+  `gerar_asaas_pos_assinatura`) fica bloqueado quando o plano é `'semanal'`
+  (recusa no SERVIDOR, nunca só escondendo o botão — mensagem explica o
+  motivo: "o Asaas só sabe cobrar com cadência mensal"). Seletor Mensal/
+  Semanal (radio) no formulário "💳 Financeiro — plano de parcelamento" de
+  `admin/venda.php` e no modal "💳 Vender na Promissória"
+  (`admin/vendas.php`) — os dois com a MESMA whitelist explícita no
+  servidor (`in_array($_POST[...], ['mensal','semanal'], true)`, nunca
+  confia no valor cru; qualquer coisa fora disso cai no padrão seguro
+  `'mensal'`). `salvarParcelamentoTermosVenda()` ganhou o mesmo parâmetro,
+  persistindo o termo pra citar no Quadro-Resumo do contrato
+  (`montarCamposContratoVenda()`/`gerarPdfContratoVenda()`,
+  `includes/contratos.php`/`contratos_pdf.php`) — mensal (padrão implícito
+  de sempre) nunca ganha sufixo novo no texto, só semanal ganha
+  " (parcela semanal)" ao lado do "{N}x de R${valor}, 1ª parcela em
+  {data}" já existente — nunca muda o texto de contrato já gerado/
+  assinado antes disso. **Descrição do lançamento financeiro também
+  marcada** (22/10/2026, achado de acompanhamento: "faz jeito para não
+  ficar lista[gem]... nome de parcelas mensal" / "parcela semanal") —
+  "Parcela {N}/{M} (semanal) — venda #{id}" em vez de só "Parcela {N}/{M}
+  — venda #{id}" quando `$periodicidade==='semanal'`, propagando sozinho
+  pra toda listagem que já lê essa descrição (Financeiro → Lançamentos,
+  `admin/promissorias.php` "Todas as parcelas", tabela de parcelas da
+  própria venda) sem precisar mexer em cada tela separada; mensal continua
+  exatamente como sempre foi, zero mudança de texto. Testado: migração
+  rodada contra o banco de dev real (`php install/migrar.php`, coluna
+  adicionada, idempotente numa 2ª rodada — "já existia") + função isolada
+  em banco de teste (venda semanal com 4 parcelas de R$150 a partir de
+  05/01/2026 confirmando vencimentos 05/01→12/01→19/01→26/01, descrição
+  "Parcela N/4 (semanal)"; venda mensal com entrada+3 parcelas confirmando
+  vencimentos 15/01→15/02→15/03, descrição SEM sufixo nenhum — regressão
+  confirmada idêntica ao formato de sempre; `salvarParcelamentoTermosVenda()`
+  persistindo `'semanal'`/`'mensal'` corretamente) + `php -l` nos 8
+  arquivos tocados + `tests/smoke.php` (0 avisos) limpos. Confirmado que o
+  banco de dev real só foi tocado pela migração em si (nunca pelos testes
+  de função, sempre via script em ARQUIVO com `auto_prepend_file`
+  apontando pra banco isolado).
 
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 

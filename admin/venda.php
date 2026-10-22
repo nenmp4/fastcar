@@ -225,14 +225,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $numParcelas = (int)($_POST['num_parcelas'] ?? 0);
                 $valorParcela = valorMonetario((string)($_POST['valor_parcela'] ?? '0')) ?? 0.0;
                 $primeiraParcela = (string)($_POST['primeira_parcela_data'] ?? '');
+                // 22/10/2026, "cliente quer pagar valor semanal mais opção e
+                // condição de venda" — whitelist explícita, nunca confia no
+                // valor cru do POST; qualquer coisa fora disso cai no padrão
+                // seguro 'mensal' (comportamento de sempre).
+                $periodicidadePost = in_array($_POST['periodicidade'] ?? '', ['mensal', 'semanal'], true) ? $_POST['periodicidade'] : 'mensal';
 
                 if (!$primeiraParcela) {
                     $erro = 'Informe a data de vencimento da 1ª parcela.';
                 } else {
-                    $r = finGerarPlanoParcelamentoVenda($id, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela, null, (string)$v['comprador_nome'], (int)$_SESSION['admin_id']);
+                    $r = finGerarPlanoParcelamentoVenda($id, $valorEntrada, $numParcelas, $valorParcela, $primeiraParcela, null, (string)$v['comprador_nome'], (int)$_SESSION['admin_id'], null, null, $periodicidadePost);
                     if ($r['ok']) {
-                        salvarParcelamentoTermosVenda($id, $valorParcela, $numParcelas, $primeiraParcela);
-                        $sucesso = "Plano de parcelamento gerado no financeiro — {$r['criadas']} lançamento(s).";
+                        salvarParcelamentoTermosVenda($id, $valorParcela, $numParcelas, $primeiraParcela, $periodicidadePost);
+                        $sucesso = "Plano de parcelamento ({$periodicidadePost}) gerado no financeiro — {$r['criadas']} lançamento(s).";
                     } else {
                         $erro = $r['erro'];
                     }
@@ -262,6 +267,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $erro = 'Chave da API Asaas não configurada em Configurações.';
                 } elseif (!$v['parcelamento_qtd_parcelas'] || !$v['parcelamento_valor_parcela'] || !$v['parcelamento_primeira_parcela_data']) {
                     $erro = 'Nenhum plano de parcelamento local pra converter — gere um acima primeiro.';
+                } elseif (($v['parcelamento_periodicidade'] ?: 'mensal') === 'semanal') {
+                    // 22/10/2026 — nunca confia só em esconder o botão na
+                    // tela; o Asaas (installmentCount) não cobra com
+                    // cadência semanal, então essa conversão é sempre
+                    // recusada no servidor pra plano semanal.
+                    $erro = 'Esse plano é semanal — o Asaas só cobra com cadência mensal, essa conversão não está disponível.';
                 } else {
                     $asaasCustomerId = asaasCriarClienteSeNecessario((string)$v['comprador_nome'], (string)$v['comprador_cpf'], (string)$v['comprador_telefone'], (string)$v['comprador_email']);
                     if (!$asaasCustomerId) {
@@ -1293,9 +1304,17 @@ function adicionarParteEntrada() {
         // existir isso + contrato já assinado é o gatilho do botão "Gerar
         // cobrança real no Asaas" mais abaixo.
         $temParcelaLocalParaConverter = (bool)array_filter($lancamentosAtivosVenda, fn($l) => (int)$l['parcela_numero'] > 0 && $l['origem'] !== 'asaas');
-        $podeGerarAsaasPosAssinatura = $v['etapa'] === 'vendido' && asaasConfigured() && $temParcelaLocalParaConverter;
+        // 22/10/2026, "cliente quer pagar valor semanal" — Asaas
+        // (installmentCount) só sabe cobrar com cadência mensal, então um
+        // plano 'semanal' nunca pode virar cobrança real por lá (ver
+        // includes/financeiro.php::finGerarPlanoParcelamentoVenda()).
+        $planoPeriodicidade = $v['parcelamento_periodicidade'] ?: 'mensal';
+        $podeGerarAsaasPosAssinatura = $v['etapa'] === 'vendido' && asaasConfigured() && $temParcelaLocalParaConverter && $planoPeriodicidade !== 'semanal';
     ?>
     <?php if ($lancamentosVenda): ?>
+        <?php if ($planoPeriodicidade === 'semanal'): ?>
+            <p><span class="badge">📅 Parcela semanal</span></p>
+        <?php endif; ?>
         <table class="tabela-oportunidades">
             <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead>
             <tbody>
@@ -1321,7 +1340,13 @@ function adicionarParteEntrada() {
             <input type="hidden" name="acao" value="cancelar_parcelamento">
             <button type="submit" class="chip-acao perigo">🚫 Cancelar parcelamento atual (pra gerar outro)</button>
         </form>
-        <?php if ($podeGerarAsaasPosAssinatura): ?>
+        <?php if ($v['etapa'] === 'vendido' && asaasConfigured() && $temParcelaLocalParaConverter && $planoPeriodicidade === 'semanal'): ?>
+            <p style="margin-top:14px">
+                <small>⚠️ Esse plano é semanal — o Asaas só sabe cobrar com cadência mensal
+                   (`installmentCount`), então essa conversão fica indisponível. O plano continua
+                   só como registro local no financeiro.</small>
+            </p>
+        <?php elseif ($podeGerarAsaasPosAssinatura): ?>
             <p style="margin-top:14px">
                 <small>Contrato já assinado — agora dá pra transformar as parcelas acima em cobrança real,
                    que o comprador paga por boleto/Pix/cartão. A entrada continua como está, nunca passa por
@@ -1356,8 +1381,15 @@ function adicionarParteEntrada() {
                     <input type="date" name="primeira_parcela_data" required>
                 </div>
             </div>
+            <label>Periodicidade das parcelas</label>
+            <label style="font-weight:normal;display:inline-flex;align-items:center;gap:4px;margin-right:16px">
+                <input type="radio" name="periodicidade" value="mensal" checked> Mensal
+            </label>
+            <label style="font-weight:normal;display:inline-flex;align-items:center;gap:4px">
+                <input type="radio" name="periodicidade" value="semanal"> Semanal
+            </label>
             <p><small>Isso gera só o registro local, pra conferir os números antes de assinar o contrato.
-               <?= asaasConfigured() ? 'A cobrança real pelo Asaas (boleto/Pix/cartão) fica disponível depois que o contrato for assinado.' : 'Asaas não configurado — fica só registrado no financeiro do CRM.' ?></small></p>
+               <?= asaasConfigured() ? 'A cobrança real pelo Asaas (boleto/Pix/cartão) fica disponível depois que o contrato for assinado — só pra plano mensal, o Asaas não cobra em cadência semanal.' : 'Asaas não configurado — fica só registrado no financeiro do CRM.' ?></small></p>
             <button type="submit">Gerar plano de parcelamento</button>
         </form>
     <?php endif; ?>
@@ -1552,7 +1584,7 @@ function copiarTextoFallback(texto, callback) {
 }
 </script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
-<?php include __DIR__ . '/_notify.php'; ?>
+<?php $notifModulo = 'vendas'; include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>

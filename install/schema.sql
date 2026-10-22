@@ -877,6 +877,12 @@ CREATE TABLE IF NOT EXISTS vendas (
     parcelamento_valor_parcela REAL,
     parcelamento_qtd_parcelas INTEGER,
     parcelamento_primeira_parcela_data DATE,
+    -- 22/10/2026, "cliente quer pagar valor semanal como fazemos" —
+    -- 'mensal' (padrão, sempre foi o único caso até aqui) ou 'semanal'.
+    -- Só afeta o plano LOCAL (finGerarPlanoParcelamentoVenda()); converter
+    -- pra cobrança real do Asaas continua travado quando for 'semanal' —
+    -- o Asaas (installmentCount) só sabe cobrar com cadência mensal.
+    parcelamento_periodicidade TEXT NOT NULL DEFAULT 'mensal' CHECK (parcelamento_periodicidade IN ('mensal', 'semanal')),
 
     data_venda DATE,                   -- quando etapa vira 'vendido'
 
