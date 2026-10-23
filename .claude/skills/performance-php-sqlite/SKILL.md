@@ -11,7 +11,8 @@ description: >
   terminar de implementar uma tela nova ou uma query nova que roda em
   toda carga de página (dashboard, listagem paginada, polling) ou numa
   tabela que já tem mais de uma centena de linhas — antes de marcar a
-  feature como concluída.
+  feature como concluída. Cobre também "o sistema inteiro ficou lento"
+  sem query ruim (trava de sessão do PHP em polling, pool do PHP-FPM).
 ---
 
 # Performance em PHP + SQLite — padrão José/Jean
@@ -383,8 +384,95 @@ código em qualquer função nova que processe lista externa em lote, ou
 qualquer escrita condicionada só por TTL de cache chamada de um include
 compartilhado por muitas páginas.
 
+## "Tá tudo lento" sem query lenta — fila de request, não banco
+
+Achado real em produção (Fastcar, 23/10/2026): sistema inteiro lento,
+nenhum erro novo no log, nenhuma query ruim. Antes de mexer em índice,
+descarte as 2 filas abaixo — elas deixam QUALQUER tela lenta, mesmo com
+todas as queries rápidas.
+
+### Fila 1 — trava do arquivo de sessão do PHP (por navegador)
+
+`session_start()` com o handler padrão (arquivos) trava o arquivo de
+sessão até a request acabar. Resultado: todas as requests do MESMO
+navegador rodam uma por vez. Se a tela tem polling (inbox a cada 2-5s,
+sino, badge de status que chama API externa ao vivo) ou serve mídia
+(download do Drive), qualquer página que o usuário abre espera atrás
+deles.
+
+Como achar: `grep -rn session_write_close admin/ includes/` vazio = o
+projeto todo está exposto. Liste os `setInterval(`/`fetch(` das telas e
+os endpoints que eles chamam.
+
+Correção: helper único, chamado logo depois de autenticar, só em
+endpoint que NUNCA escreve em `$_SESSION` depois (leitura continua valendo
+depois de fechar; escrita depois do close se perde em silêncio):
+
+```php
+// includes/security.php
+function liberarSessao(): void {
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+}
+```
+
+```php
+// endpoint de polling/mídia
+require_once __DIR__ . '/_bootstrap.php';   // já fez requireAdmin()
+liberarSessao();
+
+// página que serve HTML E responde ?ajax=... de polling
+if (isset($_GET['ajax'])) liberarSessao();
+```
+
+Antes de aplicar em cada arquivo: `grep -n "\$_SESSION\[[^]]*\] *="` no
+endpoint (nenhuma escrita) — e nunca em POST que gera/rotaciona CSRF ou
+muda estado de login.
+
+Como provar (não basta ler o código): servidor real com mais de 1
+worker (`PHP_CLI_SERVER_WORKERS=4 php -S ...`), sessão de teste, um
+endpoint lento de propósito (fake server com `sleep(3)`) disparado em
+paralelo com um endpoint rápido, da MESMA sessão (mesmo cookie jar):
+
+```bash
+(curl -s -b jar -o /dev/null -w "lento %{time_total}s\n" $URL/lento.php &); sleep 0.3
+curl -s -b jar -o /dev/null -w "rapido %{time_total}s\n" $URL/rapido.php
+```
+
+Sem o fix o rápido herda a espera do lento (medido: 2,7s); com o fix,
+~0,006s. Guard no smoke: lista fixa dos endpoints de polling/mídia que
+precisam conter `liberarSessao()`.
+
+### Fila 2 — pool do PHP-FPM pequeno demais (servidor inteiro)
+
+Padrão do Ubuntu: `pm.max_children = 5` — o servidor atende 5 requests
+PHP ao mesmo tempo, somando TODOS os usuários. Com vários usuários com
+polling aberto, enche fácil e o resto espera.
+
+```bash
+grep pm.max_children /etc/php/*/fpm/pool.d/www.conf
+ps aux | grep -c php-fpm
+```
+
+Ajuste (cada worker ~40-60MB; numa VPS de 4GB, 20 sobra folga):
+
+```bash
+sed -i 's/^pm.max_children = 5/pm.max_children = 20/' /etc/php/*/fpm/pool.d/www.conf
+sed -i 's/^pm.max_spare_servers = 3/pm.max_spare_servers = 6/' /etc/php/*/fpm/pool.d/www.conf
+grep -E "^pm\.(max_children|max_spare_servers)" /etc/php/*/fpm/pool.d/www.conf
+systemctl reload php*-fpm   # reload não derruba request em andamento
+```
+
+Isso é config do servidor, não do repo — documente no guia de setup da
+VPS (`install/SETUP_VPS.md`) pra VPS nova já nascer certa.
+
+As 2 filas se somam: a 1 é por navegador, a 2 é global. Corrija as duas.
+
 ## Checklist final
 
+- [ ] Se é "tudo lento" sem query ruim: descartadas as 2 filas (trava de
+      sessão em endpoint de polling/mídia; `pm.max_children` do FPM)
+- [ ] Endpoint novo de polling/AJAX/mídia chama `liberarSessao()` logo
+      depois de autenticar (e entrou na lista do guard do smoke)
 - [ ] Query lenta identificada com `EXPLAIN QUERY PLAN` (ou leitura
       direta do código), não um índice "por via das dúvidas"
 - [ ] Testado o caso "sem filtro extra" (super_admin/supervisor vendo

@@ -9863,6 +9863,19 @@ segue no schema sem uso novo, não removida sem ganho real),
   não aparecer listada numa sessão nova, a cópia de verdade é a deste
   repo — copiar de volta pra `~/.claude/skills/performance-php-sqlite/`,
   nunca reescrever do zero.
+  **6ª rodada — sistema inteiro lento sem nenhuma query ruim, 23/10/2026**
+  ("ficou bem lento sistema") — 2 filas de request, nenhuma no banco:
+  (1) nenhum endpoint chamava `session_write_close()`, então toda request
+  do mesmo navegador rodava uma por vez atrás do polling do inbox (2-5s),
+  sino (20s), badge de status (45s, chamada ao vivo na Evolution) e mídia —
+  `liberarSessao()` (`includes/security.php`) chamada logo após autenticar
+  nos endpoints de polling/mídia, que só leem a sessão; medido com
+  concorrência real: 2,7s de espera antes, 0,006s depois; guard
+  `[polling-sem-liberar-sessao]` no smoke; (2) PHP-FPM da VPS no padrão
+  `pm.max_children = 5` (5 requests ao mesmo tempo pra todo mundo) —
+  subido pra 20 / `max_spare_servers` 6 direto na VPS pelo usuário,
+  documentado em `install/SETUP_VPS.md`. Runbook das 2 filas incluído na
+  skill `performance-php-sqlite` (seção "Tá tudo lento sem query lenta").
 - **Marcar falta pro vendedor (lado de vendas)** (29/09/2026, "permita super
   admin deixar offline usuario que faltar e pegar os lead que chegar") —
   o lado de COMPRA já tinha isso desde 22/09/2026
