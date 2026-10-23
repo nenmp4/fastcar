@@ -891,7 +891,16 @@ function evolutionAdaptarPayloadParaZapi(array $body): ?array {
             'mimeType' => (string)($mensagem['videoMessage']['mimetype'] ?? ''),
         ];
     } elseif (isset($mensagem['documentMessage'])) {
-        $adaptado['document'] = ['mimeType' => (string)($mensagem['documentMessage']['mimetype'] ?? '')];
+        // 23/10/2026, "documento para abrir que cliente envia" — fileName
+        // nunca era capturado (só mimeType), então o link renderizado no
+        // WhatsApp Box ficava com rótulo genérico "[document]" em vez do
+        // nome real do arquivo. Campo nunca confirmado contra instância
+        // real ainda (mesma ressalva de sempre pra convenção Baileys não
+        // validada) — fica vazio sem quebrar nada se o nome vier diferente.
+        $adaptado['document'] = [
+            'mimeType' => (string)($mensagem['documentMessage']['mimetype'] ?? ''),
+            'fileName' => (string)($mensagem['documentMessage']['fileName'] ?? ''),
+        ];
     }
     // Tipo desconhecido/evento de ack/reação: fica só com os campos base,
     // tipoMidia() retorna 'desconhecido', mesmo guard silencioso de sempre.

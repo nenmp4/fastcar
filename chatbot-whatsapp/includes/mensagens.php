@@ -341,6 +341,13 @@ function descreverMidiaComGemini(string $bytes, string $mimeType, string $tipo):
     try {
         $geminiKey = getConfig('gemini_api_key') ?: '';
         if (!$geminiKey || !$bytes) return '';
+        // 23/10/2026, documento recebido do cliente (ver chamador em
+        // processarMensagemZapi()) nunca passa por aqui — sem isso, o
+        // fallback `$prompts[$tipo] ?? $prompts['image']` mais abaixo
+        // mandaria o PDF/doc pro Gemini com o prompt de FOTO (regra #3 do
+        // CLAUDE.md: nunca inventar/chutar resultado — "document" não tem
+        // prompt próprio de propósito, nunca cai no de imagem por engano).
+        if ($tipo === 'document') return '';
 
         // Identifica o TIPO de veículo explicitamente (carro, moto,
         // caminhonete, van, caminhão etc) em vez de só "o veículo" —
@@ -646,8 +653,22 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         }
 
         $textoMidia = '';
-        if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
-            $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
+        // 23/10/2026, achado real: "veja questão documento para abrir que
+        // cliente envia" — 'document' nunca entrava aqui (só audio/image/
+        // video), então quando o CLIENTE mandava PDF/doc, o sistema nunca
+        // baixava/salvava nada — ficava só o texto cru "[document]" pra
+        // sempre, sem link nenhum pra abrir. renderizarMidiaWhatsapp()
+        // (includes/whatsapp_inbox.php) já sabia desenhar o link de
+        // documento desde sempre (usado pelo lado de ENVIO, consultor
+        // anexando pelo WhatsApp Box) — só faltava o RECEBIMENTO acionar o
+        // download. Documento nunca passa pelo Gemini (não tem "descrição"
+        // útil de um PDF do jeito que tem de foto/áudio/vídeo) — só baixa e
+        // salva, $textoMidia fica vazio de propósito, cai no mesmo
+        // registro padrão '[document]' no histórico/IA, mas agora COM
+        // drive_file_id/arquivo_url preenchidos, então o link realmente
+        // abre no WhatsApp Box.
+        if (in_array($tipoBruto, ['audio', 'image', 'video', 'document'], true)) {
+            $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4', 'document' => 'application/octet-stream'][$tipoBruto];
             $bloco = $payload[$tipoBruto] ?? [];
             if (!empty($bloco['mediaId'])) {
                 // Mídia recebida via Cloud API (Meta oficial, 29/09/2026, "sim,
@@ -698,6 +719,19 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
             // qualificação abaixo tratam igual a uma mensagem digitada.
             $prefixo = ['audio' => '🎤 ', 'video' => '🎥 '][$tipoBruto] ?? '📷 ';
             $texto = $prefixo . $textoMidia;
+        } elseif ($tipoBruto === 'document' && $bytesMidia !== null) {
+            // 23/10/2026, "documento para abrir que cliente envia" — documento
+            // nunca passa por descreverMidiaComGemini() (ver lá, "não tenta
+            // descrever documento como se fosse imagem"), então $textoMidia
+            // fica sempre vazio aqui de propósito; quando o download deu
+            // certo, usa o nome real do arquivo (se o payload trouxe um —
+            // renderizarMidiaWhatsapp() já sabe extrair esse rótulo do
+            // prefixo "📎 ") em vez do genérico "[document]" sem nenhuma pista
+            // do que é. Sem nome vindo do payload, cai no genérico mesmo —
+            // nunca inventa um nome que não veio (regra #3).
+            $tipoRegistro = $tipoBruto;
+            $nomeDocumento = trim((string)($payload[$tipoBruto]['fileName'] ?? ''));
+            $texto = $nomeDocumento !== '' ? '📎 ' . $nomeDocumento : '[document]';
         } else {
             // Sem URL, download falhou, ou sem chave Gemini — marcador comum,
             // mantém a mensagem no histórico mesmo sem interpretar o conteúdo.

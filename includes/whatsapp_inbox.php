@@ -234,6 +234,31 @@ function whatsappMidiaCacheDir(): string {
     return $dir;
 }
 
+/**
+ * 23/10/2026, "está tendo demora para ouvir o audio" — o cache de 06/10 já
+ * elimina a demora pra REABRIR algo já visto, e o cache de token do
+ * Google Drive de 14/10 já elimina a reautenticação OAuth repetida; mas
+ * nenhum dos dois tinha instrumentação pra saber se a demora relatada é no
+ * 1º play de verdade (cache miss, inerente — autenticar+baixar do Drive
+ * leva um tempo real de rede) ou alguma outra coisa. Mesmo padrão de
+ * _logTimingAudioWhatsapp() (envio): loga sempre (nunca só em falha) hit/
+ * miss do cache + quanto tempo o download real levou quando foi miss, pra
+ * não precisar adivinhar de novo da próxima vez que alguém reclamar.
+ */
+function _logTimingLeituraMidiaWhatsapp(string $driveFileId, bool $cacheHit, ?float $tempoDownloadSeg, bool $sucesso): void {
+    try {
+        $dir = dirname(__DIR__) . '/storage/logs';
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        $linha = '[' . date('Y-m-d H:i:s') . "] drive_file_id={$driveFileId}"
+            . ' cache=' . ($cacheHit ? 'hit' : 'miss')
+            . ' download=' . ($tempoDownloadSeg === null ? 'n/a' : number_format($tempoDownloadSeg, 2) . 's')
+            . ' sucesso=' . ($sucesso ? '1' : '0') . "\n";
+        file_put_contents($dir . '/whatsapp_midia_leitura_timing.log', $linha, FILE_APPEND);
+    } catch (Throwable $e) {
+        // diagnóstico nunca pode quebrar a leitura de verdade
+    }
+}
+
 function lerMidiaWhatsappComCache(?string $driveFileId, ?string $arquivoUrl): ?array {
     if (!$driveFileId) {
         return lerConteudoArquivoDocumento($driveFileId, $arquivoUrl);
@@ -251,13 +276,17 @@ function lerMidiaWhatsappComCache(?string $driveFileId, ?string $arquivoUrl): ?a
         $meta = json_decode((string)@file_get_contents($metaCache), true);
         $conteudo = @file_get_contents($arquivoCache);
         if ($conteudo !== false && is_array($meta) && isset($meta['mime'], $meta['name'])) {
+            _logTimingLeituraMidiaWhatsapp($driveFileId, true, null, true);
             return ['content' => $conteudo, 'mime' => $meta['mime'], 'name' => $meta['name']];
         }
         // Cache corrompido/incompleto (ex: escrita anterior interrompida) —
         // cai pro caminho normal abaixo e regrava certo.
     }
 
+    $inicioDownload = microtime(true);
     $arquivo = lerConteudoArquivoDocumento($driveFileId, $arquivoUrl);
+    $tempoDownload = microtime(true) - $inicioDownload;
+    _logTimingLeituraMidiaWhatsapp($driveFileId, false, $tempoDownload, $arquivo !== null);
     if ($arquivo) {
         // Best-effort — nunca bloqueia servir o conteúdo que já foi
         // baixado com sucesso só porque a escrita do cache falhou.

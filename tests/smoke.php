@@ -378,6 +378,17 @@ if (!file_exists($whatsappInboxPath)) {
     } else {
         ok('[audio-sem-timing-log] enviarAudioManualWhatsapp() continua registrando o timing do envio');
     }
+
+    // 23/10/2026, "está tendo demora para ouvir o audio" — mesmo espírito
+    // do guard acima, agora pro lado de LEITURA (lerMidiaWhatsappComCache()),
+    // pra nunca perder de novo o dado de hit/miss de cache + tempo de
+    // download sem ninguém perceber.
+    $corpoLerMidia = _smokeExtrairCorpoFuncao((string)file_get_contents($whatsappInboxPath), 'lerMidiaWhatsappComCache');
+    if ($corpoLerMidia === null || !str_contains($corpoLerMidia, '_logTimingLeituraMidiaWhatsapp(')) {
+        falha('[midia-leitura-sem-timing-log] lerMidiaWhatsappComCache() não registra mais o timing da leitura');
+    } else {
+        ok('[midia-leitura-sem-timing-log] lerMidiaWhatsappComCache() continua registrando o timing da leitura');
+    }
 }
 
 // 30/09/2026, achado real: "contrato foi assinado mais não teve mensagem
