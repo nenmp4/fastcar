@@ -33,6 +33,16 @@ apt install -y nginx php-fpm php-sqlite3 php-curl php-mbstring php-xml \
 systemctl enable --now nginx php*-fpm
 ```
 
+O padrão do Ubuntu (`pm.max_children = 5`) é pouco: o polling do inbox/sino
+de vários consultores ao mesmo tempo enche os 5 e todo mundo espera em fila
+(achado real em produção, 23/10/2026). Numa VPS de 4GB, subir pra 20:
+
+```bash
+sed -i 's/^pm.max_children = 5/pm.max_children = 20/' /etc/php/*/fpm/pool.d/www.conf
+sed -i 's/^pm.max_spare_servers = 3/pm.max_spare_servers = 6/' /etc/php/*/fpm/pool.d/www.conf
+systemctl reload php*-fpm
+```
+
 Confirmar a versão instalada e o nome do socket do PHP-FPM (muda o nome do
 arquivo `.sock` conforme a versão — vai precisar no passo 4):
 
