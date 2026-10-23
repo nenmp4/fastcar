@@ -181,7 +181,15 @@ function garantirPastaDriveCliente(GoogleDrive $drive, int $clienteId, string $n
 
     $novaId = $drive->createFolder('Cliente - ' . $nomeCliente, $raizId);
     if ($novaId) {
-        $db->prepare("UPDATE clientes SET drive_folder_id = ? WHERE id = ?")->execute([$novaId, $clienteId]);
+        // 23/10/2026, "database is locked" real — burst de várias mídias do
+        // MESMO cliente novo quase simultâneas, todas chegando aqui sem
+        // pasta ainda cacheada, colidindo na escrita final depois de cada
+        // uma já ter gasto tempo com a própria chamada lenta ao Drive acima
+        // (ver executarComRetryDeLock(), includes/db.php). UPDATE idempotente
+        // de propósito (sempre grava o mesmo $novaId final), seguro reexecutar.
+        executarComRetryDeLock(fn() =>
+            $db->prepare("UPDATE clientes SET drive_folder_id = ? WHERE id = ?")->execute([$novaId, $clienteId])
+        );
     }
     return $novaId ?: null;
 }

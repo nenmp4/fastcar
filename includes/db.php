@@ -129,6 +129,47 @@ function criarSchema(PDO $db): void {
     $db->exec($sql);
 }
 
+/**
+ * Roda uma escrita única (1 INSERT/UPDATE) com retry rápido se bater em
+ * "database is locked" — nunca em volta de um `beginTransaction()` já
+ * aberto (o retry reabriria a mesma transação por cima, risco de efeito
+ * duplicado); só pra uma escrita isolada e idempotente (ex: um UPDATE
+ * simples que sempre grava o mesmo valor final, não importa quantas
+ * vezes rode).
+ *
+ * 23/10/2026, achado real ("as imgens do inbox está dando problema e o
+ * audio também" — texto cru "[image]"/"[audio]" aparecendo no lugar da
+ * mídia): `storage/logs/whatsapp_midia_debug.log` mostrava 4 fotos
+ * DIFERENTES do mesmo cliente, quase no mesmo segundo, todas falhando
+ * com "SQLSTATE[HY000]: General error: 5 database is locked" — burst de
+ * várias fotos chegando quase juntas, cada uma passando por um upload
+ * lento pro Google Drive (`salvarArquivoGeradoComoDocumento()`,
+ * `garantirPastaDriveCliente()`) ANTES de escrever no banco, fazendo
+ * vários processos PHP-FPM colidirem na escrita final no mesmo instante.
+ * `PRAGMA busy_timeout=15000` já faz o SQLite esperar até 15s sozinho
+ * ANTES de lançar essa exceção — se mesmo assim falhou, a contenção
+ * durou mais que isso; o `try/catch` que já existia em volta
+ * (`salvarMidiaWhatsappRecebida()`) evitava o webhook cair, mas nunca
+ * tentava de novo — a mídia ficava perdida PRA SEMPRE pra essa mensagem,
+ * sem nenhum jeito automático de recuperar. Tentar de novo um pouco
+ * depois (o outro escritor que colidiu já deve ter liberado o lock a
+ * essa altura) resolve sem precisar refazer o trabalho caro (download/
+ * upload pro Drive) — só a escrita em si é repetida.
+ */
+function executarComRetryDeLock(callable $fn, int $tentativas = 3) {
+    for ($i = 1; $i <= $tentativas; $i++) {
+        try {
+            return $fn();
+        } catch (PDOException $e) {
+            $ehLock = str_contains($e->getMessage(), 'database is locked')
+                || str_contains($e->getMessage(), 'SQLITE_BUSY');
+            if (!$ehLock || $i === $tentativas) throw $e;
+            usleep(random_int(150000, 400000) * $i); // 150-400ms, crescendo a cada tentativa
+        }
+    }
+    return null; // inalcançável (loop sempre retorna ou lança), só satisfaz o analisador estático
+}
+
 // Referência compartilhada entre getConfig()/setConfig() — sem isso,
 // setConfig() não tinha como atualizar o cache estático de getConfig()
 // (cada função tem seu próprio `static`, não existe jeito de um mexer no

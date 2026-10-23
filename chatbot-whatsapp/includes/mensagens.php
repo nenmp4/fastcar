@@ -416,8 +416,21 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
         @unlink($tmp);
         if ($copia['drive_file_id'] || $copia['arquivo_url']) {
             $db = getDB();
-            $db->prepare("UPDATE whatsapp_mensagens SET drive_file_id = ?, arquivo_url = ? WHERE id = ?")
-                ->execute([$copia['drive_file_id'], $copia['arquivo_url'], $mensagemId]);
+            // 23/10/2026, achado real: "as imgens do inbox está dando
+            // problema e o audio também" — storage/logs/whatsapp_midia_debug.log
+            // mostrou 4 fotos DIFERENTES do mesmo cliente, quase no mesmo
+            // segundo, todas caindo no catch abaixo com "database is
+            // locked" — burst de mídia quase simultânea, cada uma só
+            // chegando nesta escrita DEPOIS de já ter gasto tempo com o
+            // próprio upload pro Drive (salvarArquivoGeradoComoDocumento()
+            // acima), fazendo vários processos PHP-FPM colidirem bem aqui.
+            // UPDATE idempotente (sempre grava o mesmo valor final pra
+            // essa mensagemId), seguro reexecutar — ver
+            // executarComRetryDeLock() (includes/db.php).
+            executarComRetryDeLock(fn() =>
+                $db->prepare("UPDATE whatsapp_mensagens SET drive_file_id = ?, arquivo_url = ? WHERE id = ?")
+                    ->execute([$copia['drive_file_id'], $copia['arquivo_url'], $mensagemId])
+            );
         } else {
             // 21/10/2026, achado real: "áudio não carrega" — a cópia
             // visível (não só a descrição do Gemini) ficava sem rastro
