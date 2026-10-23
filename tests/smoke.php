@@ -389,6 +389,18 @@ if (!file_exists($whatsappInboxPath)) {
     } else {
         ok('[midia-leitura-sem-timing-log] lerMidiaWhatsappComCache() continua registrando o timing da leitura');
     }
+
+    // Polling/mídia sem liberarSessao() volta a enfileirar toda request do mesmo navegador.
+    $semLiberar = [];
+    foreach (['notificacoes', 'zapi_status_ajax', 'zapi_status_vendas_ajax', 'ver_midia_whatsapp', 'ver_documento',
+              'ver_contrato', 'ver_midia_revenda', 'ver_avaliacao_foto', 'whatsapp_inbox', 'vendas_inbox', 'financeiro_inbox'] as $ep) {
+        if (!str_contains((string)@file_get_contents(__DIR__ . "/../admin/{$ep}.php"), 'liberarSessao()')) $semLiberar[] = $ep;
+    }
+    if ($semLiberar) {
+        falha('[polling-sem-liberar-sessao] sem liberarSessao(): ' . implode(', ', $semLiberar));
+    } else {
+        ok('[polling-sem-liberar-sessao] endpoints de polling/mídia liberam a trava da sessão');
+    }
 }
 
 // 30/09/2026, achado real: "contrato foi assinado mais não teve mensagem

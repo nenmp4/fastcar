@@ -17,6 +17,8 @@ $telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
 // vê conversa de comprador onde ele é responsavel_id em alguma negociação.
 $responsavelFiltro = perfilVeTudo() ? null : (int)$_SESSION['admin_id'];
 
+if (isset($_GET['ajax'])) liberarSessao(); // polling só lê sessão, nunca escreve
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
     header('Content-Type: application/json');
     $depoisDe = (int)($_GET['after_id'] ?? 0);

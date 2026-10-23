@@ -33,6 +33,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+liberarSessao();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 

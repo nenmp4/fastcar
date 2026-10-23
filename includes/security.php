@@ -67,6 +67,13 @@ function requireAdmin(): void {
     }
 }
 
+// Solta a trava do arquivo de sessão do PHP: sem isso, toda request do mesmo
+// navegador (polling do inbox/sino/badge, mídia) roda em fila, uma por vez.
+// Só pra endpoint que nunca escreve em $_SESSION depois — leitura continua valendo.
+function liberarSessao(): void {
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+}
+
 /**
  * Trava de permissão pra área restrita ao super_admin (Jean) — ex:
  * configurações de API, que dão acesso a credenciais sensíveis (Z-API) e

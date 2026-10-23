@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 requireAcessoAvaliacoes();
+liberarSessao();
 
 $id = (int)($_GET['id'] ?? 0);
 $db = getDB();

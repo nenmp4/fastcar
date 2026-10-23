@@ -24,6 +24,8 @@ $telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
 $responsavelFiltro = perfilVeTudo() ? null : (int)$_SESSION['admin_id'];
 
 // ── AJAX: mensagens novas (polling da conversa aberta) ─────────────────────
+if (isset($_GET['ajax'])) liberarSessao(); // polling só lê sessão, nunca escreve
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
     header('Content-Type: application/json');
     $depoisDe = (int)($_GET['after_id'] ?? 0);

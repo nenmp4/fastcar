@@ -14,6 +14,8 @@ requireAcessoFinanceiro();
 $telefoneGet = trim((string)($_GET['telefone'] ?? ''));
 $telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
 
+if (isset($_GET['ajax'])) liberarSessao(); // polling só lê sessão, nunca escreve
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
     header('Content-Type: application/json');
     $depoisDe = (int)($_GET['after_id'] ?? 0);
