@@ -318,6 +318,14 @@ $stmtTotal = $db->prepare("SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades
 $stmtTotal->execute($params);
 $totalFiltrado = (int)$stmtTotal->fetchColumn();
 
+// 24/10/2026, "ta misturando" — nos cards de chegada (hoje/ontem/7 dias) a
+// lista é sobre QUANDO o lead entrou, então ordena só por data de entrada,
+// mais recente primeiro; a ordenação por temperatura/próxima ação continua
+// valendo pras abas normais.
+$ordemVendas = in_array($filtroEspecialVendas, ['hoje', 'ontem', 'semana'], true)
+    ? "v.created_at DESC, v.id DESC"
+    : "CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
+             (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC";
 $sql = "
     SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
            u.nome AS responsavel_nome
@@ -326,8 +334,7 @@ $sql = "
     LEFT JOIN usuarios u ON u.id = v.responsavel_id
     {$joinContratoVendaAssinado}
     {$where}
-    ORDER BY CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
-             (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC
+    ORDER BY {$ordemVendas}
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
@@ -964,7 +971,7 @@ if ($podeSelecionarEmMassa):
                 <th><input type="checkbox" id="bulk-chk-todos" onchange="bulkToggleTodos(this)" title="Selecionar todas as visíveis"></th>
                 <?php endif; ?>
                 <th>Veículo</th><th>Comprador</th><th>Preço/interesse</th>
-                <th>Etapa</th><th>Responsável</th><th>Atualizado em</th><th>Observação</th><th></th>
+                <th>Etapa</th><th>Responsável</th><th>Recebido em</th><th>Observação</th><th></th>
             </tr>
         </thead>
         <tbody>
@@ -1022,7 +1029,7 @@ if ($podeSelecionarEmMassa):
                     <?php endif; ?>
                 </td>
                 <td><?= e($v['responsavel_nome'] ?? '—') ?></td>
-                <td><?= date('d/m/Y H:i', strtotime($v['updated_at'])) ?></td>
+                <td><?= date('d/m/Y H:i', strtotime($v['created_at'])) ?></td>
                 <td data-label="Observação">
                     <?php if ($ativaParaSelecao && $perfil !== 'supervisor'): ?>
                         <?php // 01/10/2026, "adicionar campo para recado tanto na
