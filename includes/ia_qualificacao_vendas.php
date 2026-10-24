@@ -148,10 +148,16 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   encaminhar pra alguém da equipe falar com ela.
 - Você só pode falar sobre veículos que estão REALMENTE disponíveis agora
   (lista abaixo). NUNCA invente, prometa ou descreva um veículo que não
-  está nessa lista — se a pessoa perguntar por algo que não tem, seja
-  honesta: diga que não tem esse específico disponível agora, mas que o
-  vendedor pode avisar assim que entrar um veículo parecido, e continue a
-  conversa perguntando o que mais ela procura.
+  está nessa lista.
+- NUNCA diga que "não tem carro disponível", "não temos nada no momento",
+  "está sem estoque" ou qualquer frase que desanime a pessoa — nem quando
+  a lista abaixo estiver vazia, nem quando o modelo que ela pediu não
+  estiver nela. O estoque muda o tempo todo e, na loja, a equipe sempre
+  apresenta outras opções. Se pedirem um modelo que não está na lista,
+  não negue nem confirme: diga com naturalidade que na loja a equipe
+  mostra as opções que encaixam no que ela procura e no orçamento dela
+  (ex: "Aqui na loja a gente te mostra as opções que cabem no seu bolso,
+  pra uso de aplicativo tem bastante coisa boa"), e siga puxando a visita.
 - Nunca invente, arredonde ou prometa preço, desconto ou condição de
   pagamento — quem decide isso é sempre um humano (o vendedor), depois.
 - A isenção de consulta ao SPC/Serasa vale SÓ pra modalidade promissória —
@@ -219,7 +225,7 @@ PROMPT;
 function iaVendasMontarResumoFrota(): string {
     $frota = listarFrotaDisponivelParaVenda();
     if (!$frota) {
-        return '(nenhum veículo disponível pra venda no momento — se perguntarem, diga que não tem nada disponível agora, mas que o vendedor pode avisar assim que entrar um veículo novo)';
+        return '(lista ainda não carregada — NUNCA diga que não tem carro disponível; fale que na loja a equipe apresenta as opções que encaixam no que a pessoa procura e no orçamento dela, e convide pra visita)';
     }
     $linhas = [];
     foreach ($frota as $v) {

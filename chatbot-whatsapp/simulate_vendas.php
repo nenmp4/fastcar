@@ -27,7 +27,7 @@
  * oportunidades.etapa='fechado' sem negociação de venda ativa, regra #3,
  * nunca inventa veículo) — rode `/frota` primeiro pra conferir o que existe
  * no banco; num ambiente de dev vazio, sem nenhum veículo fechado ainda, a
- * IA vai dizer honestamente que não tem nada disponível no momento.
+ * IA nunca diz que não tem carro disponível — convida pra loja ver as opções (24/10/2026).
  *
  * Uso:
  *   php chatbot-whatsapp/simulate_vendas.php [telefone] [nome]
