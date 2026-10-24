@@ -828,9 +828,9 @@ document.getElementById('modal-promissoria').showModal();
 // 22/10/2026 — mesmo banner "🔎 Mostrando" de admin/index.php, só pro
 // filtro especial de vendas; nunca aparece junto da aba normal (?etapa=).
 $filtroEspecialVendasLabel = [
-    'hoje'      => 'Meus leads de hoje',
-    'ontem'     => 'Meus leads de ontem',
-    'semana'    => 'Recebidas nos últimos 7 dias',
+    'hoje'      => $souDono ? 'Meus leads de hoje' : 'Leads novos hoje',
+    'ontem'     => $souDono ? 'Meus leads de ontem' : 'Leads novos ontem',
+    'semana'    => $souDono ? 'Recebidas nos últimos 7 dias' : 'Leads novos (7 dias)',
     'atrasadas' => 'Atrasadas',
 ][$filtroEspecialVendas] ?? '';
 ?>
@@ -867,6 +867,19 @@ $filtroEspecialVendasLabel = [
             <div class="valor"><?= $stats['disponivel'] ? '🟢' : '⚪' ?></div>
             <div class="rotulo"><?= $stats['disponivel'] ? 'Disponível pra fila' : ($stats['plantao'] ? 'Offline (plantão)' : 'Offline') ?></div>
         </div>
+    <?php else: ?>
+        <a class="stat-card alerta" href="/admin/vendas.php?filtro=hoje">
+            <div class="valor"><?= (int)$stats['novas_hoje'] ?></div>
+            <div class="rotulo">Leads novos hoje</div>
+        </a>
+        <a class="stat-card azul-forte" href="/admin/vendas.php?filtro=ontem">
+            <div class="valor"><?= (int)$stats['novas_ontem'] ?></div>
+            <div class="rotulo">Leads novos ontem</div>
+        </a>
+        <a class="stat-card neutro" href="/admin/vendas.php?filtro=semana">
+            <div class="valor"><?= (int)$stats['novas_semana'] ?></div>
+            <div class="rotulo">Leads novos (7 dias)</div>
+        </a>
     <?php endif; ?>
     <div class="stat-card sucesso">
         <div class="valor"><?= (int)$stats['vendidas_mes'] ?></div>
@@ -881,8 +894,29 @@ $filtroEspecialVendasLabel = [
             <div class="valor"><?= $stats['taxa_conversao'] ?>%</div>
             <div class="rotulo">Taxa de conversão</div>
         </div>
+    <?php elseif (!$souDono): ?>
+        <div class="stat-card neutro">
+            <div class="valor"><?= $stats['taxa_conversao'] === null ? '—' : $stats['taxa_conversao'] . '%' ?></div>
+            <div class="rotulo">Taxa de conversão geral</div>
+        </div>
     <?php endif; ?>
 </div>
+
+<?php if (!$souDono): ?>
+<div class="card">
+    <h3>Funil (negociações ativas)</h3>
+    <div class="funil-barra">
+        <?php foreach (ETAPAS_VENDA_ATIVAS as $et): ?>
+            <?php $qtd = (int)($contagemPorEtapa[$et] ?? 0); $pct = $totalAtivas > 0 ? round($qtd / $totalAtivas * 100) : 0; ?>
+            <div class="funil-linha">
+                <span class="etapa-nome"><?= e(etapaVendaLabel($et)) ?></span>
+                <span class="barra-fundo"><span class="barra-preenchida" style="width:<?= $pct ?>%"></span></span>
+                <span class="qtd"><?= $qtd ?></span>
+            </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="card">
     <form method="get" style="display:flex;gap:8px;align-items:center">

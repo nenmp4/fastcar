@@ -199,11 +199,37 @@ function dashboardVendasGeral(): array {
         FROM vendas WHERE etapa = 'vendido' AND data_venda >= date('now','localtime','start of month')
     ")->fetch();
 
+    // 24/10/2026, "dasborda das vendas os leads chegando não tem igual de
+    // compras" — mesmos contadores de dashboardSuperAdmin() (só etapa
+    // ativa, batendo com a lista ao clicar no card ?filtro=hoje/ontem/semana).
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt->execute(ETAPAS_VENDA_ATIVAS);
+    $novasHoje = (int)$stmt->fetchColumn();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt->execute(ETAPAS_VENDA_ATIVAS);
+    $novasOntem = (int)$stmt->fetchColumn();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph}) AND created_at >= datetime('now','localtime','-7 days')");
+    $stmt->execute(ETAPAS_VENDA_ATIVAS);
+    $novasSemana = (int)$stmt->fetchColumn();
+
+    $rConv = $db->query("
+        SELECT
+            SUM(CASE WHEN etapa = 'vendido' THEN 1 ELSE 0 END) AS vendidas,
+            SUM(CASE WHEN etapa = 'cancelada' THEN 1 ELSE 0 END) AS canceladas
+        FROM vendas
+    ")->fetch();
+    $totalDecididas = (int)($rConv['vendidas'] ?? 0) + (int)($rConv['canceladas'] ?? 0);
+    $taxaConversao = $totalDecididas > 0 ? round(((int)$rConv['vendidas'] / $totalDecididas) * 100) : null;
+
     return [
         'ativas'            => $ativas,
         'atrasadas'         => $atrasadas,
+        'novas_hoje'        => $novasHoje,
+        'novas_ontem'       => $novasOntem,
+        'novas_semana'      => $novasSemana,
         'vendidas_mes'      => (int)$r['qtd'],
         'valor_vendido_mes' => (float)$r['total'],
+        'taxa_conversao'    => $taxaConversao,
     ];
 }
 
