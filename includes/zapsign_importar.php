@@ -88,6 +88,9 @@ function zapsignImportarContratoComoVeiculoManual(
     }
     $oportunidadeId = $r['oportunidade_id'];
     $clienteId = $r['cliente_id'];
+    // 24/10/2026 — carro de contrato antigo da ZapSign já foi vendido na
+    // época: nasce oculto do estoque (dá pra mostrar de novo no 🚘 Estoque).
+    $db->prepare("UPDATE oportunidades SET oculto_estoque = 1, oculto_estoque_motivo = 'Migrado do ZapSign (CRM antigo) — já vendido' WHERE id = ?")->execute([$oportunidadeId]);
 
     // Baixa o PDF assinado de verdade da ZapSign — best-effort: se a URL já
     // expirou (temporária, ~60min) ou a chamada falhar, o veículo/contrato

@@ -2212,4 +2212,27 @@ try {
     echo "❌ vendas.etapa (crm_preenchido): {$e->getMessage()}\n";
 }
 
+// 24/10/2026, "esses pelo ZapSign fica oculto" — 1x só: oculta do estoque
+// todo carro migrado do ZapSign (CRM antigo, já vendido). Roda uma vez
+// (flag em config) — se alguém mostrar de novo depois, não re-oculta.
+try {
+    if (getConfig('migracao_ocultar_zapsign_feita') !== '1') {
+        $dbOz = getDB();
+        $stOz = $dbOz->prepare("
+            UPDATE oportunidades SET oculto_estoque = 1,
+                   oculto_estoque_motivo = 'Migrado do ZapSign (CRM antigo) — já vendido'
+            WHERE etapa = 'fechado' AND COALESCE(oculto_estoque, 0) = 0
+              AND id IN (SELECT oportunidade_id FROM contratos WHERE tipo = 'compra'
+                         AND (campos_json LIKE '%importado_zapsign%' OR nome LIKE 'Contrato importado da ZapSign%'))
+        ");
+        $stOz->execute();
+        setConfig('migracao_ocultar_zapsign_feita', '1');
+        echo "✅ estoque: {$stOz->rowCount()} carro(s) migrado(s) do ZapSign ocultado(s)\n";
+    } else {
+        echo "⏭️  estoque: ocultar migrados do ZapSign já foi feito\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ estoque (ocultar migrados ZapSign): {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";
