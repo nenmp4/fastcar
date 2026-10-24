@@ -368,9 +368,17 @@ if ($filtroEspecialVendas === '' && in_array($etapaFiltro, ETAPAS_VENDA_ATIVAS, 
     $params[] = $etapaFiltro;
 }
 if ($busca !== '') {
-    $where .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
+    $where .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ? OR o.veiculo_placa LIKE ?)";
     $like = '%' . $busca . '%';
-    array_push($params, $like, $like, $like, $like, $like);
+    array_push($params, $like, $like, $like, $like, $like, $like);
+}
+// 24/10/2026, "separar leads de carros vendidos" — aba ✅ Vendidas virou
+// visão própria (carro, comprador, valor, data), com filtro por mês.
+$abaVendidas = $filtroEspecialVendas === '' && $etapaFiltro === 'vendido';
+$mesVendidas = ($abaVendidas && preg_match('/^\d{4}-\d{2}$/', (string)($_GET['mes'] ?? ''))) ? (string)$_GET['mes'] : '';
+if ($mesVendidas !== '') {
+    $where .= " AND strftime('%Y-%m', COALESCE(v.data_venda, v.updated_at)) = ?";
+    $params[] = $mesVendidas;
 }
 if ($filtroDataVendaAtivo) {
     $where .= " AND date({$refVendaExpr}) BETWEEN ? AND ?";
@@ -391,6 +399,7 @@ $totalFiltrado = (int)$stmtTotal->fetchColumn();
 // mais recente primeiro; a ordenação por temperatura/próxima ação continua
 // valendo pras abas normais.
 $ordemVendas = match (true) {
+    $abaVendidas => "COALESCE(v.data_venda, v.updated_at) DESC, v.id DESC",
     $filtroEspecialVendas === 'agendados' => "(v.visita_data_resolvida IS NULL), v.visita_data_resolvida ASC, v.visita_confirmada_em ASC",
     in_array($filtroEspecialVendas, ['hoje', 'ontem', 'semana'], true) => "v.created_at DESC, v.id DESC",
     default => "CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
@@ -409,6 +418,27 @@ $sql = "
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $vendas = $stmt->fetchAll();
+$resumoVendidas = null;
+if ($abaVendidas) {
+    $stmtRes = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total, COALESCE(SUM(v.valor_pago_contratacao),0) AS entradas FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where}");
+    $stmtRes->execute($params);
+    $resumoVendidas = $stmtRes->fetch();
+    // Situação das parcelas de cada venda da página (1 query só).
+    $parcVendidas = [];
+    if ($vendas) {
+        $idsV = array_map(fn($x) => (int)$x['id'], $vendas);
+        $phV = implode(',', array_fill(0, count($idsV), '?'));
+        $stmtP = $db->prepare("SELECT venda_id,
+                SUM(CASE WHEN parcela_numero > 0 THEN 1 ELSE 0 END) AS qtd,
+                SUM(CASE WHEN parcela_numero > 0 AND status = 'pago' THEN 1 ELSE 0 END) AS pagas,
+                SUM(CASE WHEN parcela_numero > 0 AND status = 'atrasado' THEN 1 ELSE 0 END) AS atrasadas,
+                MAX(CASE WHEN parcela_numero = 0 THEN status END) AS entrada_status
+            FROM fin_lancamentos WHERE venda_id IN ({$phV}) AND status != 'cancelado' AND parcela_numero IS NOT NULL
+            GROUP BY venda_id");
+        $stmtP->execute($idsV);
+        foreach ($stmtP->fetchAll() as $r) $parcVendidas[(int)$r['venda_id']] = $r;
+    }
+}
 
 // Contadores da nav das etapas ATIVAS — sempre contra ETAPAS_VENDA_ATIVAS
 // (nunca $placeholders/$etapasEscopo, que podem estar reduzidos a só
@@ -979,14 +1009,14 @@ $filtroEspecialVendasLabel = [
             <div class="rotulo">Leads novos (7 dias)</div>
         </a>
     <?php endif; ?>
-    <div class="stat-card sucesso">
+    <a class="stat-card sucesso" href="/admin/vendas.php?etapa=vendido&mes=<?= date('Y-m') ?>">
         <div class="valor"><?= (int)$stats['vendidas_mes'] ?></div>
         <div class="rotulo">Vendidas este mês</div>
-    </div>
-    <div class="stat-card sucesso">
+    </a>
+    <a class="stat-card sucesso" href="/admin/vendas.php?etapa=vendido&mes=<?= date('Y-m') ?>">
         <div class="valor"><?= moedaVenda($stats['valor_vendido_mes']) ?></div>
         <div class="rotulo">Valor vendido este mês</div>
-    </div>
+    </a>
     <?php if ($souDono && $stats['taxa_conversao'] !== null): ?>
         <div class="stat-card neutro">
             <div class="valor"><?= $stats['taxa_conversao'] ?>%</div>
@@ -1156,6 +1186,63 @@ if ($podeSelecionarEmMassa):
 <?php endif; ?>
 <?php endif; ?>
 
+<?php if ($abaVendidas): ?>
+<div class="card">
+    <h3 style="margin-top:0">✅ Vendas fechadas<?= $mesVendidas ? ' — ' . e(date('m/Y', strtotime($mesVendidas . '-01'))) : '' ?></h3>
+    <div class="stat-grid" style="margin-bottom:12px">
+        <div class="stat-card sucesso"><div class="valor"><?= (int)$resumoVendidas['qtd'] ?></div><div class="rotulo">Carros vendidos</div></div>
+        <div class="stat-card sucesso"><div class="valor"><?= moedaVenda((float)$resumoVendidas['total']) ?></div><div class="rotulo">Valor total vendido</div></div>
+        <div class="stat-card neutro"><div class="valor"><?= moedaVenda((float)$resumoVendidas['entradas']) ?></div><div class="rotulo">Entradas</div></div>
+    </div>
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <input type="hidden" name="etapa" value="vendido">
+        <div style="flex:1;min-width:180px"><label>Buscar</label><input type="text" name="q" value="<?= e($busca) ?>" placeholder="Comprador, telefone, modelo ou placa"></div>
+        <div><label>Mês da venda</label><input type="month" name="mes" value="<?= e($mesVendidas) ?>"></div>
+        <button type="submit" style="width:auto;margin:0">Filtrar</button>
+        <?php if ($mesVendidas || $busca): ?><a class="btn" href="/admin/vendas.php?etapa=vendido">Limpar</a><?php endif; ?>
+    </form>
+    <table class="tabela-oportunidades" style="margin-top:12px">
+        <thead>
+            <tr><th>Veículo</th><th>Comprador</th><th>Valor</th><th>Entrada</th><th>Parcelas</th><th>Data da venda</th><th>Vendedor</th><th></th></tr>
+        </thead>
+        <tbody>
+        <?php if (!$vendas): ?>
+            <tr><td colspan="8">Nenhuma venda fechada<?= ($mesVendidas || $busca) ? ' com esse filtro' : ' ainda' ?>.</td></tr>
+        <?php endif; ?>
+        <?php foreach ($vendas as $v): $pv = $parcVendidas[(int)$v['id']] ?? null; ?>
+            <tr class="linha-clicavel" onclick="if (!event.target.closest('a')) location.href='/admin/venda.php?id=<?= (int)$v['id'] ?>'" style="cursor:pointer">
+                <td>
+                    <?= e(trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '') . ' ' . ($v['veiculo_ano'] ?? ''))) ?: '—' ?>
+                    <?php if (!empty($v['veiculo_placa'])): ?><br><small><?= e(strtoupper($v['veiculo_placa'])) ?></small><?php endif; ?>
+                </td>
+                <td><?= e($v['comprador_nome'] ?: '—') ?><br><small><?= e($v['comprador_telefone'] ?: '') ?></small></td>
+                <td><?= $v['preco_venda'] !== null ? moedaVenda((float)$v['preco_venda']) : '—' ?></td>
+                <td>
+                    <?= $v['valor_pago_contratacao'] ? moedaVenda((float)$v['valor_pago_contratacao']) : '—' ?>
+                    <?php if ($pv && $pv['entrada_status']): ?><br><span class="badge <?= $pv['entrada_status'] === 'pago' ? 'badge-ok' : ($pv['entrada_status'] === 'atrasado' ? 'badge-atraso' : 'badge-aviso') ?>"><?= $pv['entrada_status'] === 'pago' ? '✅ paga' : ($pv['entrada_status'] === 'atrasado' ? '⚠️ atrasada' : '⏳ a conferir') ?></span><?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($v['parcelamento_qtd_parcelas']): ?>
+                        <?= (int)$v['parcelamento_qtd_parcelas'] ?>x <?= $v['parcelamento_valor_parcela'] ? moedaVenda((float)$v['parcelamento_valor_parcela']) : '' ?>
+                        <?= ($v['parcelamento_periodicidade'] ?? 'mensal') === 'semanal' ? '<small>(semanal)</small>' : '' ?>
+                        <?php if ($v['parcelamento_primeira_parcela_data']): ?><br><small>1ª em <?= date('d/m/Y', strtotime($v['parcelamento_primeira_parcela_data'])) ?></small><?php endif; ?>
+                    <?php else: ?>
+                        <small>à vista / sem parcelamento</small>
+                    <?php endif; ?>
+                    <?php if ($pv && (int)$pv['qtd'] > 0): ?>
+                        <br><span class="badge <?= (int)$pv['atrasadas'] > 0 ? 'badge-atraso' : 'badge-ok' ?>"><?= (int)$pv['pagas'] ?>/<?= (int)$pv['qtd'] ?> pagas<?= (int)$pv['atrasadas'] > 0 ? ' · ' . (int)$pv['atrasadas'] . ' atrasada(s)' : '' ?></span>
+                    <?php endif; ?>
+                </td>
+                <td><?= $v['data_venda'] ? date('d/m/Y', strtotime($v['data_venda'])) : '—' ?></td>
+                <td><?= e($v['responsavel_nome'] ?? '—') ?></td>
+                <td><a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php renderPaginacao($totalFiltrado); ?>
+</div>
+<?php else: ?>
 <div class="card">
     <table class="tabela-oportunidades">
         <thead>
@@ -1272,6 +1359,7 @@ if ($podeSelecionarEmMassa):
     </table>
     <?php renderPaginacao($totalFiltrado); ?>
 </div>
+<?php endif; ?>
 </main>
 <?php if ($podeSelecionarEmMassa): ?>
 <script>
