@@ -122,11 +122,24 @@ if ($modulo === 'vendas') {
         ");
         $stmt->execute([$desde]);
     } else {
+        // 24/10/2026, "nas notificações sempre Novo Lead de Venda" — antes
+        // usava updated_at, que muda a cada mensagem/IA/observação, então o
+        // mesmo lead disparava "novo lead" toda hora. Agora só quando o lead
+        // é NOVO de verdade (criado agora) ou acabou de ser PASSADO pra mim
+        // (reatribuição/redistribuição gravada no histórico).
         $stmt = $db->prepare("
-            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, v.updated_at AS created_at
-            FROM vendas v WHERE v.responsavel_id = ? AND v.updated_at > ? ORDER BY v.updated_at ASC LIMIT 20
+            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id,
+                   MAX(v.created_at, COALESCE((SELECT MAX(h.created_at) FROM venda_historico h
+                        WHERE h.venda_id = v.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
+                          AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')), '')) AS created_at
+            FROM vendas v
+            WHERE v.responsavel_id = ?
+              AND (v.created_at > ? OR EXISTS (SELECT 1 FROM venda_historico h
+                        WHERE h.venda_id = v.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
+                          AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')))
+            ORDER BY created_at ASC LIMIT 20
         ");
-        $stmt->execute([$meuId, $desde]);
+        $stmt->execute([$desde, $meuId, $desde, $desde]);
     }
     $leads = array_map(function ($v) use ($db) {
         $veiculo = trim((string)($v['veiculo_interesse_texto'] ?? ''));
@@ -156,7 +169,7 @@ if ($modulo === 'vendas') {
     $leads = array_map(fn($o) => [
         'id'      => (int)$o['id'],
         'tipo'    => 'novo_lead',
-        'titulo'  => '🚗 Novo lead',
+        'titulo'  => '🚗 Novo lead de compra',
         'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
         'url'     => '/admin/oportunidade.php?id=' . $o['id'],
         'created_at' => $o['created_at'],
@@ -171,7 +184,7 @@ if ($modulo === 'vendas') {
     $leads = array_map(fn($o) => [
         'id'      => (int)$o['id'],
         'tipo'    => 'novo_lead',
-        'titulo'  => '🚗 Novo lead',
+        'titulo'  => '🚗 Novo lead de compra',
         'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
         'url'     => '/admin/oportunidade.php?id=' . $o['id'],
         'created_at' => $o['created_at'],
