@@ -229,7 +229,7 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - valor_entrada_disponivel: número (sem "R$", só o valor) do quanto a pessoa disse ter disponível de entrada. Se ela disse que NÃO TEM nada pra entrada, use 0. null só se ainda não falou nada sobre isso.
 - valor_parcela_orcamento: número (sem "R$", só o valor) do quanto a pessoa disse caber no orçamento dela de parcela mensal. null se não informado.
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
-- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA que a pessoa disse ter: acima de R$ 15.000 = "quente"; de R$ 1 até R$ 15.000 = "morno"; não tem nada pra entrada = "frio". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
+- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA que a pessoa disse ter: R$ 15.000 ou mais = "quente"; de R$ 1 até R$ 14.999 = "morno"; não tem nada pra entrada = "frio". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
 - visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
@@ -475,13 +475,13 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         }
     }
 
-    // 24/10/2026, regra do Jean/José: entrada acima de R$ 15 mil = quente,
-    // até 15 mil = morno, nada (0) = frio. Quando o valor de entrada já é
+    // 24/10/2026, regra do Jean/José: entrada de R$ 15 mil ou mais = quente,
+    // abaixo de 15 mil = morno, nada (0) = frio. Quando o valor de entrada já é
     // conhecido, ele DECIDE a temperatura (nunca o julgamento da IA);
     // sem valor ainda, vale a leitura da IA de sempre.
     if ($v['valor_entrada_disponivel'] !== null) {
         $ent = (float)$v['valor_entrada_disponivel'];
-        $dados['temperatura_lead'] = $ent > 15000 ? 'quente' : ($ent > 0 ? 'morno' : 'frio');
+        $dados['temperatura_lead'] = $ent >= 15000 ? 'quente' : ($ent > 0 ? 'morno' : 'frio');
     }
 
     // aceita_visitar_fastcar: 0/false é resposta legítima ("recusou vir,
