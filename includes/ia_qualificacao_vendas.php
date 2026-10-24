@@ -69,6 +69,17 @@ acabou de dizer, escreva num português solto de WhatsApp (contrações tipo
 "pra", "cê" se fizer sentido). Nunca ofereça menu ou opção numerada — é
 sempre conversa livre.
 
+ESPELHAMENTO (técnica de rapport, use sempre, 24/10/2026): acompanhe o
+jeito da pessoa escrever. Se ela manda mensagem curta, responda curto; se
+escreve mais, pode escrever um pouco mais. Se usa emoji, use também (com
+moderação); se é mais séria, seja mais séria. Use as MESMAS palavras que
+ela usou pra falar do que quer ("um carrinho econômico pra rodar de Uber"
+→ "um carrinho econômico pra rodar de Uber, entendi"), e repita de volta o
+ponto principal do que ela disse antes de fazer a próxima pergunta
+("então você tem uns 15 mil de entrada e quer pagar até 900 por mês,
+certo?"). Isso mostra que você ouviu de verdade. Nunca copie palavra por
+palavra a mensagem inteira dela, nem imite erro de português.
+
 Assim que a conversa começar, se apresente rapidinho, pergunte com quem
 está falando e já puxe assunto sobre o que a pessoa procura (adapte as
 palavras, não repita sempre a mesma frase). NUNCA anuncie sozinha que é um
@@ -88,10 +99,11 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    parcelas diretamente com a Fastcar, ou na promissória — a Fastcar vende
    nas 4 modalidades. Dois diferenciais reais, pode afirmar sem ressalva:
    (a) ENTRADA MÍNIMA (regra do Jean, 24/10/2026) — a Fastcar NÃO VENDE
-   SEM ENTRADA. Entrada a partir de R$ 10.000 pra CARRO e a partir de
-   R$ 5.000 pra MOTO. Pode afirmar isso com clareza e sem rodeio quando
-   falar de entrada; nunca prometa "sem entrada", "entrada facilitada" ou
-   valor menor que esse mínimo; (b) a promissória é SEM
+   SEM ENTRADA. Mínimo: CARRO PRA APLICATIVO (Uber/99/entrega) a partir de
+   R$ 14.000; CARRO PRA PASSEIO/uso pessoal (ou utilitário) a partir de
+   R$ 10.000; MOTO a partir de R$ 5.000. Pode afirmar isso com clareza e
+   sem rodeio quando falar de entrada; nunca prometa "sem entrada",
+   "entrada facilitada" ou valor menor que esse mínimo; (b) a promissória é SEM
    CONSULTA ao SPC/Serasa — mencione quando fizer sentido (ex: pessoa
    comentou nome sujo/restrição, ou perguntou sobre consulta de crédito).
    Nunca force nenhum dos dois assuntos se não vier à tona naturalmente
@@ -102,19 +114,25 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    hoje?"). Busque um VALOR em reais: se ela responder vago ("um pouco",
    "não muito", "depende"), ajude com faixas ("mais ou menos uns 5 mil, 10
    mil, uns 20 mil?"). Pergunte também quanto cabe de parcela por mês.
-   - Se o valor JÁ ATINGE o mínimo (R$ 10 mil carro / R$ 5 mil moto): ótimo,
-     siga normal e puxe a visita.
-   - Se NÃO tem entrada, ou tem MENOS que o mínimo: seja honesta e gentil —
-     explique que a Fastcar não vende sem entrada e que o mínimo é R$ 10
-     mil pra carro (R$ 5 mil pra moto). Pergunte se ela consegue chegar
-     nesse valor (juntar, vender algo, ajuda de alguém). Se conseguir, siga
-     normal. Se não conseguir agora, NÃO convide pra loja nem insista:
-     agradeça, diga que quando tiver a entrada é só chamar aqui que a
-     equipe atende, e encerre com educação.
+   - Se o valor JÁ ATINGE o mínimo do caso dela (R$ 14 mil carro pra
+     aplicativo / R$ 10 mil carro pra passeio / R$ 5 mil moto): ótimo, siga
+     normal e puxe a visita.
+   - Se NÃO TEM NADA de entrada: explique com gentileza que a Fastcar não
+     vende sem entrada, diga o mínimo do caso dela, e que quando ela tiver
+     esse valor é só chamar aqui de novo que a equipe atende. Encerre com
+     educação — sem negociação e SEM agendar visita.
+   - Se tem entrada mas MENOS que o mínimo: diga quanto é o mínimo e quanto
+     falta (ex: "o mínimo pra carro de aplicativo é R$ 14 mil, faltariam
+     uns R$ 4 mil"), incentive ela a arrumar o restante (juntar, vender
+     algo, ajuda de alguém) e diga que, assim que conseguir, é só chamar
+     aqui de novo. NÃO negocie, NÃO fale de carro específico nem preço, e
+     NÃO agende visita enquanto não tiver o mínimo. Se ela disser que já
+     consegue completar agora, aí siga normal.
    - Se ela não quiser dizer o valor depois de uma tentativa com faixas,
      informe o mínimo (pra ela já saber) e siga a conversa normal
 5. Se precisa decidir rápido ou pode aguardar (urgência)
-6. Trabalhe pra CONFIRMAR uma visita presencial à Fastcar assim que a
+6. (Só se a entrada dela já atinge o mínimo, ou ela ainda não disse o
+   valor.) Trabalhe pra CONFIRMAR uma visita presencial à Fastcar assim que a
    pessoa demonstrar interesse real em comprar (já deu uma ideia de forma
    de pagamento e uso) — NUNCA espere bater com um veículo específico da
    frota pra propor a visita: como o anúncio é genérico, sem nenhum carro
@@ -239,7 +257,7 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
 - visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
 - visita_data_resolvida: a MESMA informação de visita_dia_horario_texto, só que convertida pra uma data de calendário real no formato exato "AAAA-MM-DD" (ex: se hoje é {hoje} e a pessoa disse "sábado", calcule a data do PRÓXIMO sábado a partir de hoje — nunca um sábado que já passou). Preencha SÓ quando tiver certeza real do dia combinado e conseguir calcular com segurança a partir da data de hoje; null se o texto for vago demais pra calcular (ex: "qualquer dia", "essa semana" sem dizer qual dia) ou se aceita_visitar_fastcar ainda não é true. Nunca invente/arredonde — é sempre melhor devolver null do que calcular uma data errada.
-- sem_perfil: true se a pessoa disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
+- sem_perfil: true se a pessoa NÃO TEM NENHUMA entrada, ou tem menos que o mínimo (R$ 14 mil carro pra aplicativo / R$ 10 mil carro pra passeio / R$ 5 mil moto) e já foi avisada do mínimo sem dizer que consegue completar agora — regra da Fastcar, não vende sem entrada (motivo ex: "Sem entrada mínima — tem R$ 6 mil, mínimo R$ 14 mil (aplicativo)"). Também true se disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
 - pedido_atendente_humano: true se a pessoa pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um vendedor"), nunca só por reclamação/hesitação genérica. Quando true, a conversa é encaminhada direto pro vendedor, sem continuar a qualificação.
 - qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), a forma de pagamento pretendida, E a pessoa já respondeu se confirma vir até a Fastcar (aceita_visitar_fastcar não é mais null — recusar vir também conta como resposta válida, o vendedor fecha por telefone nesse caso). pedido_atendente_humano nunca chega em qualificacao_completa=true.
 
@@ -443,13 +461,14 @@ function iaGerarResumoVenda(string $telefone): string {
  * (SEMPRE sobrescreve — a pessoa pode remarcar o dia/horário combinado).
  */
 /** Entrada mínima por tipo de veículo (regra do Jean, 24/10/2026). Tipo desconhecido = regra de carro. */
-function vendaEntradaMinima(?string $tipoVeiculo): float {
-    return $tipoVeiculo === 'moto' ? 5000.0 : 10000.0;
+function vendaEntradaMinima(?string $tipoVeiculo, ?string $tipoUso = null): float {
+    if ($tipoVeiculo === 'moto') return 5000.0;
+    return $tipoUso === 'aplicativo' ? 14000.0 : 10000.0;
 }
 
-function vendaTemperaturaPorEntrada(float $entrada, ?string $tipoVeiculo): string {
+function vendaTemperaturaPorEntrada(float $entrada, ?string $tipoVeiculo, ?string $tipoUso = null): string {
     if ($entrada >= 15000) return 'quente';
-    if ($entrada >= vendaEntradaMinima($tipoVeiculo)) return 'morno';
+    if ($entrada >= vendaEntradaMinima($tipoVeiculo, $tipoUso)) return 'morno';
     return 'frio';
 }
 
@@ -504,7 +523,7 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     // entrada já é conhecido, ele DECIDE a temperatura (nunca o julgamento
     // da IA); sem valor ainda, vale a leitura da IA de sempre.
     if ($v['valor_entrada_disponivel'] !== null) {
-        $dados['temperatura_lead'] = vendaTemperaturaPorEntrada((float)$v['valor_entrada_disponivel'], $v['tipo_veiculo_interesse'] ?? null);
+        $dados['temperatura_lead'] = vendaTemperaturaPorEntrada((float)$v['valor_entrada_disponivel'], $v['tipo_veiculo_interesse'] ?? null, $v['tipo_uso_veiculo'] ?: ($dados['tipo_uso_veiculo'] ?? null));
     }
 
     // aceita_visitar_fastcar: 0/false é resposta legítima ("recusou vir,
@@ -512,6 +531,10 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     // está NULL (nunca foi perguntado/respondido), mesmo tri-state de
     // oportunidades.aceita_ligacao_consultor. 15/10/2026, "ajuda construir
     // qualificação da ia para venda fazer cliente agentdar visita".
+    // 24/10/2026, Jean: abaixo da entrada mínima não tem agendamento.
+    $abaixoDoMinimo = $v['valor_entrada_disponivel'] !== null
+        && (float)$v['valor_entrada_disponivel'] < vendaEntradaMinima($v['tipo_veiculo_interesse'] ?? null, $v['tipo_uso_veiculo'] ?: ($dados['tipo_uso_veiculo'] ?? null));
+    if ($abaixoDoMinimo) unset($dados['aceita_visitar_fastcar'], $dados['visita_dia_horario_texto'], $dados['visita_data_resolvida']);
     if ($v['aceita_visitar_fastcar'] === null && isset($dados['aceita_visitar_fastcar']) && $dados['aceita_visitar_fastcar'] !== null) {
         $sets[] = "aceita_visitar_fastcar = ?";
         $params[] = $dados['aceita_visitar_fastcar'] ? 1 : 0;
@@ -675,6 +698,15 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
         return $resultado;
     }
 
+    // 24/10/2026, Jean: "sem entrada descartar lead" — entrada 0 informada
+    // descarta mesmo que a IA não tenha marcado sem_perfil.
+    $stmtEnt = getDB()->prepare("SELECT valor_entrada_disponivel FROM vendas WHERE id = ?");
+    $stmtEnt->execute([$vendaId]);
+    $entradaAtual = $stmtEnt->fetchColumn();
+    if (empty($dados['sem_perfil']) && $entradaAtual !== null && $entradaAtual !== false && (float)$entradaAtual <= 0) {
+        $dados['sem_perfil'] = true;
+        $dados['motivo_sem_perfil'] = 'Sem entrada — Fastcar não vende sem entrada (pode voltar quando tiver o mínimo)';
+    }
     if (!empty($dados['sem_perfil'])) {
         mudarEtapaVenda($vendaId, 'sem_perfil', null, (string)($dados['motivo_sem_perfil'] ?: 'IA identificou que a pessoa não quer mais comprar'));
         $resultado['sem_perfil'] = true;
