@@ -54,6 +54,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_
         $erro = $e->getMessage();
     }
 }
+// 24/10/2026, "crie link pra mandar o catálogo inteiro do estoque" —
+// mesmo fluxo do envio de 1 carro, só que manda o link do catálogo.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_catalogo_cliente') {
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $tel = normalizarTelefone((string)($_POST['telefone'] ?? ''));
+        $nomeCli = trim((string)($_POST['nome'] ?? ''));
+        if (strlen($tel) < 12) throw new RuntimeException('Telefone inválido — use DDD + número.');
+        $meuId = (int)$_SESSION['admin_id'];
+        $texto = ($nomeCli !== '' ? "Oi, {$nomeCli}! " : 'Oi! ') . "Separei pra você o nosso catálogo com todos os veículos disponíveis na Fastcar 👇\n" . catalogoLinkPublicoUrl($meuId);
+        $res = enviarMensagemManualVendas($tel, $texto, $meuId);
+        if (!$res['ok']) throw new RuntimeException($res['erro']);
+        $ph = implode(',', array_fill(0, count(ETAPAS_VENDA_ATIVAS), '?'));
+        $stmtA = $db->prepare("SELECT id FROM vendas WHERE comprador_telefone = ? AND etapa IN ({$ph}) LIMIT 1");
+        $stmtA->execute(array_merge([$tel], ETAPAS_VENDA_ATIVAS));
+        if (!$stmtA->fetchColumn()) {
+            $db->prepare("INSERT INTO vendas (etapa, origem, comprador_nome, comprador_telefone, responsavel_id) VALUES ('negociacao', 'whatsapp', ?, ?, ?)")
+               ->execute([clean($nomeCli), $tel, $meuId]);
+            $novaId = (int)$db->lastInsertId();
+            $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao, responsavel_id) VALUES (?, '', 'negociacao', ?, ?)")
+               ->execute([$novaId, 'Vendedor enviou o catálogo completo do Estoque', $meuId]);
+        }
+        $sucesso = "Catálogo enviado pelo WhatsApp de vendas pra {$tel}.";
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
+
 // 24/10/2026, "ocultar todos carros no estoque que vieram migrados do
 // ZapSign — já foram vendidos". Só super_admin; nunca apaga nada, reversível.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['ocultar_migrados', 'ocultar_um', 'mostrar_um'], true)) {
@@ -175,6 +204,27 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
 </div>
 
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
+<?php $linkCatalogo = catalogoLinkPublicoUrl((int)$_SESSION['admin_id']); ?>
+<div class="card">
+    <h3 style="margin-top:0">📚 Catálogo completo pro cliente</h3>
+    <p><small>Um link só com todos os veículos disponíveis (atualiza sozinho — carro vendido some). O botão de WhatsApp de cada carro vem pra você.</small></p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <button type="button" class="btn-primary" style="width:auto;margin:0" onclick="copiarTexto(<?= e(json_encode($linkCatalogo)) ?>, this)">🔗 Copiar link do catálogo</button>
+        <a class="btn" href="<?= e($linkCatalogo) ?>" target="_blank" rel="noopener">👀 Ver como o cliente vê</a>
+        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <details style="flex:1;min-width:240px">
+            <summary class="btn" style="list-style:none;cursor:pointer;text-align:center">💬 Enviar catálogo pelo WhatsApp de vendas</summary>
+            <form method="post" style="margin-top:8px">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="enviar_catalogo_cliente">
+                <input type="tel" name="telefone" required placeholder="Telefone com DDD">
+                <input type="text" name="nome" placeholder="Nome do cliente (opcional)">
+                <button type="submit" style="width:100%">Enviar catálogo</button>
+            </form>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
 <?php if ($souSuperEstoque): ?>
 <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <?php if ($migradosNoEstoque): ?>

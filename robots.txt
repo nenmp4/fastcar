@@ -17,6 +17,7 @@ Allow: /admin/assets/img/icon-512.png
 # 24/10/2026 — preview (foto+título) do link de veículo que o vendedor manda no WhatsApp.
 Allow: /public/veiculo.php
 Allow: /public/veiculo_foto.php
+Allow: /public/catalogo.php
 Disallow: /
 
 User-agent: *

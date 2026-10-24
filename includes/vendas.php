@@ -161,6 +161,28 @@ function veiculoLinkPublicoUrl(int $oportunidadeId, int $vendedorId): string {
     return $base . '/public/veiculo.php?o=' . $oportunidadeId . '&v=' . $vendedorId . '&t=' . veiculoLinkPublicoToken($oportunidadeId, $vendedorId);
 }
 
+// 24/10/2026, "link pra mandar o catálogo inteiro do estoque" — 1 link por
+// vendedor (o botão "Falar no WhatsApp" de cada carro vai pra ele).
+function catalogoLinkPublicoToken(int $vendedorId): string {
+    return substr(hash_hmac('sha256', 'catalogo:' . $vendedorId, veiculoLinkPublicoSegredo()), 0, 20);
+}
+
+function catalogoLinkPublicoValido(int $vendedorId, string $token): bool {
+    return $vendedorId > 0 && $token !== '' && hash_equals(catalogoLinkPublicoToken($vendedorId), $token);
+}
+
+function catalogoLinkPublicoUrl(int $vendedorId): string {
+    $base = rtrim((string)(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions'), '/');
+    return $base . '/public/catalogo.php?v=' . $vendedorId . '&t=' . catalogoLinkPublicoToken($vendedorId);
+}
+
+/** 1ª foto de capa de um veículo pro link público: revenda, senão vistoria. */
+function veiculoCapaPublica(int $oportunidadeId): ?array {
+    foreach (listarMidiasRevenda($oportunidadeId) as $m) if ($m['tipo'] === 'foto') return $m;
+    foreach (listarMidiasVistoriaVeiculo($oportunidadeId) as $m) if ($m['tipo'] === 'foto') return $m;
+    return null;
+}
+
 function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     $db = getDB();
     $stmtOp = $db->prepare("SELECT etapa, veiculo_placa FROM oportunidades WHERE id = ?");
