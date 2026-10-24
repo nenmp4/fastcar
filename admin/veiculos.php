@@ -69,7 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
         // confirmação cobre os dois avisos (telefone e/ou placa) juntos.
         $duplicidadeAtiva = buscarOportunidadeAtivaPorTelefone((string)($_POST['vendedor_telefone'] ?? ''));
         $duplicidadePlaca = buscarVeiculoAtivoPorPlaca((string)($_POST['veiculo_placa'] ?? ''));
-        if (($duplicidadeAtiva || $duplicidadePlaca) && empty($_POST['confirmar_duplicidade'])) {
+        if ($duplicidadePlaca) {
+            // 24/10/2026 — placa repetida virou bloqueio (nunca "cadastrar mesmo assim").
+            $avisoDuplicidade = null;
+            $avisoDuplicidadePlaca = $duplicidadePlaca;
+            $formularioManualRepetir = $_POST;
+        } elseif ($duplicidadeAtiva && empty($_POST['confirmar_duplicidade'])) {
             $avisoDuplicidade = $duplicidadeAtiva;
             $avisoDuplicidadePlaca = $duplicidadePlaca;
             $formularioManualRepetir = $_POST;
@@ -352,14 +357,14 @@ function mesesComAFastcar(?string $refPosse): int {
             #<?= (int)$avisoDuplicidadePlaca['id'] ?> (<?= e(trim($avisoDuplicidadePlaca['veiculo_marca'] . ' ' . $avisoDuplicidadePlaca['veiculo_modelo'])) ?: 'sem marca/modelo' ?>,
             vendedor <?= e($avisoDuplicidadePlaca['nome'] ?: '(sem nome)') ?>).
             <a href="/admin/oportunidade.php?id=<?= (int)$avisoDuplicidadePlaca['id'] ?>" target="_blank">Abrir essa oportunidade →</a><br>
-            Quase certamente é o MESMO carro cadastrado 2x — confere antes de continuar. Se for mesmo um carro
-            diferente (placa digitada errada antes), pode cadastrar normalmente.
+            Não dá pra cadastrar o mesmo carro 2 vezes. Se a placa estiver digitada errada, corrija aqui
+            ou no cadastro que já existe.
         </div>
     <?php endif; ?>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="cadastrar_manual">
-        <?php if ($avisoDuplicidade || $avisoDuplicidadePlaca): ?><input type="hidden" name="confirmar_duplicidade" value="1"><?php endif; ?>
+        <?php if ($avisoDuplicidade && !$avisoDuplicidadePlaca): ?><input type="hidden" name="confirmar_duplicidade" value="1"><?php endif; ?>
         <div class="grid-2">
             <div>
                 <label>Nome do vendedor/origem *</label>
@@ -391,7 +396,7 @@ function mesesComAFastcar(?string $refPosse): int {
                 <input type="text" name="veiculo_renavam" id="mv-renavam" value="<?= e((string)($formularioManualRepetir['veiculo_renavam'] ?? '')) ?>">
             </div>
         </div>
-        <button type="submit"><?= ($avisoDuplicidade || $avisoDuplicidadePlaca) ? '⚠️ Cadastrar mesmo assim' : 'Cadastrar e adicionar fotos/vídeos →' ?></button>
+        <button type="submit"><?= ($avisoDuplicidade && !$avisoDuplicidadePlaca) ? '⚠️ Cadastrar mesmo assim' : 'Cadastrar e adicionar fotos/vídeos →' ?></button>
     </form>
 </div>
 

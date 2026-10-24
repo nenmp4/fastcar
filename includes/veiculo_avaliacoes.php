@@ -251,6 +251,17 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
     }
     $db = getDB();
 
+    // 24/10/2026, "vistoria tem que ser do mesmo [carro] do estoque" — se
+    // esse veículo (fechado) tem cadastro duplicado pela placa, a vistoria
+    // vai sempre pro cadastro PRINCIPAL (o que aparece no 🚘 Estoque).
+    $stmtPl = $db->prepare("SELECT etapa, veiculo_placa FROM oportunidades WHERE id = ?");
+    $stmtPl->execute([$oportunidadeId]);
+    $opPl = $stmtPl->fetch();
+    if ($opPl && $opPl['etapa'] === 'fechado') {
+        $principalPl = veiculoPrincipalPorPlaca((string)$opPl['veiculo_placa']);
+        if ($principalPl !== null) $oportunidadeId = $principalPl;
+    }
+
     // 22/09/2026, achado real: duplo clique/reenvio do form de "Nova
     // vistoria" criava 2 linhas pro mesmo veículo (nenhuma trava contra
     // reenvio existia) — se já existe uma vistoria ATIVA (pendente/em

@@ -101,12 +101,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_
 
 // 24/10/2026, "ocultar todos carros no estoque que vieram migrados do
 // ZapSign — já foram vendidos". Só super_admin; nunca apaga nada, reversível.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['ocultar_migrados', 'ocultar_um', 'mostrar_um'], true)) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['ocultar_migrados', 'ocultar_um', 'mostrar_um', 'mesclar_duplicados'], true)) {
     try {
         if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
         if ($_SESSION['admin_perfil'] !== 'super_admin') throw new RuntimeException('Só o super admin oculta carros do estoque.');
         $acaoOc = $_POST['acao'];
-        if ($acaoOc === 'ocultar_migrados') {
+        if ($acaoOc === 'mesclar_duplicados') {
+            $m = mesclarVeiculosDuplicadosPorPlaca(true);
+            $sucesso = count($m) . ' placa(s) duplicada(s) mesclada(s) — vistorias e fotos foram pro cadastro principal.';
+        } elseif ($acaoOc === 'ocultar_migrados') {
             $n = ocultarVeiculosEstoque(idsVeiculosMigradosZapsignNoEstoque(), 'Migrado do ZapSign (CRM antigo) — já vendido');
             $sucesso = "{$n} carro(s) migrado(s) do ZapSign ocultado(s) do estoque.";
         } elseif ($acaoOc === 'ocultar_um') {
@@ -123,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['oc
 $souSuperEstoque = $_SESSION['admin_perfil'] === 'super_admin';
 $verOcultos = $souSuperEstoque && ($_GET['ocultos'] ?? '') === '1';
 $migradosNoEstoque = $souSuperEstoque ? idsVeiculosMigradosZapsignNoEstoque() : [];
+$duplicadosPlaca = $souSuperEstoque ? mesclarVeiculosDuplicadosPorPlaca(false) : [];
 $ocultosLista = [];
 if ($verOcultos) {
     $ocultosLista = $db->query("SELECT id, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, oculto_estoque_motivo, updated_at FROM oportunidades WHERE etapa = 'fechado' AND oculto_estoque = 1 ORDER BY updated_at DESC")->fetchAll();
@@ -261,6 +265,13 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
         </form>
     <?php else: ?>
         <small>✅ Nenhum carro migrado do ZapSign aparecendo no estoque.</small>
+    <?php endif; ?>
+    <?php if ($duplicadosPlaca): ?>
+        <form method="post" onsubmit="return confirmarAcao(this, 'Mesclar <?= count($duplicadosPlaca) ?> placa(s) cadastrada(s) mais de uma vez? Vistorias e fotos vão pro cadastro principal e os repetidos saem do estoque (nada é apagado).');" style="margin:0">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="mesclar_duplicados">
+            <button type="submit" style="margin:0;width:auto">🔀 Mesclar <?= count($duplicadosPlaca) ?> placa(s) duplicada(s): <?= e(implode(', ', array_column($duplicadosPlaca, 'placa'))) ?></button>
+        </form>
     <?php endif; ?>
     <a class="btn" href="/admin/estoque.php<?= $verOcultos ? '' : '?ocultos=1' ?>"><?= $verOcultos ? '← Voltar pro estoque' : '👁️ Ver ocultos (' . $totalOcultos . ')' ?></a>
 </div>

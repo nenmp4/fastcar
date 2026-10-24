@@ -541,6 +541,48 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
     return $saida;
 }
 
+/**
+ * 24/10/2026, "evitar duplicar placas" — junta os cadastros repetidos que
+ * JÁ existem: pra cada placa com mais de 1 veículo na frota, move vistorias
+ * e fotos de revenda pro cadastro principal e oculta os outros (nunca
+ * apaga nada; negociações antigas ficam onde estão).
+ * @return array lista de ['placa','principal','duplicados'=>[ids]]
+ */
+function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
+    $db = getDB();
+    $grupos = $db->query("
+        SELECT UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) AS placa, GROUP_CONCAT(id) AS ids
+        FROM oportunidades
+        WHERE etapa = 'fechado' AND COALESCE(oculto_estoque, 0) = 0
+          AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) >= 6
+        GROUP BY placa HAVING COUNT(*) > 1
+    ")->fetchAll();
+    $saida = [];
+    foreach ($grupos as $g) {
+        $principal = veiculoPrincipalPorPlaca($g['placa']);
+        if ($principal === null) continue;
+        $dups = array_values(array_filter(array_map('intval', explode(',', $g['ids'])), fn($i) => $i !== $principal));
+        $saida[] = ['placa' => $g['placa'], 'principal' => $principal, 'duplicados' => $dups];
+        if (!$aplicar) continue;
+        $db->beginTransaction();
+        try {
+            foreach ($dups as $d) {
+                $db->prepare("UPDATE veiculo_avaliacoes SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
+                $db->prepare("UPDATE veiculo_midias_revenda SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
+                $db->prepare("UPDATE oportunidades SET oculto_estoque = 1, oculto_estoque_motivo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+                   ->execute(["Cadastro duplicado da placa {$g['placa']} — mesclado no #{$principal}", $d]);
+                $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'fechado', 'fechado', ?)")
+                   ->execute([$d, "Duplicado da placa {$g['placa']}: vistorias/fotos movidas pro #{$principal} e cadastro ocultado do estoque"]);
+            }
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+    }
+    return $saida;
+}
+
 function veiculoPlacaNormalizada(string $placa): string {
     return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
 }

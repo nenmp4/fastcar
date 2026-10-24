@@ -424,6 +424,7 @@ function buscarVeiculoAtivoPorPlaca(string $placa, ?int $excluirOportunidadeId =
         SELECT o.id, o.etapa, o.veiculo_marca, o.veiculo_modelo, c.nome
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
         WHERE UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ? AND o.etapa = 'fechado'
+              AND COALESCE(o.oculto_estoque, 0) = 0
               AND o.id != ?
         ORDER BY o.id DESC LIMIT 1
     ");
@@ -537,6 +538,15 @@ function criarVeiculoManualFrota(
     }
     if (!$marca && !$modelo) {
         throw new InvalidArgumentException('Informe ao menos marca ou modelo do veículo.');
+    }
+    // 24/10/2026, "evitar duplicar placas — acaba gerando duas negociações
+    // do mesmo carro": trava CENTRAL (vale pra Frota, Vendas, Vistorias e
+    // importação) — placa já na frota nunca vira um 2º cadastro.
+    if (trim($placa) !== '' && ($dupPlaca = buscarVeiculoAtivoPorPlaca($placa))) {
+        throw new InvalidArgumentException(
+            "Essa placa já está cadastrada na frota — oportunidade #{$dupPlaca['id']} " .
+            '(' . trim(($dupPlaca['veiculo_marca'] ?? '') . ' ' . ($dupPlaca['veiculo_modelo'] ?? '')) . '). Use o veículo que já existe.'
+        );
     }
     $responsavelId = $responsavelId ?: $criadoPor;
 
