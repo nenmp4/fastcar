@@ -45,7 +45,7 @@ if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
 $resultado = aplicarHorarioExpedienteFila();
 
 if ($resultado['abriu']) {
-    log_fila_horario("Abertura da fila disparada — {$resultado['afetados']} consultor(es) ligado(s) (exceto quem faltou hoje).");
+    log_fila_horario("Abertura da fila disparada — {$resultado['afetados']} consultor(es) ligado(s) (exceto quem faltou hoje); " . ($resultado['orfas_distribuidas'] ?? 0) . " lead(s) sem dono distribuído(s) em rodízio.");
 }
 if ($resultado['fechou']) {
     log_fila_horario('Fechamento da fila disparado — todos os consultores desligados.');

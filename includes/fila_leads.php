@@ -543,6 +543,47 @@ function filaHorarioFechamento(): string {
  * `proximoDaFila()` só cai pro plantão quando ninguém normal está
  * disponível.
  */
+/**
+ * Distribui as oportunidades SEM responsável (chegaram fora do horário,
+ * sem ninguém disponível) em rodízio entre os consultores disponíveis —
+ * uma pra cada, na ordem da fila (proximoDaFila(), respeita teto), mais
+ * antigas primeiro. Nunca usa plantão. Retorna quantas foram atribuídas.
+ */
+function distribuirOrfasRodizio(): int {
+    $db = getDB();
+    $etapasPh = implode(',', array_fill(0, count(FILA_LEADS_ETAPAS_NAO_TOCADAS), '?'));
+    $stmt = $db->prepare("
+        SELECT id, etapa FROM oportunidades
+        WHERE responsavel_id IS NULL AND etapa IN ({$etapasPh})
+        ORDER BY created_at ASC, id ASC
+    ");
+    $stmt->execute(FILA_LEADS_ETAPAS_NAO_TOCADAS);
+    $total = 0;
+    foreach ($stmt->fetchAll() as $op) {
+        $db->exec('BEGIN IMMEDIATE');
+        try {
+            $usuarioId = proximoDaFila(disponivelOnly: true);
+            if ($usuarioId === null) { $db->exec('COMMIT'); break; }
+            $proximaPosicao = 1 + (int)$db->query("SELECT COALESCE(MAX(posicao_fila), 0) FROM usuarios WHERE perfil = 'consultor'")->fetchColumn();
+            $db->prepare("UPDATE usuarios SET posicao_fila = ?, ultimo_lead_recebido_em = datetime('now','localtime') WHERE id = ?")
+               ->execute([$proximaPosicao, $usuarioId]);
+            $upd = $db->prepare("UPDATE oportunidades SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ? AND responsavel_id IS NULL");
+            $upd->execute([$usuarioId, $op['id']]);
+            if ($upd->rowCount() > 0) {
+                $nome = (string)$db->query("SELECT nome FROM usuarios WHERE id = " . (int)$usuarioId)->fetchColumn();
+                $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id) VALUES (?, ?, ?, ?, NULL)")
+                   ->execute([$op['id'], $op['etapa'], $op['etapa'], "Abertura da fila: lead que chegou fora do horário atribuído a {$nome} (rodízio)"]);
+                $total++;
+            }
+            $db->exec('COMMIT');
+        } catch (Throwable $e) {
+            $db->exec('ROLLBACK');
+            throw $e;
+        }
+    }
+    return $total;
+}
+
 function aplicarHorarioExpedienteFila(): array {
     $db = getDB();
     $hoje = date('Y-m-d');
@@ -559,6 +600,10 @@ function aplicarHorarioExpedienteFila(): array {
         setConfig("fila_expediente_abriu_{$hoje}", '1');
         $resultado['abriu'] = true;
         $resultado['afetados'] = $stmt->rowCount();
+        // 24/10/2026, "tem que ser bem justo": leads que chegaram fora do
+        // horário e ficaram sem dono são divididos já na abertura, em
+        // rodízio entre todo mundo que entrou agora.
+        $resultado['orfas_distribuidas'] = distribuirOrfasRodizio();
     }
 
     if ($agora >= filaHorarioFechamento() && !getConfig("fila_expediente_fechou_{$hoje}")) {
