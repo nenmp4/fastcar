@@ -406,7 +406,7 @@ $ordemVendas = match (true) {
              (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC",
 };
 $sql = "
-    SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+    SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, o.valor_fipe_referencia,
            u.nome AS responsavel_nome
     FROM vendas v
     LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
@@ -425,6 +425,7 @@ if ($abaVendidas) {
     $resumoVendidas = $stmtRes->fetch();
     // Situação das parcelas de cada venda da página (1 query só).
     $parcVendidas = [];
+    $comissaoVendidas = [];
     if ($vendas) {
         $idsV = array_map(fn($x) => (int)$x['id'], $vendas);
         $phV = implode(',', array_fill(0, count($idsV), '?'));
@@ -437,6 +438,11 @@ if ($abaVendidas) {
             GROUP BY venda_id");
         $stmtP->execute($idsV);
         foreach ($stmtP->fetchAll() as $r) $parcVendidas[(int)$r['venda_id']] = $r;
+        // Comissão do vendedor lançada no financeiro (5% da entrada, automática).
+        $stmtC = $db->prepare("SELECT venda_id, SUM(valor) AS valor, MAX(status) AS status, COUNT(*) AS qtd FROM fin_lancamentos
+                               WHERE venda_id IN ({$phV}) AND origem = 'comissao_venda' AND status != 'cancelado' GROUP BY venda_id");
+        $stmtC->execute($idsV);
+        foreach ($stmtC->fetchAll() as $r) $comissaoVendidas[(int)$r['venda_id']] = $r;
     }
 }
 
@@ -1203,11 +1209,11 @@ if ($podeSelecionarEmMassa):
     </form>
     <table class="tabela-oportunidades" style="margin-top:12px">
         <thead>
-            <tr><th>Veículo</th><th>Comprador</th><th>Valor</th><th>Entrada</th><th>Parcelas</th><th>Data da venda</th><th>Vendedor</th><th></th></tr>
+            <tr><th>Veículo</th><th>Comprador</th><th>FIPE</th><th>Valor</th><th>Entrada</th><th>Parcelas</th><th>Comissão</th><th>Data da venda</th><th>Vendedor</th><th></th></tr>
         </thead>
         <tbody>
         <?php if (!$vendas): ?>
-            <tr><td colspan="8">Nenhuma venda fechada<?= ($mesVendidas || $busca) ? ' com esse filtro' : ' ainda' ?>.</td></tr>
+            <tr><td colspan="10">Nenhuma venda fechada<?= ($mesVendidas || $busca) ? ' com esse filtro' : ' ainda' ?>.</td></tr>
         <?php endif; ?>
         <?php foreach ($vendas as $v): $pv = $parcVendidas[(int)$v['id']] ?? null; ?>
             <tr class="linha-clicavel" onclick="if (!event.target.closest('a')) location.href='/admin/venda.php?id=<?= (int)$v['id'] ?>'" style="cursor:pointer">
@@ -1216,7 +1222,13 @@ if ($podeSelecionarEmMassa):
                     <?php if (!empty($v['veiculo_placa'])): ?><br><small><?= e(strtoupper($v['veiculo_placa'])) ?></small><?php endif; ?>
                 </td>
                 <td><?= e($v['comprador_nome'] ?: '—') ?><br><small><?= e($v['comprador_telefone'] ?: '') ?></small></td>
-                <td><?= $v['preco_venda'] !== null ? moedaVenda((float)$v['preco_venda']) : '—' ?></td>
+                <td><?= $v['valor_fipe_referencia'] ? moedaVenda((float)$v['valor_fipe_referencia']) : '<small>—</small>' ?></td>
+                <td>
+                    <?= $v['preco_venda'] !== null ? moedaVenda((float)$v['preco_venda']) : '—' ?>
+                    <?php if ($v['preco_venda'] && $v['valor_fipe_referencia'] > 0): $pct = round((float)$v['preco_venda'] / (float)$v['valor_fipe_referencia'] * 100); ?>
+                        <br><small><?= $pct ?>% da FIPE</small>
+                    <?php endif; ?>
+                </td>
                 <td>
                     <?= $v['valor_pago_contratacao'] ? moedaVenda((float)$v['valor_pago_contratacao']) : '—' ?>
                     <?php if ($pv && $pv['entrada_status']): ?><br><span class="badge <?= $pv['entrada_status'] === 'pago' ? 'badge-ok' : ($pv['entrada_status'] === 'atrasado' ? 'badge-atraso' : 'badge-aviso') ?>"><?= $pv['entrada_status'] === 'pago' ? '✅ paga' : ($pv['entrada_status'] === 'atrasado' ? '⚠️ atrasada' : '⏳ a conferir') ?></span><?php endif; ?>
@@ -1231,6 +1243,17 @@ if ($podeSelecionarEmMassa):
                     <?php endif; ?>
                     <?php if ($pv && (int)$pv['qtd'] > 0): ?>
                         <br><span class="badge <?= (int)$pv['atrasadas'] > 0 ? 'badge-atraso' : 'badge-ok' ?>"><?= (int)$pv['pagas'] ?>/<?= (int)$pv['qtd'] ?> pagas<?= (int)$pv['atrasadas'] > 0 ? ' · ' . (int)$pv['atrasadas'] . ' atrasada(s)' : '' ?></span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php $cv = $comissaoVendidas[(int)$v['id']] ?? null; ?>
+                    <?php if ($cv): ?>
+                        <?= moedaVenda((float)$cv['valor']) ?>
+                        <br><span class="badge <?= $cv['status'] === 'pago' ? 'badge-ok' : 'badge-aviso' ?>"><?= $cv['status'] === 'pago' ? '✅ lançada/paga' : '⏳ ' . e($cv['status']) ?></span>
+                    <?php elseif ($v['valor_pago_contratacao'] > 0): ?>
+                        <small>não lançada</small><br><small>(5% = <?= moedaVenda((float)$v['valor_pago_contratacao'] * 0.05) ?>)</small>
+                    <?php else: ?>
+                        <small>— sem entrada</small>
                     <?php endif; ?>
                 </td>
                 <td><?= $v['data_venda'] ? date('d/m/Y', strtotime($v['data_venda'])) : '—' ?></td>
