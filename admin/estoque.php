@@ -10,9 +10,50 @@
  */
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/veiculo_avaliacoes.php';
+require_once __DIR__ . '/../includes/vendas_inbox.php';
 requireAcessoVendas();
 
 $db = getDB();
+$erro = '';
+$sucesso = '';
+
+// 24/10/2026, "ou enviar pela instância ou copiar o link" — manda o link
+// do veículo pro cliente pela instância de vendas, assinado com o nome do
+// vendedor (mesma enviarMensagemManualVendas() da caixa de vendas). Se o
+// telefone ainda não tem negociação ativa, abre uma já com esse vendedor
+// de responsável — a conversa aparece no WhatsApp Vendas dele.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_link_cliente') {
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $opId = (int)($_POST['oportunidade_id'] ?? 0);
+        $tel = normalizarTelefone((string)($_POST['telefone'] ?? ''));
+        $nomeCli = trim((string)($_POST['nome'] ?? ''));
+        if (strlen($tel) < 12) throw new RuntimeException('Telefone inválido — use DDD + número.');
+        if (!veiculoDisponivelParaVenda($opId)) throw new RuntimeException('Esse veículo não está mais disponível.');
+        $stmtV = $db->prepare("SELECT veiculo_marca, veiculo_modelo, veiculo_ano FROM oportunidades WHERE id = ?");
+        $stmtV->execute([$opId]);
+        $vv = $stmtV->fetch();
+        $tituloV = trim(($vv['veiculo_marca'] ?? '') . ' ' . ($vv['veiculo_modelo'] ?? '') . ' ' . ($vv['veiculo_ano'] ?? ''));
+        $meuId = (int)$_SESSION['admin_id'];
+        $texto = ($nomeCli !== '' ? "Oi, {$nomeCli}! " : 'Oi! ') . "Olha esse {$tituloV} que temos aqui na Fastcar 👇\n" . veiculoLinkPublicoUrl($opId, $meuId);
+        $res = enviarMensagemManualVendas($tel, $texto, $meuId);
+        if (!$res['ok']) throw new RuntimeException($res['erro']);
+        $ph = implode(',', array_fill(0, count(ETAPAS_VENDA_ATIVAS), '?'));
+        $stmtA = $db->prepare("SELECT id FROM vendas WHERE comprador_telefone = ? AND etapa IN ({$ph}) LIMIT 1");
+        $stmtA->execute(array_merge([$tel], ETAPAS_VENDA_ATIVAS));
+        if (!$stmtA->fetchColumn()) {
+            $db->prepare("INSERT INTO vendas (etapa, origem, comprador_nome, comprador_telefone, responsavel_id, veiculo_interesse_texto) VALUES ('negociacao', 'whatsapp', ?, ?, ?, ?)")
+               ->execute([clean($nomeCli), $tel, $meuId, $tituloV]);
+            $novaId = (int)$db->lastInsertId();
+            $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao, responsavel_id) VALUES (?, '', 'negociacao', ?, ?)")
+               ->execute([$novaId, "Vendedor enviou o link do {$tituloV} pelo Estoque", $meuId]);
+        }
+        $sucesso = "Link do {$tituloV} enviado pelo WhatsApp de vendas pra {$tel}.";
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
 $busca = trim((string)($_GET['q'] ?? ''));
 $tipoFiltro = in_array($_GET['tipo'] ?? '', ['carro', 'moto', 'caminhao', 'outro'], true) ? $_GET['tipo'] : '';
 
@@ -100,6 +141,8 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
     </form>
 </div>
 
+<?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
+<?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <?php if (!$veiculos): ?>
     <div class="card"><p>Nenhum veículo disponível<?= ($busca !== '' || $tipoFiltro !== '') ? ' com esse filtro' : ' no estoque agora' ?>.</p></div>
 <?php else: ?>
@@ -126,14 +169,56 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             <?php endif; ?>
             <small>📸 <?= $qtdMidia[$id] ?? 0 ?> foto(s)/vídeo(s)</small>
         </div>
+        <?php
+            $linkCliente = veiculoLinkPublicoUrl($id, (int)$_SESSION['admin_id']);
+            $tituloCard = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '') . ' ' . ($v['veiculo_ano'] ?? ''));
+        ?>
         <div class="estoque-acoes">
-            <a class="btn" href="/admin/veiculo_midias.php?id=<?= $id ?>">Ver fotos e vídeos</a>
+            <button type="button" class="btn-primary" style="width:100%;margin-top:0" onclick="copiarTexto(<?= e(json_encode($linkCliente)) ?>, this)">🔗 Copiar link pro cliente</button>
+            <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+            <details style="margin-top:8px">
+                <summary class="btn" style="list-style:none;cursor:pointer;text-align:center">💬 Enviar pelo WhatsApp de vendas</summary>
+                <form method="post" style="margin-top:8px">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="enviar_link_cliente">
+                    <input type="hidden" name="oportunidade_id" value="<?= $id ?>">
+                    <input type="tel" name="telefone" required placeholder="Telefone com DDD">
+                    <input type="text" name="nome" placeholder="Nome do cliente (opcional)">
+                    <button type="submit" style="width:100%">Enviar link</button>
+                </form>
+            </details>
+            <?php endif; ?>
+            <a class="btn" style="margin-top:8px" href="/admin/veiculo_midias.php?id=<?= $id ?>">📸 Fotos e vídeos</a>
         </div>
     </div>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
 </main>
+<script>
+function copiarTexto(texto, btn) {
+    var original = btn.textContent;
+    function marcarCopiado() {
+        btn.textContent = '✅ Copiado!';
+        setTimeout(function () { btn.textContent = original; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(marcarCopiado).catch(function () { copiarTextoFallback(texto, marcarCopiado); });
+    } else {
+        copiarTextoFallback(texto, marcarCopiado);
+    }
+}
+function copiarTextoFallback(texto, callback) {
+    var ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); callback(); } catch (e) {}
+    document.body.removeChild(ta);
+}
+</script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php $notifModulo = 'vendas'; include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>

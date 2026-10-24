@@ -89,6 +89,35 @@ function etapaVendaLabel(string $etapa): string {
  * nunca dispara essa checagem (cadastro legado sem placa registrada
  * nunca é "duplicado" por coincidência de string vazia).
  */
+/**
+ * Link público do veículo pra vendedor mandar pro cliente (24/10/2026,
+ * "link dos veículos pro vendedor compartilhar"). Sem login: autenticado
+ * por um HMAC de (veículo, vendedor) — ninguém consegue trocar o número
+ * na URL pra ver outro carro nem "virar" outro vendedor. O vendedor entra
+ * no link pra o botão de WhatsApp da página cair direto nele.
+ */
+function veiculoLinkPublicoSegredo(): string {
+    $s = (string)getConfig('veiculo_link_publico_segredo');
+    if ($s === '') {
+        $s = bin2hex(random_bytes(32));
+        setConfig('veiculo_link_publico_segredo', $s);
+    }
+    return $s;
+}
+
+function veiculoLinkPublicoToken(int $oportunidadeId, int $vendedorId): string {
+    return substr(hash_hmac('sha256', $oportunidadeId . ':' . $vendedorId, veiculoLinkPublicoSegredo()), 0, 20);
+}
+
+function veiculoLinkPublicoValido(int $oportunidadeId, int $vendedorId, string $token): bool {
+    return $oportunidadeId > 0 && $token !== '' && hash_equals(veiculoLinkPublicoToken($oportunidadeId, $vendedorId), $token);
+}
+
+function veiculoLinkPublicoUrl(int $oportunidadeId, int $vendedorId): string {
+    $base = rtrim((string)(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions'), '/');
+    return $base . '/public/veiculo.php?o=' . $oportunidadeId . '&v=' . $vendedorId . '&t=' . veiculoLinkPublicoToken($oportunidadeId, $vendedorId);
+}
+
 function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     $db = getDB();
     $stmtOp = $db->prepare("SELECT etapa, veiculo_placa FROM oportunidades WHERE id = ?");
