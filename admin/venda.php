@@ -495,7 +495,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // vendedor, nunca inferido automaticamente de nenhum
                 // sinal (WhatsApp, data resolvida pela IA etc). Sempre
                 // disponível, independente de etapa/origem da negociação.
+                $jaCompareceu = !empty($v['visita_compareceu_em']);
                 $db->prepare("UPDATE vendas SET visita_compareceu_em = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE id = ?")->execute([$id]);
+                if (!$jaCompareceu) notificarComparecimentoVenda($id, $_SESSION['admin_nome'] ?? null);
                 $sucesso = 'Comparecimento registrado.';
             } elseif ($acao === 'desfazer_compareceu') {
                 $db->prepare("UPDATE vendas SET visita_compareceu_em = NULL, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$id]);

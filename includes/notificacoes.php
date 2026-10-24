@@ -89,6 +89,62 @@ function enviarAvisoInternoWhatsapp(?string $whatsappResponsavel, string $msg): 
     }
 }
 
+/**
+ * 24/10/2026, "manda para número Jean sempre... toda pessoa que vier até a
+ * loja" — diferente de enviarAvisoInternoWhatsapp() (números de
+ * Configurações só como FALLBACK), visita à loja vai SEMPRE pros dois: o
+ * vendedor responsável E todo número de config.notificacao_leads_whatsapp.
+ * Mesmo número nos dois lugares nunca recebe 2x.
+ */
+function enviarAvisoVisitaLojaWhatsapp(?string $whatsappResponsavel, string $msg): void {
+    try {
+        $numeros = array_filter(array_map('trim', explode(',', getConfig('notificacao_leads_whatsapp') ?: '')));
+        if (!empty($whatsappResponsavel)) array_unshift($numeros, $whatsappResponsavel);
+        $jaEnviados = [];
+        foreach ($numeros as $numero) {
+            $chave = normalizarTelefone($numero);
+            if ($chave === '' || isset($jaEnviados[$chave])) continue;
+            $jaEnviados[$chave] = true;
+            zapiEnviarTextoInterno($numero, $msg);
+        }
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar quem chama
+    }
+}
+
+/** 24/10/2026 — vendedor clicou "✅ Cliente compareceu": avisa responsável + números de Configurações. */
+function notificarComparecimentoVenda(int $vendaId, ?string $quemMarcou = null): void {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT v.comprador_nome, v.comprador_telefone, v.oportunidade_id, u.whatsapp AS responsavel_whatsapp, u.nome AS responsavel_nome
+            FROM vendas v LEFT JOIN usuarios u ON u.id = v.responsavel_id
+            WHERE v.id = ?
+        ");
+        $stmt->execute([$vendaId]);
+        $v = $stmt->fetch();
+        if (!$v) return;
+        $veiculo = '';
+        if ($v['oportunidade_id']) {
+            $stmtOp = $db->prepare("SELECT veiculo_marca, veiculo_modelo FROM oportunidades WHERE id = ?");
+            $stmtOp->execute([$v['oportunidade_id']]);
+            $op = $stmtOp->fetch();
+            if ($op) $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? ''));
+        }
+        $baseUrl = getConfig('app_base_url') ?: '';
+        $link = $baseUrl ? rtrim($baseUrl, '/') . '/admin/venda.php?id=' . $vendaId : '';
+        $msg = "🏁 Cliente chegou na loja!\nComprador: " . ($v['comprador_nome'] ?: '(sem nome)')
+             . ($v['comprador_telefone'] ? "\nTelefone: {$v['comprador_telefone']}" : '')
+             . ($veiculo !== '' ? "\nVeículo: {$veiculo}" : '')
+             . ($v['responsavel_nome'] ? "\nVendedor: {$v['responsavel_nome']}" : '')
+             . ($quemMarcou ? "\nRegistrado por: {$quemMarcou}" : '')
+             . ($link ? "\n{$link}" : '');
+        enviarAvisoVisitaLojaWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
+    } catch (Throwable $e) {
+        // best-effort
+    }
+}
+
 function notificarDocumentosConfirmadosZap(?string $whatsappResponsavel, string $rotuloContato, string $nomeContato, string $veiculo, string $url): void {
     $baseUrl = getConfig('app_base_url') ?: '';
     $link = $baseUrl && $url ? rtrim($baseUrl, '/') . $url : '';
@@ -204,7 +260,7 @@ function notificarVisitaConfirmadaVenda(int $vendaId): void {
              . ($dia !== '' ? "\nDia/horário combinado: {$dia}" : '')
              . ($veiculo !== '' ? "\nVeículo: {$veiculo}" : '')
              . ($link ? "\n{$link}" : '');
-        enviarAvisoInternoWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
+        enviarAvisoVisitaLojaWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
     } catch (Throwable $e) {
         // best-effort — nunca pode travar o turno da IA
     }
