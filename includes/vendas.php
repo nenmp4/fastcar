@@ -170,6 +170,10 @@ function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     $stmtOc = $db->prepare("SELECT COALESCE(oculto_estoque, 0) FROM oportunidades WHERE id = ?");
     $stmtOc->execute([$oportunidadeId]);
     if ((int)$stmtOc->fetchColumn() === 1) return false;
+    // Mesmo carro cadastrado 2x (mesma placa): só o "principal" vende —
+    // nunca abre 2 negociações pro mesmo veículo físico.
+    $principal = veiculoPrincipalPorPlaca((string)$op['veiculo_placa']);
+    if ($principal !== null && $principal !== $oportunidadeId) return false;
 
     $stmt = $db->prepare("
         SELECT COUNT(*) FROM vendas WHERE oportunidade_id = ? AND etapa IN ('negociacao', 'contrato_enviado', 'vendido')
@@ -500,9 +504,47 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
         ORDER BY o.data_compra DESC
         LIMIT ?
     ");
-    $stmt->bindValue(1, $limite, PDO::PARAM_INT);
+    $stmt->bindValue(1, $limite + 200, PDO::PARAM_INT);
     $stmt->execute();
-    return $stmt->fetchAll();
+    // 24/10/2026, "Fiesta está duplicando — acaba gerando dois lugares de
+    // negociação": mesmo veículo físico (mesma placa) cadastrado em 2
+    // oportunidades aparece 1 vez só — sempre o "principal".
+    $saida = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $placaNorm = veiculoPlacaNormalizada((string)$r['veiculo_placa']);
+        if ($placaNorm !== '' && veiculoPrincipalPorPlaca($placaNorm) !== (int)$r['oportunidade_id']) continue;
+        $saida[] = $r;
+        if (count($saida) >= $limite) break;
+    }
+    return $saida;
+}
+
+function veiculoPlacaNormalizada(string $placa): string {
+    return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
+}
+
+/**
+ * Entre as oportunidades 'fechado' (não ocultas) com a mesma placa, qual é a
+ * "principal" — a que tem vistoria concluída, depois a que tem foto de
+ * revenda, depois a mais nova. null = sem placa / nenhuma.
+ */
+function veiculoPrincipalPorPlaca(string $placa): ?int {
+    $norm = veiculoPlacaNormalizada($placa);
+    if (strlen($norm) < 6) return null;
+    $stmt = getDB()->prepare("
+        SELECT o.id,
+               EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = o.id AND v.etapa IN ('negociacao','contrato_enviado','vendido')) AS tem_venda,
+               EXISTS (SELECT 1 FROM veiculo_avaliacoes a WHERE a.oportunidade_id = o.id AND a.status = 'concluida') AS tem_vistoria,
+               EXISTS (SELECT 1 FROM veiculo_midias_revenda m WHERE m.oportunidade_id = o.id) AS tem_midia
+        FROM oportunidades o
+        WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque, 0) = 0
+          AND UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
+        ORDER BY tem_venda DESC, tem_vistoria DESC, tem_midia DESC, o.id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$norm]);
+    $id = $stmt->fetchColumn();
+    return $id === false ? null : (int)$id;
 }
 
 /**
