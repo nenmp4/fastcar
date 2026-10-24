@@ -510,6 +510,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mudarEtapaVenda($id, $etapaNovaPost, (int)$_SESSION['admin_id'], clean((string)($_POST['observacao'] ?? '')));
                     $sucesso = 'Etapa atualizada.';
                 }
+            } elseif ($acao === 'nao_qualificado') {
+                // 24/10/2026 — "marcar cliente não qualificado rápido".
+                $motivoNq = trim((string)($_POST['motivo'] ?? ''));
+                if ($motivoNq === '') {
+                    $erro = 'Informe o motivo de não qualificado.';
+                } elseif (!in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true)) {
+                    $erro = 'Essa negociação já está encerrada.';
+                } else {
+                    mudarEtapaVenda($id, 'sem_perfil', (int)$_SESSION['admin_id'], 'Não qualificado: ' . clean($motivoNq));
+                    $sucesso = 'Lead marcado como não qualificado.';
+                }
             } elseif ($acao === 'cancelar_venda') {
                 // 19/09/2026, "cliente devolver veiculo agente vende para
                 // outro" — a mesma ação/etapa ('cancelada') cobre cancelar
@@ -1424,13 +1435,30 @@ function adicionarParteEntrada() {
 
     <div class="card">
         <h3>Mudar etapa</h3>
-        <?php if (in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true)): ?>
+        <?php if (in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true)): ?>
+            <form method="post" onsubmit="return confirmarAcao(this, 'Marcar este lead como NÃO QUALIFICADO? Ele sai do funil (dá pra ver depois em ❌ Encerradas).');" style="margin-bottom:12px">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="nao_qualificado">
+                <label>⚪ Cliente não qualificado — motivo</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <input type="text" name="motivo" required list="motivos-nq" placeholder="Ex: sem entrada, só pesquisando..." style="flex:1;min-width:180px;margin:0">
+                    <datalist id="motivos-nq">
+                        <option value="Sem entrada">
+                        <option value="Entrada abaixo do mínimo">
+                        <option value="Só pesquisando, sem intenção de compra">
+                        <option value="Não responde mais">
+                        <option value="Fora da região">
+                    </datalist>
+                    <button type="submit" class="perigo" style="margin:0;width:auto">⚪ Não qualificado</button>
+                </div>
+            </form>
+            <hr>
             <form method="post">
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="mudar_etapa">
                 <label>Nova etapa</label>
                 <select name="etapa_nova" required>
-                    <?php foreach (['negociacao', 'contrato_enviado', 'vendido'] as $et): ?>
+                    <?php foreach (['qualificacao_ia', 'crm_preenchido', 'negociacao', 'contrato_enviado', 'vendido'] as $et): ?>
                         <option value="<?= e($et) ?>" <?= $v['etapa'] === $et ? 'selected' : '' ?>><?= e(etapaVendaLabel($et)) ?></option>
                     <?php endforeach; ?>
                 </select>

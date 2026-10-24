@@ -243,6 +243,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'atualiz
     exit;
 }
 
+// 24/10/2026, "botão no lead marcar cliente não qualificado / mudar etapa
+// rápido" — troca de etapa direto da linha da tabela, sem abrir a negociação.
+// Sempre via mudarEtapaVenda() (histórico); "não qualificado" = 'sem_perfil'
+// com motivo obrigatório. Contrato/vendido continuam só pela tela da venda.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'etapa_rapida') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera negociações.');
+    }
+    $idRap = (int)($_POST['id'] ?? 0);
+    $etapaRap = (string)($_POST['etapa_nova'] ?? '');
+    $motivoRap = trim((string)($_POST['motivo'] ?? ''));
+    $qs = $_GET;
+    unset($qs['rap_ok'], $qs['rap_erro']);
+    try {
+        if (!in_array($etapaRap, ['qualificacao_ia', 'crm_preenchido', 'negociacao', 'sem_perfil'], true)) throw new RuntimeException('Etapa inválida.');
+        $stmtR = $db->prepare('SELECT etapa, responsavel_id FROM vendas WHERE id = ?');
+        $stmtR->execute([$idRap]);
+        $vR = $stmtR->fetch();
+        if (!$vR || !in_array($vR['etapa'], ETAPAS_VENDA_ATIVAS, true)) throw new RuntimeException('Negociação não encontrada ou já encerrada.');
+        if ($souDono && (int)$vR['responsavel_id'] !== $meuId) throw new RuntimeException('Essa negociação não é da sua carteira.');
+        if ($etapaRap === 'sem_perfil' && $motivoRap === '') throw new RuntimeException('Informe o motivo de não qualificado.');
+        if ($vR['etapa'] !== $etapaRap) {
+            mudarEtapaVenda($idRap, $etapaRap, $meuId, $etapaRap === 'sem_perfil' ? 'Não qualificado: ' . $motivoRap : 'Etapa alterada direto pela lista');
+        }
+        $qs['rap_ok'] = $etapaRap === 'sem_perfil' ? "Negociação #{$idRap} marcada como não qualificada." : "Negociação #{$idRap} movida pra " . etapaVendaLabel($etapaRap) . '.';
+    } catch (Throwable $e) {
+        $qs['rap_erro'] = $e->getMessage();
+    }
+    header('Location: /admin/vendas.php?' . http_build_query($qs));
+    exit;
+}
+
 $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
@@ -475,6 +512,11 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 
 <main>
 <?php if ($erroPromissoria): ?><div class="alerta-erro"><?= e($erroPromissoria) ?></div><?php endif; ?>
+<?php if (isset($_GET['rap_ok'])): ?>
+    <div class="alerta-sucesso">✅ <?= e((string)$_GET['rap_ok']) ?></div>
+<?php elseif (isset($_GET['rap_erro'])): ?>
+    <div class="alerta-erro"><?= e((string)$_GET['rap_erro']) ?></div>
+<?php endif; ?>
 <?php if (isset($_GET['bulk_reatrib'])): ?>
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_reatrib'] ?> negociação(ões) atribuída(s) a <?= e((string)($_GET['bulk_destino'] ?? '')) ?><?= (int)($_GET['bulk_ignorados'] ?? 0) > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (já encerrada ou já era dele)' : '' ?>.</div>
 <?php elseif (isset($_GET['bulk_sucesso'])): ?>
@@ -1206,7 +1248,24 @@ if ($podeSelecionarEmMassa):
                         <small><?= e(($v['motivo_cancelamento'] ?: $v['motivo_perda']) ?: ($v['observacao_manual'] ?? '') ?: '—') ?></small>
                     <?php endif; ?>
                 </td>
-                <td><a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
+                <td>
+                    <a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a>
+                    <?php if ($ativaParaSelecao && $perfil !== 'supervisor'): ?>
+                    <form method="post" class="etapa-rapida-form" style="margin-top:6px">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="etapa_rapida">
+                        <input type="hidden" name="id" value="<?= (int)$v['id'] ?>">
+                        <input type="hidden" name="motivo" value="">
+                        <select name="etapa_nova" onchange="etapaRapida(this)" style="font-size:13px;padding:4px 6px;margin:0;min-width:150px">
+                            <option value="">⚡ Mudar etapa…</option>
+                            <?php foreach (['qualificacao_ia', 'crm_preenchido', 'negociacao'] as $etR): if ($etR === $v['etapa']) continue; ?>
+                                <option value="<?= $etR ?>"><?= e(etapaVendaLabel($etR)) ?></option>
+                            <?php endforeach; ?>
+                            <option value="sem_perfil">⚪ Não qualificado</option>
+                        </select>
+                    </form>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -1224,6 +1283,16 @@ function bulkAtualizar() {
 function bulkToggleTodos(master) {
     document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = master.checked; });
     bulkAtualizar();
+}
+function etapaRapida(sel) {
+    var form = sel.form;
+    if (!sel.value) return;
+    if (sel.value === 'sem_perfil') {
+        var motivo = prompt('Motivo de não qualificado (ex: sem entrada, só pesquisando, fora da região):');
+        if (motivo === null || motivo.trim() === '') { sel.value = ''; return; }
+        form.querySelector('input[name="motivo"]').value = motivo.trim();
+    }
+    form.submit();
 }
 function bulkReatribuir() {
     var destino = document.getElementById('bulk-novo-responsavel').value;
