@@ -968,7 +968,11 @@ if ($frotaDash) {
     $phDash = implode(',', array_fill(0, count($idsDash), '?'));
     $stmtCapa = $db->prepare("SELECT oportunidade_id, MIN(id) AS foto_id FROM veiculo_midias_revenda WHERE tipo = 'foto' AND oportunidade_id IN ({$phDash}) GROUP BY oportunidade_id");
     $stmtCapa->execute($idsDash);
-    foreach ($stmtCapa->fetchAll() as $r) $capaDash[(int)$r['oportunidade_id']] = (int)$r['foto_id'];
+    foreach ($stmtCapa->fetchAll() as $r) $capaDash[(int)$r['oportunidade_id']] = '/admin/ver_midia_revenda.php?id=' . (int)$r['foto_id'];
+    // Sem foto de revenda ainda? Usa a 1ª foto da vistoria como capa.
+    $stmtCapaV = $db->prepare("SELECT a.oportunidade_id, MIN(f.id) AS foto_id FROM veiculo_avaliacao_fotos f JOIN veiculo_avaliacoes a ON a.id = f.avaliacao_id WHERE f.tipo = 'foto' AND a.oportunidade_id IN ({$phDash}) GROUP BY a.oportunidade_id");
+    $stmtCapaV->execute($idsDash);
+    foreach ($stmtCapaV->fetchAll() as $r) $capaDash[(int)$r['oportunidade_id']] ??= '/admin/ver_avaliacao_foto.php?id=' . (int)$r['foto_id'];
 }
 $iconeDash = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'];
 ?>
@@ -990,7 +994,7 @@ $iconeDash = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
         <a class="vitrine-card<?= $iDash >= 12 ? ' vitrine-extra' : '' ?>" data-busca="<?= e($buscaDash) ?>"<?= $iDash >= 12 ? ' style="display:none"' : '' ?> href="/admin/estoque.php?q=<?= urlencode((string)($fv['veiculo_placa'] ?: $tit)) ?>">
             <div class="vitrine-foto">
                 <?php if (isset($capaDash[$fid])): ?>
-                    <img src="/admin/ver_midia_revenda.php?id=<?= $capaDash[$fid] ?>" alt="" loading="lazy">
+                    <img src="<?= e($capaDash[$fid]) ?>" alt="" loading="lazy">
                 <?php else: ?>
                     <?= $iconeDash[$fv['tipo_veiculo'] ?? ''] ?? '🚗' ?>
                 <?php endif; ?>

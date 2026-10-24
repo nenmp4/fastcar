@@ -80,9 +80,13 @@ if ($veiculos) {
     ");
     $stmt->execute($ids);
     foreach ($stmt->fetchAll() as $r) {
-        if ($r['foto_id']) $fotoCapa[(int)$r['oportunidade_id']] = (int)$r['foto_id'];
+        if ($r['foto_id']) $fotoCapa[(int)$r['oportunidade_id']] = '/admin/ver_midia_revenda.php?id=' . (int)$r['foto_id'];
         $qtdMidia[(int)$r['oportunidade_id']] = (int)$r['qtd'];
     }
+    // Sem foto de revenda ainda? Usa a 1ª foto da vistoria como capa.
+    $stmt = $db->prepare("SELECT a.oportunidade_id, MIN(f.id) AS foto_id FROM veiculo_avaliacao_fotos f JOIN veiculo_avaliacoes a ON a.id = f.avaliacao_id WHERE f.tipo = 'foto' AND a.oportunidade_id IN ({$ph}) GROUP BY a.oportunidade_id");
+    $stmt->execute($ids);
+    foreach ($stmt->fetchAll() as $r) $fotoCapa[(int)$r['oportunidade_id']] ??= '/admin/ver_avaliacao_foto.php?id=' . (int)$r['foto_id'];
 }
 $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'];
 ?>
@@ -151,7 +155,7 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
     <div class="estoque-card">
         <div class="estoque-foto">
             <?php if (isset($fotoCapa[$id])): ?>
-                <img src="/admin/ver_midia_revenda.php?id=<?= $fotoCapa[$id] ?>" alt="" loading="lazy">
+                <img src="<?= e($fotoCapa[$id]) ?>" alt="" loading="lazy">
             <?php else: ?>
                 <?= $iconeTipo[$v['tipo_veiculo'] ?? ''] ?? '🚗' ?>
             <?php endif; ?>
