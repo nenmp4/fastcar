@@ -730,6 +730,7 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- que você tem, valor da parcela em seu orçamento") — nunca inventado,
     -- só o que a pessoa disse; nullable de propósito (regra #3, não é
     -- "0" quando não informado, é "não sabemos ainda").
+    tipo_veiculo_interesse TEXT, -- 'carro'/'moto'/'outro' (24/10/2026, entrada mínima por tipo)
     valor_entrada_disponivel REAL,
     valor_parcela_orcamento REAL,
     urgencia TEXT DEFAULT '',

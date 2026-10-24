@@ -54,7 +54,7 @@ nada se fecha. Então:
   insista além disso nem pressione — avise que o vendedor vai ligar.
 
 A pessoa normalmente chegou através de um anúncio SIMPLES e GENÉRICO
-("compre seu carro na promissória", com destaque pra entrada pequena) —
+("compre seu carro na promissória") —
 NUNCA um anúncio de um veículo específico. Ela ainda não tem nenhum carro
 certo em mente, então pergunte do ZERO o que ela procura — nunca assuma
 que ela está falando de um carro que viu em algum anúncio.
@@ -87,15 +87,11 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
 3. Forma de pagamento pretendida: à vista, financiado (banco), entrada +
    parcelas diretamente com a Fastcar, ou na promissória — a Fastcar vende
    nas 4 modalidades. Dois diferenciais reais, pode afirmar sem ressalva:
-   (a) a Fastcar trabalha com ENTRADA PEQUENA e SEMPRE FACILITA A ENTRADA
-   — não precisa ter muito dinheiro disponível pra começar; mencione isso
-   com naturalidade, principalmente se a pessoa comentar que não tem muito
-   (ou nada) pra dar de entrada ou perguntar sobre valor mínimo. Se ela
-   disser que não tem entrada, NUNCA desanime nem encerre: diga que a
-   Fastcar sempre facilita a entrada e que na loja a equipe vê junto com
-   ela o melhor jeito — e convide pra visita. Nunca prometa "sem entrada",
-   valor mínimo ou forma específica de parcelar a entrada: como fica é
-   sempre o vendedor quem define, na loja; (b) a promissória é SEM
+   (a) ENTRADA MÍNIMA (regra do Jean, 24/10/2026) — a Fastcar NÃO VENDE
+   SEM ENTRADA. Entrada a partir de R$ 10.000 pra CARRO e a partir de
+   R$ 5.000 pra MOTO. Pode afirmar isso com clareza e sem rodeio quando
+   falar de entrada; nunca prometa "sem entrada", "entrada facilitada" ou
+   valor menor que esse mínimo; (b) a promissória é SEM
    CONSULTA ao SPC/Serasa — mencione quando fizer sentido (ex: pessoa
    comentou nome sujo/restrição, ou perguntou sobre consulta de crédito).
    Nunca force nenhum dos dois assuntos se não vier à tona naturalmente
@@ -105,10 +101,18 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    eu já separar as opções certas: quanto você tem disponível de entrada
    hoje?"). Busque um VALOR em reais: se ela responder vago ("um pouco",
    "não muito", "depende"), ajude com faixas ("mais ou menos uns 5 mil, 10
-   mil, uns 20 mil?"). Se disser que não tem nada, tudo bem — lembre que a
-   Fastcar sempre facilita a entrada e siga. Pergunte também quanto cabe de
-   parcela por mês. Nunca pressione: se depois de uma tentativa com faixas
-   ela não quiser dizer, siga a conversa e convide pra loja do mesmo jeito
+   mil, uns 20 mil?"). Pergunte também quanto cabe de parcela por mês.
+   - Se o valor JÁ ATINGE o mínimo (R$ 10 mil carro / R$ 5 mil moto): ótimo,
+     siga normal e puxe a visita.
+   - Se NÃO tem entrada, ou tem MENOS que o mínimo: seja honesta e gentil —
+     explique que a Fastcar não vende sem entrada e que o mínimo é R$ 10
+     mil pra carro (R$ 5 mil pra moto). Pergunte se ela consegue chegar
+     nesse valor (juntar, vender algo, ajuda de alguém). Se conseguir, siga
+     normal. Se não conseguir agora, NÃO convide pra loja nem insista:
+     agradeça, diga que quando tiver a entrada é só chamar aqui que a
+     equipe atende, e encerre com educação.
+   - Se ela não quiser dizer o valor depois de uma tentativa com faixas,
+     informe o mínimo (pra ela já saber) e siga a conversa normal
 5. Se precisa decidir rápido ou pode aguardar (urgência)
 6. Trabalhe pra CONFIRMAR uma visita presencial à Fastcar assim que a
    pessoa demonstrar interesse real em comprar (já deu uma ideia de forma
@@ -220,7 +224,7 @@ informado = null.
 Hoje é {hoje} — use essa data como referência pra calcular visita_data_resolvida.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"aceita_visitar_fastcar":null,"visita_dia_horario_texto":null,"visita_data_resolvida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
+{"nome_comprador":null,"veiculo_interesse_texto":null,"tipo_uso_veiculo":null,"forma_pagamento_pretendida":null,"valor_entrada_disponivel":null,"valor_parcela_orcamento":null,"tipo_veiculo_interesse":null,"urgencia":null,"temperatura_lead":null,"oportunidade_id_sugerida":null,"aceita_visitar_fastcar":null,"visita_dia_horario_texto":null,"visita_data_resolvida":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"pedido_atendente_humano":false}
 
 - nome_comprador: o nome que a própria pessoa deu na conversa. null se ela não disse ainda.
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
@@ -229,7 +233,8 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - valor_entrada_disponivel: número (sem "R$", só o valor) do quanto a pessoa disse ter disponível de entrada. Se ela disse que NÃO TEM nada pra entrada, use 0. null só se ainda não falou nada sobre isso.
 - valor_parcela_orcamento: número (sem "R$", só o valor) do quanto a pessoa disse caber no orçamento dela de parcela mensal. null se não informado.
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
-- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA que a pessoa disse ter: R$ 15.000 ou mais = "quente"; de R$ 1 até R$ 14.999 = "morno"; não tem nada pra entrada = "frio". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
+- tipo_veiculo_interesse: "carro" ou "moto" (ou "outro" pra caminhão/van etc.) — o tipo de veículo que a pessoa quer COMPRAR. null se ainda não deu pra saber.
+- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA que a pessoa disse ter: R$ 15.000 ou mais = "quente"; do mínimo (R$ 10.000 carro / R$ 5.000 moto) até R$ 14.999 = "morno"; abaixo do mínimo ou nada = "frio". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
 - visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
@@ -437,6 +442,17 @@ function iaGerarResumoVenda(string $telefone): string {
  * —, então checa NULL, não string vazia) e visita_dia_horario_texto
  * (SEMPRE sobrescreve — a pessoa pode remarcar o dia/horário combinado).
  */
+/** Entrada mínima por tipo de veículo (regra do Jean, 24/10/2026). Tipo desconhecido = regra de carro. */
+function vendaEntradaMinima(?string $tipoVeiculo): float {
+    return $tipoVeiculo === 'moto' ? 5000.0 : 10000.0;
+}
+
+function vendaTemperaturaPorEntrada(float $entrada, ?string $tipoVeiculo): string {
+    if ($entrada >= 15000) return 'quente';
+    if ($entrada >= vendaEntradaMinima($tipoVeiculo)) return 'morno';
+    return 'frio';
+}
+
 function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     $db = getDB();
     $stmt = $db->prepare("SELECT * FROM vendas WHERE id = ?");
@@ -465,9 +481,9 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     foreach (['valor_entrada_disponivel', 'valor_parcela_orcamento'] as $c) {
         if (!isset($dados[$c]) || $dados[$c] === null || $dados[$c] === '') continue;
         $novo = (float)str_replace(',', '.', (string)$dados[$c]);
-        // fill-if-empty — exceção: "não tenho nada" (0) pode virar um valor
-        // real depois, quando a pessoa conseguir dinheiro pra entrada.
-        if ($v[$c] === null || ((float)$v[$c] <= 0 && $novo > 0)) {
+        // fill-if-empty — exceção: valor MAIOR que o já salvo (a pessoa
+        // conseguiu juntar mais pra chegar no mínimo de entrada) atualiza.
+        if ($v[$c] === null || $novo > (float)$v[$c]) {
             $sets[] = "{$c} = ?";
             $params[] = $novo;
             $v[$c] = $novo;
@@ -475,13 +491,20 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         }
     }
 
-    // 24/10/2026, regra do Jean/José: entrada de R$ 15 mil ou mais = quente,
-    // abaixo de 15 mil = morno, nada (0) = frio. Quando o valor de entrada já é
-    // conhecido, ele DECIDE a temperatura (nunca o julgamento da IA);
-    // sem valor ainda, vale a leitura da IA de sempre.
+    if (in_array($dados['tipo_veiculo_interesse'] ?? null, ['carro', 'moto', 'outro'], true)
+        && $dados['tipo_veiculo_interesse'] !== $v['tipo_veiculo_interesse']) {
+        $sets[] = 'tipo_veiculo_interesse = ?';
+        $params[] = $dados['tipo_veiculo_interesse'];
+        $v['tipo_veiculo_interesse'] = $dados['tipo_veiculo_interesse'];
+    }
+
+    // 24/10/2026, regra do Jean: não vende sem entrada; mínimo R$ 10 mil
+    // carro / R$ 5 mil moto. R$ 15 mil ou mais = quente, do mínimo até
+    // 14.999 = morno, abaixo do mínimo (ou nada) = frio. Quando o valor de
+    // entrada já é conhecido, ele DECIDE a temperatura (nunca o julgamento
+    // da IA); sem valor ainda, vale a leitura da IA de sempre.
     if ($v['valor_entrada_disponivel'] !== null) {
-        $ent = (float)$v['valor_entrada_disponivel'];
-        $dados['temperatura_lead'] = $ent >= 15000 ? 'quente' : ($ent > 0 ? 'morno' : 'frio');
+        $dados['temperatura_lead'] = vendaTemperaturaPorEntrada((float)$v['valor_entrada_disponivel'], $v['tipo_veiculo_interesse'] ?? null);
     }
 
     // aceita_visitar_fastcar: 0/false é resposta legítima ("recusou vir,

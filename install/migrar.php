@@ -2157,6 +2157,7 @@ foreach ([
 foreach ([
     ['visita_data_resolvida', "ALTER TABLE vendas ADD COLUMN visita_data_resolvida TEXT DEFAULT ''"],
     ['visita_compareceu_em', 'ALTER TABLE vendas ADD COLUMN visita_compareceu_em DATETIME'],
+    ['tipo_veiculo_interesse', 'ALTER TABLE vendas ADD COLUMN tipo_veiculo_interesse TEXT'],
 ] as [$coluna, $sql]) {
     if (!colunaExiste($db, 'vendas', $coluna)) {
         try {
