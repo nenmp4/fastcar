@@ -221,10 +221,10 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - veiculo_interesse_texto: resumo curto (texto livre) do que a pessoa disse estar procurando (ex: "SUV até R$ 60 mil, prefere automático"). null se ainda não deu pra saber.
 - tipo_uso_veiculo: exatamente "passeio", "aplicativo" ou "utilitario" quando a pessoa disse claramente pra que vai usar o veículo. null se não deu pra saber ou não bate exatamente com nenhuma dessas 3 opções.
 - forma_pagamento_pretendida: texto curto (ex: "à vista", "financiado", "entrada + parcelas", "promissória"). null se não informado.
-- valor_entrada_disponivel: número (sem "R$", só o valor) do quanto a pessoa disse ter disponível de entrada. null se não informado.
+- valor_entrada_disponivel: número (sem "R$", só o valor) do quanto a pessoa disse ter disponível de entrada. Se ela disse que NÃO TEM nada pra entrada, use 0. null só se ainda não falou nada sobre isso.
 - valor_parcela_orcamento: número (sem "R$", só o valor) do quanto a pessoa disse caber no orçamento dela de parcela mensal. null se não informado.
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
-- temperatura_lead: "frio", "morno" ou "quente" — SEU julgamento sobre o quanto essa pessoa está PRONTA PRA COMPRAR AGORA (não pergunte isso a ela, é uma leitura sua da conversa). Sinal PRINCIPAL é o DINHEIRO PRA ENTRADA (24/10/2026, regra da Fastcar): a pessoa disse que TEM algum valor disponível pra entrada (qualquer valor, mesmo pequeno) ou vai pagar à vista = "quente". A pessoa disse que NÃO TEM nada pra entrada (nenhum dinheiro, "tô sem nada agora", "só se for sem entrada") = "frio", mesmo que esteja muito animada. Ainda não falou nada sobre entrada/dinheiro = "morno" se já sabe o que procura e a forma de pagamento, senão "frio". Confirmar visita à loja com entrada disponível reforça "quente". Tom/engajamento é sinal SECUNDÁRIO, nunca sozinho muda a faixa. null só se ainda não houver conversa suficiente pra avaliar.
+- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA que a pessoa disse ter: acima de R$ 15.000 = "quente"; de R$ 1 até R$ 15.000 = "morno"; não tem nada pra entrada = "frio". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
 - visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
@@ -458,11 +458,25 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         $avancouDadoReal = true;
     }
     foreach (['valor_entrada_disponivel', 'valor_parcela_orcamento'] as $c) {
-        if ($v[$c] === null && isset($dados[$c]) && $dados[$c] !== null && $dados[$c] !== '') {
+        if (!isset($dados[$c]) || $dados[$c] === null || $dados[$c] === '') continue;
+        $novo = (float)str_replace(',', '.', (string)$dados[$c]);
+        // fill-if-empty — exceção: "não tenho nada" (0) pode virar um valor
+        // real depois, quando a pessoa conseguir dinheiro pra entrada.
+        if ($v[$c] === null || ((float)$v[$c] <= 0 && $novo > 0)) {
             $sets[] = "{$c} = ?";
-            $params[] = (float)str_replace(',', '.', (string)$dados[$c]);
+            $params[] = $novo;
+            $v[$c] = $novo;
             $avancouDadoReal = true;
         }
+    }
+
+    // 24/10/2026, regra do Jean/José: entrada acima de R$ 15 mil = quente,
+    // até 15 mil = morno, nada (0) = frio. Quando o valor de entrada já é
+    // conhecido, ele DECIDE a temperatura (nunca o julgamento da IA);
+    // sem valor ainda, vale a leitura da IA de sempre.
+    if ($v['valor_entrada_disponivel'] !== null) {
+        $ent = (float)$v['valor_entrada_disponivel'];
+        $dados['temperatura_lead'] = $ent > 15000 ? 'quente' : ($ent > 0 ? 'morno' : 'frio');
     }
 
     // aceita_visitar_fastcar: 0/false é resposta legítima ("recusou vir,
