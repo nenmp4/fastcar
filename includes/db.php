@@ -201,6 +201,23 @@ function getConfig(?string $chave = null) {
     return $cache;
 }
 
+/**
+ * 24/10/2026 — "database is locked" ao subir várias fotos (vistoria/revenda):
+ * outra escrita segurou o banco mais que o busy_timeout. Tenta de novo
+ * algumas vezes antes de desistir — só pra escrita curta e idempotente
+ * (INSERT de 1 linha, cache), nunca em volta de chamada de rede.
+ */
+function dbComRetry(callable $fn, int $tentativas = 4) {
+    for ($i = 1; ; $i++) {
+        try {
+            return $fn();
+        } catch (PDOException $e) {
+            if ($i >= $tentativas || stripos($e->getMessage(), 'locked') === false) throw $e;
+            usleep(700000 * $i);
+        }
+    }
+}
+
 function setConfig(string $chave, string $valor): void {
     $db = getDB();
     $db->prepare("INSERT INTO config (chave, valor) VALUES (?, ?)

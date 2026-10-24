@@ -159,7 +159,7 @@ function garantirPastaRaizFastcar(GoogleDrive $drive): ?string {
     $raizId = getConfig('drive_folder_id');
     if ($raizId) return $raizId;
     $novaId = $drive->createFolder('Fastcar');
-    if ($novaId) setConfig('drive_folder_id', $novaId);
+    if ($novaId) { try { dbComRetry(fn() => setConfig('drive_folder_id', $novaId)); } catch (Throwable $e) {} }
     return $novaId ?: null;
 }
 

@@ -126,7 +126,9 @@ class GoogleDrive {
         // 3600s) — nunca reaproveita um token já expirado/quase expirando.
         $ttl = max(0, (int)($data['expires_in'] ?? 3600) - 300);
         if ($ttl > 0) {
-            setConfig($chaveCache, $now . '|' . json_encode(['tok' => $this->token, 'ttl' => $ttl]));
+            // Cache é só otimização — se o banco estiver travado, segue sem
+            // gravar (nunca derruba o upload por causa disso).
+            try { setConfig($chaveCache, $now . '|' . json_encode(['tok' => $this->token, 'ttl' => $ttl])); } catch (Throwable $e) {}
         }
         return true;
     }

@@ -903,10 +903,14 @@ function salvarMidiaRevenda(int $oportunidadeId, array $arquivo, string $legenda
         return ['ok' => false, 'erro' => 'Não foi possível salvar o arquivo agora — tente novamente.'];
     }
 
-    $db->prepare("
-        INSERT INTO veiculo_midias_revenda (oportunidade_id, tipo, mime, drive_file_id, arquivo_url, legenda)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ")->execute([$oportunidadeId, $tipo, $mime, $copia['drive_file_id'], $copia['arquivo_url'], clean($legenda)]);
+    try {
+        dbComRetry(fn() => $db->prepare("
+            INSERT INTO veiculo_midias_revenda (oportunidade_id, tipo, mime, drive_file_id, arquivo_url, legenda)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ")->execute([$oportunidadeId, $tipo, $mime, $copia['drive_file_id'], $copia['arquivo_url'], clean($legenda)]));
+    } catch (Throwable $e) {
+        return ['ok' => false, 'erro' => 'Sistema ocupado agora — tente enviar essa foto de novo.'];
+    }
 
     return ['ok' => true, 'erro' => null];
 }
