@@ -40,7 +40,10 @@ header('Cache-Control: no-store');
 $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId  = (int)$_SESSION['admin_id'];
-$modulo = in_array($_GET['modulo'] ?? '', ['vendas'], true) ? $_GET['modulo'] : null;
+// 24/10/2026, "não misturar notificações vendas com compra": vendedor
+// sempre vê só vendas; nas telas de compra (e qualquer outra sem
+// ?modulo=vendas) os eventos de venda nunca aparecem.
+$modulo = moduloNotificacaoAtual(($_GET['modulo'] ?? '') === 'vendas' ? 'vendas' : null, (string)$perfil);
 $tiposFiltro = tiposNotificacaoPorModulo($modulo);
 
 if (isset($_GET['historico'])) {

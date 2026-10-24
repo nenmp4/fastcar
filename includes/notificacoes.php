@@ -31,11 +31,24 @@ function criarNotificacao(int $usuarioId, string $tipo, string $titulo, string $
  * em quem consome isso (listarNotificacoes()/contarNotificacoesNaoLidas()/
  * marcarNotificacoesLidas()).
  */
+const TIPOS_NOTIFICACAO_VENDAS = ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda'];
+
+/**
+ * 24/10/2026, "não misturar notificações vendas com compra" — 'vendas' só
+ * os tipos de venda; 'compra' (todo o resto do admin) tudo MENOS os de
+ * venda ({'not_in': [...]}, pra tipo novo de compra entrar sozinho). null
+ * = sem filtro (mantido só por compatibilidade).
+ */
 function tiposNotificacaoPorModulo(?string $modulo): ?array {
-    if ($modulo === 'vendas') {
-        return ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda'];
-    }
+    if ($modulo === 'vendas') return TIPOS_NOTIFICACAO_VENDAS;
+    if ($modulo === 'compra') return ['not_in' => TIPOS_NOTIFICACAO_VENDAS];
     return null;
+}
+
+/** Módulo do sino pra este usuário/página: vendedor é sempre vendas; resto é compra, salvo pedido explícito de vendas. */
+function moduloNotificacaoAtual(?string $moduloPedido, string $perfil): string {
+    if ($perfil === 'vendedor' || $moduloPedido === 'vendas') return 'vendas';
+    return 'compra';
 }
 
 /**
@@ -314,8 +327,11 @@ function notificarVisitaConfirmadaVenda(int $vendaId): void {
  */
 function _notificacoesFiltroTipo(?array $tipos): array {
     if ($tipos === null || $tipos === []) return ['', []];
+    $operador = 'IN';
+    if (isset($tipos['not_in'])) { $operador = 'NOT IN'; $tipos = $tipos['not_in']; }
+    $tipos = array_values($tipos);
     $placeholders = implode(',', array_fill(0, count($tipos), '?'));
-    return [" AND tipo IN ({$placeholders})", $tipos];
+    return [" AND tipo {$operador} ({$placeholders})", $tipos];
 }
 
 /** Últimas N notificações (lidas + não lidas) do usuário, mais recente primeiro — painel do sino. */
