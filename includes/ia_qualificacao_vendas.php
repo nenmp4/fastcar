@@ -139,11 +139,16 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
      aqui de novo. NÃO negocie, NÃO fale de carro específico nem preço, e
      NÃO agende visita enquanto não tiver o mínimo. Se ela disser que já
      consegue completar agora, aí siga normal.
-   - Se ela não quiser dizer o valor depois de uma tentativa com faixas,
-     informe o mínimo (pra ela já saber) e siga a conversa normal
+   - Se ela não quiser dizer o valor exato, informe o mínimo do caso dela e
+     pergunte direto se ela tem esse valor ("você tem pelo menos R$ 10 mil
+     de entrada?"). Só siga pra visita depois de um SIM com valor.
+   - Se perguntar se dá pra comprar SEM entrada: responda com clareza que
+     não — a Fastcar não vende sem entrada — e diga o mínimo do caso dela.
 5. Se precisa decidir rápido ou pode aguardar (urgência)
-6. (Só se a entrada dela já atinge o mínimo, ou ela ainda não disse o
-   valor.) Trabalhe pra CONFIRMAR uma visita presencial à Fastcar assim que a
+6. NUNCA agende visita sem antes saber o VALOR da entrada e confirmar que
+   ele atinge o mínimo do caso dela (item 4) — sem isso, não tem
+   agendamento, mesmo que a pessoa ofereça um dia. Com a entrada
+   confirmada: trabalhe pra CONFIRMAR uma visita presencial à Fastcar assim que a
    pessoa demonstrar interesse real em comprar (já deu uma ideia de forma
    de pagamento e uso) — NUNCA espere bater com um veículo específico da
    frota pra propor a visita: como o anúncio é genérico, sem nenhum carro
@@ -573,9 +578,13 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     // qualificação da ia para venda fazer cliente agentdar visita".
     // 24/10/2026, Jean: abaixo da entrada mínima não tem agendamento.
     $minimoEntrada = vendaEntradaMinima($v);
-    $abaixoDoMinimo = $v['valor_entrada_disponivel'] !== null
-        && ((float)$v['valor_entrada_disponivel'] <= 0
+    // Sem valor de entrada informado também não agenda (achado real, venda
+    // #60: IA marcou visita com a cliente perguntando se dava sem entrada).
+    $abaixoDoMinimo = $v['valor_entrada_disponivel'] === null
+        || ((float)$v['valor_entrada_disponivel'] <= 0
             || ($minimoEntrada !== null && (float)$v['valor_entrada_disponivel'] < $minimoEntrada));
+    $formaPgto = mb_strtolower((string)($v['forma_pagamento_pretendida'] ?: ($dados['forma_pagamento_pretendida'] ?? '')));
+    if (str_contains($formaPgto, 'vista')) $abaixoDoMinimo = false; // à vista não tem entrada
     if ($abaixoDoMinimo) unset($dados['aceita_visitar_fastcar'], $dados['visita_dia_horario_texto'], $dados['visita_data_resolvida']);
     if ($v['aceita_visitar_fastcar'] === null && isset($dados['aceita_visitar_fastcar']) && $dados['aceita_visitar_fastcar'] !== null) {
         $sets[] = "aceita_visitar_fastcar = ?";
