@@ -48,7 +48,10 @@ $podeAprovarFoto = $perfil === 'super_admin' || $perfil === 'vendedor';
 $erro = '';
 $sucesso = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    // Corpo maior que o limite do servidor — o PHP descarta tudo (sem POST nem FILES).
+    $erro = 'Envio grande demais pro servidor — mande menos fotos/vídeos por vez.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
     } else {
@@ -101,6 +104,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if ($okQtd > 0) $sucesso = "{$okQtd} de " . count($arquivos) . ' foto(s)/vídeo(s) adicionado(s) à vistoria.';
                 if ($errosLote) $erro = implode(' · ', $errosLote);
+            }
+            if (!empty($_POST['ajax'])) {
+                header('Content-Type: application/json');
+                echo json_encode(['ok' => $erro === '', 'erro' => $erro]);
+                exit;
             }
         } elseif ($acao === 'excluir_foto' && $podeEditarChecklist) {
             excluirFotoAvaliacao((int)($_POST['foto_id'] ?? 0));
@@ -379,17 +387,74 @@ function avTermoStatusLabel(string $status): string {
             <input type="text" name="legenda" placeholder="Ex: Avaria no para-choque traseiro">
             <button type="submit" style="min-height:48px">📷 Adicionar</button>
         </form>
+        <div id="av-upload-status" style="display:none;margin-top:8px;padding:10px 12px;border-radius:8px;background:#eef3ff;border:1px solid var(--azul);font-weight:600"></div>
         <script>
+        // 24/10/2026, "ao selecionar multi fotos quebrou" — foto de iPhone
+        // tem 3-5MB; várias juntas estouravam o limite de envio do servidor.
+        // Agora: cada foto é reduzida no próprio celular (máx 1920px, JPEG)
+        // e enviada UMA POR VEZ, com progresso. Vídeo vai como está.
         (function () {
             var inp = document.getElementById('av-input-midias');
             if (!inp) return;
-            inp.form.addEventListener('submit', function (ev) {
-                var total = 0;
-                for (var i = 0; i < inp.files.length; i++) total += inp.files[i].size;
-                if (total > 80 * 1024 * 1024) {
-                    ev.preventDefault();
-                    alert('Lote muito grande (' + Math.round(total / 1048576) + 'MB). Envie até 80MB por vez — selecione menos fotos.');
+            var form = inp.form;
+            var status = document.getElementById('av-upload-status');
+            function reduzir(file) {
+                return new Promise(function (resolve) {
+                    if (!/^image\//.test(file.type) || file.size < 900 * 1024) { resolve(file); return; }
+                    var url = URL.createObjectURL(file);
+                    var img = new Image();
+                    img.onload = function () {
+                        var max = 1920, w = img.naturalWidth, h = img.naturalHeight;
+                        var esc = Math.min(1, max / Math.max(w, h));
+                        var c = document.createElement('canvas');
+                        c.width = Math.round(w * esc); c.height = Math.round(h * esc);
+                        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                        URL.revokeObjectURL(url);
+                        c.toBlob(function (blob) {
+                            resolve(blob ? new File([blob], (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg', {type: 'image/jpeg'}) : file);
+                        }, 'image/jpeg', 0.82);
+                    };
+                    img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+                    img.src = url;
+                });
+            }
+            form.addEventListener('submit', function (ev) {
+                if (!window.fetch || !inp.files.length) return; // sem fetch: envio normal
+                ev.preventDefault();
+                var arquivos = Array.prototype.slice.call(inp.files);
+                var legenda = (form.querySelector('[name="legenda"]') || {}).value || '';
+                var csrf = form.querySelector('[name="csrf_token"]').value;
+                var btn = form.querySelector('button[type="submit"]');
+                btn.disabled = true;
+                status.style.display = '';
+                var ok = 0, erros = [], i = 0;
+                function proximo() {
+                    if (i >= arquivos.length) {
+                        status.textContent = '✅ ' + ok + ' de ' + arquivos.length + ' enviado(s).' + (erros.length ? ' Erros: ' + erros.join(' · ') : '');
+                        setTimeout(function () { location.href = location.pathname + location.search; }, erros.length ? 3500 : 800);
+                        return;
+                    }
+                    var f = arquivos[i];
+                    status.textContent = '⏳ Enviando ' + (i + 1) + ' de ' + arquivos.length + '...';
+                    reduzir(f).then(function (pronto) {
+                        if (pronto.size > 50 * 1024 * 1024) throw new Error('maior que 50MB');
+                        var fd = new FormData();
+                        fd.append('csrf_token', csrf);
+                        fd.append('acao', 'upload_foto');
+                        fd.append('ajax', '1');
+                        fd.append('legenda', legenda);
+                        fd.append('midias[]', pronto, pronto.name || 'arquivo');
+                        return fetch(location.pathname + location.search, {method: 'POST', body: fd, credentials: 'same-origin'});
+                    }).then(function (r) {
+                        if (r.status === 413) throw new Error('arquivo grande demais pro servidor');
+                        return r.json().catch(function () { throw new Error('resposta inválida (HTTP ' + r.status + ')'); });
+                    }).then(function (j) {
+                        if (j.ok) ok++; else erros.push((f.name || 'arquivo') + ': ' + j.erro);
+                    }).catch(function (e) {
+                        erros.push((f.name || 'arquivo') + ': ' + e.message);
+                    }).then(function () { i++; proximo(); });
                 }
+                proximo();
             });
         })();
         </script>
