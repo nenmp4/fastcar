@@ -958,6 +958,61 @@ $filtroEspecialVendasLabel = [
     <?php endif; ?>
 </div>
 
+<?php
+// 24/10/2026, "coloca cards com os carros disponíveis" — vitrine rápida do
+// estoque direto no dashboard de vendas (mesma fonte do 🚘 Estoque e da IA).
+$frotaDash = listarFrotaDisponivelParaVenda(1000);
+$capaDash = [];
+if ($frotaDash) {
+    $idsDash = array_column($frotaDash, 'oportunidade_id');
+    $phDash = implode(',', array_fill(0, count($idsDash), '?'));
+    $stmtCapa = $db->prepare("SELECT oportunidade_id, MIN(id) AS foto_id FROM veiculo_midias_revenda WHERE tipo = 'foto' AND oportunidade_id IN ({$phDash}) GROUP BY oportunidade_id");
+    $stmtCapa->execute($idsDash);
+    foreach ($stmtCapa->fetchAll() as $r) $capaDash[(int)$r['oportunidade_id']] = (int)$r['foto_id'];
+}
+$iconeDash = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'];
+?>
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">🚘 Carros disponíveis (<?= count($frotaDash) ?>)</h3>
+        <a class="btn" href="/admin/estoque.php">Ver estoque completo →</a>
+    </div>
+    <?php if (!$frotaDash): ?>
+        <p><small>Nenhum veículo disponível no estoque agora.</small></p>
+    <?php else: ?>
+    <div class="vitrine-dash">
+        <?php foreach (array_slice($frotaDash, 0, 12) as $fv): $fid = (int)$fv['oportunidade_id']; $tit = trim(($fv['veiculo_marca'] ?? '') . ' ' . ($fv['veiculo_modelo'] ?? '')); ?>
+        <a class="vitrine-card" href="/admin/estoque.php?q=<?= urlencode((string)($fv['veiculo_placa'] ?: $tit)) ?>">
+            <div class="vitrine-foto">
+                <?php if (isset($capaDash[$fid])): ?>
+                    <img src="/admin/ver_midia_revenda.php?id=<?= $capaDash[$fid] ?>" alt="" loading="lazy">
+                <?php else: ?>
+                    <?= $iconeDash[$fv['tipo_veiculo'] ?? ''] ?? '🚗' ?>
+                <?php endif; ?>
+            </div>
+            <div class="vitrine-info">
+                <strong><?= e($tit ?: '(sem modelo)') ?></strong>
+                <small><?= e((string)($fv['veiculo_ano'] ?? '')) ?><?= !empty($fv['veiculo_placa']) ? ' · ' . e($fv['veiculo_placa']) : '' ?></small>
+                <?php if ($fv['valor_fipe_referencia']): ?><small>FIPE R$ <?= number_format((float)$fv['valor_fipe_referencia'], 0, ',', '.') ?></small><?php endif; ?>
+            </div>
+        </a>
+        <?php endforeach; ?>
+        <?php if (count($frotaDash) > 12): ?>
+            <a class="vitrine-card vitrine-mais" href="/admin/estoque.php">+<?= count($frotaDash) - 12 ?><br><small>ver todos</small></a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+</div>
+<style>
+.vitrine-dash { display:flex; gap:12px; overflow-x:auto; padding:12px 2px 6px; scroll-snap-type:x mandatory; }
+.vitrine-card { flex:0 0 170px; scroll-snap-align:start; background:#fff; border:1px solid var(--borda); border-radius:var(--raio); box-shadow:var(--sombra); overflow:hidden; color:inherit; text-decoration:none; display:flex; flex-direction:column; }
+.vitrine-card:hover { border-color:var(--azul); }
+.vitrine-foto { aspect-ratio:4/3; background:var(--navy); display:flex; align-items:center; justify-content:center; font-size:40px; overflow:hidden; }
+.vitrine-foto img { width:100%; height:100%; object-fit:cover; }
+.vitrine-info { padding:8px 10px; display:flex; flex-direction:column; gap:2px; font-size:14px; }
+.vitrine-mais { align-items:center; justify-content:center; font-size:24px; font-weight:700; color:var(--azul); }
+</style>
+
 <?php if (!$souDono): ?>
 <div class="card">
     <h3>Funil (negociações ativas)</h3>
