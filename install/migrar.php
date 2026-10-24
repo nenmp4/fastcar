@@ -215,6 +215,12 @@ $migracoes = [
     // nunca chutado a partir de marca/modelo).
     'oportunidades.tipo_veiculo' => "ALTER TABLE oportunidades ADD COLUMN tipo_veiculo TEXT",
 
+    // 24/10/2026, "ocultar todos carros no estoque que vieram migrados do
+    // ZapSign — esses carros já foram vendidos" — tira do 🚘 Estoque, da
+    // vitrine, da IA de vendas e do link público, sem apagar nada.
+    'oportunidades.oculto_estoque' => "ALTER TABLE oportunidades ADD COLUMN oculto_estoque INTEGER NOT NULL DEFAULT 0",
+    'oportunidades.oculto_estoque_motivo' => "ALTER TABLE oportunidades ADD COLUMN oculto_estoque_motivo TEXT DEFAULT ''",
+
     // 22/09/2026, "está aparecendo mesma oportunidade para outros
     // consultores" / "da para corrigir que duplicou" — trava a fila
     // (equalizarFilaLeads/redistribuirFilaLeads/marcarConsultorFaltou)

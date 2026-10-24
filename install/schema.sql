@@ -149,6 +149,8 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- consultor, nunca inferido de marca/modelo (regra #3, nunca chutar):
     -- sem DEFAULT de propósito, fica NULL/pendente até alguém escolher.
     tipo_veiculo TEXT CHECK (tipo_veiculo IS NULL OR tipo_veiculo IN ('carro','moto','caminhao','outro')),
+    oculto_estoque INTEGER NOT NULL DEFAULT 0,
+    oculto_estoque_motivo TEXT DEFAULT '',
     -- Débitos do veículo no momento da negociação de compra (22/09/2026,
     -- "campo de preencher - debitos do veilucos como ipva linciamento e
     -- multoas") — 3 campos numéricos separados (não 1 texto livre,

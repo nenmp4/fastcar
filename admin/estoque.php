@@ -54,6 +54,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_
         $erro = $e->getMessage();
     }
 }
+// 24/10/2026, "ocultar todos carros no estoque que vieram migrados do
+// ZapSign — já foram vendidos". Só super_admin; nunca apaga nada, reversível.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['ocultar_migrados', 'ocultar_um', 'mostrar_um'], true)) {
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] !== 'super_admin') throw new RuntimeException('Só o super admin oculta carros do estoque.');
+        $acaoOc = $_POST['acao'];
+        if ($acaoOc === 'ocultar_migrados') {
+            $n = ocultarVeiculosEstoque(idsVeiculosMigradosZapsignNoEstoque(), 'Migrado do ZapSign (CRM antigo) — já vendido');
+            $sucesso = "{$n} carro(s) migrado(s) do ZapSign ocultado(s) do estoque.";
+        } elseif ($acaoOc === 'ocultar_um') {
+            ocultarVeiculosEstoque([(int)$_POST['oportunidade_id']], 'Ocultado manualmente — já vendido');
+            $sucesso = 'Carro ocultado do estoque.';
+        } else {
+            ocultarVeiculosEstoque([(int)$_POST['oportunidade_id']], '', false);
+            $sucesso = 'Carro voltou pro estoque.';
+        }
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
+$souSuperEstoque = $_SESSION['admin_perfil'] === 'super_admin';
+$verOcultos = $souSuperEstoque && ($_GET['ocultos'] ?? '') === '1';
+$migradosNoEstoque = $souSuperEstoque ? idsVeiculosMigradosZapsignNoEstoque() : [];
+$ocultosLista = [];
+if ($verOcultos) {
+    $ocultosLista = $db->query("SELECT id, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, oculto_estoque_motivo, updated_at FROM oportunidades WHERE etapa = 'fechado' AND oculto_estoque = 1 ORDER BY updated_at DESC")->fetchAll();
+}
+$totalOcultos = $souSuperEstoque ? (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE etapa = 'fechado' AND oculto_estoque = 1")->fetchColumn() : 0;
 $busca = trim((string)($_GET['q'] ?? ''));
 $tipoFiltro = in_array($_GET['tipo'] ?? '', ['carro', 'moto', 'caminhao', 'outro'], true) ? $_GET['tipo'] : '';
 
@@ -146,6 +175,41 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
 </div>
 
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
+<?php if ($souSuperEstoque): ?>
+<div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <?php if ($migradosNoEstoque): ?>
+        <form method="post" onsubmit="return confirmarAcao(this, 'Ocultar <?= count($migradosNoEstoque) ?> carro(s) migrado(s) do ZapSign? Eles saem do estoque, da vitrine e da IA de vendas (dá pra mostrar de novo depois).');" style="margin:0">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="ocultar_migrados">
+            <button type="submit" class="perigo" style="margin:0;width:auto">🙈 Ocultar os <?= count($migradosNoEstoque) ?> migrados do ZapSign (já vendidos)</button>
+        </form>
+    <?php else: ?>
+        <small>✅ Nenhum carro migrado do ZapSign aparecendo no estoque.</small>
+    <?php endif; ?>
+    <a class="btn" href="/admin/estoque.php<?= $verOcultos ? '' : '?ocultos=1' ?>"><?= $verOcultos ? '← Voltar pro estoque' : '👁️ Ver ocultos (' . $totalOcultos . ')' ?></a>
+</div>
+<?php endif; ?>
+<?php if ($verOcultos): ?>
+<div class="card">
+    <h3 style="margin-top:0">🙈 Ocultos do estoque (<?= count($ocultosLista) ?>)</h3>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Veículo</th><th>Motivo</th><th>Ações</th></tr></thead>
+        <tbody>
+        <?php if (!$ocultosLista): ?><tr><td colspan="3">Nenhum carro oculto.</td></tr><?php endif; ?>
+        <?php foreach ($ocultosLista as $oc): ?>
+            <tr>
+                <td><?= e(trim($oc['veiculo_marca'] . ' ' . $oc['veiculo_modelo'] . ' ' . $oc['veiculo_ano'])) ?: '—' ?><?= $oc['veiculo_placa'] ? '<br><small>' . e(strtoupper($oc['veiculo_placa'])) . '</small>' : '' ?></td>
+                <td><small><?= e($oc['oculto_estoque_motivo'] ?: '—') ?></small></td>
+                <td>
+                    <form method="post" style="margin:0"><?= csrfField() ?><input type="hidden" name="acao" value="mostrar_um"><input type="hidden" name="oportunidade_id" value="<?= (int)$oc['id'] ?>">
+                        <button type="submit" class="btn-texto">👁️ Mostrar de novo</button></form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <?php if (!$veiculos): ?>
     <div class="card"><p>Nenhum veículo disponível<?= ($busca !== '' || $tipoFiltro !== '') ? ' com esse filtro' : ' no estoque agora' ?>.</p></div>
@@ -193,6 +257,14 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             </details>
             <?php endif; ?>
             <a class="btn" style="margin-top:8px" href="/admin/veiculo_midias.php?id=<?= $id ?>">📸 Fotos e vídeos</a>
+            <?php if ($souSuperEstoque): ?>
+            <form method="post" style="margin-top:8px" onsubmit="return confirmarAcao(this, 'Ocultar este carro do estoque? (já vendido / não está mais com a Fastcar)');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="ocultar_um">
+                <input type="hidden" name="oportunidade_id" value="<?= $id ?>">
+                <button type="submit" class="btn-texto perigo" style="width:100%">🙈 Ocultar (já vendido)</button>
+            </form>
+            <?php endif; ?>
         </div>
     </div>
     <?php endforeach; ?>

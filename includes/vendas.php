@@ -113,6 +113,32 @@ function listarMidiasVistoriaVeiculo(int $oportunidadeId): array {
     return $stmt->fetchAll();
 }
 
+/**
+ * Carros "migrados da ZapSign" (24/10/2026): compra importada do CRM
+ * antigo via admin/zapsign_importar.php ou install/zapsign_conciliar_vendas.php
+ * — contrato de compra marcado com origem 'importado_zapsign_crm_antigo'.
+ * Só os que ainda aparecem no estoque (fechado, não ocultos).
+ */
+function idsVeiculosMigradosZapsignNoEstoque(): array {
+    $ids = array_map(fn($r) => (int)$r['oportunidade_id'], listarFrotaDisponivelParaVenda(100000));
+    if (!$ids) return [];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = getDB()->prepare("SELECT DISTINCT oportunidade_id FROM contratos WHERE tipo = 'compra' AND oportunidade_id IN ({$ph})
+                              AND (campos_json LIKE '%importado_zapsign%' OR nome LIKE 'Contrato importado da ZapSign%')");
+    $stmt->execute($ids);
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+function ocultarVeiculosEstoque(array $ids, string $motivo, bool $ocultar = true): int {
+    $n = 0;
+    $stmt = getDB()->prepare("UPDATE oportunidades SET oculto_estoque = ?, oculto_estoque_motivo = ?, updated_at = datetime('now','localtime') WHERE id = ? AND etapa = 'fechado'");
+    foreach (array_unique(array_map('intval', $ids)) as $id) {
+        $stmt->execute([$ocultar ? 1 : 0, $ocultar ? clean($motivo) : '', $id]);
+        $n += $stmt->rowCount();
+    }
+    return $n;
+}
+
 function veiculoLinkPublicoSegredo(): string {
     $s = (string)getConfig('veiculo_link_publico_segredo');
     if ($s === '') {
@@ -141,6 +167,9 @@ function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     $stmtOp->execute([$oportunidadeId]);
     $op = $stmtOp->fetch();
     if (!$op || $op['etapa'] !== 'fechado') return false;
+    $stmtOc = $db->prepare("SELECT COALESCE(oculto_estoque, 0) FROM oportunidades WHERE id = ?");
+    $stmtOc->execute([$oportunidadeId]);
+    if ((int)$stmtOc->fetchColumn() === 1) return false;
 
     $stmt = $db->prepare("
         SELECT COUNT(*) FROM vendas WHERE oportunidade_id = ? AND etapa IN ('negociacao', 'contrato_enviado', 'vendido')
@@ -452,6 +481,7 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
                o.valor_fipe_referencia, o.veiculo_placa, o.tipo_veiculo, o.data_compra
         FROM oportunidades o
         WHERE o.etapa = 'fechado'
+          AND COALESCE(o.oculto_estoque, 0) = 0
           AND NOT EXISTS (
               SELECT 1 FROM vendas v
               WHERE v.oportunidade_id = o.id AND v.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
