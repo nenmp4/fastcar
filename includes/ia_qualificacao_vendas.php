@@ -626,7 +626,7 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
             $resumoPedido = ($resumo !== '' ? $resumo . "\n\n" : '')
                 . '🙋 Comprador pediu explicitamente pra falar com uma pessoa da equipe.';
             $db->prepare("UPDATE vendas SET resumo_ia = ? WHERE id = ?")->execute([$resumoPedido, $vendaId]);
-            mudarEtapaVenda($vendaId, 'negociacao', null, 'Comprador pediu pra falar com atendente humano — encaminhado sem continuar a qualificação automática');
+            mudarEtapaVenda($vendaId, 'crm_preenchido', null, 'Comprador pediu pra falar com atendente humano — encaminhado sem continuar a qualificação automática');
             notificarVendedorLeadQualificado($vendaId, '🙋 Comprador pediu atendimento humano');
         }
         $resultado['pedido_atendente_humano'] = true;
@@ -650,7 +650,7 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
         if ($resumo !== '') {
             $db->prepare("UPDATE vendas SET resumo_ia = ? WHERE id = ?")->execute([$resumo, $vendaId]);
         }
-        mudarEtapaVenda($vendaId, 'negociacao', null, 'Qualificação IA concluída — encaminhado pro vendedor');
+        mudarEtapaVenda($vendaId, 'crm_preenchido', null, 'Qualificação IA concluída — encaminhado pro vendedor');
         notificarVendedorLeadQualificado($vendaId, 'Qualificação concluída');
         $resultado['qualificacao_completa'] = true;
         return $resultado;
@@ -668,7 +668,7 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
                 . '⚠️ IA encaminhou pro vendedor por estagnação — conversa passou de '
                 . IA_VENDAS_LIMITE_TURNOS_SEM_AVANCO . ' turnos sem novo dado confirmado.';
             $db->prepare("UPDATE vendas SET resumo_ia = ? WHERE id = ?")->execute([$resumoFinal, $vendaId]);
-            mudarEtapaVenda($vendaId, 'negociacao', null, 'IA escalou pro vendedor — conversa estagnada sem avanço de dados');
+            mudarEtapaVenda($vendaId, 'crm_preenchido', null, 'IA escalou pro vendedor — conversa estagnada sem avanço de dados');
             notificarVendedorLeadQualificado($vendaId, 'IA escalou por estagnação');
             $resultado['escalado_sem_avanco'] = true;
         }

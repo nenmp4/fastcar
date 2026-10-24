@@ -124,7 +124,7 @@ function dashboardVendedor(int $usuarioId): array {
 
     $stmt = $db->prepare("
         SELECT COUNT(DISTINCT venda_id) FROM venda_historico
-        WHERE responsavel_id = ? AND etapa_nova = 'negociacao'
+        WHERE responsavel_id = ? AND etapa_nova IN ('crm_preenchido', 'negociacao')
           AND created_at >= datetime('now','-7 days','localtime')
     ");
     $stmt->execute([$usuarioId]);

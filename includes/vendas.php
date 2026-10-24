@@ -46,19 +46,22 @@ require_once __DIR__ . '/contratos.php'; // cancelarContratosAtivosVenda() — i
 
 // 'whatsapp'/'qualificacao_ia'/'sem_perfil' são exclusivas de leads que
 // entraram por origem='whatsapp' — negociação manual nunca passa por elas.
-const ETAPAS_VENDA_VALIDAS = ['whatsapp', 'qualificacao_ia', 'negociacao', 'contrato_enviado', 'vendido', 'cancelada', 'sem_perfil'];
-const ETAPAS_VENDA_ATIVAS  = ['whatsapp', 'qualificacao_ia', 'negociacao', 'contrato_enviado'];
+const ETAPAS_VENDA_VALIDAS = ['whatsapp', 'qualificacao_ia', 'crm_preenchido', 'negociacao', 'contrato_enviado', 'vendido', 'cancelada', 'sem_perfil'];
+// 24/10/2026, "ta faltando o crm preenchido" — mesma etapa do funil de
+// compra: IA terminou de qualificar, esperando o vendedor assumir.
+const ETAPAS_VENDA_ATIVAS  = ['whatsapp', 'qualificacao_ia', 'crm_preenchido', 'negociacao', 'contrato_enviado'];
 // Etapas do funil de PIPELINE (o que admin/vendas.php mostra na nav por
 // padrão) — deixa 'whatsapp'/'qualificacao_ia'/'sem_perfil' fora da lista
 // principal (aparecem juntas em "Leads (IA)"), igual o pipeline de compra
 // separa etapa de entrada/qualificação do funil de negociação em si.
 const ETAPAS_VENDA_PIPELINE = ['negociacao', 'contrato_enviado', 'vendido', 'cancelada'];
-const ETAPAS_VENDA_LEAD_IA  = ['whatsapp', 'qualificacao_ia'];
+const ETAPAS_VENDA_LEAD_IA  = ['whatsapp', 'qualificacao_ia', 'crm_preenchido'];
 
 function etapaVendaLabel(string $etapa): string {
     $labels = [
         'whatsapp'         => '💬 WhatsApp',
         'qualificacao_ia'  => '🤖 Qualificação IA',
+        'crm_preenchido'   => '📋 CRM preenchido',
         'negociacao'       => '🤝 Negociação',
         'contrato_enviado' => '📤 Contrato enviado',
         'vendido'          => '✅ Vendido',
@@ -947,7 +950,7 @@ function notificarVendasEmNegociacaoFimTurno(): array {
             FROM vendas v
             LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
             LEFT JOIN usuarios u ON u.id = v.responsavel_id
-            WHERE v.etapa = 'negociacao' AND date(v.created_at) = ?
+            WHERE v.etapa IN ('crm_preenchido', 'negociacao') AND date(v.created_at) = ?
             ORDER BY v.created_at
         ");
         $stmt->execute([$hoje]);

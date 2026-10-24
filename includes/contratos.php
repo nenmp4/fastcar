@@ -721,7 +721,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     // `contratos` de qualquer forma, igual compra.
     $etapaAtualVenda = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
     $etapaAtualVenda->execute([$vendaId]);
-    if ($etapaAtualVenda->fetchColumn() === 'negociacao') {
+    if (in_array($etapaAtualVenda->fetchColumn(), ['crm_preenchido', 'negociacao'], true)) {
         mudarEtapaVenda($vendaId, 'contrato_enviado', $usuarioId, 'Contrato gerado e enviado pra assinatura');
     }
 

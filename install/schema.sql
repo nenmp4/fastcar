@@ -686,7 +686,7 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- Negociação criada manualmente nunca passa por elas, vai direto pra
     -- 'negociacao'.
     etapa TEXT NOT NULL DEFAULT 'negociacao'
-        CHECK (etapa IN ('whatsapp', 'qualificacao_ia', 'negociacao', 'contrato_enviado', 'vendido', 'cancelada', 'sem_perfil')),
+        CHECK (etapa IN ('whatsapp', 'qualificacao_ia', 'crm_preenchido', 'negociacao', 'contrato_enviado', 'vendido', 'cancelada', 'sem_perfil')),
     -- 'manual' (padrão, fluxo original — vendedor/admin abre a partir de um
     -- veículo já na frota) ou 'whatsapp' (lead entrou sozinho pela instância
     -- Z-API dedicada de vendas, qualificado por IA antes de virar negociação).

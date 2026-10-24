@@ -2170,4 +2170,37 @@ foreach ([
     }
 }
 
+// 24/10/2026, "ta faltando o crm preenchido" — vendas.etapa ganha
+// 'crm_preenchido' (IA qualificou, esperando o vendedor assumir), igual
+// compra. SQLite não muda CHECK com ALTER: reconstrói a tabela a partir do
+// SQL ATUAL dela (sqlite_master), só trocando a lista da CHECK — preserva
+// toda coluna adicionada ao longo do tempo sem precisar listar uma por uma,
+// e recria os índices exatamente como estavam. Conexão própria
+// ($dbFresh), mesma lição das outras reconstruções deste arquivo.
+try {
+    $sqlAtual = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='vendas'")->fetchColumn();
+    $checkAntigo = "'qualificacao_ia', 'negociacao'";
+    if ($sqlAtual && !str_contains($sqlAtual, "'crm_preenchido'") && str_contains($sqlAtual, $checkAntigo)) {
+        $dbFresh = new PDO('sqlite:' . DB_PATH);
+        $dbFresh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $dbFresh->exec('PRAGMA busy_timeout=15000');
+        $indices = $dbFresh->query("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='vendas' AND sql IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
+        $sqlNovo = str_replace($checkAntigo, "'qualificacao_ia', 'crm_preenchido', 'negociacao'", $sqlAtual);
+        $sqlNovo = preg_replace('/^CREATE TABLE\s+"?vendas"?/i', 'CREATE TABLE vendas_novo', $sqlNovo, 1);
+        $dbFresh->exec('BEGIN');
+        $dbFresh->exec($sqlNovo);
+        $dbFresh->exec('INSERT INTO vendas_novo SELECT * FROM vendas');
+        $dbFresh->exec('DROP TABLE vendas');
+        $dbFresh->exec('ALTER TABLE vendas_novo RENAME TO vendas');
+        foreach ($indices as $idx) $dbFresh->exec($idx);
+        $dbFresh->exec('COMMIT');
+        echo "✅ vendas.etapa: CHECK reconstruída pra aceitar 'crm_preenchido'\n";
+    } else {
+        echo "⏭️  vendas.etapa (crm_preenchido): já existia\n";
+    }
+} catch (Throwable $e) {
+    try { if (isset($dbFresh)) $dbFresh->exec('ROLLBACK'); } catch (Throwable $e2) {}
+    echo "❌ vendas.etapa (crm_preenchido): {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

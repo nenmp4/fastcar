@@ -273,6 +273,12 @@ switch ($filtroEspecialVendas) {
         $etapasEscopo = ETAPAS_VENDA_ATIVAS;
         $extraWhereVendas = " AND v.created_at >= datetime('now','localtime','-7 days')";
         break;
+    case 'agendados':
+        // 24/10/2026, "colocar card de todos os agendamentos" — confirmou
+        // vir até a loja e ainda não compareceu.
+        $etapasEscopo = ETAPAS_VENDA_ATIVAS;
+        $extraWhereVendas = " AND v.aceita_visitar_fastcar = 1 AND v.visita_compareceu_em IS NULL";
+        break;
     case 'atrasadas':
         $etapasEscopo = ETAPAS_VENDA_ATIVAS;
         $extraWhereVendas = " AND v.proxima_acao_em IS NOT NULL AND v.proxima_acao_em < datetime('now','localtime')";
@@ -322,10 +328,12 @@ $totalFiltrado = (int)$stmtTotal->fetchColumn();
 // lista é sobre QUANDO o lead entrou, então ordena só por data de entrada,
 // mais recente primeiro; a ordenação por temperatura/próxima ação continua
 // valendo pras abas normais.
-$ordemVendas = in_array($filtroEspecialVendas, ['hoje', 'ontem', 'semana'], true)
-    ? "v.created_at DESC, v.id DESC"
-    : "CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
-             (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC";
+$ordemVendas = match (true) {
+    $filtroEspecialVendas === 'agendados' => "(v.visita_data_resolvida IS NULL), v.visita_data_resolvida ASC, v.visita_confirmada_em ASC",
+    in_array($filtroEspecialVendas, ['hoje', 'ontem', 'semana'], true) => "v.created_at DESC, v.id DESC",
+    default => "CASE v.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
+             (v.proxima_acao_em IS NULL), v.proxima_acao_em ASC, v.created_at DESC",
+};
 $sql = "
     SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
            u.nome AS responsavel_nome
@@ -392,6 +400,14 @@ $stats = match (true) {
     $souDono => dashboardVendedor($meuId),
     default  => dashboardVendasGeral(),
 };
+
+$phAgend = implode(',', array_fill(0, count(ETAPAS_VENDA_ATIVAS), '?'));
+$sqlAgend = "SELECT COUNT(*) FROM vendas WHERE etapa IN ({$phAgend}) AND aceita_visitar_fastcar = 1 AND visita_compareceu_em IS NULL";
+$paramsAgend = ETAPAS_VENDA_ATIVAS;
+if ($souDono) { $sqlAgend .= " AND responsavel_id = ?"; $paramsAgend[] = $meuId; }
+$stmtAgend = $db->prepare($sqlAgend);
+$stmtAgend->execute($paramsAgend);
+$totalAgendados = (int)$stmtAgend->fetchColumn();
 
 function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.'); }
 ?>
@@ -839,6 +855,7 @@ $filtroEspecialVendasLabel = [
     'ontem'     => $souDono ? 'Meus leads de ontem' : 'Leads novos ontem',
     'semana'    => $souDono ? 'Recebidas nos últimos 7 dias' : 'Leads novos (7 dias)',
     'atrasadas' => 'Atrasadas',
+    'agendados' => 'Visitas agendadas na loja (ainda não vieram)',
 ][$filtroEspecialVendas] ?? '';
 ?>
 <?php if ($filtroEspecialVendasLabel !== ''): ?>
@@ -856,6 +873,10 @@ $filtroEspecialVendasLabel = [
     <a class="stat-card <?= $stats['atrasadas'] > 0 ? 'alerta' : '' ?>" href="/admin/vendas.php?filtro=atrasadas">
         <div class="valor"><?= (int)$stats['atrasadas'] ?></div>
         <div class="rotulo">Atrasadas</div>
+    </a>
+    <a class="stat-card sucesso" href="/admin/vendas.php?filtro=agendados">
+        <div class="valor"><?= $totalAgendados ?></div>
+        <div class="rotulo">📍 Visitas agendadas</div>
     </a>
     <?php if ($souDono): ?>
         <a class="stat-card alerta" href="/admin/vendas.php?filtro=hoje">
@@ -1021,6 +1042,11 @@ if ($podeSelecionarEmMassa):
                 <td>
                     <span class="badge"><?= e(etapaVendaLabel($v['etapa'])) ?></span>
                     <?php if ($atrasada): ?><br><span class="badge badge-atraso">⚠️ atrasada</span><?php endif; ?>
+                    <?php if (!empty($v['visita_compareceu_em'])): ?>
+                        <br><span class="badge badge-ok">🏁 veio na loja</span>
+                    <?php elseif ((int)($v['aceita_visitar_fastcar'] ?? 0) === 1): ?>
+                        <br><span class="badge badge-info">📍 visita: <?= e(mb_strimwidth((string)$v['visita_dia_horario_texto'], 0, 30, '…') ?: 'confirmada') ?><?= !empty($v['visita_data_resolvida']) ? ' (' . date('d/m', strtotime($v['visita_data_resolvida'])) . ')' : '' ?></span>
+                    <?php endif; ?>
                     <?php if ($v['etapa'] === 'vendido' && $v['data_venda']): ?>
                         <br><small>vendido <?= date('d/m/Y', strtotime($v['data_venda'])) ?></small>
                     <?php elseif (in_array($v['etapa'], ['cancelada', 'sem_perfil'], true)): ?>

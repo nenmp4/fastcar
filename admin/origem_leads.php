@@ -63,7 +63,7 @@ $linhasVenda = $db->query("
         SUM(CASE WHEN etapa = 'vendido' THEN 1 ELSE 0 END) AS vendidas,
         SUM(CASE WHEN etapa = 'cancelada' THEN 1 ELSE 0 END) AS canceladas,
         SUM(CASE WHEN etapa = 'sem_perfil' THEN 1 ELSE 0 END) AS sem_perfil,
-        SUM(CASE WHEN etapa IN ('whatsapp','qualificacao_ia','negociacao','contrato_enviado') THEN 1 ELSE 0 END) AS em_andamento
+        SUM(CASE WHEN etapa IN ('whatsapp','qualificacao_ia','crm_preenchido','negociacao','contrato_enviado') THEN 1 ELSE 0 END) AS em_andamento
     FROM vendas
     GROUP BY canal_origem, campanha_origem, anuncio_origem
     ORDER BY total_negociacoes DESC

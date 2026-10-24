@@ -1131,7 +1131,7 @@ function adicionarParteEntrada() {
         <button type="submit">Salvar condições da venda</button>
     </form>
 
-    <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
+    <?php if (in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
         <hr>
         <div class="card" style="background:var(--fundo);margin-bottom:14px">
             <strong style="font-size:13px">✍️ Testemunhas do contrato</strong>
@@ -1166,7 +1166,7 @@ function adicionarParteEntrada() {
         <p><small>"👁️ Gerar contrato" salva um rascunho só pra conferir, sem disparar assinatura nem
            avisar o comprador. Gerar de novo substitui o rascunho anterior (nunca empilha) — dá pra
            excluir manualmente também, na tabela abaixo.</small></p>
-    <?php elseif (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true)): ?>
+    <?php elseif (in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true)): ?>
         <p><small>⏳ Vincule um veículo da frota (card acima) antes de gerar o contrato.</small></p>
     <?php endif; ?>
 
@@ -1423,7 +1423,7 @@ function adicionarParteEntrada() {
 
     <div class="card">
         <h3>Mudar etapa</h3>
-        <?php if (in_array($v['etapa'], ['negociacao', 'contrato_enviado'], true)): ?>
+        <?php if (in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true)): ?>
             <form method="post">
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="mudar_etapa">
