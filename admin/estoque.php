@@ -54,6 +54,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_
         $erro = $e->getMessage();
     }
 }
+// 24/10/2026, "botão que abre modal — tipo de venda: promissória ou
+// quitação futura". Quitação futura = mesmo fluxo do botão "Vender" da
+// Frota (criarVenda() → negociação com o contrato de venda com quitação
+// futura). Promissória = abre o modal de promissória em Vendas já com o carro.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar_venda_quitacao') {
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $vendaId = criarVenda((int)$_POST['oportunidade_id'], (int)$_SESSION['admin_id']);
+        header('Location: /admin/venda.php?id=' . $vendaId);
+        exit;
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
+
 // 24/10/2026, "crie link pra mandar o catálogo inteiro do estoque" —
 // mesmo fluxo do envio de 1 carro, só que manda o link do catálogo.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_catalogo_cliente') {
@@ -292,7 +308,10 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             $tituloCard = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '') . ' ' . ($v['veiculo_ano'] ?? ''));
         ?>
         <div class="estoque-acoes">
-            <button type="button" class="btn-primary" style="width:100%;margin-top:0" onclick="copiarTexto(<?= e(json_encode($linkCliente)) ?>, this)">🔗 Copiar link pro cliente</button>
+            <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+            <button type="button" class="btn-sucesso-venda" onclick="abrirModalVender(<?= $id ?>, <?= e(json_encode($tituloCard)) ?>)">💰 Vender este veículo</button>
+            <?php endif; ?>
+            <button type="button" class="btn-primary" style="width:100%;margin-top:8px" onclick="copiarTexto(<?= e(json_encode($linkCliente)) ?>, this)">🔗 Copiar link pro cliente</button>
             <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
             <details style="margin-top:8px">
                 <summary class="btn" style="list-style:none;cursor:pointer;text-align:center">💬 Enviar pelo WhatsApp de vendas</summary>
@@ -320,6 +339,48 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
+<dialog id="modal-vender" class="modal-lancamento">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0">💰 Vender veículo</h3>
+        <button type="button" onclick="document.getElementById('modal-vender').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
+    </div>
+    <p id="modal-vender-titulo" style="font-weight:600;margin:8px 0 14px"></p>
+    <p style="margin:0 0 10px"><small>Escolha o tipo de venda:</small></p>
+    <div class="tipo-venda-opcoes">
+        <a id="modal-vender-promissoria" class="tipo-venda-opcao" href="#">
+            <span class="tv-icone">💳</span>
+            <strong>Promissória</strong>
+            <small>Entrada (PIX em partes, bem de troca) + parcelas da Fastcar, sem consulta SPC/Serasa. Abre o formulário completo já com este carro.</small>
+        </a>
+        <form method="post" style="margin:0" onsubmit="return confirmarAcao(this, 'Abrir uma negociação de venda com quitação futura para este veículo?');">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="iniciar_venda_quitacao">
+            <input type="hidden" name="oportunidade_id" id="modal-vender-op" value="">
+            <button type="submit" class="tipo-venda-opcao" style="width:100%;margin:0;text-align:left">
+                <span class="tv-icone">📄</span>
+                <strong>Quitação futura</strong>
+                <small>Contrato de venda com quitação futura do financiamento. Abre a negociação pra preencher comprador e condições.</small>
+            </button>
+        </form>
+    </div>
+</dialog>
+<style>
+.btn-sucesso-venda { width:100%; margin:0; background:#16a34a; color:#fff; border:none; border-radius:var(--raio); min-height:44px; font-weight:700; cursor:pointer; }
+.tipo-venda-opcoes { display:grid; gap:12px; }
+.tipo-venda-opcao { display:flex; flex-direction:column; gap:4px; padding:14px 16px; border:2px solid var(--borda); border-radius:var(--raio); background:#fff; color:inherit; text-decoration:none; cursor:pointer; box-shadow:none; }
+.tipo-venda-opcao:hover { border-color:var(--azul); background:#f5f8ff; }
+.tipo-venda-opcao strong { font-size:17px; color:var(--navy); }
+.tipo-venda-opcao small { color:#555; font-weight:400; }
+.tv-icone { font-size:26px; }
+</style>
+<script>
+function abrirModalVender(opId, titulo) {
+    document.getElementById('modal-vender-titulo').textContent = titulo;
+    document.getElementById('modal-vender-op').value = opId;
+    document.getElementById('modal-vender-promissoria').href = '/admin/vendas.php?vender_op=' + opId;
+    document.getElementById('modal-vender').showModal();
+}
+</script>
 </main>
 <script>
 function copiarTexto(texto, btn) {

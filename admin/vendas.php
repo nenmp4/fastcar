@@ -40,6 +40,10 @@ $souDono = in_array($perfil, ['vendedor', 'avaliador'], true); // 24/10/2026: av
  */
 $erroPromissoria = '';
 $modalPromissoriaAbrir = false;
+// 24/10/2026 — vindo do 🚘 Estoque ("Vender → Promissória"): abre o modal
+// já com o veículo escolhido.
+$venderOpEstoque = (int)($_GET['vender_op'] ?? 0);
+if ($venderOpEstoque > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST' && $perfil !== 'supervisor') $modalPromissoriaAbrir = true;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_promissoria') {
     $modalPromissoriaAbrir = true;
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -573,7 +577,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 </div>
 
 <?php
-    $postVp = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : [];
+    $postVp = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : ($venderOpEstoque > 0 ? ['oportunidade_id' => $venderOpEstoque] : []);
     $vpSemFrota = !$frotaDisponivelPromissoria;
     $vpCadastrarNovo = !empty($postVp['cadastrar_veiculo_novo']) || $vpSemFrota;
 
