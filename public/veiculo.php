@@ -27,10 +27,12 @@ if ($valido) {
     $stmt->execute([$vid]);
     $vendedor = $stmt->fetch() ?: null;
     if ($disponivel) $midias = listarMidiasRevenda($o);
+    // 24/10/2026 — sem foto de revenda ainda, usa as fotos da vistoria.
+    if ($disponivel && !$midias) $midias = listarMidiasVistoriaVeiculo($o);
 }
 $titulo = $veic ? trim(($veic['veiculo_marca'] ?? '') . ' ' . ($veic['veiculo_modelo'] ?? '') . ' ' . ($veic['veiculo_ano'] ?? '')) : 'Veículo';
 $base = rtrim((string)(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions'), '/');
-$urlMidia = fn(array $m) => '/public/veiculo_foto.php?o=' . $o . '&v=' . $vid . '&t=' . urlencode($t) . '&m=' . (int)$m['id'];
+$urlMidia = fn(array $m) => '/public/veiculo_foto.php?o=' . $o . '&v=' . $vid . '&t=' . urlencode($t) . '&m=' . (int)$m['id'] . (!empty($m['_vistoria']) ? '&s=av' : '');
 $fotos = array_values(array_filter($midias, fn($m) => $m['tipo'] === 'foto'));
 $videos = array_values(array_filter($midias, fn($m) => $m['tipo'] === 'video'));
 

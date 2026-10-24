@@ -16,9 +16,20 @@ if (!veiculoLinkPublicoValido($o, $v, (string)($_GET['t'] ?? '')) || !veiculoDis
     http_response_code(404);
     exit('Não encontrado.');
 }
-$stmt = getDB()->prepare("SELECT * FROM veiculo_midias_revenda WHERE id = ? AND oportunidade_id = ?");
-$stmt->execute([$m, $o]);
-$midia = $stmt->fetch();
+if (($_GET['s'] ?? '') === 'av') {
+    // Foto da vistoria — só serve enquanto o veículo não tem mídia de
+    // revenda própria (mesma regra da página pública).
+    $midia = null;
+    if (!listarMidiasRevenda($o)) {
+        foreach (listarMidiasVistoriaVeiculo($o) as $mv) {
+            if ((int)$mv['id'] === $m) { $midia = $mv; break; }
+        }
+    }
+} else {
+    $stmt = getDB()->prepare("SELECT * FROM veiculo_midias_revenda WHERE id = ? AND oportunidade_id = ?");
+    $stmt->execute([$m, $o]);
+    $midia = $stmt->fetch();
+}
 if (!$midia) {
     http_response_code(404);
     exit('Não encontrado.');

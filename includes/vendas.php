@@ -96,6 +96,23 @@ function etapaVendaLabel(string $etapa): string {
  * na URL pra ver outro carro nem "virar" outro vendedor. O vendedor entra
  * no link pra o botão de WhatsApp da página cair direto nele.
  */
+/**
+ * Fotos/vídeos das vistorias de um veículo (24/10/2026) — usadas como
+ * capa/galeria quando o carro ainda não tem mídia de revenda própria.
+ * Marca cada item com _vistoria=1 pra quem monta a URL saber a origem.
+ */
+function listarMidiasVistoriaVeiculo(int $oportunidadeId): array {
+    $stmt = getDB()->prepare("
+        SELECT f.id, f.tipo, f.mime, f.drive_file_id, f.arquivo_url, f.legenda, 1 AS _vistoria
+        FROM veiculo_avaliacao_fotos f
+        JOIN veiculo_avaliacoes a ON a.id = f.avaliacao_id
+        WHERE a.oportunidade_id = ?
+        ORDER BY f.id
+    ");
+    $stmt->execute([$oportunidadeId]);
+    return $stmt->fetchAll();
+}
+
 function veiculoLinkPublicoSegredo(): string {
     $s = (string)getConfig('veiculo_link_publico_segredo');
     if ($s === '') {
