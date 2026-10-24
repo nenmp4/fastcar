@@ -597,7 +597,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
         </form>
     <?php endif; ?>
     <a href="/admin/clientes.php">👥 Clientes</a>
-    <?php if (podeAcessarVendas()): ?><a href="/admin/vendas.php">💰 Vendas</a><?php endif; ?>
+    <?php if (podeAcessarVendas()): ?><a href="/admin/vendas.php">💰 Vendas</a><a href="/admin/estoque.php">🚘 Estoque</a><?php endif; ?>
     <?php if (podeAcessarFinanceiro()): ?><a href="/admin/financeiro.php">🧾 Financeiro</a><?php endif; ?>
     <?php if (podeAcessarAvaliacoes()): ?><a href="/admin/avaliacoes.php">🔍 Vistorias</a><?php endif; ?>
     <a href="/admin/pendencias_pos_venda.php">📋 Pendências</a>
