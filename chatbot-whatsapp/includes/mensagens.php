@@ -485,7 +485,9 @@ function registrarMensagem(
     $stmt->execute([$telNorm]);
     $clienteId = $stmt->fetchColumn();
 
-    $db->prepare("
+    // 24/10/2026 — log mostrou "database is locked" aqui em horários de pico;
+    // INSERT OR IGNORE é idempotente, então tentar de novo é seguro.
+    dbComRetry(fn() => $db->prepare("
         INSERT OR IGNORE INTO whatsapp_mensagens
             (telefone, cliente_id, direcao, mensagem, tipo, enviado_por_ia, zapi_message_id, usuario_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
@@ -498,7 +500,7 @@ function registrarMensagem(
         $enviadoPorIa ? 1 : 0,
         $zapiMessageId ?: '',
         $usuarioId,
-    ]);
+    ]));
 
     // id da linha inserida — 0 se foi ignorado por dedup de zapi_message_id
     // (não deveria acontecer aqui: quem chama já checou jaProcessado() antes
