@@ -33,36 +33,40 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
     $whereBusca = '';
     $params = [];
     if ($busca !== '') {
-        $whereBusca = ' AND (v.comprador_nome LIKE ? OR m.telefone LIKE ?)';
+        $whereBusca = ' AND (v.comprador_nome LIKE ? OR ultv.comprador_telefone LIKE ?)';
         $like = '%' . $busca . '%';
         $params = [$like, $like];
     }
     $whereResponsavel = '';
     if ($responsavelFiltro !== null) {
-        $whereResponsavel = ' AND EXISTS (SELECT 1 FROM vendas v2 WHERE v2.comprador_telefone = m.telefone AND v2.responsavel_id = ?)';
+        $whereResponsavel = ' AND EXISTS (SELECT 1 FROM vendas v2 WHERE v2.comprador_telefone = ultv.comprador_telefone AND v2.responsavel_id = ?)';
         $params[] = $responsavelFiltro;
     }
-
-    // Só telefone que tem pelo menos 1 negociação de venda (origem
-    // 'whatsapp' ou manual com telefone já preenchido) — nunca mistura com
-    // conversa que é só do funil de compra (telefone pode coincidir com um
-    // cliente comprador em tese, mas essa caixa só mostra o lado venda).
+    // 24/10/2026, "tem aparecer inbox da conversa pro vendedor" — a base é a
+    // NEGOCIAÇÃO (1 linha por telefone de comprador), não a mensagem: lead
+    // atribuído a um vendedor aparece na caixa dele mesmo antes de ter
+    // qualquer mensagem trocada (ex: acabou de ser atribuído em massa ou
+    // criado manualmente). Nunca mistura com conversa só do funil de compra.
     $sql = "
-        SELECT m.telefone, m.mensagem AS ultima_mensagem, m.direcao AS ultima_direcao,
-               m.tipo AS ultima_tipo, m.created_at AS ultima_em,
+        SELECT ultv.comprador_telefone AS telefone,
+               COALESCE(m.mensagem, '(sem mensagens ainda — clique pra iniciar a conversa)') AS ultima_mensagem,
+               COALESCE(m.direcao, '') AS ultima_direcao,
+               COALESCE(m.tipo, 'text') AS ultima_tipo,
+               COALESCE(m.created_at, v.created_at) AS ultima_em,
                v.comprador_nome,
-               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
+               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = ultv.comprador_telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
-        FROM whatsapp_mensagens m
-        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
-          ON ult.telefone = m.telefone AND ult.max_id = m.id
-        JOIN (SELECT comprador_telefone, MAX(id) AS max_id FROM vendas GROUP BY comprador_telefone) ultv
-          ON ultv.comprador_telefone = m.telefone
+        FROM (SELECT comprador_telefone, MAX(id) AS max_id FROM vendas
+              WHERE comprador_telefone IS NOT NULL AND comprador_telefone != ''
+              GROUP BY comprador_telefone) ultv
         JOIN vendas v ON v.id = ultv.max_id
-        LEFT JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone
-        WHERE 1=1
+        LEFT JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
+          ON ult.telefone = ultv.comprador_telefone
+        LEFT JOIN whatsapp_mensagens m ON m.id = ult.max_id
+        LEFT JOIN whatsapp_sessoes ws ON ws.telefone = ultv.comprador_telefone
+        WHERE (m.id IS NOT NULL OR v.etapa IN ('" . implode("','", ETAPAS_VENDA_ATIVAS) . "'))
         {$whereBusca}{$whereResponsavel}
-        ORDER BY m.created_at DESC
+        ORDER BY COALESCE(m.created_at, v.created_at) DESC
         LIMIT ?
     ";
     $params[] = $limite;
