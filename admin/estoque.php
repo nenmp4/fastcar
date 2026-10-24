@@ -224,6 +224,16 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
 <div class="card">
     <h3 style="margin-top:0">📚 Catálogo completo pro cliente</h3>
     <p><small>Um link só com todos os veículos disponíveis (atualiza sozinho — carro vendido some). O botão de WhatsApp de cada carro vem pra você.</small></p>
+    <?php
+        $stmtMeuZap = $db->prepare("SELECT whatsapp FROM usuarios WHERE id = ?");
+        $stmtMeuZap->execute([(int)$_SESSION['admin_id']]);
+        $meuZap = trim((string)$stmtMeuZap->fetchColumn());
+    ?>
+    <?php if ($meuZap === ''): ?>
+        <div class="alerta-erro" style="margin:8px 0">⚠️ Seu WhatsApp não está cadastrado — no catálogo e no link dos carros o botão "Falar com você" não aparece pro cliente. Cadastre em <a href="/admin/meu_perfil.php">🙋 Meu perfil</a>.</div>
+    <?php else: ?>
+        <p style="margin:6px 0"><small>📱 O cliente que clicar em "Falar com..." cai no <strong>seu</strong> WhatsApp: <strong><?= e($meuZap) ?></strong> (não no número da instância). Pra trocar, use <a href="/admin/meu_perfil.php">🙋 Meu perfil</a>.</small></p>
+    <?php endif; ?>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
         <button type="button" class="btn-primary" style="width:auto;margin:0" onclick="copiarTexto(<?= e(json_encode($linkCatalogo)) ?>, this)">🔗 Copiar link do catálogo</button>
         <a class="btn" href="<?= e($linkCatalogo) ?>" target="_blank" rel="noopener">👀 Ver como o cliente vê</a>
