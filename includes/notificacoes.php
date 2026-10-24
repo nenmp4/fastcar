@@ -33,7 +33,7 @@ function criarNotificacao(int $usuarioId, string $tipo, string $titulo, string $
  */
 function tiposNotificacaoPorModulo(?string $modulo): ?array {
     if ($modulo === 'vendas') {
-        return ['documentos_confirmados_venda', 'visita_confirmada_venda'];
+        return ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda'];
     }
     return null;
 }
@@ -142,6 +142,47 @@ function notificarComparecimentoVenda(int $vendaId, ?string $quemMarcou = null):
         enviarAvisoVisitaLojaWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
     } catch (Throwable $e) {
         // best-effort
+    }
+}
+
+/** 24/10/2026 — negociação de venda virou 🔥 quente pela IA: sino + WhatsApp (vendedor + números de Configurações), 1x por venda. */
+function notificarLeadQuenteVenda(int $vendaId): void {
+    try {
+        $chave = 'venda_quente_avisado_' . $vendaId;
+        if (getConfig($chave)) return;
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT v.responsavel_id, v.comprador_nome, v.comprador_telefone, v.veiculo_interesse_texto,
+                   v.forma_pagamento_pretendida, v.valor_entrada_disponivel, v.valor_parcela_orcamento,
+                   u.whatsapp AS responsavel_whatsapp, u.nome AS responsavel_nome
+            FROM vendas v LEFT JOIN usuarios u ON u.id = v.responsavel_id
+            WHERE v.id = ?
+        ");
+        $stmt->execute([$vendaId]);
+        $v = $stmt->fetch();
+        if (!$v) return;
+        setConfig($chave, date('Y-m-d H:i:s'));
+
+        $nome = $v['comprador_nome'] ?: '(sem nome)';
+        $url = '/admin/venda.php?id=' . $vendaId;
+        $responsavelId = $v['responsavel_id'] ? (int)$v['responsavel_id'] : null;
+        foreach (destinatariosNotificacao($responsavelId) as $usuarioId) {
+            criarNotificacao($usuarioId, 'lead_quente_venda', '🔥 Lead quente em vendas', $nome, $url);
+        }
+
+        $fmt = fn($x) => 'R$ ' . number_format((float)$x, 2, ',', '.');
+        $baseUrl = getConfig('app_base_url') ?: '';
+        $msg = "🔥 Lead QUENTE em vendas!\nComprador: {$nome}"
+             . ($v['comprador_telefone'] ? "\nTelefone: {$v['comprador_telefone']}" : '')
+             . ($v['veiculo_interesse_texto'] ? "\nProcura: {$v['veiculo_interesse_texto']}" : '')
+             . ($v['forma_pagamento_pretendida'] ? "\nPagamento: {$v['forma_pagamento_pretendida']}" : '')
+             . ($v['valor_entrada_disponivel'] ? "\nEntrada: " . $fmt($v['valor_entrada_disponivel']) : '')
+             . ($v['valor_parcela_orcamento'] ? "\nParcela até: " . $fmt($v['valor_parcela_orcamento']) : '')
+             . "\nVendedor: " . ($v['responsavel_nome'] ?: 'sem responsável')
+             . ($baseUrl ? "\n" . rtrim($baseUrl, '/') . $url : '');
+        enviarAvisoVisitaLojaWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
+    } catch (Throwable $e) {
+        // best-effort — nunca pode travar o turno da IA
     }
 }
 

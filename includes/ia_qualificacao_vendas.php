@@ -487,6 +487,7 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         $sets[] = "temperatura_lead = ?";
         $params[] = $dados['temperatura_lead'];
     }
+    $virouQuente = ($dados['temperatura_lead'] ?? null) === 'quente' && $v['temperatura_lead'] !== 'quente';
 
     if ($sets) {
         $params[] = $vendaId;
@@ -503,6 +504,12 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
     // === null lá em cima.
     if ($visitaConfirmadaAgora) {
         notificarVisitaConfirmadaVenda($vendaId);
+    }
+    // 24/10/2026, "lead quente no caso da venda enviar" — mesmos destinos da
+    // visita (vendedor + números de Configurações); 1x por negociação, mesmo
+    // se a temperatura oscilar morno↔quente depois.
+    if ($virouQuente) {
+        notificarLeadQuenteVenda($vendaId);
     }
 
     return $avancouDadoReal;
