@@ -708,7 +708,7 @@ function salvarFotoAvaliacao(int $avaliacaoId, array $arquivo, string $legenda):
         return ['ok' => false, 'erro' => 'Veículo não encontrado.'];
     }
 
-    $nomeArquivo = 'vistoria_' . $tipo . '_' . $avaliacaoId . '_' . time() . '.' . $ext;
+    $nomeArquivo = 'vistoria_' . $tipo . '_' . $avaliacaoId . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
     $copia = salvarArquivoGeradoComoDocumento((int)$cli['cliente_id'], $cli['nome'] ?: "Cliente #{$cli['cliente_id']}", $arquivo['tmp_name'], $nomeArquivo, $mime, 'vistoria');
     if (!$copia['drive_file_id'] && !$copia['arquivo_url']) {
         return ['ok' => false, 'erro' => 'Não foi possível salvar o arquivo agora — tente novamente.'];

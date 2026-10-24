@@ -75,8 +75,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             reabrirAvaliacao($id);
             $sucesso = 'Vistoria reaberta pra edição.';
         } elseif ($acao === 'upload_foto' && $podeEditarChecklist) {
-            $resultado = salvarFotoAvaliacao($id, $_FILES['midia'] ?? [], (string)($_POST['legenda'] ?? ''));
-            if ($resultado['ok']) { $sucesso = 'Foto/vídeo adicionado à vistoria.'; } else { $erro = $resultado['erro']; }
+            // 24/10/2026, "no iPhone só consigo selecionar uma foto por vez" —
+            // aceita várias de uma vez (midias[]), salvando 1 a 1 com a mesma
+            // função; 1 arquivo com erro nunca impede os outros.
+            $lote = $_FILES['midias'] ?? null;
+            $arquivos = [];
+            if ($lote && is_array($lote['name'] ?? null)) {
+                foreach ($lote['name'] as $i => $nomeArq) {
+                    if (($lote['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) continue;
+                    $arquivos[] = ['name' => $nomeArq, 'type' => $lote['type'][$i], 'tmp_name' => $lote['tmp_name'][$i], 'error' => $lote['error'][$i], 'size' => $lote['size'][$i]];
+                }
+            } elseif (!empty($_FILES['midia'])) {
+                $arquivos[] = $_FILES['midia'];
+            }
+            $somaBytes = array_sum(array_map(fn($a) => (int)($a['size'] ?? 0), $arquivos));
+            if (!$arquivos) {
+                $erro = 'Selecione pelo menos uma foto ou vídeo.';
+            } elseif ($somaBytes > 80 * 1024 * 1024) {
+                $erro = 'Lote muito grande (' . round($somaBytes / 1048576) . 'MB) — envie até 80MB por vez.';
+            } else {
+                $okQtd = 0; $errosLote = [];
+                foreach ($arquivos as $arq) {
+                    $r = salvarFotoAvaliacao($id, $arq, (string)($_POST['legenda'] ?? ''));
+                    if ($r['ok']) { $okQtd++; } else { $errosLote[] = ($arq['name'] ?? 'arquivo') . ': ' . $r['erro']; }
+                }
+                if ($okQtd > 0) $sucesso = "{$okQtd} de " . count($arquivos) . ' foto(s)/vídeo(s) adicionado(s) à vistoria.';
+                if ($errosLote) $erro = implode(' · ', $errosLote);
+            }
         } elseif ($acao === 'excluir_foto' && $podeEditarChecklist) {
             excluirFotoAvaliacao((int)($_POST['foto_id'] ?? 0));
             $sucesso = 'Mídia removida da vistoria.';
@@ -347,13 +372,27 @@ function avTermoStatusLabel(string $status): string {
         <form method="post" enctype="multipart/form-data">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="upload_foto">
-            <label>Foto ou vídeo (JPG/PNG/WEBP até 10MB, ou vídeo MP4/MOV/WEBM até 50MB)</label>
-            <input type="file" name="midia" accept="image/*,video/*" required>
-            <small>Toque pra tirar a foto na hora com a câmera, ou escolher um arquivo já salvo.</small>
+            <label>Fotos ou vídeos (pode selecionar várias de uma vez — JPG/PNG/WEBP até 10MB cada, vídeo até 50MB)</label>
+            <input type="file" id="av-input-midias" name="midias[]" accept="image/*,video/*" multiple required>
+            <small>No celular: toque e escolha "Fototeca" pra marcar várias fotos, ou "Tirar Foto" pra usar a câmera. Até 80MB por envio.</small>
             <label>Legenda (opcional)</label>
             <input type="text" name="legenda" placeholder="Ex: Avaria no para-choque traseiro">
             <button type="submit" style="min-height:48px">📷 Adicionar</button>
         </form>
+        <script>
+        (function () {
+            var inp = document.getElementById('av-input-midias');
+            if (!inp) return;
+            inp.form.addEventListener('submit', function (ev) {
+                var total = 0;
+                for (var i = 0; i < inp.files.length; i++) total += inp.files[i].size;
+                if (total > 80 * 1024 * 1024) {
+                    ev.preventDefault();
+                    alert('Lote muito grande (' + Math.round(total / 1048576) + 'MB). Envie até 80MB por vez — selecione menos fotos.');
+                }
+            });
+        })();
+        </script>
     <?php endif; ?>
 </div>
 
