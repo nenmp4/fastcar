@@ -1079,6 +1079,10 @@ function enviarMidiaCatalogoParaComprador(int $oportunidadeId, string $telefone,
  * dedicada de vendas pra isso. Nunca lança, nunca bloqueia a criação do lead.
  */
 function notificarNovoLeadVendas(int $vendaId, string $nomeComprador, string $telefoneComprador): void {
+    // 24/10/2026, "IA de venda notifica todos os leads pro Jean — só os
+    // leads quentes": lead novo de venda NÃO vai mais pros números de
+    // Configurações (só o 🔥 quente vai, via notificarLeadQuenteVenda()).
+    return;
     try {
         $lista = getConfig('notificacao_leads_whatsapp') ?: '';
         $numeros = array_filter(array_map('trim', explode(',', $lista)));
@@ -1128,6 +1132,12 @@ function notificarVendedorLeadQualificado(int $vendaId, string $motivo = 'Qualif
             zapiEnviarTextoInterno($v['vendedor_whatsapp'], $msg);
             return;
         }
+
+        // Sem vendedor com WhatsApp: só cai pros números de Configurações se
+        // o lead for 🔥 quente (24/10/2026 — "só os leads quentes" pro Jean).
+        $stmtT = $db->prepare("SELECT temperatura_lead FROM vendas WHERE id = ?");
+        $stmtT->execute([$vendaId]);
+        if ($stmtT->fetchColumn() !== 'quente') return;
 
         $lista = getConfig('notificacao_leads_whatsapp') ?: '';
         foreach (array_filter(array_map('trim', explode(',', $lista))) as $numero) {
