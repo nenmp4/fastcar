@@ -374,7 +374,8 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT o.id AS oportunidade_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
-               COALESCE(o.valor_fipe_referencia, o.valor_final) AS valor_referencia
+               COALESCE(o.valor_fipe_referencia, o.valor_final) AS valor_referencia,
+               o.valor_fipe_referencia, o.veiculo_placa, o.tipo_veiculo, o.data_compra
         FROM oportunidades o
         WHERE o.etapa = 'fechado'
           AND NOT EXISTS (

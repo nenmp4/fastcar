@@ -89,7 +89,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // admin/_zapi_status_vendas.php), mesma classe de bug do
         // comentário acima — precisa estar no allowlist senão o fetch()
         // leva 302 pra vendas.php.
-        'zapi_status_vendas_ajax.php'];
+        'zapi_status_vendas_ajax.php',
+        // 24/10/2026 — catálogo/estoque de veículos disponíveis + fotos.
+        'estoque.php', 'veiculo_midias.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -153,7 +155,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // 24/10/2026 — avaliador também atende vendas, igual vendedor
         // ("perfil de vistoria vai ter acesso aos carros pra vender/leads").
         'vendas.php', 'venda.php', 'vendas_inbox.php', 'promissorias.php',
-        'veiculo_crlv_ajax.php', 'zapi_status_vendas_ajax.php'];
+        'veiculo_crlv_ajax.php', 'zapi_status_vendas_ajax.php', 'estoque.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;
