@@ -186,6 +186,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cancela
     exit;
 }
 
+// 24/10/2026 — atribuir responsável em massa (só super_admin).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'reatribuir_venda_massa') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil !== 'super_admin') {
+        http_response_code(403);
+        exit('Só o super admin atribui responsável em massa.');
+    }
+    $idsPost = array_map('intval', (array)($_POST['ids'] ?? []));
+    $destinoPost = (int)($_POST['novo_responsavel_id'] ?? 0);
+    try {
+        if (!$idsPost) throw new RuntimeException('Nenhuma negociação selecionada.');
+        $r = reatribuirVendasEmMassa($idsPost, $destinoPost, $meuId);
+        $bulkQs = ['bulk_reatrib' => $r['sucesso'], 'bulk_ignorados' => $r['ignorados'], 'bulk_destino' => $r['destino_nome']];
+    } catch (Throwable $e) {
+        $bulkQs = ['bulk_erro' => $e->getMessage()];
+    }
+    $qs = $_GET;
+    unset($qs['bulk_sucesso'], $qs['bulk_ignorados'], $qs['bulk_erro'], $qs['bulk_reatrib'], $qs['bulk_destino']);
+    header('Location: /admin/vendas.php?' . http_build_query(array_merge($qs, $bulkQs)));
+    exit;
+}
+
 // 01/10/2026, "adicionar campo para recado tanto na compra e revenda" —
 // mesma mecânica de admin/index.php (atualizarObservacaoManual()): texto
 // livre editável direto na linha, só enquanto a negociação ainda está
@@ -450,7 +475,9 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 
 <main>
 <?php if ($erroPromissoria): ?><div class="alerta-erro"><?= e($erroPromissoria) ?></div><?php endif; ?>
-<?php if (isset($_GET['bulk_sucesso'])): ?>
+<?php if (isset($_GET['bulk_reatrib'])): ?>
+    <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_reatrib'] ?> negociação(ões) atribuída(s) a <?= e((string)($_GET['bulk_destino'] ?? '')) ?><?= (int)($_GET['bulk_ignorados'] ?? 0) > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (já encerrada ou já era dele)' : '' ?>.</div>
+<?php elseif (isset($_GET['bulk_sucesso'])): ?>
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> negociação(ões) cancelada(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
 <?php elseif (isset($_GET['bulk_erro'])): ?>
     <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
@@ -977,12 +1004,31 @@ if ($podeSelecionarEmMassa):
 </form>
 <div id="barra-bulk-cancelar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
     <strong><span id="bulk-contagem">0</span> selecionada(s)</strong>
-    <input type="text" name="motivo" form="form-bulk-cancelar" id="bulk-motivo" required
+    <input type="text" name="motivo" form="form-bulk-cancelar" id="bulk-motivo"
            placeholder="Motivo (obrigatório) — ex: desistiu, achou proposta baixa..."
            style="flex:1;min-width:220px;margin:0">
-    <button type="submit" form="form-bulk-cancelar" class="perigo" style="margin:0">🚫 Cancelar selecionadas</button>
+    <button type="submit" form="form-bulk-cancelar" class="perigo" style="margin:0"
+            onclick="if (document.getElementById('bulk-motivo').value.trim() === '') { alert('Escreva o motivo do cancelamento.'); return false; }">🚫 Cancelar selecionadas</button>
+    <?php if ($perfil === 'super_admin'): ?>
+        <?php $destinosVenda = $db->query("SELECT id, nome, perfil FROM usuarios WHERE bloqueado = 0 AND perfil IN ('vendedor','avaliador','super_admin') ORDER BY nome")->fetchAll(); ?>
+        <span style="flex-basis:100%;height:0"></span>
+        <select id="bulk-novo-responsavel" style="flex:1;min-width:200px;margin:0">
+            <option value="">— atribuir a… —</option>
+            <?php foreach ($destinosVenda as $d): ?>
+                <option value="<?= (int)$d['id'] ?>"><?= e($d['nome']) ?> (<?= e($d['perfil']) ?>)</option>
+            <?php endforeach; ?>
+        </select>
+        <button type="button" style="margin:0" onclick="bulkReatribuir()">👤 Atribuir responsável</button>
+    <?php endif; ?>
     <button type="button" class="btn-texto" onclick="bulkLimparSelecao()">Limpar seleção</button>
 </div>
+<?php if ($perfil === 'super_admin'): ?>
+<form id="form-bulk-reatribuir" method="post" style="display:none">
+    <?= csrfField() ?>
+    <input type="hidden" name="acao" value="reatribuir_venda_massa">
+    <input type="hidden" name="novo_responsavel_id" id="bulk-reatrib-destino">
+</form>
+<?php endif; ?>
 <?php endif; ?>
 
 <div class="card">
@@ -1095,6 +1141,17 @@ function bulkAtualizar() {
 function bulkToggleTodos(master) {
     document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = master.checked; });
     bulkAtualizar();
+}
+function bulkReatribuir() {
+    var destino = document.getElementById('bulk-novo-responsavel').value;
+    if (!destino) { alert('Escolha pra quem atribuir.'); return; }
+    var form = document.getElementById('form-bulk-reatribuir');
+    form.querySelectorAll('input[name="ids[]"]').forEach(function (i) { i.remove(); });
+    document.querySelectorAll('.bulk-chk-lead:checked').forEach(function (c) {
+        var h = document.createElement('input'); h.type = 'hidden'; h.name = 'ids[]'; h.value = c.value; form.appendChild(h);
+    });
+    document.getElementById('bulk-reatrib-destino').value = destino;
+    form.submit();
 }
 function bulkLimparSelecao() {
     document.querySelectorAll('.bulk-chk-lead').forEach(function (c) { c.checked = false; });

@@ -262,6 +262,34 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
  * @param int[] $ids
  * @return array{total:int, sucesso:int, ignorados:int}
  */
+/**
+ * 24/10/2026, "opção pra eu selecionar múltiplo e atribuir responsável" —
+ * troca o vendedor de várias negociações de uma vez (só etapas ativas),
+ * gravando histórico em cada uma. Destino: vendedor, avaliador ou
+ * super_admin ativo.
+ */
+function reatribuirVendasEmMassa(array $ids, int $novoResponsavelId, ?int $executadoPor = null): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id, nome FROM usuarios WHERE id = ? AND bloqueado = 0 AND perfil IN ('vendedor','avaliador','super_admin')");
+    $stmt->execute([$novoResponsavelId]);
+    $destino = $stmt->fetch();
+    if (!$destino) throw new RuntimeException('Responsável de destino inválido.');
+    $sucesso = 0; $ignorados = 0;
+    foreach (array_unique(array_map('intval', $ids)) as $id) {
+        $stmt = $db->prepare("SELECT v.etapa, v.responsavel_id, u.nome AS origem FROM vendas v LEFT JOIN usuarios u ON u.id = v.responsavel_id WHERE v.id = ?");
+        $stmt->execute([$id]);
+        $v = $stmt->fetch();
+        if (!$v || !in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true) || (int)$v['responsavel_id'] === $novoResponsavelId) { $ignorados++; continue; }
+        $db->beginTransaction();
+        $db->prepare("UPDATE vendas SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$novoResponsavelId, $id]);
+        $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao, responsavel_id) VALUES (?, ?, ?, ?, ?)")
+           ->execute([$id, $v['etapa'], $v['etapa'], 'Reatribuído manualmente pelo super admin' . ($v['origem'] ? " (de {$v['origem']}" : ' (sem responsável anterior') . " pra {$destino['nome']})", $executadoPor]);
+        $db->commit();
+        $sucesso++;
+    }
+    return ['sucesso' => $sucesso, 'ignorados' => $ignorados, 'destino_nome' => $destino['nome']];
+}
+
 function cancelarVendaEmMassa(array $ids, string $motivo, ?int $responsavelId = null, ?int $restringirDono = null): array {
     if (trim($motivo) === '') {
         throw new InvalidArgumentException('Motivo do cancelamento é obrigatório.');
