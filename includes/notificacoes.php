@@ -31,7 +31,7 @@ function criarNotificacao(int $usuarioId, string $tipo, string $titulo, string $
  * em quem consome isso (listarNotificacoes()/contarNotificacoesNaoLidas()/
  * marcarNotificacoesLidas()).
  */
-const TIPOS_NOTIFICACAO_VENDAS = ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda'];
+const TIPOS_NOTIFICACAO_VENDAS = ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda', 'cliente_chegou_loja'];
 
 /**
  * 24/10/2026, "não misturar notificações vendas com compra" — 'vendas' só
@@ -122,6 +122,51 @@ function enviarAvisoVisitaLojaWhatsapp(?string $whatsappResponsavel, string $msg
         }
     } catch (Throwable $e) {
         // best-effort — nunca pode travar quem chama
+    }
+}
+
+/**
+ * 24/10/2026, "se o cliente mandar mensagem quando chega na loja" — cliente
+ * com visita confirmada escreveu "cheguei"/"estou aqui"... Detecção por
+ * frase de chegada (nunca qualquer mensagem, pra não responder pergunta
+ * comum como se fosse chegada).
+ */
+function vendaTextoEhChegada(string $texto): bool {
+    $t = mb_strtolower(trim($texto));
+    $t = strtr($t, ['á'=>'a','à'=>'a','â'=>'a','ã'=>'a','é'=>'e','ê'=>'e','í'=>'i','ó'=>'o','ô'=>'o','õ'=>'o','ú'=>'u','ç'=>'c']);
+    if ($t === '' || mb_strlen($t) > 160) return false;
+    return (bool)preg_match('/\b(cheguei|acabei de chegar|ja cheguei|estacionei|chegando ai|to chegando|estou chegando|ja estou ai|ja to ai)\b/u', $t)
+        || (bool)preg_match('/\b(to|tou|estou|ja to|ja estou|tamo|estamos)\s+(aqui|ai|na porta|na frente|na loja|no local|aqui fora|na fastcar|ai fora)(\s+(fora|na frente|na porta|embaixo|em frente))?\s*[!.,?]*\s*$/u', $t);
+}
+
+/**
+ * Cliente chegou na loja: avisa o vendedor (WhatsApp pessoal + sino) e os
+ * números de Configurações. Devolve o 1º nome do vendedor (pra resposta ao
+ * cliente) ou null se não tiver vendedor.
+ */
+function notificarClienteChegouLoja(int $vendaId, string $textoCliente): ?string {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT v.comprador_nome, v.comprador_telefone, v.responsavel_id, v.visita_dia_horario_texto,
+                   u.whatsapp AS responsavel_whatsapp, u.nome AS responsavel_nome
+            FROM vendas v LEFT JOIN usuarios u ON u.id = v.responsavel_id WHERE v.id = ?
+        ");
+        $stmt->execute([$vendaId]);
+        $v = $stmt->fetch();
+        if (!$v) return null;
+        $nome = $v['comprador_nome'] ?: '(sem nome)';
+        $base = rtrim((string)(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions'), '/');
+        $msg = "📍 CLIENTE CHEGOU NA LOJA!\n{$nome} ({$v['comprador_telefone']}) mandou: \"" . mb_strimwidth($textoCliente, 0, 120, '…') . "\"\n"
+             . ($v['responsavel_nome'] ? "Vendedor: {$v['responsavel_nome']}\n" : "⚠️ Sem vendedor definido\n")
+             . "{$base}/admin/vendas_inbox.php?telefone=" . $v['comprador_telefone'];
+        enviarAvisoVisitaLojaWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
+        foreach (destinatariosNotificacao($v['responsavel_id'] ? (int)$v['responsavel_id'] : null) as $uid) {
+            criarNotificacao($uid, 'cliente_chegou_loja', '📍 Cliente chegou na loja', "{$nome} avisou que chegou", '/admin/venda.php?id=' . $vendaId);
+        }
+        return $v['responsavel_nome'] ? explode(' ', trim($v['responsavel_nome']))[0] : null;
+    } catch (Throwable $e) {
+        return null;
     }
 }
 

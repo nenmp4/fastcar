@@ -151,6 +151,33 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
                 'instancia' => $instancia, 'ia_resultado' => null];
     }
 
+    // 24/10/2026, "se o cliente mandar mensagem quando chega na loja" — com
+    // visita confirmada e ainda sem comparecimento marcado, uma frase de
+    // chegada ("cheguei", "estou aqui") recebe resposta automática pela
+    // instância de vendas (1x por dia) e avisa o vendedor na hora. Vale
+    // mesmo com a IA pausada/qualificação encerrada — é só um recado.
+    if ($vendaLead && $tipoRegistro === 'text' && vendaTextoEhChegada($texto)) {
+        $dbCh = getDB();
+        $stmtCh = $dbCh->prepare("SELECT etapa, aceita_visitar_fastcar, visita_compareceu_em, comprador_nome FROM vendas WHERE id = ?");
+        $stmtCh->execute([(int)$vendaLead['venda_id']]);
+        $vCh = $stmtCh->fetch();
+        $chaveCh = 'chegada_loja_' . (int)$vendaLead['venda_id'] . '_' . date('Y-m-d');
+        if ($vCh && (int)$vCh['aceita_visitar_fastcar'] === 1 && empty($vCh['visita_compareceu_em'])
+            && in_array($vCh['etapa'], ETAPAS_VENDA_ATIVAS, true) && getConfig($chaveCh) !== '1') {
+            setConfig($chaveCh, '1');
+            $vendedorNome = notificarClienteChegouLoja((int)$vendaLead['venda_id'], $texto);
+            $primeiro = trim(explode(' ', (string)($vCh['comprador_nome'] ?? ''))[0]);
+            $msgChegada = 'Que bom que você chegou' . ($primeiro !== '' ? ", {$primeiro}" : '') . '! 😊 '
+                . ($vendedorNome ? "Já avisei o {$vendedorNome}, ele vai te receber em instantes." : 'Já avisei a equipe, alguém vai te receber em instantes.');
+            if (zapiEnviarTexto($phone, $msgChegada, $credenciaisVendas)) {
+                registrarMensagem($phone, 'out', $msgChegada, null, true);
+            }
+            return ['ignored' => 'cliente_chegou_loja', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                    'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                    'instancia' => $instancia, 'ia_resultado' => null];
+        }
+    }
+
     if ($vendaLead && !$ia_pausada && $instancia['tipo'] === 'vendas') {
         $db = getDB();
         $stmtEtapa = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
