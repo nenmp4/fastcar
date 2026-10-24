@@ -69,7 +69,7 @@ function atribuirVendedorAutomatico(): ?int {
         // "não empatar 2 no mesmo segundo" da fila de compra, granularidade
         // do SQLite).
         $proximaPosicao = 1 + (int)$db->query("
-            SELECT COALESCE(MAX(posicao_fila), 0) FROM usuarios WHERE perfil = 'vendedor'
+            SELECT COALESCE(MAX(posicao_fila), 0) FROM usuarios WHERE perfil IN ('vendedor', 'avaliador')
         ")->fetchColumn();
         $db->prepare("
             UPDATE usuarios SET posicao_fila = ?, ultimo_lead_recebido_em = datetime('now','localtime') WHERE id = ?
@@ -85,7 +85,7 @@ function atribuirVendedorAutomatico(): ?int {
 
 function proximoDaFilaVendas(bool $disponivelOnly, bool $apenasPlantao = false): ?int {
     $db = getDB();
-    $condicoes = ["bloqueado = 0", "perfil = 'vendedor'"];
+    $condicoes = ["bloqueado = 0", "perfil IN ('vendedor', 'avaliador')"];
     if ($apenasPlantao) {
         $condicoes[] = 'plantao_fim_expediente = 1';
     } else {
@@ -118,7 +118,7 @@ function listarFilaVendedores(): array {
     return $db->query("
         SELECT id, nome, perfil, disponivel, plantao_fim_expediente, ultimo_lead_recebido_em, faltou_em
         FROM usuarios
-        WHERE perfil = 'vendedor' AND bloqueado = 0
+        WHERE perfil IN ('vendedor', 'avaliador') AND bloqueado = 0
         ORDER BY nome
     ")->fetchAll();
 }
@@ -145,7 +145,7 @@ function marcarVendedorFaltou(int $usuarioId, int $executadoPor): array {
     $db = getDB();
     $hoje = date('Y-m-d');
 
-    $stmt = $db->prepare("SELECT nome FROM usuarios WHERE id = ? AND perfil = 'vendedor'");
+    $stmt = $db->prepare("SELECT nome FROM usuarios WHERE id = ? AND perfil IN ('vendedor', 'avaliador')");
     $stmt->execute([$usuarioId]);
     $ausente = $stmt->fetch();
     if (!$ausente) {
@@ -157,7 +157,7 @@ function marcarVendedorFaltou(int $usuarioId, int $executadoPor): array {
 
     $receptores = $db->query("
         SELECT id, nome FROM usuarios
-        WHERE perfil = 'vendedor' AND bloqueado = 0 AND disponivel = 1 AND id != {$usuarioId}
+        WHERE perfil IN ('vendedor', 'avaliador') AND bloqueado = 0 AND disponivel = 1 AND id != {$usuarioId}
         ORDER BY posicao_fila ASC, id ASC
     ")->fetchAll();
 

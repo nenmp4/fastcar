@@ -632,6 +632,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sucesso = "{$resultado['ausente_nome']} marcado como ausente hoje. Sem negociações não-tocadas pra redistribuir (ou nenhum outro vendedor disponível agora).";
             }
+        } elseif ($acao === 'alternar_disponivel_vendedor') {
+            // 24/10/2026 — não existia jeito nenhum de ligar vendedor/avaliador
+            // na fila de vendas (o botão "Disponível" só fica nas telas de compra).
+            $stmtDisp = getDB()->prepare("UPDATE usuarios SET disponivel = CASE disponivel WHEN 1 THEN 0 ELSE 1 END WHERE id = ? AND perfil IN ('vendedor','avaliador')");
+            $stmtDisp->execute([(int)($_POST['usuario_id'] ?? 0)]);
+            $sucesso = 'Disponibilidade na fila de vendas atualizada.';
         } elseif ($acao === 'desmarcar_falta_vendedor') {
             desmarcarVendedorFaltou((int)($_POST['usuario_id'] ?? 0));
             $sucesso = 'Falta desmarcada — o vendedor volta a ser candidato normal na fila.';
@@ -1869,6 +1875,14 @@ unset($fv);
                         <span class="badge badge-ok">🟢 disponível</span>
                     <?php else: ?>
                         <span class="badge badge-atraso">⚪ offline</span>
+                    <?php endif; ?>
+                    <?php if (!$faltouHojeVendedor): ?>
+                    <form method="post" class="inline">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="alternar_disponivel_vendedor">
+                        <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
+                        <button type="submit" style="margin-top:4px;padding:4px 10px;font-size:12px"><?= $fv['disponivel'] ? 'Desligar' : 'Ligar na fila' ?></button>
+                    </form>
                     <?php endif; ?>
                 </td>
                 <td>

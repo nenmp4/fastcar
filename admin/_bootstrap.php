@@ -149,7 +149,11 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         'parar_impersonar.php',
         // 08/10/2026 — sino de notificação + badge de status Z-API (ver
         // nota completa no guard do vendedor acima, mesmo bug/mesma correção).
-        'notificacoes.php', 'zapi_status_ajax.php'];
+        'notificacoes.php', 'zapi_status_ajax.php',
+        // 24/10/2026 — avaliador também atende vendas, igual vendedor
+        // ("perfil de vistoria vai ter acesso aos carros pra vender/leads").
+        'vendas.php', 'venda.php', 'vendas_inbox.php', 'promissorias.php',
+        'veiculo_crlv_ajax.php', 'zapi_status_vendas_ajax.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

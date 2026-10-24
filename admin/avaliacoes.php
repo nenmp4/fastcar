@@ -191,6 +191,7 @@ function avStatusBadge(string $status): string {
     <?php if ($perfil !== 'avaliador'): ?><a href="/admin/index.php" style="color:#fff">← Voltar</a><?php endif; ?>
     <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
     <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
+    <?php if (podeAcessarVendas()): ?><a href="/admin/vendas.php">💰 Vendas</a><?php endif; ?>
     <a href="/admin/meu_perfil.php">🙋 Meu perfil</a>
     <a href="/admin/logout.php">Sair</a>
 </header>

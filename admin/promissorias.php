@@ -27,7 +27,7 @@ requireAcessoVendas();
 $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId = (int)$_SESSION['admin_id'];
-$souDono = $perfil === 'vendedor';
+$souDono = in_array($perfil, ['vendedor', 'avaliador'], true);
 
 $erro = '';
 $sucesso = '';

@@ -122,7 +122,8 @@ function requireVisaoGeral(): void {
  * dito. `consultor` nunca entra aqui — os dois módulos são times separados.
  */
 function podeAcessarVendas(): bool {
-    return in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'supervisor', 'vendedor'], true);
+    // 24/10/2026: avaliador também atende vendas, igual vendedor.
+    return in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'supervisor', 'vendedor', 'avaliador'], true);
 }
 
 function requireAcessoVendas(): void {

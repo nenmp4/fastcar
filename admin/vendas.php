@@ -19,7 +19,7 @@ $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId = (int)$_SESSION['admin_id'];
 // vendedor só vê a própria carteira; super_admin/supervisor veem tudo.
-$souDono = $perfil === 'vendedor';
+$souDono = in_array($perfil, ['vendedor', 'avaliador'], true); // 24/10/2026: avaliador atende vendas igual vendedor
 
 /*
  * "Vender na Promissória" (26/09/2026) — modal único que registra a
