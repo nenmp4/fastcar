@@ -977,12 +977,17 @@ $iconeDash = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
         <h3 style="margin:0">🚘 Carros disponíveis (<?= count($frotaDash) ?>)</h3>
         <a class="btn" href="/admin/estoque.php">Ver estoque completo →</a>
     </div>
+    <?php if ($frotaDash): ?>
+    <input type="search" id="vitrine-busca" placeholder="🔎 Digite a placa (ou modelo) pra achar rápido" autocomplete="off"
+           style="margin-top:10px;text-transform:uppercase" oninput="vitrineFiltrar(this.value)">
+    <?php endif; ?>
     <?php if (!$frotaDash): ?>
         <p><small>Nenhum veículo disponível no estoque agora.</small></p>
     <?php else: ?>
     <div class="vitrine-dash">
-        <?php foreach (array_slice($frotaDash, 0, 12) as $fv): $fid = (int)$fv['oportunidade_id']; $tit = trim(($fv['veiculo_marca'] ?? '') . ' ' . ($fv['veiculo_modelo'] ?? '')); ?>
-        <a class="vitrine-card" href="/admin/estoque.php?q=<?= urlencode((string)($fv['veiculo_placa'] ?: $tit)) ?>">
+        <?php foreach ($frotaDash as $iDash => $fv): $fid = (int)$fv['oportunidade_id']; $tit = trim(($fv['veiculo_marca'] ?? '') . ' ' . ($fv['veiculo_modelo'] ?? ''));
+            $buscaDash = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($fv['veiculo_placa'] ?? '')) . ' ' . $tit . ' ' . ($fv['veiculo_ano'] ?? '')); ?>
+        <a class="vitrine-card<?= $iDash >= 12 ? ' vitrine-extra' : '' ?>" data-busca="<?= e($buscaDash) ?>"<?= $iDash >= 12 ? ' style="display:none"' : '' ?> href="/admin/estoque.php?q=<?= urlencode((string)($fv['veiculo_placa'] ?: $tit)) ?>">
             <div class="vitrine-foto">
                 <?php if (isset($capaDash[$fid])): ?>
                     <img src="/admin/ver_midia_revenda.php?id=<?= $capaDash[$fid] ?>" alt="" loading="lazy">
@@ -992,18 +997,37 @@ $iconeDash = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             </div>
             <div class="vitrine-info">
                 <strong><?= e($tit ?: '(sem modelo)') ?></strong>
-                <small><?= e((string)($fv['veiculo_ano'] ?? '')) ?><?= !empty($fv['veiculo_placa']) ? ' · ' . e($fv['veiculo_placa']) : '' ?></small>
+                <?php if (!empty($fv['veiculo_placa'])): ?><span class="vitrine-placa"><?= e(strtoupper($fv['veiculo_placa'])) ?></span><?php endif; ?>
+                <small><?= e((string)($fv['veiculo_ano'] ?? '')) ?></small>
                 <?php if ($fv['valor_fipe_referencia']): ?><small>FIPE R$ <?= number_format((float)$fv['valor_fipe_referencia'], 0, ',', '.') ?></small><?php endif; ?>
             </div>
         </a>
         <?php endforeach; ?>
         <?php if (count($frotaDash) > 12): ?>
-            <a class="vitrine-card vitrine-mais" href="/admin/estoque.php">+<?= count($frotaDash) - 12 ?><br><small>ver todos</small></a>
+            <a class="vitrine-card vitrine-mais" id="vitrine-mais" href="/admin/estoque.php">+<?= count($frotaDash) - 12 ?><br><small>ver todos</small></a>
         <?php endif; ?>
+        <p id="vitrine-vazio" style="display:none;margin:8px 0"><small>Nenhum carro disponível com essa placa/modelo.</small></p>
     </div>
     <?php endif; ?>
 </div>
+<script>
+function vitrineFiltrar(termo) {
+    var t = termo.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+    var semEspaco = t.replace(/ /g, '');
+    var achou = 0;
+    document.querySelectorAll('.vitrine-dash .vitrine-card[data-busca]').forEach(function (c) {
+        var b = c.getAttribute('data-busca');
+        var mostra = t === '' ? !c.classList.contains('vitrine-extra') : (b.indexOf(t) !== -1 || b.replace(/ /g, '').indexOf(semEspaco) !== -1);
+        c.style.display = mostra ? '' : 'none';
+        if (mostra) achou++;
+    });
+    var mais = document.getElementById('vitrine-mais');
+    if (mais) mais.style.display = t === '' ? '' : 'none';
+    document.getElementById('vitrine-vazio').style.display = (t !== '' && achou === 0) ? '' : 'none';
+}
+</script>
 <style>
+.vitrine-placa { display:inline-block; align-self:flex-start; font-family:monospace; font-weight:700; font-size:14px; letter-spacing:1px; background:#fff; border:2px solid var(--navy); border-top-width:5px; border-top-color:var(--azul); border-radius:4px; padding:1px 6px; }
 .vitrine-dash { display:flex; gap:12px; overflow-x:auto; padding:12px 2px 6px; scroll-snap-type:x mandatory; }
 .vitrine-card { flex:0 0 170px; scroll-snap-align:start; background:#fff; border:1px solid var(--borda); border-radius:var(--raio); box-shadow:var(--sombra); overflow:hidden; color:inherit; text-decoration:none; display:flex; flex-direction:column; }
 .vitrine-card:hover { border-color:var(--azul); }
