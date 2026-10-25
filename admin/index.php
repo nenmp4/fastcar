@@ -399,6 +399,36 @@ if ($consultorFiltro > 0) {
     $where .= " AND o.responsavel_id = ?";
     $params[] = $consultorFiltro;
 }
+// 25/10/2026, Jean: "filtro por período nas compras já fechadas — hoje,
+// ontem, últimos 7/15/30 dias e definir o período". Data de referência =
+// data da compra (data_compra, gravada no fechamento); sem ela, a última
+// atualização da oportunidade.
+$periodoFechadas = '';
+$fechDe = '';
+$fechAte = '';
+if ($etapaBuscandoFechadas) {
+    $periodoFechadas = in_array($_GET['periodo'] ?? '', ['hoje', 'ontem', '7', '15', '30', 'personalizado'], true) ? $_GET['periodo'] : '';
+    $hojeF = date('Y-m-d');
+    switch ($periodoFechadas) {
+        case 'hoje':  $fechDe = $fechAte = $hojeF; break;
+        case 'ontem': $fechDe = $fechAte = date('Y-m-d', strtotime('-1 day')); break;
+        case '7': case '15': case '30':
+            $fechDe = date('Y-m-d', strtotime('-' . ((int)$periodoFechadas - 1) . ' days'));
+            $fechAte = $hojeF;
+            break;
+        case 'personalizado':
+            $okDe = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['de'] ?? ''));
+            $okAte = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['ate'] ?? ''));
+            $fechDe = $okDe ? $_GET['de'] : '0000-01-01';
+            $fechAte = $okAte ? $_GET['ate'] : '9999-12-31';
+            if (!$okDe && !$okAte) $periodoFechadas = '';
+            break;
+    }
+    if ($periodoFechadas !== '') {
+        $where .= " AND COALESCE(o.data_compra, date(o.updated_at)) BETWEEN ? AND ?";
+        array_push($params, $fechDe, $fechAte);
+    }
+}
 // 28/09/2026, "queria que ficasse separado uma aba de carro e outra de
 // moto" — captura o WHERE/params ANTES de aplicar o filtro de tipo, pra
 // contar quantas oportunidades de CADA tipo existem dentro do mesmo
@@ -1019,6 +1049,39 @@ if ($podeSelecionarEmMassa):
 </div>
 <?php endif; ?>
 
+<?php if ($etapaBuscandoFechadas): ?>
+<?php
+    $stmtResF = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$where}");
+    $stmtResF->execute($params);
+    $resF = $stmtResF->fetch();
+    $qsBaseF = array_diff_key($_GET, ['periodo' => 1, 'de' => 1, 'ate' => 1, 'pagina' => 1]);
+    $linkPeriodo = fn(string $pp) => '/admin/index.php?' . http_build_query(array_merge($qsBaseF, $pp !== '' ? ['periodo' => $pp] : []));
+    $rotulosPeriodo = ['' => 'Tudo', 'hoje' => 'Hoje', 'ontem' => 'Ontem', '7' => 'Últimos 7 dias', '15' => 'Últimos 15 dias', '30' => 'Últimos 30 dias'];
+?>
+<div class="card" style="margin-bottom:12px">
+    <strong>📅 Período da compra</strong>
+    <nav class="etapas-nav" style="margin:8px 0">
+        <?php foreach ($rotulosPeriodo as $pp => $rot): ?>
+            <a href="<?= e($linkPeriodo($pp)) ?>" class="<?= $periodoFechadas === $pp ? 'ativo' : '' ?>"><?= e($rot) ?></a>
+        <?php endforeach; ?>
+    </nav>
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <?php foreach ($qsBaseF as $k => $val): if (is_array($val)) continue; ?>
+            <input type="hidden" name="<?= e($k) ?>" value="<?= e((string)$val) ?>">
+        <?php endforeach; ?>
+        <input type="hidden" name="periodo" value="personalizado">
+        <div><label>De</label><input type="date" name="de" value="<?= e($periodoFechadas === 'personalizado' && $fechDe !== '0000-01-01' ? $fechDe : '') ?>"></div>
+        <div><label>Até</label><input type="date" name="ate" value="<?= e($periodoFechadas === 'personalizado' && $fechAte !== '9999-12-31' ? $fechAte : '') ?>"></div>
+        <button type="submit" style="width:auto;margin:0">Definir período</button>
+    </form>
+    <p style="margin:10px 0 0">
+        <?php if ($periodoFechadas !== ''): ?>
+            <small>Mostrando compras fechadas de <strong><?= $fechDe === '0000-01-01' ? 'o início' : date('d/m/Y', strtotime($fechDe)) ?></strong> até <strong><?= $fechAte === '9999-12-31' ? 'hoje' : date('d/m/Y', strtotime($fechAte)) ?></strong> — </small>
+        <?php endif; ?>
+        <strong><?= (int)$resF['qtd'] ?> compra(s)</strong> · total pago <strong>R$ <?= number_format((float)$resF['total'], 2, ',', '.') ?></strong>
+    </p>
+</div>
+<?php endif; ?>
 <table class="tabela-oportunidades">
     <thead>
         <tr>
