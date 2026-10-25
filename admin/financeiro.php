@@ -197,7 +197,7 @@ $stmtCarrosComprados = $db->prepare("
         FROM contratos WHERE tipo = 'compra' AND assinado_em IS NOT NULL
         GROUP BY oportunidade_id
     ) ctr ON ctr.oportunidade_id = o.id
-    WHERE o.etapa = 'fechado'
+    WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
       AND date(COALESCE(ctr.assinado_em, o.data_compra, o.updated_at)) BETWEEN ? AND ?
 ");
 $stmtCarrosComprados->execute([$inicioMes, $fimMes]);

@@ -188,7 +188,8 @@ $fDe = (string)($_GET['de'] ?? '');
 $fAte = (string)($_GET['ate'] ?? '');
 $filtroDataAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fAte);
 
-$where = "WHERE o.etapa = 'fechado'";
+// Cadastro duplicado (mesclado no principal) nunca conta como carro a mais.
+$where = "WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
 $params = [];
 if ($busca !== '') {
     $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ?)";
@@ -210,7 +211,7 @@ if (!$mostrarIncompletos) {
 
 // Contagem separada (sem o filtro de incompletos) pro link "ver também
 // incompletos" mostrar quantos estão escondidos agora.
-$stmtIncompletos = $db->prepare("SELECT COUNT(*) FROM oportunidades o {$joinContratoAssinado} WHERE o.etapa = 'fechado' AND {$condIncompletoImportAntigo}");
+$stmtIncompletos = $db->prepare("SELECT COUNT(*) FROM oportunidades o {$joinContratoAssinado} WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND {$condIncompletoImportAntigo}");
 $stmtIncompletos->execute();
 $totalIncompletosImportAntigo = (int)$stmtIncompletos->fetchColumn();
 
@@ -259,7 +260,7 @@ $rBuckets = $db->query("
         SUM(CASE WHEN {$diasPosseExpr} >= 730 THEN 1 ELSE 0 END) AS b24
     FROM oportunidades o
     {$joinContratoAssinado}
-    WHERE o.etapa = 'fechado' AND o.financiamento_quitado = 0
+    WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND o.financiamento_quitado = 0
 ")->fetch();
 if ($rBuckets) {
     $bucketsPrazo = ['12' => (int)($rBuckets['b12'] ?? 0), '18' => (int)($rBuckets['b18'] ?? 0), '24' => (int)($rBuckets['b24'] ?? 0)];

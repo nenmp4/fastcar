@@ -417,6 +417,13 @@ if ($etapaBuscandoFechadas) {
         header('Location: /admin/index.php?' . http_build_query(array_merge($_GET, ['mesclados' => $okFech])));
         exit;
     }
+    // Sem placa o sistema não consegue achar duplicado — lista à parte pra completar.
+    $semPlacaFech = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE etapa = 'fechado'
+        AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+        AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) < 6")->fetchColumn();
+    if (($_GET['sem_placa'] ?? '') === '1') {
+        $where .= " AND LENGTH(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) < 6";
+    }
     foreach ($db->query("SELECT UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) AS p, COUNT(*) AS n FROM oportunidades
                          WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
                            AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) >= 6
@@ -1096,6 +1103,16 @@ if ($podeSelecionarEmMassa):
         <?php endif; ?>
         <strong><?= (int)$resF['qtd'] ?> compra(s)</strong> · total pago <strong>R$ <?= number_format((float)$resF['total'], 2, ',', '.') ?></strong>
     </p>
+    <?php if (!empty($semPlacaFech)): ?>
+        <div class="alerta-erro" style="margin-top:8px">
+            ⚠️ <?= $semPlacaFech ?> compra(s) fechada(s) <strong>sem placa</strong> — sem placa o sistema não consegue saber se é carro repetido.
+            <?php if (($_GET['sem_placa'] ?? '') === '1'): ?>
+                <a href="<?= e('/admin/index.php?' . http_build_query(array_diff_key($_GET, ['sem_placa' => 1]))) ?>">Mostrar todas</a>
+            <?php else: ?>
+                <a href="<?= e('/admin/index.php?' . http_build_query(array_merge($_GET, ['sem_placa' => '1']))) ?>">Ver só essas e completar a placa →</a>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
     <?php if (isset($_GET['mesclados'])): ?>
         <div class="alerta-sucesso" style="margin-top:8px">✅ <?= (int)$_GET['mesclados'] ?> placa(s) duplicada(s) mesclada(s) — cada carro aparece 1 vez só agora.</div>
     <?php endif; ?>

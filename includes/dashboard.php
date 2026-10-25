@@ -67,7 +67,7 @@ function dashboardConsultor(int $usuarioId): array {
     $stmt = $db->prepare("
         SELECT COUNT(*), COALESCE(SUM(valor_final), 0)
         FROM oportunidades
-        WHERE fechado_por = ? AND etapa = 'fechado' AND data_compra >= date('now','localtime','start of month')
+        WHERE fechado_por = ? AND etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND data_compra >= date('now','localtime','start of month')
     ");
     $stmt->execute([$usuarioId]);
     [$fechadasMes, $valorFechadoMes] = $stmt->fetch(PDO::FETCH_NUM);
@@ -270,7 +270,7 @@ function dashboardSuperAdmin(): array {
 
     $r = $db->query("
         SELECT COUNT(*) AS qtd, COALESCE(SUM(valor_final), 0) AS total
-        FROM oportunidades WHERE etapa = 'fechado' AND data_compra >= date('now','localtime','start of month')
+        FROM oportunidades WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND data_compra >= date('now','localtime','start of month')
     ")->fetch();
 
     $rConv = $db->query("
