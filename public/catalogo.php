@@ -77,7 +77,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     <div class="aviso"><h2>Link inválido</h2><p>Peça um novo link pra quem te enviou.</p></div>
 <?php else: ?>
     <h1>🚘 Veículos disponíveis na Fastcar</h1>
-    <p>Documentação regularizada · entrada facilitada<?= $primeiroNome ? ' · atendimento com ' . e($primeiroNome) : '' ?></p>
+    <p>Documentação regularizada · entrada facilitada · atendimento Fastcar</p>
     <?php $qs = fn($tp) => '?v=' . $vid . '&t=' . urlencode($t) . ($tp ? '&tipo=' . $tp : ''); ?>
     <div class="filtros">
         <a href="<?= e($qs('')) ?>" class="<?= $tipoFiltro === '' ? 'ativo' : '' ?>">Todos</a>
@@ -112,7 +112,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
-    <?php if ($zap): ?><a class="btn-zap" href="<?= e($zap) ?>">💬 Gostei! Falar com <?= e($primeiroNome) ?></a><?php endif; ?>
+    <?php if ($zap): ?><a class="btn-zap" href="<?= e($zap) ?>">💬 Gostei! Falar com a Fastcar</a><?php endif; ?>
 <?php endif; ?>
 </main>
 <footer><strong>FASTCAR SOLUTIONS</strong> · CNPJ 66.934.500/0001-09<br>Av. Sagitário, 138 — Alphaville Conde II, Barueri/SP</footer>

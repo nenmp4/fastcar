@@ -88,7 +88,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
         <?php if (!$midias): ?><div class="sem-foto"><?= ($veic['tipo_veiculo'] ?? '') === 'moto' ? '🏍️' : '🚗' ?></div><?php endif; ?>
     </div>
     <?php if ($zap): ?>
-        <a class="btn-zap" href="<?= e($zap) ?>">💬 Quero esse! Falar com <?= e(explode(' ', (string)$vendedor['nome'])[0]) ?></a>
+        <a class="btn-zap" href="<?= e($zap) ?>">💬 Quero esse! Falar com a Fastcar</a>
     <?php endif; ?>
     <p style="text-align:center"><small>Condições de pagamento e visita: fale com nosso vendedor.</small></p>
 <?php endif; ?>
