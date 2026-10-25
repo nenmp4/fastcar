@@ -406,7 +406,23 @@ if ($consultorFiltro > 0) {
 $periodoFechadas = '';
 $fechDe = '';
 $fechAte = '';
+// 25/10/2026, "tem duplicidade em alguns veículos" — cadastro repetido já
+// mesclado (mesclarVeiculosDuplicadosPorPlaca()) não aparece nem soma mais.
+$placasRepetidasFech = [];
 if ($etapaBuscandoFechadas) {
+    $where .= " AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
+    if ($perfil === 'super_admin' && ($_POST['acao'] ?? '') === 'mesclar_duplicados_fechadas' && validateCSRF($_POST['csrf_token'] ?? '')) {
+        $mFech = mesclarVeiculosDuplicadosPorPlaca(true);
+        $okFech = count(array_filter($mFech, fn($m) => !$m['conflito']));
+        header('Location: /admin/index.php?' . http_build_query(array_merge($_GET, ['mesclados' => $okFech])));
+        exit;
+    }
+    foreach ($db->query("SELECT UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) AS p, COUNT(*) AS n FROM oportunidades
+                         WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+                           AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) >= 6
+                         GROUP BY p HAVING COUNT(*) > 1")->fetchAll() as $rp) {
+        $placasRepetidasFech[$rp['p']] = (int)$rp['n'];
+    }
     $periodoFechadas = in_array($_GET['periodo'] ?? '', ['hoje', 'ontem', '7', '15', '30', 'personalizado'], true) ? $_GET['periodo'] : '';
     $hojeF = date('Y-m-d');
     switch ($periodoFechadas) {
@@ -535,7 +551,7 @@ $totalAtivas = array_sum($contagemPorEtapa);
 // busca do bloco "Fechadas" acima, independente do filtro atual.
 $sqlFechadas = "SELECT COUNT(*) FROM oportunidades o
                 JOIN clientes c ON c.id = o.cliente_id
-                WHERE o.etapa = 'fechado'";
+                WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
 $paramsFechadas = [];
 if ($souDono) {
     $sqlFechadas .= " AND o.fechado_por = ?";
@@ -1080,6 +1096,22 @@ if ($podeSelecionarEmMassa):
         <?php endif; ?>
         <strong><?= (int)$resF['qtd'] ?> compra(s)</strong> · total pago <strong>R$ <?= number_format((float)$resF['total'], 2, ',', '.') ?></strong>
     </p>
+    <?php if (isset($_GET['mesclados'])): ?>
+        <div class="alerta-sucesso" style="margin-top:8px">✅ <?= (int)$_GET['mesclados'] ?> placa(s) duplicada(s) mesclada(s) — cada carro aparece 1 vez só agora.</div>
+    <?php endif; ?>
+    <?php if ($placasRepetidasFech): ?>
+        <div class="alerta-erro" style="margin-top:8px">
+            ⚠️ <?= count($placasRepetidasFech) ?> placa(s) cadastrada(s) mais de uma vez: <strong><?= e(implode(', ', array_keys($placasRepetidasFech))) ?></strong>
+            — aparecem repetidas aqui e somam 2x no total.
+            <?php if ($perfil === 'super_admin'): ?>
+            <form method="post" style="margin:8px 0 0" onsubmit="return confirmarAcao(this, 'Mesclar os cadastros repetidos? Fica 1 cadastro por placa (o principal); vistorias e fotos vão pra ele e os repetidos saem da lista e do estoque. Nada é apagado.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="mesclar_duplicados_fechadas">
+                <button type="submit" style="width:auto;margin:0">🔀 Mesclar duplicados agora</button>
+            </form>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 <table class="tabela-oportunidades">
@@ -1125,6 +1157,10 @@ if ($podeSelecionarEmMassa):
                     <span class="badge">❄️ Frio</span>
                 <?php endif; ?>
                 <br><small><?= e($op['cliente_telefone']) ?></small>
+                <?php $plNormRow = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($op['veiculo_placa'] ?? ''))); ?>
+                <?php if ($etapaBuscandoFechadas && $plNormRow !== '' && isset($placasRepetidasFech[$plNormRow])): ?>
+                    <br><span class="badge badge-atraso">⚠️ placa repetida (<?= $placasRepetidasFech[$plNormRow] ?>x)</span>
+                <?php endif; ?>
             </td>
             <td>
                 <?= $op['created_at'] ? date('d/m/Y H:i', strtotime($op['created_at'])) : '—' ?>

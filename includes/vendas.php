@@ -549,30 +549,50 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
  * @return array lista de ['placa','principal','duplicados'=>[ids]]
  */
 function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
+    // 25/10/2026 — vale pra TODO veículo fechado (inclusive os ocultos,
+    // ex: migrados do ZapSign), não só os do estoque: a mesma compra
+    // aparecia 2x na aba ✅ Fechadas e somava 2x no total.
     $db = getDB();
     $grupos = $db->query("
-        SELECT UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) AS placa, GROUP_CONCAT(id) AS ids
+        SELECT UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) AS placa
         FROM oportunidades
-        WHERE etapa = 'fechado' AND COALESCE(oculto_estoque, 0) = 0
+        WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
           AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) >= 6
         GROUP BY placa HAVING COUNT(*) > 1
-    ")->fetchAll();
+    ")->fetchAll(PDO::FETCH_COLUMN);
+    $stmtGrupo = $db->prepare("
+        SELECT o.id,
+               EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = o.id AND v.etapa != 'cancelada') AS tem_venda,
+               (COALESCE(o.oculto_estoque, 0) = 0) AS visivel,
+               EXISTS (SELECT 1 FROM veiculo_avaliacoes a WHERE a.oportunidade_id = o.id AND a.status = 'concluida') AS tem_vistoria,
+               EXISTS (SELECT 1 FROM veiculo_midias_revenda m WHERE m.oportunidade_id = o.id) AS tem_midia,
+               EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status = 'assinado') AS tem_contrato
+        FROM oportunidades o
+        WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+          AND UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
+        ORDER BY tem_venda DESC, visivel DESC, tem_vistoria DESC, tem_midia DESC, tem_contrato DESC, o.id DESC
+    ");
     $saida = [];
-    foreach ($grupos as $g) {
-        $principal = veiculoPrincipalPorPlaca($g['placa']);
-        if ($principal === null) continue;
-        $dups = array_values(array_filter(array_map('intval', explode(',', $g['ids'])), fn($i) => $i !== $principal));
-        $saida[] = ['placa' => $g['placa'], 'principal' => $principal, 'duplicados' => $dups];
-        if (!$aplicar) continue;
+    foreach ($grupos as $placa) {
+        $stmtGrupo->execute([$placa]);
+        $linhas = $stmtGrupo->fetchAll();
+        if (count($linhas) < 2) continue;
+        $comVenda = array_filter($linhas, fn($l) => (int)$l['tem_venda'] === 1);
+        $principal = (int)$linhas[0]['id'];
+        $dups = array_map(fn($l) => (int)$l['id'], array_slice($linhas, 1));
+        // 2 cadastros com venda própria = provável recompra real — nunca mescla sozinho.
+        $conflito = count($comVenda) > 1;
+        $saida[] = ['placa' => $placa, 'principal' => $principal, 'duplicados' => $dups, 'conflito' => $conflito];
+        if (!$aplicar || $conflito) continue;
         $db->beginTransaction();
         try {
             foreach ($dups as $d) {
                 $db->prepare("UPDATE veiculo_avaliacoes SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
                 $db->prepare("UPDATE veiculo_midias_revenda SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
                 $db->prepare("UPDATE oportunidades SET oculto_estoque = 1, oculto_estoque_motivo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
-                   ->execute(["Cadastro duplicado da placa {$g['placa']} — mesclado no #{$principal}", $d]);
+                   ->execute(["Cadastro duplicado da placa {$placa} — mesclado no #{$principal}", $d]);
                 $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'fechado', 'fechado', ?)")
-                   ->execute([$d, "Duplicado da placa {$g['placa']}: vistorias/fotos movidas pro #{$principal} e cadastro ocultado do estoque"]);
+                   ->execute([$d, "Duplicado da placa {$placa}: vistorias/fotos movidas pro #{$principal}; cadastro ocultado do estoque e da lista de compras fechadas"]);
             }
             $db->commit();
         } catch (Throwable $e) {
