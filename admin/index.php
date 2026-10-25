@@ -417,6 +417,12 @@ if ($etapaBuscandoFechadas) {
         header('Location: /admin/index.php?' . http_build_query(array_merge($_GET, ['mesclados' => $okFech])));
         exit;
     }
+    if ($perfil === 'super_admin' && ($_POST['acao'] ?? '') === 'desfazer_mesclagem_fechadas' && validateCSRF($_POST['csrf_token'] ?? '')) {
+        $nDesf = desfazerMesclagemVeiculos();
+        header('Location: /admin/index.php?' . http_build_query(array_merge(array_diff_key($_GET, ['mesclados' => 1]), ['desmesclados' => $nDesf])));
+        exit;
+    }
+    $totalMescladosFech = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE COALESCE(oculto_estoque_motivo, '') LIKE 'Cadastro duplicado%'")->fetchColumn();
     // Sem placa o sistema não consegue achar duplicado — lista à parte pra completar.
     $semPlacaFech = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE etapa = 'fechado'
         AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
@@ -1115,6 +1121,16 @@ if ($podeSelecionarEmMassa):
     <?php endif; ?>
     <?php if (isset($_GET['mesclados'])): ?>
         <div class="alerta-sucesso" style="margin-top:8px">✅ <?= (int)$_GET['mesclados'] ?> placa(s) duplicada(s) mesclada(s) — cada carro aparece 1 vez só agora.</div>
+    <?php endif; ?>
+    <?php if (isset($_GET['desmesclados'])): ?>
+        <div class="alerta-sucesso" style="margin-top:8px">↩️ Mesclagem desfeita — <?= (int)$_GET['desmesclados'] ?> cadastro(s) voltaram pra lista.</div>
+    <?php endif; ?>
+    <?php if ($perfil === 'super_admin' && !empty($totalMescladosFech)): ?>
+        <form method="post" style="margin:8px 0 0" onsubmit="return confirmarAcao(this, 'Desfazer a mesclagem? Os <?= (int)$totalMescladosFech ?> cadastro(s) escondidos como duplicado voltam pra lista e pro total, do jeito que estavam antes.');">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="desfazer_mesclagem_fechadas">
+            <button type="submit" class="btn-secundario" style="width:auto;margin:0">↩️ Desfazer mesclagem (<?= (int)$totalMescladosFech ?> escondido(s))</button>
+        </form>
     <?php endif; ?>
     <?php if ($placasRepetidasFech): ?>
         <div class="alerta-erro" style="margin-top:8px">

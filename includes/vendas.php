@@ -566,11 +566,12 @@ function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
                (COALESCE(o.oculto_estoque, 0) = 0) AS visivel,
                EXISTS (SELECT 1 FROM veiculo_avaliacoes a WHERE a.oportunidade_id = o.id AND a.status = 'concluida') AS tem_vistoria,
                EXISTS (SELECT 1 FROM veiculo_midias_revenda m WHERE m.oportunidade_id = o.id) AS tem_midia,
-               EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status = 'assinado') AS tem_contrato
+               EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status = 'assinado') AS tem_contrato,
+               (COALESCE(o.valor_final, 0) > 0) AS tem_valor
         FROM oportunidades o
         WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
           AND UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
-        ORDER BY tem_venda DESC, visivel DESC, tem_vistoria DESC, tem_midia DESC, tem_contrato DESC, o.id DESC
+        ORDER BY tem_venda DESC, tem_contrato DESC, tem_valor DESC, tem_vistoria DESC, tem_midia DESC, visivel DESC, o.id ASC
     ");
     $saida = [];
     foreach ($grupos as $placa) {
@@ -584,9 +585,22 @@ function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
         $conflito = count($comVenda) > 1;
         $saida[] = ['placa' => $placa, 'principal' => $principal, 'duplicados' => $dups, 'conflito' => $conflito];
         if (!$aplicar || $conflito) continue;
+        $algumVisivel = (bool)array_filter($linhas, fn($l) => (int)$l['visivel'] === 1);
         $db->beginTransaction();
         try {
+            // Se o carro estava visível no estoque por um dos cadastros, o
+            // principal herda essa visibilidade (senão o carro some do estoque).
+            if ($algumVisivel && (int)$linhas[0]['visivel'] === 0) {
+                $antesP = $db->query("SELECT COALESCE(oculto_estoque,0) || '|' || COALESCE(oculto_estoque_motivo,'') FROM oportunidades WHERE id = " . $principal)->fetchColumn();
+                setConfig('mesclagem_principal_' . $principal, (string)$antesP);
+                $db->prepare("UPDATE oportunidades SET oculto_estoque = 0, oculto_estoque_motivo = '' WHERE id = ?")->execute([$principal]);
+            }
             foreach ($dups as $d) {
+                // Guarda o que foi movido, pra desfazerMesclagemVeiculos() devolver certinho.
+                $movAv = $db->query("SELECT id FROM veiculo_avaliacoes WHERE oportunidade_id = " . (int)$d)->fetchAll(PDO::FETCH_COLUMN);
+                $movMi = $db->query("SELECT id FROM veiculo_midias_revenda WHERE oportunidade_id = " . (int)$d)->fetchAll(PDO::FETCH_COLUMN);
+                $ocultoAntes = $db->query("SELECT COALESCE(oculto_estoque,0) || '|' || COALESCE(oculto_estoque_motivo,'') FROM oportunidades WHERE id = " . (int)$d)->fetchColumn();
+                setConfig('mesclagem_veiculo_' . $d, json_encode(['principal' => $principal, 'av' => $movAv, 'mi' => $movMi, 'oculto_antes' => $ocultoAntes], JSON_UNESCAPED_UNICODE));
                 $db->prepare("UPDATE veiculo_avaliacoes SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
                 $db->prepare("UPDATE veiculo_midias_revenda SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
                 $db->prepare("UPDATE oportunidades SET oculto_estoque = 1, oculto_estoque_motivo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
@@ -601,6 +615,57 @@ function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
         }
     }
     return $saida;
+}
+
+/**
+ * Desfaz TODA mesclagem de veículo duplicado (24/10/2026, Jean: "acho que
+ * você tirou a verdadeira compra e deixou apenas a avaliação do Levy — tem
+ * como voltar as 24?"). Cada cadastro marcado 'Cadastro duplicado...' volta
+ * a aparecer; o estado de oculto anterior é restaurado (gravado na hora da
+ * mesclagem; pra mesclagem antiga sem esse registro, volta oculto só se for
+ * compra importada do ZapSign — mesmo critério da migração). Vistorias/fotos
+ * movidas voltam pro cadastro de origem quando o registro existe.
+ */
+function desfazerMesclagemVeiculos(): int {
+    $db = getDB();
+    $ids = $db->query("SELECT id FROM oportunidades WHERE COALESCE(oculto_estoque_motivo, '') LIKE 'Cadastro duplicado%'")->fetchAll(PDO::FETCH_COLUMN);
+    $stmtZap = $db->prepare("SELECT 1 FROM contratos WHERE tipo = 'compra' AND oportunidade_id = ?
+                             AND (campos_json LIKE '%importado_zapsign%' OR nome LIKE 'Contrato importado da ZapSign%') LIMIT 1");
+    $n = 0;
+    foreach ($ids as $id) {
+        $id = (int)$id;
+        $reg = json_decode((string)getConfig('mesclagem_veiculo_' . $id), true);
+        $db->beginTransaction();
+        try {
+            if (is_array($reg)) {
+                [$oc, $mot] = array_pad(explode('|', (string)($reg['oculto_antes'] ?? '0|'), 2), 2, '');
+                foreach (($reg['av'] ?? []) as $a) $db->prepare("UPDATE veiculo_avaliacoes SET oportunidade_id = ? WHERE id = ?")->execute([$id, (int)$a]);
+                foreach (($reg['mi'] ?? []) as $m) $db->prepare("UPDATE veiculo_midias_revenda SET oportunidade_id = ? WHERE id = ?")->execute([$id, (int)$m]);
+            } else {
+                $stmtZap->execute([$id]);
+                $oc = $stmtZap->fetchColumn() ? '1' : '0';
+                $mot = $oc === '1' ? 'Migrado do ZapSign (CRM antigo) — já vendido' : '';
+            }
+            $db->prepare("UPDATE oportunidades SET oculto_estoque = ?, oculto_estoque_motivo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+               ->execute([(int)$oc, $mot, $id]);
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'fechado', 'fechado', ?)")
+               ->execute([$id, 'Mesclagem de duplicado desfeita — cadastro voltou pra lista de compras fechadas']);
+            $db->commit();
+            setConfig('mesclagem_veiculo_' . $id, '');
+            $pr = (int)($reg['principal'] ?? 0);
+            $antesP = $pr ? (string)getConfig('mesclagem_principal_' . $pr) : '';
+            if ($antesP !== '') {
+                [$ocP, $motP] = array_pad(explode('|', $antesP, 2), 2, '');
+                $db->prepare("UPDATE oportunidades SET oculto_estoque = ?, oculto_estoque_motivo = ? WHERE id = ?")->execute([(int)$ocP, $motP, $pr]);
+                setConfig('mesclagem_principal_' . $pr, '');
+            }
+            $n++;
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+    }
+    return $n;
 }
 
 function veiculoPlacaNormalizada(string $placa): string {
