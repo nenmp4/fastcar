@@ -603,10 +603,11 @@ function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
                 setConfig('mesclagem_veiculo_' . $d, json_encode(['principal' => $principal, 'av' => $movAv, 'mi' => $movMi, 'oculto_antes' => $ocultoAntes], JSON_UNESCAPED_UNICODE));
                 $db->prepare("UPDATE veiculo_avaliacoes SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
                 $db->prepare("UPDATE veiculo_midias_revenda SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $d]);
+                _juntarDocumentosDoDuplicado($d, $principal);
                 $db->prepare("UPDATE oportunidades SET oculto_estoque = 1, oculto_estoque_motivo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
                    ->execute(["Cadastro duplicado da placa {$placa} — mesclado no #{$principal}", $d]);
                 $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'fechado', 'fechado', ?)")
-                   ->execute([$d, "Duplicado da placa {$placa}: vistorias/fotos movidas pro #{$principal}; cadastro ocultado do estoque e da lista de compras fechadas"]);
+                   ->execute([$d, "Duplicado da placa {$placa}: vistorias/fotos/documentos/contratos levados pro #{$principal}; cadastro ocultado do estoque e da lista de compras fechadas"]);
             }
             $db->commit();
         } catch (Throwable $e) {
@@ -615,6 +616,102 @@ function mesclarVeiculosDuplicadosPorPlaca(bool $aplicar = true): array {
         }
     }
     return $saida;
+}
+
+/**
+ * 27/10/2026, "fica 1 documento num cadastro e outro no outro" — junta no
+ * cadastro principal os documentos e contratos do duplicado. Documento:
+ * COPIA a referência do arquivo só pro tipo que o principal ainda não tem
+ * (nunca sobrescreve o que já existe lá). Contrato: move a linha pro
+ * principal. Grava o que fez no registro da mesclagem
+ * (config.mesclagem_veiculo_{dup}, chaves 'docs'/'ct') pra
+ * desfazerMesclagemVeiculos() devolver certinho. Idempotente — rodar de
+ * novo não copia/move nada a mais. Chamar dentro de transação.
+ */
+function _juntarDocumentosDoDuplicado(int $dup, int $principal): void {
+    $db = getDB();
+    $reg = json_decode((string)getConfig('mesclagem_veiculo_' . $dup), true);
+    if (!is_array($reg)) $reg = ['principal' => $principal];
+    $docsCopiados = $reg['docs'] ?? [];
+    $ctMovidos = $reg['ct'] ?? [];
+
+    $stmtDocs = $db->prepare("SELECT * FROM oportunidade_documentos WHERE oportunidade_id = ?
+                              AND (COALESCE(arquivo_url,'') != '' OR COALESCE(drive_file_id,'') != '')");
+    $stmtDocs->execute([$dup]);
+    $stmtTem = $db->prepare("SELECT id, COALESCE(arquivo_url,'') AS a, COALESCE(drive_file_id,'') AS d FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?");
+    foreach ($stmtDocs->fetchAll() as $doc) {
+        $stmtTem->execute([$principal, $doc['tipo']]);
+        $tem = $stmtTem->fetch();
+        if ($tem && ($tem['a'] !== '' || $tem['d'] !== '')) continue; // principal já tem esse documento
+        if ($tem) {
+            $db->prepare("UPDATE oportunidade_documentos SET arquivo_url = ?, drive_file_id = ?, enviado_pelo_cliente = ?, dados_confirmados = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+               ->execute([$doc['arquivo_url'], $doc['drive_file_id'], (int)$doc['enviado_pelo_cliente'], (int)$doc['dados_confirmados'], (int)$tem['id']]);
+            $docsCopiados[] = ['tipo' => $doc['tipo'], 'criou' => false];
+        } else {
+            $db->prepare("INSERT INTO oportunidade_documentos (oportunidade_id, tipo, arquivo_url, drive_file_id, obrigatorio, enviado_pelo_cliente, dados_confirmados) VALUES (?, ?, ?, ?, ?, ?, ?)")
+               ->execute([$principal, $doc['tipo'], $doc['arquivo_url'], $doc['drive_file_id'], (int)$doc['obrigatorio'], (int)$doc['enviado_pelo_cliente'], (int)$doc['dados_confirmados']]);
+            $docsCopiados[] = ['tipo' => $doc['tipo'], 'criou' => true];
+        }
+    }
+    $ids = $db->query("SELECT id FROM contratos WHERE oportunidade_id = " . $dup)->fetchAll(PDO::FETCH_COLUMN);
+    if ($ids) {
+        $db->prepare("UPDATE contratos SET oportunidade_id = ? WHERE oportunidade_id = ?")->execute([$principal, $dup]);
+        $ctMovidos = array_values(array_unique(array_merge($ctMovidos, array_map('intval', $ids))));
+    }
+    $reg['principal'] = $principal;
+    $reg['docs'] = $docsCopiados;
+    $reg['ct'] = $ctMovidos;
+    setConfig('mesclagem_veiculo_' . $dup, json_encode($reg, JSON_UNESCAPED_UNICODE));
+}
+
+/**
+ * O que _juntarDocumentosDoDuplicado() faria, SEM alterar nada — pra
+ * conferir antes ("ainda não vamos executar, vamos conferir certinho").
+ * Retorna ['principal' => id, 'docs' => [tipos que iriam pro principal],
+ * 'contratos' => qtd de contratos que iriam junto].
+ */
+function previaJuntarDocumentosDoDuplicado(int $dup, string $motivo = ''): array {
+    $db = getDB();
+    $reg = json_decode((string)getConfig('mesclagem_veiculo_' . $dup), true);
+    $principal = (int)($reg['principal'] ?? 0);
+    if (!$principal && preg_match('/mesclado no #(\d+)/', $motivo, $m)) $principal = (int)$m[1];
+    if (!$principal) return ['principal' => 0, 'docs' => [], 'contratos' => 0];
+    $st = $db->prepare("SELECT d.tipo FROM oportunidade_documentos d
+        WHERE d.oportunidade_id = ? AND (COALESCE(d.arquivo_url,'') != '' OR COALESCE(d.drive_file_id,'') != '')
+          AND NOT EXISTS (SELECT 1 FROM oportunidade_documentos p WHERE p.oportunidade_id = ? AND p.tipo = d.tipo
+                          AND (COALESCE(p.arquivo_url,'') != '' OR COALESCE(p.drive_file_id,'') != ''))");
+    $st->execute([$dup, $principal]);
+    return [
+        'principal' => $principal,
+        'docs' => $st->fetchAll(PDO::FETCH_COLUMN),
+        'contratos' => (int)$db->query("SELECT COUNT(*) FROM contratos WHERE oportunidade_id = " . $dup)->fetchColumn(),
+    ];
+}
+
+/**
+ * Pra mesclagens feitas antes de 27/10/2026 (só levavam vistoria/foto):
+ * junta os documentos/contratos de cada duplicado já escondido no seu
+ * principal. Só roda pelo botão manual do super admin (aba Fechadas →
+ * ver escondidos), nunca sozinho. Idempotente.
+ */
+function juntarDocumentosDeMesclagensExistentes(): int {
+    $db = getDB();
+    $n = 0;
+    foreach ($db->query("SELECT id, oculto_estoque_motivo FROM oportunidades WHERE COALESCE(oculto_estoque_motivo, '') LIKE 'Cadastro duplicado%'")->fetchAll() as $l) {
+        $reg = json_decode((string)getConfig('mesclagem_veiculo_' . $l['id']), true);
+        $principal = (int)($reg['principal'] ?? 0);
+        if (!$principal && preg_match('/mesclado no #(\d+)/', (string)$l['oculto_estoque_motivo'], $m)) $principal = (int)$m[1];
+        if (!$principal) continue;
+        $db->beginTransaction();
+        try {
+            _juntarDocumentosDoDuplicado((int)$l['id'], $principal);
+            $db->commit();
+            $n++;
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+        }
+    }
+    return $n;
 }
 
 /**
@@ -641,6 +738,20 @@ function desfazerMesclagemVeiculos(): int {
                 [$oc, $mot] = array_pad(explode('|', (string)($reg['oculto_antes'] ?? '0|'), 2), 2, '');
                 foreach (($reg['av'] ?? []) as $a) $db->prepare("UPDATE veiculo_avaliacoes SET oportunidade_id = ? WHERE id = ?")->execute([$id, (int)$a]);
                 foreach (($reg['mi'] ?? []) as $m) $db->prepare("UPDATE veiculo_midias_revenda SET oportunidade_id = ? WHERE id = ?")->execute([$id, (int)$m]);
+                foreach (($reg['ct'] ?? []) as $ct) $db->prepare("UPDATE contratos SET oportunidade_id = ? WHERE id = ?")->execute([$id, (int)$ct]);
+                $prReg = (int)($reg['principal'] ?? 0);
+                foreach (($reg['docs'] ?? []) as $dc) {
+                    if (!$prReg) break;
+                    // Só desfaz se o principal ainda está com o MESMO arquivo copiado
+                    // (nunca apaga um documento que alguém subiu depois lá).
+                    $mesmo = " AND COALESCE(arquivo_url,'') = (SELECT COALESCE(arquivo_url,'') FROM oportunidade_documentos WHERE oportunidade_id = {$id} AND tipo = ?)
+                               AND COALESCE(drive_file_id,'') = (SELECT COALESCE(drive_file_id,'') FROM oportunidade_documentos WHERE oportunidade_id = {$id} AND tipo = ?)";
+                    if (!empty($dc['criou'])) {
+                        $db->prepare("DELETE FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?" . $mesmo)->execute([$prReg, $dc['tipo'], $dc['tipo'], $dc['tipo']]);
+                    } else {
+                        $db->prepare("UPDATE oportunidade_documentos SET arquivo_url = '', drive_file_id = '', dados_confirmados = 0 WHERE oportunidade_id = ? AND tipo = ?" . $mesmo)->execute([$prReg, $dc['tipo'], $dc['tipo'], $dc['tipo']]);
+                    }
+                }
             } else {
                 $stmtZap->execute([$id]);
                 $oc = $stmtZap->fetchColumn() ? '1' : '0';

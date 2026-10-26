@@ -446,6 +446,11 @@ if ($etapaBuscandoFechadas) {
         header('Location: /admin/index.php?' . http_build_query(array_merge($_GET, ['mesclados' => $okFech])));
         exit;
     }
+    if ($perfil === 'super_admin' && ($_POST['acao'] ?? '') === 'juntar_documentos_mesclados' && validateCSRF($_POST['csrf_token'] ?? '')) {
+        $nJunt = juntarDocumentosDeMesclagensExistentes();
+        header('Location: /admin/index.php?' . http_build_query(array_merge($_GET, ['juntados' => $nJunt])));
+        exit;
+    }
     if ($perfil === 'super_admin' && ($_POST['acao'] ?? '') === 'desfazer_mesclagem_fechadas' && validateCSRF($_POST['csrf_token'] ?? '')) {
         $nDesf = desfazerMesclagemVeiculos();
         header('Location: /admin/index.php?' . http_build_query(array_merge(array_diff_key($_GET, ['mesclados' => 1]), ['desmesclados' => $nDesf])));
@@ -1207,7 +1212,19 @@ if ($podeSelecionarEmMassa):
         <p style="margin:8px 0 0">
         <?php if ($verMescladosFech): ?>
             🔍 Mostrando só os <strong><?= (int)$totalMescladosFech ?> cadastro(s) escondido(s) como duplicado</strong> (não somam no total).
-            <a href="<?= e('/admin/index.php?' . http_build_query(array_diff_key($_GET, ['ver_mesclados' => 1]))) ?>">Voltar pra lista normal</a>
+            <a href="<?= e('/admin/index.php?' . http_build_query(array_diff_key($_GET, ['ver_mesclados' => 1, 'juntados' => 1]))) ?>">Voltar pra lista normal</a>
+            <br><small>Em cada linha aparece o que <strong>iria</strong> pro cadastro principal (documentos que o principal ainda não tem + contratos). Nada é movido até clicar no botão abaixo.</small>
+            <?php if (isset($_GET['juntados'])): ?>
+                <br><span class="badge badge-ok">✅ Documentos/contratos juntados no principal (<?= (int)$_GET['juntados'] ?> cadastro(s) conferido(s))</span>
+            <?php elseif ($perfil === 'super_admin'): ?>
+            </p>
+            <form method="post" style="margin:8px 0 0" onsubmit="return confirmarAcao(this, 'Levar pro cadastro principal os documentos e contratos listados em cada linha? Documento que o principal já tem nunca é substituído. Dá pra desfazer pelo botão Desfazer mesclagem.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="juntar_documentos_mesclados">
+                <button type="submit" class="btn-secundario" style="width:auto;margin:0">📎 Juntar documentos e contratos no cadastro principal</button>
+            </form>
+            <p style="margin:0">
+            <?php endif; ?>
         <?php else: ?>
             <a href="<?= e('/admin/index.php?' . http_build_query(array_merge($_GET, ['ver_mesclados' => '1']))) ?>">👁️ Ver os <?= (int)$totalMescladosFech ?> cadastro(s) escondido(s) como duplicado →</a>
         <?php endif; ?>
@@ -1355,6 +1372,11 @@ if ($podeSelecionarEmMassa):
                 <?php endif; ?>
                 <?php if (!empty($verMescladosFech) && !empty($op['oculto_estoque_motivo'])): ?>
                     <br><small>🔀 <?= e($op['oculto_estoque_motivo']) ?></small>
+                    <?php $pv = previaJuntarDocumentosDoDuplicado((int)$op['id'], (string)$op['oculto_estoque_motivo']);
+                          $pvDocs = array_map(fn($t) => (TIPOS_DOCUMENTOS_CLIENTE + TIPOS_DOCUMENTOS_FECHAMENTO)[$t] ?? $t, $pv['docs']); ?>
+                    <br><small>📎 <?= ($pvDocs || $pv['contratos'])
+                        ? 'Iria pro #' . (int)$pv['principal'] . ': ' . e(implode(', ', $pvDocs)) . ($pv['contratos'] ? ($pvDocs ? ' + ' : '') . (int)$pv['contratos'] . ' contrato(s)' : '')
+                        : 'Nada a levar — o principal já tem tudo que este cadastro tem.' ?></small>
                 <?php endif; ?>
             </td>
             <td><?= e($op['responsavel_nome'] ?? '—') ?></td>
