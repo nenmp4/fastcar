@@ -229,9 +229,9 @@ $filtroDataAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool)preg
 $where = "WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
 $params = [];
 if ($busca !== '') {
-    $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ?)";
+    $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ? OR c.cidade LIKE ?)";
     $like = '%' . $busca . '%';
-    $params = [$like, $like, $like, $like, $like];
+    $params = [$like, $like, $like, $like, $like, $like];
 }
 if (isset($faixasPrazo[(string)$fPrazo])) {
     [$diasMin, $diasMax] = $faixasPrazo[(string)$fPrazo];
@@ -246,6 +246,25 @@ if (!$mostrarIncompletos) {
     $where .= " AND NOT {$condIncompletoImportAntigo}";
 }
 
+// 27/10/2026, "adicionar coluna cidade/estado e mostrar quantos" — cidade/UF
+// do vendedor (clientes.cidade/estado). Contagem por UF/cidade respeita os
+// outros filtros da tela; ?uf= filtra a tabela por estado.
+$whereSemUf = $where;
+$paramsSemUf = $params;
+$fUf = strtoupper(preg_replace('/[^A-Za-z]/', '', (string)($_GET['uf'] ?? '')));
+if ($fUf === 'SEMUF') {
+    $where .= " AND TRIM(COALESCE(c.estado, '')) = ''";
+} elseif ($fUf !== '') {
+    $where .= " AND UPPER(TRIM(c.estado)) = ?";
+    $params[] = $fUf;
+}
+$stUfs = $db->prepare("SELECT UPPER(TRIM(COALESCE(c.estado,''))) AS uf, COUNT(*) AS n FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$joinContratoAssinado} {$whereSemUf} GROUP BY uf ORDER BY n DESC");
+$stUfs->execute($paramsSemUf);
+$contagemUf = $stUfs->fetchAll();
+$stCid = $db->prepare("SELECT TRIM(c.cidade) AS cidade, UPPER(TRIM(COALESCE(c.estado,''))) AS uf, COUNT(*) AS n FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id {$joinContratoAssinado} {$where} AND TRIM(COALESCE(c.cidade,'')) != '' GROUP BY LOWER(TRIM(c.cidade)), uf ORDER BY n DESC LIMIT 12");
+$stCid->execute($params);
+$contagemCidade = $stCid->fetchAll();
+
 // Contagem separada (sem o filtro de incompletos) pro link "ver também
 // incompletos" mostrar quantos estão escondidos agora.
 $stmtIncompletos = $db->prepare("SELECT COUNT(*) FROM oportunidades o {$joinContratoAssinado} WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND {$condIncompletoImportAntigo}");
@@ -257,7 +276,7 @@ $stmtTotal->execute($params);
 $totalVeiculos = (int)$stmtTotal->fetchColumn();
 
 $sql = "
-    SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+    SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.cidade AS cliente_cidade, c.estado AS cliente_estado,
            vd.id AS venda_id, vd.etapa AS venda_etapa,
            {$refPosseExpr} AS ref_posse,
            (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias,
@@ -500,17 +519,38 @@ function lerCrlvManual() {
 </div>
 
 <div class="card">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:.5rem">📍 Veículos por estado (UF do vendedor) — clique pra filtrar</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <?php $qsUf = array_diff_key($_GET, ['uf' => 1, 'pagina' => 1]); ?>
+        <?php foreach ($contagemUf as $cu): $ufK = $cu['uf'] === '' ? 'SEMUF' : $cu['uf']; ?>
+            <a href="?<?= e(http_build_query(array_merge($qsUf, ['uf' => $ufK]))) ?>" class="btn<?= $fUf === $ufK ? '-primary' : '' ?>" style="width:auto;text-decoration:none">
+                <?= $cu['uf'] === '' ? 'Sem UF' : e($cu['uf']) ?> — <strong><?= (int)$cu['n'] ?></strong>
+            </a>
+        <?php endforeach; ?>
+        <?php if ($fUf !== ''): ?><a href="?<?= e(http_build_query($qsUf)) ?>" style="align-self:center">Todos os estados</a><?php endif; ?>
+    </div>
+    <?php if ($contagemCidade): ?>
+        <div style="font-size:.8rem;color:var(--muted);font-weight:600;margin:.75rem 0 .35rem">🏙️ Cidades com mais veículos<?= $fUf !== '' && $fUf !== 'SEMUF' ? ' em ' . e($fUf) : '' ?></div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;font-size:.85rem">
+            <?php foreach ($contagemCidade as $cc): ?>
+                <span class="badge"><?= e($cc['cidade']) ?><?= $cc['uf'] !== '' ? '/' . e($cc['uf']) : '' ?> — <?= (int)$cc['n'] ?></span>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</div>
+
+<div class="card">
     <table class="tabela-oportunidades">
         <thead>
             <tr>
-                <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th>
+                <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th><th>Cidade/UF</th>
                 <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
                 <th>Contrato compra</th><th>Financiamento</th><th>Condição</th><th>Fotos/vídeos</th><th>Venda</th><th></th><th></th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="13"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="14"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <?php
@@ -529,6 +569,7 @@ function lerCrlvManual() {
                 </td>
                 <td><?= e($v['veiculo_placa'] ?: '—') ?><?php if ($v['veiculo_chassi']): ?><br><small><?= e($v['veiculo_chassi']) ?></small><?php endif; ?></td>
                 <td><a href="/admin/cliente_detalhe.php?id=<?= (int)$v['cliente_id'] ?>"><?= e($v['cliente_nome']) ?></a><br><small><?= e($v['cliente_telefone']) ?></small></td>
+                <td><?php $cidV = trim((string)($v['cliente_cidade'] ?? '')); $ufV = strtoupper(trim((string)($v['cliente_estado'] ?? ''))); ?><?= ($cidV !== '' || $ufV !== '') ? e($cidV . ($cidV !== '' && $ufV !== '' ? '/' : '') . $ufV) : '<small>—</small>' ?></td>
                 <td><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></td>
                 <td><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?></td>
                 <td>
