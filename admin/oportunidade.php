@@ -150,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // 5ª/1.3) — travado no servidor, não só no max="24" do
                     // input, mesmo padrão já usado pro prazo do contrato de
                     // venda (admin/venda.php).
-                    $_POST['prazo_quitacao_meses'] !== '' ? min(24, max(1, (int)$_POST['prazo_quitacao_meses'])) : null,
+                    $_POST['prazo_quitacao_meses'] !== '' ? min(240, max(1, (int)$_POST['prazo_quitacao_meses'])) : null, // 27/10/2026: sem teto de 24 — depende da financeira
                     $id,
                 ]);
                 $sucesso = 'Dados do contrato atualizados.';
@@ -872,8 +872,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <label>Data de entrega da posse</label>
                 <input type="date" name="data_entrega_posse" value="<?= e($op['data_entrega_posse'] ?? '') ?>">
                 <label>Prazo pra quitar o financiamento (meses)</label>
-                <input type="number" min="1" max="24" name="prazo_quitacao_meses" value="<?= e((string)($op['prazo_quitacao_meses'] ?? '')) ?>" placeholder="normal: 12 a 18">
-                <small style="color:var(--texto-fraco)">Normal fica entre 12 e 18 meses — o limite contratual é 24 (cláusula 5ª), nunca digitar mais que isso.</small>
+                <input type="number" min="1" max="240" name="prazo_quitacao_meses" value="<?= e((string)($op['prazo_quitacao_meses'] ?? '')) ?>" placeholder="normal: 12 a 18">
+                <small style="color:var(--texto-fraco)">Normal fica entre 12 e 18 meses, mas pode ser outro prazo conforme a financeira (até 240). Abaixo de 24 o contrato cita prorrogação excepcional até 24 meses; a partir de 24 cita só o prazo digitado.</small>
                 <label>Seguro/proteção durante a posse da FASTCAR</label>
                 <input type="text" name="seguro_texto" value="<?= e($op['seguro_texto'] ?? '') ?>">
                 <label>IPVA/licenciamento/multas após a entrega</label>

@@ -216,12 +216,10 @@ function _fmtMoeda(?float $v): string {
 }
 
 /**
- * Número por extenso (1-24) pro padrão jurídico "18 (dezoito) meses" — cobre
- * o prazo de quitação da COMPRA, que segue travado em até 24 meses (regra de
- * negócio confirmada, includes/contratos.php/admin/oportunidade.php). O
- * prazo da VENDA deixou de ter teto em 06/10/2026 ("deixar valor aberto",
- * admin/venda.php) — fora da faixa 1-24, devolve null (nunca um número
- * repetido tipo "48 (48)"); quem chama decide o formato final sem extenso.
+ * Número por extenso (1-999) pro padrão jurídico "18 (dezoito) meses". O
+ * prazo da VENDA deixou de ter teto em 06/10/2026 e o da COMPRA em
+ * 27/10/2026 ("depende da financeira") — fora da faixa devolve null (nunca
+ * um número repetido tipo "48 (48)"); quem chama decide o formato final.
  */
 function _extensoMeses(int $n): ?string {
     $numeros = [
@@ -231,7 +229,25 @@ function _extensoMeses(int $n): ?string {
         18 => 'dezoito', 19 => 'dezenove', 20 => 'vinte', 21 => 'vinte e um', 22 => 'vinte e dois',
         23 => 'vinte e três', 24 => 'vinte e quatro',
     ];
-    return $numeros[$n] ?? null;
+    if (isset($numeros[$n])) return $numeros[$n];
+    // 27/10/2026 — prazo da compra deixou de ter teto (depende da financeira):
+    // extenso genérico de 25 a 999.
+    if ($n < 25 || $n > 999) return null;
+    $dezenas = [2 => 'vinte', 3 => 'trinta', 4 => 'quarenta', 5 => 'cinquenta', 6 => 'sessenta', 7 => 'setenta', 8 => 'oitenta', 9 => 'noventa'];
+    $centenas = [1 => 'cento', 2 => 'duzentos', 3 => 'trezentos', 4 => 'quatrocentos', 5 => 'quinhentos', 6 => 'seiscentos', 7 => 'setecentos', 8 => 'oitocentos', 9 => 'novecentos'];
+    $partes = [];
+    $c = intdiv($n, 100); $r = $n % 100;
+    if ($c > 0) $partes[] = ($n === 100) ? 'cem' : $centenas[$c];
+    if ($r > 0) {
+        if ($r < 20) $partes[] = $numeros[$r];
+        else { $d = intdiv($r, 10); $u = $r % 10; $partes[] = $dezenas[$d] . ($u ? ' e ' . $numeros[$u] : ''); }
+    }
+    return implode(' e ', $partes);
+}
+
+/** Frase de prorrogação excepcional — só faz sentido enquanto o prazo é menor que 24 meses. */
+function _prorrogacaoAte24(int $prazo): string {
+    return $prazo < 24 ? ', podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses' : '';
 }
 
 /**
@@ -312,8 +328,8 @@ function gerarPdfContratoCompra(array $c): string {
         _pdfLinhaResumo($pdf, 'Responsável registral perante o credor', $c['responsavel_registral']);
     }
     _pdfLinhaResumo($pdf, 'Prazo pra quitação do financiamento', "Fica ajustado, entretanto, que o prazo supracitado será de até " .
-        "{$c['prazo_quitacao_meses']} (" . _extensoMeses((int)$c['prazo_quitacao_meses']) . ") meses, contado de {$c['data_entrega_posse']}, " .
-        "podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses.");
+        _mesesComExtenso((int)$c['prazo_quitacao_meses']) . ", contado de {$c['data_entrega_posse']}" .
+        _prorrogacaoAte24((int)$c['prazo_quitacao_meses']) . ".");
     if (!empty($c['terceiro_quitacao'])) {
         _pdfLinhaResumo($pdf, 'Terceiro indicado pela FASTCAR para a quitação', $c['terceiro_quitacao']);
     }
@@ -381,9 +397,9 @@ function gerarPdfContratoCompra(array $c): string {
 
 /**
  * Cláusulas do contrato-mestre de compra — [título, corpo].
- * $prazoMeses: prazo negociado pra quitar o financiamento (normal 12-18,
- * nunca > 24 — travado em admin/oportunidade.php/includes/contratos.php
- * antes de chegar aqui). 17/09/2026: até então vinha fixo em "24 meses"
+ * $prazoMeses: prazo negociado pra quitar o financiamento (normal 12-18;
+ * sem teto de 24 desde 27/10/2026 — depende da financeira, até 240 em
+ * admin/oportunidade.php). 17/09/2026: até então vinha fixo em "24 meses"
  * hardcoded em todo lugar — ver bullet "Saldo do financiamento..." não,
  * ver CLAUDE.md seção "Módulo de contrato (só COMPRA)" pro histórico.
  */
@@ -411,7 +427,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "4.5. Se a instituição exigir anuência, comparecimento, assinatura ou documento do VENDEDOR, este deverá cooperar em prazo razoável, sem assumir obrigações novas não previstas."],
         ["CLÁUSULA 5ª – PRAZO DE ATÉ {$prazoMeses} MESES",
             "5.1. A quitação integral da obrigação financeira objeto deste contrato deverá ocorrer, em regra, no prazo inicial de 12 (doze) meses, contados a partir da data da efetiva entrega do veículo à FASTCAR, indicada no Quadro-Resumo. Fica ajustado, entretanto, que o prazo supracitado será de até " .
-            (int)$prazoMeses . " (" . _extensoMeses((int)$prazoMeses) . ") meses, podendo ser excepcionalmente prorrogado por até 24 (vinte e quatro) meses, desde que tal extensão derive de necessidade operacional, administrativa ou financeira, não configurando, em qualquer hipótese, inadimplemento, mora ou descumprimento contratual por parte da FASTCAR.\n\n" .
+            _mesesComExtenso((int)$prazoMeses) . _prorrogacaoAte24((int)$prazoMeses) . ", desde que tal extensão derive de necessidade operacional, administrativa ou financeira, não configurando, em qualquer hipótese, inadimplemento, mora ou descumprimento contratual por parte da FASTCAR.\n\n" .
             "5.2. O prazo é limite máximo para obtenção da quitação e baixa do gravame, não simples prazo para início de negociação.\n\n" .
             "5.3. Nos 90, 60 e 30 dias anteriores ao termo final, a FASTCAR deverá promover revisão documentada do status da dívida e do plano de quitação."],
         ['CLÁUSULA 6ª – POSSE, GUARDA E ENTREGA',
