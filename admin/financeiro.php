@@ -345,6 +345,11 @@ $carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, '
     <div style="font-size:1.6rem;font-weight:800;color:#ea580c"><?= (int)$carrosVendidos['qtd'] ?></div>
     <div style="font-size:.7rem;color:var(--muted)">R$ <?= number_format((float)$carrosVendidos['total'], 2, ',', '.') ?> — valor baseado no contrato assinado</div>
   </a>
+  <a class="card" href="#despesas-operacionais" style="display:block;color:inherit;text-decoration:none;border-top:4px solid #db2777">
+    <div style="font-size:.8rem;color:var(--muted);font-weight:600">💸 Despesas operacionais a aprovar</div>
+    <div style="font-size:1.6rem;font-weight:800;color:#db2777"><?= count($despesasOperacionaisPendentes) ?></div>
+    <div style="font-size:.7rem;color:var(--muted)">R$ <?= number_format($totalDespesasOperacionaisPendentes, 2, ',', '.') ?> — puxada, despachante... lançadas pelo consultor</div>
+  </a>
 </div>
 
 <div class="card">
@@ -368,7 +373,7 @@ $carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, '
   <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card" id="despesas-operacionais">
   <h2 style="margin-bottom:1rem">💸 Despesas operacionais — conferir e aprovar</h2>
   <p style="color:var(--muted);font-size:.85rem;margin-top:-.5rem">
     Lançadas pelo consultor com comprovante (puxada, despachante...). Confira o comprovante e aprove (vira <strong>pago</strong>) ou recuse.
