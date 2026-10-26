@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/marca.php';
+require_once __DIR__ . '/../includes/vendas_formulario.php';
 requireSuperAdmin();
 
 $campos = [
@@ -327,6 +328,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) {
                 $erro = 'Falha ao listar instâncias: ' . $e->getMessage();
             }
+        } elseif ($acao === 'salvar_formulario_vendas') {
+            // 26/10/2026 — formulário de entrada do lead de vendas (public/quero-carro.php).
+            $numF = normalizarTelefone(trim((string)($_POST['vendas_whatsapp_numero'] ?? '')));
+            setConfig('vendas_whatsapp_numero', $numF ?: '');
+            setConfig('meta_pixel_id', preg_replace('/\D/', '', (string)($_POST['meta_pixel_id'] ?? '')));
+            setConfig('vendas_formulario_obrigatorio', ($_POST['vendas_formulario_obrigatorio'] ?? '') === '1' ? '1' : '0');
+            $sucesso = 'Formulário de vendas salvo.';
         } elseif ($acao === 'salvar_evolution_vendas') {
             foreach (array_keys($camposEvolutionVendas) as $chave) {
                 setConfig($chave, trim((string)($_POST[$chave] ?? '')));
@@ -1049,6 +1057,30 @@ unset($fv);
            (<code>GET /instance/fetchInstances</code>) — use se "Nome da instância" estiver
            errado e o teste de conexão disser "instance does not exist". Só precisa de
            URL base + API key, não do nome da instância.</small></p>
+    </form>
+</div>
+
+<div class="card">
+    <h2>📝 Formulário de vendas (anúncio → formulário → WhatsApp)</h2>
+    <p><small>Página pública onde o cliente preenche nome, carro/moto, uso, entrada e parcela. Quem tem a
+       <strong>entrada mínima</strong> (moto R$ 5 mil · passeio/trabalho R$ 10 mil · aplicativo R$ 14 mil) entra no CRM
+       já qualificado (igual ao lead da IA), o vendedor é avisado e o cliente ganha o botão do WhatsApp. Quem não tem
+       vira "sem perfil" e nunca chega no vendedor.</small></p>
+    <p><strong>Link pro anúncio:</strong><br>
+       <code style="word-break:break-all"><?= e(vendaFormularioUrl(['utm_source' => 'meta', 'utm_campaign' => 'NOME_DA_CAMPANHA'])) ?></code><br>
+       <small>Troque <code>NOME_DA_CAMPANHA</code> pelo nome da campanha — aparece em "Origem dos leads".</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_formulario_vendas">
+        <label>Número do WhatsApp de vendas (o botão final abre esse número)</label>
+        <input type="tel" inputmode="tel" name="vendas_whatsapp_numero" value="<?= e((string)getConfig('vendas_whatsapp_numero')) ?>" placeholder="5511999999999">
+        <label>ID do Pixel da Meta <small>(opcional — marca "Lead" só pra quem tem entrada mínima)</small></label>
+        <input type="text" inputmode="numeric" name="meta_pixel_id" value="<?= e((string)getConfig('meta_pixel_id')) ?>" placeholder="ex: 123456789012345">
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
+            <input type="checkbox" name="vendas_formulario_obrigatorio" value="1" style="width:auto" <?= vendaFormularioObrigatorio() ? 'checked' : '' ?>>
+            Só atender no WhatsApp quem passou pelo formulário — quem chamar direto recebe 1 mensagem com o link (a IA não conversa)
+        </label>
+        <button type="submit">Salvar formulário de vendas</button>
     </form>
 </div>
 

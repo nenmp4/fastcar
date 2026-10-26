@@ -479,7 +479,7 @@ function criarOuAbrirVendaLead(string $telefone, string $nome = '', array $orige
     $db->prepare("
         INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
         VALUES (?, '', 'whatsapp', ?, ?)
-    ")->execute([$vendaId, $responsavelId, 'Lead de venda criado — entrada pelo WhatsApp' . ($responsavelId ? ' (atribuído automaticamente)' : '')]);
+    ")->execute([$vendaId, $responsavelId, 'Lead de venda criado — entrada pelo ' . (($origem['canal_origem'] ?? '') === 'formulario_site' ? 'formulário do site' : 'WhatsApp') . ($responsavelId ? ' (atribuído automaticamente)' : '')]);
 
     notificarNovoLeadVendas($vendaId, $nome ?: '(sem nome)', $telNorm);
 

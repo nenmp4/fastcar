@@ -25,6 +25,7 @@ require_once dirname(__DIR__, 2) . '/includes/zapi_instancias.php';
 require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao_vendas.php';
 require_once __DIR__ . '/mensagens.php'; // helpers genéricos de mídia/dedup/debounce
+require_once dirname(__DIR__, 2) . '/includes/vendas_formulario.php';
 
 /**
  * Núcleo do processamento de uma mensagem recebida via Z-API na instância
@@ -173,6 +174,57 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
                 registrarMensagem($phone, 'out', $msgChegada, null, true);
             }
             return ['ignored' => 'cliente_chegou_loja', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                    'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                    'instancia' => $instancia, 'ia_resultado' => null];
+        }
+    }
+
+    // 26/10/2026 — formulário do site (includes/vendas_formulario.php). A
+    // mensagem pronta do botão traz "(cód. FCnnn)": se o cliente chamou de
+    // um número DIFERENTE do que preencheu, liga as duas pontas — o lead
+    // novo desse número vira sem_perfil apontando pro do formulário, e o
+    // vendedor vê no histórico de onde ele está falando.
+    if ($vendaLead && $tipoRegistro === 'text' && ($idForm = vendaFormularioIdDoTexto($texto))) {
+        $dbF = getDB();
+        $stF = $dbF->prepare("SELECT id, comprador_telefone, etapa FROM vendas WHERE id = ? AND canal_origem = 'formulario_site'");
+        $stF->execute([$idForm]);
+        $vf = $stF->fetch();
+        if (!$vf) $idForm = null;
+        if ($vf && (int)$vf['id'] !== (int)$vendaLead['venda_id']) {
+            $dbF->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, ?, ?, ?)")
+                ->execute([(int)$vf['id'], $vf['etapa'], $vf['etapa'], "Cliente chamou no WhatsApp pelo número {$phone} (diferente do informado no formulário)"]);
+            if (!empty($vendaLead['nova'])) {
+                mudarEtapaVenda((int)$vendaLead['venda_id'], 'sem_perfil', null, 'Mesmo cliente do formulário ' . vendaFormularioCodigo((int)$vf['id']) . ' — chamou de outro número');
+            }
+        }
+    }
+    if (!empty($idForm)) {
+        pausarIA($phone);
+        return ['ignored' => 'formulario_site', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => true, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                'instancia' => $instancia, 'ia_resultado' => null];
+    }
+
+    // "Só vem pro WhatsApp se passar pelo formulário" (Configurações →
+    // Formulário de vendas): quem chama direto, sem ter preenchido, recebe
+    // UMA mensagem com o link — a IA não conversa com ele.
+    if ($vendaLead && !$ia_pausada && $instancia['tipo'] === 'vendas' && vendaFormularioObrigatorio()) {
+        $dbF = getDB();
+        $stF = $dbF->prepare("SELECT etapa, canal_origem, comprador_nome FROM vendas WHERE id = ?");
+        $stF->execute([(int)$vendaLead['venda_id']]);
+        $vf = $stF->fetch();
+        if ($vf && $vf['etapa'] === 'whatsapp' && $vf['canal_origem'] !== 'formulario_site') {
+            $chaveF = 'formvenda_link_' . (int)$vendaLead['venda_id'];
+            if (getConfig($chaveF) !== '1') {
+                $msgF = vendaFormularioMsgLink((string)$vf['comprador_nome']);
+                if (zapiEnviarTexto($phone, $msgF, $credenciaisVendas)) {
+                    registrarMensagem($phone, 'out', $msgF, null, true);
+                    setConfig($chaveF, '1');
+                    $dbF->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'whatsapp', 'whatsapp', ?)")
+                        ->execute([(int)$vendaLead['venda_id'], 'Link do formulário enviado (chamou direto no WhatsApp sem preencher)']);
+                }
+            }
+            return ['ignored' => 'formulario_obrigatorio', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                     'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
                     'instancia' => $instancia, 'ia_resultado' => null];
         }
