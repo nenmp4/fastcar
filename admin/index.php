@@ -432,8 +432,14 @@ $fechAte = '';
 // 25/10/2026, "tem duplicidade em alguns veículos" — cadastro repetido já
 // mesclado (mesclarVeiculosDuplicadosPorPlaca()) não aparece nem soma mais.
 $placasRepetidasFech = [];
+// 27/10/2026, "antes tinha 24, precisamos voltar os outros para conferir" —
+// ?ver_mesclados=1 mostra SÓ os cadastros escondidos como duplicado, pra
+// conferir se a mesclagem acertou (super admin/supervisor).
+$verMescladosFech = $etapaBuscandoFechadas && perfilVeTudo() && ($_GET['ver_mesclados'] ?? '') === '1';
 if ($etapaBuscandoFechadas) {
-    $where .= " AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
+    $where .= $verMescladosFech
+        ? " AND COALESCE(o.oculto_estoque_motivo, '') LIKE 'Cadastro duplicado%'"
+        : " AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
     if ($perfil === 'super_admin' && ($_POST['acao'] ?? '') === 'mesclar_duplicados_fechadas' && validateCSRF($_POST['csrf_token'] ?? '')) {
         $mFech = mesclarVeiculosDuplicadosPorPlaca(true);
         $okFech = count(array_filter($mFech, fn($m) => !$m['conflito']));
@@ -1197,6 +1203,16 @@ if ($podeSelecionarEmMassa):
     <?php if (isset($_GET['desmesclados'])): ?>
         <div class="alerta-sucesso" style="margin-top:8px">↩️ Mesclagem desfeita — <?= (int)$_GET['desmesclados'] ?> cadastro(s) voltaram pra lista.</div>
     <?php endif; ?>
+    <?php if (perfilVeTudo() && !empty($totalMescladosFech)): ?>
+        <p style="margin:8px 0 0">
+        <?php if ($verMescladosFech): ?>
+            🔍 Mostrando só os <strong><?= (int)$totalMescladosFech ?> cadastro(s) escondido(s) como duplicado</strong> (não somam no total).
+            <a href="<?= e('/admin/index.php?' . http_build_query(array_diff_key($_GET, ['ver_mesclados' => 1]))) ?>">Voltar pra lista normal</a>
+        <?php else: ?>
+            <a href="<?= e('/admin/index.php?' . http_build_query(array_merge($_GET, ['ver_mesclados' => '1']))) ?>">👁️ Ver os <?= (int)$totalMescladosFech ?> cadastro(s) escondido(s) como duplicado →</a>
+        <?php endif; ?>
+        </p>
+    <?php endif; ?>
     <?php if ($perfil === 'super_admin' && !empty($totalMescladosFech)): ?>
         <form method="post" style="margin:8px 0 0" onsubmit="return confirmarAcao(this, 'Desfazer a mesclagem? Os <?= (int)$totalMescladosFech ?> cadastro(s) escondidos como duplicado voltam pra lista e pro total, do jeito que estavam antes.');">
             <?= csrfField() ?>
@@ -1336,6 +1352,9 @@ if ($podeSelecionarEmMassa):
                 <span class="badge <?= e(etapaBadgeClasse($op['etapa'])) ?>"><?= e(etapaLabel($op['etapa'])) ?></span>
                 <?php if ($etapaBuscandoEncerradas && $op['motivo_perda']): ?>
                     <br><small><?= e($op['motivo_perda']) ?></small>
+                <?php endif; ?>
+                <?php if (!empty($verMescladosFech) && !empty($op['oculto_estoque_motivo'])): ?>
+                    <br><small>🔀 <?= e($op['oculto_estoque_motivo']) ?></small>
                 <?php endif; ?>
             </td>
             <td><?= e($op['responsavel_nome'] ?? '—') ?></td>
