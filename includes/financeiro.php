@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php';
+require_once __DIR__ . '/extracao_documentos.php'; // extrairValorComprovanteComIA()
 require_once __DIR__ . '/asaas.php'; // finGerarReceitaVendaAssinatura() chama asaasConfigured()/etc direto
 
 /**
@@ -77,6 +78,86 @@ function finSalvarAnexo(array $arquivo): array {
         return ['drive_file_id' => '', 'arquivo_url' => 'financeiro/' . $fn];
     }
     return ['drive_file_id' => '', 'arquivo_url' => ''];
+}
+
+/**
+ * Despesas operacionais lançadas pelo consultor na oportunidade (27/10/2026,
+ * "lançar puxada automática — consultor sobe o comprovante — financeiro vai
+ * como pendente, financeiro confere e aprova"). Tipo => nome da categoria.
+ */
+const FIN_DESPESA_OPERACIONAL_TIPOS = [
+    'puxada'      => ['🔎 Consulta de débitos (puxada)', 'Consulta de débitos (puxada)'],
+    'despachante' => ['📄 Despachante/documentação',     'Despachante/documentação'],
+    'manutencao'  => ['🔧 Manutenção/revisão',           'Manutenção/revisão de veículo'],
+    'combustivel' => ['⛽ Combustível',                   'Combustível'],
+    'outra'       => ['📦 Outra despesa',                 'Outras Despesas'],
+];
+const FIN_DESPESA_OPERACIONAL_MARCA = 'Despesa operacional lançada pelo consultor';
+
+/**
+ * Lança a despesa como PENDENTE (o financeiro confere o comprovante e marca
+ * pago). Valor: o digitado; se vazio, a IA lê do comprovante — sem valor
+ * legível, recusa (nunca lança chutado). Retorna ['ok','erro','id','valor','lido_ia'].
+ */
+function finLancarDespesaOperacional(int $oportunidadeId, string $tipo, array $arquivo, ?float $valorDigitado, int $usuarioId, string $usuarioNome, string $obs = ''): array {
+    if (!isset(FIN_DESPESA_OPERACIONAL_TIPOS[$tipo])) return ['ok' => false, 'erro' => 'Escolha o tipo da despesa.'];
+    if (($arquivo['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)($arquivo['tmp_name'] ?? ''))) {
+        return ['ok' => false, 'erro' => 'Anexe o comprovante.'];
+    }
+    $ext = strtolower(pathinfo((string)$arquivo['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'pdf'], true)) {
+        return ['ok' => false, 'erro' => 'Comprovante precisa ser foto (JPG/PNG/WEBP) ou PDF.'];
+    }
+    $valor = ($valorDigitado !== null && $valorDigitado > 0) ? round($valorDigitado, 2) : null;
+    $dataPgto = null;
+    $lidoIa = false;
+    $descIa = '';
+    if ($valor === null) {
+        $mime = $ext === 'pdf' ? 'application/pdf' : (mime_content_type($arquivo['tmp_name']) ?: 'image/jpeg');
+        $ia = extrairValorComprovanteComIA(['mime' => $mime, 'content' => (string)file_get_contents($arquivo['tmp_name'])]);
+        if ($ia && !$ia['parece_comprovante']) {
+            return ['ok' => false, 'erro' => 'O arquivo não parece um comprovante de pagamento — confira, ou digite o valor.'];
+        }
+        if (!$ia || $ia['valor'] === null) {
+            return ['ok' => false, 'erro' => 'Não deu pra ler o valor do comprovante — digite o valor e envie de novo.'];
+        }
+        $valor = $ia['valor'];
+        $dataPgto = $ia['data'];
+        $descIa = $ia['descricao'];
+        $lidoIa = true;
+    }
+    $anexo = finSalvarAnexo($arquivo);
+    if ($anexo['drive_file_id'] === '' && $anexo['arquivo_url'] === '') {
+        return ['ok' => false, 'erro' => 'Falha ao salvar o comprovante — tente de novo.'];
+    }
+    $db = getDB();
+    $catNome = FIN_DESPESA_OPERACIONAL_TIPOS[$tipo][1];
+    $stCat = $db->prepare("SELECT id FROM fin_categorias WHERE nome = ? AND tipo = 'despesa' LIMIT 1");
+    $stCat->execute([$catNome]);
+    $catId = $stCat->fetchColumn() ?: null;
+    $op = $db->prepare("SELECT o.veiculo_marca, o.veiculo_modelo, o.veiculo_placa, o.cliente_id, c.nome FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?");
+    $op->execute([$oportunidadeId]);
+    $o = $op->fetch() ?: [];
+    $veic = trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '') . (!empty($o['veiculo_placa']) ? ' ' . $o['veiculo_placa'] : ''));
+    $descricao = $catNome . ' — oportunidade #' . $oportunidadeId . ($veic !== '' ? ' (' . $veic . ')' : '');
+    $observacoes = FIN_DESPESA_OPERACIONAL_MARCA . ': ' . $usuarioNome
+        . ($lidoIa ? ' — valor lido do comprovante pela IA' . ($descIa !== '' ? " ({$descIa})" : '') : ' — valor digitado')
+        . ($dataPgto ? ' — pago em ' . date('d/m/Y', strtotime($dataPgto)) : '')
+        . ($obs !== '' ? ' — ' . $obs : '');
+    $db->prepare("INSERT INTO fin_lancamentos (tipo, categoria_id, descricao, valor, natureza, data_vencimento, status,
+                    cliente_id, oportunidade_id, drive_file_id, arquivo_url, observacoes, origem, created_by)
+                  VALUES ('despesa', ?, ?, ?, 'variavel', ?, 'pendente', ?, ?, ?, ?, ?, 'manual', ?)")
+       ->execute([$catId, $descricao, $valor, $dataPgto ?: date('Y-m-d'), $o['cliente_id'] ?? null, $oportunidadeId,
+                  $anexo['drive_file_id'], $anexo['arquivo_url'], $observacoes, $usuarioId]);
+    return ['ok' => true, 'id' => (int)$db->lastInsertId(), 'valor' => $valor, 'lido_ia' => $lidoIa];
+}
+
+/** Despesas operacionais de uma oportunidade (pro card do consultor). */
+function finListarDespesasOperacionais(int $oportunidadeId): array {
+    $st = getDB()->prepare("SELECT l.*, c.nome AS categoria_nome FROM fin_lancamentos l LEFT JOIN fin_categorias c ON c.id = l.categoria_id
+                            WHERE l.oportunidade_id = ? AND l.observacoes LIKE ? ORDER BY l.id DESC");
+    $st->execute([$oportunidadeId, FIN_DESPESA_OPERACIONAL_MARCA . '%']);
+    return $st->fetchAll();
 }
 
 /** Quantos lançamentos (de qualquer origem) já existem pra uma venda. */

@@ -172,6 +172,21 @@ $entradasVendaPendentes = $db->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 $totalEntradasVendaPendentes = array_sum(array_column($entradasVendaPendentes, 'valor'));
 
+// 27/10/2026 — despesas operacionais (puxada, despachante...) lançadas pelo
+// consultor com comprovante; o financeiro confere e aprova (marca pago) ou recusa.
+$stDespOp = $db->prepare("
+    SELECT l.id, l.valor, l.descricao, l.observacoes, l.created_at, l.oportunidade_id,
+           (COALESCE(l.drive_file_id,'') != '' OR COALESCE(l.arquivo_url,'') != '') AS tem_anexo,
+           c.nome AS categoria_nome, c.icone
+    FROM fin_lancamentos l
+    LEFT JOIN fin_categorias c ON c.id = l.categoria_id
+    WHERE l.observacoes LIKE ? AND l.status IN ('pendente','atrasado')
+    ORDER BY l.created_at ASC, l.id ASC
+");
+$stDespOp->execute([FIN_DESPESA_OPERACIONAL_MARCA . '%']);
+$despesasOperacionaisPendentes = $stDespOp->fetchAll(PDO::FETCH_ASSOC);
+$totalDespesasOperacionaisPendentes = array_sum(array_column($despesasOperacionaisPendentes, 'valor'));
+
 /**
  * 06/10/2026, "no finaceiro da exibir cads carros comprados esses mes
  * carros vendidos clica neles exibi a lista" — "valor basedo no contrato
@@ -346,6 +361,49 @@ $carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, '
           <td><a href="/admin/financeiro-lancamentos.php?action=edit&id=<?= (int)$c['id'] ?>"><?= e($c['descricao']) ?></a></td>
           <td><?= e(($c['icone'] ?? '') . ' ' . ($c['categoria_nome'] ?? '—')) ?></td>
           <td style="font-weight:600"><?= $c['tipo'] === 'receita' ? '+' : '-' ?> R$ <?= number_format((float)$c['valor'], 2, ',', '.') ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  <?php endif; ?>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">💸 Despesas operacionais — conferir e aprovar</h2>
+  <p style="color:var(--muted);font-size:.85rem;margin-top:-.5rem">
+    Lançadas pelo consultor com comprovante (puxada, despachante...). Confira o comprovante e aprove (vira <strong>pago</strong>) ou recuse.
+    Total pendente: <strong>R$ <?= number_format($totalDespesasOperacionaisPendentes, 2, ',', '.') ?></strong>
+    (<?= count($despesasOperacionaisPendentes) ?>).
+  </p>
+  <?php if (!$despesasOperacionaisPendentes): ?>
+    <p style="color:var(--muted);font-size:.85rem">Nenhuma despesa operacional esperando conferência. 🎉</p>
+  <?php else: ?>
+    <table class="tabela-oportunidades">
+      <thead><tr><th>Despesa</th><th>Oportunidade</th><th>Valor</th><th>Lançada por</th><th>Comprovante</th><th>Ações</th></tr></thead>
+      <tbody>
+      <?php foreach ($despesasOperacionaisPendentes as $dp): ?>
+        <tr>
+          <td><?= e(($dp['icone'] ?? '') . ' ' . ($dp['categoria_nome'] ?: $dp['descricao'])) ?></td>
+          <td><?= $dp['oportunidade_id'] ? '#' . (int)$dp['oportunidade_id'] : '—' ?></td>
+          <td style="font-weight:700;color:var(--vermelho, #dc2626)">R$ <?= number_format((float)$dp['valor'], 2, ',', '.') ?></td>
+          <td><small><?= e(preg_replace('/^' . preg_quote(FIN_DESPESA_OPERACIONAL_MARCA, '/') . ':\s*/', '', (string)$dp['observacoes'])) ?></small></td>
+          <td><?= $dp['tem_anexo'] ? '<a href="/admin/ver_anexo_financeiro.php?id=' . (int)$dp['id'] . '" target="_blank">📄 ver</a>' : '—' ?></td>
+          <td>
+            <form method="POST" action="/admin/financeiro-lancamentos.php" style="display:inline">
+              <?= csrfField() ?>
+              <input type="hidden" name="acao" value="marcar_pago">
+              <input type="hidden" name="id" value="<?= (int)$dp['id'] ?>">
+              <button type="submit" class="btn-texto" title="Conferido — aprovar (marca pago)">✅ Aprovar</button>
+            </form>
+            <form method="POST" action="/admin/financeiro-lancamentos.php" style="display:inline" onsubmit="return confirmarAcao(this, 'Recusar esta despesa? Ela fica cancelada (o registro continua no histórico).');">
+              <?= csrfField() ?>
+              <input type="hidden" name="acao" value="cancelar">
+              <input type="hidden" name="id" value="<?= (int)$dp['id'] ?>">
+              <input type="hidden" name="motivo_cancelamento" value="Recusada na conferência do financeiro">
+              <button type="submit" class="btn-texto perigo">🚫 Recusar</button>
+            </form>
+            <a class="btn-texto" href="/admin/financeiro-lancamentos.php?action=edit&id=<?= (int)$dp['id'] ?>">✏️ Corrigir</a>
+          </td>
         </tr>
       <?php endforeach; ?>
       </tbody>

@@ -1187,6 +1187,7 @@ try {
         ['Comissão de consultor/vendedor',    'despesa', 'variavel', '🤝', 'operacional'],
         ['Manutenção/revisão de veículo',     'despesa', 'variavel', '🔧', 'operacional'],
         ['Despachante/documentação',          'despesa', 'variavel', '📄', 'operacional'],
+        ['Consulta de débitos (puxada)',      'despesa', 'variavel', '🔎', 'operacional'],
         ['Combustível',                       'despesa', 'variavel', '⛽', 'operacional'],
         ['Salários',                          'despesa', 'fixa',     '👥', 'pessoal'],
         ['Pró-labore',                        'despesa', 'fixa',     '👔', 'pessoal'],

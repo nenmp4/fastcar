@@ -330,3 +330,33 @@ function extrairDebitosVeiculoComIA(array $arquivo): ?array {
         'referencias' => trim((string)($d['referencias'] ?? '')),
     ];
 }
+
+/**
+ * 27/10/2026, "consultor sobe o comprovante — pegar valor do comprovante".
+ * Lê valor/data de um comprovante de pagamento (PIX, boleto, recibo).
+ * Nunca inventa: sem valor legível devolve valor=null.
+ * ['parece_comprovante' => bool, 'valor' => ?float, 'data' => ?string Y-m-d, 'descricao' => string]
+ */
+function extrairValorComprovanteComIA(array $arquivo): ?array {
+    $key = getConfig('gemini_api_key') ?: '';
+    if (!$key) return null;
+    $prompt = "Este arquivo deve ser um comprovante de pagamento (PIX, boleto pago, transferência, recibo ou nota). "
+        . "Responda SÓ com um JSON, sem texto antes ou depois:\n"
+        . "{\"parece_comprovante\": true|false, \"valor\": número ou null, \"data\": \"AAAA-MM-DD\" ou null, \"descricao\": \"texto curto\"}\n"
+        . "Regras: \"valor\" é o valor TOTAL pago em reais como número (ex: 89.90). Use null se não estiver legível — nunca invente. "
+        . "\"data\" é a data do pagamento. \"descricao\": quem recebeu / o que foi pago, em poucas palavras.";
+    $resposta = geminiCallComMidia($prompt, $arquivo['mime'], base64_encode($arquivo['content']),
+        $key, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 400, 0.1, 45);
+    if ($resposta === '') return null;
+    $limpo = preg_replace('/```(?:json)?/i', '', $resposta);
+    preg_match('/\{[\s\S]*\}/', $limpo, $m);
+    $d = json_decode(preg_replace('/,(\s*[}\]])/', '$1', trim($m[0] ?? '')), true);
+    if (!is_array($d)) return null;
+    $data = (string)($d['data'] ?? '');
+    return [
+        'parece_comprovante' => ($d['parece_comprovante'] ?? true) !== false,
+        'valor' => is_numeric($d['valor'] ?? null) && (float)$d['valor'] > 0 ? round((float)$d['valor'], 2) : null,
+        'data' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $data) && strtotime($data) ? $data : null,
+        'descricao' => mb_substr(trim((string)($d['descricao'] ?? '')), 0, 120),
+    ];
+}

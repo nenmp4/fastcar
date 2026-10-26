@@ -274,6 +274,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         . "<a href=\"" . e($link) . "\" style=\"color:#2f6fed\">" . e($link) . "</a></p>";
                     enviarEmail($op['cliente_email'], 'Fastcar — envio de documentos', emailLayout($corpoEmail), $op['cliente_nome'] ?: '');
                 }
+            } elseif ($acao === 'lancar_despesa_operacional') {
+                // 27/10/2026 — consultor sobe o comprovante (puxada, despachante...),
+                // a IA lê o valor e a despesa vai PENDENTE pro financeiro conferir.
+                $rDesp = finLancarDespesaOperacional($id, (string)($_POST['tipo_despesa'] ?? ''), $_FILES['comprovante'] ?? [],
+                    valorMonetario($_POST['valor_despesa'] ?? null), (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'],
+                    clean((string)($_POST['obs_despesa'] ?? '')));
+                if (!$rDesp['ok']) {
+                    $erro = $rDesp['erro'];
+                } else {
+                    auditoriaRegistrar('despesa_operacional_lancada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
+                        'Despesa operacional R$ ' . number_format($rDesp['valor'], 2, ',', '.') . ' lançada (pendente) — lançamento #' . $rDesp['id']);
+                    $sucesso = 'Despesa de R$ ' . number_format($rDesp['valor'], 2, ',', '.') . ($rDesp['lido_ia'] ? ' (valor lido do comprovante)' : '')
+                        . ' enviada pro financeiro conferir.';
+                }
             } elseif ($acao === 'ler_consulta_debitos') {
                 // 27/10/2026 — sobe a "puxada" de débitos e a IA preenche
                 // sozinha: existe débito? valores de IPVA/licenciamento/
@@ -1722,6 +1736,48 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     recalcularTotal();
 })();
 </script>
+
+<?php $despesasOp = finListarDespesasOperacionais($id); ?>
+<div class="card">
+    <h3>💸 Despesas operacionais</h3>
+    <p><small>Pagou a puxada, despachante ou outra despesa deste veículo? Suba o comprovante — o valor é lido automaticamente e vai <strong>pendente</strong> pro financeiro conferir e aprovar.</small></p>
+    <?php if ($despesasOp): ?>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Despesa</th><th>Valor</th><th>Lançada em</th><th>Status</th></tr></thead>
+        <tbody>
+        <?php foreach ($despesasOp as $dp):
+            $stLbl = ['pendente' => ['⏳ aguardando financeiro', 'badge-aviso'], 'atrasado' => ['⏳ aguardando financeiro', 'badge-aviso'],
+                      'pago' => ['✅ aprovada', 'badge-ok'], 'cancelado' => ['🚫 recusada/cancelada', 'badge-atraso']][$dp['status']] ?? [$dp['status'], 'badge-info']; ?>
+            <tr>
+                <td><?= e($dp['categoria_nome'] ?: $dp['descricao']) ?></td>
+                <td>R$ <?= number_format((float)$dp['valor'], 2, ',', '.') ?></td>
+                <td><?= date('d/m/Y H:i', strtotime($dp['created_at'])) ?></td>
+                <td><span class="badge <?= $stLbl[1] ?>"><?= e($stLbl[0]) ?></span></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php endif; ?>
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+    <form method="post" enctype="multipart/form-data" style="margin-top:10px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="lancar_despesa_operacional">
+        <label>Tipo</label>
+        <select name="tipo_despesa" required>
+            <?php foreach (FIN_DESPESA_OPERACIONAL_TIPOS as $k => $t): ?>
+                <option value="<?= e($k) ?>"><?= e($t[0]) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>Comprovante (foto ou PDF)</label>
+        <input type="file" name="comprovante" accept="image/*,application/pdf" required>
+        <label>Valor (R$) — opcional</label>
+        <input type="text" inputmode="decimal" name="valor_despesa" placeholder="em branco = lido do comprovante">
+        <label>Observação (opcional)</label>
+        <input type="text" name="obs_despesa" maxlength="200">
+        <button type="submit">📤 Enviar pro financeiro</button>
+    </form>
+    <?php endif; ?>
+</div>
 
 <div class="card">
     <h3>🔍 Checklist de vistoria do veículo</h3>

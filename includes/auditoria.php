@@ -93,6 +93,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'perfil_proprio_editado' => '🙋 Usuário editou o próprio perfil',
         'avatar_atualizado' => '🖼️ Avatar atualizado',
         'lancamento_cancelado' => '🚫 Lançamento financeiro cancelado',
+        'despesa_operacional_lancada' => '💸 Despesa operacional lançada (comprovante)',
         'impersonacao_iniciada' => '🎭 Impersonação iniciada',
         'impersonacao_finalizada' => '🎭 Impersonação encerrada',
         'lgpd_exclusao_solicitada' => '⚖️ Pedido de exclusão de dados (LGPD)',
