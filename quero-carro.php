@@ -136,7 +136,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     <div class="card">
         <h1>Obrigado pelo interesse!</h1>
         <p>No momento, nossas condições começam a partir de <strong><?= e($fmt($res['minimo'])) ?> de entrada</strong> pra esse tipo de veículo.</p>
-        <?php if (($f['tipo'] ?? '') === 'carro'): ?>
+        <?php if (in_array($f['tipo'] ?? '', ['carro', 'utilitario'], true)): ?>
             <p>Uma <strong>moto</strong> te atende? Pra moto, a entrada começa em <?= e($fmt(5000)) ?>.</p>
             <a class="btn-zap" style="background:var(--azul)" href="<?= e(vendaFormularioUrl($utm)) ?>">Ver opção de moto</a>
         <?php endif; ?>
@@ -158,6 +158,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
             <label class="t">O que você procura?</label>
             <div class="opcoes">
                 <label><input type="radio" name="tipo" value="carro" required <?= $sel('tipo', 'carro') ?>> 🚗 Carro</label>
+                <label><input type="radio" name="tipo" value="utilitario" <?= $sel('tipo', 'utilitario') ?>> 🛻 Utilitário <small>(picape, van, furgão)</small></label>
                 <label><input type="radio" name="tipo" value="moto" <?= $sel('tipo', 'moto') ?>> 🏍️ Moto</label>
             </div>
         </div>

@@ -19,10 +19,10 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/vendas.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // pausarIA()
 
-const VENDA_FORM_TIPOS = ['carro' => 'Carro', 'moto' => 'Moto'];
+const VENDA_FORM_TIPOS = ['carro' => 'Carro', 'utilitario' => 'Utilitário (picape/van/furgão)', 'moto' => 'Moto'];
 const VENDA_FORM_USOS = ['passeio' => 'Passeio / família', 'aplicativo' => 'Aplicativo (Uber/99/entrega)', 'utilitario' => 'Trabalho / carga'];
 
-/** Entrada mínima (R$) pro caso — moto R$ 5 mil, aplicativo R$ 14 mil, passeio/trabalho R$ 10 mil. */
+/** Entrada mínima (R$) pro caso — moto R$ 5 mil, aplicativo R$ 14 mil, passeio/trabalho e utilitário R$ 10 mil. */
 function vendaFormularioMinimo(string $tipo, string $uso): float {
     if ($tipo === 'moto') return 5000.0;
     if ($uso === 'aplicativo') return 14000.0;
@@ -67,6 +67,7 @@ function registrarFormularioVenda(array $d): array {
     $tipo = array_key_exists($d['tipo'] ?? '', VENDA_FORM_TIPOS) ? $d['tipo'] : '';
     $uso = array_key_exists($d['uso'] ?? '', VENDA_FORM_USOS) ? $d['uso'] : '';
     if ($tipo === 'moto') $uso = $uso ?: 'passeio';
+    if ($tipo === 'utilitario') $uso = $uso ?: 'utilitario';
     if ($nome === '') return ['ok' => false, 'erro' => 'Informe seu nome.'];
     if (!$tel || strlen($tel) < 12) return ['ok' => false, 'erro' => 'Informe um WhatsApp válido com DDD.'];
     if ($tipo === '' || $uso === '') return ['ok' => false, 'erro' => 'Escolha o tipo de veículo e o uso.'];
