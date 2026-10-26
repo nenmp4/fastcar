@@ -438,7 +438,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
         ['CLÁUSULA 6ª – POSSE, GUARDA E ENTREGA',
             "6.1. O VENDEDOR entrega voluntariamente a posse física do veículo à FASTCAR mediante Termo de Entrega e Vistoria.\n\n" .
             "6.2. A entrega não altera, perante o credor ou o órgão de trânsito, a titularidade registral que dependa de quitação, baixa de gravame e demais formalidades.\n\n" .
-            "6.3. A FASTCAR assume a guarda operacional do veículo a partir da entrega, nos limites das responsabilidades definidas neste contrato e nos anexos."],
+            "6.3. A FASTCAR assume a guarda operacional do veículo a partir da entrega, nos limites das responsabilidades definidas neste contrato."],
         ['CLÁUSULA 7ª – EXPLORAÇÃO ECONÔMICA PELA FASTCAR',
             "7.1. Durante a vigência da operação, a FASTCAR poderá utilizar o veículo em sua atividade econômica e cedê-lo onerosamente a terceiros, inclusive mediante locação, desde que respeitados os limites do financiamento, da legislação, do seguro/proteção e deste contrato.\n\n" .
             "7.2. A receita obtida com a exploração do veículo pertence à FASTCAR, não gerando participação, aluguel ou prestação de contas de receitas ao VENDEDOR, salvo ajuste escrito em sentido diverso.\n\n" .
