@@ -85,7 +85,12 @@ $placeholders = implode(',', array_fill(0, count($etapasEscopo), '?'));
 $where = "WHERE o.etapa IN ({$placeholders}){$extraWhere}";
 $params = $etapasEscopo;
 if ($souDono) {
-    $where .= $etapaBuscandoFechadas ? " AND o.fechado_por = ?" : " AND o.responsavel_id = ?";
+    if ($etapaBuscandoFechadas) {
+        $where .= " AND (o.fechado_por = ? OR o.responsavel_id = ?)";
+        $params[] = $meuId;
+    } else {
+        $where .= " AND o.responsavel_id = ?";
+    }
     $params[] = $meuId;
 }
 if ($filtroEspecial === '' && $etapaFiltro && !$etapaBuscandoFechadas && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {

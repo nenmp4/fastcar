@@ -959,9 +959,11 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
             $db->prepare("
                 UPDATE oportunidades
                 SET etapa = ?, valor_final = ?, data_compra = date('now','localtime'),
-                    fechado_por = ?, updated_at = datetime('now','localtime')
+                    fechado_por = COALESCE(?, responsavel_id), updated_at = datetime('now','localtime')
                 WHERE id = ?
             ")->execute([$etapaNova, $op['valor_ofertado'], $responsavelId, $oportunidadeId]);
+            // fechado_por: fechamento automático (assinatura na ZapSign, sem
+            // usuário) cai pro responsável — nunca mais fica vazio (27/10/2026).
         } else {
             $db->prepare("UPDATE oportunidades SET etapa = ?, updated_at = datetime('now','localtime') WHERE id = ?")
                ->execute([$etapaNova, $oportunidadeId]);

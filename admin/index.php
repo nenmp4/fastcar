@@ -385,7 +385,16 @@ if ($souDono) {
     // mês", ver includes/dashboard.php) — as etapas ativas continuam
     // filtrando por responsavel_id (quem está cuidando da carteira em
     // aberto agora), que é um conceito diferente.
-    $where .= $etapaBuscandoFechadas ? " AND o.fechado_por = ?" : " AND o.responsavel_id = ?";
+    // 27/10/2026, "consultor fechou pasta sumiu cliente dele" — fechamento
+    // automático (contrato assinado na ZapSign) gravava fechado_por vazio, e a
+    // aba Fechadas sumia com o cliente. Agora conta quem fechou OU quem é o
+    // responsável — o consultor sempre vê todos os clientes dele.
+    if ($etapaBuscandoFechadas) {
+        $where .= " AND (o.fechado_por = ? OR o.responsavel_id = ?)";
+        $params[] = $meuId;
+    } else {
+        $where .= " AND o.responsavel_id = ?";
+    }
     $params[] = $meuId;
 }
 if ($filtroEspecial === '' && $etapaFiltro && !$etapaBuscandoFechadas && in_array($etapaFiltro, ETAPAS_ATIVAS, true)) {
@@ -403,7 +412,12 @@ if ($busca !== '') {
     array_push($params, $like, $like, $like, $like, $like);
 }
 if ($consultorFiltro > 0) {
-    $where .= " AND o.responsavel_id = ?";
+    if ($etapaBuscandoFechadas) {
+        $where .= " AND (o.fechado_por = ? OR o.responsavel_id = ?)";
+        $params[] = $consultorFiltro;
+    } else {
+        $where .= " AND o.responsavel_id = ?";
+    }
     $params[] = $consultorFiltro;
 }
 $where .= $gestaoSql;
@@ -605,16 +619,16 @@ $sqlFechadas = "SELECT COUNT(*) FROM oportunidades o
                 WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
 $paramsFechadas = [];
 if ($souDono) {
-    $sqlFechadas .= " AND o.fechado_por = ?";
-    $paramsFechadas[] = $meuId;
+    $sqlFechadas .= " AND (o.fechado_por = ? OR o.responsavel_id = ?)";
+    array_push($paramsFechadas, $meuId, $meuId);
 }
 if ($busca !== '') {
     $sqlFechadas .= " AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ?)";
     array_push($paramsFechadas, $like, $like, $like, $like, $like);
 }
 if ($consultorFiltro > 0) {
-    $sqlFechadas .= " AND o.fechado_por = ?";
-    $paramsFechadas[] = $consultorFiltro;
+    $sqlFechadas .= " AND (o.fechado_por = ? OR o.responsavel_id = ?)";
+    array_push($paramsFechadas, $consultorFiltro, $consultorFiltro);
 }
 $sqlFechadas .= $gestaoSql;
 array_push($paramsFechadas, ...$gestaoParams);

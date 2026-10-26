@@ -477,9 +477,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // atribuir — evitar duplicar": quem cria é o avaliador (Nova
                 // vistoria manual) ou o super admin; consultor só atribui
                 // avaliador numa vistoria que já existe.
-                if ($_SESSION['admin_perfil'] === 'consultor') {
-                    throw new RuntimeException('Consultor não cria vistoria — peça pro avaliador criar; aqui você só atribui o avaliador na vistoria já existente.');
-                }
+                // 27/10/2026, "permita que consultores indique o avaliador" —
+                // com o botão manual do avaliador removido, o consultor volta a
+                // criar a vistoria indicando o avaliador. Duplicata continua
+                // barrada por criarAvaliacao() (reaproveita a vistoria ativa).
                 // Checklist de vistoria (compra) — includes/veiculo_avaliacoes.php.
                 // 22/09/2026, "avaliação tem ter opção de moto carro" —
                 // tipo de veículo escolhido aqui, checklist muda de verdade
@@ -1752,9 +1753,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php else: ?>
         <p><small>Nenhuma vistoria registrada ainda pra este veículo.</small></p>
     <?php endif; ?>
-    <?php if ($_SESSION['admin_perfil'] === 'consultor'): ?>
-        <p><small>🔍 A vistoria é criada pelo avaliador (ou super admin). Se já existe uma vistoria acima, abra ela pra atribuir o avaliador.</small></p>
-    <?php elseif ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
         <form method="post" style="margin-top:10px">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="criar_avaliacao">
