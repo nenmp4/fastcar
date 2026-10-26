@@ -377,10 +377,9 @@ function gerarContratoCompraPreview(int $oportunidadeId, ?int $usuarioId): array
         return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
     }
 
+    // 27/10/2026 — o limite de 25% da FIPE saiu do contrato (cláusula 1.2 e
+    // Quadro-Resumo), então não existe mais aviso de "excede o limite".
     $avisos = [];
-    if ($campos['percentual_fipe'] > 25) {
-        $avisos[] = "Percentual pago ({$campos['percentual_fipe']}%) excede o limite contratual de 25% da FIPE.";
-    }
     $aviso = $avisos ? implode(' ', $avisos) : null;
 
     $pdfPath = gerarPdfContratoCompra($campos);
@@ -450,12 +449,9 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
     }
 
-    // Limite contratual de 25% da FIPE (cláusula 1.2) — nunca decide sozinho
-    // se segue ou não, só avisa; a decisão de negociação é sempre do consultor.
+    // 27/10/2026 — o limite de 25% da FIPE saiu do contrato (cláusula 1.2 e
+    // Quadro-Resumo), então não existe mais aviso de "excede o limite".
     $avisos = [];
-    if ($campos['percentual_fipe'] > 25) {
-        $avisos[] = "Percentual pago ({$campos['percentual_fipe']}%) excede o limite contratual de 25% da FIPE — confira antes de enviar pra assinatura.";
-    }
     // Cliente sem e-mail cadastrado (wizard antigo, ou cliente ainda não
     // confirmou a 1ª etapa) — a ZapSign segue mandando só por
     // telefone/WhatsApp, nunca trava o envio do contrato por causa disso,
