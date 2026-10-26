@@ -392,7 +392,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
         ['CLÁUSULA 1ª – OBJETO E ESTRUTURA DA OPERAÇÃO',
             "1.1. O VENDEDOR negocia com a FASTCAR os direitos econômicos e a futura aquisição do veículo identificado no Quadro-Resumo, entregando-lhe desde já a posse direta e autorizando sua administração e exploração econômica, permanecendo a transferência registral definitiva condicionada à quitação e baixa de eventual gravame.\n\n" .
             "1.2. Como contraprestação inicial, a FASTCAR pagará ao VENDEDOR o valor indicado no Quadro-Resumo, correspondente ao percentual livremente ajustado.\n\n" .
-            "1.3. O restante da estrutura econômica da operação consiste na quitação futura do financiamento/gravame, por terceiro indicado pela FASTCAR, dentro do prazo máximo de {$prazoMeses} meses, indicado no Quadro-Resumo, nunca superior a 24 meses.\n\n" .
+            "1.3. O restante da estrutura econômica da operação consiste na quitação futura do financiamento/gravame, por terceiro indicado pela FASTCAR, dentro do prazo máximo estipulado no Quadro-Resumo da operação.\n\n" .
             "1.4. O pagamento da dívida ao credor por terceiro não equivale, por si só, à assunção formal da dívida perante a instituição financeira, nem substitui eventual consentimento do credor exigido para mudança de devedor, novação ou alteração contratual.\n\n" .
             "1.5. Enquanto vigente alienação fiduciária, a titularidade resolúvel e os direitos do credor fiduciário permanecem preservados, não podendo este instrumento ser interpretado como autorização para frustrar, ocultar ou impedir o exercício legítimo desses direitos."],
         ['CLÁUSULA 2ª – DECLARAÇÕES DO VENDEDOR E SITUAÇÃO DO VEÍCULO',
