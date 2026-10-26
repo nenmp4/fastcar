@@ -454,7 +454,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "9.2. A FASTCAR deverá acompanhar o status financeiro e evitar que a exploração do veículo seja realizada ignorando situação de mora relevante ou medida de apreensão conhecida.\n\n" .
             "9.3. Nenhuma cláusula deste contrato limita direitos do credor que não seja parte deste instrumento."],
         ['CLÁUSULA 10ª – PARCELAS DO FINANCIAMENTO ATÉ A QUITAÇÃO',
-            "10.1. A forma de manutenção das parcelas do financiamento durante o período de até {$prazoMeses} meses será descrita no Anexo Financeiro: quem paga mensalmente, como se dará a negociação, como será evitada mora.\n\n" .
+            "10.1. Em casos específicos, a FASTCAR poderá, de comum acordo com o VENDEDOR, dar continuidade ao pagamento das parcelas do financiamento durante o período que será descrito no Quadro-Resumo da operação.\n\n" .
             "10.2. Este campo é condição essencial. O veículo não deverá ser recebido pela FASTCAR sem definição documental sobre quem realizará os pagamentos correntes ou sobre a existência de acordo formal com o credor.\n\n" .
             "10.3. Havendo alteração do plano, deverá ser produzida evidência escrita e atualizada."],
         ['CLÁUSULA 11ª – TRIBUTOS, LICENCIAMENTO E MULTAS',
