@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->prepare("
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
-                        saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
+                        saldo_financiamento_atual = ?, terceiro_quitacao = ?, encargos_texto = ?,
                         pix_pagamento_cedente = ?, condicao_pagamento_cedente = ?, parcelas_pagas_fastcar_texto = ?,
                         data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
@@ -142,7 +142,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['contrato_financiamento_numero'] ?? '')),
                     valorMonetario($_POST['saldo_financiamento_atual'] ?? null),
                     clean((string)($_POST['terceiro_quitacao'] ?? '')),
-                    clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
                     clean((string)($_POST['pix_pagamento_cedente'] ?? '')),
                     clean((string)($_POST['condicao_pagamento_cedente'] ?? '')),
@@ -883,8 +882,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <label>Prazo pra quitar o financiamento (meses)</label>
                 <input type="number" min="1" max="240" name="prazo_quitacao_meses" value="<?= e((string)($op['prazo_quitacao_meses'] ?? '')) ?>" placeholder="normal: 12 a 18">
                 <small style="color:var(--texto-fraco)">Normal fica entre 12 e 18 meses, mas pode ser outro prazo conforme a financeira (até 240). Abaixo de 24 o contrato cita prorrogação excepcional até 24 meses; a partir de 24 cita só o prazo digitado.</small>
-                <label>Seguro/proteção durante a posse da FASTCAR</label>
-                <input type="text" name="seguro_texto" value="<?= e($op['seguro_texto'] ?? '') ?>">
+                <?php // Seguro/proteção saiu em 27/10/2026 — nova cláusula 12.1: seguro é responsabilidade do VENDEDOR. ?>
                 <label>IPVA/licenciamento/multas após a entrega</label>
                 <input type="text" name="encargos_texto" value="<?= e($op['encargos_texto'] ?? '') ?>">
             </div>

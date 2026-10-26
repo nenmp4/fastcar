@@ -347,9 +347,7 @@ function gerarPdfContratoCompra(array $c): string {
     }
     _pdfLinhaResumo($pdf, 'Exploração econômica pela FASTCAR', 'Autorizada, inclusive locação a terceiros, nos limites contratuais');
     _pdfLinhaResumo($pdf, 'Transferência final', 'Após quitação/baixa do gravame e cumprimento das formalidades legais');
-    if (!empty($c['seguro_texto'])) {
-        _pdfLinhaResumo($pdf, 'Seguro/proteção durante posse FASTCAR', $c['seguro_texto']);
-    }
+    // Linha de seguro/proteção removida em 27/10/2026 — cláusula 12.1: seguro é responsabilidade do VENDEDOR.
     if (!empty($c['encargos_texto'])) {
         _pdfLinhaResumo($pdf, 'IPVA/licenciamento/multas após entrega', $c['encargos_texto']);
     }
