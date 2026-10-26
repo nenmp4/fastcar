@@ -217,6 +217,9 @@ function salvarUploadDocumentoVenda(int $vendaId, string $tipo, array $arquivo, 
     // do arquivo já ter sido salvo no Drive/disco. Mesmo fix do lado de
     // compra (includes/documentos.php::salvarUploadDocumento()): devolve o
     // mesmo formato de erro que o caller já trata, nunca um crash cru.
+    // Até 3 tentativas: contenção passageira de escrita no banco não deve
+    // derrubar o envio do cliente (27/10/2026).
+    for ($tentativaDoc = 1; $tentativaDoc <= 3; $tentativaDoc++) {
     try {
         $db->prepare("
             INSERT INTO venda_documentos (venda_id, tipo, arquivo_url, drive_file_id, enviado_pelo_cliente, dados_confirmados, updated_at)
@@ -232,8 +235,17 @@ function salvarUploadDocumentoVenda(int $vendaId, string $tipo, array $arquivo, 
         $stmtId = $db->prepare("SELECT id FROM venda_documentos WHERE venda_id = ? AND tipo = ?");
         $stmtId->execute([$vendaId, $tipo]);
         $docId = (int)$stmtId->fetchColumn();
+        break;
     } catch (Throwable $e) {
-        return ['ok' => false, 'erro' => 'Erro temporário ao salvar — tente enviar o arquivo de novo em alguns segundos.'];
+        // 27/10/2026, achado real (comprador mandando PDF no wizard): o erro
+        // ficava engolido sem rastro — agora sempre registra o motivo real
+        // em storage/logs/php_errors.log pra dar pra investigar.
+        error_log('[documentos-venda] falha ao gravar documento (tipo ' . $tipo . ', tentativa ' . $tentativaDoc . '): ' . get_class($e) . ': ' . $e->getMessage());
+        if ($tentativaDoc >= 3) {
+            return ['ok' => false, 'erro' => 'Erro temporário ao salvar — tente enviar o arquivo de novo em alguns segundos.'];
+        }
+        sleep(1);
+    }
     }
 
     return ['ok' => true, 'erro' => null, 'documento_id' => $docId];
