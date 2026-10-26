@@ -40,6 +40,17 @@ $formularioVeiculoRepetir = null; // preserva o que foi digitado enquanto espera
 $zapcarServicoNomeAtivo = zapcarAtivo() ? zapcarNomeServico(zapcarServicoAtivo()) : '';
 $zapcarPrecoAtivo = zapcarAtivo() ? zapcarPrecoServico(zapcarServicoAtivo()) : null;
 
+const COMPRA_ACOES_TRAVADAS = ['atualizar_veiculo', 'atualizar_contrato', 'gerar_contrato', 'gerar_contrato_preview',
+    'excluir_contrato_preview', 'mudar_etapa', 'marcar_perdida', 'atualizar_nome_cliente', 'excluir_documento_staff',
+    'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2'];
+$compraTravada = $op['etapa'] === 'fechado' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+function documentoCompraJaEnviado(int $opId, string $tipo): bool {
+    $st = getDB()->prepare("SELECT 1 FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?
+                            AND (COALESCE(arquivo_url,'') != '' OR COALESCE(drive_file_id,'') != '')");
+    $st->execute([$opId, $tipo]);
+    return (bool)$st->fetchColumn();
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
@@ -49,6 +60,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // está fazendo") — vê tudo, mas não age em nome de ninguém.
         http_response_code(403);
         $erro = 'Perfil de supervisão só acompanha, não altera oportunidades.';
+    } elseif ($compraTravada && in_array((string)($_POST['acao'] ?? ''), COMPRA_ACOES_TRAVADAS, true)
+              || ($compraTravada && ($_POST['acao'] ?? '') === 'upload_documento_staff' && documentoCompraJaEnviado($id, (string)($_POST['tipo_documento'] ?? '')))) {
+        // 27/10/2026, "todos contratos fechados não ter possibilidade de
+        // alterar as informações" — compra fechada (contrato assinado) fica
+        // travada; só o super admin corrige. Pendência pós-venda, vistoria,
+        // anexar documento que ainda falta e reenviar/sincronizar continuam.
+        http_response_code(403);
+        $erro = '🔒 Compra fechada — os dados do contrato não podem mais ser alterados. Só o super admin pode corrigir.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         try {
@@ -534,6 +553,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </header>
 
 <main>
+<?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Compra fechada</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <?php if ($marcaFeedback): ?>
@@ -1721,5 +1741,20 @@ function copiarTextoFallback(texto, callback) {
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status.php'; ?>
+<?php if ($compraTravada): ?>
+<script>
+// Trava visual (o servidor já bloqueia): desabilita os formulários das ações travadas.
+(function () {
+    var travadas = <?= json_encode(COMPRA_ACOES_TRAVADAS) ?>;
+    document.querySelectorAll('main form').forEach(function (f) {
+        var a = f.querySelector('input[name=acao]');
+        if (!a || travadas.indexOf(a.value) === -1) return;
+        f.querySelectorAll('input:not([type=hidden]),select,textarea,button').forEach(function (el) { el.disabled = true; });
+        f.style.opacity = '.55';
+        f.title = 'Contrato fechado — dados travados';
+    });
+})();
+</script>
+<?php endif; ?>
 </body>
 </html>

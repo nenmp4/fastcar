@@ -531,6 +531,33 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $oportunidades = $stmt->fetchAll();
 
+// 27/10/2026, "mostrar igual de vendas se as comissões dos carros comprados
+// foram lançadas" — comissão automática do consultor (1% da FIPE de
+// referência, includes/financeiro.php::finRegistrarComissaoCompraFechada())
+// por compra fechada, e o motivo quando não foi lançada (sem FIPE / sem
+// colaborador ativo vinculado ao consultor que fechou).
+$comissaoFech = [];
+$colabAtivoFech = [];
+if ($etapaBuscandoFechadas && $oportunidades) {
+    if ($perfil === 'super_admin' && ($_POST['acao'] ?? '') === 'gerar_comissao_compra' && validateCSRF($_POST['csrf_token'] ?? '')) {
+        $idC = (int)($_POST['oportunidade_id'] ?? 0);
+        $stC = $db->prepare("SELECT valor_final, fechado_por, data_compra FROM oportunidades WHERE id = ? AND etapa = 'fechado'");
+        $stC->execute([$idC]);
+        if ($oc = $stC->fetch()) {
+            finRegistrarComissaoCompraFechada($idC, (float)$oc['valor_final'], $oc['fechado_por'] ? (int)$oc['fechado_por'] : null, $oc['data_compra'] ?: null);
+        }
+        header('Location: /admin/index.php?' . http_build_query($_GET));
+        exit;
+    }
+    $idsF = array_map(fn($x) => (int)$x['id'], $oportunidades);
+    $phF = implode(',', array_fill(0, count($idsF), '?'));
+    $stmtCF = $db->prepare("SELECT oportunidade_id, SUM(valor) AS valor, MAX(status) AS status FROM fin_lancamentos
+                            WHERE oportunidade_id IN ({$phF}) AND origem = 'comissao_compra' AND status != 'cancelado' GROUP BY oportunidade_id");
+    $stmtCF->execute($idsF);
+    foreach ($stmtCF->fetchAll() as $r) $comissaoFech[(int)$r['oportunidade_id']] = $r;
+    foreach ($db->query("SELECT usuario_id FROM fin_colaboradores WHERE status = 'ativo' AND usuario_id IS NOT NULL") as $r) $colabAtivoFech[(int)$r['usuario_id']] = true;
+}
+
 // Contadores da nav das etapas ATIVAS — sempre contra ETAPAS_ATIVAS
 // (nunca $placeholders/$etapasEscopo, que agora podem estar reduzidos a
 // só 'fechado' quando esse filtro está selecionado, ver acima) — a nav
@@ -1186,14 +1213,14 @@ if ($podeSelecionarEmMassa):
             <?php endif; ?>
             <th>Cliente</th><th>Recebido em</th><th>Veículo</th>
             <?php if ($etapaBuscandoFechadas): ?>
-            <th>Valor pago</th>
+            <th>Valor pago</th><th>FIPE</th><th>Comissão</th>
             <?php endif; ?>
             <th>Etapa</th><th>Responsável</th><th>Próxima ação</th><th>Observação</th><th></th>
         </tr>
     </thead>
     <tbody>
     <?php if (!$oportunidades): ?>
-        <tr><td colspan="<?= ($podeSelecionarEmMassa ? 9 : 8) + ($etapaBuscandoFechadas ? 1 : 0) ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
+        <tr><td colspan="<?= ($podeSelecionarEmMassa ? 9 : 8) + ($etapaBuscandoFechadas ? 3 : 0) ?>"><?= $busca !== '' ? 'Nenhuma oportunidade encontrada pra essa busca.' : 'Nenhuma oportunidade nessa etapa.' ?></td></tr>
     <?php endif; ?>
     <?php foreach ($oportunidades as $op): ?>
         <?php // "Atrasada" só faz sentido pra oportunidade ainda em aberto —
@@ -1264,6 +1291,31 @@ if ($podeSelecionarEmMassa):
             <?php if ($etapaBuscandoFechadas): ?>
             <td data-label="Valor pago">
                 <?= $op['valor_final'] ? moeda((float)$op['valor_final']) : '—' ?>
+            </td>
+            <td data-label="FIPE">
+                <?php if ((float)($op['valor_fipe_referencia'] ?? 0) > 0): ?>
+                    <?= moeda((float)$op['valor_fipe_referencia']) ?>
+                    <?php if ((float)$op['valor_final'] > 0): ?><br><small><?= round((float)$op['valor_final'] / (float)$op['valor_fipe_referencia'] * 100) ?>% da FIPE</small><?php endif; ?>
+                <?php else: ?><small>— sem FIPE</small><?php endif; ?>
+            </td>
+            <td data-label="Comissão">
+                <?php $cf = $comissaoFech[(int)$op['id']] ?? null; $fipeOp = (float)($op['valor_fipe_referencia'] ?? 0); ?>
+                <?php if ($cf): ?>
+                    <?= moeda((float)$cf['valor']) ?>
+                    <br><span class="badge <?= $cf['status'] === 'pago' ? 'badge-ok' : 'badge-aviso' ?>"><?= $cf['status'] === 'pago' ? '✅ lançada' : '⏳ ' . e($cf['status']) ?></span>
+                <?php elseif ($fipeOp <= 0): ?>
+                    <span class="badge badge-aviso">não lançada</span><br><small>falta FIPE de referência</small>
+                <?php elseif (empty($op['fechado_por']) || empty($colabAtivoFech[(int)$op['fechado_por']])): ?>
+                    <span class="badge badge-aviso">não lançada</span><br><small>consultor sem colaborador ativo no Financeiro</small>
+                <?php else: ?>
+                    <span class="badge badge-aviso">não lançada</span><br><small>1% = <?= moeda($fipeOp * 0.01) ?></small>
+                    <?php if ($perfil === 'super_admin'): ?>
+                    <form method="post" style="margin:4px 0 0" onsubmit="return confirmarAcao(this, 'Lançar a comissão de <?= e(moeda($fipeOp * 0.01)) ?> no Financeiro, com a data da compra?');">
+                        <?= csrfField() ?><input type="hidden" name="acao" value="gerar_comissao_compra"><input type="hidden" name="oportunidade_id" value="<?= (int)$op['id'] ?>">
+                        <button type="submit" class="btn-texto">💰 Lançar agora</button>
+                    </form>
+                    <?php endif; ?>
+                <?php endif; ?>
             </td>
             <?php endif; ?>
             <td>

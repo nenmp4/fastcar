@@ -38,6 +38,18 @@ if (!$v) {
 $erro = '';
 $sucesso = '';
 
+const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
+    'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
+    'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
+    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2'];
+$vendaTravada = $v['etapa'] === 'vendido' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
+    $st = getDB()->prepare("SELECT 1 FROM venda_documentos WHERE venda_id = ? AND tipo = ?
+                            AND (COALESCE(arquivo_url,'') != '' OR COALESCE(drive_file_id,'') != '')");
+    $st->execute([$vendaId, $tipo]);
+    return (bool)$st->fetchColumn();
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
@@ -46,6 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // — vê tudo, nunca age.
         http_response_code(403);
         $erro = 'Perfil de supervisão só acompanha, não altera negociações.';
+    } elseif ($vendaTravada && in_array((string)($_POST['acao'] ?? ''), VENDA_ACOES_TRAVADAS, true)
+              || ($vendaTravada && ($_POST['acao'] ?? '') === 'upload_documento_staff_venda' && documentoVendaJaEnviado($id, (string)($_POST['tipo_documento'] ?? '')))) {
+        // 27/10/2026, "todos contratos fechados não ter possibilidade de
+        // alterar as informações" — venda concluída fica travada; só o
+        // super admin corrige. Devolução do veículo, cobrança Asaas pós-
+        // assinatura, fotos, vistoria e anexar documento que falta seguem.
+        http_response_code(403);
+        $erro = '🔒 Venda concluída — os dados do contrato não podem mais ser alterados. Só o super admin pode corrigir.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         try {
@@ -611,6 +631,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </header>
 
 <main>
+<?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Venda concluída</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
@@ -1620,5 +1641,20 @@ function copiarTextoFallback(texto, callback) {
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>
 <?php include __DIR__ . '/_zapi_status_vendas.php'; ?>
+<?php if ($vendaTravada): ?>
+<script>
+// Trava visual (o servidor já bloqueia): desabilita os formulários das ações travadas.
+(function () {
+    var travadas = <?= json_encode(VENDA_ACOES_TRAVADAS) ?>;
+    document.querySelectorAll('main form').forEach(function (f) {
+        var a = f.querySelector('input[name=acao]');
+        if (!a || travadas.indexOf(a.value) === -1) return;
+        f.querySelectorAll('input:not([type=hidden]),select,textarea,button').forEach(function (el) { el.disabled = true; });
+        f.style.opacity = '.55';
+        f.title = 'Contrato fechado — dados travados';
+    });
+})();
+</script>
+<?php endif; ?>
 </body>
 </html>
