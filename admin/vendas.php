@@ -326,7 +326,7 @@ $filtroDataVendaAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool
 // compra, "evita o usuário cair numa combinação impossível").
 // 26/10/2026, "filtro no dashboard dos vendedores — por data, tipo de
 // lead quente etc" — mesmo filtro de gestão de admin/index.php.
-[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'v.temperatura_lead', 'v.created_at');
+[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista] = filtroGestaoLeads($_GET, 'v.temperatura_lead', 'v.created_at');
 $qsGestao = $gestaoQsPartes ? '&' . implode('&', $gestaoQsPartes) : '';
 $filtroEspecialVendas = (string)($_GET['filtro'] ?? '');
 $extraWhereVendas = '';
@@ -408,7 +408,7 @@ $totalFiltrado = (int)$stmtTotal->fetchColumn();
 // lista é sobre QUANDO o lead entrou, então ordena só por data de entrada,
 // mais recente primeiro; a ordenação por temperatura/próxima ação continua
 // valendo pras abas normais.
-$ordemVendas = match (true) {
+$ordemVendas = filtroGestaoOrdemSql($ordemLista, 'v') ?? match (true) {
     $abaVendidas => "COALESCE(v.data_venda, v.updated_at) DESC, v.id DESC",
     $filtroEspecialVendas === 'agendados' => "(v.visita_data_resolvida IS NULL), v.visita_data_resolvida ASC, v.visita_confirmada_em ASC",
     in_array($filtroEspecialVendas, ['hoje', 'ontem', 'semana'], true) => "v.created_at DESC, v.id DESC",
@@ -1175,7 +1175,7 @@ function vitrineFiltrar(termo) {
         elseif ($etapaFiltro !== '') $gestaoManterV['etapa'] = $etapaFiltro;
         if ($busca !== '') $gestaoManterV['q'] = $busca;
         if ($mesVendidas !== '') $gestaoManterV['mes'] = $mesVendidas;
-        echo filtroGestaoForm('/admin/vendas.php', $gestaoManterV, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte);
+        echo filtroGestaoForm('/admin/vendas.php', $gestaoManterV, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista);
     ?>
 </div>
 

@@ -341,7 +341,30 @@ function filtroGestaoLeads(array $get, string $colTemp, string $colData): array 
             if ($ate !== '') $qs[] = 'entrada_ate=' . $ate;
         }
     }
-    return [$sql, $params, $qs, $temp, $periodo, $de, $ate];
+    // 26/10/2026, "consultor organizar por data os leads — hoje a listagem
+    // tá por ordem de tipo de lead" — ordenação escolhida pelo usuário.
+    $ordem = array_key_exists($get['ordem'] ?? '', FILTRO_GESTAO_ORDENS) && ($get['ordem'] ?? '') !== '' ? $get['ordem'] : '';
+    if ($ordem !== '') $qs[] = 'ordem=' . $ordem;
+    return [$sql, $params, $qs, $temp, $periodo, $de, $ate, $ordem];
+}
+
+const FILTRO_GESTAO_ORDENS = [
+    '' => 'Prioridade (lead quente primeiro)',
+    'recentes' => 'Data de entrada — mais recentes',
+    'antigos' => 'Data de entrada — mais antigos',
+    'atualizados' => 'Última movimentação',
+    'proxima_acao' => 'Próxima ação mais próxima',
+];
+
+/** ORDER BY da ordenação escolhida, ou null = deixa a ordem padrão da tela. */
+function filtroGestaoOrdemSql(string $ordem, string $a): ?string {
+    return match ($ordem) {
+        'recentes' => "{$a}.created_at DESC, {$a}.id DESC",
+        'antigos' => "{$a}.created_at ASC, {$a}.id ASC",
+        'atualizados' => "{$a}.updated_at DESC, {$a}.id DESC",
+        'proxima_acao' => "({$a}.proxima_acao_em IS NULL), {$a}.proxima_acao_em ASC, {$a}.created_at DESC",
+        default => null,
+    };
 }
 
 /** Hidden inputs pra um <form method="get"> não perder o filtro de gestão. */
@@ -355,7 +378,7 @@ function filtroGestaoHiddens(array $qsPartes): string {
 }
 
 /** Barra de filtro (temperatura + período de entrada), formulário GET próprio. */
-function filtroGestaoForm(string $acao, array $manter, string $temp, string $periodo, string $de, string $ate): string {
+function filtroGestaoForm(string $acao, array $manter, string $temp, string $periodo, string $de, string $ate, string $ordem = ''): string {
     $ops = fn(array $lista, string $atual) => implode('', array_map(
         fn($v, $r) => '<option value="' . e($v) . '"' . ($v === $atual ? ' selected' : '') . '>' . e($r) . '</option>',
         array_keys($lista), $lista));
@@ -367,10 +390,12 @@ function filtroGestaoForm(string $acao, array $manter, string $temp, string $per
     $h .= '<label style="margin:0">📅 Entrou:</label><select name="entrada" style="width:auto" onchange="var p=this.value===\'personalizado\';this.form.querySelectorAll(\'.fg-datas\').forEach(function(x){x.style.display=p?\'\':\'none\'});if(!p)this.form.submit()">'
         . $ops(['' => 'Qualquer data', 'hoje' => 'Hoje', 'ontem' => 'Ontem', '7' => 'Últimos 7 dias', '15' => 'Últimos 15 dias', '30' => 'Últimos 30 dias', 'personalizado' => 'Personalizado…'], $periodo)
         . '</select>';
+    $h .= '<label style="margin:0">↕️ Ordenar:</label><select name="ordem" onchange="this.form.submit()" style="width:auto">'
+        . $ops(FILTRO_GESTAO_ORDENS, $ordem) . '</select>';
     $mostra = $periodo === 'personalizado' ? '' : 'display:none';
     $h .= '<span class="fg-datas" style="' . $mostra . '">de <input type="date" name="entrada_de" value="' . e($de) . '" style="width:auto"> até <input type="date" name="entrada_ate" value="' . e($ate) . '" style="width:auto"></span>';
     $h .= '<button type="submit" class="fg-datas" style="width:auto;margin:0;' . $mostra . '">Filtrar</button>';
-    if ($temp !== '' || $periodo !== '') {
+    if ($temp !== '' || $periodo !== '' || $ordem !== '') {
         $q = http_build_query($manter);
         $h .= '<a href="' . e($acao . ($q !== '' ? '?' . $q : '')) . '">Limpar filtro</a>';
     }

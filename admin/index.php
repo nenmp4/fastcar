@@ -299,7 +299,7 @@ if (!$souDono) {
 // gestão dos leads — filtro por data, tipo de lead quente etc" — temperatura
 // do lead + período de ENTRADA do lead (created_at). Combina com etapa/
 // busca/tipo/consultor e entra em todas as contagens da nav.
-[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at');
+[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at');
 $qsGestao = $gestaoQsPartes ? '&' . implode('&', $gestaoQsPartes) : '';
 
 // 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
@@ -523,8 +523,8 @@ $sql = "
     JOIN clientes c ON c.id = o.cliente_id
     LEFT JOIN usuarios u ON u.id = o.responsavel_id
     {$where}
-    ORDER BY CASE o.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
-             (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.created_at DESC
+    ORDER BY " . (filtroGestaoOrdemSql($ordemLista, 'o') ?? "CASE o.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
+             (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.created_at DESC") . "
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);
@@ -968,7 +968,7 @@ if ($filtroEspecialLabel !== ''): ?>
         if ($busca !== '') $gestaoHiddensBase['q'] = $busca;
         if ($tipoVeiculoFiltro !== '') $gestaoHiddensBase['tipo_veiculo'] = $tipoVeiculoFiltro;
         if ($consultorFiltro > 0) $gestaoHiddensBase['consultor'] = $consultorFiltro;
-        echo filtroGestaoForm('/admin/index.php', $gestaoHiddensBase, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte);
+        echo filtroGestaoForm('/admin/index.php', $gestaoHiddensBase, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista);
     ?>
     <?php
         // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
