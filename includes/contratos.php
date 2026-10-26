@@ -257,6 +257,7 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         // contrato), citada no Quadro-Resumo (ver gerarPdfContratoCompra()).
         'pix_pagamento_cedente'         => $op['pix_pagamento_cedente'] ?: '',
         'condicao_pagamento_cedente'    => trim((string)($op['condicao_pagamento_cedente'] ?? '')),
+        'parcelas_pagas_fastcar_texto'  => trim((string)($op['parcelas_pagas_fastcar_texto'] ?? '')),
         // 27/10/2026 — declaração de débitos (IPVA/licenciamento/multas) na data.
         'debitos_existem'               => $op['debitos_existem'] === null ? null : (int)$op['debitos_existem'],
         'debitos_referencias'           => trim((string)($op['debitos_referencias'] ?? '')),

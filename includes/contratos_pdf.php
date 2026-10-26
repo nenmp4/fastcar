@@ -315,6 +315,10 @@ function gerarPdfContratoCompra(array $c): string {
     if (!empty($c['condicao_pagamento_cedente'])) {
         _pdfLinhaResumo($pdf, 'Condição de pagamento ao VENDEDOR', $c['condicao_pagamento_cedente']);
     }
+    // Cláusula 10.1 (27/10/2026) — período em que a FASTCAR paga as parcelas, quando combinado.
+    if (!empty($c['parcelas_pagas_fastcar_texto'])) {
+        _pdfLinhaResumo($pdf, 'Pagamento das parcelas do financiamento pela FASTCAR (cláusula 10.1)', $c['parcelas_pagas_fastcar_texto']);
+    }
     if (!empty($c['pix_pagamento_cedente'])) {
         _pdfLinhaResumo($pdf, 'Chave PIX do VENDEDOR para pagamento', $c['pix_pagamento_cedente']);
     }
@@ -454,9 +458,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "9.2. A FASTCAR deverá acompanhar o status financeiro e evitar que a exploração do veículo seja realizada ignorando situação de mora relevante ou medida de apreensão conhecida.\n\n" .
             "9.3. Nenhuma cláusula deste contrato limita direitos do credor que não seja parte deste instrumento."],
         ['CLÁUSULA 10ª – PARCELAS DO FINANCIAMENTO ATÉ A QUITAÇÃO',
-            "10.1. Em casos específicos, a FASTCAR poderá, de comum acordo com o VENDEDOR, dar continuidade ao pagamento das parcelas do financiamento durante o período que será descrito no Quadro-Resumo da operação.\n\n" .
-            "10.2. Este campo é condição essencial. O veículo não deverá ser recebido pela FASTCAR sem definição documental sobre quem realizará os pagamentos correntes ou sobre a existência de acordo formal com o credor.\n\n" .
-            "10.3. Havendo alteração do plano, deverá ser produzida evidência escrita e atualizada."],
+            "10.1. Em casos específicos, a FASTCAR poderá, de comum acordo com o VENDEDOR, dar continuidade ao pagamento das parcelas do financiamento durante o período que será descrito no Quadro-Resumo da operação."],
         ['CLÁUSULA 11ª – TRIBUTOS, LICENCIAMENTO E MULTAS',
             "11.1. A distribuição econômica de IPVA, licenciamento, multas, pedágios e demais encargos constará do Anexo Financeiro e Operacional.\n\n" .
             "11.2. Infrações decorrentes da utilização do veículo após a entrega serão economicamente atribuídas ao responsável pela condução/uso, cabendo à FASTCAR organizar a identificação de condutor e o reembolso quando aplicável.\n\n" .

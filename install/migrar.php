@@ -1892,6 +1892,16 @@ if (!colunaExiste($db, 'oportunidades', 'condicao_pagamento_cedente')) {
 } else {
     echo "⏭️  oportunidades.condicao_pagamento_cedente: já existia\n";
 }
+if (!colunaExiste($db, 'oportunidades', 'parcelas_pagas_fastcar_texto')) {
+    try {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN parcelas_pagas_fastcar_texto TEXT DEFAULT ''");
+        echo "✅ oportunidades.parcelas_pagas_fastcar_texto: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ oportunidades.parcelas_pagas_fastcar_texto: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  oportunidades.parcelas_pagas_fastcar_texto: já existia\n";
+}
 
 // 02/10/2026 — CHECK de contratos.status ganha 'cancelado' (nunca vem da
 // ZapSign, só a própria aplicação marca ao gerar outro contrato pra mesma
