@@ -122,6 +122,15 @@ function proximoDaFila(bool $disponivelOnly, bool $apenasPlantao = false): ?int 
     }
     $where = implode(' AND ', $condicoes);
 
+    // 26/10/2026, achado real ("era pra ficar off nesse horário" — lead caindo
+    // pro consultor às 19:34 com fechamento 19:20): o rodízio normal só confiava
+    // no "disponível" que o cron desliga; se o cron atrasar/não rodar, o lead
+    // ia pra quem ficou ligado. Agora, fora do expediente, o rodízio normal
+    // nunca entrega — só o plantão (abaixo) ou fica sem dono até a abertura.
+    if ($disponivelOnly && !$apenasPlantao && !filaDentroExpediente()) {
+        return null;
+    }
+
     // posicao_fila menor = há mais tempo (ou nunca) sem receber — próximo
     // da fila. id ASC só desempata o caso raro de dois nunca terem
     // recebido nada ainda (posicao_fila=0 nos dois).
@@ -524,6 +533,11 @@ function filaHorarioAbertura(): string {
 function filaHorarioFechamento(): string {
     $v = getConfig('fila_horario_fechamento');
     return ($v && preg_match('/^\d{2}:\d{2}$/', $v)) ? $v : '19:20';
+}
+/** Agora está entre a abertura (inclusive) e o fechamento (exclusive) da fila? */
+function filaDentroExpediente(): bool {
+    $agora = date('H:i');
+    return $agora >= filaHorarioAbertura() && $agora < filaHorarioFechamento();
 }
 
 /**
