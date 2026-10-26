@@ -107,6 +107,10 @@ if ($consultorFiltro > 0) {
     $where .= " AND o.responsavel_id = ?";
     $params[] = $consultorFiltro;
 }
+require_once __DIR__ . '/../includes/dashboard.php';
+[$gestaoSql, $gestaoParams, , $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at');
+$where .= $gestaoSql;
+array_push($params, ...$gestaoParams);
 
 $titulo = [
     'hoje' => 'Leads novos hoje', 'ontem' => 'Leads novos ontem',
@@ -124,6 +128,8 @@ if ($tipoVeiculoFiltro !== '') {
     $tipoVeiculoRotulos = ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão', 'outro' => 'Outro', 'sem_tipo' => 'sem tipo definido'];
     $titulo .= ' — tipo: ' . ($tipoVeiculoRotulos[$tipoVeiculoFiltro] ?? $tipoVeiculoFiltro);
 }
+if ($tempFiltro !== '') $titulo .= ' — lead: ' . ($tempFiltro === 'sem' ? 'sem classificação' : $tempFiltro);
+if ($periodoEntrada !== '') $titulo .= ' — entrada: ' . ($entradaDe !== '' ? date('d/m/Y', strtotime($entradaDe)) : '…') . ' a ' . ($entradaAte !== '' ? date('d/m/Y', strtotime($entradaAte)) : '…');
 if ($consultorFiltro > 0 && isset($consultorValido)) {
     $titulo .= ' — consultor: ' . $consultorValido['nome'];
 }

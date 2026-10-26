@@ -293,3 +293,86 @@ function dashboardSuperAdmin(): array {
         'taxa_conversao'    => $taxaConversao,
     ];
 }
+
+/**
+ * Filtro de gestão de leads (26/10/2026, "filtro no dashboard dos
+ * consultores/vendedores — por data, tipo de lead quente etc") —
+ * compartilhado entre admin/index.php (compra) e admin/vendas.php
+ * (vendas). Temperatura (?temp=quente|morno|frio|sem) + período de
+ * ENTRADA do lead (?entrada=hoje|ontem|7|15|30|personalizado, com
+ * ?entrada_de=&entrada_ate= no personalizado). Sempre whitelist, nunca
+ * valor cru do GET no SQL.
+ * Retorna [sql, params, qsPartes, temp, periodo, de, ate].
+ */
+function filtroGestaoLeads(array $get, string $colTemp, string $colData): array {
+    $sql = ''; $params = []; $qs = [];
+    $temp = in_array($get['temp'] ?? '', ['quente', 'morno', 'frio', 'sem'], true) ? $get['temp'] : '';
+    if ($temp === 'sem') {
+        $sql .= " AND COALESCE({$colTemp}, '') = ''";
+    } elseif ($temp !== '') {
+        $sql .= " AND {$colTemp} = ?";
+        $params[] = $temp;
+    }
+    if ($temp !== '') $qs[] = 'temp=' . $temp;
+
+    $periodo = in_array($get['entrada'] ?? '', ['hoje', 'ontem', '7', '15', '30', 'personalizado'], true) ? $get['entrada'] : '';
+    $de = ''; $ate = '';
+    switch ($periodo) {
+        case 'hoje': $de = $ate = date('Y-m-d'); break;
+        case 'ontem': $de = $ate = date('Y-m-d', strtotime('-1 day')); break;
+        case '7': case '15': case '30':
+            $de = date('Y-m-d', strtotime('-' . ((int)$periodo - 1) . ' days'));
+            $ate = date('Y-m-d');
+            break;
+        case 'personalizado':
+            $okDe = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($get['entrada_de'] ?? ''));
+            $okAte = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($get['entrada_ate'] ?? ''));
+            $de = $okDe ? $get['entrada_de'] : '';
+            $ate = $okAte ? $get['entrada_ate'] : '';
+            if (!$okDe && !$okAte) $periodo = '';
+            break;
+    }
+    if ($periodo !== '') {
+        if ($de !== '') { $sql .= " AND date({$colData}) >= ?"; $params[] = $de; }
+        if ($ate !== '') { $sql .= " AND date({$colData}) <= ?"; $params[] = $ate; }
+        $qs[] = 'entrada=' . $periodo;
+        if ($periodo === 'personalizado') {
+            if ($de !== '') $qs[] = 'entrada_de=' . $de;
+            if ($ate !== '') $qs[] = 'entrada_ate=' . $ate;
+        }
+    }
+    return [$sql, $params, $qs, $temp, $periodo, $de, $ate];
+}
+
+/** Hidden inputs pra um <form method="get"> não perder o filtro de gestão. */
+function filtroGestaoHiddens(array $qsPartes): string {
+    $h = '';
+    foreach ($qsPartes as $p) {
+        [$k, $v] = array_pad(explode('=', $p, 2), 2, '');
+        $h .= '<input type="hidden" name="' . e($k) . '" value="' . e(urldecode($v)) . '">';
+    }
+    return $h;
+}
+
+/** Barra de filtro (temperatura + período de entrada), formulário GET próprio. */
+function filtroGestaoForm(string $acao, array $manter, string $temp, string $periodo, string $de, string $ate): string {
+    $ops = fn(array $lista, string $atual) => implode('', array_map(
+        fn($v, $r) => '<option value="' . e($v) . '"' . ($v === $atual ? ' selected' : '') . '>' . e($r) . '</option>',
+        array_keys($lista), $lista));
+    $h = '<form method="get" action="' . e($acao) . '" class="filtro-gestao" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    foreach ($manter as $k => $v) $h .= '<input type="hidden" name="' . e($k) . '" value="' . e((string)$v) . '">';
+    $h .= '<label style="margin:0">🌡️ Lead:</label><select name="temp" onchange="this.form.submit()" style="width:auto">'
+        . $ops(['' => 'Todas as temperaturas', 'quente' => '🔥 Quente', 'morno' => '🌤️ Morno', 'frio' => '❄️ Frio', 'sem' => '❔ Sem classificação'], $temp)
+        . '</select>';
+    $h .= '<label style="margin:0">📅 Entrou:</label><select name="entrada" style="width:auto" onchange="var p=this.value===\'personalizado\';this.form.querySelectorAll(\'.fg-datas\').forEach(function(x){x.style.display=p?\'\':\'none\'});if(!p)this.form.submit()">'
+        . $ops(['' => 'Qualquer data', 'hoje' => 'Hoje', 'ontem' => 'Ontem', '7' => 'Últimos 7 dias', '15' => 'Últimos 15 dias', '30' => 'Últimos 30 dias', 'personalizado' => 'Personalizado…'], $periodo)
+        . '</select>';
+    $mostra = $periodo === 'personalizado' ? '' : 'display:none';
+    $h .= '<span class="fg-datas" style="' . $mostra . '">de <input type="date" name="entrada_de" value="' . e($de) . '" style="width:auto"> até <input type="date" name="entrada_ate" value="' . e($ate) . '" style="width:auto"></span>';
+    $h .= '<button type="submit" class="fg-datas" style="width:auto;margin:0;' . $mostra . '">Filtrar</button>';
+    if ($temp !== '' || $periodo !== '') {
+        $q = http_build_query($manter);
+        $h .= '<a href="' . e($acao . ($q !== '' ? '?' . $q : '')) . '">Limpar filtro</a>';
+    }
+    return $h . '</form>';
+}

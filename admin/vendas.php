@@ -324,6 +324,10 @@ $filtroDataVendaAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool
 // aqui é o mesmo mecanismo, trimmado pros 4 casos que os cards de vendas
 // de fato mostram — sempre vence sobre `?etapa=` (mesma disciplina de
 // compra, "evita o usuário cair numa combinação impossível").
+// 26/10/2026, "filtro no dashboard dos vendedores — por data, tipo de
+// lead quente etc" — mesmo filtro de gestão de admin/index.php.
+[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'v.temperatura_lead', 'v.created_at');
+$qsGestao = $gestaoQsPartes ? '&' . implode('&', $gestaoQsPartes) : '';
 $filtroEspecialVendas = (string)($_GET['filtro'] ?? '');
 $extraWhereVendas = '';
 switch ($filtroEspecialVendas) {
@@ -376,6 +380,8 @@ if ($busca !== '') {
     $like = '%' . $busca . '%';
     array_push($params, $like, $like, $like, $like, $like, $like);
 }
+$where .= $gestaoSql;
+array_push($params, ...$gestaoParams);
 // 24/10/2026, "separar leads de carros vendidos" — aba ✅ Vendidas virou
 // visão própria (carro, comprador, valor, data), com filtro por mês.
 $abaVendidas = $filtroEspecialVendas === '' && $etapaFiltro === 'vendido';
@@ -467,6 +473,8 @@ if ($busca !== '') {
     $sqlContagem .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
     array_push($paramsContagem, $like, $like, $like, $like, $like);
 }
+$sqlContagem .= $gestaoSql;
+array_push($paramsContagem, ...$gestaoParams);
 $sqlContagem .= " GROUP BY v.etapa";
 $stmtContagem = $db->prepare($sqlContagem);
 $stmtContagem->execute($paramsContagem);
@@ -482,6 +490,8 @@ if ($busca !== '') {
     $sqlVendidas .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
     array_push($paramsVendidas, $like, $like, $like, $like, $like);
 }
+$sqlVendidas .= $gestaoSql;
+array_push($paramsVendidas, ...$gestaoParams);
 $stmtVendidas = $db->prepare($sqlVendidas);
 $stmtVendidas->execute($paramsVendidas);
 $totalVendidas = (int)$stmtVendidas->fetchColumn();
@@ -494,6 +504,8 @@ if ($busca !== '') {
     $sqlEncerradasVenda .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
     array_push($paramsEncerradasVenda, $like, $like, $like, $like, $like);
 }
+$sqlEncerradasVenda .= $gestaoSql;
+array_push($paramsEncerradasVenda, ...$gestaoParams);
 $stmtEncerradasVenda = $db->prepare($sqlEncerradasVenda);
 $stmtEncerradasVenda->execute($paramsEncerradasVenda);
 $totalEncerradasVenda = (int)$stmtEncerradasVenda->fetchColumn();
@@ -540,14 +552,15 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 </header>
 
 <nav class="etapas-nav">
-    <a href="/admin/vendas.php<?= $busca !== '' ? '?q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === '' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
+    <?php $qsNavV = ltrim(($busca !== '' ? '&q=' . urlencode($busca) : '') . $qsGestao, '&'); ?>
+    <a href="/admin/vendas.php<?= $qsNavV !== '' ? '?' . $qsNavV : '' ?>" class="<?= $etapaFiltro === '' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>"><?= $souDono ? 'Minhas' : 'Todas' ?> (<?= (int)$totalAtivas ?>)</a>
     <?php foreach (ETAPAS_VENDA_ATIVAS as $et): ?>
-        <a href="/admin/vendas.php?etapa=<?= urlencode($et) ?><?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === $et && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">
+        <a href="/admin/vendas.php?etapa=<?= urlencode($et) ?><?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?><?= e($qsGestao) ?>" class="<?= $etapaFiltro === $et && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">
             <?= e(etapaVendaLabel($et)) ?> (<?= (int)($contagemPorEtapa[$et] ?? 0) ?>)
         </a>
     <?php endforeach; ?>
-    <a href="/admin/vendas.php?etapa=vendido<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === 'vendido' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">✅ Vendidas (<?= $totalVendidas ?>)</a>
-    <a href="/admin/vendas.php?etapa=encerradas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $etapaFiltro === 'encerradas' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">❌ Encerradas (<?= $totalEncerradasVenda ?>)</a>
+    <a href="/admin/vendas.php?etapa=vendido<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?><?= e($qsGestao) ?>" class="<?= $etapaFiltro === 'vendido' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">✅ Vendidas (<?= $totalVendidas ?>)</a>
+    <a href="/admin/vendas.php?etapa=encerradas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?><?= e($qsGestao) ?>" class="<?= $etapaFiltro === 'encerradas' && $filtroEspecialVendas === '' ? 'ativo' : '' ?>">❌ Encerradas (<?= $totalEncerradasVenda ?>)</a>
 </nav>
 
 <main>
@@ -1143,6 +1156,7 @@ function vitrineFiltrar(termo) {
     <form method="get" style="display:flex;gap:8px;align-items:center">
         <?php if ($filtroEspecialVendas !== ''): ?><input type="hidden" name="filtro" value="<?= e($filtroEspecialVendas) ?>">
         <?php elseif ($etapaFiltro): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
+        <?= filtroGestaoHiddens($gestaoQsPartes) ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por comprador, telefone ou veículo..." style="flex:1;margin:0">
         <button type="submit" style="margin:0">Buscar</button>
         <?php if ($busca):
@@ -1152,8 +1166,17 @@ function vitrineFiltrar(termo) {
             // de hoje" jogava de volta pra aba padrão sem querer.
             $voltarQsVendas = $filtroEspecialVendas !== '' ? '?filtro=' . urlencode($filtroEspecialVendas)
                              : ($etapaFiltro !== '' ? '?etapa=' . urlencode($etapaFiltro) : '');
-        ?><a href="/admin/vendas.php<?= $voltarQsVendas ?>">Limpar</a><?php endif; ?>
+            if ($qsGestao !== '') $voltarQsVendas .= ($voltarQsVendas === '' ? '?' : '&') . ltrim($qsGestao, '&');
+        ?><a href="/admin/vendas.php<?= e($voltarQsVendas) ?>">Limpar</a><?php endif; ?>
     </form>
+    <?php
+        $gestaoManterV = [];
+        if ($filtroEspecialVendas !== '') $gestaoManterV['filtro'] = $filtroEspecialVendas;
+        elseif ($etapaFiltro !== '') $gestaoManterV['etapa'] = $etapaFiltro;
+        if ($busca !== '') $gestaoManterV['q'] = $busca;
+        if ($mesVendidas !== '') $gestaoManterV['mes'] = $mesVendidas;
+        echo filtroGestaoForm('/admin/vendas.php', $gestaoManterV, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte);
+    ?>
 </div>
 
 <?php
@@ -1206,6 +1229,7 @@ if ($podeSelecionarEmMassa):
     </div>
     <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <input type="hidden" name="etapa" value="vendido">
+<?= filtroGestaoHiddens($gestaoQsPartes) ?>
         <div style="flex:1;min-width:180px"><label>Buscar</label><input type="text" name="q" value="<?= e($busca) ?>" placeholder="Comprador, telefone, modelo ou placa"></div>
         <div><label>Mês da venda</label><input type="month" name="mes" value="<?= e($mesVendidas) ?>"></div>
         <button type="submit" style="width:auto;margin:0">Filtrar</button>

@@ -295,6 +295,13 @@ if (!$souDono) {
     }
 }
 
+// 26/10/2026, "filtro no dashboard dos consultores/vendedores pra fazer
+// gestão dos leads — filtro por data, tipo de lead quente etc" — temperatura
+// do lead + período de ENTRADA do lead (created_at). Combina com etapa/
+// busca/tipo/consultor e entra em todas as contagens da nav.
+[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at');
+$qsGestao = $gestaoQsPartes ? '&' . implode('&', $gestaoQsPartes) : '';
+
 // 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
 // abri os leads" — os cards de KPI (Atrasadas/Leads novos hoje/na semana/
 // Em negociação/Fechadas este mês) viraram link pra essa mesma tela com
@@ -399,6 +406,8 @@ if ($consultorFiltro > 0) {
     $where .= " AND o.responsavel_id = ?";
     $params[] = $consultorFiltro;
 }
+$where .= $gestaoSql;
+array_push($params, ...$gestaoParams);
 // 25/10/2026, Jean: "filtro por período nas compras já fechadas — hoje,
 // ontem, últimos 7/15/30 dias e definir o período". Data de referência =
 // data da compra (data_compra, gravada no fechamento); sem ela, a última
@@ -548,6 +557,8 @@ if ($consultorFiltro > 0) {
     $sqlContagem .= " AND o.responsavel_id = ?";
     $paramsContagem[] = $consultorFiltro;
 }
+$sqlContagem .= $gestaoSql;
+array_push($paramsContagem, ...$gestaoParams);
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $sqlContagem .= " AND o.tipo_veiculo IS NULL";
 } elseif ($tipoVeiculoFiltro !== '') {
@@ -578,6 +589,8 @@ if ($consultorFiltro > 0) {
     $sqlFechadas .= " AND o.fechado_por = ?";
     $paramsFechadas[] = $consultorFiltro;
 }
+$sqlFechadas .= $gestaoSql;
+array_push($paramsFechadas, ...$gestaoParams);
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $sqlFechadas .= " AND o.tipo_veiculo IS NULL";
 } elseif ($tipoVeiculoFiltro !== '') {
@@ -607,6 +620,8 @@ if ($consultorFiltro > 0) {
     $sqlEncerradas .= " AND o.responsavel_id = ?";
     $paramsEncerradas[] = $consultorFiltro;
 }
+$sqlEncerradas .= $gestaoSql;
+array_push($paramsEncerradas, ...$gestaoParams);
 if ($tipoVeiculoFiltro === 'sem_tipo') {
     $sqlEncerradas .= " AND o.tipo_veiculo IS NULL";
 } elseif ($tipoVeiculoFiltro !== '') {
@@ -684,6 +699,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : '';
     $qsBusca .= $tipoVeiculoFiltro !== '' ? '&tipo_veiculo=' . urlencode($tipoVeiculoFiltro) : '';
     $qsBusca .= $consultorFiltro > 0 ? '&consultor=' . $consultorFiltro : '';
+    $qsBusca .= $qsGestao;
     // Mesma combinação (busca + tipo de veículo), sem o "?etapa=" na frente
     // — usada nos links "Todas/Minhas" e "Limpar filtro" abaixo, que nunca
     // têm etapa nenhuma selecionada.
@@ -717,6 +733,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     elseif ($etapaFiltro !== '') $qsSemTipoPartes[] = 'etapa=' . urlencode($etapaFiltro);
     if ($busca !== '') $qsSemTipoPartes[] = 'q=' . urlencode($busca);
     if ($consultorFiltro > 0) $qsSemTipoPartes[] = 'consultor=' . $consultorFiltro;
+    array_push($qsSemTipoPartes, ...$gestaoQsPartes);
     $qsSemTipo = implode('&', $qsSemTipoPartes);
     $tiposVeiculoRotulos = ['carro' => '🚗 Carro', 'moto' => '🏍️ Moto', 'caminhao' => '🚚 Caminhão', 'outro' => '🚙 Outro'];
 ?>
@@ -884,6 +901,7 @@ if ($filtroEspecialLabel !== ''): ?>
         <?php if ($consultorFiltro > 0): ?>
             <input type="hidden" name="consultor" value="<?= (int)$consultorFiltro ?>">
         <?php endif; ?>
+        <?= filtroGestaoHiddens($gestaoQsPartes) ?>
         <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por nome, telefone, marca, modelo ou placa...">
         <button type="submit">Buscar</button>
         <?php if ($busca !== ''):
@@ -892,6 +910,7 @@ if ($filtroEspecialLabel !== ''): ?>
             elseif ($etapaFiltro !== '') $voltarQsPartes[] = 'etapa=' . urlencode($etapaFiltro);
             if ($tipoVeiculoFiltro !== '') $voltarQsPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
             if ($consultorFiltro > 0) $voltarQsPartes[] = 'consultor=' . $consultorFiltro;
+            array_push($voltarQsPartes, ...$gestaoQsPartes);
             $voltarQs = $voltarQsPartes ? '?' . implode('&', $voltarQsPartes) : '';
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar busca</a><?php endif; ?>
     </form>
@@ -921,6 +940,7 @@ if ($filtroEspecialLabel !== ''): ?>
         <?php if ($filtroEspecial !== ''): ?><input type="hidden" name="filtro" value="<?= e($filtroEspecial) ?>"><?php elseif ($etapaFiltro !== ''): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
         <?php if ($busca !== ''): ?><input type="hidden" name="q" value="<?= e($busca) ?>"><?php endif; ?>
         <?php if ($tipoVeiculoFiltro !== ''): ?><input type="hidden" name="tipo_veiculo" value="<?= e($tipoVeiculoFiltro) ?>"><?php endif; ?>
+        <?= filtroGestaoHiddens($gestaoQsPartes) ?>
         <label for="filtro-consultor" style="margin:0">Filtrar por consultor:</label>
         <select name="consultor" id="filtro-consultor" onchange="this.form.submit()">
             <option value="0">— Todos —</option>
@@ -934,12 +954,22 @@ if ($filtroEspecialLabel !== ''): ?>
             elseif ($etapaFiltro !== '') $qsSemConsultorPartes[] = 'etapa=' . urlencode($etapaFiltro);
             if ($busca !== '') $qsSemConsultorPartes[] = 'q=' . urlencode($busca);
             if ($tipoVeiculoFiltro !== '') $qsSemConsultorPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
+            array_push($qsSemConsultorPartes, ...$gestaoQsPartes);
             $qsSemConsultor = $qsSemConsultorPartes ? '?' . implode('&', $qsSemConsultorPartes) : '';
         ?>
             <a href="/admin/index.php<?= $qsSemConsultor ?>">Limpar filtro de consultor</a>
         <?php endif; ?>
     </form>
     <?php endif; ?>
+    <?php
+        $gestaoHiddensBase = [];
+        if ($filtroEspecial !== '') $gestaoHiddensBase['filtro'] = $filtroEspecial;
+        elseif ($etapaFiltro !== '') $gestaoHiddensBase['etapa'] = $etapaFiltro;
+        if ($busca !== '') $gestaoHiddensBase['q'] = $busca;
+        if ($tipoVeiculoFiltro !== '') $gestaoHiddensBase['tipo_veiculo'] = $tipoVeiculoFiltro;
+        if ($consultorFiltro > 0) $gestaoHiddensBase['consultor'] = $consultorFiltro;
+        echo filtroGestaoForm('/admin/index.php', $gestaoHiddensBase, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte);
+    ?>
     <?php
         // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
         // exatamente o que a tabela abaixo está mostrando (mesmo filtro/
@@ -951,6 +981,7 @@ if ($filtroEspecialLabel !== ''): ?>
         if ($busca !== '') $pdfQsPartes[] = 'q=' . urlencode($busca);
         if ($tipoVeiculoFiltro !== '') $pdfQsPartes[] = 'tipo_veiculo=' . urlencode($tipoVeiculoFiltro);
         if ($consultorFiltro > 0) $pdfQsPartes[] = 'consultor=' . $consultorFiltro;
+        array_push($pdfQsPartes, ...$gestaoQsPartes);
         $pdfQs = $pdfQsPartes ? '?' . implode('&', $pdfQsPartes) : '';
     ?>
     <a class="btn" style="margin-top:10px;display:inline-block" href="/admin/dashboard_relatorio_pdf.php<?= $pdfQs ?>" target="_blank">📄 Gerar PDF do relatório</a>
