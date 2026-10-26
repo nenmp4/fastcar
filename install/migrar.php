@@ -208,6 +208,8 @@ $migracoes = [
     // valor aproximado, mas "há quanto tempo está atrasado"/contexto
     // qualitativo não cabe em número — texto livre à parte.
     'oportunidades.debitos_veiculo_obs' => "ALTER TABLE oportunidades ADD COLUMN debitos_veiculo_obs TEXT DEFAULT ''",
+    'oportunidades.debitos_existem' => "ALTER TABLE oportunidades ADD COLUMN debitos_existem INTEGER",
+    'oportunidades.debitos_referencias' => "ALTER TABLE oportunidades ADD COLUMN debitos_referencias TEXT DEFAULT ''",
 
     // 28/09/2026, "preciso de um filtro para separar se carro moto
     // caminhão ou outros" (funil de compra) — sempre escolhido

@@ -41,6 +41,9 @@ const TIPOS_DOCUMENTOS_FECHAMENTO = [
     // nunca trava o fechamento (regra #7) por um documento que a maioria
     // das compras nem chega a ter.
     'procuracao'             => 'Procuração (quando o vendedor é representado por procurador)',
+    // 27/10/2026 — "puxada" de débitos (IPVA/licenciamento/multas), lida
+    // por IA e usada pra declarar os débitos no contrato de compra.
+    'consulta_debitos'       => 'Consulta de débitos do veículo (IPVA/licenciamento/multas)',
 ];
 
 /**
@@ -59,7 +62,7 @@ const TIPOS_DOCUMENTOS_FECHAMENTO = [
  * obrigatórios são os que o cliente sobe no wizard: CNH/comprovante de
  * endereço/contrato de financiamento/CRLV).
  */
-const TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS = ['comprovante_pagamento', 'laudo_avaliacao', 'procuracao'];
+const TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS = ['comprovante_pagamento', 'laudo_avaliacao', 'procuracao', 'consulta_debitos'];
 
 define('UPLOADS_DIR', dirname(__DIR__) . '/storage/uploads');
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10MB

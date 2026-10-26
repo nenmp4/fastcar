@@ -42,7 +42,7 @@ $zapcarPrecoAtivo = zapcarAtivo() ? zapcarPrecoServico(zapcarServicoAtivo()) : n
 
 const COMPRA_ACOES_TRAVADAS = ['atualizar_veiculo', 'atualizar_contrato', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'mudar_etapa', 'marcar_perdida', 'atualizar_nome_cliente', 'excluir_documento_staff',
-    'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2'];
+    'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2', 'ler_consulta_debitos'];
 $compraTravada = $op['etapa'] === 'fechado' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
 function documentoCompraJaEnviado(int $opId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?
@@ -96,6 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             veiculo_renavam = ?, veiculo_chassi = ?, tipo_veiculo = ?, banco_financiamento = ?,
                             valor_parcela = ?, parcelas_restantes = ?, parcelas_atraso = ?, valor_pretendido = ?,
                             debito_ipva = ?, debito_licenciamento = ?, debito_multas = ?, debitos_veiculo_obs = ?,
+                            debitos_existem = ?, debitos_referencias = ?,
                             updated_at = datetime('now','localtime')
                         WHERE id = ?
                     ")->execute([
@@ -115,6 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         valorMonetario($_POST['debito_licenciamento'] ?? null),
                         valorMonetario($_POST['debito_multas'] ?? null),
                         clean((string)($_POST['debitos_veiculo_obs'] ?? '')),
+                        in_array($_POST['debitos_existem'] ?? '', ['0', '1'], true) ? (int)$_POST['debitos_existem'] : null,
+                        ($_POST['debitos_existem'] ?? '') === '1' ? clean((string)($_POST['debitos_referencias'] ?? '')) : '',
                         $id,
                     ]);
                     // Só um sinal visual pro consultor — nunca sobrescreve o que
@@ -269,6 +272,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         . "<p style=\"font-size:12.5px;color:#6b7280\">Se o botão não funcionar, copie e cole este link no navegador:<br>"
                         . "<a href=\"" . e($link) . "\" style=\"color:#2f6fed\">" . e($link) . "</a></p>";
                     enviarEmail($op['cliente_email'], 'Fastcar — envio de documentos', emailLayout($corpoEmail), $op['cliente_nome'] ?: '');
+                }
+            } elseif ($acao === 'ler_consulta_debitos') {
+                // 27/10/2026 — sobe a "puxada" de débitos e a IA preenche
+                // sozinha: existe débito? valores de IPVA/licenciamento/
+                // multas e as referências que vão pro contrato de compra.
+                if (empty($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                    $erro = 'Selecione o documento da consulta de débitos.';
+                } else {
+                    $resultado = salvarUploadDocumento($id, 'consulta_debitos', $_FILES['arquivo'], false);
+                    if (!$resultado['ok']) {
+                        $erro = $resultado['erro'] ?: 'Falha ao salvar o documento.';
+                    } else {
+                        auditoriaRegistrar('documento_anexado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id, 'Documento "Consulta de débitos do veículo" anexado.');
+                        $docDeb = listarDocumentos($id)['consulta_debitos'] ?? null;
+                        $arqDeb = $docDeb ? lerConteudoArquivoDocumento($docDeb['drive_file_id'] ?: null, $docDeb['arquivo_url'] ?: null) : null;
+                        $deb = $arqDeb ? extrairDebitosVeiculoComIA($arqDeb) : null;
+                        if (!$deb) {
+                            $sucesso = 'Documento anexado, mas não deu pra ler automaticamente — preencha os débitos à mão.';
+                        } elseif (!$deb['parece_debitos']) {
+                            $erro = 'Documento anexado, mas não parece uma consulta de débitos do veículo — confira o arquivo. Nada foi preenchido.';
+                        } else {
+                            $sets = []; $vals = [];
+                            foreach (['ipva' => 'debito_ipva', 'licenciamento' => 'debito_licenciamento', 'multas' => 'debito_multas'] as $k => $col) {
+                                if ($deb[$k] !== null) { $sets[] = "{$col} = ?"; $vals[] = $deb[$k]; }
+                            }
+                            $existem = $deb['existem'];
+                            if ($existem === null && ($deb['ipva'] !== null || $deb['licenciamento'] !== null || $deb['multas'] !== null)) {
+                                $existem = ($deb['ipva'] + $deb['licenciamento'] + $deb['multas']) > 0;
+                            }
+                            if ($existem !== null) {
+                                $sets[] = 'debitos_existem = ?'; $vals[] = $existem ? 1 : 0;
+                                $sets[] = 'debitos_referencias = ?'; $vals[] = $existem ? clean($deb['referencias']) : '';
+                            }
+                            if ($sets) {
+                                $vals[] = $id;
+                                $db->prepare('UPDATE oportunidades SET ' . implode(', ', $sets) . ", updated_at = datetime('now','localtime') WHERE id = ?")->execute($vals);
+                            }
+                            $sucesso = $existem === null
+                                ? 'Documento lido, mas não deu pra saber se há débitos — responda a pergunta à mão.'
+                                : ($existem ? 'Documento lido: há débitos em aberto — valores e referências preenchidos. Confira antes de gerar o contrato.'
+                                            : 'Documento lido: sem débitos em aberto. Confira antes de gerar o contrato.');
+                        }
+                        $stmtOp->execute([$id]);
+                        $op = $stmtOp->fetch();
+                    }
                 }
             } elseif ($acao === 'upload_documento_staff') {
                 $tipoDoc = (string)($_POST['tipo_documento'] ?? '');
@@ -722,8 +770,35 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         </div>
         <label>Observação sobre os débitos (atraso, contexto — a IA já pode ter preenchido isso pelo WhatsApp)</label>
         <textarea name="debitos_veiculo_obs" rows="2" style="width:100%"><?= e($op['debitos_veiculo_obs'] ?? '') ?></textarea>
+
+        <?php $debExistem = $op['debitos_existem'] === null ? '' : (string)(int)$op['debitos_existem']; ?>
+        <div style="margin-top:14px;padding:12px;border:1px solid var(--borda);border-radius:var(--raio)">
+            <label style="margin-top:0"><strong>Na presente data existem débitos em aberto decorrentes de IPVA, Licenciamento ou multas?</strong> <span style="color:var(--vermelho)">* obrigatório pro contrato</span></label>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="debitos_existem" value="1" style="width:auto" <?= $debExistem === '1' ? 'checked' : '' ?> onchange="document.getElementById('deb-refs').style.display=''"> Sim</label>
+                <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="debitos_existem" value="0" style="width:auto" <?= $debExistem === '0' ? 'checked' : '' ?> onchange="document.getElementById('deb-refs').style.display='none'"> Não</label>
+            </div>
+            <div id="deb-refs" style="<?= $debExistem === '1' ? '' : 'display:none' ?>">
+                <label>Especifique as referências (vai no contrato)</label>
+                <textarea name="debitos_referencias" rows="3" style="width:100%" placeholder="Ex: IPVA 2025 — R$ 1.230,00&#10;Multa AIT 123456 — R$ 195,23"><?= e($op['debitos_referencias'] ?? '') ?></textarea>
+            </div>
+        </div>
         <button type="submit">Salvar dados do veículo</button>
     </form>
+
+    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+    <form method="post" enctype="multipart/form-data" style="margin-top:12px;padding:12px;background:var(--fundo);border:1px dashed var(--borda);border-radius:var(--raio)">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="ler_consulta_debitos">
+        <label style="margin-top:0"><strong>📄 Documento da consulta de débitos</strong> <small>(a "puxada" — a IA lê e preenche sozinha a pergunta, os valores e as referências)</small></label>
+        <?php $docDebAtual = listarDocumentos($id)['consulta_debitos'] ?? null; ?>
+        <?php if ($docDebAtual && ($docDebAtual['arquivo_url'] || $docDebAtual['drive_file_id'])): ?>
+            <p style="margin:4px 0"><small>✅ Já anexado — <a href="/admin/ver_documento.php?id=<?= (int)$docDebAtual['id'] ?>" target="_blank">ver</a>. Enviar outro substitui.</small></p>
+        <?php endif; ?>
+        <input type="file" name="arquivo" accept="image/*,application/pdf" required>
+        <button type="submit" style="width:auto">Ler documento e preencher</button>
+    </form>
+    <?php endif; ?>
 
     <?php if (!empty($op['zapcar_resumo_texto'])): ?>
         <div style="margin-top:16px;background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:12px">

@@ -256,6 +256,9 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         // do vendedor, só informativa (nunca bloqueia geração do
         // contrato), citada no Quadro-Resumo (ver gerarPdfContratoCompra()).
         'pix_pagamento_cedente'         => $op['pix_pagamento_cedente'] ?: '',
+        // 27/10/2026 — declaração de débitos (IPVA/licenciamento/multas) na data.
+        'debitos_existem'               => $op['debitos_existem'] === null ? null : (int)$op['debitos_existem'],
+        'debitos_referencias'           => trim((string)($op['debitos_referencias'] ?? '')),
         'banco_financiamento'           => $op['banco_financiamento'] ?: '',
         'contrato_financiamento_numero' => $op['contrato_financiamento_numero'] ?: '',
         'saldo_financiamento_atual'     => $op['saldo_financiamento_atual'] !== null ? (float)$op['saldo_financiamento_atual'] : null,
@@ -330,6 +333,15 @@ function verificarCamposObrigatoriosContrato(array $campos): array {
     $faltando = [];
     foreach ($obrigatorios as $campo => $label) {
         if (empty($campos[$campo]) && $campos[$campo] !== 0.0) $faltando[] = $label;
+    }
+    // 27/10/2026 — "Na presente data existem débitos em aberto (IPVA,
+    // licenciamento ou multas)?" é obrigatório; se Sim, as referências também.
+    if (array_key_exists('debitos_existem', $campos)) {
+        if ($campos['debitos_existem'] === null) {
+            $faltando[] = 'Débitos em aberto na data — responda Sim ou Não (card "Dados do veículo")';
+        } elseif ($campos['debitos_existem'] === 1 && ($campos['debitos_referencias'] ?? '') === '') {
+            $faltando[] = 'Referências dos débitos em aberto (IPVA/licenciamento/multas)';
+        }
     }
     return $faltando;
 }

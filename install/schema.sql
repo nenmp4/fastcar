@@ -169,6 +169,11 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- campo de texto livre à parte — mesmo fill-if-empty dos outros, nunca
     -- sobrescreve o que o consultor já anotou.
     debitos_veiculo_obs TEXT DEFAULT '',
+    -- 27/10/2026 — declaração obrigatória no contrato de compra: "Na presente
+    -- data existem débitos em aberto (IPVA, licenciamento ou multas)?"
+    -- NULL = não respondido (bloqueia gerar contrato), 1 = sim, 0 = não.
+    debitos_existem INTEGER,
+    debitos_referencias TEXT DEFAULT '',
     -- Resumo automático da consulta ZapCar (22/09/2026, "vamos preencher
     -- tudo... oportunidade para consultor ter poder negociação") — texto
     -- legível com situação/recall/sinistro/leilão/restrições/proprietário/

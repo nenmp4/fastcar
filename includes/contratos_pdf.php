@@ -297,6 +297,10 @@ function gerarPdfContratoCompra(array $c): string {
     if (!empty($c['pix_pagamento_cedente'])) {
         _pdfLinhaResumo($pdf, 'Chave PIX do VENDEDOR para pagamento', $c['pix_pagamento_cedente']);
     }
+    // 27/10/2026 — só aparece quando há débito declarado ("se for não, não colocar nada").
+    if (($c['debitos_existem'] ?? null) === 1 && !empty($c['debitos_referencias'])) {
+        _pdfLinhaResumo($pdf, 'Débitos em aberto na presente data (IPVA, licenciamento ou multas)', 'Sim — ' . preg_replace('/\s*\R\s*/', '; ', $c['debitos_referencias']));
+    }
     if (!empty($c['banco_financiamento'])) {
         _pdfLinhaResumo($pdf, 'Instituição financeira/credor', $c['banco_financiamento']);
     }

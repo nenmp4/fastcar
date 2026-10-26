@@ -290,3 +290,43 @@ function compararDivergenciasDocumento(array $dadosAtuais, array $dadosExtraidos
     }
     return $divergencias;
 }
+
+/**
+ * Lê o documento da "puxada" de débitos do veículo (consulta DETRAN/
+ * despachante: IPVA, licenciamento, multas) e devolve o que encontrou —
+ * 27/10/2026, "adicionar documento da puxada aí já preenche automático".
+ * Retorna null se não deu pra ler. Nunca inventa: valor não visível = null.
+ * ['existem' => bool|null, 'ipva' => ?float, 'licenciamento' => ?float,
+ *  'multas' => ?float, 'referencias' => string, 'parece_debitos' => bool]
+ */
+function extrairDebitosVeiculoComIA(array $arquivo): ?array {
+    $key = getConfig('gemini_api_key') ?: '';
+    if (!$key) return null;
+    $prompt = "Este arquivo deve ser uma consulta de débitos de um veículo no Brasil (DETRAN, Sefaz, despachante "
+        . "ou similar). Leia e responda SÓ com um JSON, sem texto antes ou depois:\n"
+        . "{\"parece_consulta_de_debitos\": true|false, \"existem_debitos\": true|false|null, "
+        . "\"ipva\": número ou null, \"licenciamento\": número ou null, \"multas\": número ou null, "
+        . "\"referencias\": \"texto\"}\n"
+        . "Regras: valores em reais como número (ex: 1234.56), somando todos os itens de cada tipo em aberto. "
+        . "\"multas\" soma todas as multas em aberto. Use null quando o documento não mostrar aquele tipo — nunca invente. "
+        . "\"existem_debitos\": true se houver qualquer IPVA, licenciamento ou multa em aberto; false se o documento "
+        . "disser que não há débitos (\"nada consta\", tudo pago); null se não der pra saber. "
+        . "\"referencias\": lista curta e objetiva de cada débito em aberto, um por linha, com tipo, ano/exercício ou "
+        . "data, número do auto (multa) e valor — ex: \"IPVA 2025 — R$ 1.230,00\". Vazio se não houver débito.";
+    $resposta = geminiCallComMidia($prompt, $arquivo['mime'], base64_encode($arquivo['content']),
+        $key, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 800, 0.1, 45);
+    if ($resposta === '') return null;
+    $limpo = preg_replace('/```(?:json)?/i', '', $resposta);
+    preg_match('/\{[\s\S]*\}/', $limpo, $m);
+    $d = json_decode(preg_replace('/,(\s*[}\]])/', '$1', trim($m[0] ?? '')), true);
+    if (!is_array($d)) return null;
+    $num = fn($v) => is_numeric($v) ? max(0.0, (float)$v) : null;
+    return [
+        'parece_debitos' => ($d['parece_consulta_de_debitos'] ?? true) !== false,
+        'existem' => is_bool($d['existem_debitos'] ?? null) ? $d['existem_debitos'] : null,
+        'ipva' => $num($d['ipva'] ?? null),
+        'licenciamento' => $num($d['licenciamento'] ?? null),
+        'multas' => $num($d['multas'] ?? null),
+        'referencias' => trim((string)($d['referencias'] ?? '')),
+    ];
+}
