@@ -72,12 +72,12 @@ function _pdfCabecalho(FPDF $pdf, string $subtitulo = 'CONTRATO-MESTRE DE COMPRA
  */
 function _pdfRodapeEndereco(FPDF $pdf): void {
     $pdf->Ln(8);
-    if ($pdf->GetY() > 265) { // sem espaço pra faixa (18mm) antes da margem inferior — nunca corta no meio
+    if ($pdf->GetY() > 261) { // sem espaço pra faixa (22mm) antes da margem inferior — nunca corta no meio
         $pdf->AddPage();
     }
     $y = $pdf->GetY();
     $pdf->SetFillColor(244, 244, 247); // cinza-claro, igual ao fundo do rodapé do e-mail (#f4f4f7)
-    $pdf->Rect(20, $y, 170, 18, 'F');
+    $pdf->Rect(20, $y, 170, 22, 'F');
     $pdf->SetFillColor(47, 111, 237); // borda azul no topo da faixa, igual ao border-top do e-mail
     $pdf->Rect(20, $y, 170, 0.8, 'F');
     $pdf->SetY($y + 3);
@@ -88,6 +88,9 @@ function _pdfRodapeEndereco(FPDF $pdf): void {
     $pdf->SetTextColor(107, 114, 128); // cinza, igual ao #6b7280 do rodapé do e-mail
     $pdf->Cell(0, 4, _pdfTexto('Av. Sagitário, 138 — Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices'), 0, 1, 'C');
     $pdf->Cell(0, 4, _pdfTexto('Alphaville Conde II, Barueri/SP — CEP 06473-073'), 0, 1, 'C');
+    // 27/10/2026, "adicione e-mail corporativo no rodapé".
+    $emailCorp = (function_exists('getConfig') ? (string)getConfig('email_from') : '') ?: 'contato@fastcar.solutions';
+    $pdf->Cell(0, 4, _pdfTexto('E-mail: ' . $emailCorp), 0, 1, 'C');
     $pdf->SetTextColor(0, 0, 0);
 }
 
@@ -315,6 +318,10 @@ function gerarPdfContratoCompra(array $c): string {
     if (!empty($c['condicao_pagamento_cedente'])) {
         _pdfLinhaResumo($pdf, 'Condição de pagamento ao VENDEDOR', $c['condicao_pagamento_cedente']);
     }
+    // 27/10/2026 — autorização de uso de imagem/voz, perguntada pelo consultor (Sim/Não).
+    $autImg = $c['autoriza_uso_imagem'] ?? null;
+    _pdfLinhaResumo($pdf, 'Autorização de uso de imagem e voz — Autorizo, de forma gratuita e definitiva, o uso de minha imagem e voz gravadas em vídeo para veiculação em redes sociais, internet e demais mídias pela FastCar, sem qualquer direito a indenização ou remuneração, por prazo indeterminado, podendo ser revogado mediante notificação extrajudicial via ouvidoria (11) 97816-4525.',
+        '(' . ($autImg === 1 ? 'X' : ' ') . ') Sim     (' . ($autImg === 0 ? 'X' : ' ') . ') Não');
     // Cláusula 10.1 (27/10/2026) — período em que a FASTCAR paga as parcelas, quando combinado.
     if (!empty($c['parcelas_pagas_fastcar_texto'])) {
         _pdfLinhaResumo($pdf, 'Pagamento das parcelas do financiamento pela FASTCAR (cláusula 10.1)', $c['parcelas_pagas_fastcar_texto']);

@@ -260,6 +260,7 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'parcelas_pagas_fastcar_texto'  => trim((string)($op['parcelas_pagas_fastcar_texto'] ?? '')),
         // 27/10/2026 — declaração de débitos (IPVA/licenciamento/multas) na data.
         'debitos_existem'               => $op['debitos_existem'] === null ? null : (int)$op['debitos_existem'],
+        'autoriza_uso_imagem'           => ($op['autoriza_uso_imagem'] ?? null) === null ? null : (int)$op['autoriza_uso_imagem'],
         'debitos_referencias'           => trim((string)($op['debitos_referencias'] ?? '')),
         'banco_financiamento'           => $op['banco_financiamento'] ?: '',
         'contrato_financiamento_numero' => $op['contrato_financiamento_numero'] ?: '',
@@ -344,6 +345,10 @@ function verificarCamposObrigatoriosContrato(array $campos): array {
         } elseif ($campos['debitos_existem'] === 1 && ($campos['debitos_referencias'] ?? '') === '') {
             $faltando[] = 'Referências dos débitos em aberto (IPVA/licenciamento/multas)';
         }
+    }
+    // 27/10/2026 — autorização de uso de imagem/voz: consultor pergunta e marca Sim ou Não.
+    if (array_key_exists('autoriza_uso_imagem', $campos) && $campos['autoriza_uso_imagem'] === null) {
+        $faltando[] = 'Autorização de uso de imagem e voz — marque Sim ou Não (card "Financiamento e contrato de compra")';
     }
     return $faltando;
 }

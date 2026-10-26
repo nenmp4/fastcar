@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
                         saldo_financiamento_atual = ?, terceiro_quitacao = ?, encargos_texto = ?,
-                        pix_pagamento_cedente = ?, condicao_pagamento_cedente = ?, parcelas_pagas_fastcar_texto = ?,
+                        pix_pagamento_cedente = ?, condicao_pagamento_cedente = ?, parcelas_pagas_fastcar_texto = ?, autoriza_uso_imagem = ?,
                         data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -154,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         return clean((string)($_POST['condicao_pagamento_cedente'] ?? ''));
                     })(),
                     clean((string)($_POST['parcelas_pagas_fastcar_texto'] ?? '')),
+                    in_array($_POST['autoriza_uso_imagem'] ?? '', ['0', '1'], true) ? (int)$_POST['autoriza_uso_imagem'] : null,
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
                     // Nunca mais que 24 meses (limite contratual, cláusula
                     // 5ª/1.3) — travado no servidor, não só no max="24" do
@@ -894,6 +895,13 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 </select>
                 <textarea name="condicao_pagamento_cedente" id="cond-pgto-outra" rows="2" style="<?= $condOpc === 'outra' ? '' : 'display:none' ?>" placeholder="Descreva a condição de pagamento"><?= e($condOpc === 'outra' ? $condAtual : '') ?></textarea>
                 <small style="color:var(--texto-fraco)">Use quando o pagamento for em partes (ex: metade agora, metade depois de resolver alguma pendência). Em branco, não aparece no contrato.</small>
+                <?php $autImgAtual = ($op['autoriza_uso_imagem'] ?? null) === null ? '' : (string)(int)$op['autoriza_uso_imagem']; ?>
+                <label>📸 Autorização de uso de imagem e voz — pergunte ao cliente (obrigatório pro contrato)</label>
+                <small style="color:var(--texto-fraco);display:block;margin-bottom:4px">Autorizo, de forma gratuita e definitiva, o uso de minha imagem e voz gravadas em vídeo para veiculação em redes sociais, internet e demais mídias pela FastCar, sem qualquer direito a indenização ou remuneração, por prazo indeterminado, podendo ser revogado mediante notificação extrajudicial via ouvidoria (11) 97816-4525.</small>
+                <div style="display:flex;gap:18px;margin-bottom:8px">
+                    <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="autoriza_uso_imagem" value="1" style="width:auto" <?= $autImgAtual === '1' ? 'checked' : '' ?>> Sim</label>
+                    <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="autoriza_uso_imagem" value="0" style="width:auto" <?= $autImgAtual === '0' ? 'checked' : '' ?>> Não</label>
+                </div>
                 <label>Parcelas do financiamento pagas pela FASTCAR — cláusula 10.1 (opcional)</label>
                 <textarea name="parcelas_pagas_fastcar_texto" rows="2" placeholder="Ex: FASTCAR paga as parcelas de 11/2026 a 04/2027"><?= e($op['parcelas_pagas_fastcar_texto'] ?? '') ?></textarea>
                 <small style="color:var(--texto-fraco)">Só quando foi combinado com o vendedor que a FASTCAR continua pagando as parcelas. Em branco, não aparece no Quadro-Resumo.</small>

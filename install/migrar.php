@@ -210,6 +210,7 @@ $migracoes = [
     'oportunidades.debitos_veiculo_obs' => "ALTER TABLE oportunidades ADD COLUMN debitos_veiculo_obs TEXT DEFAULT ''",
     'oportunidades.debitos_existem' => "ALTER TABLE oportunidades ADD COLUMN debitos_existem INTEGER",
     'oportunidades.debitos_referencias' => "ALTER TABLE oportunidades ADD COLUMN debitos_referencias TEXT DEFAULT ''",
+    'oportunidades.autoriza_uso_imagem' => "ALTER TABLE oportunidades ADD COLUMN autoriza_uso_imagem INTEGER", // 27/10/2026 — NULL = não perguntado, 1 sim, 0 não
 
     // 28/09/2026, "preciso de um filtro para separar se carro moto
     // caminhão ou outros" (funil de compra) — sempre escolhido

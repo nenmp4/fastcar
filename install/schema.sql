@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- data existem débitos em aberto (IPVA, licenciamento ou multas)?"
     -- NULL = não respondido (bloqueia gerar contrato), 1 = sim, 0 = não.
     debitos_existem INTEGER,
+    autoriza_uso_imagem INTEGER, -- 27/10/2026: autorização de uso de imagem/voz (Quadro-Resumo da compra) — NULL não perguntado, 1 sim, 0 não
     debitos_referencias TEXT DEFAULT '',
     -- Resumo automático da consulta ZapCar (22/09/2026, "vamos preencher
     -- tudo... oportunidade para consultor ter poder negociação") — texto
