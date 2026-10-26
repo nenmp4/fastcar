@@ -464,9 +464,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "11.2. Infrações decorrentes da utilização do veículo após a entrega serão economicamente atribuídas ao responsável pela condução/uso, cabendo à FASTCAR organizar a identificação de condutor e o reembolso quando aplicável.\n\n" .
             "11.3. Débitos anteriores à entrega serão de responsabilidade do VENDEDOR, salvo assunção expressa pela FASTCAR."],
         ['CLÁUSULA 12ª – SEGURO, PROTEÇÃO E SINISTROS',
-            "12.1. A FASTCAR deverá verificar e documentar a existência de seguro/proteção compatível com o modo de exploração do veículo.\n\n" .
-            "12.2. O Anexo de Seguro definirá cobertura, condutores, franquia, perda total, furto, roubo e uso comercial/locação.\n\n" .
-            "12.3. Em perda total, furto ou roubo, a indenização será aplicada conforme titularidade, gravame, direitos do credor e estrutura econômica da operação, mediante prestação de contas."],
+            "12.1. A FASTCAR não é responsável pela verificação e/ou documentação da existência de seguro/proteção compatível com o modo de exploração do veículo, sendo de inteira responsabilidade do VENDEDOR."],
         ['CLÁUSULA 13ª – MANUTENÇÃO, CONSERVAÇÃO E AVARIAS',
             "13.1. A FASTCAR realizará ou providenciará manutenção compatível com o uso e manterá registros essenciais.\n\n" .
             "13.2. Danos decorrentes de locatários ou terceiros poderão ser cobrados destes pela FASTCAR, sem prejuízo da proteção do patrimônio e dos direitos do credor.\n\n" .
