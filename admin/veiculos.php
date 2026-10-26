@@ -101,6 +101,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
             }
         }
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'devolucao_veiculo') {
+    // 27/10/2026, "esse carro foi vendido, agora está de volta na Fastcar,
+    // vamos vender novamente — gera histórico". Mesma ação de
+    // admin/venda.php (venda 'vendido' → 'cancelada' via mudarEtapaVenda(),
+    // que grava venda_historico e cancela as parcelas futuras pendentes),
+    // + registro no histórico do veículo e na auditoria. O veículo volta a
+    // aparecer com o botão "💰 Vender".
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        $vendaIdDev = (int)($_POST['venda_id'] ?? 0);
+        $motivoDev = trim(clean((string)($_POST['motivo'] ?? '')));
+        $stDev = $db->prepare("SELECT id, oportunidade_id, comprador_nome, etapa FROM vendas WHERE id = ?");
+        $stDev->execute([$vendaIdDev]);
+        $vDev = $stDev->fetch();
+        if (!$vDev || $vDev['etapa'] !== 'vendido') {
+            $erro = 'Essa venda não está como vendida — nada a devolver.';
+        } elseif ($motivoDev === '') {
+            $erro = 'Informe o motivo da devolução.';
+        } else {
+            try {
+                $obsDev = 'Devolução — veículo voltou pra Fastcar: ' . $motivoDev;
+                mudarEtapaVenda($vendaIdDev, 'cancelada', (int)$_SESSION['admin_id'], $obsDev);
+                $opDev = (int)$vDev['oportunidade_id'];
+                $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+                   ->execute([$opDev, (int)$_SESSION['admin_id'], "Veículo voltou pra Fastcar (venda #{$vendaIdDev} pra " . ($vDev['comprador_nome'] ?: 'comprador') . " desfeita) — disponível pra nova venda. Motivo: {$motivoDev}"]);
+                // Se estava escondido do estoque por já ter sido vendido, volta a aparecer.
+                $db->prepare("UPDATE oportunidades SET oculto_estoque = 0, oculto_estoque_motivo = '', updated_at = datetime('now','localtime')
+                              WHERE id = ? AND COALESCE(oculto_estoque, 0) = 1 AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'")->execute([$opDev]);
+                auditoriaRegistrar('veiculo_devolvido', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $opDev,
+                    "Venda #{$vendaIdDev} desfeita (devolução). Motivo: {$motivoDev}");
+                $sucesso = 'Devolução registrada — o veículo está disponível pra vender de novo (botão 💰 Vender). Parcelas futuras pendentes foram canceladas no financeiro; o que já foi pago continua como receita.';
+            } catch (Throwable $e) {
+                $erro = $e->getMessage();
+            }
+        }
+    }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'excluir_veiculo') {
     // 23/09/2026, "permita super admin excuir veiculo veio duas bianca que
     // veio do outro sistema" — ver excluirVeiculoFrota() (includes/oportunidades.php)
@@ -553,6 +590,13 @@ function lerCrlvManual() {
                         </form>
                     <?php elseif ($v['venda_etapa'] === 'vendido'): ?>
                         <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge badge-ok">✅ vendido</span></a>
+                        <form method="post" class="inline" style="margin-top:6px" onsubmit="var m = prompt('Motivo da devolução (ex: comprador devolveu, inadimplência):'); if (!m) return false; this.motivo.value = m; return true;">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="devolucao_veiculo">
+                            <input type="hidden" name="venda_id" value="<?= (int)$v['venda_id'] ?>">
+                            <input type="hidden" name="motivo" value="">
+                            <button type="submit" class="btn-texto" style="font-size:12px" title="O carro voltou pra Fastcar — desfaz a venda e libera pra vender de novo">🔙 Voltou pra Fastcar</button>
+                        </form>
                     <?php else: ?>
                         <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'])) ?></span></a>
                     <?php endif; ?>
