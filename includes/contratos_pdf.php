@@ -425,7 +425,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
             "3.2. O VENDEDOR dará recibo do valor efetivamente recebido, sem que isso importe declaração de quitação do financiamento perante a instituição financeira.\n\n" .
             "3.3. Nenhum valor adicional será devido ao VENDEDOR além do expressamente previsto neste contrato, ressalvado aditivo escrito."],
         ['CLÁUSULA 4ª – QUITAÇÃO FUTURA DO FINANCIAMENTO POR TERCEIRO INDICADO',
-            "4.1. A FASTCAR deverá organizar a indicação de terceiro responsável por realizar a quitação do financiamento ou gravame no prazo máximo de {$prazoMeses} meses.\n\n" .
+            "4.1. A FASTCAR deverá organizar a indicação de terceiro responsável por realizar a quitação do financiamento ou gravame no prazo estipulado no Quadro-Resumo da operação.\n\n" .
             "4.2. O terceiro pagador poderá quitar integralmente a dívida, negociar liquidação antecipada ou aderir a solução aceita pela instituição financeira que resulte na efetiva baixa do gravame dentro do prazo máximo contratual.\n\n" .
             "4.3. A indicação de terceiro não exonera a FASTCAR de sua obrigação contratual de gestão e resultado perante o VENDEDOR quanto à obtenção da quitação/baixa no prazo, salvo se o impedimento decorrer exclusivamente de ato do VENDEDOR ou de fato documental por ele omitido.\n\n" .
             "4.4. Pagamentos ao credor serão comprovados por documentos idôneos. A FASTCAR manterá trilha de acompanhamento e fornecerá ao VENDEDOR informações razoáveis sobre marcos relevantes.\n\n" .
