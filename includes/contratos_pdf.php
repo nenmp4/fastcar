@@ -373,7 +373,7 @@ function gerarPdfContratoCompra(array $c): string {
     $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['vendedor_nome']} / {$c['vendedor_cpf']}"), 0, 1, 'C');
-    _pdfLinhaRepresentanteLegal($pdf, $c);
+    // 27/10/2026, "retirar representante legal, deixa só FASTCAR" — compra sem a linha.
 
     // Testemunha não é obrigatória pra gerar o contrato — se ainda não foi
     // preenchida (responsável pela negociação, ou testemunha 2 ainda não
@@ -509,19 +509,16 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
         ['CLÁUSULA 26ª – BOA-FÉ E DEVER DE INFORMAÇÃO',
             "26.1. As partes atuarão com boa-fé, transparência, cooperação e preservação da documentação.\n\n" .
             "26.2. Nenhuma parte poderá criar aparência de transferência plena enquanto o gravame impedir a efetiva transferência registral."],
-        ['CLÁUSULA 27ª – ANEXOS E PREVALÊNCIA',
-            "27.1. Integram este contrato os anexos assinados. Dados específicos regularmente preenchidos no Quadro-Resumo e anexos prevalecem sobre referências genéricas, salvo norma cogente.\n\n" .
-            "27.2. Campos essenciais de financiamento, pagamento corrente, seguro e responsabilidade tributária não poderão ficar em branco no momento da entrega do veículo."],
-        ['CLÁUSULA 28ª – TÍTULO EXECUTIVO E ASSINATURA',
-            "28.1. As partes poderão assinar fisicamente ou por meio eletrônico idôneo. Recomenda-se a assinatura de duas testemunhas para reforço da executividade das obrigações líquidas quando cabível.\n\n" .
-            "28.2. Obrigações dependentes de apuração deverão ser acompanhadas do respectivo demonstrativo."],
-        ['CLÁUSULA 29ª – SOLUÇÃO DE CONTROVÉRSIAS',
-            "29.1. As partes buscarão solução negocial antes do litígio, sem impedir tutela urgente.\n\n" .
-            "29.2. Respeitadas regras cogentes de competência, fica eleito o foro de Barueri/SP."],
-        ['CLÁUSULA 30ª – DISPOSIÇÕES FINAIS',
-            "30.1. Tolerância não constitui novação ou renúncia.\n\n" .
-            "30.2. Invalidade parcial não prejudica cláusulas autônomas preserváveis.\n\n" .
-            "30.3. Qualquer alteração relevante deverá ser documentada por escrito ou eletronicamente."],
+        ['CLÁUSULA 27ª – TÍTULO EXECUTIVO E ASSINATURA',
+            "27.1. As partes poderão assinar fisicamente ou por meio eletrônico idôneo. Recomenda-se a assinatura de duas testemunhas para reforço da executividade das obrigações líquidas quando cabível.\n\n" .
+            "27.2. Obrigações dependentes de apuração deverão ser acompanhadas do respectivo demonstrativo."],
+        ['CLÁUSULA 28ª – SOLUÇÃO DE CONTROVÉRSIAS',
+            "28.1. As partes buscarão solução negocial antes do litígio, sem impedir tutela urgente.\n\n" .
+            "28.2. Respeitadas regras cogentes de competência, fica eleito o foro da Comarca de Barueri/SP para dirimir quaisquer litígios decorrentes deste contrato."],
+        ['CLÁUSULA 29ª – DISPOSIÇÕES FINAIS',
+            "29.1. Tolerância não constitui novação ou renúncia.\n\n" .
+            "29.2. Invalidade parcial não prejudica cláusulas autônomas preserváveis.\n\n" .
+            "29.3. Qualquer alteração relevante deverá ser documentada por escrito ou eletronicamente."],
     ];
 }
 
