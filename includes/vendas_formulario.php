@@ -22,9 +22,10 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // p
 const VENDA_FORM_TIPOS = ['carro' => 'Carro', 'utilitario' => 'Utilitário (picape/van/furgão)', 'moto' => 'Moto'];
 const VENDA_FORM_USOS = ['passeio' => 'Passeio / família', 'aplicativo' => 'Aplicativo (Uber/99/entrega)', 'utilitario' => 'Trabalho / carga'];
 
-/** Entrada mínima (R$) pro caso — moto R$ 5 mil, aplicativo R$ 14 mil, passeio/trabalho e utilitário R$ 10 mil. */
+/** Entrada mínima (R$) pro caso — moto R$ 5 mil, aplicativo R$ 14 mil, passeio/trabalho R$ 10 mil, utilitário R$ 20 mil (Jean, 26/10/2026). */
 function vendaFormularioMinimo(string $tipo, string $uso): float {
     if ($tipo === 'moto') return 5000.0;
+    if ($tipo === 'utilitario') return 20000.0;
     if ($uso === 'aplicativo') return 14000.0;
     return 10000.0;
 }

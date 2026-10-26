@@ -738,7 +738,7 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- só o que a pessoa disse; nullable de propósito (regra #3, não é
     -- "0" quando não informado, é "não sabemos ainda").
     tipo_veiculo_interesse TEXT, -- 'carro'/'moto'/'outro' (24/10/2026, entrada mínima por tipo)
-    categoria_veiculo_interesse TEXT, -- 'hibrido'/'suv'/'comum' (24/10/2026, entrada mínima)
+    categoria_veiculo_interesse TEXT, -- 'hibrido'/'suv'/'utilitario'/'comum' (24/10/2026, entrada mínima)
     ano_veiculo_interesse INTEGER, -- ano mínimo procurado (aplicativo 2020+ = entrada maior)
     valor_entrada_disponivel REAL,
     valor_parcela_orcamento REAL,

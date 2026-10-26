@@ -1063,7 +1063,7 @@ unset($fv);
 <div class="card">
     <h2>📝 Formulário de vendas (anúncio → formulário → WhatsApp)</h2>
     <p><small>Página pública onde o cliente preenche nome, carro/moto, uso, entrada e parcela. Quem tem a
-       <strong>entrada mínima</strong> (moto R$ 5 mil · passeio/trabalho R$ 10 mil · aplicativo R$ 14 mil) entra no CRM
+       <strong>entrada mínima</strong> (moto R$ 5 mil · passeio/trabalho R$ 10 mil · aplicativo R$ 14 mil · utilitário R$ 20 mil) entra no CRM
        já qualificado (igual ao lead da IA), o vendedor é avisado e o cliente ganha o botão do WhatsApp. Quem não tem
        vira "sem perfil" e nunca chega no vendedor.</small></p>
     <p><strong>Link pro anúncio:</strong><br>

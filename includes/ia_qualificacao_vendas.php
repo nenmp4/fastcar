@@ -110,7 +110,8 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
      • CARRO PRA APLICATIVO (Uber/99/entrega) ano 2020 ou mais novo: a
        partir de R$ 20.000
      • CARRO PRA APLICATIVO mais antigo que 2020: a partir de R$ 14.000
-     • CARRO PRA PASSEIO/uso pessoal (ou utilitário): a partir de R$ 10.000
+     • UTILITÁRIO (picape, van, furgão): a partir de R$ 20.000
+     • CARRO PRA PASSEIO/uso pessoal: a partir de R$ 10.000
      • MOTO: a partir de R$ 5.000
    Por isso, descubra cedo se é carro ou moto, se é híbrido/SUV, pra que
    uso e mais ou menos de que ano ela procura. Pode afirmar isso com clareza e
@@ -268,14 +269,14 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - valor_parcela_orcamento: número (sem "R$", só o valor) do quanto a pessoa disse caber no orçamento dela de parcela mensal. null se não informado.
 - urgencia: texto curto livre sobre pressa/prazo pra decidir. null se não deu pra saber.
 - tipo_veiculo_interesse: "carro" ou "moto" (ou "outro" pra caminhão/van etc.) — o tipo de veículo que a pessoa quer COMPRAR. null se ainda não deu pra saber.
-- categoria_veiculo_interesse: "hibrido", "suv" ou "comum" (qualquer outro carro) — só pra carro. null se ainda não deu pra saber.
+- categoria_veiculo_interesse: "hibrido", "suv", "utilitario" (picape, van, furgão) ou "comum" (qualquer outro carro) — só pra carro. null se ainda não deu pra saber.
 - ano_veiculo_interesse: número do ano (ex: 2020) do carro que a pessoa procura, se ela disse (o MAIS ANTIGO que aceita, se disse uma faixa; "2020 pra cima" = 2020). null se não disse.
-- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA comparado ao MÍNIMO do caso dela (híbrido R$ 40 mil; SUV ~35% da FIPE; aplicativo 2020+ R$ 20 mil; aplicativo antigo R$ 14 mil; passeio R$ 10 mil; moto R$ 5 mil): abaixo do mínimo ou nada = "frio"; atingiu o mínimo e tem R$ 15.000 ou mais = "quente"; atingiu o mínimo mas menos de R$ 15.000 = "morno". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
+- temperatura_lead: "frio", "morno" ou "quente" — regra da Fastcar (24/10/2026) pelo VALOR DE ENTRADA comparado ao MÍNIMO do caso dela (híbrido R$ 40 mil; SUV ~35% da FIPE; utilitário R$ 20 mil; aplicativo 2020+ R$ 20 mil; aplicativo antigo R$ 14 mil; passeio R$ 10 mil; moto R$ 5 mil): abaixo do mínimo ou nada = "frio"; atingiu o mínimo e tem R$ 15.000 ou mais = "quente"; atingiu o mínimo mas menos de R$ 15.000 = "morno". Ainda não falou de entrada: "frio", ou "morno" se já sabe o que procura e a forma de pagamento. Tom/animação nunca muda a faixa. null só se ainda não houver conversa suficiente.
 - oportunidade_id_sugerida: o número do [ID x] (veja a lista abaixo) do ÚNICO veículo que bate com o que a pessoa está procurando AGORA, SOMENTE quando você tem certeza real (ex: ela citou marca/modelo que bate com exatamente 1 item da lista, ou reagiu positivamente a um veículo específico que você mencionou). null se não tem certeza, se bate com mais de um item, ou se ainda não sabe o suficiente — nunca chute.
 - aceita_visitar_fastcar: true se a pessoa confirmou que vem pessoalmente até a Fastcar ver o(s) veículo(s), false se ela recusou/preferiu decidir só por WhatsApp/telefone sem vir, null se ainda não foi perguntado ou ela não respondeu isso especificamente.
 - visita_dia_horario_texto: o dia/horário que a pessoa combinou de vir, EXATAMENTE como ela disse (ex: "sábado de manhã", "quinta às 15h") — sempre a versão MAIS RECENTE se ela mudou o dia/horário durante a conversa. null se aceita_visitar_fastcar ainda não é true ou ela não especificou nenhum dia/horário ainda.
 - visita_data_resolvida: a MESMA informação de visita_dia_horario_texto, só que convertida pra uma data de calendário real no formato exato "AAAA-MM-DD" (ex: se hoje é {hoje} e a pessoa disse "sábado", calcule a data do PRÓXIMO sábado a partir de hoje — nunca um sábado que já passou). Preencha SÓ quando tiver certeza real do dia combinado e conseguir calcular com segurança a partir da data de hoje; null se o texto for vago demais pra calcular (ex: "qualquer dia", "essa semana" sem dizer qual dia) ou se aceita_visitar_fastcar ainda não é true. Nunca invente/arredonde — é sempre melhor devolver null do que calcular uma data errada.
-- sem_perfil: true se a pessoa NÃO TEM NENHUMA entrada, ou tem menos que o mínimo do caso dela (híbrido R$ 40 mil; SUV ~35% da FIPE; aplicativo 2020+ R$ 20 mil; aplicativo antigo R$ 14 mil; passeio R$ 10 mil; moto R$ 5 mil) e já foi avisada do mínimo sem dizer que consegue completar agora — regra da Fastcar, não vende sem entrada (motivo ex: "Sem entrada mínima — tem R$ 6 mil, mínimo R$ 20 mil (aplicativo 2020)"). Também true se disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
+- sem_perfil: true se a pessoa NÃO TEM NENHUMA entrada, ou tem menos que o mínimo do caso dela (híbrido R$ 40 mil; SUV ~35% da FIPE; utilitário R$ 20 mil; aplicativo 2020+ R$ 20 mil; aplicativo antigo R$ 14 mil; passeio R$ 10 mil; moto R$ 5 mil) e já foi avisada do mínimo sem dizer que consegue completar agora — regra da Fastcar, não vende sem entrada (motivo ex: "Sem entrada mínima — tem R$ 6 mil, mínimo R$ 20 mil (aplicativo 2020)"). Também true se disse claramente que não quer mais comprar, mudou de ideia, ou não era essa a intenção dela (ex: número errado, queria vender e não comprar). Preencha motivo_sem_perfil com um resumo curto.
 - pedido_atendente_humano: true se a pessoa pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um vendedor"), nunca só por reclamação/hesitação genérica. Quando true, a conversa é encaminhada direto pro vendedor, sem continuar a qualificação.
 - qualificacao_completa: true SOMENTE quando já se sabe o nome, o que a pessoa procura (veiculo_interesse_texto), a forma de pagamento pretendida, E a pessoa já respondeu se confirma vir até a Fastcar (aceita_visitar_fastcar não é mais null — recusar vir também conta como resposta válida, o vendedor fecha por telefone nesse caso). pedido_atendente_humano nunca chega em qualificacao_completa=true.
 
@@ -487,6 +488,7 @@ function vendaEntradaMinima(array $v): ?float {
     if (($v['tipo_veiculo_interesse'] ?? null) === 'moto') return 5000.0;
     $categoria = $v['categoria_veiculo_interesse'] ?? null;
     if ($categoria === 'hibrido') return 40000.0;
+    if ($categoria === 'utilitario') return 20000.0; // Jean, 26/10/2026: utilitário a partir de R$ 20 mil
     if ($categoria === 'suv') return null;
     if (($v['tipo_uso_veiculo'] ?? null) === 'aplicativo') {
         $ano = (int)($v['ano_veiculo_interesse'] ?? 0);
@@ -541,7 +543,7 @@ function iaAplicarDadosExtraidosVenda(int $vendaId, array $dados): bool {
         }
     }
 
-    if (in_array($dados['categoria_veiculo_interesse'] ?? null, ['hibrido', 'suv', 'comum'], true)
+    if (in_array($dados['categoria_veiculo_interesse'] ?? null, ['hibrido', 'suv', 'utilitario', 'comum'], true)
         && $dados['categoria_veiculo_interesse'] !== $v['categoria_veiculo_interesse']) {
         $sets[] = 'categoria_veiculo_interesse = ?';
         $params[] = $dados['categoria_veiculo_interesse'];
