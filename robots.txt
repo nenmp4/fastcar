@@ -18,7 +18,7 @@ Allow: /admin/assets/img/icon-512.png
 Allow: /public/veiculo.php
 Allow: /public/veiculo_foto.php
 Allow: /public/catalogo.php
-Allow: /public/quero-carro.php
+Allow: /quero-carro.php
 Disallow: /
 
 User-agent: *

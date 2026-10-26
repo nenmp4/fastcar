@@ -4,7 +4,7 @@
  * formulários registrar no CRM do mesmo jeito que a IA" / "só vem pro
  * WhatsApp se ele passar pelo formulário").
  *
- * Anúncio → public/quero-carro.php → o cliente preenche → o lead entra em
+ * Anúncio → fastcar.solutions/quero-carro.php → o cliente preenche → o lead entra em
  * `vendas` igual ao lead que a IA qualifica (crm_preenchido + resumo em
  * checklist + temperatura + vendedor avisado). Quem não tem a entrada
  * mínima pro caso dele vira 'sem_perfil' e nunca recebe o botão do
@@ -46,8 +46,8 @@ function vendaFormularioIdDoTexto(string $texto): ?int {
 }
 
 function vendaFormularioUrl(array $utm = []): string {
-    $base = rtrim((string)(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions'), '/');
-    return $base . '/public/quero-carro.php' . ($utm ? '?' . http_build_query($utm) : '');
+    // Sempre no domínio público (fastcar.solutions), nunca no do sistema.
+    return 'https://fastcar.solutions/quero-carro.php' . ($utm ? '?' . http_build_query($utm) : '');
 }
 
 /** Liga/desliga em Configurações: lead que chama direto no WhatsApp de vendas recebe o link do formulário em vez da IA. */

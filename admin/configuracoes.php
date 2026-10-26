@@ -329,7 +329,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $erro = 'Falha ao listar instâncias: ' . $e->getMessage();
             }
         } elseif ($acao === 'salvar_formulario_vendas') {
-            // 26/10/2026 — formulário de entrada do lead de vendas (public/quero-carro.php).
+            // 26/10/2026 — formulário de entrada do lead de vendas (quero-carro.php, raiz do site público).
             $numF = normalizarTelefone(trim((string)($_POST['vendas_whatsapp_numero'] ?? '')));
             setConfig('vendas_whatsapp_numero', $numF ?: '');
             setConfig('meta_pixel_id', preg_replace('/\D/', '', (string)($_POST['meta_pixel_id'] ?? '')));
