@@ -229,6 +229,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- sem formato fixo) — entra no Quadro-Resumo do contrato de compra
     -- (ver gerarPdfContratoCompra(), includes/contratos_pdf.php).
     pix_pagamento_cedente TEXT DEFAULT '',
+    condicao_pagamento_cedente TEXT DEFAULT '', -- 27/10/2026: pagamento em partes (ex: 50% agora, 50% após pendência) — Quadro-Resumo da compra
     prazo_quitacao_meses INTEGER,      -- prazo negociado pra quitar o financiamento (normal: 12-18, nunca > 24 meses — cláusulas 1.3/4.1/5ª/18.3 do contrato-mestre de compra); sem DEFAULT de propósito, sempre confirmado com o cliente por oportunidade, nunca fixo em 24
     -- 02/10/2026, "próprio consultor vira testemunha fixa pois eles
     -- responsável direto... ele pode selecionar outro usuário do sistema

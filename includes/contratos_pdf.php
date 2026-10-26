@@ -310,6 +310,11 @@ function gerarPdfContratoCompra(array $c): string {
     // fato preencheu. Campos centrais do negócio (veículo, FIPE, valor
     // pago ao vendedor, prazo de quitação — já obrigatório pra gerar o
     // contrato) nunca entram nessa checagem, continuam sempre impressos.
+    // 27/10/2026, "às vezes a Fastcar manda 50 depois manda 50 devido
+    // alguma pendência" — texto livre, só sai quando preenchido.
+    if (!empty($c['condicao_pagamento_cedente'])) {
+        _pdfLinhaResumo($pdf, 'Condição de pagamento ao VENDEDOR', $c['condicao_pagamento_cedente']);
+    }
     if (!empty($c['pix_pagamento_cedente'])) {
         _pdfLinhaResumo($pdf, 'Chave PIX do VENDEDOR para pagamento', $c['pix_pagamento_cedente']);
     }
@@ -414,7 +419,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
         ['CLÁUSULA 2ª – DECLARAÇÕES DO VENDEDOR E SITUAÇÃO DO VEÍCULO',
             "2.1. O VENDEDOR declara ser o proprietário registral/devedor fiduciante ou possuir legitimidade documental suficiente para a operação, devendo revelar integralmente gravames, financiamento, parcelas vencidas, ações, restrições, multas, sinistros, débitos e qualquer fato relevante.\n\n" .
             "2.2. O VENDEDOR entregará CRLV-e, contrato/extrato do financiamento, demonstrativo de saldo, boletos ou meios de consulta, documentos pessoais, chaves e demais documentos indicados nos anexos.\n\n" .
-            "2.3. A omissão dolosa de restrição relevante, bloqueio, sinistro estrutural, busca e apreensão, fraude, perda total ou impedimento de transferência caracteriza inadimplemento grave."],
+            "2.3. A omissão de restrição relevante, bloqueio, sinistro estrutural, busca e apreensão, fraude, perda total ou impedimento de transferência ou em caso de eventual apontamento do laudo cautelar, caracteriza inadimplemento grave e em alguns casos, poderá ser abatido do crédito de compra as despesas comprovadas de regularização ou percentual de até 20% do crédito, sendo uma opção do comprador o desconto do crédito ou o desfazimento do negócio, ocasião em que o veículo poderá ser devolvido mediante o pagamento de todas as despesas e eventual crédito pago a título antecipatório."],
         ['CLÁUSULA 3ª – PREÇO INICIAL E QUITAÇÃO AO VENDEDOR',
             "3.1. O valor pago pela FASTCAR ao VENDEDOR constitui a parcela imediata do preço desta operação, conforme Quadro-Resumo e comprovante.\n\n" .
             "3.2. O VENDEDOR dará recibo do valor efetivamente recebido, sem que isso importe declaração de quitação do financiamento perante a instituição financeira.\n\n" .

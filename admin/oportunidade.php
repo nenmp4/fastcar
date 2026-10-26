@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     UPDATE oportunidades
                     SET valor_fipe_referencia = ?, valor_ofertado = ?, contrato_financiamento_numero = ?,
                         saldo_financiamento_atual = ?, terceiro_quitacao = ?, seguro_texto = ?, encargos_texto = ?,
-                        pix_pagamento_cedente = ?,
+                        pix_pagamento_cedente = ?, condicao_pagamento_cedente = ?,
                         data_entrega_posse = ?, prazo_quitacao_meses = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
@@ -145,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['seguro_texto'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
                     clean((string)($_POST['pix_pagamento_cedente'] ?? '')),
+                    clean((string)($_POST['condicao_pagamento_cedente'] ?? '')),
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
                     // Nunca mais que 24 meses (limite contratual, cláusula
                     // 5ª/1.3) — travado no servidor, não só no max="24" do
@@ -857,10 +858,13 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <div>
                 <label>Valor FIPE de referência (R$)</label>
                 <input type="number" step="0.01" name="valor_fipe_referencia" id="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
-                <label>Valor ofertado ao vendedor (R$) — limitado a 25% da FIPE</label>
+                <label>Valor ofertado ao vendedor (R$)</label>
                 <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)($op['valor_ofertado'] ?? '')) ?>">
                 <label>Chave PIX do vendedor/cedente (pra onde a Fastcar transfere o pagamento)</label>
                 <input type="text" name="pix_pagamento_cedente" value="<?= e($op['pix_pagamento_cedente'] ?? '') ?>" placeholder="CPF, e-mail, telefone ou chave aleatória">
+                <label>Condição de pagamento ao vendedor (opcional)</label>
+                <textarea name="condicao_pagamento_cedente" rows="2" placeholder="Ex: 50% na assinatura e 50% após a regularização da pendência X"><?= e($op['condicao_pagamento_cedente'] ?? '') ?></textarea>
+                <small style="color:var(--texto-fraco)">Use quando o pagamento for em partes (ex: metade agora, metade depois de resolver alguma pendência). Em branco, não aparece no contrato.</small>
                 <label>Nº do contrato de financiamento</label>
                 <input type="text" name="contrato_financiamento_numero" value="<?= e($op['contrato_financiamento_numero'] ?? '') ?>">
                 <label>Saldo do financiamento atual (R$)</label>

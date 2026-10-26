@@ -1880,6 +1880,19 @@ if (!colunaExiste($db, 'oportunidades', 'pix_pagamento_cedente')) {
     echo "⏭️  oportunidades.pix_pagamento_cedente: já existia\n";
 }
 
+// 27/10/2026, "às vezes Fastcar manda 50 depois manda 50 devido alguma
+// pendência" — condição de pagamento ao vendedor no Quadro-Resumo.
+if (!colunaExiste($db, 'oportunidades', 'condicao_pagamento_cedente')) {
+    try {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN condicao_pagamento_cedente TEXT DEFAULT ''");
+        echo "✅ oportunidades.condicao_pagamento_cedente: adicionada\n";
+    } catch (Throwable $e) {
+        echo "❌ oportunidades.condicao_pagamento_cedente: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  oportunidades.condicao_pagamento_cedente: já existia\n";
+}
+
 // 02/10/2026 — CHECK de contratos.status ganha 'cancelado' (nunca vem da
 // ZapSign, só a própria aplicação marca ao gerar outro contrato pra mesma
 // negociação — ver cancelarContratosAnterioresDaNegociacao(),
