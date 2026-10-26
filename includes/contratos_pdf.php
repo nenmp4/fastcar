@@ -285,7 +285,7 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfLinhaResumo($pdf, 'Ano fabricação/modelo', $c['veiculo_ano']);
     _pdfLinhaResumo($pdf, 'Placa / RENAVAM / chassi', "{$c['veiculo_placa']} / {$c['veiculo_renavam']} / {$c['veiculo_chassi']}");
     _pdfLinhaResumo($pdf, 'Valor FIPE de referência na contratação', _fmtMoeda($c['valor_fipe_referencia']));
-    _pdfLinhaResumo($pdf, 'Percentual pago pela FASTCAR ao VENDEDOR', $c['percentual_fipe'] . '% da FIPE, limitado contratualmente a 25%');
+    _pdfLinhaResumo($pdf, 'Percentual pago pela FASTCAR ao VENDEDOR', $c['percentual_fipe'] . '% da FIPE');
     _pdfLinhaResumo($pdf, 'Valor pago ao VENDEDOR', _fmtMoeda($c['valor_pago_vendedor']));
     // 06/10/2026 — mesmo pedido já aplicado no Quadro-Resumo da VENDA
     // ("no de compras campos vazio não gerar também"): campo opcional sem
