@@ -460,7 +460,7 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
         ['CLÁUSULA 10ª – PARCELAS DO FINANCIAMENTO ATÉ A QUITAÇÃO',
             "10.1. Em casos específicos, a FASTCAR poderá, de comum acordo com o VENDEDOR, dar continuidade ao pagamento das parcelas do financiamento durante o período que será descrito no Quadro-Resumo da operação."],
         ['CLÁUSULA 11ª – TRIBUTOS, LICENCIAMENTO E MULTAS',
-            "11.1. A distribuição econômica de IPVA, licenciamento, multas, pedágios e demais encargos constará do Quadro-Resumo da operação.\n\n" .
+            "11.1. A distribuição econômica de IPVA, licenciamento, multas, pedágios e demais encargos constará do Quadro de Resumo Operacional.\n\n" .
             "11.2. Infrações decorrentes da utilização do veículo após a entrega serão economicamente atribuídas ao responsável pela condução/uso, cabendo à FASTCAR organizar a identificação de condutor e o reembolso quando aplicável.\n\n" .
             "11.3. Débitos anteriores à entrega serão de responsabilidade do VENDEDOR, salvo assunção expressa pela FASTCAR."],
         ['CLÁUSULA 12ª – SEGURO, PROTEÇÃO E SINISTROS',
