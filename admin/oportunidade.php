@@ -40,6 +40,7 @@ $formularioVeiculoRepetir = null; // preserva o que foi digitado enquanto espera
 $zapcarServicoNomeAtivo = zapcarAtivo() ? zapcarNomeServico(zapcarServicoAtivo()) : '';
 $zapcarPrecoAtivo = zapcarAtivo() ? zapcarPrecoServico(zapcarServicoAtivo()) : null;
 
+const CONDICAO_PAGAMENTO_5050 = '50% na assinatura e 50% após a regularização dos documentos pendentes';
 const COMPRA_ACOES_TRAVADAS = ['atualizar_veiculo', 'atualizar_contrato', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'mudar_etapa', 'marcar_perdida', 'atualizar_nome_cliente', 'excluir_documento_staff',
     'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2', 'ler_consulta_debitos'];
@@ -144,7 +145,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     clean((string)($_POST['terceiro_quitacao'] ?? '')),
                     clean((string)($_POST['encargos_texto'] ?? '')),
                     clean((string)($_POST['pix_pagamento_cedente'] ?? '')),
-                    clean((string)($_POST['condicao_pagamento_cedente'] ?? '')),
+                    // 27/10/2026, "50% na assinatura e 50% após... ficar sempre documentos
+                    // pendentes" — texto padrão fixo; "outra" mantém o texto livre.
+                    (function () {
+                        $opc = (string)($_POST['condicao_pagamento_opcao'] ?? '');
+                        if ($opc === '5050') return CONDICAO_PAGAMENTO_5050;
+                        if ($opc === '') return '';
+                        return clean((string)($_POST['condicao_pagamento_cedente'] ?? ''));
+                    })(),
                     clean((string)($_POST['parcelas_pagas_fastcar_texto'] ?? '')),
                     $_POST['data_entrega_posse'] !== '' ? (string)$_POST['data_entrega_posse'] : null,
                     // Nunca mais que 24 meses (limite contratual, cláusula
@@ -877,7 +885,14 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <label>Chave PIX do vendedor/cedente (pra onde a Fastcar transfere o pagamento)</label>
                 <input type="text" name="pix_pagamento_cedente" value="<?= e($op['pix_pagamento_cedente'] ?? '') ?>" placeholder="CPF, e-mail, telefone ou chave aleatória">
                 <label>Condição de pagamento ao vendedor (opcional)</label>
-                <textarea name="condicao_pagamento_cedente" rows="2" placeholder="Ex: 50% na assinatura e 50% após a regularização da pendência X"><?= e($op['condicao_pagamento_cedente'] ?? '') ?></textarea>
+                <?php $condAtual = (string)($op['condicao_pagamento_cedente'] ?? '');
+                      $condOpc = $condAtual === '' ? '' : ($condAtual === CONDICAO_PAGAMENTO_5050 ? '5050' : 'outra'); ?>
+                <select name="condicao_pagamento_opcao" id="cond-pgto-opcao" onchange="document.getElementById('cond-pgto-outra').style.display = this.value === 'outra' ? '' : 'none'">
+                    <option value="" <?= $condOpc === '' ? 'selected' : '' ?>>Integral (não aparece no contrato)</option>
+                    <option value="5050" <?= $condOpc === '5050' ? 'selected' : '' ?>><?= e(CONDICAO_PAGAMENTO_5050) ?></option>
+                    <option value="outra" <?= $condOpc === 'outra' ? 'selected' : '' ?>>Outra condição (escrever)</option>
+                </select>
+                <textarea name="condicao_pagamento_cedente" id="cond-pgto-outra" rows="2" style="<?= $condOpc === 'outra' ? '' : 'display:none' ?>" placeholder="Descreva a condição de pagamento"><?= e($condOpc === 'outra' ? $condAtual : '') ?></textarea>
                 <small style="color:var(--texto-fraco)">Use quando o pagamento for em partes (ex: metade agora, metade depois de resolver alguma pendência). Em branco, não aparece no contrato.</small>
                 <label>Parcelas do financiamento pagas pela FASTCAR — cláusula 10.1 (opcional)</label>
                 <textarea name="parcelas_pagas_fastcar_texto" rows="2" placeholder="Ex: FASTCAR paga as parcelas de 11/2026 a 04/2027"><?= e($op['parcelas_pagas_fastcar_texto'] ?? '') ?></textarea>
