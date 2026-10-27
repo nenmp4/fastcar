@@ -641,7 +641,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <a href="/admin/logout.php">Sair</a>
 </header>
 
-<main>
+<main data-abas-ordem="👤 Comprador|🚗 Veículo|📝 Contrato|💳 Financeiro|📎 Documentos|📅 Andamento">
 <?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Venda concluída</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
@@ -731,7 +731,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 
 <?php if ($v['origem'] === 'whatsapp'): ?>
-<div class="card">
+<div class="card" data-aba="👤 Comprador">
     <h3>🤖 Lead qualificado por IA</h3>
     <p><small>Entrou sozinho pela instância de WhatsApp de vendas.
        <a href="/admin/vendas_inbox.php?telefone=<?= e($v['comprador_telefone']) ?>">Ver conversa no WhatsApp Vendas →</a></small></p>
@@ -762,7 +762,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card" data-aba="👤 Comprador">
     <h3>📍 Visita presencial</h3>
     <?php if ($v['visita_compareceu_em']): ?>
         <p><span class="badge badge-ok">✅ Cliente compareceu em <?= date('d/m/Y H:i', strtotime($v['visita_compareceu_em'])) ?></span></p>
@@ -787,7 +787,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 
 <?php if (!in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
-<div class="card">
+<div class="card" data-aba="🚗 Veículo">
     <?php if (!$v['oportunidade_id']): ?>
         <h3>🔗 Vincular veículo da frota</h3>
         <p><small>Essa negociação ainda não tem um veículo confirmado — o sistema NUNCA vincula sozinho
@@ -822,7 +822,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php endif; ?>
 
 <?php if ($v['oportunidade_id']): ?>
-<div class="card">
+<div class="card" data-aba="🚗 Veículo">
     <h3>📸 Fotos e vídeos pra revenda</h3>
     <p><small>Fica ligado ao VEÍCULO (não a esta negociação específica) — some depois de qualquer nova tentativa de
        venda do mesmo carro. A IA de vendas manda essas mídias sozinha pro comprador quando identifica interesse
@@ -903,7 +903,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card" data-aba="👤 Comprador">
     <h3>👤 Dados do <?= $ehLocacao ? "locatário" : "comprador" ?></h3>
     <p><small>Alimenta a qualificação do COMPRADOR no contrato-mestre de venda (includes/contratos_pdf.php).</small></p>
     <form method="post">
@@ -940,7 +940,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 
 <?php if ($v['oportunidade_id']): ?>
-<div class="card">
+<div class="card" data-aba="📎 Documentos">
     <h3>📎 Documentos do comprador</h3>
     <p><small>Espelha o wizard de compra — mesmo rito (1 documento por vez, IA lê e pré-preenche, comprador revisa e
        confirma), mas só 2 etapas: CNH/RG e comprovante de endereço (comprador de revenda não tem financiamento
@@ -1072,7 +1072,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php endif; ?>
 
 <?php if (!$ehLocacao): // locação não tem entrada/bem de troca ?>
-<div class="card">
+<div class="card" data-aba="📝 Contrato">
     <h3>💰 Entrada — pago via PIX (em partes)</h3>
     <p><small>Réplica do fluxo do sistema antigo: a entrada pode ser paga em mais de uma parte, cada uma com valor e
        data próprios. O total das partes abaixo é sempre o "Valor pago pelo comprador na contratação" do Quadro-Resumo
@@ -1126,7 +1126,7 @@ function adicionarParteEntrada() {
 }
 </script>
 
-<div class="card">
+<div class="card" data-aba="📝 Contrato">
     <h3>🔁 Bem recebido como parte da entrada</h3>
     <p><small>Veículo ou outro bem que o comprador entregou como parte do pagamento — entra no Quadro-Resumo do
        contrato, mas nunca soma na entrada em dinheiro acima (o valor do bem não gera receita/lançamento financeiro,
@@ -1170,7 +1170,7 @@ function adicionarParteEntrada() {
 
 <?php endif; ?>
 
-<div class="card">
+<div class="card" data-aba="📝 Contrato">
 <?php if ($ehLocacao): ?>
     <h3>🔑 Condições da locação (Quadro-Resumo)</h3>
     <p><small>Alimentam o Quadro-Resumo do contrato de locação pura — confirme com o locatário antes de gerar.
@@ -1406,7 +1406,7 @@ function adicionarParteEntrada() {
 </div>
 
 <?php if (!$ehLocacao): // aluguel é lançado manualmente no Financeiro ?>
-<div class="card">
+<div class="card" data-aba="💳 Financeiro">
     <h3>💳 Financeiro — plano de parcelamento</h3>
     <p><small>Fastcar vende o veículo financiado pro comprador — entrada + parcelas. Gera 1x só; depois disso os
        lançamentos são acompanhados em <a href="/admin/financeiro.php">Financeiro</a>.</small></p>
@@ -1513,7 +1513,7 @@ function adicionarParteEntrada() {
 </div>
 <?php endif; ?>
 
-<div class="grid-2">
+<div class="grid-2" data-aba="📅 Andamento">
     <div class="card">
         <h3>Próxima ação</h3>
         <form method="post">
@@ -1613,7 +1613,7 @@ function adicionarParteEntrada() {
     </div>
 </div>
 
-<div class="card">
+<div class="card" data-aba="📅 Andamento">
     <h3>Histórico de etapas</h3>
     <?php if (!$historico): ?>
         <p><small>Sem histórico ainda.</small></p>
@@ -1628,7 +1628,7 @@ function adicionarParteEntrada() {
 </div>
 
 <?php if ($v['oportunidade_id']): ?>
-<div class="card">
+<div class="card" data-aba="🚗 Veículo">
     <h3>🔍 Checklist de vistoria do veículo</h3>
     <?php if ($avaliacoesVeiculo): ?>
         <table>
@@ -1688,6 +1688,7 @@ function adicionarParteEntrada() {
 <?php endif; ?>
 
 </main>
+<?php include __DIR__ . '/_abas.php'; ?>
 <script>
 // 26/09/2026, "permita copia link para enviar sem depender da instância
 // pois estamos com problemas" — mesmo padrão de admin/oportunidade.php:

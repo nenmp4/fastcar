@@ -625,7 +625,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <a href="/admin/logout.php">Sair</a>
 </header>
 
-<main>
+<main data-abas-ordem="👤 Cliente|🚗 Veículo|📝 Contrato|📎 Documentos|📅 Andamento|💬 Conversa">
 <?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Compra fechada</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
@@ -660,6 +660,10 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <a class="btn" href="/admin/cliente_detalhe.php?id=<?= (int)$op['cliente_id'] ?>" style="padding:5px 12px;font-size:13px">✏️ Editar cadastro do cliente</a>
         </form>
     <?php endif; ?>
+</div>
+
+<div class="card" data-aba="👤 Cliente">
+    <h3>👤 Dados do cliente</h3>
     <div class="grid-2">
         <div>
             <p><strong>Telefone:</strong> <?= e($op['cliente_telefone']) ?></p>
@@ -721,7 +725,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card" data-aba="🚗 Veículo">
     <h3>Dados do veículo <small>(marca é conferida contra a lista oficial da FIPE ao salvar)</small></h3>
     <?php if ($avisoDuplicidadeVeiculo): ?>
         <div class="alerta-erro">
@@ -837,7 +841,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 <?php if (zapcarAtivo()): ?>
-<div class="card" id="zapcar-card">
+<div class="card" data-aba="🚗 Veículo" id="zapcar-card">
     <h3>🔎 Consulta veicular (ZapCar) — <?= e($zapcarServicoNomeAtivo) ?></h3>
     <p><small>22/09/2026 — consulta paga (desconta do saldo da conta ZapCar): restrições, débitos, sinistro, leilão
        e gravame pela placa oficial, direto na base. Ajuda a avaliar o veículo antes de fechar a compra — nunca
@@ -855,7 +859,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card" data-aba="📝 Contrato">
     <h3>📝 Financiamento e contrato de compra</h3>
     <p><small>Esses dados alimentam o Quadro-Resumo do contrato-mestre de compra (includes/contratos_pdf.php) — o
        consultor confirma com o cliente antes de gerar, a IA/sistema nunca preenche isso sozinho.</small></p>
@@ -1093,7 +1097,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card" data-aba="📎 Documentos">
     <h3>📎 Documentos</h3>
     <p><small>O cliente sobe CNH, comprovante de endereço e contrato de financiamento sozinho, sem login, num wizard
        passo a passo pelo link abaixo — a cada envio a IA lê o documento e pré-preenche nome/CPF/endereço/dados do
@@ -1195,7 +1199,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     </form>
 </div>
 
-<div class="grid-2">
+<div class="grid-2" data-aba="📅 Andamento">
     <div class="card">
         <h3>Próxima ação</h3>
         <form method="post">
@@ -1258,7 +1262,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 <?php if ($op['etapa'] === 'fechado'): ?>
-<div class="card">
+<div class="card" data-aba="📅 Andamento">
     <h3>📋 Pendências pós-venda</h3>
     <p><small>Pasta fechada, mas pode sobrar pendência operacional (ex: quitação de financiamento junto ao banco,
        transferência do veículo) — fica registrada aqui, separada do funil comercial que já encerrou.</small></p>
@@ -1317,7 +1321,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card" data-aba="📅 Andamento">
     <h3>Histórico de etapas</h3>
     <?php if (!$historico): ?>
         <p><small>Sem histórico ainda.</small></p>
@@ -1331,7 +1335,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endforeach; ?>
 </div>
 
-<div class="card">
+<div class="card" data-aba="💬 Conversa">
     <h3>Conversa (últimas <?= count($mensagens) ?> mensagens)
         <a href="/admin/whatsapp_inbox.php?telefone=<?= e($op['cliente_telefone']) ?>" style="font-size:13px;font-weight:600">💬 Abrir no WhatsApp Box →</a>
     </h3>
@@ -1761,7 +1765,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </script>
 
 <?php $despesasOp = finListarDespesasOperacionais($id); ?>
-<div class="card">
+<div class="card" data-aba="📝 Contrato">
     <h3>💸 Despesas operacionais</h3>
     <p><small>Pagou a puxada, despachante ou outra despesa deste veículo? Suba o comprovante — o valor é lido automaticamente e vai <strong>pendente</strong> pro financeiro conferir e aprovar.</small></p>
     <?php if ($despesasOp): ?>
@@ -1802,7 +1806,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card" data-aba="🚗 Veículo">
     <h3>🔍 Checklist de vistoria do veículo</h3>
     <?php if ($op['etapa'] === 'presencial' && !array_filter($avaliacoesVeiculo, fn($a) => $a['tipo'] === 'compra')): ?>
         <div class="alerta-info">📢 Cliente já trouxe o veículo pra avaliação? Registre uma vistoria de recebimento abaixo antes de fechar o negócio.</div>
@@ -1864,6 +1868,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 </main>
+<?php include __DIR__ . '/_abas.php'; ?>
 <script>
 // 26/09/2026, "permita copia link para enviar sem depender da instância
 // pois estamos com problemas" — botão "📋 Copiar link" ao lado de todo
