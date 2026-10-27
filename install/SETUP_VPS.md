@@ -226,15 +226,18 @@ Quando o domínio existir:
    Mode):
    ```bash
    apt install -y ufw
-   ufw allow 22/tcp
+   ufw allow 22022/tcp   # porta SSH da HostGator (painel → Acesso SSH → Porta), NÃO a 22
    for ip in $(curl -s https://www.cloudflare.com/ips-v4); do ufw allow from $ip to any port 80,443 proto tcp; done
    for ip in $(curl -s https://www.cloudflare.com/ips-v6); do ufw allow from $ip to any port 80,443 proto tcp; done
    ufw default deny incoming
    ufw enable
    ```
    ⚠️ Rodar isso ANTES de fechar a sessão SSH atual e confirmar que a porta
-   22 continua acessível — `ufw enable` mal configurado pode trancar o
-   próprio acesso.
+   SSH continua acessível — `ufw enable` mal configurado pode trancar o
+   próprio acesso. A VPS da HostGator usa SSH na porta **22022**, não na 22
+   (confirmado no painel, 27/10/2026 — liberar só a 22 trancou o acesso;
+   recuperado pelo console noVNC do painel com `ufw allow 22022/tcp`).
+   Conectar com `ssh -p 22022 root@143.95.165.5`.
 
 ## 7. Crontab
 
