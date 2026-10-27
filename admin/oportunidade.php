@@ -163,6 +163,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_POST['prazo_quitacao_meses'] !== '' ? min(240, max(1, (int)$_POST['prazo_quitacao_meses'])) : null, // 27/10/2026: sem teto de 24 — depende da financeira
                     $id,
                 ]);
+                // Valor escolhido na busca PlacaFIPE (e não editado à mão
+                // depois) → entra no histórico FIPE do veículo.
+                $fipeEscolhido = valorMonetario($_POST['fipe_valor_escolhido'] ?? null);
+                $fipeSalvo = valorMonetario($_POST['valor_fipe_referencia'] ?? null);
+                if ($fipeEscolhido && $fipeSalvo && abs($fipeEscolhido - $fipeSalvo) < 0.01) {
+                    registrarConsultaFipe($id, (string)($_POST['fipe_placa'] ?? $op['veiculo_placa'] ?? ''), $fipeSalvo,
+                        clean((string)($_POST['fipe_codigo'] ?? '')), clean((string)($_POST['fipe_descricao'] ?? '')),
+                        clean((string)($_POST['fipe_mes_ref'] ?? '')), (int)$_SESSION['admin_id']);
+                }
                 $sucesso = 'Dados do contrato atualizados.';
             } elseif ($acao === 'salvar_testemunha2') {
                 // 02/10/2026, achado de acompanhamento: "ao pedir para gerar
@@ -877,10 +886,21 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <p id="fipe-resultado" style="font-size:12.5px;color:var(--texto-fraco);margin-top:8px"></p>
             <div id="fipe-candidatos"></div>
         </div>
+    <?php else: ?>
+        <div class="alerta-info" style="margin-bottom:14px">🔍 Busca do valor FIPE pela placa (PlacaFIPE) desligada — falta o token em
+            <?= ($_SESSION['admin_perfil'] ?? '') === 'super_admin' ? '<a href="/admin/configuracoes.php">Configurações → FIPE</a>' : 'Configurações → FIPE (peça ao administrador)' ?>.
+            Enquanto isso, digite o valor FIPE à mão abaixo.</div>
     <?php endif; ?>
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="atualizar_contrato">
+        <!-- Preenchidos pelo "Usar este valor" da busca PlacaFIPE — viram uma
+             linha do histórico FIPE do veículo ao salvar. -->
+        <input type="hidden" name="fipe_codigo" id="fipe-h-codigo">
+        <input type="hidden" name="fipe_descricao" id="fipe-h-descricao">
+        <input type="hidden" name="fipe_mes_ref" id="fipe-h-mes">
+        <input type="hidden" name="fipe_valor_escolhido" id="fipe-h-valor">
+        <input type="hidden" name="fipe_placa" id="fipe-h-placa">
         <div class="grid-2">
             <div>
                 <label>Valor FIPE de referência (R$)</label>
@@ -938,6 +958,28 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <?php if ($percentualAtual > 25): ?><span class="badge badge-atraso">⚠️ acima do limite de 25%</span><?php endif; ?>
         </small></p>
     <?php endif; ?>
+    <?php $historicoFipe = listarHistoricoFipe((int)$op['id'], (string)($op['veiculo_placa'] ?? '')); ?>
+    <details style="margin:8px 0 12px" <?= $historicoFipe ? '' : '' ?>>
+        <summary style="cursor:pointer;font-weight:600;font-size:13.5px">📜 Histórico FIPE do veículo (<?= count($historicoFipe) ?>)</summary>
+        <?php if (!$historicoFipe): ?>
+            <p><small>Nenhuma consulta registrada ainda — use "🔍 Buscar valor FIPE pela placa", clique em "Usar este valor" e salve.</small></p>
+        <?php else: ?>
+            <table class="sem-cards" style="font-size:12.5px;margin-top:6px">
+                <thead><tr><th>Data</th><th>Valor FIPE</th><th>Veículo (FIPE)</th><th>Cód. / tabela</th><th>Por</th></tr></thead>
+                <tbody>
+                <?php foreach ($historicoFipe as $hf): ?>
+                    <tr>
+                        <td><?= date('d/m/Y H:i', strtotime($hf['created_at'])) ?><?php if ((int)$hf['oportunidade_id'] !== (int)$op['id']): ?><br><small>🔗 <a href="/admin/oportunidade.php?id=<?= (int)$hf['oportunidade_id'] ?>">cadastro #<?= (int)$hf['oportunidade_id'] ?></a></small><?php endif; ?></td>
+                        <td><strong>R$ <?= number_format((float)$hf['valor'], 2, ',', '.') ?></strong></td>
+                        <td><?= e($hf['descricao'] ?: '—') ?></td>
+                        <td><?= e($hf['codigo_fipe'] ?: '—') ?><?= $hf['mes_referencia'] ? '<br><small>' . e($hf['mes_referencia']) . '</small>' : '' ?></td>
+                        <td><?= e($hf['usuario_nome'] ?? '—') ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </details>
 
     <hr>
     <div class="card" style="background:var(--fundo);margin-bottom:14px">
@@ -1435,7 +1477,12 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     btn.style.cssText = 'margin:0;padding:5px 10px;font-size:12px;white-space:nowrap';
                     btn.addEventListener('click', function () {
                         if (campoValor && c.valor_numero !== null) campoValor.value = c.valor_numero;
-                        resultado.textContent = '✅ ' + c.valor_texto + ' preenchido no campo abaixo — confira antes de salvar.';
+                        document.getElementById('fipe-h-codigo').value = c.codigo_fipe || '';
+                        document.getElementById('fipe-h-descricao').value = (c.marca + ' ' + c.modelo + ' ' + c.ano_modelo + ' ' + c.combustivel).trim();
+                        document.getElementById('fipe-h-mes').value = c.mes_referencia || '';
+                        document.getElementById('fipe-h-valor').value = c.valor_numero;
+                        document.getElementById('fipe-h-placa').value = inputPlaca.value;
+                        resultado.textContent = '✅ ' + c.valor_texto + ' preenchido no campo abaixo — clique em salvar pra gravar (fica no histórico FIPE do veículo).';
                     });
                     div.appendChild(btn);
                     listaCandidatos.appendChild(div);

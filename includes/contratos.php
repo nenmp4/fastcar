@@ -19,6 +19,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/contratos_pdf.php';
 require_once __DIR__ . '/zapsign.php';
+require_once __DIR__ . '/fipe.php'; // consultaFipeDoValorAtual() no Quadro-Resumo
 require_once __DIR__ . '/google_drive.php';
 require_once __DIR__ . '/documentos.php'; // garantirPastaDriveCliente()
 require_once __DIR__ . '/vendas.php'; // mudarEtapaVenda() — auto-transição ao gerar/assinar contrato de venda
@@ -251,6 +252,18 @@ function montarCamposContratoCompra(int $oportunidadeId): ?array {
         'veiculo_chassi'                => $op['veiculo_chassi'] ?: '',
         'valor_fipe_referencia'         => $op['valor_fipe_referencia'] !== null ? (float)$op['valor_fipe_referencia'] : null,
         'percentual_fipe'               => $percentual,
+        // 27/10/2026 — consulta PlacaFIPE que originou o valor (código,
+        // tabela, data); vazio quando o valor foi digitado à mão.
+        'fipe_consulta'                 => (function () use ($op, $oportunidadeId) {
+            $fc = consultaFipeDoValorAtual($oportunidadeId, $op['valor_fipe_referencia'] !== null ? (float)$op['valor_fipe_referencia'] : null);
+            if (!$fc) return '';
+            $partes = array_filter([
+                $fc['codigo_fipe'] ? 'cód. FIPE ' . $fc['codigo_fipe'] : '',
+                $fc['mes_referencia'] ? 'tabela ' . $fc['mes_referencia'] : '',
+                'consultada em ' . date('d/m/Y', strtotime($fc['created_at'])),
+            ]);
+            return implode(', ', $partes);
+        })(),
         'valor_pago_vendedor'           => $op['valor_ofertado'] !== null ? (float)$op['valor_ofertado'] : null,
         // 01/10/2026, "adiciona campo de pagamento do cedente para qual
         // pix a empresa está transferido no caso da compra" — chave PIX

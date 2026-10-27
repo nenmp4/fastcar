@@ -257,3 +257,51 @@ function placafipeConsultarPorPlaca(string $placa): ?array {
     }
     return $dados;
 }
+
+/**
+ * Histórico do valor FIPE escolhido por veículo — 27/10/2026, "campo
+ * tabela FIPE usando a API PlacaFIPE... no contrato de compra vai ser ref.
+ * Serve mostrando histórico do veículo". Grava 1 linha cada vez que o
+ * consultor escolhe um candidato da PlacaFIPE ("Usar este valor") e salva
+ * o card do contrato. Nunca chama a API (a consulta já foi paga na busca).
+ */
+function registrarConsultaFipe(int $oportunidadeId, string $placa, float $valor, string $codigo, string $descricao, string $mesRef, ?int $usuarioId): void {
+    if ($valor <= 0) return;
+    getDB()->prepare("
+        INSERT INTO fipe_consultas (oportunidade_id, placa, valor, codigo_fipe, descricao, mes_referencia, usuario_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ")->execute([$oportunidadeId, strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa)), $valor,
+                 mb_substr($codigo, 0, 20), mb_substr($descricao, 0, 200), mb_substr($mesRef, 0, 40), $usuarioId]);
+}
+
+/**
+ * Histórico do VEÍCULO: consultas deste cadastro + de qualquer outro
+ * cadastro com a mesma placa (mesmo carro físico), mais recente primeiro.
+ */
+function listarHistoricoFipe(int $oportunidadeId, string $placa = ''): array {
+    $norm = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
+    $stmt = getDB()->prepare("
+        SELECT f.*, u.nome AS usuario_nome FROM fipe_consultas f
+        LEFT JOIN usuarios u ON u.id = f.usuario_id
+        WHERE f.oportunidade_id = ? OR (? != '' AND f.placa = ?)
+        ORDER BY f.created_at DESC, f.id DESC LIMIT 30
+    ");
+    $p = strlen($norm) >= 6 ? $norm : '';
+    $stmt->execute([$oportunidadeId, $p, $p]);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Consulta que originou o valor FIPE atual do cadastro (mesmo valor, a
+ * mais recente) — citada no Quadro-Resumo do contrato. null = valor
+ * digitado à mão, sem consulta registrada.
+ */
+function consultaFipeDoValorAtual(int $oportunidadeId, ?float $valorAtual): ?array {
+    if (!$valorAtual) return null;
+    $stmt = getDB()->prepare("
+        SELECT * FROM fipe_consultas WHERE oportunidade_id = ? AND ABS(valor - ?) < 0.01
+        ORDER BY id DESC LIMIT 1
+    ");
+    $stmt->execute([$oportunidadeId, $valorAtual]);
+    return $stmt->fetch() ?: null;
+}

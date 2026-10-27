@@ -1491,3 +1491,19 @@ CREATE TABLE IF NOT EXISTS notificacoes (
     created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_notificacoes_usuario ON notificacoes(usuario_id, lida, id);
+
+-- 27/10/2026 — histórico do valor FIPE escolhido (PlacaFIPE) por veículo;
+-- o mais recente é citado no Quadro-Resumo do contrato de compra.
+CREATE TABLE IF NOT EXISTS fipe_consultas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    placa TEXT DEFAULT '',
+    valor REAL NOT NULL,
+    codigo_fipe TEXT DEFAULT '',
+    descricao TEXT DEFAULT '',
+    mes_referencia TEXT DEFAULT '',
+    usuario_id INTEGER REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_fipe_consultas_oportunidade ON fipe_consultas(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_fipe_consultas_placa ON fipe_consultas(placa);

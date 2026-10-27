@@ -2282,4 +2282,27 @@ try {
     echo "❌ estoque (ocultar migrados ZapSign): {$e->getMessage()}\n";
 }
 
+// 27/10/2026, "campo tabela FIPE usando a API PlacaFIPE... no contrato de
+// compra vai ser ref. Serve mostrando histórico do veículo".
+try {
+    $db->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS fipe_consultas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oportunidade_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    placa TEXT DEFAULT '',
+    valor REAL NOT NULL,
+    codigo_fipe TEXT DEFAULT '',
+    descricao TEXT DEFAULT '',
+    mes_referencia TEXT DEFAULT '',
+    usuario_id INTEGER REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_fipe_consultas_oportunidade ON fipe_consultas(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_fipe_consultas_placa ON fipe_consultas(placa);
+SQL);
+    echo "✅ fipe_consultas: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ fipe_consultas: {$e->getMessage()}\n";
+}
+
 echo "\n🎉 Migração concluída.\n";
