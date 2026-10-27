@@ -798,12 +798,13 @@ function veiculoPrincipalPorPlaca(string $placa): ?int {
     $stmt = getDB()->prepare("
         SELECT o.id,
                EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = o.id AND v.etapa IN ('negociacao','contrato_enviado','vendido')) AS tem_venda,
+               EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status NOT IN ('gerado','cancelado')) AS tem_contrato,
                EXISTS (SELECT 1 FROM veiculo_avaliacoes a WHERE a.oportunidade_id = o.id AND a.status = 'concluida') AS tem_vistoria,
                EXISTS (SELECT 1 FROM veiculo_midias_revenda m WHERE m.oportunidade_id = o.id) AS tem_midia
         FROM oportunidades o
         WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque, 0) = 0
           AND UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
-        ORDER BY tem_venda DESC, tem_vistoria DESC, tem_midia DESC, o.id DESC
+        ORDER BY tem_venda DESC, tem_contrato DESC, tem_vistoria DESC, tem_midia DESC, o.id DESC
         LIMIT 1
     ");
     $stmt->execute([$norm]);

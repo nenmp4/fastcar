@@ -1638,7 +1638,7 @@ function adicionarParteEntrada() {
                 $scoreLinha = veiculoAvaliacaoScore(listarItensAvaliacao((int)$a['id']));
             ?>
                 <tr>
-                    <td><?= $a['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?></td>
+                    <td><?= $a['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?><?php if (!empty($a['outro_cadastro_id'])): ?><br><small title="Mesma placa, outro cadastro do mesmo carro">🔗 feita no <a href="/admin/oportunidade.php?id=<?= (int)$a['outro_cadastro_id'] ?>">cadastro #<?= (int)$a['outro_cadastro_id'] ?></a></small><?php endif; ?></td>
                     <td><?= match ($a['status']) { 'concluida' => '✅ Concluída', 'em_andamento' => '🔧 Em andamento', default => '⏳ Pendente' } ?></td>
                     <td>
                         <?php if ($scoreLinha['percentual'] !== null): ?>

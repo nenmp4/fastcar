@@ -456,14 +456,25 @@ function listarItensAvaliacao(int $avaliacaoId): array {
  */
 function listarAvaliacoesDoVeiculo(int $oportunidadeId): array {
     $db = getDB();
+    // 27/10/2026, "acontece muito ficar contrato num card e vistoria em
+    // outro" — o mesmo carro (mesma placa) às vezes tem 2 cadastros; o card
+    // mostra também as vistorias do outro cadastro (outro_cadastro_id
+    // preenchido nessas linhas), pra nunca parecer que o carro não foi vistoriado.
+    $stPl = $db->prepare("SELECT veiculo_placa FROM oportunidades WHERE id = ?");
+    $stPl->execute([$oportunidadeId]);
+    $placaNorm = veiculoPlacaNormalizada((string)$stPl->fetchColumn());
     $stmt = $db->prepare("
-        SELECT va.*, u.nome AS avaliador_nome
+        SELECT va.*, u.nome AS avaliador_nome,
+               CASE WHEN va.oportunidade_id != ? THEN va.oportunidade_id END AS outro_cadastro_id
         FROM veiculo_avaliacoes va
+        JOIN oportunidades o ON o.id = va.oportunidade_id
         LEFT JOIN usuarios u ON u.id = va.avaliador_id
         WHERE va.oportunidade_id = ?
+           OR (? != '' AND UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) = ?)
         ORDER BY va.created_at DESC, va.id DESC
     ");
-    $stmt->execute([$oportunidadeId]);
+    $placaBusca = strlen($placaNorm) >= 6 ? $placaNorm : '';
+    $stmt->execute([$oportunidadeId, $oportunidadeId, $placaBusca, $placaBusca]);
     return $stmt->fetchAll();
 }
 
