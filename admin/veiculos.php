@@ -229,10 +229,31 @@ $filtroDataAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool)preg
 $where = "WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
 $params = [];
 if ($busca !== '') {
-    $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ? OR c.cidade LIKE ?)";
+    // 27/10/2026, "tem carro duplicado, não consigo localizar" — placa/chassi
+    // também batem ignorando hífen/espaço/maiúscula ("abc1234" acha "ABC-1234").
+    $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ? OR c.cidade LIKE ?
+                     OR UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) LIKE ?
+                     OR UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_chassi,''), '-', ''), ' ', '')) LIKE ?)";
     $like = '%' . $busca . '%';
-    $params = [$like, $like, $like, $like, $like, $like];
+    $buscaNorm = strtoupper(preg_replace('/[\s\-]/', '', $busca));
+    $likeNorm = '%' . ($buscaNorm !== '' ? $buscaNorm : $busca) . '%';
+    $params = [$like, $like, $like, $like, $like, $like, $likeNorm, $likeNorm];
 }
+// Placas/chassis repetidos na frota (cadastros já mesclados não contam) —
+// cada um vira link que filtra a lista só pros cadastros daquele carro.
+$repetidosFrota = $db->query("
+    SELECT 'placa' AS tipo, UPPER(REPLACE(REPLACE(veiculo_placa, '-', ''), ' ', '')) AS chave, COUNT(*) AS n
+    FROM oportunidades
+    WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+      AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) >= 6
+    GROUP BY chave HAVING COUNT(*) > 1
+    UNION ALL
+    SELECT 'chassi', UPPER(REPLACE(REPLACE(veiculo_chassi, '-', ''), ' ', '')), COUNT(*)
+    FROM oportunidades
+    WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+      AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_chassi,''), '-', ''), ' ', '')) >= 10
+    GROUP BY 2 HAVING COUNT(*) > 1
+")->fetchAll();
 if (isset($faixasPrazo[(string)$fPrazo])) {
     [$diasMin, $diasMax] = $faixasPrazo[(string)$fPrazo];
     $where .= " AND o.financiamento_quitado = 0 AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
@@ -376,6 +397,16 @@ function mesesComAFastcar(?string $refPosse): int {
         <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Placa, chassi, marca/modelo ou vendedor...">
         <button type="submit">Buscar</button>
     </form>
+    <?php if ($repetidosFrota): ?>
+        <div class="alerta-erro" style="margin-top:10px">
+            ⚠️ Carro cadastrado mais de uma vez — clique pra ver só os cadastros dele:
+            <?php foreach ($repetidosFrota as $rf): ?>
+                <a class="chip-acao" style="display:inline-block;margin:4px 4px 0 0"
+                   href="?busca=<?= urlencode($rf['chave']) ?>&incompletos=1"><?= $rf['tipo'] === 'placa' ? 'Placa' : 'Chassi' ?> <?= e($rf['chave']) ?> (<?= (int)$rf['n'] ?>x)</a>
+            <?php endforeach; ?>
+            <br><small>Pra juntar num cadastro só: Compras → aba ✅ Fechadas → "🔀 Mesclar duplicados agora" (nada é apagado). Cadastro sem nada importante pode ser excluído na 🗑️ da linha.</small>
+        </div>
+    <?php endif; ?>
     <?php if ($mostrarIncompletos): ?>
         <p style="margin-top:10px"><small>⚠️ Mostrando também <?= $totalIncompletosImportAntigo ?> veículo(s) importado(s) do CRM antigo com documento incompleto (marcados abaixo).
             <a href="?busca=<?= urlencode($busca) ?>">Esconder de novo →</a></small></p>

@@ -461,6 +461,13 @@ if ($etapaBuscandoFechadas) {
     $semPlacaFech = (int)$db->query("SELECT COUNT(*) FROM oportunidades WHERE etapa = 'fechado'
         AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
         AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_placa,''), '-', ''), ' ', '')) < 6")->fetchColumn();
+    // 27/10/2026, "tem carro duplicado, não consigo localizar" — clicar numa
+    // placa repetida do aviso mostra só os cadastros dela (ignora hífen/espaço).
+    $placaDupFech = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($_GET['placa_dup'] ?? '')));
+    if ($placaDupFech !== '') {
+        $where .= " AND UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) = ?";
+        $params[] = $placaDupFech;
+    }
     if (($_GET['sem_placa'] ?? '') === '1') {
         $where .= " AND LENGTH(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) < 6";
     }
@@ -1237,10 +1244,16 @@ if ($podeSelecionarEmMassa):
             <button type="submit" class="btn-secundario" style="width:auto;margin:0">↩️ Desfazer mesclagem (<?= (int)$totalMescladosFech ?> escondido(s))</button>
         </form>
     <?php endif; ?>
+    <?php if (!empty($placaDupFech)): ?>
+        <div class="alerta-info" style="margin-top:8px">🔎 Mostrando só os cadastros da placa <strong><?= e($placaDupFech) ?></strong>.
+            <a href="<?= e('/admin/index.php?' . http_build_query(array_diff_key($_GET, ['placa_dup' => 1]))) ?>">Mostrar todas</a></div>
+    <?php endif; ?>
     <?php if ($placasRepetidasFech): ?>
         <div class="alerta-erro" style="margin-top:8px">
-            ⚠️ <?= count($placasRepetidasFech) ?> placa(s) cadastrada(s) mais de uma vez: <strong><?= e(implode(', ', array_keys($placasRepetidasFech))) ?></strong>
-            — aparecem repetidas aqui e somam 2x no total.
+            ⚠️ <?= count($placasRepetidasFech) ?> placa(s) cadastrada(s) mais de uma vez — aparecem repetidas aqui e somam 2x no total. Clique pra ver só os cadastros dela:
+            <?php foreach ($placasRepetidasFech as $pRep => $nRep): ?>
+                <a class="chip-acao" style="display:inline-block;margin:4px 4px 0 0" href="<?= e('/admin/index.php?' . http_build_query(array_merge(array_diff_key($_GET, ['pagina' => 1]), ['placa_dup' => $pRep]))) ?>"><?= e($pRep) ?> (<?= (int)$nRep ?>x)</a>
+            <?php endforeach; ?>
             <?php if ($perfil === 'super_admin'): ?>
             <form method="post" style="margin:8px 0 0" onsubmit="return confirmarAcao(this, 'Mesclar os cadastros repetidos? Fica 1 cadastro por placa (o principal); vistorias e fotos vão pra ele e os repetidos saem da lista e do estoque. Nada é apagado.');">
                 <?= csrfField() ?>
