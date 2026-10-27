@@ -11325,6 +11325,37 @@ segue no schema sem uso novo, não removida sem ganho real),
   `$filtroEspecialVendas` + `php -l` + `tests/smoke.php` (0 avisos)
   limpos. Sem migração de schema.
 
+- **Contrato de LOCAÇÃO pura + botão "📄 Novo contrato" em Vendas**
+  (27/10/2026, "vamos subir contrato de locação coloca botão seleciona tipo
+  de contrato em vendas... promissória mudaria para tipo de contrato e abria
+  o modal") — modelo real `01_Contrato_Mestre_FASTCAR_Locacao_Pura.docx`
+  (Versão 1.0, Set/2026) transcrito em `gerarPdfContratoLocacao()`/
+  `clausulasContratoLocacao()` (`includes/contratos_pdf.php`, 30 cláusulas +
+  Quadro-Resumo; endereço da sede e foro corrigidos pra Barueri/SP — o modelo
+  trazia Santana de Parnaíba, mesma correção dos outros contratos).
+  **Reaproveita `vendas`** em vez de tabela nova: `vendas.tipo_contrato`
+  (`'venda'` padrão / `'locacao'`) + `vendas.locacao_dados_json` (Quadro-
+  Resumo, chaves de `LOCACAO_CAMPOS` — fonte única pra form, parsing e PDF,
+  `includes/locacao.php`); locatário usa as colunas `comprador_*`. Mesmo
+  veículo da frota, mesmo wizard de documentos, mesmo envio ZapSign
+  (`gerarEEnviarContratoVenda()`/`gerarContratoVendaPreview()` só escolhem o
+  PDF pelo tipo). `admin/vendas.php`: botão virou "📄 Novo contrato" →
+  modal de escolha (💳 Promissória / 🔑 Locação) → modal de locação
+  (`registrar_locacao`, `registrarLocacao()` reaproveita `criarVenda()`).
+  `admin/venda.php`: card "🔑 Condições da locação" (`salvar_locacao`,
+  travada junto do resto depois de assinado) no lugar de "Condições da
+  venda"; cards de entrada PIX/bem de troca/parcelamento escondidos.
+  Assinado → mesma etapa `'vendido'`, exibida "🔑 Locado"
+  (`etapaVendaLabel($etapa, $tipoContrato)`), veículo indisponível pra venda;
+  quando volta, "🔙 Voltou pra Fastcar" da Frota. **Nunca gera receita/
+  comissão automática** (guard em `finGerarReceitaVendaAssinatura()`/
+  `finRegistrarComissaoVendaFechada()`) — aluguel não é preço de compra,
+  lançamento manual. Obrigatórios pra gerar: nome/CPF do locatário,
+  modalidade, data de início, aluguel, vencimento. Testado ponta a ponta via
+  HTTP (banco isolado): registrar → rascunho do contrato → PDF decodificado
+  conferindo Quadro-Resumo/cláusulas/foro; assinatura simulada não gera
+  nenhum `fin_lancamentos`. ⚠️ Revisão do texto/campos pelo time pendente.
+
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
 Itens explicitamente adiados durante a conversa, pra não se perderem:

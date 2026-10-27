@@ -119,7 +119,10 @@ function renderCamposLocacao(array $dados): string {
         foreach ($coluna as $k) {
             $def = LOCACAO_CAMPOS[$k];
             $obrig = in_array($k, LOCACAO_CAMPOS_OBRIGATORIOS, true);
-            $valor = array_key_exists($k, $dados) ? (string)$dados[$k] : (string)($def['padrao'] ?? '');
+            // Padrão só pré-preenche um cadastro NOVO (sem nada salvo ainda) —
+            // nunca numa edição, senão a tela mostraria um valor que o PDF
+            // não tem (campo apagado de propósito sairia "—" no contrato).
+            $valor = array_key_exists($k, $dados) ? (string)$dados[$k] : ($dados ? '' : (string)($def['padrao'] ?? ''));
             $html .= '<label>' . e($def['label']) . ($obrig ? ' *' : '') . '</label>';
             $name = 'loc[' . $k . ']';
             if ($def['tipo'] === 'select') {
