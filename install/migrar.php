@@ -1859,6 +1859,8 @@ try {
 foreach ([
     'tipo_contrato' => "TEXT NOT NULL DEFAULT 'venda' CHECK (tipo_contrato IN ('venda', 'locacao'))",
     'locacao_dados_json' => "TEXT DEFAULT '{}'",
+    // 27/10/2026 — Quadro-Resumo da promissória (includes/promissoria.php).
+    'promissoria_dados_json' => "TEXT DEFAULT '{}'",
 ] as $colLoc => $defLoc) {
     if (!colunaExiste($db, 'vendas', $colLoc)) {
         try {

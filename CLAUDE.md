@@ -11356,6 +11356,40 @@ segue no schema sem uso novo, não removida sem ganho real),
   conferindo Quadro-Resumo/cláusulas/foro; assinatura simulada não gera
   nenhum `fin_lancamentos`. ⚠️ Revisão do texto/campos pelo time pendente.
 
+- **Contrato de PROMISSÓRIA substitui o contrato-mestre de venda + Termo de
+  retirada amigável** (27/10/2026, "vamos substituir contrato atual no
+  sistema de promissória" + "esse termo vai ter botão para imprimir, o
+  cliente assina, agente sobe novamente em documentos") — (1)
+  `gerarPdfContratoVenda()`/`clausulasContratoVenda()` agora geram o modelo
+  `Contrato_FASTCAR_PROMISSÓRIA.docx` ("Aquisição de posse veicular com
+  promessa condicionada de compra e venda", 30 cláusulas + 2-A/6-A/13-A/
+  25-A/25-B) pra toda negociação `tipo_contrato='venda'`; o antigo
+  (20 cláusulas, incl. 12.4 retirada extrajudicial após 60 dias) saiu — o
+  novo proíbe retirada forçada (cl. 19). Sede/foro corrigidos pra
+  Barueri/SP (modelo trazia Santana de Parnaíba). Quadro-Resumo quase todo
+  CALCULADO em `promissoriaQuadro()` (`includes/promissoria.php`): comissão
+  15% da FIPE (só se marcada "há intermediação"), abatida da entrada, saldo
+  líquido, comissão ainda a pagar, parcela 90% locação/10% residual, total
+  das parcelas e total a pagar (entrada + parcelas + saldo final + comissão
+  a pagar). Só o que não existe em lugar nenhum mora em
+  `vendas.promissoria_dados_json` (`PROMISSORIA_CAMPOS`: data da consulta
+  FIPE, proprietário registral — vazio = vendedor original do veículo —,
+  terceiro intermediado, saldo final, proteção veicular, entrega da posse,
+  uso de imagem, horas pra devolução cl. 18.1, dias pra sanar cl. 24.2),
+  card "🧾 Quadro-Resumo do contrato de promissória" em `admin/venda.php`
+  com prévia do cálculo. Render/parse dos campos generalizados
+  (`renderCamposQuadro()`/`parseCamposQuadroPost()`, `includes/locacao.php`)
+  e reaproveitados pela locação. (2) Termo de devolução amigável
+  (`gerarPdfTermoRetiradaAmigavel()`, `admin/termo_retirada.php`, modelo
+  `Termo_FASTCAR_Retirada_Amigavel.docx`): botão "🖨️ Imprimir termo" no
+  card de documentos da venda, sai já com cliente/contrato/veículo e com
+  local/data/assinaturas em branco; a cópia assinada sobe como documento
+  `termo_retirada_amigavel` (`TIPOS_DOCUMENTOS_VENDA_EXTRA`, opcional, sem
+  IA, nunca ZapSign). Testado: PDFs gerados e decodificados conferindo
+  valores calculados/prazos/foro; HTTP real (card, salvar Quadro-Resumo,
+  PDF do termo como super_admin e vendedor, upload do termo assinado);
+  migração idempotente; smoke limpo. ⚠️ Revisão jurídica do time pendente.
+
 ## Segunda etapa (combinado com o Jean/José — não iniciar sem pedido novo)
 
 Itens explicitamente adiados durante a conversa, pra não se perderem:

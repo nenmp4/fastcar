@@ -42,7 +42,7 @@ $sucesso = '';
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
-    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao'];
+    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria'];
 $vendaTravada = $v['etapa'] === 'vendido' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
 function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM venda_documentos WHERE venda_id = ? AND tipo = ?
@@ -135,6 +135,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 27/10/2026 — Quadro-Resumo do contrato de locação (includes/locacao.php).
                 salvarDadosLocacao($id, parseCamposLocacaoPost((array)($_POST['loc'] ?? [])));
                 $sucesso = 'Condições da locação salvas.';
+            } elseif ($acao === 'salvar_promissoria') {
+                // 27/10/2026 — campos do Quadro-Resumo do contrato de promissória
+                // que não são derivados da negociação (includes/promissoria.php).
+                salvarDadosPromissoria($id, parseCamposPromissoriaPost((array)($_POST['prom'] ?? [])));
+                $sucesso = 'Quadro-Resumo da promissória salvo.';
             } elseif ($acao === 'atualizar_condicoes') {
                 // valor_pago_contratacao NUNCA é escrito aqui — desde
                 // 26/09/2026 é sempre a soma das partes da entrada
@@ -445,7 +450,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } elseif ($acao === 'upload_documento_staff_venda') {
                 $tipoDoc = (string)($_POST['tipo_documento'] ?? '');
-                if (!isset(TIPOS_DOCUMENTOS_COMPRADOR[$tipoDoc])) {
+                if (!isset(TIPOS_DOCUMENTOS_COMPRADOR[$tipoDoc]) && !isset(TIPOS_DOCUMENTOS_VENDA_EXTRA[$tipoDoc])) {
                     $erro = 'Tipo de documento inválido.';
                 } elseif (empty($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
                     $erro = 'Selecione um arquivo pra enviar.';
@@ -459,7 +464,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // documento no slot errado do lado de compra (ver
                         // admin/oportunidade.php, ação upload_documento_staff).
                         $docSalvo = listarDocumentosVenda($id)[$tipoDoc] ?? null;
-                        $arquivoLido = $docSalvo ? lerConteudoArquivoDocumento($docSalvo['drive_file_id'] ?: null, $docSalvo['arquivo_url'] ?: null) : null;
+                        // Termo de retirada é assinado à mão — sem extração por IA.
+                        $arquivoLido = ($docSalvo && isset(TIPOS_DOCUMENTOS_COMPRADOR[$tipoDoc])) ? lerConteudoArquivoDocumento($docSalvo['drive_file_id'] ?: null, $docSalvo['arquivo_url'] ?: null) : null;
                         if ($arquivoLido) {
                             $dadosExtraidos = extrairDadosDocumentoComIA($tipoDoc, $arquivoLido);
                             if ($dadosExtraidos && !$dadosExtraidos['_documento_correto']) {
@@ -1023,8 +1029,30 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <td><?= $temArquivo ? '<a href="/admin/ver_documento_venda.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
             </tr>
         <?php endforeach; ?>
+        <?php foreach (TIPOS_DOCUMENTOS_VENDA_EXTRA as $tipo => $label): ?>
+            <?php
+                $doc = $documentosVenda[$tipo] ?? null;
+                $temArquivo = $doc && ($doc['arquivo_url'] || $doc['drive_file_id']);
+            ?>
+            <tr>
+                <td><?= e($label) ?> <small>(opcional)</small></td>
+                <td>
+                    <?php if ($temArquivo): ?>
+                        <span class="badge badge-ok">✅ anexado <?= date('d/m', strtotime($doc['updated_at'])) ?></span>
+                    <?php else: ?>
+                        <span class="badge">— só quando o veículo volta</span>
+                    <?php endif; ?>
+                </td>
+                <td><?= $temArquivo ? 'equipe' : '—' ?></td>
+                <td>
+                    <?= $temArquivo ? '<a href="/admin/ver_documento_venda.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?>
+                    <a class="btn" href="/admin/termo_retirada.php?id=<?= (int)$id ?>" target="_blank" style="margin-left:6px">🖨️ Imprimir termo</a>
+                </td>
+            </tr>
+        <?php endforeach; ?>
         </tbody>
     </table>
+    <p><small>🖨️ <strong>Termo de retirada amigável:</strong> imprima, o cliente preenche local/data e assina à mão — depois anexe a cópia assinada aqui embaixo escolhendo "Termo de devolução amigável".</small></p>
 
     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
         <form method="post" enctype="multipart/form-data" style="margin-top:12px">
@@ -1032,7 +1060,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
             <input type="hidden" name="acao" value="upload_documento_staff_venda">
             <label>Anexar documento manualmente</label>
             <select name="tipo_documento">
-                <?php foreach (TIPOS_DOCUMENTOS_COMPRADOR as $tipo => $label): ?>
+                <?php foreach (TIPOS_DOCUMENTOS_COMPRADOR + TIPOS_DOCUMENTOS_VENDA_EXTRA as $tipo => $label): ?>
                     <option value="<?= e($tipo) ?>"><?= e($label) ?></option>
                 <?php endforeach; ?>
             </select>
@@ -1182,6 +1210,38 @@ function adicionarParteEntrada() {
         </div>
 
         <button type="submit">Salvar condições da venda</button>
+    </form>
+
+    <hr>
+    <h3>🧾 Quadro-Resumo do contrato de promissória</h3>
+    <p><small>Só o que não sai sozinho da negociação. Preço, entrada, parcelas, FIPE e banco já vêm dos cards acima;
+       comissão de <?= PROMISSORIA_COMISSAO_PCT ?>% da FIPE, abatimento na entrada, composição <?= PROMISSORIA_PCT_LOCACAO ?>/<?= 100 - PROMISSORIA_PCT_LOCACAO ?> da parcela e total a pagar são calculados.</small></p>
+    <?php
+    $promDados = lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
+    $promCampos = $v['oportunidade_id'] ? montarCamposContratoVenda($id) : null;
+    $promQ = $promCampos ? promissoriaQuadro($promCampos) : null;
+    ?>
+    <?php if ($promQ): ?>
+    <div style="background:var(--fundo);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+        <strong>Prévia do cálculo:</strong>
+        comissão <?= $promQ['comissao'] !== null ? _fmtMoeda($promQ['comissao']) : '—' ?> ·
+        abatida da entrada <?= $promQ['comissao_abatida'] !== null ? _fmtMoeda($promQ['comissao_abatida']) : '—' ?> ·
+        saldo líquido da entrada <?= _fmtMoeda($promQ['saldo_liquido_entrada']) ?> ·
+        comissão a pagar <?= $promQ['comissao_a_pagar'] ? _fmtMoeda($promQ['comissao_a_pagar']) : '—' ?><br>
+        <?php if ($promQ['tem_parcelas']): ?>
+            parcela = locação <?= _fmtMoeda($promQ['parte_locacao']) ?> + residual <?= _fmtMoeda($promQ['parte_residual']) ?> ·
+            total das parcelas <?= _fmtMoeda($promQ['total_parcelas']) ?> ·
+        <?php else: ?>
+            parcelamento ainda não gerado ·
+        <?php endif; ?>
+        <strong>total a pagar <?= _fmtMoeda($promQ['total_a_pagar']) ?></strong>
+    </div>
+    <?php endif; ?>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_promissoria">
+        <?= renderCamposPromissoria($promDados) ?>
+        <button type="submit">Salvar Quadro-Resumo</button>
     </form>
 <?php endif; ?>
 

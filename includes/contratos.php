@@ -25,6 +25,7 @@ require_once __DIR__ . '/vendas.php'; // mudarEtapaVenda() — auto-transição 
 require_once __DIR__ . '/oportunidades.php'; // mudarEtapa()/checklistFechamentoCompleto() — fecha a compra sozinha ao assinar (19/09/2026)
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
+require_once __DIR__ . '/promissoria.php'; // Quadro-Resumo do contrato de promissória (27/10/2026)
 require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — testemunha 1/2 dinâmicas, ver signatariosExtrasContrato()
 
 const CONTRATOS_STATUS_ZAPSIGN = [
@@ -554,8 +555,10 @@ function montarCamposContratoVenda(int $vendaId): ?array {
     $stmt = $db->prepare("
         SELECT v.*, o.id AS oportunidade_id, o.cliente_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
                o.veiculo_placa, o.veiculo_renavam, o.veiculo_chassi, o.banco_financiamento,
-               o.contrato_financiamento_numero, o.saldo_financiamento_atual, o.valor_fipe_referencia
+               o.contrato_financiamento_numero, o.saldo_financiamento_atual, o.valor_fipe_referencia,
+               cl.nome AS vendedor_original_nome
         FROM vendas v JOIN oportunidades o ON o.id = v.oportunidade_id
+        LEFT JOIN clientes cl ON cl.id = o.cliente_id
         WHERE v.id = ?
     ");
     $stmt->execute([$vendaId]);
@@ -634,6 +637,12 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         // venda (includes/locacao.php); '_loc' é o Quadro-Resumo da locação.
         '_tipo_contrato'                => $v['tipo_contrato'] ?? 'venda',
         '_loc'                          => lerDadosLocacao($v['locacao_dados_json'] ?? '{}'),
+        // 27/10/2026 — Quadro-Resumo do contrato de promissória
+        // (includes/promissoria.php); cálculos em promissoriaQuadro().
+        '_prom'                         => lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}'),
+        // Proprietário registral padrão = vendedor original do veículo
+        // (no modelo de negócio, o carro segue no nome dele até a baixa do gravame).
+        'vendedor_original_nome'        => $v['vendedor_original_nome'] ?? '',
         '_oportunidade_id'              => (int)$v['oportunidade_id'],
         '_cliente_id'                   => (int)$v['cliente_id'],
         '_telefone'                     => $v['comprador_telefone'] ?: '',

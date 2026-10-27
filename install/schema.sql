@@ -841,6 +841,9 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- da locação mora em locacao_dados_json (chaves de LOCACAO_CAMPOS).
     tipo_contrato TEXT NOT NULL DEFAULT 'venda' CHECK (tipo_contrato IN ('venda', 'locacao')),
     locacao_dados_json TEXT DEFAULT '{}',
+    -- 27/10/2026 — campos do Quadro-Resumo da promissória que não são
+    -- derivados da negociação (chaves de PROMISSORIA_CAMPOS, includes/promissoria.php).
+    promissoria_dados_json TEXT DEFAULT '{}',
     km_entrega INTEGER,
     preco_venda REAL,                  -- "Preço ajustado entre FASTCAR e COMPRADOR"
     valor_pago_contratacao REAL,       -- valor pago pelo comprador na contratação

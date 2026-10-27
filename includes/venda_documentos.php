@@ -55,6 +55,16 @@ const TIPOS_DOCUMENTOS_VENDA_CONTRATO = [
 ];
 
 /**
+ * Termo de devolução amigável / autorização de retirada (27/10/2026) —
+ * impresso em admin/termo_retirada.php, assinado à mão pelo cliente e
+ * anexado aqui pela equipe. Opcional (só existe quando o carro volta),
+ * nunca entra no wizard nem na extração por IA.
+ */
+const TIPOS_DOCUMENTOS_VENDA_EXTRA = [
+    'termo_retirada_amigavel' => 'Termo de devolução amigável / autorização de retirada (assinado)',
+];
+
+/**
  * Token do link público — só faz sentido gerar depois que a venda já tem
  * veículo vinculado (`oportunidade_id` preenchido, `vincularVeiculoVenda()`
  * já rodou), já que o destino Drive da cópia dos documentos depende do

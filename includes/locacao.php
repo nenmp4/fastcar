@@ -73,9 +73,17 @@ function lerDadosLocacao(?string $json): array {
  * fora da lista de opções é descartado.
  */
 function parseCamposLocacaoPost(array $loc): array {
+    return parseCamposQuadroPost(LOCACAO_CAMPOS, $loc);
+}
+
+/**
+ * Parsing genérico de um Quadro-Resumo (definições no formato de
+ * LOCACAO_CAMPOS) — compartilhado com a promissória (includes/promissoria.php).
+ */
+function parseCamposQuadroPost(array $defs, array $post): array {
     $out = [];
-    foreach (LOCACAO_CAMPOS as $k => $def) {
-        $bruto = trim((string)($loc[$k] ?? ''));
+    foreach ($defs as $k => $def) {
+        $bruto = trim((string)($post[$k] ?? ''));
         if ($bruto === '') continue;
         switch ($def['tipo']) {
             case 'money':
@@ -111,20 +119,28 @@ function locacaoCamposFaltando(array $dados): array {
 
 /** Renderiza os inputs (name="loc[chave]") — usado no modal e no card. */
 function renderCamposLocacao(array $dados): string {
+    return renderCamposQuadro(LOCACAO_CAMPOS, LOCACAO_CAMPOS_OBRIGATORIOS, 'loc', $dados);
+}
+
+/**
+ * Renderização genérica de um Quadro-Resumo (name="{prefixo}[chave]") —
+ * compartilhada com a promissória (includes/promissoria.php).
+ */
+function renderCamposQuadro(array $defs, array $obrigatorios, string $prefixo, array $dados): string {
     $html = '<div class="grid-2">';
-    $chaves = array_keys(LOCACAO_CAMPOS);
+    $chaves = array_keys($defs);
     $metade = (int)ceil(count($chaves) / 2);
     foreach ([array_slice($chaves, 0, $metade), array_slice($chaves, $metade)] as $coluna) {
         $html .= '<div>';
         foreach ($coluna as $k) {
-            $def = LOCACAO_CAMPOS[$k];
-            $obrig = in_array($k, LOCACAO_CAMPOS_OBRIGATORIOS, true);
+            $def = $defs[$k];
+            $obrig = in_array($k, $obrigatorios, true);
             // Padrão só pré-preenche um cadastro NOVO (sem nada salvo ainda) —
             // nunca numa edição, senão a tela mostraria um valor que o PDF
             // não tem (campo apagado de propósito sairia "—" no contrato).
             $valor = array_key_exists($k, $dados) ? (string)$dados[$k] : ($dados ? '' : (string)($def['padrao'] ?? ''));
             $html .= '<label>' . e($def['label']) . ($obrig ? ' *' : '') . '</label>';
-            $name = 'loc[' . $k . ']';
+            $name = $prefixo . '[' . $k . ']';
             if ($def['tipo'] === 'select') {
                 $html .= '<select name="' . $name . '"' . ($obrig ? ' required' : '') . '><option value="">— escolha —</option>';
                 foreach ($def['opcoes'] as $ov => $ol) {
