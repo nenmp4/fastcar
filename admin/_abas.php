@@ -13,6 +13,10 @@
  * MESMA aba onde o usuário estava), senão a 1ª. Abas vazias (todos os
  * cards condicionais delas ausentes) nunca aparecem.
  */
+// 27/10/2026, "volta layout anterior, deixa como opção em configurações" —
+// desligado por padrão; liga em Configurações → 🗂️ Layout. Desligado, os
+// atributos data-aba no HTML não fazem nada (página inteira, como antes).
+if (getConfig('layout_abas_detalhe') !== '1') return;
 ?>
 <style>
 .abas-nav { display:flex; gap:6px; flex-wrap:nowrap; overflow-x:auto; margin:4px 0 14px;

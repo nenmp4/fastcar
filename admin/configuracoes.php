@@ -658,6 +658,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig($chave, clean((string)($_POST[$chave] ?? '')));
             }
             $sucesso = 'Representante da FASTCAR pra assinatura salvo.';
+        } elseif ($acao === 'salvar_layout_abas') {
+            setConfig('layout_abas_detalhe', !empty($_POST['layout_abas_detalhe']) ? '1' : '0');
+            $sucesso = getConfig('layout_abas_detalhe') === '1'
+                ? 'Telas de oportunidade e venda agora em abas.'
+                : 'Telas de oportunidade e venda voltaram pro layout anterior (tudo numa página só).';
         } elseif ($acao === 'salvar_logo') {
             $resultado = processarUploadLogo($_FILES['logo'] ?? []);
             if ($resultado['ok']) {
@@ -780,6 +785,21 @@ unset($fv);
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
+
+<div class="card">
+    <h2>🗂️ Layout das telas de oportunidade e venda</h2>
+    <p><small>Ligado: os cards da oportunidade/venda ficam separados em abas (Cliente, Veículo, Contrato, Documentos,
+       Andamento...). Desligado (padrão): layout anterior, tudo numa página só, rolando pra baixo.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_layout_abas">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:400">
+            <input type="checkbox" name="layout_abas_detalhe" value="1" <?= getConfig('layout_abas_detalhe') === '1' ? 'checked' : '' ?>>
+            Mostrar oportunidade e venda em abas
+        </label>
+        <button type="submit" style="width:auto">Salvar</button>
+    </form>
+</div>
 
 <div class="card">
     <h2>🎨 Identidade visual</h2>
