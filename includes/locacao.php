@@ -57,6 +57,19 @@ const LOCACAO_CAMPOS = [
     'mora_atualizacao'        => ['label' => 'Encargos de mora — atualização', 'tipo' => 'text'],
     'multa_saida_antecipada'  => ['label' => 'Multa por saída antecipada, se aplicável', 'tipo' => 'text'],
     'prazo_devolucao_resolucao' => ['label' => 'Prazo para devolução após resolução', 'tipo' => 'text', 'placeholder' => 'ex: 48 horas'],
+    // Modelo "Readequado" (27/10/2026) — campos que antes ficavam nos anexos.
+    'veiculo_cor'             => ['label' => 'Cor do veículo', 'tipo' => 'text'],
+    'canal_whatsapp'          => ['label' => 'Canal oficial FASTCAR — WhatsApp', 'tipo' => 'text', 'placeholder' => '(11) 9....'],
+    'proprietario_registral'  => ['label' => 'Proprietário registral (vazio = vendedor original do veículo)', 'tipo' => 'text'],
+    'restricoes_conhecidas'   => ['label' => 'Restrições conhecidas', 'tipo' => 'text', 'placeholder' => 'ex: nenhuma'],
+    'entrega_data'            => ['label' => 'Entrega prevista — data', 'tipo' => 'date'],
+    'entrega_hora'            => ['label' => 'Entrega prevista — hora', 'tipo' => 'text', 'placeholder' => 'ex: 14h'],
+    'entrega_local'           => ['label' => 'Entrega prevista — local', 'tipo' => 'text', 'padrao' => 'Sede FASTCAR — Barueri/SP'],
+    'franquia_acumulavel'     => ['label' => 'Franquia de km acumulável?', 'tipo' => 'select', 'opcoes' => ['sim' => 'Sim', 'nao' => 'Não']],
+    'cobertura_texto'         => ['label' => 'Cobertura: responsável, limites e exclusões (vazio = não contratada)', 'tipo' => 'text'],
+    'local_devolucao'         => ['label' => 'Local de devolução', 'tipo' => 'text', 'padrao' => 'Sede FASTCAR — Barueri/SP'],
+    'canal_privacidade'       => ['label' => 'Canal de privacidade e revogação de imagem e voz', 'tipo' => 'text', 'padrao' => 'Ouvidoria (11) 97816-4525'],
+    'autoriza_imagem'         => ['label' => 'Uso de imagem e voz (vazio = marcar na assinatura)', 'tipo' => 'select', 'opcoes' => ['sim' => 'SIM', 'nao' => 'NÃO']],
 ];
 
 /** Campos sem os quais o contrato de locação não é gerado. */

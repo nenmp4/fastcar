@@ -11355,6 +11355,14 @@ segue no schema sem uso novo, não removida sem ganho real),
   HTTP (banco isolado): registrar → rascunho do contrato → PDF decodificado
   conferindo Quadro-Resumo/cláusulas/foro; assinatura simulada não gera
   nenhum `fin_lancamentos`. ⚠️ Revisão do texto/campos pelo time pendente.
+  **Modelo "Readequado" + título simplificado (27/10/2026)** — texto trocado
+  pro `Contrato_FASTCAR_Locacao_Pura_Readequado.docx` (sem anexos: o que
+  ficava neles foi pro Quadro-Resumo; cláusula 30ª saiu; 4.3 com 30 dias
+  úteis do distrato; 5.5/11.1-A/18.5 novas; 13.4 imagem/voz no Quadro) e
+  título "CONTRATO DE LOCAÇÃO DE VEÍCULO". 12 campos novos em
+  `LOCACAO_CAMPOS` (cor, WhatsApp oficial, proprietário/restrições, entrega
+  prevista, franquia acumulável, cobertura, local de devolução, canal de
+  privacidade, autorização de imagem). Sede/foro mantidos em Barueri/SP.
 
 - **Contrato de PROMISSÓRIA substitui o contrato-mestre de venda + Termo de
   retirada amigável** (27/10/2026, "vamos substituir contrato atual no

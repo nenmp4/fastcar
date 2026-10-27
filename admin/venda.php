@@ -1173,7 +1173,7 @@ function adicionarParteEntrada() {
 <div class="card" data-aba="📝 Contrato">
 <?php if ($ehLocacao): ?>
     <h3>🔑 Condições da locação (Quadro-Resumo)</h3>
-    <p><small>Alimentam o Quadro-Resumo do contrato de locação pura — confirme com o locatário antes de gerar.
+    <p><small>Alimentam o Quadro-Resumo do contrato de locação de veículo — confirme com o locatário antes de gerar.
        Os campos com * são obrigatórios pra gerar o contrato.</small></p>
     <form method="post">
         <?= csrfField() ?>
