@@ -409,6 +409,24 @@ function buscarVeiculoAtivoPorPlaca(string $placa, ?int $excluirOportunidadeId =
 }
 
 /**
+ * Telefone PLACEHOLDER único (DDD 00, nunca existe de verdade) pra
+ * criarVeiculoManualFrota() quando o veículo não tem vendedor pra registrar
+ * (ex: recuperado pela Fastcar) — clientes.telefone é UNIQUE e nunca se
+ * inventa um número que pareça real (regra #3). Usado pelo botão
+ * "➕ Nova vistoria" (admin/avaliacoes.php).
+ */
+function gerarTelefonePlaceholderVeiculoRecuperado(): string {
+    $db = getDB();
+    $stmt = $db->prepare('SELECT 1 FROM clientes WHERE telefone = ?');
+    for ($tentativa = 0; $tentativa < 5; $tentativa++) {
+        $candidato = '00' . str_pad((string)random_int(0, 999999999), 9, '0', STR_PAD_LEFT);
+        $stmt->execute([normalizarTelefone($candidato)]);
+        if (!$stmt->fetch()) return $candidato;
+    }
+    throw new RuntimeException('Não consegui gerar um telefone placeholder único — tente de novo.');
+}
+
+/**
  * Cria uma oportunidade MANUALMENTE, sem passar pelo WhatsApp — 05/10/2026,
  * "opçao adcionar uma opotunidade manual". Cobre o lead que chegou por
  * ligação, indicação ou presencial — o consultor/admin já tem o contato (e,

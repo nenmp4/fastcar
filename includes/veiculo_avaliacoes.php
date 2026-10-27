@@ -279,6 +279,14 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
     if ($existenteId) {
         return (int)$existenteId;
     }
+    // 27/10/2026, "não pode duplicar placa" — a mesma placa pode estar em
+    // mais de um cadastro (lead do WhatsApp + carro na frota); se QUALQUER
+    // um deles já tem vistoria de compra em aberto, reaproveita ela em vez
+    // de abrir uma 2ª pro mesmo carro físico.
+    if ($tipo === 'compra' && $opPl && strlen(veiculoPlacaNormalizada((string)$opPl['veiculo_placa'])) >= 6) {
+        $existentePlaca = vistoriaAtivaPorPlaca((string)$opPl['veiculo_placa']);
+        if ($existentePlaca) return $existentePlaca;
+    }
 
     $db->beginTransaction();
     try {
@@ -303,6 +311,101 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
         $db->rollBack();
         throw $e;
     }
+}
+
+/**
+ * Vistoria de COMPRA ainda em aberto (pendente/em andamento) de qualquer
+ * cadastro com essa placa — null se não houver. 27/10/2026.
+ */
+function vistoriaAtivaPorPlaca(string $placa): ?int {
+    $norm = veiculoPlacaNormalizada($placa);
+    if (strlen($norm) < 6) return null;
+    $stmt = getDB()->prepare("
+        SELECT va.id FROM veiculo_avaliacoes va
+        JOIN oportunidades o ON o.id = va.oportunidade_id
+        WHERE va.tipo = 'compra' AND va.status IN ('pendente', 'em_andamento')
+          AND UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', '')) = ?
+        ORDER BY va.id DESC LIMIT 1
+    ");
+    $stmt->execute([$norm]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int)$id : null;
+}
+
+/**
+ * Busca do botão "➕ Nova vistoria" (admin/avaliacoes.php, 27/10/2026):
+ * placa (ignora hífen/espaço), marca/modelo ou nome/telefone. Compra varre
+ * oportunidades (sem perdido/sem_perfil e sem cadastro já mesclado como
+ * duplicado); venda varre negociações com veículo vinculado. Cada
+ * candidato diz se já tem vistoria em aberto (pra abrir a existente).
+ */
+function buscarCandidatosVistoria(string $tipo, string $termo): array {
+    $termo = trim($termo);
+    if (mb_strlen($termo) < 2) return [];
+    $db = getDB();
+    $like = '%' . $termo . '%';
+    $likeNorm = '%' . veiculoPlacaNormalizada($termo) . '%';
+    $placaExpr = "UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', ''))";
+    if ($tipo === 'venda') {
+        $stmt = $db->prepare("
+            SELECT v.id AS venda_id, v.oportunidade_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+                   v.comprador_nome AS pessoa_nome, v.comprador_telefone AS pessoa_telefone,
+                   (SELECT va.id FROM veiculo_avaliacoes va WHERE va.venda_id = v.id AND va.tipo = 'venda'
+                      AND va.status IN ('pendente','em_andamento') ORDER BY va.id DESC LIMIT 1) AS vistoria_ativa_id
+            FROM vendas v JOIN oportunidades o ON o.id = v.oportunidade_id
+            WHERE v.etapa != 'cancelada'
+              AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR {$placaExpr} LIKE ?)
+            ORDER BY v.created_at DESC LIMIT 15
+        ");
+    } else {
+        $stmt = $db->prepare("
+            SELECT o.id AS oportunidade_id, NULL AS venda_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+                   c.nome AS pessoa_nome, c.telefone AS pessoa_telefone,
+                   (SELECT va.id FROM veiculo_avaliacoes va JOIN oportunidades o2 ON o2.id = va.oportunidade_id
+                     WHERE va.tipo = 'compra' AND va.status IN ('pendente','em_andamento')
+                       AND (va.oportunidade_id = o.id OR (LENGTH({$placaExpr}) >= 6
+                            AND UPPER(REPLACE(REPLACE(COALESCE(o2.veiculo_placa,''), '-', ''), ' ', '')) = {$placaExpr}))
+                     ORDER BY va.id DESC LIMIT 1) AS vistoria_ativa_id
+            FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+            WHERE o.etapa NOT IN ('perdido', 'sem_perfil')
+              AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+              AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR {$placaExpr} LIKE ?)
+            ORDER BY (o.etapa = 'fechado') DESC, o.created_at DESC LIMIT 15
+        ");
+    }
+    $stmt->execute([$like, $like, $like, $like, $likeNorm]);
+    $out = [];
+    foreach ($stmt->fetchAll() as $l) {
+        $veiculo = trim(($l['veiculo_marca'] ?? '') . ' ' . ($l['veiculo_modelo'] ?? '')) ?: 'Veículo sem marca/modelo';
+        $out[] = [
+            'oportunidade_id' => (int)$l['oportunidade_id'],
+            'venda_id' => $l['venda_id'] !== null ? (int)$l['venda_id'] : null,
+            'placa' => veiculoPlacaNormalizada((string)$l['veiculo_placa']),
+            'label' => $veiculo . ($l['veiculo_ano'] ? ' ' . $l['veiculo_ano'] : '') . ($l['veiculo_placa'] ? ' — ' . $l['veiculo_placa'] : ' — sem placa')
+                     . ' — ' . ($l['pessoa_nome'] ?: 'Sem nome'),
+            'vistoria_ativa_id' => $l['vistoria_ativa_id'] ? (int)$l['vistoria_ativa_id'] : null,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * Qualquer cadastro ATIVO (não perdido/sem_perfil, não mesclado) com essa
+ * placa — usado pra nunca cadastrar o mesmo carro de novo pelo botão de
+ * vistoria. Mais amplo que buscarVeiculoAtivoPorPlaca() (só frota).
+ */
+function cadastroAtivoPorPlaca(string $placa): ?array {
+    $norm = veiculoPlacaNormalizada($placa);
+    if (strlen($norm) < 6) return null;
+    $stmt = getDB()->prepare("
+        SELECT o.id, o.etapa, o.veiculo_marca, o.veiculo_modelo FROM oportunidades o
+        WHERE o.etapa NOT IN ('perdido', 'sem_perfil')
+          AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+          AND UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) = ?
+        ORDER BY (o.etapa = 'fechado') DESC, o.id DESC LIMIT 1
+    ");
+    $stmt->execute([$norm]);
+    return $stmt->fetch() ?: null;
 }
 
 function buscarAvaliacao(int $avaliacaoId): ?array {
