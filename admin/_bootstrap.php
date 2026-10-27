@@ -67,6 +67,8 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // ver_avaliacao_foto.php, acima).
         'ver_assinatura_retirada.php',
         'promissorias.php', 'meu_perfil.php', 'logout.php',
+        // 27/10/2026 — busca FIPE pela placa no card "📊 Valor FIPE do veículo" da venda.
+        'fipe_ajax.php',
         // 27/10/2026 — PDF do termo de retirada amigável (admin/venda.php).
         'termo_retirada.php',
         // 26/09/2026 — leitura de CRLV por IA no modal "Vender na

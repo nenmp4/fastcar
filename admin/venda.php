@@ -42,7 +42,7 @@ $sucesso = '';
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
-    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria'];
+    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria', 'salvar_fipe_venda'];
 $vendaTravada = $v['etapa'] === 'vendido' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
 function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM venda_documentos WHERE venda_id = ? AND tipo = ?
@@ -140,6 +140,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // que não são derivados da negociação (includes/promissoria.php).
                 salvarDadosPromissoria($id, parseCamposPromissoriaPost((array)($_POST['prom'] ?? [])));
                 $sucesso = 'Quadro-Resumo da promissória salvo.';
+            } elseif ($acao === 'salvar_fipe_venda') {
+                // 27/10/2026, "campo da FIPE no contrato de venda, caso
+                // esqueceram de pôr na compra" — o valor FIPE é do VEÍCULO
+                // (oportunidades.valor_fipe_referencia), o mesmo que a compra
+                // usa; preencher aqui completa os dois lados.
+                if (!$v['oportunidade_id']) {
+                    $erro = 'Vincule o veículo da frota antes de informar a FIPE.';
+                } else {
+                    $fipeNovo = valorMonetario($_POST['valor_fipe_referencia'] ?? null);
+                    $db->prepare("UPDATE oportunidades SET valor_fipe_referencia = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+                       ->execute([$fipeNovo, (int)$v['oportunidade_id']]);
+                    $fipeEscolhido = valorMonetario($_POST['fipe_valor_escolhido'] ?? null);
+                    if ($fipeEscolhido && $fipeNovo && abs($fipeEscolhido - $fipeNovo) < 0.01) {
+                        registrarConsultaFipe((int)$v['oportunidade_id'], (string)($_POST['fipe_placa'] ?? $v['veiculo_placa'] ?? ''), $fipeNovo,
+                            clean((string)($_POST['fipe_codigo'] ?? '')), clean((string)($_POST['fipe_descricao'] ?? '')),
+                            clean((string)($_POST['fipe_mes_ref'] ?? '')), (int)$_SESSION['admin_id']);
+                        // Data da consulta do Quadro da promissória: preenche se ainda vazia.
+                        if (($v['tipo_contrato'] ?? 'venda') === 'venda') {
+                            $promAtual = lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
+                            if (empty($promAtual['fipe_data_consulta'])) {
+                                $promAtual['fipe_data_consulta'] = date('Y-m-d');
+                                salvarDadosPromissoria($id, $promAtual);
+                            }
+                        }
+                    }
+                    $sucesso = $fipeNovo ? 'Valor FIPE do veículo salvo (vale pro contrato de venda e de compra).' : 'Valor FIPE apagado.';
+                }
             } elseif ($acao === 'atualizar_condicoes') {
                 // valor_pago_contratacao NUNCA é escrito aqui — desde
                 // 26/09/2026 é sempre a soma das partes da entrada
@@ -1171,6 +1198,82 @@ function adicionarParteEntrada() {
 <?php endif; ?>
 
 <div class="card" data-aba="📝 Contrato">
+<?php if ($v['oportunidade_id']): ?>
+    <h3>📊 Valor FIPE do veículo</h3>
+    <p><small>Usado no contrato de venda (comissão de <?= PROMISSORIA_COMISSAO_PCT ?>% da FIPE, % da FIPE) — é o mesmo valor do
+       contrato de compra deste carro. <?= $v['valor_fipe_referencia'] ? 'Já preenchido.' : '⚠️ Não foi preenchido na compra — informe aqui.' ?></small></p>
+    <?php if (getConfig('placafipe_token')): ?>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+            <div style="flex:1;min-width:160px"><label>Placa</label>
+                <input type="text" id="vfipe-placa" value="<?= e($v['veiculo_placa'] ?? '') ?>" style="text-transform:uppercase" maxlength="8"></div>
+            <button type="button" id="vfipe-buscar" style="width:auto;margin:0">🔍 Buscar FIPE pela placa</button>
+        </div>
+        <p id="vfipe-resultado" style="font-size:12.5px;margin-top:8px"></p>
+        <div id="vfipe-candidatos"></div>
+    <?php endif; ?>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_fipe_venda">
+        <input type="hidden" name="fipe_codigo" id="vfipe-h-codigo">
+        <input type="hidden" name="fipe_descricao" id="vfipe-h-descricao">
+        <input type="hidden" name="fipe_mes_ref" id="vfipe-h-mes">
+        <input type="hidden" name="fipe_valor_escolhido" id="vfipe-h-valor">
+        <input type="hidden" name="fipe_placa" id="vfipe-h-placa">
+        <label>Valor FIPE de referência (R$)</label>
+        <input type="number" step="0.01" inputmode="decimal" name="valor_fipe_referencia" id="vfipe-valor" value="<?= e((string)($v['valor_fipe_referencia'] ?? '')) ?>">
+        <button type="submit">Salvar valor FIPE</button>
+    </form>
+    <?php $histFipeVenda = listarHistoricoFipe((int)$v['oportunidade_id'], (string)($v['veiculo_placa'] ?? '')); ?>
+    <?php if ($histFipeVenda): ?>
+        <details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">📜 Histórico FIPE do veículo (<?= count($histFipeVenda) ?>)</summary>
+            <?php foreach ($histFipeVenda as $hf): ?>
+                <p style="margin:4px 0;font-size:12.5px"><?= date('d/m/Y', strtotime($hf['created_at'])) ?> — <strong>R$ <?= number_format((float)$hf['valor'], 2, ',', '.') ?></strong>
+                   <?= e($hf['descricao']) ?><?= $hf['codigo_fipe'] ? ' · cód. ' . e($hf['codigo_fipe']) : '' ?><?= $hf['mes_referencia'] ? ' · ' . e($hf['mes_referencia']) : '' ?></p>
+            <?php endforeach; ?>
+        </details>
+    <?php endif; ?>
+    <?php if (getConfig('placafipe_token')): ?>
+    <script>
+    (function () {
+        var btn = document.getElementById('vfipe-buscar'), placa = document.getElementById('vfipe-placa');
+        var res = document.getElementById('vfipe-resultado'), lista = document.getElementById('vfipe-candidatos');
+        function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+        btn.addEventListener('click', function () {
+            var p = placa.value.trim();
+            if (p.length < 7) { res.textContent = 'Digite a placa completa.'; return; }
+            btn.disabled = true; res.textContent = 'Buscando...'; lista.innerHTML = '';
+            fetch('/admin/fipe_ajax.php?acao=buscar_placa&placa=' + encodeURIComponent(p), { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    btn.disabled = false;
+                    if (!d.ok) { res.textContent = '⚠️ ' + (d.msg || 'Não consegui buscar essa placa.'); return; }
+                    if (!d.candidatos || !d.candidatos.length) { res.textContent = 'Nenhum valor FIPE encontrado pra essa placa.'; return; }
+                    res.textContent = 'Escolha qual valor FIPE bate com o veículo:';
+                    d.candidatos.forEach(function (c) {
+                        var div = document.createElement('div');
+                        div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;border:1px solid var(--borda);border-radius:6px;margin-top:6px;font-size:12.5px';
+                        div.innerHTML = '<span>' + esc(c.marca) + ' ' + esc(c.modelo) + ' (' + esc(c.ano_modelo) + ', ' + esc(c.combustivel) + ')<br><small>Correspondência ' + esc(c.correspondencia) + '% · ' + esc(c.mes_referencia) + '</small></span><strong>' + esc(c.valor_texto) + '</strong>';
+                        var b = document.createElement('button');
+                        b.type = 'button'; b.textContent = 'Usar este valor'; b.style.cssText = 'width:auto;margin:0;padding:5px 10px;font-size:12px';
+                        b.addEventListener('click', function () {
+                            document.getElementById('vfipe-valor').value = c.valor_numero;
+                            document.getElementById('vfipe-h-codigo').value = c.codigo_fipe || '';
+                            document.getElementById('vfipe-h-descricao').value = (c.marca + ' ' + c.modelo + ' ' + c.ano_modelo + ' ' + c.combustivel).trim();
+                            document.getElementById('vfipe-h-mes').value = c.mes_referencia || '';
+                            document.getElementById('vfipe-h-valor').value = c.valor_numero;
+                            document.getElementById('vfipe-h-placa').value = p;
+                            res.textContent = '✅ ' + c.valor_texto + ' preenchido — clique em "Salvar valor FIPE".';
+                        });
+                        div.appendChild(b); lista.appendChild(div);
+                    });
+                })
+                .catch(function () { btn.disabled = false; res.textContent = '⚠️ Falha ao buscar — tente de novo.'; });
+        });
+    })();
+    </script>
+    <?php endif; ?>
+    <hr>
+<?php endif; ?>
 <?php if ($ehLocacao): ?>
     <h3>🔑 Condições da locação (Quadro-Resumo)</h3>
     <p><small>Alimentam o Quadro-Resumo do contrato de locação de veículo — confirme com o locatário antes de gerar.
