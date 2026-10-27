@@ -812,6 +812,15 @@ function clausulasContratoVenda(int $horasDevolucao = 0, int $diasSaneamento = 0
             "19.2. Este contrato não constitui autorização para ingresso forçado em residência, garagem fechada ou propriedade particular, rompimento de obstáculos, ameaça, violência, constrangimento ou qualquer conduta ilícita.\n\n" .
             "19.3. Havendo resistência, conflito possessório ou necessidade de coerção, a FASTCAR adotará a medida judicial adequada.\n\n" .
             "19.4. O eventual uso de chave reserva observará a licitude da posse e do acesso ao local, não servindo como autorização autônoma para ingresso irregular."],
+        // 27/10/2026, "mantem clausula anterior 12.4" — autorização de retirada
+        // após 60 dias trazida do contrato de venda antigo (era a 12.4 dele),
+        // adaptada aos termos deste (LOCATÁRIO, parcelas do Quadro-Resumo,
+        // notificação pela cláusula 16). Compatível com a 19: nunca ingresso
+        // forçado/violência; havendo resistência, segue a via judicial (19.3).
+        ['CLÁUSULA 19-A – AUTORIZAÇÃO DE RETIRADA DO VEÍCULO EM CASO DE INADIMPLÊNCIA SUPERIOR A 60 DIAS',
+            "19-A.1. O atraso no pagamento de qualquer parcela prevista no Quadro-Resumo por prazo superior a 60 (sessenta) dias corridos, sem que tenha sido devidamente sanado, autoriza, desde já e de forma livre e expressa, a FASTCAR a promover a retirada extrajudicial do veículo, diretamente ou por preposto devidamente identificado, mediante prévia notificação por escrito ao LOCATÁRIO (cláusula 16ª) com antecedência mínima de 10 (dez) dias para regularização do débito.\n\n" .
+            "19-A.2. Ultrapassado esse prazo adicional sem a regularização, a retirada poderá ser efetivada em local de fácil acesso, sem uso de violência, arrombamento, ameaça ou constrangimento ao LOCATÁRIO ou a terceiros, e independentemente de nova notificação caso a inadimplência persista.\n\n" .
+            "19-A.3. Esta autorização não exclui o direito da FASTCAR de cobrar o saldo remanescente, encargos e demais perdas e danos legalmente cabíveis, nem a possibilidade de o LOCATÁRIO regularizar o débito e reaver o veículo enquanto este ainda estiver em poder da FASTCAR e não houver sido revendido a terceiro, observada a prestação de contas da cláusula 22ª."],
         ['CLÁUSULA 20ª – NÃO DEVOLUÇÃO APÓS A RESOLUÇÃO',
             "20.1. Encerrada validamente a autorização de uso e vencido o prazo de devolução, a permanência do veículo com o LOCATÁRIO poderá gerar remuneração/indenização pelo período de utilização, além de danos, quilometragem, multas e despesas comprovadas, conforme a natureza jurídica aplicável.\n\n" .
             "20.2. A permanência posterior não restabelece automaticamente a promessa de aquisição."],

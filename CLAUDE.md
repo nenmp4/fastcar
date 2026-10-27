@@ -11364,8 +11364,9 @@ segue no schema sem uso novo, não removida sem ganho real),
   `Contrato_FASTCAR_PROMISSÓRIA.docx` ("Aquisição de posse veicular com
   promessa condicionada de compra e venda", 30 cláusulas + 2-A/6-A/13-A/
   25-A/25-B) pra toda negociação `tipo_contrato='venda'`; o antigo
-  (20 cláusulas, incl. 12.4 retirada extrajudicial após 60 dias) saiu — o
-  novo proíbe retirada forçada (cl. 19). Sede/foro corrigidos pra
+  (20 cláusulas) saiu; a antiga 12.4 (retirada extrajudicial após 60 dias
+  de atraso, com notificação de 10 dias) foi MANTIDA a pedido ("mantem
+  clausula anterior 12.4") como cláusula 19-A, adaptada aos termos do novo. Sede/foro corrigidos pra
   Barueri/SP (modelo trazia Santana de Parnaíba). Quadro-Resumo quase todo
   CALCULADO em `promissoriaQuadro()` (`includes/promissoria.php`): comissão
   15% da FIPE (só se marcada "há intermediação"), abatida da entrada, saldo
