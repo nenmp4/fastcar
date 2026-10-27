@@ -43,6 +43,7 @@ require_once __DIR__ . '/whatsapp_config.php';
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()/lerConteudoArquivoDocumento() — catálogo de mídia de revenda
 require_once __DIR__ . '/financeiro.php'; // finGerarReceitaVendaAssinatura() — receita automática ao vender
 require_once __DIR__ . '/contratos.php'; // cancelarContratosAtivosVenda() — invalida contrato pendente ao trocar o veículo vinculado (16/10/2026). Circular (contratos.php também requer vendas.php) — seguro, nenhum dos dois chama função do outro fora de corpo de função, só na definição
+require_once __DIR__ . '/locacao.php'; // contrato de locação pura reaproveita esta tabela (27/10/2026)
 
 // 'whatsapp'/'qualificacao_ia'/'sem_perfil' são exclusivas de leads que
 // entraram por origem='whatsapp' — negociação manual nunca passa por elas.
@@ -57,7 +58,10 @@ const ETAPAS_VENDA_ATIVAS  = ['whatsapp', 'qualificacao_ia', 'crm_preenchido', '
 const ETAPAS_VENDA_PIPELINE = ['negociacao', 'contrato_enviado', 'vendido', 'cancelada'];
 const ETAPAS_VENDA_LEAD_IA  = ['whatsapp', 'qualificacao_ia', 'crm_preenchido'];
 
-function etapaVendaLabel(string $etapa): string {
+function etapaVendaLabel(string $etapa, string $tipoContrato = 'venda'): string {
+    // Locação (27/10/2026): mesma etapa 'vendido' quando o contrato é
+    // assinado, mas exibida como "Locado" — o carro continua da Fastcar.
+    if ($tipoContrato === 'locacao' && $etapa === 'vendido') return '🔑 Locado';
     $labels = [
         'whatsapp'         => '💬 WhatsApp',
         'qualificacao_ia'  => '🤖 Qualificação IA',

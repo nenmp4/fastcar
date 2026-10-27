@@ -155,6 +155,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
     }
 }
 
+// 27/10/2026, "vamos subir contrato de locação — coloca botão seleciona tipo
+// de contrato em vendas" — modal de LOCAÇÃO pura (includes/locacao.php).
+// Reaproveita a negociação de venda (tipo_contrato='locacao'), mesmo veículo
+// da frota, mesmo wizard de documentos e mesma geração de contrato.
+$erroLocacao = '';
+$modalLocacaoAbrir = false;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'registrar_locacao') {
+    $modalLocacaoAbrir = true;
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erroLocacao = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Ação não permitida — perfil de acompanhamento só consulta.');
+    } else {
+        try {
+            $resLoc = registrarLocacao([
+                'oportunidade_id'    => (int)($_POST['oportunidade_id'] ?? 0),
+                'locatario_nome'     => (string)($_POST['locatario_nome'] ?? ''),
+                'locatario_telefone' => (string)($_POST['locatario_telefone'] ?? ''),
+                'locatario_cpf'      => (string)($_POST['locatario_cpf'] ?? ''),
+                'locatario_rg'       => (string)($_POST['locatario_rg'] ?? ''),
+                'locatario_cnh'      => (string)($_POST['locatario_cnh'] ?? ''),
+                'locatario_email'    => (string)($_POST['locatario_email'] ?? ''),
+                'loc'                => parseCamposLocacaoPost((array)($_POST['loc'] ?? [])),
+            ], $meuId);
+            header('Location: /admin/venda.php?id=' . $resLoc['venda_id'] . '&criado=1');
+            exit;
+        } catch (Throwable $e) {
+            $erroLocacao = $e->getMessage();
+        }
+    }
+}
+
 // 29/09/2026, mesmo pedido do lado de compra (ver admin/index.php) —
 // seleção em massa na tabela, pra cancelar várias negociações de uma vez.
 // Reaproveita cancelarVendaEmMassa() (includes/vendas.php) — nunca apaga
@@ -565,6 +598,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 
 <main>
 <?php if ($erroPromissoria): ?><div class="alerta-erro"><?= e($erroPromissoria) ?></div><?php endif; ?>
+<?php if ($erroLocacao): ?><div class="alerta-erro"><?= e($erroLocacao) ?></div><?php endif; ?>
 <?php if (isset($_GET['rap_ok'])): ?>
     <div class="alerta-sucesso">✅ <?= e((string)$_GET['rap_ok']) ?></div>
 <?php elseif (isset($_GET['rap_erro'])): ?>
@@ -586,8 +620,84 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 <?php endif; ?>
 
 <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
-    <button type="button" class="btn-primary" style="width:auto" onclick="document.getElementById('modal-promissoria').showModal()">💳 Vender na Promissória</button>
+    <button type="button" class="btn-primary" style="width:auto" onclick="document.getElementById('modal-tipo-contrato').showModal()">📄 Novo contrato</button>
 </div>
+
+<dialog id="modal-tipo-contrato" class="modal-lancamento" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h2 style="margin:0">📄 Qual tipo de contrato?</h2>
+        <button type="button" onclick="document.getElementById('modal-tipo-contrato').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
+    </div>
+    <div style="display:grid;gap:12px;margin-top:12px">
+        <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
+                onclick="document.getElementById('modal-tipo-contrato').close();document.getElementById('modal-promissoria').showModal()">
+            💳 Venda na Promissória<br><small style="font-weight:400">Venda com entrada + parcelas, quitação futura do financiamento</small>
+        </button>
+        <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
+                onclick="document.getElementById('modal-tipo-contrato').close();document.getElementById('modal-locacao').showModal()">
+            🔑 Locação<br><small style="font-weight:400">Aluguel do veículo — sem promessa de compra, o carro continua da Fastcar</small>
+        </button>
+    </div>
+</dialog>
+
+<?php $postLoc = ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'registrar_locacao') ? $_POST : []; ?>
+<dialog id="modal-locacao" class="modal-lancamento">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h2 style="margin:0">🔑 Contrato de Locação</h2>
+        <button type="button" onclick="document.getElementById('modal-locacao').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
+    </div>
+    <p><small>Locação pura: o aluguel não vira parcela de compra e o veículo continua da Fastcar. Depois de registrar,
+       a tela da negociação gera o contrato (rascunho ou envio pra assinatura) e o link de documentos do locatário.
+       Assinado, o veículo fica "🔑 Locado"; quando voltar, use "🔙 Voltou pra Fastcar" na Frota.</small></p>
+    <?php if (!$frotaDisponivelPromissoria): ?>
+        <div class="alerta-info">⚠️ Nenhum veículo disponível na frota agora — cadastre o veículo na Frota antes de locar.</div>
+    <?php else: ?>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="registrar_locacao">
+
+        <h3 style="margin-top:1rem">🚗 Veículo</h3>
+        <select name="oportunidade_id" required>
+            <option value="">— Escolha —</option>
+            <?php foreach ($frotaDisponivelPromissoria as $fv): ?>
+                <option value="<?= (int)$fv['oportunidade_id'] ?>" <?= (int)($postLoc['oportunidade_id'] ?? 0) === (int)$fv['oportunidade_id'] ? 'selected' : '' ?>>
+                    #<?= (int)$fv['oportunidade_id'] ?> — <?= e(trim($fv['veiculo_marca'] . ' ' . $fv['veiculo_modelo'] . ' ' . $fv['veiculo_ano'])) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+
+        <h3 style="margin-top:1.4rem">🙋 Locatário</h3>
+        <div class="grid-2">
+            <div>
+                <label>Nome completo *</label>
+                <input type="text" name="locatario_nome" value="<?= e($postLoc['locatario_nome'] ?? '') ?>" required>
+                <label>Telefone/WhatsApp *</label>
+                <input type="tel" name="locatario_telefone" value="<?= e($postLoc['locatario_telefone'] ?? '') ?>" required placeholder="Ex: 11999998888">
+                <label>E-mail</label>
+                <input type="email" name="locatario_email" value="<?= e($postLoc['locatario_email'] ?? '') ?>">
+            </div>
+            <div>
+                <label>CPF/CNPJ</label>
+                <input type="text" name="locatario_cpf" value="<?= e($postLoc['locatario_cpf'] ?? '') ?>">
+                <label>RG</label>
+                <input type="text" name="locatario_rg" value="<?= e($postLoc['locatario_rg'] ?? '') ?>">
+                <label>CNH</label>
+                <input type="text" name="locatario_cnh" value="<?= e($postLoc['locatario_cnh'] ?? '') ?>">
+            </div>
+        </div>
+        <p><small>Endereço, nacionalidade, estado civil e profissão entram depois pelo link de documentos (ou editando na tela da negociação).</small></p>
+
+        <h3 style="margin-top:1.4rem">📋 Quadro-Resumo da locação</h3>
+        <?= renderCamposLocacao(parseCamposLocacaoPost((array)($postLoc['loc'] ?? []))) ?>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem">
+            <button type="button" class="secundario" onclick="document.getElementById('modal-locacao').close()">Cancelar</button>
+            <button type="submit">✅ Registrar locação</button>
+        </div>
+    </form>
+    <?php endif; ?>
+</dialog>
+<?php if ($modalLocacaoAbrir): ?><script>document.addEventListener('DOMContentLoaded', function () { document.getElementById('modal-locacao').showModal(); });</script><?php endif; ?>
 
 <?php
     $postVp = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : ($venderOpEstoque > 0 ? ['oportunidade_id' => $venderOpEstoque] : []);
@@ -1350,7 +1460,8 @@ if ($podeSelecionarEmMassa):
                 </td>
                 <td><?= $v['preco_venda'] !== null ? moedaVenda((float)$v['preco_venda']) : '—' ?></td>
                 <td>
-                    <span class="badge"><?= e(etapaVendaLabel($v['etapa'])) ?></span>
+                    <span class="badge"><?= e(etapaVendaLabel($v['etapa'], $v['tipo_contrato'] ?? 'venda')) ?></span>
+                    <?php if (($v['tipo_contrato'] ?? 'venda') === 'locacao'): ?><br><span class="badge badge-info">🔑 Locação</span><?php endif; ?>
                     <?php if ($atrasada): ?><br><span class="badge badge-atraso">⚠️ atrasada</span><?php endif; ?>
                     <?php if (!empty($v['visita_compareceu_em'])): ?>
                         <br><span class="badge badge-ok">🏁 veio na loja</span>

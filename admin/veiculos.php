@@ -277,7 +277,7 @@ $totalVeiculos = (int)$stmtTotal->fetchColumn();
 
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.cidade AS cliente_cidade, c.estado AS cliente_estado,
-           vd.id AS venda_id, vd.etapa AS venda_etapa,
+           vd.id AS venda_id, vd.etapa AS venda_etapa, vd.tipo_contrato AS venda_tipo_contrato,
            {$refPosseExpr} AS ref_posse,
            (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias,
            {$condIncompletoImportAntigo} AS incompleto_import_antigo
@@ -630,7 +630,7 @@ function lerCrlvManual() {
                             <button type="submit" style="margin-top:0;padding:5px 10px;font-size:12px">💰 Vender</button>
                         </form>
                     <?php elseif ($v['venda_etapa'] === 'vendido'): ?>
-                        <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge badge-ok">✅ vendido</span></a>
+                        <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge badge-ok"><?= ($v['venda_tipo_contrato'] ?? 'venda') === 'locacao' ? '🔑 locado' : '✅ vendido' ?></span></a>
                         <form method="post" class="inline" style="margin-top:6px" onsubmit="var m = prompt('Motivo da devolução (ex: comprador devolveu, inadimplência):'); if (!m) return false; this.motivo.value = m; return true;">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="devolucao_veiculo">
@@ -639,7 +639,7 @@ function lerCrlvManual() {
                             <button type="submit" class="btn-texto" style="font-size:12px" title="O carro voltou pra Fastcar — desfaz a venda e libera pra vender de novo">🔙 Voltou pra Fastcar</button>
                         </form>
                     <?php else: ?>
-                        <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'])) ?></span></a>
+                        <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'], $v['venda_tipo_contrato'] ?? 'venda')) ?></span></a>
                     <?php endif; ?>
                 </td>
                 <td><a href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>

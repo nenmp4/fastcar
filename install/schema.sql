@@ -836,6 +836,11 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- Condições da venda — Quadro-Resumo do contrato-mestre de venda
     -- (includes/contratos_pdf.php::gerarPdfContratoVenda(), transcrito de
     -- 01_Contrato_Mestre_FASTCAR_Venda_Quitacao_Futura.docx)
+    -- 27/10/2026 — contrato de LOCAÇÃO pura reaproveita esta tabela
+    -- (includes/locacao.php): 'venda' (padrão) ou 'locacao'; o Quadro-Resumo
+    -- da locação mora em locacao_dados_json (chaves de LOCACAO_CAMPOS).
+    tipo_contrato TEXT NOT NULL DEFAULT 'venda' CHECK (tipo_contrato IN ('venda', 'locacao')),
+    locacao_dados_json TEXT DEFAULT '{}',
     km_entrega INTEGER,
     preco_venda REAL,                  -- "Preço ajustado entre FASTCAR e COMPRADOR"
     valor_pago_contratacao REAL,       -- valor pago pelo comprador na contratação

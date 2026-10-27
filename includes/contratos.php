@@ -630,6 +630,10 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         'fastcar_signatario_cpf'        => getConfig('fastcar_signatario_cpf') ?: '',
         'data_extenso'                  => formatarDataExtensoPtBr(date('Y-m-d')),
         '_venda_id'                     => (int)$v['id'],
+        // 27/10/2026 — contrato de locação pura reaproveita a negociação de
+        // venda (includes/locacao.php); '_loc' é o Quadro-Resumo da locação.
+        '_tipo_contrato'                => $v['tipo_contrato'] ?? 'venda',
+        '_loc'                          => lerDadosLocacao($v['locacao_dados_json'] ?? '{}'),
         '_oportunidade_id'              => (int)$v['oportunidade_id'],
         '_cliente_id'                   => (int)$v['cliente_id'],
         '_telefone'                     => $v['comprador_telefone'] ?: '',
@@ -643,6 +647,12 @@ function montarCamposContratoVenda(int $vendaId): ?array {
  * lado do COMPRADOR.
  */
 function verificarCamposObrigatoriosContratoVenda(array $campos): array {
+    if (($campos['_tipo_contrato'] ?? 'venda') === 'locacao') {
+        $faltando = [];
+        if (empty($campos['comprador_nome'])) $faltando[] = 'Nome do locatário';
+        if (empty($campos['comprador_cpf'])) $faltando[] = 'CPF do locatário';
+        return array_merge($faltando, locacaoCamposFaltando($campos['_loc'] ?? []));
+    }
     $obrigatorios = [
         'comprador_nome' => 'Nome do comprador', 'comprador_cpf' => 'CPF do comprador',
         'comprador_rg' => 'RG do comprador', 'preco_venda' => 'Preço ajustado (bloco de negociação)',
@@ -673,8 +683,9 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         ? 'Comprador sem e-mail cadastrado — o contrato vai só pelo WhatsApp/telefone pra assinatura.'
         : null;
 
-    $pdfPath = gerarPdfContratoVenda($campos);
-    $nomeDoc = 'Contrato de Venda - ' . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+    $ehLocacao = ($campos['_tipo_contrato'] ?? 'venda') === 'locacao';
+    $pdfPath = $ehLocacao ? gerarPdfContratoLocacao($campos) : gerarPdfContratoVenda($campos);
+    $nomeDoc = ($ehLocacao ? 'Contrato de Locação - ' : 'Contrato de Venda - ') . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
 
     // Mesmo padrão do contrato de compra: cópia própria salva ANTES de
     // mandar pra assinatura, pra dar pra visualizar no sistema mesmo
@@ -684,7 +695,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     // — não existe cadastro em `clientes` pro COMPRADOR da revenda (ver
     // includes/vendas.php), então a pasta do veículo/processo continua
     // sendo a mesma dos documentos de compra desse mesmo carro.
-    $nomeArquivoCopia = 'contrato_venda_' . $vendaId . '_' . time() . '.pdf';
+    $nomeArquivoCopia = ($ehLocacao ? 'contrato_locacao_' : 'contrato_venda_') . $vendaId . '_' . time() . '.pdf';
     $copia = salvarArquivoGeradoComoDocumento(
         $campos['_cliente_id'], $campos['comprador_nome'], $pdfPath, $nomeArquivoCopia,
         'application/pdf', 'contratos/' . $campos['_oportunidade_id']
@@ -714,7 +725,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     // aqui pra ter a mesma paridade e a mesma checagem de status.
     if ($campos['_email']) {
         $corpoEmail = "<p>Olá, " . htmlspecialchars($campos['comprador_nome'] ?: '', ENT_QUOTES) . "!</p>"
-            . "<p>O contrato de venda do seu veículo (<strong>" . htmlspecialchars(trim($campos['veiculo_marca'] . ' ' . $campos['veiculo_modelo']), ENT_QUOTES) . "</strong>) "
+            . "<p>O contrato de " . ($ehLocacao ? 'locação do veículo' : 'venda do seu veículo') . " (<strong>" . htmlspecialchars(trim($campos['veiculo_marca'] . ' ' . $campos['veiculo_modelo']), ENT_QUOTES) . "</strong>) "
             . "acaba de ser enviado pra assinatura eletrônica.</p>"
             . "<p>Você vai receber um link de assinatura da ZapSign, nossa plataforma parceira, por WhatsApp e/ou e-mail. "
             . "Basta seguir as instruções por lá pra assinar.</p>"
@@ -771,10 +782,11 @@ function gerarContratoVendaPreview(int $vendaId, ?int $usuarioId): array {
         return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
     }
 
-    $pdfPath = gerarPdfContratoVenda($campos);
-    $nomeDoc = 'Contrato de Venda (rascunho) - ' . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+    $ehLocacao = ($campos['_tipo_contrato'] ?? 'venda') === 'locacao';
+    $pdfPath = $ehLocacao ? gerarPdfContratoLocacao($campos) : gerarPdfContratoVenda($campos);
+    $nomeDoc = ($ehLocacao ? 'Contrato de Locação (rascunho) - ' : 'Contrato de Venda (rascunho) - ') . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
 
-    $nomeArquivoCopia = 'contrato_venda_preview_' . $vendaId . '_' . time() . '.pdf';
+    $nomeArquivoCopia = ($ehLocacao ? 'contrato_locacao_preview_' : 'contrato_venda_preview_') . $vendaId . '_' . time() . '.pdf';
     $copia = salvarArquivoGeradoComoDocumento(
         $campos['_cliente_id'], $campos['comprador_nome'], $pdfPath, $nomeArquivoCopia,
         'application/pdf', 'contratos/' . $campos['_oportunidade_id']

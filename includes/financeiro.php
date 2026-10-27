@@ -651,6 +651,11 @@ function finCancelarParcelasPendentesVenda(int $vendaId): array {
 function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $dataVenda = null): void {
     try {
         if (finContarLancamentosVenda($vendaId) > 0) return;
+        // Locação (27/10/2026) nunca gera receita/comissão de VENDA — aluguel
+        // não é preço de compra, lançamento fica manual em Financeiro.
+        $tipoContratoFin = getDB()->prepare("SELECT tipo_contrato FROM vendas WHERE id = ?");
+        $tipoContratoFin->execute([$vendaId]);
+        if ($tipoContratoFin->fetchColumn() === 'locacao') return;
 
         $db = getDB();
         $stmt = $db->prepare("
@@ -785,6 +790,11 @@ function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = nul
         $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE venda_id = ? AND origem = 'comissao_venda'");
         $existe->execute([$vendaId]);
         if ($existe->fetchColumn()) return;
+        // Locação (27/10/2026) nunca gera receita/comissão de VENDA — aluguel
+        // não é preço de compra, lançamento fica manual em Financeiro.
+        $tipoContratoFin = getDB()->prepare("SELECT tipo_contrato FROM vendas WHERE id = ?");
+        $tipoContratoFin->execute([$vendaId]);
+        if ($tipoContratoFin->fetchColumn() === 'locacao') return;
 
         $stmt = $db->prepare("
             SELECT v.responsavel_id, v.valor_pago_contratacao, v.comprador_nome,

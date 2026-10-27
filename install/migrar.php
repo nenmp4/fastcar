@@ -1854,6 +1854,24 @@ try {
     echo "❌ whatsapp_envios_log: {$e->getMessage()}\n";
 }
 
+// 27/10/2026 — contrato de locação pura (includes/locacao.php) reaproveita
+// a tabela vendas, marcando o tipo de contrato.
+foreach ([
+    'tipo_contrato' => "TEXT NOT NULL DEFAULT 'venda' CHECK (tipo_contrato IN ('venda', 'locacao'))",
+    'locacao_dados_json' => "TEXT DEFAULT '{}'",
+] as $colLoc => $defLoc) {
+    if (!colunaExiste($db, 'vendas', $colLoc)) {
+        try {
+            $db->exec("ALTER TABLE vendas ADD COLUMN {$colLoc} {$defLoc}");
+            echo "✅ vendas.{$colLoc}: adicionada\n";
+        } catch (Throwable $e) {
+            echo "❌ vendas.{$colLoc}: {$e->getMessage()}\n";
+        }
+    } else {
+        echo "⏭️  vendas.{$colLoc}: já existia\n";
+    }
+}
+
 // 01/10/2026, "adicionar campo para recado tanto na compra e revenda" —
 // compra já tinha observacao_manual desde 29/09/2026; aqui espelha pro
 // lado de vendas (admin/vendas.php), mesma mecânica.

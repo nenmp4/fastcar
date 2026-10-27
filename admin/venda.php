@@ -29,6 +29,7 @@ $stmtVenda = $db->prepare("
 ");
 $stmtVenda->execute([$id]);
 $v = $stmtVenda->fetch();
+$ehLocacao = $v && ($v['tipo_contrato'] ?? 'venda') === 'locacao';
 
 if (!$v) {
     http_response_code(404);
@@ -41,7 +42,7 @@ $sucesso = '';
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
-    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2'];
+    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao'];
 $vendaTravada = $v['etapa'] === 'vendido' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
 function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM venda_documentos WHERE venda_id = ? AND tipo = ?
@@ -130,6 +131,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $id,
                 ]);
                 $sucesso = 'Dados do comprador atualizados.';
+            } elseif ($acao === 'salvar_locacao') {
+                // 27/10/2026 — Quadro-Resumo do contrato de locação (includes/locacao.php).
+                salvarDadosLocacao($id, parseCamposLocacaoPost((array)($_POST['loc'] ?? [])));
+                $sucesso = 'Condições da locação salvas.';
             } elseif ($acao === 'atualizar_condicoes') {
                 // valor_pago_contratacao NUNCA é escrito aqui — desde
                 // 26/09/2026 é sempre a soma das partes da entrada
@@ -648,8 +653,8 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         : null;
 ?>
 <div class="alerta-sucesso" style="padding:16px;border-radius:8px;margin-bottom:1rem">
-    <h3 style="margin:0 0 8px">✅ Venda registrada com sucesso!</h3>
-    <p style="margin:0 0 6px"><strong>Comprador:</strong> <?= e($v['comprador_nome'] ?: '—') ?> · <?= e($v['comprador_telefone'] ?: '—') ?></p>
+    <h3 style="margin:0 0 8px">✅ <?= $ehLocacao ? 'Locação registrada com sucesso!' : 'Venda registrada com sucesso!' ?></h3>
+    <p style="margin:0 0 6px"><strong><?= $ehLocacao ? 'Locatário' : 'Comprador' ?>:</strong> <?= e($v['comprador_nome'] ?: '—') ?> · <?= e($v['comprador_telefone'] ?: '—') ?></p>
     <p style="margin:0 0 6px"><strong>Veículo:</strong> <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'] . ' ' . $v['veiculo_ano'])) ?: '—' ?></p>
     <?php if ($v['preco_venda']): ?>
         <p style="margin:0 0 6px"><strong>Preço de venda:</strong> R$ <?= number_format((float)$v['preco_venda'], 2, ',', '.') ?></p>
@@ -674,7 +679,8 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 
 <div class="card">
     <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
-        <span class="badge"><?= e(etapaVendaLabel($v['etapa'])) ?></span>
+        <span class="badge"><?= e(etapaVendaLabel($v['etapa'], $v['tipo_contrato'] ?? 'venda')) ?></span>
+        <?php if (($v['tipo_contrato'] ?? 'venda') === 'locacao'): ?><span class="badge badge-info">🔑 Locação</span><?php endif; ?>
         <?php if ($atrasada): ?><span class="badge badge-atraso">⚠️ ação atrasada</span><?php endif; ?>
         <?php if ($v['temperatura_lead']): ?>
             <span class="badge" title="Leitura da IA sobre a prontidão de compra do lead">
@@ -892,7 +898,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php endif; ?>
 
 <div class="card">
-    <h3>👤 Dados do comprador</h3>
+    <h3>👤 Dados do <?= $ehLocacao ? "locatário" : "comprador" ?></h3>
     <p><small>Alimenta a qualificação do COMPRADOR no contrato-mestre de venda (includes/contratos_pdf.php).</small></p>
     <form method="post">
         <?= csrfField() ?>
@@ -1037,6 +1043,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </div>
 <?php endif; ?>
 
+<?php if (!$ehLocacao): // locação não tem entrada/bem de troca ?>
 <div class="card">
     <h3>💰 Entrada — pago via PIX (em partes)</h3>
     <p><small>Réplica do fluxo do sistema antigo: a entrada pode ser paga em mais de uma parte, cada uma com valor e
@@ -1133,7 +1140,20 @@ function adicionarParteEntrada() {
     </form>
 </div>
 
+<?php endif; ?>
+
 <div class="card">
+<?php if ($ehLocacao): ?>
+    <h3>🔑 Condições da locação (Quadro-Resumo)</h3>
+    <p><small>Alimentam o Quadro-Resumo do contrato de locação pura — confirme com o locatário antes de gerar.
+       Os campos com * são obrigatórios pra gerar o contrato.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_locacao">
+        <?= renderCamposLocacao(lerDadosLocacao($v['locacao_dados_json'] ?? '{}')) ?>
+        <button type="submit">Salvar condições da locação</button>
+    </form>
+<?php else: ?>
     <h3>📝 Condições da venda</h3>
     <p><small>Alimentam o Quadro-Resumo do contrato-mestre de venda — mesma disciplina do lado de compra: o consultor
        confirma com o comprador antes de gerar, nunca preenchido sozinho pelo sistema.</small></p>
@@ -1163,6 +1183,7 @@ function adicionarParteEntrada() {
 
         <button type="submit">Salvar condições da venda</button>
     </form>
+<?php endif; ?>
 
     <?php if (in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>
         <hr>
@@ -1324,6 +1345,7 @@ function adicionarParteEntrada() {
     <?php endif; ?>
 </div>
 
+<?php if (!$ehLocacao): // aluguel é lançado manualmente no Financeiro ?>
 <div class="card">
     <h3>💳 Financeiro — plano de parcelamento</h3>
     <p><small>Fastcar vende o veículo financiado pro comprador — entrada + parcelas. Gera 1x só; depois disso os
@@ -1429,6 +1451,7 @@ function adicionarParteEntrada() {
         </form>
     <?php endif; ?>
 </div>
+<?php endif; ?>
 
 <div class="grid-2">
     <div class="card">

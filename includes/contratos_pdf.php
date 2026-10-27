@@ -812,3 +812,282 @@ function clausulasContratoVenda(int $prazoMeses): array {
             "20.3. A eleição de foro não afasta foro legalmente inderrogável quando aplicável."],
     ];
 }
+
+/**
+ * Contrato-mestre de LOCAÇÃO pura de veículo (27/10/2026) — transcrito do
+ * modelo real 01_Contrato_Mestre_FASTCAR_Locacao_Pura.docx (Versão 1.0,
+ * Setembro/2026). Mesmo encanamento visual dos contratos de compra/venda.
+ * Endereço da sede e foro corrigidos pra Barueri/SP (o modelo trazia o
+ * endereço antigo de Santana de Parnaíba/SP — mesma correção já aplicada
+ * nos outros 2 contratos). $c vem de montarCamposContratoVenda() com
+ * tipo_contrato='locacao' ('_loc' = Quadro-Resumo, ver includes/locacao.php).
+ */
+function gerarPdfContratoLocacao(array $c): string {
+    $l = $c['_loc'] ?? [];
+    $v = fn(string $k, string $vazio = '—') => (isset($l[$k]) && $l[$k] !== '') ? (string)$l[$k] : $vazio;
+    $marca = fn(bool $x) => $x ? '(X)' : '( )';
+
+    $pdf = _pdfNovo();
+    _pdfCabecalho($pdf, 'CONTRATO-MESTRE DE LOCAÇÃO DE VEÍCULO — LOCAÇÃO PURA');
+
+    $pdf->SetFillColor(247, 243, 231);
+    $pdf->SetFont('Helvetica', 'B', 9);
+    $pdf->MultiCell(0, 5.5, _pdfTexto(
+        "NATUREZA DA OPERAÇÃO\n" .
+        "Este instrumento regula exclusivamente a locação temporária e onerosa de veículo. Os pagamentos de " .
+        "aluguel não constituem parcelas de compra, não geram crédito para aquisição e não obrigam a FASTCAR a " .
+        "vender ou transferir o veículo ao LOCATÁRIO."
+    ), 0, 'L', true);
+    $pdf->Ln(2);
+
+    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->MultiCell(0, 5, _pdfTexto(
+        "Pelo presente instrumento particular, de um lado, FASTCAR SOLUTIONS, pessoa jurídica de direito " .
+        "privado, inscrita no CNPJ/MF sob o nº 66.934.500/0001-09, com sede na Avenida Sagitário, nº 138, " .
+        "Sala 1003, 10º andar, Torre City (Torre 2), Complexo Alpha Square Offices, Alphaville Conde II, " .
+        "Barueri/SP, CEP 06473-073, doravante denominada LOCADORA ou FASTCAR; e, de outro lado, " .
+        "{$c['comprador_nome']}, {$c['comprador_nacionalidade']}, {$c['comprador_estado_civil']}, " .
+        "{$c['comprador_profissao']}, RG nº {$c['comprador_rg']}, CPF/CNPJ nº {$c['comprador_cpf']}, " .
+        "CNH nº {$c['comprador_cnh']}, endereço {$c['comprador_endereco']}, telefone/WhatsApp " .
+        "{$c['comprador_telefone']}, e-mail {$c['comprador_email']}, doravante denominado(a) LOCATÁRIO(A); " .
+        "têm entre si justo e contratado o presente CONTRATO DE LOCAÇÃO DE VEÍCULO, regido pelas condições do " .
+        "Quadro-Resumo, pelas cláusulas abaixo e pelos anexos integrantes."
+    ));
+
+    $pdf->Ln(3);
+    $pdf->SetFont('Helvetica', 'B', 11);
+    $pdf->Cell(0, 7, _pdfTexto('QUADRO-RESUMO DA LOCAÇÃO'), 0, 1, 'C');
+    $pdf->Ln(1);
+
+    $modalidade = $l['modalidade'] ?? '';
+    $rastreador = $l['rastreador'] ?? '';
+    $uso = $l['uso'] ?? '';
+    $caucao = isset($l['caucao_valor']) ? _fmtMoeda((float)$l['caucao_valor']) : 'não há';
+    if (isset($l['caucao_valor']) && !empty($l['caucao_modalidade'])) $caucao .= ' / modalidade: ' . $l['caucao_modalidade'];
+
+    _pdfLinhaResumo($pdf, 'Contrato nº', 'LOC-' . $c['_venda_id']);
+    _pdfLinhaResumo($pdf, 'Veículo / versão', trim($c['veiculo_marca'] . ' ' . $c['veiculo_modelo']));
+    _pdfLinhaResumo($pdf, 'Ano fabricação/modelo', $c['veiculo_ano'] ?: '—');
+    _pdfLinhaResumo($pdf, 'Placa / RENAVAM', ($c['veiculo_placa'] ?: '—') . ' / ' . ($c['veiculo_renavam'] ?: '—'));
+    _pdfLinhaResumo($pdf, 'Chassi', $c['veiculo_chassi'] ?: '—');
+    _pdfLinhaResumo($pdf, 'Quilometragem inicial', $v('km_inicial') !== '—' ? $v('km_inicial') . ' km' : '—');
+    _pdfLinhaResumo($pdf, 'Valor FIPE de referência', _fmtMoeda($c['valor_fipe_referencia']));
+    _pdfLinhaResumo($pdf, 'Modalidade', $marca($modalidade === 'determinado') . ' prazo determinado  ' . $marca($modalidade === 'indeterminado') . ' prazo indeterminado');
+    _pdfLinhaResumo($pdf, 'Prazo inicial', $v('prazo_meses') !== '—' ? $v('prazo_meses') . ' meses' : '—');
+    _pdfLinhaResumo($pdf, 'Data de início', !empty($l['data_inicio']) ? date('d/m/Y', strtotime($l['data_inicio'])) : '—');
+    _pdfLinhaResumo($pdf, 'Aluguel mensal', isset($l['aluguel_mensal']) ? _fmtMoeda((float)$l['aluguel_mensal']) : '—');
+    _pdfLinhaResumo($pdf, 'Vencimento', $v('vencimento_dia') !== '—' ? 'dia ' . $v('vencimento_dia') . ' de cada mês' : '—');
+    _pdfLinhaResumo($pdf, 'Caução/garantia, se houver', $caucao);
+    _pdfLinhaResumo($pdf, 'Franquia de quilometragem', $v('franquia_km') !== '—' ? $v('franquia_km') . ' km por ' . $v('franquia_periodo', 'mês') : '—');
+    _pdfLinhaResumo($pdf, 'Km excedente', isset($l['km_excedente_valor']) ? _fmtMoeda((float)$l['km_excedente_valor']) . '/km' : '—');
+    _pdfLinhaResumo($pdf, 'IPVA', 'Responsável: ' . $v('ipva_resp'));
+    _pdfLinhaResumo($pdf, 'Licenciamento', 'Responsável: ' . $v('licenciamento_resp'));
+    _pdfLinhaResumo($pdf, 'Seguro/proteção', $v('seguro_texto'));
+    _pdfLinhaResumo($pdf, 'Franquia de sinistro', 'Responsável: ' . $v('franquia_sinistro_resp'));
+    _pdfLinhaResumo($pdf, 'Manutenção preventiva', 'Responsável: ' . $v('manutencao_resp'));
+    _pdfLinhaResumo($pdf, 'Pneus/itens de desgaste', 'Regra: ' . $v('pneus_regra'));
+    _pdfLinhaResumo($pdf, 'Combustível na devolução', $v('combustivel_devolucao'));
+    _pdfLinhaResumo($pdf, 'Rastreador', $marca($rastreador === 'instalado') . ' instalado  ' . $marca($rastreador === 'sera_instalado') . ' será instalado  ' . $marca($rastreador === 'nao_aplicavel') . ' não aplicável');
+    _pdfLinhaResumo($pdf, 'Uso autorizado', $marca($uso === 'pessoal') . ' pessoal  ' . $marca($uso === 'profissional') . ' profissional  ' . $marca($uso === 'aplicativo') . ' aplicativo  ' . $marca($uso === 'outro') . ' outro' . ($uso === 'outro' && !empty($l['uso_outro']) ? ': ' . $l['uso_outro'] : ''));
+    _pdfLinhaResumo($pdf, 'Aviso prévio para devolução', $v('aviso_previo_dias') !== '—' ? $v('aviso_previo_dias') . ' dias' : '—');
+    _pdfLinhaResumo($pdf, 'Encargos de mora', 'multa ' . $v('mora_multa_pct') . '% | juros ' . $v('mora_juros') . ' | atualização ' . $v('mora_atualizacao'));
+    _pdfLinhaResumo($pdf, 'Multa por saída antecipada, se aplicável', $v('multa_saida_antecipada'));
+    _pdfLinhaResumo($pdf, 'Prazo para devolução após resolução', $v('prazo_devolucao_resolucao'));
+    $emailCorp = (function_exists('getConfig') ? (string)getConfig('email_from') : '') ?: 'contato@fastcar.solutions';
+    _pdfLinhaResumo($pdf, 'Canal oficial FASTCAR', 'e-mail ' . $emailCorp);
+
+    $pdf->Ln(2);
+    $pdf->SetFont('Helvetica', 'I', 8);
+    $pdf->MultiCell(0, 4.5, _pdfTexto(
+        'O Quadro-Resumo integra o contrato e deverá ser preenchido antes da assinatura. Havendo divergência entre ' .
+        'dado variável do Quadro-Resumo e referência genérica no corpo contratual, prevalecerá o dado específico ' .
+        'regularmente preenchido, sem prejuízo de normas cogentes.'
+    ));
+
+    foreach (clausulasContratoLocacao() as [$titulo, $corpo]) {
+        _pdfTituloClausula($pdf, $titulo);
+        _pdfCorpo($pdf, $corpo);
+    }
+
+    $pdf->Ln(6);
+    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
+    $pdf->Ln(14);
+
+    $pdf->SetFont('Helvetica', '', 8.5);
+    $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('LOCATÁRIO(A)'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['comprador_nome']} / {$c['comprador_cpf']}"), 0, 1, 'C');
+
+    $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
+    $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
+    $pdf->Ln(12);
+    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+
+    _pdfRodapeEndereco($pdf);
+
+    $caminho = tempnam(sys_get_temp_dir(), 'contrato_locacao_') . '.pdf';
+    $pdf->Output('F', $caminho);
+    return $caminho;
+}
+
+/** Cláusulas do contrato de locação pura — [título, corpo]. */
+function clausulasContratoLocacao(): array {
+    return [
+        ['CLÁUSULA 1ª – OBJETO E NATUREZA DA LOCAÇÃO',
+            "1.1. A FASTCAR entrega ao LOCATÁRIO, para posse direta temporária e uso oneroso, o veículo identificado no Quadro-Resumo e nos anexos.\n\n" .
+            "1.2. A propriedade e a posse indireta permanecem com o titular registral e/ou com quem legitimamente disponibilize o veículo à FASTCAR, conforme a situação documental indicada no Anexo VIII.\n\n" .
+            "1.3. Este contrato não contém promessa de compra e venda, opção automática de compra, financiamento, consórcio ou formação de crédito para aquisição. O pagamento dos aluguéis não confere ao LOCATÁRIO direito de propriedade sobre o veículo.\n\n" .
+            "1.4. Eventual negociação futura para venda do veículo, se admitida pela FASTCAR, dependerá de instrumento autônomo, preço e condições próprios, não se presumindo pela duração da locação ou pelos valores pagos.\n\n" .
+            "1.5. Aplicam-se ao contrato as normas cogentes incidentes à relação concreta, inclusive as de proteção do consumidor quando juridicamente aplicáveis."],
+        ['CLÁUSULA 2ª – PRAZO, INÍCIO E PRORROGAÇÃO',
+            "2.1. A locação inicia-se na data indicada no Quadro-Resumo e poderá ser contratada por prazo determinado ou indeterminado.\n\n" .
+            "2.2. No prazo determinado, a permanência do veículo com o LOCATÁRIO após o termo final dependerá de prorrogação expressa ou das consequências juridicamente aplicáveis, sem converter pagamentos passados em preço de compra.\n\n" .
+            "2.3. No prazo indeterminado, qualquer parte poderá encerrar a relação mediante aviso prévio no prazo indicado no Quadro-Resumo, ressalvadas hipóteses de resolução por inadimplemento ou infração grave.\n\n" .
+            "2.4. A devolução física do veículo e a quitação financeira são atos distintos: a entrega encerra a posse direta, enquanto valores pendentes serão apurados em demonstrativo próprio."],
+        ['CLÁUSULA 3ª – ALUGUEL, VENCIMENTO E PAGAMENTO',
+            "3.1. O LOCATÁRIO pagará o aluguel mensal e demais valores contratualmente previstos nas datas indicadas no Quadro-Resumo.\n\n" .
+            "3.2. O aluguel remunera a disponibilização e o uso do veículo durante o período correspondente. Não se transforma em crédito de compra e não é restituível apenas porque o contrato terminou ou foi resolvido, sem prejuízo de valores pagos indevidamente.\n\n" .
+            "3.3. O pagamento será considerado quitado após confirmação do crédito no meio indicado pela FASTCAR.\n\n" .
+            "3.4. O recebimento de pagamento posterior, isoladamente, não importa novação, renúncia a saldo anterior ou alteração permanente das condições.\n\n" .
+            "3.5. Alterações de valor, vencimento, prazo, franquia ou demais condições essenciais dependerão de instrumento escrito ou eletrônico apto a comprovar autoria e integridade."],
+        ['CLÁUSULA 4ª – CAUÇÃO E OUTRAS GARANTIAS',
+            "4.1. Quando prevista no Quadro-Resumo, a caução ou garantia será tratada separadamente do aluguel e não constitui pagamento antecipado para aquisição do veículo.\n\n" .
+            "4.2. Encerrada a locação e concluída a vistoria final, a FASTCAR elaborará demonstrativo discriminado, podendo compensar a garantia com obrigações líquidas, comprovadas e contratualmente imputáveis ao LOCATÁRIO.\n\n" .
+            "4.3. Havendo saldo remanescente em favor do LOCATÁRIO, este será restituído no prazo indicado no Anexo X após a conclusão da apuração e disponibilização do demonstrativo.\n\n" .
+            "4.4. A retenção não poderá ser genérica: toda compensação deverá identificar a rubrica, o valor e, quando cabível, a prova correspondente."],
+        ['CLÁUSULA 5ª – ENTREGA, VISTORIA E ESTADO DO VEÍCULO',
+            "5.1. A entrega ocorrerá mediante Termo de Entrega e Vistoria, com registro de quilometragem, combustível, pneus, lataria, pintura, vidros, interior, painel, acessórios, chaves, documentos e avarias preexistentes.\n\n" .
+            "5.2. Fotografias e vídeos datados e identificados poderão integrar o dossiê eletrônico e servir como prova comparativa na devolução.\n\n" .
+            "5.3. O reconhecimento do estado aparente não implica renúncia a direitos legalmente indisponíveis ou a vícios ocultos cuja responsabilidade seja definida pela legislação aplicável.\n\n" .
+            "5.4. A FASTCAR poderá recusar a entrega enquanto o dossiê contratual essencial não estiver concluído."],
+        ['CLÁUSULA 6ª – USO AUTORIZADO, GUARDA E CONDUTORES',
+            "6.1. O veículo deverá ser utilizado de forma diligente, lícita e compatível com a destinação indicada no Quadro-Resumo. O LOCATÁRIO deverá:\n" .
+            "a) manter CNH válida e respeitar restrições administrativas e securitárias;\n" .
+            "b) não ceder a posse habitual, sublocar, emprestar comercialmente ou permitir uso por condutor não autorizado quando houver restrição contratual ou securitária;\n" .
+            "c) não utilizar o veículo em competição, racha, teste de velocidade, transporte ilícito ou atividade incompatível com a contratação;\n" .
+            "d) não alienar, prometer vender, oferecer em garantia ou constituir ônus sobre o veículo;\n" .
+            "e) comunicar mudança relevante de endereço, telefone ou local habitual de guarda do veículo.\n\n" .
+            "6.2. O uso por terceiros não exclui a responsabilidade contratual do LOCATÁRIO, sem prejuízo da individualização do condutor para fins legais e securitários."],
+        ['CLÁUSULA 7ª – QUILOMETRAGEM E HODÔMETRO',
+            "7.1. A franquia e o valor do quilômetro excedente constam do Quadro-Resumo.\n\n" .
+            "7.2. O critério de acumulação ou não acumulação de franquia deverá constar expressamente do Anexo I; na ausência de indicação, não se presumirá acumulação entre períodos.\n\n" .
+            "7.3. A quilometragem será registrada na entrega, nas inspeções autorizadas e na devolução.\n\n" .
+            "7.4. É vedada qualquer adulteração, desconexão deliberada ou intervenção no hodômetro. Havendo defeito, o LOCATÁRIO deverá comunicar imediatamente a FASTCAR para registro e critério técnico de apuração."],
+        ['CLÁUSULA 8ª – MANUTENÇÃO, CONSERVAÇÃO E ALERTAS DO VEÍCULO',
+            "8.1. A distribuição das responsabilidades de manutenção constará do Quadro-Resumo e do Anexo VII.\n\n" .
+            "8.2. O LOCATÁRIO deverá observar o plano de revisões, alertas do painel, níveis, temperatura, pressão de pneus e demais sinais que exijam interrupção do uso ou assistência.\n\n" .
+            "8.3. O LOCATÁRIO não poderá autorizar reparo estrutural, modificação, instalação de equipamento, alteração estética relevante ou intervenção elétrica/mecânica significativa sem autorização da FASTCAR, salvo medida emergencial indispensável à segurança, devidamente documentada.\n\n" .
+            "8.4. Danos decorrentes de mau uso, negligência, continuidade de rodagem após alerta grave ou modificação não autorizada poderão ser imputados ao LOCATÁRIO mediante prova e nexo com a conduta.\n\n" .
+            "8.5. Desgaste natural compatível com tempo, quilometragem e uso regular não será cobrado novamente como avaria extraordinária."],
+        ['CLÁUSULA 9ª – MULTAS, PEDÁGIOS E IDENTIFICAÇÃO DE CONDUTOR',
+            "9.1. Infrações, pedágios, estacionamentos e demais encargos decorrentes da utilização durante a posse do LOCATÁRIO serão de sua responsabilidade na extensão legal e contratual aplicável.\n\n" .
+            "9.2. O LOCATÁRIO deverá fornecer, dentro do prazo informado, documentos e assinatura necessários à identificação do real condutor.\n\n" .
+            "9.3. Valores comprovadamente suportados pela FASTCAR por ato ou omissão imputável ao LOCATÁRIO poderão ser reembolsados mediante demonstrativo.\n\n" .
+            "9.4. Taxa administrativa somente será cobrada se expressamente prevista, informada e juridicamente admissível."],
+        ['CLÁUSULA 10ª – TRIBUTOS, LICENCIAMENTO E DESPESAS DO VEÍCULO',
+            "10.1. A responsabilidade econômica por IPVA, licenciamento e outras despesas periódicas constará do Quadro-Resumo.\n\n" .
+            "10.2. Nenhum encargo não previsto ou sem base legal será transferido ao LOCATÁRIO.\n\n" .
+            "10.3. Despesas extraordinárias decorrentes de ato imputável ao LOCATÁRIO serão individualizadas e comprovadas sempre que necessário."],
+        ['CLÁUSULA 11ª – SEGURO, PROTEÇÃO E SINISTRO',
+            "11.1. As condições de seguro ou proteção, coberturas, exclusões, condutores, franquia, assistência, perda total, furto e roubo serão descritas no Anexo XI.\n\n" .
+            "11.2. Em acidente, furto, roubo, incêndio, alagamento ou outro sinistro relevante, o LOCATÁRIO deverá: interromper o uso quando necessário à segurança; comunicar imediatamente a FASTCAR; seguir orientações da seguradora/proteção; preservar documentos, chaves e provas; e registrar ocorrência quando juridicamente ou operacionalmente pertinente.\n\n" .
+            "11.3. O LOCATÁRIO não deverá assumir responsabilidade perante terceiro, autorizar reparo relevante ou celebrar acordo sobre o veículo sem ciência da FASTCAR, salvo providência emergencial indispensável.\n\n" .
+            "11.4. Franquias, prejuízos não cobertos e demais valores somente serão imputados ao LOCATÁRIO conforme causa, responsabilidade, condições previamente informadas e legislação aplicável.\n\n" .
+            "11.5. Em perda total, furto ou roubo, a continuidade ou encerramento da locação será formalizada após análise de cobertura, responsabilidade e disponibilidade do ativo."],
+        ['CLÁUSULA 12ª – RASTREAMENTO E GEOLOCALIZAÇÃO',
+            "12.1. O LOCATÁRIO declara ciência de que o veículo possui ou poderá possuir rastreamento/geolocalização, quando indicado no Quadro-Resumo ou Anexo IV.\n\n" .
+            "12.2. A finalidade limita-se à proteção patrimonial, segurança, localização do ativo, prevenção e apuração de fraude, execução contratual, exercício regular de direitos e preservação de prova, observados os limites legais.\n\n" .
+            "12.3. É vedado retirar, destruir, adulterar, bloquear ou impedir deliberadamente o funcionamento do equipamento.\n\n" .
+            "12.4. Falha de sinal ou indisponibilidade técnica não será automaticamente presumida como fraude.\n\n" .
+            "12.5. O rastreamento não autoriza ingresso forçado em residência, garagem ou propriedade privada, nem retirada mediante violência, ameaça ou constrangimento."],
+        ['CLÁUSULA 13ª – PROTEÇÃO DE DADOS PESSOAIS',
+            "13.1. A FASTCAR tratará dados necessários à contratação, identificação, cobrança, proteção do crédito, prevenção a fraude, segurança, gestão de multas e sinistros, rastreamento e exercício regular de direitos, conforme bases legais aplicáveis.\n\n" .
+            "13.2. Poderão ser tratados dados cadastrais, financeiros, contratuais, de atendimento, do veículo, imagens técnicas, localização, multas e sinistros.\n\n" .
+            "13.3. O compartilhamento poderá ocorrer, quando necessário e juridicamente adequado, com rastreamento, seguradoras/proteções, oficinas, despachantes, cobrança, recuperação lícita, assessoria jurídica, órgãos públicos e autoridades.\n\n" .
+            "13.4. Autorização para publicidade, imagem, voz ou depoimento não integra automaticamente este contrato e dependerá de instrumento apartado, facultativo."],
+        ['CLÁUSULA 14ª – MORA E ENCARGOS',
+            "14.1. O não pagamento no vencimento constitui mora, observadas as regras legais aplicáveis.\n\n" .
+            "14.2. Incidirão apenas os encargos expressamente indicados no Quadro-Resumo e juridicamente admissíveis.\n\n" .
+            "14.3. Não haverá cumulação de penalidades de mesma natureza que produza duplicidade sancionatória.\n\n" .
+            "14.4. A FASTCAR poderá realizar cobrança por canais cadastrados, preservando linguagem respeitosa e vedada exposição pública ou ameaça ilícita."],
+        ['CLÁUSULA 15ª – INADIMPLEMENTO E RÉGUA DE TRATAMENTO',
+            "15.1. Para fins operacionais, a FASTCAR poderá utilizar régua progressiva de cobrança e documentação, sem que a passagem por todas as etapas seja requisito automático quando houver infração grave, risco concreto ao ativo ou necessidade de medida urgente.\n\n" .
+            "15.2. A FASTCAR poderá encaminhar avisos, notificações e oportunidades de regularização de forma progressiva e proporcional, conforme a situação concreta, sem que a tolerância em determinada etapa implique renúncia ou novação.\n\n" .
+            "15.3. A resolução por inadimplemento dependerá da verificação dos requisitos contratuais e legais aplicáveis, inclusive eventual forma específica de constituição em mora, quando exigida.\n\n" .
+            "15.4. Fraude documental, alienação irregular, ocultação deliberada, adulteração de identificadores, sabotagem comprovada do rastreador, uso ilícito grave ou risco concreto de desaparecimento poderão justificar escalonamento imediato ao jurídico."],
+        ['CLÁUSULA 16ª – NOTIFICAÇÕES E ATUALIZAÇÃO CADASTRAL',
+            "16.1. São canais contratuais o endereço, WhatsApp, telefone e e-mail informados pelo LOCATÁRIO.\n\n" .
+            "16.2. O LOCATÁRIO deverá comunicar alteração cadastral em prazo razoável.\n\n" .
+            "16.3. Comunicações ordinárias poderão ocorrer por meios eletrônicos que permitam registro. Quando a lei exigir forma específica de notificação ou constituição em mora, será observado o procedimento correspondente.\n\n" .
+            "16.4. A FASTCAR manterá, sempre que possível, histórico das comunicações relevantes no dossiê da operação."],
+        ['CLÁUSULA 17ª – RESOLUÇÃO POR INADIMPLEMENTO OU INFRAÇÃO GRAVE',
+            "17.1. A FASTCAR poderá resolver o contrato nas hipóteses previstas neste instrumento e na lei, após observância dos requisitos aplicáveis ao caso concreto.\n\n" .
+            "17.2. Poderão justificar resolução, conforme gravidade e circunstâncias: mora relevante; uso ilícito; cessão ou sublocação não autorizada; adulteração do veículo; fraude; sabotagem intencional de rastreador; não apresentação injustificada do veículo; perda de condição essencial de habilitação; dano grave por uso proibido; alienação ou tentativa de disposição do ativo.\n\n" .
+            "17.3. A resolução cessará a autorização contratual de uso e permitirá convocação do LOCATÁRIO para devolução voluntária no prazo informado.\n\n" .
+            "17.4. A resolução não autoriza, por si só, ingresso forçado, confronto, ameaça, retirada clandestina ou qualquer medida coercitiva fora das hipóteses legais e procedimentos adequados."],
+        ['CLÁUSULA 18ª – RESCISÃO ANTECIPADA PELO LOCATÁRIO',
+            "18.1. O LOCATÁRIO poderá solicitar encerramento antecipado, devendo observar aviso prévio, local de entrega, vistoria e eventual multa expressamente indicada no Quadro-Resumo.\n\n" .
+            "18.2. Em contratos com prazo determinado, eventual multa será calculada segundo o critério previamente informado, com observância da proporcionalidade e das normas aplicáveis.\n\n" .
+            "18.3. A FASTCAR não exigirá automaticamente todas as mensalidades vincendas como condição de devolução; eventual obrigação decorrente da saída antecipada observará a cláusula específica e a legislação aplicável.\n\n" .
+            "18.4. A devolução deverá ser formalizada por termo e seguida de apuração financeira."],
+        ['CLÁUSULA 19ª – DEVOLUÇÃO VOLUNTÁRIA E VISTORIA FINAL',
+            "19.1. Encerrado ou resolvido o contrato, o veículo será devolvido no local e prazo informados pela FASTCAR ou ajustados por escrito.\n\n" .
+            "19.2. A devolução seguirá as etapas: agendamento; entrega física; registro de quilometragem e combustível; vistoria e fotos/vídeos; conferência de chaves/documentos/acessórios; consulta de multas e sinistros; e posterior demonstrativo financeiro.\n\n" .
+            "19.3. A equipe que recebe o veículo não é obrigada a definir imediatamente o saldo final. A apuração ocorrerá após conferência documental e, se necessário, obtenção de orçamento ou nota fiscal.\n\n" .
+            "19.4. A assinatura do termo de entrega não representa quitação automática para nenhuma das partes."],
+        ['CLÁUSULA 20ª – DESGASTE NATURAL E AVARIAS EXTRAORDINÁRIAS',
+            "20.1. Considera-se desgaste natural a deterioração razoavelmente compatível com tempo, quilometragem e uso regular do veículo.\n\n" .
+            "20.2. Avarias extraordinárias são danos além do desgaste natural, tais como colisões, amassados relevantes, riscos profundos, quebra de vidros ou acessórios, rasgos, ausência de peças, danos por negligência ou alterações não autorizadas, desde que comprovados.\n\n" .
+            "20.3. A apuração de avarias deverá comparar a vistoria inicial com a final e, quando houver cobrança, apresentar prova e critério de valor.\n\n" .
+            "20.4. Não será cobrado novamente como avaria aquilo que corresponda apenas a desgaste normal já inerente à remuneração da locação."],
+        ['CLÁUSULA 21ª – APURAÇÃO E DEMONSTRATIVO DE ENCERRAMENTO',
+            "21.1. Após a devolução, a FASTCAR elaborará demonstrativo com créditos e débitos aplicáveis à locação.\n\n" .
+            "21.2. Poderão integrar a apuração: caução/garantia; aluguéis vencidos; uso posterior à resolução, quando cabível; quilometragem excedente; multas e encargos de trânsito; combustível; franquia/sinistro; avarias extraordinárias comprovadas; despesas legítimas de devolução/recuperação; e outros valores expressamente previstos e comprovados.\n\n" .
+            "21.3. Cada rubrica relevante deverá ser individualizada, evitando duplicidade de cobrança pela mesma causa.\n\n" .
+            "21.4. Havendo saldo a restituir ao LOCATÁRIO, será observado o prazo do Anexo X. Havendo saldo devido à FASTCAR, serão informadas as condições para pagamento ou composição."],
+        ['CLÁUSULA 22ª – RECUPERAÇÃO DO VEÍCULO E LIMITES DE ATUAÇÃO',
+            "22.1. A FASTCAR priorizará devolução voluntária e documentação do procedimento.\n\n" .
+            "22.2. Empresa ou preposto de recuperação somente poderá atuar dentro de autorização formal, sem violência, ameaça, constrangimento, rompimento de obstáculos ou ingresso não autorizado em propriedade privada.\n\n" .
+            "22.3. Havendo recusa, conflito, terceiro contestando a posse ou necessidade de coerção, a diligência operacional deverá ser interrompida e o caso encaminhado ao jurídico.\n\n" .
+            "22.4. A natureza de eventual medida judicial será definida conforme a estrutura jurídica real da operação, sem classificação automática incompatível com os documentos do veículo."],
+        ['CLÁUSULA 23ª – INSPEÇÃO E APRESENTAÇÃO DO VEÍCULO',
+            "23.1. A FASTCAR poderá solicitar apresentação do veículo para manutenção, vistoria, regularização documental, campanha de segurança, sinistro ou verificação técnica, com aviso e justificativa compatíveis com a situação.\n\n" .
+            "23.2. A inspeção deverá preservar a privacidade do LOCATÁRIO e limitar-se às finalidades contratuais legítimas.\n\n" .
+            "23.3. A recusa injustificada e reiterada a apresentação indispensável poderá ser tratada como infração contratual, conforme gravidade."],
+        ['CLÁUSULA 24ª – COMUNICAÇÃO DE ACIDENTE, APREENSÃO OU RESTRIÇÃO',
+            "24.1. O LOCATÁRIO comunicará imediatamente acidente grave, apreensão, bloqueio, retenção policial, restrição judicial, furto, roubo ou fato que comprometa posse, segurança ou disponibilidade do veículo.\n\n" .
+            "24.2. O LOCATÁRIO cooperará com entrega de documentos e esclarecimentos necessários à regularização, sem assumir obrigações não previstas em lei ou contrato."],
+        ['CLÁUSULA 25ª – CESSÃO CONTRATUAL E ALTERAÇÕES',
+            "25.1. O LOCATÁRIO não poderá ceder sua posição contratual sem autorização da FASTCAR.\n\n" .
+            "25.2. A FASTCAR poderá realizar reorganizações internas ou substituição de prestadores sem reduzir direitos essenciais do LOCATÁRIO.\n\n" .
+            "25.3. Alterações relevantes deste contrato dependerão de instrumento escrito ou eletrônico."],
+        ['CLÁUSULA 26ª – TOLERÂNCIA E NÃO NOVAÇÃO',
+            "26.1. Tolerância eventual de qualquer das partes não implica renúncia, novação ou alteração permanente do contrato.\n\n" .
+            "26.2. A ausência de exercício imediato de direito não impede seu exercício posterior dentro dos limites legais."],
+        ['CLÁUSULA 27ª – BOA-FÉ, COOPERAÇÃO E DEVER DE INFORMAÇÃO',
+            "27.1. As partes observarão boa-fé, transparência, cooperação e preservação de provas relevantes.\n\n" .
+            "27.2. O LOCATÁRIO comunicará fatos relevantes que afetem posse, localização, segurança, documentação ou conservação do veículo.\n\n" .
+            "27.3. A FASTCAR disponibilizará informações contratuais relevantes e demonstrativo de encerramento quando cabível."],
+        ['CLÁUSULA 28ª – INVALIDADE PARCIAL',
+            "28.1. A eventual invalidade ou ineficácia de uma disposição não prejudicará automaticamente as demais cláusulas autônomas que possam ser preservadas."],
+        ['CLÁUSULA 29ª – SOLUÇÃO DE CONTROVÉRSIAS E FORO',
+            "29.1. As partes buscarão inicialmente solução negocial, sem impedir acesso ao Poder Judiciário.\n\n" .
+            "29.2. Respeitadas as regras cogentes de competência e, quando aplicável, as normas de proteção do consumidor, fica indicado o foro da Comarca de Barueri/SP para controvérsias decorrentes deste contrato.\n\n" .
+            "29.3. Não se estabelece arbitragem compulsória unilateral."],
+        ['CLÁUSULA 30ª – ANEXOS INTEGRANTES',
+            "30.1. Integram este contrato: Anexo I – Quadro-Resumo Particular; Anexo II – Entrega e Vistoria Inicial; Anexo III – Registro Fotográfico/Audiovisual; Anexo IV – Rastreamento e Geolocalização; Anexo V – Tratamento de Dados; Anexo VI – Multas e Condutores; Anexo VII – Manutenção e Conservação; Anexo VIII – Situação Dominial e Documental; Anexo IX – Procedimento de Devolução; Anexo X – Vistoria Final e Demonstrativo de Encerramento; Anexo XI – Seguro e Sinistro.\n\n" .
+            "30.2. Os anexos deverão ser preenchidos conforme a operação concreta; campos econômicos, securitários, responsabilidades ou fatos não deverão ser completados retroativamente de modo incompatível com o que foi informado e assinado."],
+    ];
+}
