@@ -589,11 +589,10 @@ function gerarPdfContratoVenda(array $c): string {
     _pdfLinhaResumo($pdf, 'Marca / modelo / versão / ano', trim("{$c['veiculo_marca']} {$c['veiculo_modelo']} {$c['veiculo_ano']}"));
     _pdfLinhaResumo($pdf, 'Placa / RENAVAM / chassi', "{$c['veiculo_placa']} / {$c['veiculo_renavam']} / {$c['veiculo_chassi']}");
     _pdfLinhaResumo($pdf, 'Valor FIPE e data da consulta', _fmtMoeda($c['valor_fipe_referencia']) . ' / ' . $data($p['fipe_data_consulta'] ?? null));
-    $credor = $c['banco_financiamento'] ? $c['banco_financiamento'] . ' — alienação fiduciária' : 'sem gravame informado';
-    $proprietario = ($p['proprietario_registral'] ?? '') ?: ($c['vendedor_original_nome'] ?? '');
-    _pdfLinhaResumo($pdf, 'Proprietário registral / credor e gravame', ($proprietario ?: '—') . ' / ' . $credor);
+    // 27/10/2026 — "Proprietário registral / credor e gravame" e "Terceiro
+    // vendedor intermediado" saíram do Quadro-Resumo a pedido (print da
+    // VENDA-111 com as 2 linhas marcadas pra remover).
     _pdfLinhaResumo($pdf, 'Responsável pela quitação / prazo e baixa do gravame', 'FASTCAR / a baixa do gravame se dará após a quitação do presente contrato perante a FASTCAR');
-    _pdfLinhaResumo($pdf, 'Terceiro vendedor intermediado, se aplicável', ($p['terceiro_vendedor'] ?? '') ?: $na);
 
     $secao('ENTRADA E COMISSÃO');
     _pdfLinhaResumo($pdf, 'Preço do veículo', _fmtMoeda($c['preco_venda']));

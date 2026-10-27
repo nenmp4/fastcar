@@ -26,8 +26,6 @@ const PROMISSORIA_PCT_LOCACAO = 90;
 
 const PROMISSORIA_CAMPOS = [
     'fipe_data_consulta'       => ['label' => 'Data da consulta FIPE', 'tipo' => 'date'],
-    'proprietario_registral'   => ['label' => 'Proprietário registral (vazio = vendedor original do veículo)', 'tipo' => 'text'],
-    'terceiro_vendedor'        => ['label' => 'Terceiro vendedor intermediado (vazio = não aplicável)', 'tipo' => 'text'],
     'comissao_aplicavel'       => ['label' => 'Comissão de intermediação (15% da FIPE)', 'tipo' => 'select', 'opcoes' => ['nao' => 'Não aplicável', 'sim' => 'Sim — há intermediação']],
     'comissao_saldo_vencimento'=> ['label' => 'Vencimento da comissão ainda a pagar (se a entrada não cobrir)', 'tipo' => 'date'],
     'vencimento_dia'           => ['label' => 'Vencimento das demais parcelas (dia do mês) — vazio = mesmo dia da 1ª', 'tipo' => 'int'],
