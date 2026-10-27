@@ -591,7 +591,7 @@ function gerarPdfContratoVenda(array $c): string {
     $credor = $c['banco_financiamento'] ? $c['banco_financiamento'] . ' — alienação fiduciária' : 'sem gravame informado';
     $proprietario = ($p['proprietario_registral'] ?? '') ?: ($c['vendedor_original_nome'] ?? '');
     _pdfLinhaResumo($pdf, 'Proprietário registral / credor e gravame', ($proprietario ?: '—') . ' / ' . $credor);
-    _pdfLinhaResumo($pdf, 'Responsável pela quitação / prazo e baixa do gravame', 'FASTCAR / até ' . _mesesComExtenso((int)$c['prazo_quitacao_meses']) . ', contado da assinatura deste contrato');
+    _pdfLinhaResumo($pdf, 'Responsável pela quitação / prazo e baixa do gravame', 'FASTCAR / a baixa do gravame se dará após a quitação do presente contrato perante a FASTCAR');
     _pdfLinhaResumo($pdf, 'Terceiro vendedor intermediado, se aplicável', ($p['terceiro_vendedor'] ?? '') ?: $na);
 
     $secao('ENTRADA E COMISSÃO');
