@@ -513,19 +513,23 @@ function clausulasContratoCompra(int $prazoMeses = 24): array {
         ['CLÁUSULA 25ª – AUSÊNCIA DE NOVAÇÃO BANCÁRIA AUTOMÁTICA',
             "25.1. Nada neste contrato altera, sem anuência do credor quando exigida, a identidade do devedor do financiamento, suas garantias ou condições bancárias.\n\n" .
             "25.2. O VENDEDOR permanece formalmente sujeito às obrigações perante a instituição financeira até a quitação ou modificação aceita pelo credor, sem prejuízo das obrigações internas assumidas pela FASTCAR neste contrato."],
-        ['CLÁUSULA 26ª – BOA-FÉ E DEVER DE INFORMAÇÃO',
-            "26.1. As partes atuarão com boa-fé, transparência, cooperação e preservação da documentação.\n\n" .
-            "26.2. Nenhuma parte poderá criar aparência de transferência plena enquanto o gravame impedir a efetiva transferência registral."],
-        ['CLÁUSULA 27ª – TÍTULO EXECUTIVO E ASSINATURA',
-            "27.1. As partes poderão assinar fisicamente ou por meio eletrônico idôneo. Recomenda-se a assinatura de duas testemunhas para reforço da executividade das obrigações líquidas quando cabível.\n\n" .
-            "27.2. Obrigações dependentes de apuração deverão ser acompanhadas do respectivo demonstrativo."],
-        ['CLÁUSULA 28ª – SOLUÇÃO DE CONTROVÉRSIAS',
-            "28.1. As partes buscarão solução negocial antes do litígio, sem impedir tutela urgente.\n\n" .
-            "28.2. Respeitadas regras cogentes de competência, fica eleito o foro da Comarca de Barueri/SP para dirimir quaisquer litígios decorrentes deste contrato."],
-        ['CLÁUSULA 29ª – DISPOSIÇÕES FINAIS',
-            "29.1. Tolerância não constitui novação ou renúncia.\n\n" .
-            "29.2. Invalidade parcial não prejudica cláusulas autônomas preserváveis.\n\n" .
-            "29.3. Qualquer alteração relevante deverá ser documentada por escrito ou eletronicamente."],
+        ['CLÁUSULA 26ª – DA NEGOCIAÇÃO COM A INSTITUIÇÃO FINANCEIRA',
+            "26.1. O VENDEDOR compromete-se a não celebrar, sem a anuência prévia e expressa da FASTCAR, acordo, renegociação, refinanciamento ou qualquer outra operação com a instituição financeira que altere as condições do financiamento vinculado ao veículo ou interfira na quitação assumida pela FASTCAR.\n\n" .
+            "26.2. O VENDEDOR deverá comunicar à FASTCAR eventual cobrança, proposta de acordo ou notificação recebida do banco.\n\n" .
+            "26.3. O descumprimento desta cláusula, fora dessas hipóteses, poderá gerar responsabilidade pelos prejuízos efetivamente comprovados."],
+        ['CLÁUSULA 27ª – BOA-FÉ E DEVER DE INFORMAÇÃO',
+            "27.1. As partes atuarão com boa-fé, transparência, cooperação e preservação da documentação.\n\n" .
+            "27.2. Nenhuma parte poderá criar aparência de transferência plena enquanto o gravame impedir a efetiva transferência registral."],
+        ['CLÁUSULA 28ª – TÍTULO EXECUTIVO E ASSINATURA',
+            "28.1. As partes poderão assinar fisicamente ou por meio eletrônico idôneo. Recomenda-se a assinatura de duas testemunhas para reforço da executividade das obrigações líquidas quando cabível.\n\n" .
+            "28.2. Obrigações dependentes de apuração deverão ser acompanhadas do respectivo demonstrativo."],
+        ['CLÁUSULA 29ª – SOLUÇÃO DE CONTROVÉRSIAS',
+            "29.1. As partes buscarão solução negocial antes do litígio, sem impedir tutela urgente.\n\n" .
+            "29.2. Respeitadas regras cogentes de competência, fica eleito o foro da Comarca de Barueri/SP para dirimir quaisquer litígios decorrentes deste contrato."],
+        ['CLÁUSULA 30ª – DISPOSIÇÕES FINAIS',
+            "30.1. Tolerância não constitui novação ou renúncia.\n\n" .
+            "30.2. Invalidade parcial não prejudica cláusulas autônomas preserváveis.\n\n" .
+            "30.3. Qualquer alteração relevante deverá ser documentada por escrito ou eletronicamente."],
     ];
 }
 
