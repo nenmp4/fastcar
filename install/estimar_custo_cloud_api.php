@@ -1,4 +1,6 @@
 <?php
+// Só roda pelo terminal — nunca pela URL (28/10/2026, chamado via web gerava erro fatal).
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 /**
  * Estimativa de custo mensal se o número principal (compra/leads) migrar
  * do Z-API pra WhatsApp Cloud API oficial (24/09/2026, "Levanta ai" —

@@ -612,6 +612,17 @@ if (!str_contains((string)file_get_contents($root . '/includes/whatsapp_conformi
     ok('[envio-ativo-sem-gate-conformidade] podeEnviarAtivo() presente em includes/whatsapp_conformidade.php');
 }
 
+// install-sem-guard-cli — 28/10/2026: install/classificar_tipo_veiculo_ia.php foi
+// aberto pela URL e estourou erro fatal (só faz sentido no terminal). Todo script
+// de install/ precisa recusar execução via web.
+$semCli = [];
+foreach (glob($root . '/install/*.php') as $arqInst) {
+    $cab = (string)file_get_contents($arqInst, false, null, 0, 6000);
+    if (!str_contains($cab, 'PHP_SAPI') && !str_contains($cab, 'php_sapi_name')) $semCli[] = basename($arqInst);
+}
+$semCli ? falha('[install-sem-guard-cli] script de install/ roda pela URL — falta checar PHP_SAPI: ' . implode(', ', $semCli))
+        : ok('[install-sem-guard-cli] todo install/*.php recusa execução via web');
+
 // allowlist-silo-sem-notificacoes guard — 08/10/2026, achado real: o sino
 // (admin/_notify.php) e o badge de status Z-API (admin/_zapi_status.php)
 // são incluídos em TODA página cheia do admin e fazem fetch() pra

@@ -550,22 +550,37 @@ function iaPausada(string $telefone): bool {
 
 /** Consultor assume a conversa — pausa a IA, ela não pode responder por cima. */
 function pausarIA(string $telefone): void {
-    $db = getDB();
-    $db->prepare("
-        INSERT INTO whatsapp_sessoes (telefone, ia_pausada, updated_at)
-        VALUES (?, 1, datetime('now','localtime'))
-        ON CONFLICT(telefone) DO UPDATE SET ia_pausada = 1, updated_at = datetime('now','localtime')
-    ")->execute([normalizarTelefone($telefone)]);
+    _gravarIaPausada($telefone, 1);
+}
+
+/**
+ * 28/10/2026 — "database is locked" (Saúde do sistema) estourava aqui como
+ * erro fatal, derrubando o envio inteiro da mensagem. Tenta de novo (até 3x)
+ * e, se ainda assim o banco estiver travado, só registra no log — nunca
+ * derruba a request por causa dessa marcação.
+ */
+function _gravarIaPausada(string $telefone, int $valor): void {
+    for ($tentativa = 1; $tentativa <= 3; $tentativa++) {
+        try {
+            getDB()->prepare("
+                INSERT INTO whatsapp_sessoes (telefone, ia_pausada, updated_at)
+                VALUES (?, ?, datetime('now','localtime'))
+                ON CONFLICT(telefone) DO UPDATE SET ia_pausada = excluded.ia_pausada, updated_at = datetime('now','localtime')
+            ")->execute([normalizarTelefone($telefone), $valor]);
+            return;
+        } catch (PDOException $e) {
+            if (!str_contains($e->getMessage(), 'locked') || $tentativa === 3) {
+                error_log('Aviso: não gravou ia_pausada=' . $valor . ' pra ' . $telefone . ' — ' . $e->getMessage());
+                return;
+            }
+            usleep(500000);
+        }
+    }
 }
 
 /** Devolve a conversa pra IA (ex: consultor encerrou o atendimento manual). */
 function retomarIA(string $telefone): void {
-    $db = getDB();
-    $db->prepare("
-        INSERT INTO whatsapp_sessoes (telefone, ia_pausada, updated_at)
-        VALUES (?, 0, datetime('now','localtime'))
-        ON CONFLICT(telefone) DO UPDATE SET ia_pausada = 0, updated_at = datetime('now','localtime')
-    ")->execute([normalizarTelefone($telefone)]);
+    _gravarIaPausada($telefone, 0);
 }
 
 /**

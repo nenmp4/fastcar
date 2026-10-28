@@ -1,4 +1,6 @@
 <?php
+// Só roda pelo terminal — nunca pela URL (28/10/2026, chamado via web gerava erro fatal).
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 /**
  * Classifica em lote (heurística local + Gemini quando ela não resolve)
  * TODA oportunidade sem tipo de veículo (`oportunidades.tipo_veiculo IS

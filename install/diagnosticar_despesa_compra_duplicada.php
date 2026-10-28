@@ -1,4 +1,6 @@
 <?php
+// Só roda pelo terminal — nunca pela URL (28/10/2026, chamado via web gerava erro fatal).
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 /**
  * Diagnóstico SÓ LEITURA (25/10/2026, "referência correta na quantidade de
  * carros"): lista despesas automáticas de compra (origem='fechamento_compra')
