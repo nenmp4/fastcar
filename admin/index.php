@@ -1006,7 +1006,7 @@ if ($filtroEspecialLabel !== ''): ?>
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar busca</a><?php endif; ?>
     </form>
     <button type="submit" form="form-bulk-marcar" name="acao" value="mover_vendas_massa" style="margin:0"
-            onclick="return confirm('Mover os selecionados pra VENDAS? Use pra quem quer COMPRAR um veículo. Saem do funil de compra e vão pro rodízio dos vendedores.')">🛒 Mover pra vendas (quer comprar)</button>
+            onclick="return window.confirm('Mover os selecionados pra VENDAS? Use pra quem quer COMPRAR um veículo. Saem do funil de compra e vão pro rodízio dos vendedores.')">🛒 Mover pra vendas (quer comprar)</button>
     <?php if (!$souDono):
         // 29/09/2026, "coloca fitro por super admin - puxar leads dos
         // consultores" — filtro por consultor, só pra quem vê a empresa
