@@ -66,8 +66,10 @@ ini_set('error_log', $errorLogDir . '/php_errors.log');
 // de verdade — é só o que sobra depois de reduzir a contenção real.
 set_exception_handler(function (Throwable $e): void {
     error_log(sprintf(
-        'PHP Fatal error: Uncaught %s: %s in %s:%d',
-        get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()
+        'PHP Fatal error: Uncaught %s: %s in %s:%d [%s]',
+        get_class($e), $e->getMessage(), $e->getFile(), $e->getLine(),
+        // 28/10/2026 — de qual tela/cron veio, pra Saúde do sistema mostrar
+        PHP_SAPI === 'cli' ? 'cli ' . basename((string)($_SERVER['argv'][0] ?? '')) : (($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'))
     ));
     if (PHP_SAPI === 'cli') {
         fwrite(STDERR, $e->getMessage() . "\n");

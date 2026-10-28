@@ -422,7 +422,18 @@ if ($errorLogPath && file_exists($errorLogPath) && is_readable($errorLogPath)) {
     if ($recentes) {
         check('Erros', 'Erros recentes', 'warn', count($linhas) . ' encontrado(s) (últimos 5 abaixo)', basename($errorLogPath));
         foreach ($recentes as $linha) {
-            check('Erros', 'Erro', 'error', substr(trim($linha), 0, 140), '');
+            // 28/10/2026 — o corte em 140 caracteres escondia ONDE foi o erro
+            // (arquivo:linha fica no fim da linha do log). Mensagem + local separados.
+            $msgErro = preg_replace('/^\[[^\]]*\]\s*/', '', trim($linha));
+            $local = '';
+            if (preg_match('/ in (\/\S+?):(\d+)(?: \[([^\]]*)\])?/', $msgErro, $mLoc)) {
+                $local = str_replace(dirname(__DIR__) . '/', '', $mLoc[1]) . ':' . $mLoc[2] . (!empty($mLoc[3]) ? ' — ' . $mLoc[3] : '');
+            } elseif (preg_match('/called in (\/\S+) on line (\d+)/', $msgErro, $mLoc)) {
+                $local = str_replace(dirname(__DIR__) . '/', '', $mLoc[1]) . ':' . $mLoc[2];
+            }
+            preg_match('/^\[([^\]]*)\]/', trim($linha), $mData);
+            $msgErro = preg_replace('/ in \/\S+?:\d+.*$/', '', $msgErro);
+            check('Erros', 'Erro' . (!empty($mData[1]) ? ' ' . substr($mData[1], 0, 20) : ''), 'error', mb_strimwidth($msgErro, 0, 220, '…'), $local);
         }
     } else {
         check('Erros', 'Erros recentes', 'ok', 'Nenhum erro fatal', basename($errorLogPath));
