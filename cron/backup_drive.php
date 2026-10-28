@@ -22,4 +22,7 @@ if (!$isCli) {
 echo '[' . date('Y-m-d H:i:s') . "] Enviando backup pro Drive...\n";
 $r = backupEnviarDrive();
 echo '[' . date('Y-m-d H:i:s') . '] ' . ($r['ok'] ? '✅ ' : '❌ ') . $r['mensagem'] . "\n";
+// 28/10/2026, "precisa ver se todo dia vai enviar" — guarda o resultado da
+// rodada automática (tela de Backup mostra) e avisa no WhatsApp se falhar.
+backupRegistrarResultadoAutomatico($r);
 exit($r['ok'] ? 0 : 1);

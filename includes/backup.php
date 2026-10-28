@@ -195,3 +195,38 @@ function backupListarDrive(): array {
     usort($arquivos, fn($a, $b) => strcmp($b['createdTime'] ?? '', $a['createdTime'] ?? ''));
     return $arquivos;
 }
+
+/**
+ * Resultado da rodada AUTOMÁTICA do envio pro Drive (cron/backup_drive.php):
+ * grava data/mensagem pra tela de Backup e, se falhou, avisa no WhatsApp
+ * dos números de notificação (config.notificacao_leads_whatsapp). Nunca lança.
+ */
+function backupRegistrarResultadoAutomatico(array $r): void {
+    try {
+        setConfig('drive_backup_auto_ultima', json_encode([
+            'em' => date('Y-m-d H:i:s'), 'ok' => (bool)($r['ok'] ?? false), 'mensagem' => (string)($r['mensagem'] ?? ''),
+        ], JSON_UNESCAPED_UNICODE));
+        if (!empty($r['ok'])) return;
+        require_once __DIR__ . '/whatsapp_config.php';
+        $msg = "⚠️ *Backup Fastcar*: o envio automático pro Google Drive FALHOU hoje.\n"
+             . 'Motivo: ' . ($r['mensagem'] ?? 'desconhecido') . "\n"
+             . 'Confira em Backup no sistema e tente "Enviar mais recente pro Drive".';
+        foreach (preg_split('/[\s,;]+/', (string)getConfig('notificacao_leads_whatsapp')) as $num) {
+            if (trim($num) !== '') zapiEnviarTextoInterno(trim($num), $msg);
+        }
+    } catch (Throwable $e) {
+        // nunca derruba o cron por causa do aviso
+    }
+}
+
+/** Status pra tela de Backup: última rodada automática + último envio com sucesso. */
+function backupStatusAutomatico(): array {
+    $ultima = json_decode((string)getConfig('drive_backup_auto_ultima'), true);
+    $ultimoOk = getConfig('drive_backup_ultimo');
+    $horasSemEnvio = $ultimoOk ? (time() - strtotime($ultimoOk)) / 3600 : null;
+    return [
+        'ultima' => is_array($ultima) ? $ultima : null,
+        'ultimo_ok' => $ultimoOk ?: null,
+        'atrasado' => $horasSemEnvio === null || $horasSemEnvio > 26,
+    ];
+}

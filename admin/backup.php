@@ -70,6 +70,25 @@ function formatarBytes(int $bytes): string {
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
+<?php $stAuto = backupStatusAutomatico(); ?>
+<div class="card">
+    <h2>☁️ Envio automático pro Drive (todo dia às 4h)</h2>
+    <?php if ($stAuto['atrasado']): ?>
+        <div class="alerta-erro">⚠️ Nenhum backup chegou ao Drive nas últimas 26 horas
+            <?= $stAuto['ultimo_ok'] ? '(último: ' . date('d/m/Y H:i', strtotime($stAuto['ultimo_ok'])) . ')' : '(nunca enviado)' ?>.
+            Clique em "Enviar mais recente pro Drive" abaixo e, se continuar, confira o cron na VPS.</div>
+    <?php else: ?>
+        <div class="alerta-sucesso">✅ Em dia — último backup enviado em <?= date('d/m/Y H:i', strtotime($stAuto['ultimo_ok'])) ?>.</div>
+    <?php endif; ?>
+    <p><small>Última rodada automática:
+        <?php if ($stAuto['ultima']): ?>
+            <?= date('d/m/Y H:i', strtotime($stAuto['ultima']['em'])) ?> — <?= $stAuto['ultima']['ok'] ? '✅' : '❌' ?> <?= e($stAuto['ultima']['mensagem']) ?>
+        <?php else: ?>
+            ainda não registrada (passa a aparecer a partir da próxima madrugada).
+        <?php endif; ?>
+        <br>Se a rodada automática falhar, os números de notificação de leads recebem um aviso no WhatsApp.</small></p>
+</div>
+
 <div class="card">
     <h2>💾 Backup manual</h2>
     <p><small>O automático já roda pelo cron (banco várias vezes ao dia, completo 1x/dia, envio pro Drive na
