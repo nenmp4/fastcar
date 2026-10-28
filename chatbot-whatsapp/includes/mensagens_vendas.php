@@ -217,6 +217,13 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
         // IA antes de ligar a opção (recebe o link na próxima mensagem).
         if ($vf && in_array($vf['etapa'], ['whatsapp', 'qualificacao_ia'], true) && $vf['canal_origem'] !== 'formulario_site') {
             $chaveF = 'formvenda_link_' . (int)$vendaLead['venda_id'];
+            // 28/10/2026 — "se ele ficar mandando mensagem/áudio": o link já foi
+            // e ele insistiu sem preencher → avisa o vendedor responsável (1x por
+            // lead) no WhatsApp pessoal, pra não deixar lead interessado esfriar.
+            // A IA continua sem conversar com ele.
+            if (getConfig($chaveF) === '1') {
+                avisarVendedorLeadInsistiuSemFormulario((int)$vendaLead['venda_id'], $phone, (string)$vf['comprador_nome'], $tipoRegistro);
+            }
             if (getConfig($chaveF) !== '1') {
                 $msgF = vendaFormularioMsgLink((string)$vf['comprador_nome']);
                 if (zapiEnviarTexto($phone, $msgF, $credenciaisVendas)) {
@@ -283,4 +290,32 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
         'instancia' => $instancia,
         'ia_resultado' => $iaResultado,
     ];
+}
+
+/**
+ * Aviso único pro vendedor quando o lead que só recebeu o link do formulário
+ * continua mandando mensagem/áudio sem preencher (ver formulário obrigatório
+ * em processarMensagemVendasZapi()). Sem vendedor com WhatsApp, cai nos
+ * números de notificação de Configurações. Best-effort, nunca lança.
+ */
+function avisarVendedorLeadInsistiuSemFormulario(int $vendaId, string $telefone, string $nome, string $tipo): void {
+    try {
+        $chave = 'formvenda_insistiu_' . $vendaId;
+        if (getConfig($chave) === '1') return;
+        require_once dirname(__DIR__, 2) . '/includes/notificacoes.php';
+        $st = getDB()->prepare("SELECT u.whatsapp FROM vendas v LEFT JOIN usuarios u ON u.id = v.responsavel_id AND u.bloqueado = 0 WHERE v.id = ?");
+        $st->execute([$vendaId]);
+        $zapVendedor = (string)($st->fetchColumn() ?: '');
+        $base = rtrim(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions', '/');
+        $oQue = in_array($tipo, ['audio'], true) ? 'mandou áudio' : 'continua mandando mensagem';
+        $msg = "🔔 Lead de vendas insistindo\n"
+            . ($nome !== '' ? "{$nome} " : '') . "({$telefone}) {$oQue} no WhatsApp de vendas mas ainda não preencheu o formulário.\n"
+            . "Vale chamar ele: {$base}/admin/vendas_inbox.php?telefone={$telefone}";
+        setConfig($chave, '1'); // marca antes: nunca repete mesmo se o envio demorar
+        enviarAvisoInternoWhatsapp($zapVendedor !== '' ? $zapVendedor : null, $msg);
+        getDB()->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) SELECT id, etapa, etapa, ? FROM vendas WHERE id = ?")
+            ->execute(['Cliente insistiu no WhatsApp sem preencher o formulário — vendedor avisado', $vendaId]);
+    } catch (Throwable $e) {
+        // nunca derruba o webhook
+    }
 }
