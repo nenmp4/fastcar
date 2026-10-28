@@ -217,6 +217,13 @@ class GoogleDrive {
 
     public function uploadFile(string $tmp_path, string $nome, string $mime, string $folder_id): string|bool {
         if (!$this->token) return false;
+        // 28/10/2026, "ao enviar backup pro Drive dá erro" — upload multipart
+        // do Drive só aceita até 5 MB e carrega o arquivo inteiro na memória;
+        // o ZIP de backup passa disso. Acima de 4 MB vai em partes (resumable).
+        $tamanho = @filesize($tmp_path);
+        if ($tamanho !== false && $tamanho > 4 * 1024 * 1024) {
+            return $this->uploadFileResumable($tmp_path, $nome, $mime, $folder_id, (int)$tamanho);
+        }
         $conteudo = file_get_contents($tmp_path);
         if ($conteudo === false) return false;
         $meta     = json_encode(['name' => $nome, 'parents' => [$folder_id]]);
@@ -246,6 +253,91 @@ class GoogleDrive {
         }
         $data = json_decode($resp, true);
         return $data['id'] ?? false;
+    }
+
+    /**
+     * Upload em partes (Drive "resumable upload") pra arquivo grande: abre a
+     * sessão, manda blocos de 8 MB lidos do disco (nunca o arquivo inteiro
+     * na memória). Cada bloco tem até 3 tentativas.
+     */
+    private function uploadFileResumable(string $path, string $nome, string $mime, string $folder_id, int $tamanho): string|bool {
+        $ch = curl_init($this->uploadUrl() . '/files?uploadType=resumable&supportsAllDrives=true');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode(['name' => $nome, 'parents' => [$folder_id]]),
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $this->token,
+                'Content-Type: application/json; charset=UTF-8',
+                'X-Upload-Content-Type: ' . $mime,
+                'X-Upload-Content-Length: ' . $tamanho,
+            ],
+            CURLOPT_HEADER  => true,
+            CURLOPT_TIMEOUT => 30,
+        ]);
+        $resp = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $tamHeader = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $erroCurl = curl_error($ch);
+        curl_close($ch);
+        if ($status !== 200 || !preg_match('/^location:\s*(\S+)/mi', substr((string)$resp, 0, $tamHeader), $m)) {
+            $err = json_decode(substr((string)$resp, $tamHeader) ?: '{}', true);
+            $this->lastError = 'Upload em partes (início): ' . (($err['error']['message'] ?? '') ?: ($erroCurl ?: "HTTP {$status}"));
+            return false;
+        }
+        $sessao = trim($m[1]);
+
+        $fh = fopen($path, 'rb');
+        if (!$fh) { $this->lastError = 'Não consegui ler o arquivo local.'; return false; }
+        $bloco = 8 * 1024 * 1024; // múltiplo de 256 KB, exigência do Drive
+        $enviado = 0;
+        try {
+            while ($enviado < $tamanho) {
+                fseek($fh, $enviado);
+                $dados = fread($fh, $bloco);
+                if ($dados === false || $dados === '') { $this->lastError = 'Falha lendo o arquivo local.'; return false; }
+                $fim = $enviado + strlen($dados) - 1;
+                $ok = false;
+                for ($tentativa = 1; $tentativa <= 3 && !$ok; $tentativa++) {
+                    $c = curl_init($sessao);
+                    curl_setopt_array($c, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_CUSTOMREQUEST  => 'PUT',
+                        CURLOPT_POSTFIELDS     => $dados,
+                        CURLOPT_HTTPHEADER     => [
+                            'Content-Length: ' . strlen($dados),
+                            "Content-Range: bytes {$enviado}-{$fim}/{$tamanho}",
+                        ],
+                        CURLOPT_HEADER  => true,
+                        CURLOPT_TIMEOUT => 300,
+                    ]);
+                    $r = curl_exec($c);
+                    $st = curl_getinfo($c, CURLINFO_HTTP_CODE);
+                    $hs = curl_getinfo($c, CURLINFO_HEADER_SIZE);
+                    $ec = curl_error($c);
+                    curl_close($c);
+                    if ($st === 200 || $st === 201) {
+                        $this->lastError = '';
+                        $data = json_decode(substr((string)$r, $hs), true);
+                        return $data['id'] ?? false;
+                    }
+                    if ($st === 308) {
+                        // Drive confirma até onde recebeu (header Range: bytes=0-N).
+                        $enviado = preg_match('/^range:\s*bytes=0-(\d+)/mi', substr((string)$r, 0, $hs), $mr) ? (int)$mr[1] + 1 : $fim + 1;
+                        $ok = true;
+                    } else {
+                        $err = json_decode(substr((string)$r, $hs) ?: '{}', true);
+                        $this->lastError = 'Upload em partes (' . round($enviado / 1048576) . ' de ' . round($tamanho / 1048576) . ' MB): '
+                            . (($err['error']['message'] ?? '') ?: ($ec ?: "HTTP {$st}"));
+                    }
+                }
+                if (!$ok) return false;
+            }
+        } finally {
+            fclose($fh);
+        }
+        $this->lastError = 'Upload em partes terminou sem o Drive devolver o arquivo.';
+        return false;
     }
 
     /**
