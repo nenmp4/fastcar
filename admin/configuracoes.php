@@ -822,6 +822,13 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
+<?php // 28/10/2026 — "layout diferente, não precisar rolar até embaixo": cada card vira
+      // um item recolhível (só o título aparece), com busca no topo. Ver script no fim. ?>
+<div class="cfg-topo">
+    <input type="search" id="cfg-busca" placeholder="🔎 Buscar (ex: vendas, IA, backup)" autocomplete="off">
+    <button type="button" class="btn-secundario" id="cfg-abrir-tudo">Abrir tudo</button>
+</div>
+
 <div class="card">
     <h2>🗂️ Layout das telas de oportunidade e venda</h2>
     <p><small>Ligado: os cards da oportunidade/venda ficam separados em abas (Cliente, Veículo, Contrato, Documentos,
@@ -2133,6 +2140,44 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 </main>
 
 <script>
+(function () {
+    var CHAVE = 'cfg_abertos';
+    var abertos = {};
+    try { abertos = JSON.parse(sessionStorage.getItem(CHAVE) || '{}') || {}; } catch (e) {}
+    function salvar() { try { sessionStorage.setItem(CHAVE, JSON.stringify(abertos)); } catch (e) {} }
+    var cards = Array.prototype.slice.call(document.querySelectorAll('main > .card'));
+    cards.forEach(function (card) {
+        var tit = card.querySelector(':scope > h2, :scope > h3');
+        if (!tit) return;
+        var corpo = document.createElement('div');
+        corpo.className = 'cfg-corpo';
+        while (tit.nextSibling) corpo.appendChild(tit.nextSibling);
+        card.appendChild(corpo);
+        card.classList.add('cfg-item');
+        tit.classList.add('cfg-titulo');
+        tit.setAttribute('role', 'button');
+        tit.setAttribute('tabindex', '0');
+        var chave = tit.textContent.trim();
+        // Abre sozinho: o que estava aberto antes de salvar, ou card com resultado/erro dentro.
+        var abrir = !!abertos[chave] || !!card.querySelector('.alerta-erro, .alerta-sucesso') || (location.hash && card.id === location.hash.slice(1));
+        function aplicar(v) { card.classList.toggle('cfg-aberto', v); tit.setAttribute('aria-expanded', v ? 'true' : 'false'); }
+        aplicar(abrir);
+        function alternar() { var v = !card.classList.contains('cfg-aberto'); aplicar(v); if (v) abertos[chave] = 1; else delete abertos[chave]; salvar(); }
+        tit.addEventListener('click', alternar);
+        tit.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternar(); } });
+    });
+    var busca = document.getElementById('cfg-busca');
+    busca && busca.addEventListener('input', function () {
+        var t = busca.value.trim().toLowerCase();
+        cards.forEach(function (c) { c.style.display = !t || c.textContent.toLowerCase().indexOf(t) !== -1 ? '' : 'none'; });
+    });
+    var btn = document.getElementById('cfg-abrir-tudo');
+    btn && btn.addEventListener('click', function () {
+        var abrirTodos = btn.textContent === 'Abrir tudo';
+        cards.forEach(function (c) { if (c.classList.contains('cfg-item')) c.classList.toggle('cfg-aberto', abrirTodos); });
+        btn.textContent = abrirTodos ? 'Fechar tudo' : 'Abrir tudo';
+    });
+})();
 document.getElementById('mostrarSenhas') && document.getElementById('mostrarSenhas').addEventListener('change', function () {
     var tipo = this.checked ? 'text' : 'password';
     ['zapi_instance_id', 'zapi_token', 'zapi_client_token'].forEach(function (id) {
