@@ -153,6 +153,21 @@ function backupEnviarDrive(): array {
 
     if (!$jaTemHoje) {
         $fileId = $drive->uploadFile($zipMaisRecente, $nomeZip, 'application/zip', $pastaId);
+        // 28/10/2026 — pasta "Backups" guardada no sistema pode não existir
+        // mais (apagada, ou criada antes do Drive estar configurado certo):
+        // recria a pasta 1x sozinho e tenta de novo.
+        if (!$fileId && stripos((string)$drive->lastError, 'not found') !== false) {
+            setConfig('drive_backups_folder_id', '');
+            $pastaId = garantirPastaDriveBackups($drive);
+            if (!$pastaId) { // a pasta raiz "Fastcar" também sumiu
+                setConfig('drive_folder_id', '');
+                $pastaId = garantirPastaDriveBackups($drive);
+            }
+            if ($pastaId) {
+                $existentes = [];
+                $fileId = $drive->uploadFile($zipMaisRecente, $nomeZip, 'application/zip', $pastaId);
+            }
+        }
         if (!$fileId) return ['ok' => false, 'mensagem' => 'Falha no upload: ' . ($drive->lastError ?: 'erro desconhecido')];
         setConfig('drive_backup_ultimo', date('Y-m-d H:i:s'));
         $existentes[] = ['name' => $nomeZip, 'id' => $fileId, 'createdTime' => date('c')];
