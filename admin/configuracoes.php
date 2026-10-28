@@ -1004,6 +1004,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 </div>
 <?php endif; ?>
 
+<?php if (!$esconderZapiMeta): // Conformidade usa instância Z-API dedicada — some junto com a Z-API ?>
 <div class="card">
     <h2>🛡️ Conformidade WhatsApp</h2>
     <p><small>30/09/2026 — a conta WhatsApp Business da Fastcar foi <strong>desativada permanentemente pela
@@ -1056,6 +1057,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <button type="submit">Salvar</button>
     </form>
 </div>
+<?php endif; ?>
 
 <div class="card">
     <h2>🟣 Evolution API (self-hosted) — Canal principal</h2>
@@ -2121,7 +2123,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     <?php if ($mostrarDesativados): ?>
         <a href="/admin/configuracoes.php">Ocultar integrações desativadas</a>
     <?php elseif ($esconderZapiMeta || $esconderZapcar): ?>
-        <a href="/admin/configuracoes.php?mostrar_desativados=1">Mostrar integrações desativadas (Z-API, Meta, ZapCar)</a>
+        <a href="/admin/configuracoes.php?mostrar_desativados=1">Mostrar integrações desativadas (Z-API, Meta, Conformidade, ZapCar)</a>
     <?php endif; ?>
 </p>
 </main>
