@@ -944,7 +944,7 @@ function gerarPdfContratoLocacao(array $c): string {
         _pdfLinhaResumo($pdf, 'Vencimento', $v('vencimento_dia') !== '—' ? 'dia ' . $v('vencimento_dia') . ' de cada mês' : '—');
     }
     _pdfLinhaResumo($pdf, 'Caução/garantia, se houver', $caucao);
-    _pdfLinhaResumo($pdf, 'Franquia de quilometragem', $v('franquia_km') !== '—' ? $v('franquia_km') . ' km por ' . $v('franquia_periodo', 'mês') : '—');
+    _pdfLinhaResumo($pdf, 'Franquia de quilometragem', $v('franquia_km') !== '—' ? $v('franquia_km') . ' km por ' . $v('franquia_periodo', $semanal ? 'semana' : 'mês') : '—');
     _pdfLinhaResumo($pdf, 'Km excedente', isset($l['km_excedente_valor']) ? _fmtMoeda((float)$l['km_excedente_valor']) . '/km' : '—');
     _pdfLinhaResumo($pdf, 'IPVA', 'Responsável: ' . $v('ipva_resp'));
     _pdfLinhaResumo($pdf, 'Licenciamento', 'Responsável: ' . $v('licenciamento_resp'));

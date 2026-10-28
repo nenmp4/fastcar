@@ -43,7 +43,7 @@ const LOCACAO_CAMPOS = [
     'caucao_modalidade'       => ['label' => 'Modalidade da caução', 'tipo' => 'text', 'placeholder' => 'PIX, depósito, cheque...'],
     'km_inicial'              => ['label' => 'Quilometragem inicial (km)', 'tipo' => 'int'],
     'franquia_km'             => ['label' => 'Franquia de quilometragem (km)', 'tipo' => 'int'],
-    'franquia_periodo'        => ['label' => 'Franquia por', 'tipo' => 'text', 'padrao' => 'mês'],
+    'franquia_periodo'        => ['label' => 'Franquia por (vazio = mesmo período do aluguel)', 'tipo' => 'text'],
     'km_excedente_valor'      => ['label' => 'Km excedente (R$/km)', 'tipo' => 'money'],
     'ipva_resp'               => ['label' => 'IPVA — responsável', 'tipo' => 'text', 'padrao' => 'FASTCAR'],
     'licenciamento_resp'      => ['label' => 'Licenciamento — responsável', 'tipo' => 'text', 'padrao' => 'FASTCAR'],
@@ -53,7 +53,7 @@ const LOCACAO_CAMPOS = [
     'pneus_regra'             => ['label' => 'Pneus/itens de desgaste — regra', 'tipo' => 'text'],
     'combustivel_devolucao'   => ['label' => 'Combustível na devolução', 'tipo' => 'text', 'padrao' => 'Mesmo nível da entrega'],
     'rastreador'              => ['label' => 'Rastreador', 'tipo' => 'select', 'opcoes' => ['instalado' => 'Instalado', 'sera_instalado' => 'Será instalado', 'nao_aplicavel' => 'Não aplicável']],
-    'uso'                     => ['label' => 'Uso autorizado', 'tipo' => 'select', 'opcoes' => ['pessoal' => 'Pessoal', 'profissional' => 'Profissional', 'aplicativo' => 'Aplicativo', 'outro' => 'Outro']],
+    'uso'                     => ['label' => 'Uso autorizado', 'tipo' => 'select', 'opcoes' => ['pessoal' => 'Pessoal', 'profissional' => 'Profissional', 'aplicativo' => 'Aplicativo', 'outro' => 'Outro'], 'padrao' => 'aplicativo'], // 28/10/2026 — locação vai pra motorista de aplicativo
     'uso_outro'               => ['label' => 'Uso autorizado — se "outro", qual', 'tipo' => 'text'],
     'aviso_previo_dias'       => ['label' => 'Aviso prévio para devolução (dias)', 'tipo' => 'int'],
     'mora_multa_pct'          => ['label' => 'Encargos de mora — multa (%)', 'tipo' => 'text', 'padrao' => '2'],
