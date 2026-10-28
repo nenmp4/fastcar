@@ -1122,6 +1122,31 @@ function telefoneEhLeadDeVendasSemCompraAtiva(string $telefone): bool {
     return (bool)$st->fetchColumn();
 }
 
+/**
+ * 28/10/2026 — "os leads que está sendo encerrado está voltando": lead que a
+ * EQUIPE encerrou na compra (perdido/sem perfil, com usuário no histórico —
+ * nunca o encerramento automático por silêncio nem o "sem perfil" da IA)
+ * escrevendo de novo nos próximos 60 dias não abre lead novo pro rodízio.
+ * A mensagem continua salva e aparece no WhatsApp Box do consultor que tinha
+ * o lead; se for negócio de verdade, ele reabre (botão "↩️ Reabrir").
+ */
+function telefoneEncerradoPelaEquipeRecente(string $telefone): bool {
+    $tel = normalizarTelefone($telefone);
+    if (!$tel) return false;
+    $db = getDB();
+    $st = $db->prepare("SELECT o.id, o.etapa FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE c.telefone = ? ORDER BY o.id DESC LIMIT 1");
+    $st->execute([$tel]);
+    $ult = $st->fetch();
+    if (!$ult || !in_array($ult['etapa'], ['perdido', 'sem_perfil'], true)) return false;
+    $st = $db->prepare("SELECT responsavel_id, created_at FROM oportunidade_historico
+        WHERE oportunidade_id = ? AND etapa_nova = ? ORDER BY id DESC LIMIT 1");
+    $st->execute([(int)$ult['id'], $ult['etapa']]);
+    $h = $st->fetch();
+    return $h && $h['responsavel_id'] !== null
+        && strtotime((string)$h['created_at']) >= strtotime('-60 days');
+}
+
 function moverOportunidadeParaVendas(int $oportunidadeId, ?int $usuarioId = null, string $observacao = ''): array {
     require_once __DIR__ . '/vendas.php';
     $db = getDB();

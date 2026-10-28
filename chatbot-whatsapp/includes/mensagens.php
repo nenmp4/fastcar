@@ -763,6 +763,10 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // escrevendo de novo no número de compra: nunca reabre oportunidade de
     // compra nem roda a IA de compra — a mensagem já ficou salva e aparece
     // no WhatsApp de vendas pro vendedor responder.
+    if (telefoneEncerradoPelaEquipeRecente($phone)) {
+        return ['ignored' => 'encerrado_pela_equipe', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => iaPausada($phone)] + $vazio;
+    }
     if (telefoneEhLeadDeVendasSemCompraAtiva($phone)) {
         return ['ignored' => 'lead_de_vendas', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
