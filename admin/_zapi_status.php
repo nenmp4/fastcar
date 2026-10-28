@@ -53,10 +53,10 @@ $zapiPodeVerSaude = ($_SESSION['admin_perfil'] ?? '') === 'super_admin';
             nao_configurado: ['⚪', 'Meta (oficial) não configurado']
         },
         evolution: {
-            conectado: ['🟣', 'Evolution (compra) conectado'],
-            desconectado: ['🔴', 'Evolution (compra) desconectado'],
-            erro: ['🟡', 'Evolution (compra) — erro ao verificar'],
-            nao_configurado: ['⚪', 'Evolution (compra) não configurado']
+            conectado: ['🟣', 'Compra conectado'],
+            desconectado: ['🔴', 'Compra desconectado'],
+            erro: ['🟡', 'Compra — erro'],
+            nao_configurado: ['⚪', 'Compra não configurado']
         }
     };
 

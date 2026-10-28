@@ -807,7 +807,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_layout_abas">
         <label style="display:flex;align-items:center;gap:8px;font-weight:400">
-            <input type="checkbox" name="layout_abas_detalhe" value="1" <?= getConfig('layout_abas_detalhe') === '1' ? 'checked' : '' ?>>
+            <input type="checkbox" style="width:auto;margin:0" name="layout_abas_detalhe" value="1" <?= getConfig('layout_abas_detalhe') === '1' ? 'checked' : '' ?>>
             Mostrar oportunidade e venda em abas
         </label>
         <button type="submit" style="width:auto">Salvar</button>

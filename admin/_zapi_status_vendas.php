@@ -45,10 +45,10 @@ $zapiVendasPodeVerSaude = ($_SESSION['admin_perfil'] ?? '') === 'super_admin';
             nao_configurado: ['⚪', 'Meta (vendas) não configurado']
         },
         evolution: {
-            conectado: ['🟣', 'Evolution (vendas) conectado'],
-            desconectado: ['🔴', 'Evolution (vendas) desconectado'],
-            erro: ['🟡', 'Evolution (vendas) — erro ao verificar'],
-            nao_configurado: ['⚪', 'Evolution (vendas) não configurado']
+            conectado: ['🟣', 'Vendas conectado'],
+            desconectado: ['🔴', 'Vendas desconectado'],
+            erro: ['🟡', 'Vendas — erro'],
+            nao_configurado: ['⚪', 'Vendas não configurado']
         }
     };
 
