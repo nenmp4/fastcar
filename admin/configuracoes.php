@@ -756,6 +756,10 @@ foreach (array_keys($camposEvolutionFinanceiro) as $chave) {
 }
 $configuradoEvolutionFinanceiro = $valoresEvolution['evolution_base_url'] && $valoresEvolutionFinanceiro['evolution_financeiro_instance_name'] && $valoresEvolutionFinanceiro['evolution_financeiro_api_key'];
 $zapiMetaDesativadoAtual = whatsappZapiMetaDesativado();
+// 28/10/2026 — "pode ocultar todos que estão desativados": Z-API, Meta e ZapCar
+// desativados ficam recolhidos num item só (toque pra abrir), em vez de
+// encher a tela. Nunca some de vez — dá pra religar por ali.
+$ocultarZapcar = zapcarDesativadoManualmente();
 $valoresOficialVendas = [];
 foreach (array_keys($camposWhatsappOficialVendas) as $chave) {
     $valoresOficialVendas[$chave] = getConfig($chave) ?? '';
@@ -855,6 +859,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     </form>
 </div>
 
+<?php if ($zapiMetaDesativadoAtual): ?><details class="card card-desativado"><summary>⚙️ Z-API (principal, vendas e financeiro) — desativado (toque pra ver)</summary><?php endif; ?>
 <div class="card">
     <h2>⚙️ Instância Z-API (única)</h2>
     <p><small>Restrito ao super_admin. Essas credenciais dão acesso à instância de WhatsApp da Fastcar — não compartilhe.
@@ -995,6 +1000,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <?php endif; ?>
     </form>
 </div>
+<?php if ($zapiMetaDesativadoAtual): ?></details><?php endif; ?>
 
 <div class="card">
     <h2>🛡️ Conformidade WhatsApp</h2>
@@ -1314,6 +1320,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     </form>
 </div>
 
+<?php if ($zapiMetaDesativadoAtual): ?><details class="card card-desativado"><summary>🟢 Meta oficial (principal e vendas) — desativado (toque pra ver)</summary><?php endif; ?>
 <div class="card">
     <h2>🟢 WhatsApp Cloud API (Meta oficial)</h2>
     <?php if ($zapiMetaDesativadoAtual): ?>
@@ -1452,6 +1459,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <button type="submit">Salvar</button>
     </form>
 </div>
+<?php if ($zapiMetaDesativadoAtual): ?></details><?php endif; ?>
 
 <div class="card">
     <h3>📣 Meta Marketing API — Custo por Lead (CPL)</h3>
@@ -1683,6 +1691,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     </form>
 </div>
 
+<?php if ($ocultarZapcar): ?><details class="card card-desativado"><summary>🚓 ZapCar — desativado (toque pra ver ou religar)</summary><?php endif; ?>
 <div class="card">
     <h2>🚓 ZapCar — consulta veicular por placa</h2>
     <p><small>Adicionado 22/09/2026 — proprietário, restrições, gravame e leilão pela placa oficial
@@ -1743,6 +1752,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <small style="color:var(--texto-fraco)">Só lê o catálogo e o saldo — não gasta nada.</small>
     </form>
 </div>
+<?php if ($ocultarZapcar): ?></details><?php endif; ?>
 
 <div class="card">
     <h2>🔄 Asaas</h2>

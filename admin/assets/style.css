@@ -825,3 +825,11 @@ button.av-btn-status.ativo-nao_verificado { background: var(--fundo); color: var
 }
 .av-tipo-pill.tipo-compra { background: var(--azul-claro); border: 2px solid var(--azul); color: var(--azul-escuro); }
 .av-tipo-pill.tipo-venda { background: var(--laranja-bg); border: 2px solid var(--laranja); color: var(--laranja); }
+
+/* 28/10/2026 — integrações desativadas (Z-API, Meta, ZapCar) recolhidas em
+   Configurações: 1 linha só, toque pra abrir. */
+details.card-desativado > summary { cursor: pointer; font-weight: 600; color: var(--texto-fraco); min-height: 44px; display: flex; align-items: center; list-style: none; }
+details.card-desativado > summary::-webkit-details-marker { display: none; }
+details.card-desativado > summary::after { content: '▸'; margin-left: auto; }
+details.card-desativado[open] > summary::after { content: '▾'; }
+details.card-desativado[open] > summary { margin-bottom: 12px; }
