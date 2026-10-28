@@ -1094,6 +1094,64 @@ function marcarPerdida(int $oportunidadeId, string $motivo, ?int $responsavelId 
 }
 
 /**
+ * 28/10/2026 — "ta caindo leads de venda para os consultores" → "Mover esses
+ * leads pra vendas". Cliente que quer COMPRAR um veículo (não vender o dele)
+ * chegou pelo número de compra e virou oportunidade de compra, caindo no
+ * rodízio dos consultores. Cria/reaproveita a negociação de vendas desse
+ * telefone (criarOuAbrirVendaLead() — rodízio dos vendedores + aviso) e
+ * encerra a oportunidade de compra como 'sem_perfil' com o motivo apontando
+ * pra negociação — nunca apaga nada, dá pra reabrir. Mensagens já trocadas
+ * aparecem sozinhas no WhatsApp de vendas (mesma tabela, chave = telefone).
+ * Depois disso, mensagem nova desse telefone no número de compra não abre
+ * oportunidade de novo (ver processarMensagemZapi()).
+ */
+function telefoneEhLeadDeVendasSemCompraAtiva(string $telefone): bool {
+    $tel = normalizarTelefone($telefone);
+    if (!$tel) return false;
+    $db = getDB();
+    $ph = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+    $st = $db->prepare("SELECT 1 FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE c.telefone = ? AND o.etapa IN ({$ph}) LIMIT 1");
+    $st->execute([$tel, ...ETAPAS_ATIVAS]);
+    if ($st->fetchColumn()) return false; // tem compra ativa: segue o fluxo normal
+    // Só bloqueia quem foi ENCAMINHADO da compra pra vendas — nunca um
+    // comprador qualquer que um dia resolva vender o próprio carro.
+    $st = $db->prepare("SELECT 1 FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE c.telefone = ? AND o.etapa = 'sem_perfil' AND o.motivo_perda LIKE 'Quer comprar veículo — encaminhado pra vendas%'
+        AND o.updated_at >= datetime('now','localtime','-60 days') LIMIT 1");
+    $st->execute([$tel]);
+    return (bool)$st->fetchColumn();
+}
+
+function moverOportunidadeParaVendas(int $oportunidadeId, ?int $usuarioId = null, string $observacao = ''): array {
+    require_once __DIR__ . '/vendas.php';
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT o.etapa, o.resumo_ia, c.nome, c.telefone, c.canal_origem, c.campanha_origem, c.anuncio_origem
+        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?
+    ");
+    $stmt->execute([$oportunidadeId]);
+    $op = $stmt->fetch();
+    if (!$op) return ['ok' => false, 'erro' => 'Oportunidade não encontrada.'];
+    if (!in_array($op['etapa'], ETAPAS_ATIVAS, true)) return ['ok' => false, 'erro' => 'Oportunidade já está encerrada.'];
+    try {
+        $v = criarOuAbrirVendaLead((string)$op['telefone'], (string)$op['nome'], [
+            'canal_origem' => (string)$op['canal_origem'], 'campanha_origem' => (string)$op['campanha_origem'], 'anuncio_origem' => (string)$op['anuncio_origem'],
+        ]);
+    } catch (Throwable $e) {
+        return ['ok' => false, 'erro' => $e->getMessage()];
+    }
+    $vendaId = (int)$v['venda_id'];
+    $nota = "Veio do funil de compra (oportunidade #{$oportunidadeId}) — cliente quer COMPRAR um veículo."
+        . ($observacao !== '' ? " {$observacao}." : '');
+    $db->prepare("UPDATE vendas SET observacao_manual = CASE WHEN COALESCE(observacao_manual,'') = '' THEN ? ELSE observacao_manual END WHERE id = ?")
+       ->execute([mb_substr($nota, 0, 300), $vendaId]);
+    $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao) SELECT id, etapa, etapa, ?, ? FROM vendas WHERE id = ?")
+       ->execute([$usuarioId, $nota . (trim((string)$op['resumo_ia']) !== '' ? "\n\nResumo da conversa na compra:\n" . $op['resumo_ia'] : ''), $vendaId]);
+    marcarPerdida($oportunidadeId, "Quer comprar veículo — encaminhado pra vendas (negociação #{$vendaId})", $usuarioId, true);
+    return ['ok' => true, 'venda_id' => $vendaId, 'nova' => (bool)$v['nova']];
+}
+
+/**
  * Reabre uma oportunidade 'perdido'/'sem_perfil' — 22/10/2026, "temos
  * adcionar uma opção de clientes encerrado para voltar pois ancerram
  * cliente por engano". Até aqui só existia via CLI

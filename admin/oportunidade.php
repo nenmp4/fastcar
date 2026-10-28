@@ -254,6 +254,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($acao === 'marcar_perdida') {
                 marcarPerdida($id, clean((string)($_POST['motivo'] ?? '')), (int)$_SESSION['admin_id'], !empty($_POST['sem_perfil']));
                 $sucesso = 'Oportunidade encerrada.';
+            } elseif ($acao === 'mover_para_vendas') {
+                // 28/10/2026 — cliente quer COMPRAR um veículo: sai da compra, vira negociação de vendas.
+                $rMov = moverOportunidadeParaVendas($id, (int)$_SESSION['admin_id'], 'Movido manualmente do funil de compra');
+                if (!empty($rMov['ok'])) $sucesso = 'Movido pra vendas — negociação #' . $rMov['venda_id'] . ' (já foi pro rodízio dos vendedores).';
+                else $erro = 'Não deu pra mover pra vendas: ' . ($rMov['erro'] ?? 'erro desconhecido');
             } elseif ($acao === 'enviar_link_documentos') {
                 $token = getOuCriarTokenDocumentos($id);
                 $baseUrl = getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'];
@@ -1296,6 +1301,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="text" name="motivo" required placeholder="Ex: desistiu, achou proposta baixa, sem perfil...">
                 <label><input type="checkbox" name="sem_perfil" value="1" style="width:auto;display:inline-block"> Marcar como "sem perfil de compra" (em vez de "perdido")</label>
                 <button type="submit" class="perigo">Encerrar oportunidade</button>
+            </form>
+            <form method="post" onsubmit="return confirmarAcao(this, 'Esse cliente quer COMPRAR um veículo? Ele sai do funil de compra e vira negociação de vendas (vai pro rodízio dos vendedores).');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="mover_para_vendas">
+                <button type="submit" class="btn-secundario">🛒 Cliente quer comprar — mover pra vendas</button>
             </form>
         <?php else: ?>
             <p>Oportunidade encerrada — <?= e(etapaLabel($op['etapa'])) ?><?= $op['motivo_perda'] ? ': ' . e($op['motivo_perda']) : '' ?>.</p>

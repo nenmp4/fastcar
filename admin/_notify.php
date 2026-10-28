@@ -62,9 +62,13 @@ $notifModulo = $notifModulo ?? null;
 (function () {
     var MODULO = <?= $notifModulo !== null ? json_encode($notifModulo) : 'null' ?>;
     var SUFIXO_MODULO = MODULO ? ('&modulo=' + encodeURIComponent(MODULO)) : '';
-    var CHAVE = 'fastcar_notif_desde_<?= $meuId ?>';
-    var CHAVE_NOTIF_ID = 'fastcar_notif_id_<?= $meuId ?>';
-    var CHAVE_LEADS_HIST = 'fastcar_notif_leads_hist_<?= $meuId ?>';
+    // 28/10/2026 — chaves separadas por módulo: o histórico local de "lead
+    // novo" era um só, então lead de COMPRA visto no funil aparecia no sino
+    // do módulo de vendas ("Notificação de compra no sino da vendas").
+    var SUF = MODULO ? ('_' + MODULO) : '';
+    var CHAVE = 'fastcar_notif_desde_<?= $meuId ?>' + SUF;
+    var CHAVE_NOTIF_ID = 'fastcar_notif_id_<?= $meuId ?>' + SUF;
+    var CHAVE_LEADS_HIST = 'fastcar_notif_leads_hist_<?= $meuId ?>' + SUF;
     var LEADS_HIST_MAX = 20;
     var desde = localStorage.getItem(CHAVE) || '';
     var desdeNotifId = parseInt(localStorage.getItem(CHAVE_NOTIF_ID) || '0', 10) || 0;

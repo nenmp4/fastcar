@@ -140,6 +140,11 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   da equipe (pedido explícito, não só uma reclamação ou hesitação) — não
   insista em continuar sozinho: confirme com naturalidade que vai
   encaminhar pra alguém da equipe falar com ela.
+- Se a pessoa quer COMPRAR um veículo da Fastcar (não vender o dela — ex:
+  "quero comprar um carro", "vi o anúncio de carro na promissória", "tem
+  moto pra vender?") — não faça nenhuma pergunta de qualificação de venda:
+  responda com naturalidade que vai passar pro time de vendas, que vai
+  chamar ela pra mostrar as opções. O sistema encaminha sozinho.
 - A Fastcar compra carro, moto, caminhão, caminhonete, van, jet ski — QUALQUER
   veículo financiado, não só carro. Nunca diga que "trabalha especificamente
   com carros" ou algo parecido restringindo o tipo de veículo — se o cliente
@@ -181,7 +186,7 @@ explicitamente — nunca invente, deduza ou arredonde um valor não
 mencionado. Campo não informado = null.
 
 Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato exato:
-{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"optin_whatsapp":null,"optin_whatsapp_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null,"pedido_atendente_humano":false}
+{"nome_cliente":null,"veiculo_marca":null,"veiculo_modelo":null,"veiculo_ano":null,"veiculo_placa":null,"banco_financiamento":null,"valor_parcela":null,"parcelas_restantes":null,"parcelas_atraso":null,"debito_ipva":null,"debito_licenciamento":null,"debito_multas":null,"debitos_veiculo_obs":null,"cidade":null,"estado":null,"valor_pretendido":null,"urgencia":null,"temperatura_lead":null,"aceita_ligacao_consultor":null,"optin_whatsapp":null,"optin_whatsapp_texto":null,"sem_perfil":false,"motivo_sem_perfil":null,"qualificacao_completa":false,"reclamacao_pos_venda":false,"motivo_reclamacao_pos_venda":null,"pedido_atendente_humano":false,"quer_comprar_veiculo":false}
 
 - nome_cliente: o nome que a própria pessoa deu na conversa (nunca o que já estava salvo antes). null se ela não disse o nome ainda.
 - veiculo_placa: a placa do veículo, exatamente como o cliente escreveu (ex: "ABC1234" ou "ABC-1234"). null se não informou.
@@ -197,6 +202,7 @@ Responda APENAS com um JSON estrito, sem texto antes ou depois, nesse formato ex
 - sem_perfil: true se o cliente disse claramente que não quer vender um veículo NOVO, não tem interesse, ou não se enquadra pra uma compra nova (não é o dono, etc) — OU se confirmou que o veículo (que está oferecendo AGORA) JÁ ESTÁ QUITADO (sem financiamento em aberto). O foco da Fastcar é comprar veículo AINDA financiado (assumir a dívida do financiamento); veículo quitado foge desse foco, então nesse caso preencha motivo_sem_perfil com algo como "Veículo já quitado — fora do foco de compra financiada, possível oportunidade pro setor de vendas" (não é rejeição do cliente, é só fora do perfil dessa qualificação — mantenha o tom educado com ele, sem dizer "não compramos", só encerre a qualificação nesse ponto). NUNCA use sem_perfil pro caso de "veículo já vendido pra Fastcar antes" — isso é reclamacao_pos_venda (ver abaixo), categoria bem diferente.
 - reclamacao_pos_venda: true se o cliente está falando de um veículo que ELE JÁ VENDEU pra Fastcar antes (não está oferecendo um veículo novo agora) — reclamando de financiamento não quitado, transferência não feita, notificação/multa/cobrança chegando em nome dele por causa desse carro que já não é mais dele, ou perguntando sobre um negócio já fechado. Isso é uma categoria BEM DIFERENTE de sem_perfil — não é alguém desqualificado pra vender, é um CLIENTE JÁ CONVERTIDO com uma pendência real que precisa de atenção humana rápida (pode envolver problema jurídico). Quando true, preencha motivo_reclamacao_pos_venda com um resumo curto do que a pessoa relatou (ex: "Cliente recebeu notificação extrajudicial sobre financiamento não quitado do Duster placa DVN3E82 vendido à Fastcar"), e pare de fazer perguntas de qualificação de venda nova (marca/modelo/banco/parcela) — o objetivo aqui é só captar o relato, não vender/qualificar nada.
 - pedido_atendente_humano: true se o cliente pediu CLARAMENTE e DIRETAMENTE pra falar com uma pessoa/atendente/alguém da equipe (ex: "quero falar com uma pessoa", "tem alguém aí de verdade?", "passa pra um atendente") — nunca marque true só por reclamação, hesitação ou desconfiança genérica, é especificamente um pedido explícito de atendimento humano. Quando true, a conversa é encaminhada direto pro consultor (igual reclamacao_pos_venda), sem continuar a qualificação.
+- quer_comprar_veiculo: true SOMENTE se a pessoa deixou claro que quer COMPRAR um veículo da Fastcar (é comprador, não está oferecendo o veículo dela pra vender) — ex: "quero comprar um carro", "vi o anúncio do carro na promissória", "vocês têm moto à venda?", "quanto de entrada pra pegar um carro?". Nunca marque true só porque ela falou em "carro" ou "financiamento" — quem quer VENDER o carro financiado dela é false. Na dúvida, false. Quando true, a conversa é encaminhada pro time de vendas.
 - qualificacao_completa: true SOMENTE quando já se sabe modelo+ano, a situação do financiamento (banco+parcela, confirmando que AINDA tem parcelas em aberto), o valor pretendido pelo cliente, E a pessoa já respondeu se aceita a ligação do consultor (aceita_ligacao_consultor não é mais null). Veículo quitado nunca chega em qualificacao_completa=true — vira sem_perfil (ver acima) assim que a quitação for confirmada. reclamacao_pos_venda e pedido_atendente_humano também nunca chegam em qualificacao_completa=true.
 
 Conversa:
@@ -549,6 +555,15 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
         }
         $resultado['pedido_atendente_humano'] = true;
         return $resultado;
+    }
+
+    // 28/10/2026 — "ta caindo leads de venda para os consultores": quem quer
+    // COMPRAR um veículo (anúncio de promissória, etc) escrevendo no número
+    // de compra sai do funil de compra e vira negociação de vendas.
+    if (!empty($dados['quer_comprar_veiculo'])) {
+        $r = moverOportunidadeParaVendas($oportunidadeId, null, 'IA identificou na conversa que o cliente quer comprar um veículo');
+        $resultado['quer_comprar_veiculo'] = !empty($r['ok']);
+        if (!empty($r['ok'])) return $resultado;
     }
 
     if (!empty($dados['sem_perfil'])) {

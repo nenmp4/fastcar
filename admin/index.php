@@ -97,6 +97,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'marcar_
     exit;
 }
 
+// 28/10/2026 — "ta caindo leads de venda para os consultores" → mover pra
+// vendas quem quer COMPRAR um veículo (moverOportunidadeParaVendas()).
+// Consultor só move a própria carteira.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'mover_vendas_massa') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil === 'supervisor') {
+        http_response_code(403);
+        exit('Perfil de supervisão só acompanha, não altera oportunidades.');
+    }
+    $idsPost = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['ids'] ?? [])))));
+    $movidas = 0; $ignoradas = 0;
+    foreach ($idsPost as $idMov) {
+        if ($souDono) {
+            $stDono = $db->prepare('SELECT responsavel_id FROM oportunidades WHERE id = ?');
+            $stDono->execute([$idMov]);
+            if ((int)$stDono->fetchColumn() !== $meuId) { $ignoradas++; continue; }
+        }
+        $rMov = moverOportunidadeParaVendas($idMov, $meuId, 'Movido manualmente do funil de compra');
+        !empty($rMov['ok']) ? $movidas++ : $ignoradas++;
+    }
+    $qs = $_GET;
+    unset($qs['bulk_sucesso'], $qs['bulk_ignorados'], $qs['bulk_erro'], $qs['bulk_destino'], $qs['bulk_vendas']);
+    $bulkQs = $idsPost ? ['bulk_vendas' => $movidas, 'bulk_ignorados' => $ignoradas] : ['bulk_erro' => 'Nenhuma oportunidade selecionada.'];
+    header('Location: /admin/index.php?' . http_build_query(array_merge($qs, $bulkQs)));
+    exit;
+}
+
 // 29/09/2026, "coloca fitro por super admin - puxar leads dos consultores"
 // — reatribuição em massa dos leads selecionados pra outro consultor.
 // Reaproveita reatribuirEmMassa() (includes/oportunidades.php) — sempre
@@ -812,7 +842,9 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 
 <main>
 
-<?php if (isset($_GET['bulk_sucesso']) && isset($_GET['bulk_destino'])): ?>
+<?php if (isset($_GET['bulk_vendas'])): ?>
+    <div class="alerta-sucesso">🛒 <?= (int)$_GET['bulk_vendas'] ?> lead(s) movido(s) pra vendas (já foram pro rodízio dos vendedores)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorado(s) (fora da carteira ou já encerrado)' : '' ?>.</div>
+<?php elseif (isset($_GET['bulk_sucesso']) && isset($_GET['bulk_destino'])): ?>
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> oportunidade(s) puxada(s) pra <strong><?= e((string)$_GET['bulk_destino']) ?></strong><?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (já era desse consultor ou já encerrada)' : '' ?>.</div>
 <?php elseif (isset($_GET['bulk_sucesso'])): ?>
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> oportunidade(s) marcada(s) como perdida(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
@@ -973,6 +1005,8 @@ if ($filtroEspecialLabel !== ''): ?>
             $voltarQs = $voltarQsPartes ? '?' . implode('&', $voltarQsPartes) : '';
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar busca</a><?php endif; ?>
     </form>
+    <button type="submit" form="form-bulk-marcar" name="acao" value="mover_vendas_massa" style="margin:0"
+            onclick="return confirm('Mover os selecionados pra VENDAS? Use pra quem quer COMPRAR um veículo. Saem do funil de compra e vão pro rodízio dos vendedores.')">🛒 Mover pra vendas (quer comprar)</button>
     <?php if (!$souDono):
         // 29/09/2026, "coloca fitro por super admin - puxar leads dos
         // consultores" — filtro por consultor, só pra quem vê a empresa
