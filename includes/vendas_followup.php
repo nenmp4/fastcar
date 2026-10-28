@@ -142,3 +142,26 @@ function vendasFollowupEnviarProximo(int $maxDia = VENDAS_FU_MAX_DIA): array {
     try { registrarMensagem($tel, 'out', $msg, null, true); } catch (Throwable $e) {}
     return ['status' => 'enviado', 'telefone' => $tel];
 }
+
+/**
+ * 1 rodada completa (envio + log + liga/desliga), compartilhada entre o cron e o
+ * botão "📤 Enviar 1 agora" de Configurações — o botão existe pra não depender
+ * do crontab da VPS (SSH bloqueado) caso o agendamento não esteja instalado.
+ */
+function vendasFollowupRodada(): array {
+    $r = vendasFollowupEnviarProximo();
+    $log = '[' . date('d/m H:i:s') . '] ' . $r['status'] . (isset($r['telefone']) ? ' ' . $r['telefone'] : '') . (!empty($r['erro']) ? ' — ' . $r['erro'] : '');
+    setConfig('vendas_followup_ultimo_log', $log);
+    if ($r['status'] === 'fila_vazia' && empty($r['erro'])) {
+        setConfig('vendas_followup_ativo', '0'); // acabou a lista
+    }
+    if ($r['status'] === 'falhou') {
+        $falhas = (int)getConfig('vendas_followup_falhas_seguidas') + 1;
+        setConfig('vendas_followup_falhas_seguidas', (string)$falhas);
+        if ($falhas >= 3) setConfig('vendas_followup_ativo', '0'); // pausa: provável instância caída
+    } elseif ($r['status'] === 'enviado') {
+        setConfig('vendas_followup_falhas_seguidas', '0');
+    }
+    $r['log'] = $log;
+    return $r;
+}

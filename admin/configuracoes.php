@@ -337,6 +337,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setConfig('vendas_followup_ativo', '1');
             setConfig('vendas_followup_falhas_seguidas', '0');
             $sucesso = 'Follow-up iniciado — 1 mensagem a cada ~5 min, seg–sáb das 10h às 18h, até ' . VENDAS_FU_MAX_DIA . ' por dia.';
+        } elseif ($acao === 'enviar_agora_followup_vendas') {
+            // Sem depender do crontab (SSH bloqueado): roda 1 rodada na hora.
+            $rFu = vendasFollowupRodada();
+            if ($rFu['status'] === 'enviado') $sucesso = 'Mensagem enviada pra ' . $rFu['telefone'] . '.';
+            else $erro = 'Nada enviado: ' . $rFu['log'];
         } elseif ($acao === 'pausar_followup_vendas') {
             setConfig('vendas_followup_ativo', '0');
             $sucesso = 'Follow-up pausado.';
@@ -1142,6 +1147,14 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         · total já enviados: <strong><?= vendasFollowupTotalEnviados() ?></strong>
         <?php if (!vendasFollowupDentroHorario()): ?> · <small>agora está fora do horário de envio</small><?php endif; ?>
     </p>
+    <?php $cronVisto = (string)getConfig('vendas_followup_cron_visto'); ?>
+    <p><small>
+        <?php if ($cronVisto === ''): ?>
+            ⚠️ O agendamento automático ainda não rodou nenhuma vez neste servidor — se continuar assim depois de ~10 min, use "📤 Enviar 1 agora" (ou peça pra instalar o crontab).
+        <?php else: $minCron = (int)floor((time() - strtotime($cronVisto)) / 60); ?>
+            <?= $minCron <= 10 ? '✅' : '⚠️' ?> Agendamento automático visto há <?= $minCron ?> min (<?= e(date('d/m H:i', strtotime($cronVisto))) ?>)
+        <?php endif; ?>
+    </small></p>
     <?php if (getConfig('vendas_followup_ultimo_log')): ?>
         <p><small>Última rodada: <?= e((string)getConfig('vendas_followup_ultimo_log')) ?></small></p>
     <?php endif; ?>
@@ -1151,6 +1164,8 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <?php if ($fuAtivo): ?>
             <form method="post" style="margin:0"><?= csrfField() ?><input type="hidden" name="acao" value="pausar_followup_vendas">
                 <button type="submit" class="perigo" style="width:auto;margin:0">⏸️ Pausar</button></form>
+            <form method="post" style="margin:0"><?= csrfField() ?><input type="hidden" name="acao" value="enviar_agora_followup_vendas">
+                <button type="submit" class="btn-secundario" style="width:auto;margin:0">📤 Enviar 1 agora</button></form>
         <?php else: ?>
             <form method="post" style="margin:0" onsubmit="return confirmarAcao(this, 'Começar a mandar o link do formulário pros leads sem resposta? Sai 1 mensagem a cada ~5 min, só em horário comercial, pela instância de vendas.');">
                 <?= csrfField() ?><input type="hidden" name="acao" value="iniciar_followup_vendas">
