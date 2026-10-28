@@ -9,6 +9,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/marca.php';
 require_once __DIR__ . '/../includes/vendas_formulario.php';
+require_once __DIR__ . '/../includes/vendas_followup.php';
 requireSuperAdmin();
 
 $campos = [
@@ -328,6 +329,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) {
                 $erro = 'Falha ao listar instâncias: ' . $e->getMessage();
             }
+        } elseif ($acao === 'simular_followup_vendas') {
+            // 28/10/2026 — follow-up dos leads de vendas sem resposta, sem SSH.
+            $simulacaoFollowup = vendasFollowupMontarFila();
+            $sucesso = count($simulacaoFollowup['fila']) . ' contato(s) receberiam o link do formulário — confira a lista no card "📣 Follow-up".';
+        } elseif ($acao === 'iniciar_followup_vendas') {
+            setConfig('vendas_followup_ativo', '1');
+            setConfig('vendas_followup_falhas_seguidas', '0');
+            $sucesso = 'Follow-up iniciado — 1 mensagem a cada ~5 min, seg–sáb das 10h às 18h, até ' . VENDAS_FU_MAX_DIA . ' por dia.';
+        } elseif ($acao === 'pausar_followup_vendas') {
+            setConfig('vendas_followup_ativo', '0');
+            $sucesso = 'Follow-up pausado.';
         } elseif ($acao === 'salvar_formulario_vendas') {
             // 26/10/2026 — formulário de entrada do lead de vendas (quero-carro.php, raiz do site público).
             $numF = normalizarTelefone(trim((string)($_POST['vendas_whatsapp_numero'] ?? '')));
@@ -1114,6 +1126,65 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         </label>
         <button type="submit">Salvar formulário de vendas</button>
     </form>
+</div>
+
+<div class="card" id="followup-vendas">
+    <h2>📣 Follow-up dos leads de vendas sem resposta</h2>
+    <p><small>Manda o link do formulário pra quem escreveu no WhatsApp de vendas e ficou sem resposta (inclusive quem
+       chegou com a instância desconectada e nunca entrou no CRM). Nunca manda pra quem pediu SAIR, quem já está em
+       negociação, quem já recebeu, ou conversa em que a última mensagem foi nossa. Devagar pra não queimar o número:
+       1 mensagem a cada ~5 min, seg–sáb das 10h às 18h, até <?= VENDAS_FU_MAX_DIA ?> por dia. Para sozinho quando a lista acaba
+       ou se der 3 falhas seguidas.</small></p>
+    <?php $fuAtivo = vendasFollowupAtivo(); ?>
+    <p>
+        Status: <?= $fuAtivo ? '<span class="badge badge-ok">▶️ Enviando</span>' : '<span class="badge">⏸️ Parado</span>' ?>
+        · enviados hoje: <strong><?= vendasFollowupEnviadosHoje() ?></strong>
+        · total já enviados: <strong><?= vendasFollowupTotalEnviados() ?></strong>
+        <?php if (!vendasFollowupDentroHorario()): ?> · <small>agora está fora do horário de envio</small><?php endif; ?>
+    </p>
+    <?php if (getConfig('vendas_followup_ultimo_log')): ?>
+        <p><small>Última rodada: <?= e((string)getConfig('vendas_followup_ultimo_log')) ?></small></p>
+    <?php endif; ?>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <form method="post" style="margin:0"><?= csrfField() ?><input type="hidden" name="acao" value="simular_followup_vendas">
+            <button type="submit" class="btn-secundario" style="width:auto;margin:0">🔎 Simular (ver quem receberia)</button></form>
+        <?php if ($fuAtivo): ?>
+            <form method="post" style="margin:0"><?= csrfField() ?><input type="hidden" name="acao" value="pausar_followup_vendas">
+                <button type="submit" class="perigo" style="width:auto;margin:0">⏸️ Pausar</button></form>
+        <?php else: ?>
+            <form method="post" style="margin:0" onsubmit="return confirmarAcao(this, 'Começar a mandar o link do formulário pros leads sem resposta? Sai 1 mensagem a cada ~5 min, só em horário comercial, pela instância de vendas.');">
+                <?= csrfField() ?><input type="hidden" name="acao" value="iniciar_followup_vendas">
+                <button type="submit" style="width:auto;margin:0">▶️ Iniciar envio</button></form>
+        <?php endif; ?>
+    </div>
+    <?php if (!empty($simulacaoFollowup)): $sf = $simulacaoFollowup; ?>
+        <div style="margin-top:12px">
+            <?php if ($sf['erro']): ?><div class="alerta-erro"><?= e($sf['erro']) ?></div><?php endif; ?>
+            <p><small>
+                <?= $sf['conversas'] !== null ? 'Conversas lidas na instância de vendas: <strong>' . (int)$sf['conversas'] . '</strong> · ' : '' ?>
+                Vão receber: <strong><?= count($sf['fila']) ?></strong> ·
+                ficaram de fora — já receberam <?= $sf['pulados']['ja_recebeu'] ?>, pediram SAIR <?= $sf['pulados']['pediu_sair'] ?>,
+                negociação já andando <?= $sf['pulados']['negociacao_andando'] ?>, já respondidos <?= $sf['pulados']['ja_respondido'] ?>,
+                funcionários <?= $sf['pulados']['funcionario'] ?>.
+            </small></p>
+            <?php if ($sf['fila']): ?>
+                <details><summary style="cursor:pointer">Ver a lista (<?= count($sf['fila']) ?>)</summary>
+                    <table class="sem-cards" style="font-size:12.5px">
+                        <thead><tr><th>Telefone</th><th>Nome</th><th>De onde</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($sf['fila'] as $telF => $cF): ?>
+                            <tr><td><?= e($telF) ?></td><td><?= e($cF['nome'] ?: '—') ?></td><td><?= e($cF['origem']) ?></td></tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </details>
+            <?php endif; ?>
+            <?php if ($sf['exemplo']): ?>
+                <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px">Dado técnico (exemplo de conversa lida)</summary>
+                    <code style="font-size:11px;word-break:break-all"><?= e($sf['exemplo']) ?></code></details>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 </div>
 
 <div class="card">

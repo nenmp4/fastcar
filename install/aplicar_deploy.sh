@@ -44,6 +44,10 @@ mkdir -p "$BASE_DIR/storage/logs"
 echo "[$(date '+%d/%m/%Y %H:%M:%S')] Aplicando deploy..." | tee -a "$LOG"
 git pull origin main 2>&1 | tee -a "$LOG"
 "$PHP_BIN" install/migrar.php 2>&1 | tee -a "$LOG"
+# 28/10/2026, "SSH ainda está bloqueado" — reinstala os crons a cada deploy
+# (idempotente, só mexe nas linhas "# fastcar-cron"), pra cron novo entrar
+# em produção sem ninguém precisar rodar setup_crontab.sh na mão.
+bash install/setup_crontab.sh 2>&1 | tee -a "$LOG"
 
 if "$PHP_BIN" tests/smoke.php 2>&1 | tee -a "$LOG"; then
     echo "[$(date '+%d/%m/%Y %H:%M:%S')] ✅ Deploy aplicado, smoke OK." | tee -a "$LOG"
