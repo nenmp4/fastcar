@@ -46,6 +46,11 @@ function vendaFormularioIdDoTexto(string $texto): ?int {
     return preg_match('/\bFC(\d{1,9})\b/i', $texto, $m) ? (int)$m[1] : null;
 }
 
+/** Link curto pras mensagens de WhatsApp (ver carro/index.php): 'r' follow-up, 'w' chamou direto. */
+function vendaFormularioUrlCurta(string $codigo): string {
+    return 'https://fastcar.solutions/carro?' . $codigo;
+}
+
 function vendaFormularioUrl(array $utm = []): string {
     // Sempre no domínio público (fastcar.solutions), nunca no do sistema.
     return 'https://fastcar.solutions/quero-carro.php' . ($utm ? '?' . http_build_query($utm) : '');
@@ -134,7 +139,7 @@ function registrarFormularioVenda(array $d): array {
 function vendaFormularioMsgLink(string $nome = ''): string {
     $primeiro = trim(explode(' ', $nome)[0] ?? '');
     $oi = $primeiro !== '' ? "Oi, {$primeiro}! " : 'Oi! ';
-    $link = vendaFormularioUrl(['utm_source' => 'whatsapp']);
+    $link = vendaFormularioUrlCurta('w');
     return $oi . variarMensagem([
         "Pra eu te mostrar as opções que cabem no seu bolso, preenche aqui rapidinho (leva 1 minuto): {$link}",
         "Tudo bem? Pra separar os carros certos pra você, me conta aqui em 1 minutinho: {$link}",

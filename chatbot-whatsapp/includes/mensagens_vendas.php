@@ -221,6 +221,11 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
             // e ele insistiu sem preencher → avisa o vendedor responsável (1x por
             // lead) no WhatsApp pessoal, pra não deixar lead interessado esfriar.
             // A IA continua sem conversar com ele.
+            // Já recebeu o link pelo follow-up de recuperação? Conta como enviado:
+            // nunca manda o link 2x — a resposta dele já vira aviso pro vendedor.
+            if (getConfig($chaveF) !== '1' && getConfig('vendas_fu_form_' . normalizarTelefone($phone))) {
+                setConfig($chaveF, '1');
+            }
             if (getConfig($chaveF) === '1') {
                 avisarVendedorLeadInsistiuSemFormulario((int)$vendaLead['venda_id'], $phone, (string)$vf['comprador_nome'], $tipoRegistro);
             }

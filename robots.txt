@@ -19,6 +19,7 @@ Allow: /public/veiculo.php
 Allow: /public/veiculo_foto.php
 Allow: /public/catalogo.php
 Allow: /quero-carro.php
+Allow: /carro
 Disallow: /
 
 User-agent: *

@@ -110,7 +110,7 @@ function vendasFollowupMontarFila(int $dias = VENDAS_FU_DIAS): array {
 function vendasFollowupMensagem(string $nome): string {
     $p = trim(explode(' ', trim($nome))[0] ?? '');
     $oi = $p !== '' ? "Oi, {$p}! " : 'Oi! ';
-    $link = vendaFormularioUrl(['utm_source' => 'whatsapp', 'utm_campaign' => 'followup_recuperacao']);
+    $link = vendaFormularioUrlCurta('r');
     return $oi . variarMensagem([
         "Desculpa a demora pra te responder, tivemos uma instabilidade aqui no WhatsApp. Ainda procurando carro? Pra eu te mostrar as opções na promissória, preenche aqui rapidinho (leva 1 minuto): {$link}",
         "Aqui é da Fastcar 🚗 Vi que você chamou a gente e ficou sem resposta, me desculpa! Pra separar os carros que cabem no seu bolso, me conta aqui em 1 minutinho: {$link}",
