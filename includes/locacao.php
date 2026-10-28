@@ -33,8 +33,12 @@ const LOCACAO_CAMPOS = [
     'modalidade'              => ['label' => 'Modalidade', 'tipo' => 'select', 'opcoes' => ['determinado' => 'Prazo determinado', 'indeterminado' => 'Prazo indeterminado']],
     'prazo_meses'             => ['label' => 'Prazo inicial (meses)', 'tipo' => 'int'],
     'data_inicio'             => ['label' => 'Data de início', 'tipo' => 'date'],
-    'aluguel_mensal'          => ['label' => 'Aluguel mensal (R$)', 'tipo' => 'money'],
-    'vencimento_dia'          => ['label' => 'Vencimento (dia do mês)', 'tipo' => 'int'],
+    // 28/10/2026 — "locação por semana: mensal ou semanal". Vazio = mensal
+    // (contratos anteriores). A chave aluguel_mensal guarda o valor do PERÍODO.
+    'periodicidade'           => ['label' => 'Pagamento do aluguel', 'tipo' => 'select', 'opcoes' => ['mensal' => 'Mensal', 'semanal' => 'Semanal'], 'padrao' => 'mensal'],
+    'aluguel_mensal'          => ['label' => 'Valor do aluguel (R$) — por mês ou por semana', 'tipo' => 'money'],
+    'vencimento_dia'          => ['label' => 'Vencimento — dia do mês (se mensal)', 'tipo' => 'int'],
+    'vencimento_semana'       => ['label' => 'Vencimento — dia da semana (se semanal)', 'tipo' => 'select', 'opcoes' => ['segunda' => 'Segunda-feira', 'terca' => 'Terça-feira', 'quarta' => 'Quarta-feira', 'quinta' => 'Quinta-feira', 'sexta' => 'Sexta-feira', 'sabado' => 'Sábado', 'domingo' => 'Domingo']],
     'caucao_valor'            => ['label' => 'Caução/garantia (R$), se houver', 'tipo' => 'money'],
     'caucao_modalidade'       => ['label' => 'Modalidade da caução', 'tipo' => 'text', 'placeholder' => 'PIX, depósito, cheque...'],
     'km_inicial'              => ['label' => 'Quilometragem inicial (km)', 'tipo' => 'int'],
@@ -73,7 +77,12 @@ const LOCACAO_CAMPOS = [
 ];
 
 /** Campos sem os quais o contrato de locação não é gerado. */
-const LOCACAO_CAMPOS_OBRIGATORIOS = ['modalidade', 'data_inicio', 'aluguel_mensal', 'vencimento_dia'];
+const LOCACAO_CAMPOS_OBRIGATORIOS = ['modalidade', 'data_inicio', 'aluguel_mensal'];
+
+/** 'semanal' ou 'mensal' (padrão — contratos anteriores não têm o campo). */
+function locacaoPeriodicidade(array $dados): string {
+    return ($dados['periodicidade'] ?? '') === 'semanal' ? 'semanal' : 'mensal';
+}
 
 function lerDadosLocacao(?string $json): array {
     $d = json_decode((string)$json, true);
@@ -127,6 +136,9 @@ function locacaoCamposFaltando(array $dados): array {
             $faltando[] = LOCACAO_CAMPOS[$k]['label'];
         }
     }
+    // Vencimento depende da periodicidade: dia do mês (mensal) ou dia da semana (semanal).
+    $kVenc = locacaoPeriodicidade($dados) === 'semanal' ? 'vencimento_semana' : 'vencimento_dia';
+    if (empty($dados[$kVenc])) $faltando[] = LOCACAO_CAMPOS[$kVenc]['label'];
     return $faltando;
 }
 

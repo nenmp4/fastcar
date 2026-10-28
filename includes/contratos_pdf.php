@@ -881,6 +881,7 @@ function clausulasContratoVenda(int $horasDevolucao = 0, int $diasSaneamento = 0
  * tipo_contrato='locacao' ('_loc' = Quadro-Resumo, ver includes/locacao.php).
  */
 function gerarPdfContratoLocacao(array $c): string {
+    require_once __DIR__ . '/locacao.php'; // LOCACAO_CAMPOS / locacaoPeriodicidade()
     $l = $c['_loc'] ?? [];
     $v = fn(string $k, string $vazio = '—') => (isset($l[$k]) && $l[$k] !== '') ? (string)$l[$k] : $vazio;
     $marca = fn(bool $x) => $x ? '(X)' : '( )';
@@ -933,8 +934,15 @@ function gerarPdfContratoLocacao(array $c): string {
     _pdfLinhaResumo($pdf, 'Modalidade', $marca($modalidade === 'determinado') . ' prazo determinado  ' . $marca($modalidade === 'indeterminado') . ' prazo indeterminado');
     _pdfLinhaResumo($pdf, 'Prazo inicial', $v('prazo_meses') !== '—' ? $v('prazo_meses') . ' meses' : '—');
     _pdfLinhaResumo($pdf, 'Data de início', !empty($l['data_inicio']) ? date('d/m/Y', strtotime($l['data_inicio'])) : '—');
-    _pdfLinhaResumo($pdf, 'Aluguel mensal', isset($l['aluguel_mensal']) ? _fmtMoeda((float)$l['aluguel_mensal']) : '—');
-    _pdfLinhaResumo($pdf, 'Vencimento', $v('vencimento_dia') !== '—' ? 'dia ' . $v('vencimento_dia') . ' de cada mês' : '—');
+    $semanal = locacaoPeriodicidade($l) === 'semanal';
+    _pdfLinhaResumo($pdf, 'Periodicidade do aluguel', $marca(!$semanal) . ' mensal  ' . $marca($semanal) . ' semanal');
+    _pdfLinhaResumo($pdf, $semanal ? 'Aluguel semanal' : 'Aluguel mensal', isset($l['aluguel_mensal']) ? _fmtMoeda((float)$l['aluguel_mensal']) . ($semanal ? ' por semana' : ' por mês') : '—');
+    if ($semanal) {
+        $diaSem = LOCACAO_CAMPOS['vencimento_semana']['opcoes'][$l['vencimento_semana'] ?? ''] ?? '';
+        _pdfLinhaResumo($pdf, 'Vencimento', $diaSem !== '' ? 'toda ' . mb_strtolower($diaSem) : '—');
+    } else {
+        _pdfLinhaResumo($pdf, 'Vencimento', $v('vencimento_dia') !== '—' ? 'dia ' . $v('vencimento_dia') . ' de cada mês' : '—');
+    }
     _pdfLinhaResumo($pdf, 'Caução/garantia, se houver', $caucao);
     _pdfLinhaResumo($pdf, 'Franquia de quilometragem', $v('franquia_km') !== '—' ? $v('franquia_km') . ' km por ' . $v('franquia_periodo', 'mês') : '—');
     _pdfLinhaResumo($pdf, 'Km excedente', isset($l['km_excedente_valor']) ? _fmtMoeda((float)$l['km_excedente_valor']) . '/km' : '—');
@@ -1030,7 +1038,7 @@ function clausulasContratoLocacao(): array {
             "2.3. No prazo indeterminado, qualquer parte poderá encerrar a relação mediante aviso prévio no prazo indicado no Quadro-Resumo, ressalvadas hipóteses de resolução por inadimplemento ou infração grave.\n\n" .
             "2.4. A devolução física do veículo e a quitação financeira são atos distintos: a entrega encerra a posse direta, enquanto valores pendentes serão apurados em demonstrativo próprio."],
         ['CLÁUSULA 3ª – ALUGUEL, VENCIMENTO E PAGAMENTO',
-            "3.1. O LOCATÁRIO pagará o aluguel mensal e demais valores contratualmente previstos nas datas indicadas no Quadro-Resumo.\n\n" .
+            "3.1. O LOCATÁRIO pagará o aluguel, na periodicidade (mensal ou semanal) indicada no Quadro-Resumo, e demais valores contratualmente previstos nas datas indicadas no Quadro-Resumo.\n\n" .
             "3.2. O aluguel remunera a disponibilização e o uso do veículo durante o período correspondente. Não se transforma em crédito de compra e não é restituível apenas porque o contrato terminou ou foi resolvido, sem prejuízo de valores pagos indevidamente.\n\n" .
             "3.3. O pagamento será considerado quitado após confirmação do crédito no meio indicado pela FASTCAR.\n\n" .
             "3.4. O recebimento de pagamento posterior, isoladamente, não importa novação, renúncia a saldo anterior ou alteração permanente das condições.\n\n" .
@@ -1115,7 +1123,7 @@ function clausulasContratoLocacao(): array {
         ['CLÁUSULA 18ª – RESCISÃO ANTECIPADA PELO LOCATÁRIO',
             "18.1. O LOCATÁRIO poderá solicitar encerramento antecipado, devendo observar aviso prévio, local de entrega, vistoria e eventual multa expressamente indicada no Quadro-Resumo.\n\n" .
             "18.2. Em contratos com prazo determinado, eventual multa será calculada segundo o critério previamente informado, com observância da proporcionalidade e das normas aplicáveis.\n\n" .
-            "18.3. A FASTCAR não exigirá automaticamente todas as mensalidades vincendas como condição de devolução; eventual obrigação decorrente da saída antecipada observará a cláusula específica e a legislação aplicável.\n\n" .
+            "18.3. A FASTCAR não exigirá automaticamente todos os aluguéis vincendos como condição de devolução; eventual obrigação decorrente da saída antecipada observará a cláusula específica e a legislação aplicável.\n\n" .
             "18.4. A devolução deverá ser formalizada por termo e seguida de apuração financeira.\n\n" .
             "18.5. Caso a contratação ocorra fora do estabelecimento e se aplique o artigo 49 do Código de Defesa do Consumidor, será assegurado o direito de arrependimento no prazo legal, com os efeitos de restituição previstos em lei."],
         ['CLÁUSULA 19ª – DEVOLUÇÃO VOLUNTÁRIA E VISTORIA FINAL',
