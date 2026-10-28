@@ -1254,6 +1254,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     </form>
 </div>
 
+<?php if ($mostrarDesativados || evolutionConfiguredFinanceiro()): // Evolution financeiro ainda não configurada: fica oculta ?>
 <div class="card">
     <h2>🟣 Evolution API (self-hosted) — Financeiro</h2>
     <p><small>Mesmo padrão do card de vendas acima — mesma URL base da instância principal, nome de
@@ -1292,7 +1293,9 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <?php endif; ?>
     </form>
 </div>
+<?php endif; ?>
 
+<?php if ($mostrarDesativados): // chave liga/desliga Z-API+Meta só aparece em "Mostrar integrações desativadas" ?>
 <div class="card">
     <h2>🔌 Desativar Z-API e Meta oficial (definitivo)</h2>
     <p><small>12/10/2026, "vamos desativar definitivo zpi... coloca evoltion como padrão para todas
@@ -1323,6 +1326,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <button type="submit">Salvar</button>
     </form>
 </div>
+<?php endif; ?>
 
 <?php if (!$esconderZapiMeta): ?>
 <div class="card">
@@ -2122,8 +2126,8 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 <p style="text-align:center;margin:18px 0">
     <?php if ($mostrarDesativados): ?>
         <a href="/admin/configuracoes.php">Ocultar integrações desativadas</a>
-    <?php elseif ($esconderZapiMeta || $esconderZapcar): ?>
-        <a href="/admin/configuracoes.php?mostrar_desativados=1">Mostrar integrações desativadas (Z-API, Meta, Conformidade, ZapCar)</a>
+    <?php else: ?>
+        <a href="/admin/configuracoes.php?mostrar_desativados=1">Mostrar integrações desativadas (Z-API, Meta, Conformidade, ZapCar, Evolution financeiro)</a>
     <?php endif; ?>
 </p>
 </main>
