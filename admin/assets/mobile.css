@@ -89,7 +89,7 @@ pre, code { overflow-x: auto; max-width: 100%; }
 
     /* Z-API: só o indicador (bolinha/emoji), texto vai pro title */
     .zapi-status-badge { top: 14px; right: 60px; width: 36px; height: 32px; padding: 0; justify-content: center; overflow: hidden; }
-    #zapi-status-texto { display: inline-block; width: 1.3em; overflow: hidden; white-space: nowrap; }   /* só o 🟢/🔴 */
+    #zapi-status-texto, #zapi-status-texto-vendas { display: inline-block; width: 1.3em; overflow: hidden; white-space: nowrap; }   /* só o 🟢/🔴 */
     .notif-sino { top: 10px; right: 12px; width: 40px; height: 40px; }
     .notif-toasts { left: 12px; right: 12px; top: 70px; max-width: none; }
 
