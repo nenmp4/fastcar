@@ -782,6 +782,19 @@ unset($fv);
     <a href="/admin/logout.php">Sair</a>
 </header>
 
+<?php
+// 28/10/2026, "arruma ux aonde marca instância conectada" — status REAL de
+// conexão de cada instância Evolution (cache de 60s), não só "credenciais preenchidas".
+function badgeConexaoEvolution(bool $configurado, string $canal): string {
+    if (!$configurado) return '<span class="badge badge-atraso">⏳ ainda não configurado</span>';
+    $st = evolutionStatusCache(false, $canal)['estado'] ?? 'erro';
+    return match ($st) {
+        'conectado' => '<span class="badge badge-ok">🟢 Conectada — recebendo e enviando mensagens</span>',
+        'desconectado' => '<span class="badge badge-atraso">🔴 Desconectada — abra o Evolution Manager e leia o QR Code</span>',
+        default => '<span class="badge badge-aviso">🟡 Não consegui verificar agora — use "Testar conexão"</span>',
+    };
+}
+?>
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
@@ -1031,10 +1044,8 @@ unset($fv);
        projeto. Teste a conexão antes de ativar como canal principal.</small></p>
 
     <p>
-        Status Evolution API:
-        <span class="badge <?= $configuradoEvolution ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= $configuradoEvolution ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
-        </span>
+        Conexão da instância (compra):
+<?= badgeConexaoEvolution($configuradoEvolution, 'principal') ?>
     </p>
 
     <form method="post" autocomplete="off">
@@ -1092,6 +1103,7 @@ unset($fv);
     <form method="post">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_formulario_vendas">
+        <p style="margin:0 0 6px">Instância de vendas: <?= badgeConexaoEvolution(evolutionConfiguredVendas(), 'vendas') ?></p>
         <label>Número do WhatsApp de vendas (o botão final abre esse número)</label>
         <input type="tel" inputmode="tel" name="vendas_whatsapp_numero" value="<?= e((string)getConfig('vendas_whatsapp_numero')) ?>" placeholder="5511999999999">
         <label>ID do Pixel da Meta <small>(opcional — marca "Lead" só pra quem tem entrada mínima)</small></label>
@@ -1112,10 +1124,8 @@ unset($fv);
        no mesmo servidor).</small></p>
 
     <p>
-        Status Evolution API (vendas):
-        <span class="badge <?= $configuradoEvolutionVendas ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= $configuradoEvolutionVendas ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
-        </span>
+        Conexão da instância (vendas):
+<?= badgeConexaoEvolution($configuradoEvolutionVendas, 'vendas') ?>
         <?php if (!$valoresEvolution['evolution_base_url']): ?>
             <br><small>Preencha e salve a "URL base" no card da instância principal primeiro.</small>
         <?php endif; ?>
@@ -1154,10 +1164,8 @@ unset($fv);
        instância + API key PRÓPRIOS do número dedicado de cobrança.</small></p>
 
     <p>
-        Status Evolution API (financeiro):
-        <span class="badge <?= $configuradoEvolutionFinanceiro ? 'badge-ok' : 'badge-atraso' ?>">
-            <?= $configuradoEvolutionFinanceiro ? '✅ credenciais preenchidas' : '⏳ ainda não configurado' ?>
-        </span>
+        Conexão da instância (financeiro):
+<?= badgeConexaoEvolution($configuradoEvolutionFinanceiro, 'financeiro') ?>
         <?php if (!$valoresEvolution['evolution_base_url']): ?>
             <br><small>Preencha e salve a "URL base" no card da instância principal primeiro.</small>
         <?php endif; ?>
