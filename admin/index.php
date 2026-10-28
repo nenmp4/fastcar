@@ -1168,7 +1168,7 @@ if ($podeSelecionarEmMassa):
 <form id="form-bulk-marcar" method="post">
     <?= csrfField() ?>
 </form>
-<div id="barra-bulk-marcar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
+<div id="barra-bulk-marcar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
     <strong><span id="bulk-contagem">0</span> selecionada(s)</strong>
     <input type="text" name="motivo" form="form-bulk-marcar" id="bulk-motivo"
            placeholder="Motivo (obrigatório pra marcar perdido) — ex: desistiu, achou proposta baixa..."
@@ -1326,7 +1326,7 @@ if ($podeSelecionarEmMassa):
         <?php $ativaParaSelecao = in_array($op['etapa'], ETAPAS_ATIVAS, true); ?>
         <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
             <?php if ($podeSelecionarEmMassa): ?>
-            <td data-label="">
+            <td data-label="" class="col-chk">
                 <?php if ($ativaParaSelecao): ?>
                 <input type="checkbox" class="bulk-chk-lead" name="ids[]" value="<?= (int)$op['id'] ?>" form="form-bulk-marcar" onchange="bulkAtualizar()">
                 <?php endif; ?>
@@ -1442,7 +1442,7 @@ if ($podeSelecionarEmMassa):
                     <?php // 29/09/2026, "campo de observação manual para digitar
                           // consultor" — texto livre editável direto na linha,
                           // só enquanto a oportunidade ainda está ativa. ?>
-                    <form method="post" style="display:flex;gap:4px;min-width:160px">
+                    <form method="post" class="obs-form" style="display:flex;gap:4px;min-width:160px">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="atualizar_observacao_manual">
                         <input type="hidden" name="id" value="<?= (int)$op['id'] ?>">
@@ -1457,7 +1457,7 @@ if ($podeSelecionarEmMassa):
                 <?php endif; ?>
             </td>
             <td>
-                <a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">Abrir →</a>
+                <a class="link-abrir" href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">Abrir →</a>
                 <?php if ($etapaBuscandoEncerradas && $perfil !== 'supervisor'): ?>
                     <?php // 22/10/2026, "clientes encerrado para voltar pois
                           // ancerram cliente por engano" — botão de reabrir

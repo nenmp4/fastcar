@@ -186,6 +186,19 @@ pre, code { overflow-x: auto; max-width: 100%; }
     table.tabela-cards td.td-acoes a, table.tabela-cards td.td-acoes button { min-height: 40px; display: inline-flex; align-items: center; }
     table.tabela-cards td input, table.tabela-cards td select { max-width: 60%; }
     table.tabela-cards tr:hover { background: var(--superficie); }
+    /* 28/10/2026 — "UX venda": checkbox de seleção em massa no canto do card
+       (antes ocupava uma linha inteira só pra ele), anotação ocupando a
+       largura toda e "Abrir →" com alvo de toque de verdade. */
+    table.tabela-cards tr { position: relative; }
+    table.tabela-cards td.col-chk { position: absolute; top: 8px; right: 10px; width: auto; padding: 0 !important; border: 0 !important; z-index: 1; }
+    table.tabela-cards td.col-chk input[type=checkbox] { width: 26px; height: 26px; max-width: none; margin: 0; }
+    table.tabela-cards tr:has(td.col-chk input) td.td-titulo { padding-right: 40px !important; }
+    table.tabela-cards td .obs-form { width: 100%; min-width: 0 !important; flex-wrap: nowrap !important; }
+    table.tabela-cards td.td-titulo > * { margin-left: 0 !important; }
+    table.tabela-cards td .obs-form input[type=text] { max-width: none; font-size: 16px !important; min-height: 44px; padding: 8px 10px !important; }
+    table.tabela-cards td .obs-form button { min-width: 44px; min-height: 44px; }
+    table.tabela-cards .etapa-rapida-form select { font-size: 16px !important; min-height: 44px; max-width: none; }
+    table.tabela-cards a.link-abrir { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--borda); border-radius: 10px; font-weight: 600; text-decoration: none; }
     table.tabela-cards tr.linha-quente:hover { background: var(--laranja-bg); }
 }
 

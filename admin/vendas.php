@@ -1300,7 +1300,7 @@ if ($podeSelecionarEmMassa):
     <?= csrfField() ?>
     <input type="hidden" name="acao" value="cancelar_venda_massa">
 </form>
-<div id="barra-bulk-cancelar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
+<div id="barra-bulk-cancelar" class="card" style="display:none;margin-bottom:14px;background:var(--laranja-bg,#fff4ec);border:1px solid var(--laranja,#ea580c);flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px">
     <strong><span id="bulk-contagem">0</span> selecionada(s)</strong>
     <input type="text" name="motivo" form="form-bulk-cancelar" id="bulk-motivo"
            placeholder="Motivo (obrigatório) — ex: desistiu, achou proposta baixa..."
@@ -1396,7 +1396,7 @@ if ($podeSelecionarEmMassa):
                 </td>
                 <td><?= $v['data_venda'] ? date('d/m/Y', strtotime($v['data_venda'])) : '—' ?></td>
                 <td><?= e($v['responsavel_nome'] ?? '—') ?></td>
-                <td><a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
+                <td><a class="link-abrir" href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -1433,7 +1433,7 @@ if ($podeSelecionarEmMassa):
             ?>
             <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
                 <?php if ($podeSelecionarEmMassa): ?>
-                <td data-label="">
+                <td data-label="" class="col-chk">
                     <?php if ($ativaParaSelecao): ?>
                     <input type="checkbox" class="bulk-chk-lead" name="ids[]" value="<?= (int)$v['id'] ?>" form="form-bulk-cancelar" onchange="bulkAtualizar()">
                     <?php endif; ?>
@@ -1483,7 +1483,7 @@ if ($podeSelecionarEmMassa):
                               // compra e revenda" — mesma mecânica de admin/index.php,
                               // texto livre editável direto na linha, só enquanto a
                               // negociação ainda está ativa. ?>
-                        <form method="post" style="display:flex;gap:4px;min-width:160px">
+                        <form method="post" class="obs-form" style="display:flex;gap:4px;min-width:160px">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="atualizar_observacao_manual">
                             <input type="hidden" name="id" value="<?= (int)$v['id'] ?>">
@@ -1498,7 +1498,7 @@ if ($podeSelecionarEmMassa):
                     <?php endif; ?>
                 </td>
                 <td>
-                    <a href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a>
+                    <a class="link-abrir" href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a>
                     <?php if ($ativaParaSelecao && $perfil !== 'supervisor'): ?>
                     <form method="post" class="etapa-rapida-form" style="margin-top:6px">
                         <?= csrfField() ?>
