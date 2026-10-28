@@ -759,6 +759,65 @@ function evolutionBaixarMidiaRecebida(string $messageId, string $tipo): ?array {
 }
 
 /**
+ * Conversas (chats) que existem na instância — 28/10/2026, recuperação dos
+ * leads de vendas que chegaram enquanto a conexão estava caída (o webhook
+ * não entregou, o CRM nunca viu). `POST /chat/findChats/{instance}`.
+ * Formato da resposta nunca confirmado contra esta instância — lê os
+ * campos mais prováveis e guarda o item cru em 'raw' pra diagnóstico.
+ * Só conversa individual (@s.whatsapp.net), nunca grupo/status.
+ * @return array|null lista de ['telefone','nome','atualizado_ts','ultima_de_mim'(?bool),'raw'] ou null em erro
+ */
+function evolutionListarConversas(?array $override = null): ?array {
+    [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
+    if (!$base || !$instance || !$apiKey) {
+        _evolutionSetUltimoErro('Sem URL/instância/API key configurados.');
+        return null;
+    }
+    $ch = curl_init("{$base}/chat/findChats/" . rawurlencode($instance));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => '{}',
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_TIMEOUT => 60,
+    ] + _evolutionCurlSslOpts());
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) { _evolutionSetUltimoErro("Falha de conexão: {$curlErr}"); return null; }
+    $json = json_decode((string)$resp, true);
+    if ($httpCode < 200 || $httpCode >= 300 || !is_array($json)) {
+        _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode) . ' — resposta: ' . substr((string)$resp, 0, 500));
+        return null;
+    }
+    $itens = array_is_list($json) ? $json : ($json['chats'] ?? $json['data'] ?? $json['records'] ?? []);
+    $saida = [];
+    foreach ((array)$itens as $c) {
+        if (!is_array($c)) continue;
+        $jid = (string)($c['remoteJid'] ?? $c['id'] ?? $c['jid'] ?? '');
+        if (!str_ends_with($jid, '@s.whatsapp.net')) continue;
+        $tel = normalizarTelefone(explode('@', $jid)[0]);
+        if (strlen($tel) < 12) continue;
+        $ult = $c['lastMessage'] ?? $c['last_message'] ?? null;
+        $ts = null;
+        if (is_array($ult) && !empty($ult['messageTimestamp'])) $ts = (int)$ult['messageTimestamp'];
+        elseif (!empty($c['updatedAt'])) $ts = is_numeric($c['updatedAt']) ? (int)$c['updatedAt'] : (strtotime((string)$c['updatedAt']) ?: null);
+        if ($ts && $ts > 20000000000) $ts = (int)($ts / 1000); // veio em milissegundos
+        $deMim = (is_array($ult) && isset($ult['key']['fromMe'])) ? (bool)$ult['key']['fromMe'] : null;
+        $saida[] = [
+            'telefone' => $tel,
+            'nome' => trim((string)($c['pushName'] ?? $c['name'] ?? (is_array($ult) ? ($ult['pushName'] ?? '') : ''))),
+            'atualizado_ts' => $ts,
+            'ultima_de_mim' => $deMim,
+            'raw' => $c,
+        ];
+    }
+    _evolutionSetUltimoErro(null);
+    return $saida;
+}
+
+/**
  * Status cacheado (60s TTL, mesmo padrão exato de zapiStatusPrincipalCache()/
  * oficialStatusCache()) — pro badge do topbar.
  *
