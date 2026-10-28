@@ -213,15 +213,17 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
         $stF = $dbF->prepare("SELECT etapa, canal_origem, comprador_nome FROM vendas WHERE id = ?");
         $stF->execute([(int)$vendaLead['venda_id']]);
         $vf = $stF->fetch();
-        if ($vf && $vf['etapa'] === 'whatsapp' && $vf['canal_origem'] !== 'formulario_site') {
+        // 28/10/2026 — vale também pra quem já estava em qualificação com a
+        // IA antes de ligar a opção (recebe o link na próxima mensagem).
+        if ($vf && in_array($vf['etapa'], ['whatsapp', 'qualificacao_ia'], true) && $vf['canal_origem'] !== 'formulario_site') {
             $chaveF = 'formvenda_link_' . (int)$vendaLead['venda_id'];
             if (getConfig($chaveF) !== '1') {
                 $msgF = vendaFormularioMsgLink((string)$vf['comprador_nome']);
                 if (zapiEnviarTexto($phone, $msgF, $credenciaisVendas)) {
                     registrarMensagem($phone, 'out', $msgF, null, true);
                     setConfig($chaveF, '1');
-                    $dbF->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'whatsapp', 'whatsapp', ?)")
-                        ->execute([(int)$vendaLead['venda_id'], 'Link do formulário enviado (chamou direto no WhatsApp sem preencher)']);
+                    $dbF->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, ?, ?, ?)")
+                        ->execute([(int)$vendaLead['venda_id'], $vf['etapa'], $vf['etapa'], 'Link do formulário enviado (chamou direto no WhatsApp sem preencher)']);
                 }
             }
             return ['ignored' => 'formulario_obrigatorio', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
