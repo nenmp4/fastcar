@@ -243,7 +243,7 @@ function avStatusBadge(string $status): string {
                     if (d.placa_livre) {
                         h += '<div class="card" style="padding:10px 12px;margin:0 0 6px;cursor:pointer;border:2px dashed var(--azul)" data-novo="' + esc(d.placa_livre) + '">➕ Placa <strong>' + esc(d.placa_livre) + '</strong> não está no sistema — cadastrar veículo novo</div>';
                     }
-                    if (!h) h = '<p><small>Nada encontrado. ' + (tipo.value === 'compra' ? 'Digite a placa completa (ex: ABC1D23) pra cadastrar o veículo.' : 'Vistoria de venda precisa de uma negociação com veículo vinculado.') + '</small></p>';
+                    if (!h) h = '<p><small>Nada encontrado (carro que já tem vistoria não aparece aqui). ' + (tipo.value === 'compra' ? 'Digite a placa completa (ex: ABC1D23) pra cadastrar o veículo.' : 'Vistoria de venda precisa de uma negociação com veículo vinculado.') + '</small></p>';
                     res.innerHTML = h;
                 })
                 .catch(function () { res.innerHTML = '<p><small>Erro ao buscar — tente de novo.</small></p>'; });

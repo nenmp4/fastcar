@@ -339,6 +339,11 @@ function vistoriaAtivaPorPlaca(string $placa): ?int {
  * duplicado); venda varre negociações com veículo vinculado. Cada
  * candidato diz se já tem vistoria em aberto (pra abrir a existente).
  */
+/**
+ * 29/10/2026, "na vistoria só mostrar veículos que não têm vistoria ainda":
+ * carro que já tem QUALQUER vistoria do mesmo tipo (pendente, em andamento
+ * ou concluída — pela oportunidade ou pela mesma placa) não aparece mais na busca.
+ */
 function buscarCandidatosVistoria(string $tipo, string $termo): array {
     $termo = trim($termo);
     if (mb_strlen($termo) < 2) return [];
@@ -354,6 +359,7 @@ function buscarCandidatosVistoria(string $tipo, string $termo): array {
                       AND va.status IN ('pendente','em_andamento') ORDER BY va.id DESC LIMIT 1) AS vistoria_ativa_id
             FROM vendas v JOIN oportunidades o ON o.id = v.oportunidade_id
             WHERE v.etapa != 'cancelada'
+              AND NOT EXISTS (SELECT 1 FROM veiculo_avaliacoes vx WHERE vx.venda_id = v.id AND vx.tipo = 'venda')
               AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR {$placaExpr} LIKE ?)
             ORDER BY v.created_at DESC LIMIT 15
         ");
@@ -369,6 +375,9 @@ function buscarCandidatosVistoria(string $tipo, string $termo): array {
             FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
             WHERE o.etapa NOT IN ('perdido', 'sem_perfil')
               AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+              AND NOT EXISTS (SELECT 1 FROM veiculo_avaliacoes vx JOIN oportunidades ox ON ox.id = vx.oportunidade_id
+                   WHERE vx.tipo = 'compra' AND (vx.oportunidade_id = o.id OR (LENGTH({$placaExpr}) >= 6
+                        AND UPPER(REPLACE(REPLACE(COALESCE(ox.veiculo_placa,''), '-', ''), ' ', '')) = {$placaExpr})))
               AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR {$placaExpr} LIKE ?)
             ORDER BY (o.etapa = 'fechado') DESC, o.created_at DESC LIMIT 15
         ");
