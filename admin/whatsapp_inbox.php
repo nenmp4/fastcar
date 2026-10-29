@@ -55,9 +55,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
     $soNaoLidasAjax = ($_GET['filtro'] ?? '') === 'nao_lidas';
+    // Até 1000 de uma vez (botão "Carregar mais" sobe de 100 em 100).
+    $limiteAjax = max(20, min(1000, (int)($_GET['limite'] ?? 100)));
+    $listaAjax = listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, $limiteAjax + 1, $soNaoLidasAjax);
     echo json_encode([
-        'conversas'      => listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, 100, $soNaoLidasAjax),
-        'total_nao_lidas' => count(listarConversasWhatsapp('', $responsavelFiltro, 500, true)),
+        'conversas'       => array_slice($listaAjax, 0, $limiteAjax),
+        'tem_mais'        => count($listaAjax) > $limiteAjax,
+        'total_nao_lidas' => contarConversasNaoLidasWhatsapp($responsavelFiltro),
     ]);
     exit;
 }
@@ -207,8 +211,10 @@ if ($telefoneAtivo) {
 
 $busca = trim((string)($_GET['busca'] ?? ''));
 $soNaoLidas = ($_GET['filtro'] ?? '') === 'nao_lidas';
-$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 100, $soNaoLidas);
-$totalConversasNaoLidas = count(listarConversasWhatsapp('', $responsavelFiltro, 500, true));
+$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas);
+$temMaisConversas = count($conversas) > 100;
+$conversas = array_slice($conversas, 0, 100);
+$totalConversasNaoLidas = contarConversasNaoLidasWhatsapp($responsavelFiltro);
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo) : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
@@ -268,6 +274,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-item .preview { font-size: 12.5px; color: var(--texto-fraco); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wpp-item .quando { font-size: 11px; color: var(--texto-fraco); white-space: nowrap; }
 /* 29/10/2026, "mostrar mensagens não lidas igual zap" — abas + destaque. */
+.wpp-mais { margin: 8px 12px 12px; width: calc(100% - 24px); background: var(--fundo); color: var(--azul); border: 1px solid var(--borda); box-shadow: none; min-height: 44px; }
+.wpp-mais[hidden] { display: none; }
 .wpp-filtros { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--borda); }
 .wpp-chip { padding: 6px 14px; border-radius: 999px; background: var(--fundo); color: var(--texto); font-size: 13px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; border: 1px solid var(--borda); }
 .wpp-chip.ativo { background: #d9fdd3; border-color: #25d366; color: #0b5c2e; font-weight: 700; }
@@ -322,13 +330,13 @@ if ($telefoneAtivo && !$contatoAtivo) {
 
 <div class="wpp-wrap">
     <aside class="wpp-sidebar">
-        <form method="get">
-            <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
+        <form method="get" id="wpp-busca-form">
+            <input type="search" name="busca" id="wpp-busca" value="<?= e($busca) ?>" placeholder="🔎 Buscar por nome ou telefone..." autocomplete="off">
             <?php if ($soNaoLidas): ?><input type="hidden" name="filtro" value="nao_lidas"><?php endif; ?>
         </form>
         <div class="wpp-filtros">
-            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= $soNaoLidas ? '' : 'ativo' ?>">Todas</a>
-            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas']))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= $soNaoLidas ? '' : 'ativo' ?>" data-filtro="">Todas</a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas']))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>" data-filtro="nao_lidas">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
         </div>
         <form method="get" class="wpp-nova-form" id="wpp-nova-form">
             <input type="text" name="telefone" placeholder="Nova conversa — telefone com DDD" inputmode="numeric">
@@ -358,6 +366,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 </a>
             <?php endforeach; ?>
         </div>
+        <button type="button" id="wpp-mais" class="wpp-mais" <?= $temMaisConversas ? '' : 'hidden' ?>>⬇️ Carregar mais conversas</button>
     </aside>
 
     <section class="wpp-chat">
@@ -642,6 +651,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 
     if (telefone) {
         setInterval(function () {
+            if (document.hidden) return; // aba em segundo plano: não gasta servidor à toa
             fetch('?ajax=novas&telefone=' + encodeURIComponent(telefone) + '&after_id=' + ultimoId)
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
@@ -665,18 +675,36 @@ if ($telefoneAtivo && !$contatoAtivo) {
     // esperando lead novo chegar), a lista nunca atualizava sozinha, só
     // recarregando a página na mão. Movido pra fora do `if`, roda sempre.
     // Intervalo apertado (5s) a pedido — "deixa bem fluido inbox".
-    setInterval(atualizarListaConversas, 5000);
+    //
+    // 29/10/2026, "melhore ux inbox velocidade listagens" — (1) só redesenha a
+    // lista quando algo mudou de verdade (antes reconstruía tudo a cada 5s,
+    // piscando e perdendo a rolagem); (2) aba em segundo plano não faz
+    // polling; (3) "Carregar mais" sobe de 100 em 100 (até 1000); (4) busca e
+    // abas Todas/Não lidas filtram na hora, sem recarregar a página.
+    var limiteLista = 100;
+    var assinaturaLista = '';
+    var reqListaSeq = 0;
+    setInterval(function () { if (!document.hidden) atualizarListaConversas(); }, 5000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) atualizarListaConversas(); });
 
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);
-        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&filtro=' + encodeURIComponent(params.get('filtro') || ''))
+        var seq = ++reqListaSeq;
+        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&filtro=' + encodeURIComponent(params.get('filtro') || '') + '&limite=' + limiteLista)
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (seq !== reqListaSeq) return; // resposta velha (digitou de novo no meio) — ignora
                 var lista = document.getElementById('wpp-lista');
                 if (!lista || !data.conversas) return;
                 var spanTotal = document.getElementById('wpp-total-nao-lidas');
                 if (spanTotal) spanTotal.textContent = data.total_nao_lidas ? '(' + data.total_nao_lidas + ')' : '';
                 document.title = (data.total_nao_lidas ? '(' + data.total_nao_lidas + ') ' : '') + document.title.replace(/^\(\d+\) /, '');
+                var btnMais = document.getElementById('wpp-mais');
+                if (btnMais) { btnMais.hidden = !data.tem_mais; btnMais.disabled = false; btnMais.textContent = '⬇️ Carregar mais conversas'; }
+                var assinatura = JSON.stringify(data.conversas) + '|' + (params.get('filtro') || '');
+                if (assinatura === assinaturaLista) return; // nada mudou — não mexe na tela
+                assinaturaLista = assinatura;
+                var rolagem = lista.scrollTop;
                 lista.innerHTML = '';
                 if (!data.conversas.length) {
                     var vazio = document.createElement('p');
@@ -715,10 +743,51 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         '</div>';
                     lista.appendChild(a);
                 });
+                lista.scrollTop = rolagem;
                 carregarFotos();
             })
             .catch(function () {});
     }
+
+    // "Carregar mais": +100 conversas por clique.
+    var btnMaisConversas = document.getElementById('wpp-mais');
+    if (btnMaisConversas) btnMaisConversas.addEventListener('click', function () {
+        limiteLista = Math.min(1000, limiteLista + 100);
+        btnMaisConversas.disabled = true;
+        btnMaisConversas.textContent = 'Carregando…';
+        atualizarListaConversas();
+    });
+
+    function trocarParamUrl(chave, valor) {
+        var params = new URLSearchParams(window.location.search);
+        if (valor) params.set(chave, valor); else params.delete(chave);
+        history.replaceState(null, '', '?' + params.toString());
+    }
+
+    // Busca ao vivo (sem recarregar a página).
+    var inputBusca = document.getElementById('wpp-busca');
+    var formBusca = document.getElementById('wpp-busca-form');
+    var timerBusca = null;
+    if (inputBusca) inputBusca.addEventListener('input', function () {
+        clearTimeout(timerBusca);
+        timerBusca = setTimeout(function () {
+            trocarParamUrl('busca', inputBusca.value.trim());
+            limiteLista = 100;
+            atualizarListaConversas();
+        }, 300);
+    });
+    if (formBusca) formBusca.addEventListener('submit', function (ev) { ev.preventDefault(); });
+
+    // Abas Todas / Não lidas sem recarregar.
+    document.querySelectorAll('.wpp-chip[data-filtro]').forEach(function (chip) {
+        chip.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            document.querySelectorAll('.wpp-chip[data-filtro]').forEach(function (c) { c.classList.toggle('ativo', c === chip); });
+            trocarParamUrl('filtro', chip.getAttribute('data-filtro'));
+            limiteLista = 100;
+            atualizarListaConversas();
+        });
+    });
 
     if (form) {
         form.addEventListener('submit', function (ev) {

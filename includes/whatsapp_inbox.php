@@ -44,7 +44,7 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
  * na prática — regra #2 cria a oportunidade já no 1º contato — mas por
  * segurança) só aparece pro super_admin, nunca pra um consultor aleatório.
  */
-function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false): array {
+function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0): array {
     $db = getDB();
     $whereBusca = '';
     $params = [];
@@ -85,12 +85,35 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
         WHERE 1=1
         {$whereBusca}{$whereResponsavel}
         ORDER BY m.created_at DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
     ";
     $params[] = $limite;
+    $params[] = max(0, $offset);
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll();
+}
+
+/**
+ * Quantas conversas têm mensagem não lida — contador da aba "Não lidas"
+ * (29/10/2026). Query própria e barata (usa o índice parcial
+ * idx_wpp_nao_lidas), nunca a listagem inteira de novo a cada polling.
+ * Mesmo filtro de carteira do consultor de listarConversasWhatsapp().
+ */
+function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
+    $db = getDB();
+    $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m WHERE m.direcao = 'in' AND m.lida = 0";
+    $params = [];
+    if ($responsavelFiltro !== null) {
+        $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $sql .= " AND EXISTS (SELECT 1 FROM clientes c JOIN oportunidades o ON o.cliente_id = c.id
+                              WHERE c.telefone = m.telefone AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
+        $params[] = $responsavelFiltro;
+        foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    return (int)$stmt->fetchColumn();
 }
 
 /** Últimas $limite mensagens de uma conversa, em ordem cronológica (mais antiga primeiro). */
