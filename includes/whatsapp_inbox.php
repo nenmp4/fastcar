@@ -44,7 +44,7 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
  * na prática — regra #2 cria a oportunidade já no 1º contato — mas por
  * segurança) só aparece pro super_admin, nunca pra um consultor aleatório.
  */
-function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100): array {
+function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false): array {
     $db = getDB();
     $whereBusca = '';
     $params = [];
@@ -65,6 +65,10 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
         $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
         foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
+    }
+    // 29/10/2026, "mostrar mensagens não lidas igual zap" — aba "Não lidas".
+    if ($soNaoLidas) {
+        $whereResponsavel .= " AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.direcao = 'in' AND m4.lida = 0)";
     }
 
     $sql = "

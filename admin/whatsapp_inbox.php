@@ -54,7 +54,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
 // ── AJAX: lista de conversas (refresca a barra lateral sem recarregar tudo) ─
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
-    echo json_encode(['conversas' => listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro)]);
+    $soNaoLidasAjax = ($_GET['filtro'] ?? '') === 'nao_lidas';
+    echo json_encode([
+        'conversas'      => listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, 100, $soNaoLidasAjax),
+        'total_nao_lidas' => count(listarConversasWhatsapp('', $responsavelFiltro, 500, true)),
+    ]);
     exit;
 }
 
@@ -202,7 +206,9 @@ if ($telefoneAtivo) {
 }
 
 $busca = trim((string)($_GET['busca'] ?? ''));
-$conversas = listarConversasWhatsapp($busca, $responsavelFiltro);
+$soNaoLidas = ($_GET['filtro'] ?? '') === 'nao_lidas';
+$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 100, $soNaoLidas);
+$totalConversasNaoLidas = count(listarConversasWhatsapp('', $responsavelFiltro, 500, true));
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo) : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
@@ -231,7 +237,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WhatsApp — Fastcar CRM</title>
+<title><?= $totalConversasNaoLidas ? "(" . (int)$totalConversasNaoLidas . ") " : "" ?>WhatsApp — Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
 <link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
 <script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
@@ -261,6 +267,14 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-item .nome { font-weight: 600; font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; }
 .wpp-item .preview { font-size: 12.5px; color: var(--texto-fraco); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wpp-item .quando { font-size: 11px; color: var(--texto-fraco); white-space: nowrap; }
+/* 29/10/2026, "mostrar mensagens não lidas igual zap" — abas + destaque. */
+.wpp-filtros { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--borda); }
+.wpp-chip { padding: 6px 14px; border-radius: 999px; background: var(--fundo); color: var(--texto); font-size: 13px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; border: 1px solid var(--borda); }
+.wpp-chip.ativo { background: #d9fdd3; border-color: #25d366; color: #0b5c2e; font-weight: 700; }
+.wpp-item.nao-lida .nome span:first-child { font-weight: 800; }
+.wpp-item.nao-lida .preview { color: var(--texto); font-weight: 600; }
+.wpp-item.nao-lida .quando { color: #1fa855; font-weight: 700; }
+.wpp-item.nao-lida .wpp-badge { background: #25d366; }
 .wpp-badge { background: var(--azul); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 1px 7px; min-width: 18px; text-align: center; display: inline-block; }
 .wpp-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; background: var(--superficie); }
@@ -310,7 +324,12 @@ if ($telefoneAtivo && !$contatoAtivo) {
     <aside class="wpp-sidebar">
         <form method="get">
             <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
+            <?php if ($soNaoLidas): ?><input type="hidden" name="filtro" value="nao_lidas"><?php endif; ?>
         </form>
+        <div class="wpp-filtros">
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= $soNaoLidas ? '' : 'ativo' ?>">Todas</a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas']))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
+        </div>
         <form method="get" class="wpp-nova-form" id="wpp-nova-form">
             <input type="text" name="telefone" placeholder="Nova conversa — telefone com DDD" inputmode="numeric">
             <button type="submit">+ Iniciar conversa</button>
@@ -318,11 +337,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
         <div class="wpp-lista" id="wpp-lista">
             <?php if (!$conversas): ?>
                 <p style="padding:16px;color:var(--texto-fraco);font-size:13px">
-                    <?= $busca ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — mensagens aparecem aqui assim que o cliente escrever pelo WhatsApp.' ?>
+                    <?= $soNaoLidas ? 'Nenhuma conversa não lida. 🎉' : ($busca ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — mensagens aparecem aqui assim que o cliente escrever pelo WhatsApp.' ) ?>
                 </p>
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
-                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
+                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?><?= (int)$c['nao_lidas'] > 0 ? ' nao-lida' : '' ?>" href="?<?= e(http_build_query(array_filter(['telefone' => $c['telefone'], 'filtro' => $soNaoLidas ? 'nao_lidas' : null]))) ?>">
                     <div class="wpp-avatar-placeholder" data-av-phone="<?= e($c['telefone']) ?>" data-nome="<?= e($c['cliente_nome'] ?: $c['telefone']) ?>"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <div class="wpp-corpo">
                         <div class="nome">
@@ -650,23 +669,26 @@ if ($telefoneAtivo && !$contatoAtivo) {
 
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);
-        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || ''))
+        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&filtro=' + encodeURIComponent(params.get('filtro') || ''))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 var lista = document.getElementById('wpp-lista');
                 if (!lista || !data.conversas) return;
+                var spanTotal = document.getElementById('wpp-total-nao-lidas');
+                if (spanTotal) spanTotal.textContent = data.total_nao_lidas ? '(' + data.total_nao_lidas + ')' : '';
+                document.title = (data.total_nao_lidas ? '(' + data.total_nao_lidas + ') ' : '') + document.title.replace(/^\(\d+\) /, '');
                 lista.innerHTML = '';
                 if (!data.conversas.length) {
                     var vazio = document.createElement('p');
                     vazio.style.cssText = 'padding:16px;color:var(--texto-fraco);font-size:13px';
-                    vazio.textContent = 'Nenhuma conversa ainda.';
+                    vazio.textContent = params.get('filtro') === 'nao_lidas' ? 'Nenhuma conversa não lida. 🎉' : 'Nenhuma conversa ainda.';
                     lista.appendChild(vazio);
                     return;
                 }
                 data.conversas.forEach(function (c) {
                     var a = document.createElement('a');
-                    a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '');
-                    a.href = '?telefone=' + encodeURIComponent(c.telefone);
+                    a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '') + (c.nao_lidas > 0 ? ' nao-lida' : '');
+                    a.href = '?telefone=' + encodeURIComponent(c.telefone) + (params.get('filtro') === 'nao_lidas' ? '&filtro=nao_lidas' : '');
                     var preview = c.ultima_mensagem.length > 60 ? c.ultima_mensagem.slice(0, 60) + '…' : c.ultima_mensagem;
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
