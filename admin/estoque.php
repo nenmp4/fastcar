@@ -63,6 +63,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
         if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
         if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
         $vendaId = criarVenda((int)$_POST['oportunidade_id'], (int)$_SESSION['admin_id']);
+        // 30/10/2026, "no estoque adicionar quem comprou e abrir negociação"
+        $compNome = trim((string)($_POST['comprador_nome'] ?? ''));
+        $compTel = normalizarTelefone((string)($_POST['comprador_telefone'] ?? ''));
+        if ($compNome !== '' || $compTel) {
+            getDB()->prepare("UPDATE vendas SET comprador_nome = CASE WHEN ? != '' THEN ? ELSE comprador_nome END,
+                comprador_telefone = CASE WHEN ? != '' THEN ? ELSE comprador_telefone END WHERE id = ?")
+                ->execute([clean($compNome), clean($compNome), (string)$compTel, (string)$compTel, $vendaId]);
+        }
         header('Location: /admin/venda.php?id=' . $vendaId);
         exit;
     } catch (Throwable $e) {
@@ -347,14 +355,6 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             </details>
             <?php endif; ?>
             <a class="btn" style="margin-top:8px" href="/admin/veiculo_midias.php?id=<?= $id ?>">📸 Fotos e vídeos</a>
-            <?php if ($souSuperEstoque): ?>
-            <form method="post" style="margin-top:8px" onsubmit="return confirmarAcao(this, 'Ocultar este carro do estoque? (já vendido / não está mais com a Fastcar)');">
-                <?= csrfField() ?>
-                <input type="hidden" name="acao" value="ocultar_um">
-                <input type="hidden" name="oportunidade_id" value="<?= $id ?>">
-                <button type="submit" class="btn-texto perigo" style="width:100%">🙈 Ocultar (já vendido)</button>
-            </form>
-            <?php endif; ?>
         </div>
     </div>
     <?php endforeach; ?>
@@ -366,17 +366,28 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
         <button type="button" onclick="document.getElementById('modal-vender').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
     </div>
     <p id="modal-vender-titulo" style="font-weight:600;margin:8px 0 14px"></p>
-    <p style="margin:0 0 10px"><small>Escolha o tipo de venda:</small></p>
+    <div class="grid-2" style="margin-bottom:10px">
+        <div><label>Quem comprou (nome)</label><input type="text" id="mv-comprador-nome" placeholder="Nome do comprador"></div>
+        <div><label>WhatsApp do comprador</label><input type="tel" inputmode="tel" id="mv-comprador-tel" placeholder="Ex: 11999998888"></div>
+    </div>
+    <p style="margin:0 0 10px"><small>Escolha o tipo de contrato — abre a negociação já com o comprador:</small></p>
     <div class="tipo-venda-opcoes">
         <a id="modal-vender-promissoria" class="tipo-venda-opcao" href="#">
             <span class="tv-icone">💳</span>
             <strong>Promissória</strong>
             <small>Entrada (PIX em partes, bem de troca) + parcelas da Fastcar, sem consulta SPC/Serasa. Abre o formulário completo já com este carro.</small>
         </a>
-        <form method="post" style="margin:0" onsubmit="return confirmarAcao(this, 'Abrir uma negociação de venda com quitação futura para este veículo?');">
+        <a id="modal-vender-locacao" class="tipo-venda-opcao" href="#">
+            <span class="tv-icone">🔑</span>
+            <strong>Locação</strong>
+            <small>Aluguel semanal ou mensal (motorista de aplicativo). Abre o formulário de locação já com este carro.</small>
+        </a>
+        <form method="post" style="margin:0" onsubmit="mvCopiarComprador(this); return confirmarAcao(this, 'Abrir uma negociação de venda com quitação futura para este veículo?');">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="iniciar_venda_quitacao">
             <input type="hidden" name="oportunidade_id" id="modal-vender-op" value="">
+            <input type="hidden" name="comprador_nome" value="">
+            <input type="hidden" name="comprador_telefone" value="">
             <button type="submit" class="tipo-venda-opcao" style="width:100%;margin:0;text-align:left">
                 <span class="tv-icone">📄</span>
                 <strong>Quitação futura</strong>
@@ -395,12 +406,28 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
 .tv-icone { font-size:26px; }
 </style>
 <script>
+var mvOpAtual = 0;
 function abrirModalVender(opId, titulo) {
+    mvOpAtual = opId;
     document.getElementById('modal-vender-titulo').textContent = titulo;
     document.getElementById('modal-vender-op').value = opId;
-    document.getElementById('modal-vender-promissoria').href = '/admin/vendas.php?vender_op=' + opId;
     document.getElementById('modal-vender').showModal();
 }
+function mvQsComprador() {
+    var n = document.getElementById('mv-comprador-nome').value.trim();
+    var t = document.getElementById('mv-comprador-tel').value.trim();
+    return (n ? '&comprador_nome=' + encodeURIComponent(n) : '') + (t ? '&comprador_telefone=' + encodeURIComponent(t) : '');
+}
+function mvCopiarComprador(form) {
+    form.querySelector('[name=comprador_nome]').value = document.getElementById('mv-comprador-nome').value.trim();
+    form.querySelector('[name=comprador_telefone]').value = document.getElementById('mv-comprador-tel').value.trim();
+}
+document.getElementById('modal-vender-promissoria').addEventListener('click', function (e) {
+    e.preventDefault(); window.location.href = '/admin/vendas.php?vender_op=' + mvOpAtual + mvQsComprador();
+});
+document.getElementById('modal-vender-locacao').addEventListener('click', function (e) {
+    e.preventDefault(); window.location.href = '/admin/vendas.php?locar_op=' + mvOpAtual + mvQsComprador();
+});
 </script>
 </main>
 <script>

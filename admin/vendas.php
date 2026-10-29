@@ -161,6 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
 // da frota, mesmo wizard de documentos e mesma geração de contrato.
 $erroLocacao = '';
 $modalLocacaoAbrir = false;
+// 30/10/2026 — vindo do 🚘 Estoque ("Vender → Locação"): abre o modal já com o carro e o locatário.
+$locarOpEstoque = (int)($_GET['locar_op'] ?? 0);
+if ($locarOpEstoque > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST' && $perfil !== 'supervisor') $modalLocacaoAbrir = true;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'registrar_locacao') {
     $modalLocacaoAbrir = true;
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -640,7 +643,9 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     </div>
 </dialog>
 
-<?php $postLoc = ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'registrar_locacao') ? $_POST : []; ?>
+<?php $postLoc = ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'registrar_locacao') ? $_POST
+    : ($locarOpEstoque > 0 ? ['oportunidade_id' => $locarOpEstoque,
+        'locatario_nome' => (string)($_GET['comprador_nome'] ?? ''), 'locatario_telefone' => (string)($_GET['comprador_telefone'] ?? '')] : []); ?>
 <dialog id="modal-locacao" class="modal-lancamento">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
         <h2 style="margin:0">🔑 Contrato de Locação</h2>
@@ -700,7 +705,11 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 <?php if ($modalLocacaoAbrir): ?><script>document.addEventListener('DOMContentLoaded', function () { document.getElementById('modal-locacao').showModal(); });</script><?php endif; ?>
 
 <?php
-    $postVp = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : ($venderOpEstoque > 0 ? ['oportunidade_id' => $venderOpEstoque] : []);
+    $postVp = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : ($venderOpEstoque > 0 ? [
+        'oportunidade_id' => $venderOpEstoque,
+        'comprador_nome' => (string)($_GET['comprador_nome'] ?? ''),
+        'comprador_telefone' => (string)($_GET['comprador_telefone'] ?? ''),
+    ] : []);
     $vpSemFrota = !$frotaDisponivelPromissoria;
     $vpCadastrarNovo = !empty($postVp['cadastrar_veiculo_novo']) || $vpSemFrota;
 
