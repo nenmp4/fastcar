@@ -23,6 +23,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/oportunidades.php'; // ETAPAS_ATIVAS
 require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — assinar mensagem com o nome do consultor
 require_once __DIR__ . '/documentos.php'; // lerConteudoArquivoDocumento() — cache local de mídia já baixada do Drive
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem(), iaPausada(), pausarIA(), retomarIA()
@@ -54,8 +55,16 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
     }
     $whereResponsavel = '';
     if ($responsavelFiltro !== null) {
-        $whereResponsavel = ' AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ?)';
+        // 29/10/2026, "dando cliente encerrado ele não some da listagens" —
+        // antes bastava ter tido QUALQUER oportunidade com o consultor (até
+        // perdida/sem perfil/fechada) pra conversa ficar na lista dele pra
+        // sempre. Agora só aparece enquanto ele tem oportunidade ATIVA com o
+        // cliente; encerrou, sai da lista (a conversa continua acessível pelo
+        // cadastro/oportunidade, e volta sozinha se o cliente abrir negócio novo).
+        $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
+        foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
     }
 
     $sql = "
