@@ -17,6 +17,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/vendas.php';
+require_once __DIR__ . '/notificacoes.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // pausarIA()
 
 const VENDA_FORM_TIPOS = ['carro' => 'Carro', 'utilitario' => 'Utilitário (picape/van/furgão)', 'moto' => 'Moto'];
@@ -127,7 +128,14 @@ function registrarFormularioVenda(array $d): array {
         }
         // Vendedor assume a conversa: a IA nunca qualifica de novo quem já preencheu.
         pausarIA($tel);
-        notificarVendedorLeadQualificado($vendaId, 'Formulário do site');
+        // 29/10/2026, "já começou chegar lead pelo formulário — só o quente
+        // que o Jean é notificado": 🔥 quente avisa vendedor + números de
+        // Configurações (Jean), 1x por negociação; morno só o vendedor.
+        if ($temperatura === 'quente') {
+            notificarLeadQuenteVenda($vendaId);
+        } else {
+            notificarVendedorLeadQualificado($vendaId, 'Formulário do site');
+        }
     } elseif (in_array($etapa, ['whatsapp', 'qualificacao_ia'], true)) {
         mudarEtapaVenda($vendaId, 'sem_perfil', null,
             'Formulário: entrada ' . $fmt($entrada) . ' abaixo do mínimo de ' . $fmt($minimo) . ' pra ' . $interesse);
