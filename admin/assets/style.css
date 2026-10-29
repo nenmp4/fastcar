@@ -844,3 +844,7 @@ details.card-desativado[open] > summary { margin-bottom: 12px; }
 .card.cfg-item.cfg-aberto > .cfg-titulo::after { content: '▾'; }
 .card.cfg-item > .cfg-corpo { display: none; padding-bottom: 16px; }
 .card.cfg-item.cfg-aberto > .cfg-corpo { display: block; }
+
+/* 29/10/2026 — Quadro-Resumo da locação: condições extras recolhidas. */
+details.quadro-mais { margin-top: 10px; border: 1px dashed var(--borda); border-radius: var(--raio); padding: 8px 12px; }
+details.quadro-mais > summary { cursor: pointer; font-weight: 600; min-height: 40px; display: flex; align-items: center; }

@@ -79,6 +79,10 @@ const LOCACAO_CAMPOS = [
 /** Campos sem os quais o contrato de locação não é gerado. */
 const LOCACAO_CAMPOS_OBRIGATORIOS = ['modalidade', 'data_inicio', 'aluguel_mensal'];
 
+/** Campos que aparecem de cara no modal/card — o resto fica em "Mais condições". */
+const LOCACAO_CAMPOS_PRINCIPAIS = ['periodicidade', 'aluguel_mensal', 'vencimento_dia', 'vencimento_semana', 'data_inicio',
+    'modalidade', 'prazo_meses', 'caucao_valor', 'km_inicial', 'franquia_km', 'uso'];
+
 /** 'semanal' ou 'mensal' (padrão — contratos anteriores não têm o campo). */
 function locacaoPeriodicidade(array $dados): string {
     return ($dados['periodicidade'] ?? '') === 'semanal' ? 'semanal' : 'mensal';
@@ -144,14 +148,25 @@ function locacaoCamposFaltando(array $dados): array {
 
 /** Renderiza os inputs (name="loc[chave]") — usado no modal e no card. */
 function renderCamposLocacao(array $dados): string {
-    return renderCamposQuadro(LOCACAO_CAMPOS, LOCACAO_CAMPOS_OBRIGATORIOS, 'loc', $dados);
+    return renderCamposQuadro(LOCACAO_CAMPOS, LOCACAO_CAMPOS_OBRIGATORIOS, 'loc', $dados, LOCACAO_CAMPOS_PRINCIPAIS);
 }
 
 /**
  * Renderização genérica de um Quadro-Resumo (name="{prefixo}[chave]") —
  * compartilhada com a promissória (includes/promissoria.php).
  */
-function renderCamposQuadro(array $defs, array $obrigatorios, string $prefixo, array $dados): string {
+function renderCamposQuadro(array $defs, array $obrigatorios, string $prefixo, array $dados, ?array $principais = null): string {
+    // 29/10/2026 — "ficou muito campo pra preencher": com $principais, só esses
+    // aparecem; o resto fica recolhido em "Mais condições" (padrões já preenchidos).
+    if ($principais !== null) {
+        $resto = array_diff_key($defs, array_flip($principais));
+        $html = renderCamposQuadro(array_intersect_key($defs, array_flip($principais)), $obrigatorios, $prefixo, $dados);
+        if ($resto) {
+            $html .= '<details class="quadro-mais"><summary>➕ Mais condições do contrato (' . count($resto) . ' campos — opcional, os que têm padrão já vêm preenchidos)</summary>'
+                . renderCamposQuadro($resto, $obrigatorios, $prefixo, $dados) . '</details>';
+        }
+        return $html;
+    }
     $html = '<div class="grid-2">';
     $chaves = array_keys($defs);
     $metade = (int)ceil(count($chaves) / 2);
