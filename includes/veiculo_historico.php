@@ -131,13 +131,17 @@ function veiculoHistorico(int $oportunidadeId): array {
         }
     }
 
-    $st = $db->prepare("SELECT * FROM contratos WHERE oportunidade_id IN ($ph) AND status IN ('enviado','visualizado','assinado','recusado') ORDER BY id");
+    $st = $db->prepare("SELECT ct.*, c.nome AS vend_nome, v.comprador_nome AS comp_nome, v.tipo_contrato AS v_tipo
+        FROM contratos ct JOIN oportunidades o ON o.id = ct.oportunidade_id JOIN clientes c ON c.id = o.cliente_id
+        LEFT JOIN vendas v ON v.id = ct.venda_id
+        WHERE ct.oportunidade_id IN ($ph) AND ct.status IN ('enviado','visualizado','assinado','recusado') ORDER BY ct.id");
     $st->execute($ids);
     foreach ($st->fetchAll() as $ct) {
         $assinado = $ct['status'] === 'assinado';
+        $quemAssina = $ct['tipo'] === 'venda' ? ($ct['comp_nome'] ?: '') : ($ct['vend_nome'] ?: '');
         $eventos[] = ['data' => $assinado && $ct['assinado_em'] ? $ct['assinado_em'] : $ct['created_at'], 'icone' => $assinado ? '✍️' : '📄',
-            'titulo' => 'Contrato de ' . ($ct['tipo'] === 'venda' ? 'venda' : 'compra') . ' ' . ($assinado ? 'assinado' : ($ct['status'] === 'recusado' ? 'recusado' : 'enviado pra assinatura')),
-            'detalhe' => '', 'url' => $ct['venda_id'] ? '/admin/venda.php?id=' . (int)$ct['venda_id'] : '/admin/oportunidade.php?id=' . (int)$ct['oportunidade_id']];
+            'titulo' => 'Contrato de ' . ($ct['tipo'] === 'venda' ? (($ct['v_tipo'] ?? '') === 'locacao' ? 'locação' : 'venda') : 'compra') . ' ' . ($assinado ? 'assinado' : ($ct['status'] === 'recusado' ? 'recusado' : 'enviado pra assinatura')),
+            'detalhe' => $quemAssina !== '' ? ($ct['tipo'] === 'venda' ? 'Comprador: ' : 'Vendedor (dono): ') . $quemAssina : '', 'url' => $ct['venda_id'] ? '/admin/venda.php?id=' . (int)$ct['venda_id'] : '/admin/oportunidade.php?id=' . (int)$ct['oportunidade_id']];
     }
 
     usort($eventos, fn($a, $b) => strcmp((string)$b['data'], (string)$a['data']));
@@ -166,5 +170,92 @@ function veiculoHistorico(int $oportunidadeId): array {
         } catch (Throwable $e) {
         }
     }
-    return ['veiculo' => $veiculo, 'cadastros' => $cadastros, 'eventos' => $eventos, 'pagamentos' => $pagamentos];
+
+    // Débitos do veículo (IPVA/licenciamento/multas) — completando entre cadastros.
+    $debitos = ['ipva' => null, 'licenciamento' => null, 'multas' => null, 'obs' => ''];
+    foreach ($cadastros as $c) {
+        foreach (['ipva', 'licenciamento', 'multas'] as $k) {
+            if ($debitos[$k] === null && $c['debito_' . $k] !== null && $c['debito_' . $k] !== '') $debitos[$k] = (float)$c['debito_' . $k];
+        }
+        if ($debitos['obs'] === '' && !empty($c['debitos_veiculo_obs'])) $debitos['obs'] = (string)$c['debitos_veiculo_obs'];
+    }
+
+    // Negociações de venda/locação (todas, inclusive canceladas/devolvidas).
+    $st = $db->prepare("SELECT v.*, u.nome AS vendedor_nome,
+            (SELECT MAX(assinado_em) FROM contratos WHERE venda_id = v.id AND status = 'assinado') AS contrato_assinado_em
+        FROM vendas v LEFT JOIN usuarios u ON u.id = v.responsavel_id WHERE v.oportunidade_id IN ($ph) ORDER BY v.id DESC");
+    $st->execute($ids);
+    $negociacoes = $st->fetchAll();
+    $vendaIds = array_map(fn($n) => (int)$n['id'], $negociacoes);
+    $receitaPorVenda = [];
+    if ($vendaIds) {
+        $phv = implode(',', array_fill(0, count($vendaIds), '?'));
+        try {
+            $st = $db->prepare("SELECT venda_id, SUM(CASE WHEN status = 'pago' THEN valor ELSE 0 END) AS recebido,
+                    SUM(CASE WHEN status IN ('pendente','atrasado') THEN valor ELSE 0 END) AS a_receber,
+                    SUM(CASE WHEN status = 'atrasado' THEN valor ELSE 0 END) AS atrasado
+                FROM fin_lancamentos WHERE tipo = 'receita' AND venda_id IN ($phv) GROUP BY venda_id");
+            $st->execute($vendaIds);
+            foreach ($st->fetchAll() as $r) $receitaPorVenda[(int)$r['venda_id']] = $r;
+        } catch (Throwable $e) {
+        }
+    }
+    foreach ($negociacoes as &$n) $n['receita'] = $receitaPorVenda[(int)$n['id']] ?? null;
+    unset($n);
+
+    // Comissões pagas (consultor na compra, vendedor na venda).
+    $comissoes = [];
+    try {
+        $params = $ids;
+        $sqlV = '';
+        if ($vendaIds) {
+            $sqlV = ' OR (l.origem = \'comissao_venda\' AND l.venda_id IN (' . implode(',', array_fill(0, count($vendaIds), '?')) . '))';
+            $params = array_merge($params, $vendaIds);
+        }
+        $st = $db->prepare("SELECT l.*, fc.nome AS colaborador_nome FROM fin_lancamentos l
+            LEFT JOIN fin_colaboradores fc ON fc.id = l.funcionario_id
+            WHERE l.status != 'cancelado' AND ((l.origem = 'comissao_compra' AND l.oportunidade_id IN ($ph))$sqlV)
+            ORDER BY COALESCE(l.data_pagamento, l.data_vencimento)");
+        $st->execute($params);
+        $comissoes = $st->fetchAll();
+    } catch (Throwable $e) {
+    }
+    foreach ($comissoes as $cm) {
+        $eventos[] = ['data' => ($cm['data_pagamento'] ?: $cm['data_vencimento']) . ' 12:00:00', 'icone' => '🤝',
+            'titulo' => 'Comissão ' . ($cm['origem'] === 'comissao_venda' ? 'do vendedor' : 'do consultor') . ': ' . $moeda($cm['valor']),
+            'detalhe' => trim(($cm['colaborador_nome'] ?: '') . ' · ' . ($cm['status'] === 'pago' ? 'paga' : $cm['status']), ' ·'),
+            'url' => $cm['venda_id'] ? '/admin/venda.php?id=' . (int)$cm['venda_id'] : '/admin/oportunidade.php?id=' . (int)$cm['oportunidade_id']];
+    }
+    usort($eventos, fn($a, $b) => strcmp((string)$b['data'], (string)$a['data']));
+
+    // Resumo: dono atual + tempo com a Fastcar (da compra mais recente até a venda, ou hoje).
+    $inicio = null;
+    $compraUltima = null;
+    foreach ($cadastros as $c) {
+        if ($c['etapa'] !== 'fechado') continue;
+        $st = $db->prepare("SELECT MAX(assinado_em) FROM contratos WHERE oportunidade_id = ? AND tipo = 'compra' AND status = 'assinado'");
+        $st->execute([(int)$c['id']]);
+        $ref = $st->fetchColumn() ?: ($c['data_compra'] ?: $c['updated_at']);
+        if ($ref && ($inicio === null || strcmp($ref, $inicio) > 0)) { $inicio = $ref; $compraUltima = $c; }
+    }
+    $vendaAtiva = null;
+    foreach ($negociacoes as $n) {
+        if ($n['etapa'] === 'vendido') {
+            $refV = $n['contrato_assinado_em'] ?: $n['data_venda'] ?: $n['updated_at'];
+            if ($inicio === null || strcmp((string)$refV, (string)$inicio) >= 0) { $vendaAtiva = $n + ['ref_venda' => $refV]; break; }
+        }
+    }
+    $fim = $vendaAtiva ? $vendaAtiva['ref_venda'] : date('Y-m-d H:i:s');
+    $dias = $inicio ? max(0, (int)floor((strtotime($fim) - strtotime($inicio)) / 86400)) : null;
+    if ($vendaAtiva) {
+        $dono = (($vendaAtiva['tipo_contrato'] ?? '') === 'locacao' ? 'Locado pra ' : '') . ($vendaAtiva['comprador_nome'] ?: $vendaAtiva['comprador_telefone'] ?: 'comprador');
+    } elseif ($compraUltima) {
+        $dono = 'Fastcar (comprado de ' . ($compraUltima['cliente_nome'] ?: $compraUltima['cliente_telefone']) . ')';
+    } else {
+        $dono = ($cadastros[0]['cliente_nome'] ?? '') ?: 'vendedor original (compra ainda não fechada)';
+    }
+    $resumo = ['dono_atual' => $dono, 'inicio_fastcar' => $inicio, 'fim_fastcar' => $vendaAtiva ? $fim : null, 'dias_fastcar' => $dias];
+
+    return ['veiculo' => $veiculo, 'cadastros' => $cadastros, 'eventos' => $eventos, 'pagamentos' => $pagamentos,
+        'debitos' => $debitos, 'negociacoes' => $negociacoes, 'comissoes' => $comissoes, 'resumo' => $resumo];
 }

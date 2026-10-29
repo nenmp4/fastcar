@@ -17,7 +17,7 @@ if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
 }
 
 $id = (int)($_GET['id'] ?? 0);
-$h = $id ? veiculoHistorico($id) : ['veiculo' => null, 'cadastros' => [], 'eventos' => [], 'pagamentos' => []];
+$h = $id ? veiculoHistorico($id) : ['veiculo' => null, 'cadastros' => [], 'eventos' => [], 'pagamentos' => [], 'resumo' => null];
 $v = $h['veiculo'];
 $voltar = (string)($_SERVER['HTTP_REFERER'] ?? '');
 if (!preg_match('#^https?://[^/]+/admin/#', $voltar)) $voltar = paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '');
@@ -59,6 +59,44 @@ $vhMiolo = function () use ($v, $h, $cadastrosCompra) { ?>
         </div>
     <?php endif; ?>
 </div>
+
+<?php $rs = $h['resumo'] ?? null; $db_ = $h['debitos'] ?? null; ?>
+<?php if ($rs): ?>
+<div class="card">
+    <h3 style="margin-top:0">📋 Resumo</h3>
+    <div class="vh-pag">
+        <div><small>Dono atual</small><strong><?= e($rs['dono_atual']) ?></strong></div>
+        <div><small>Tempo com a Fastcar</small><strong><?php if ($rs['dias_fastcar'] === null): ?>—<?php else: $d = (int)$rs['dias_fastcar']; ?><?= $d >= 60 ? floor($d / 30.44) . ' mês(es)' : $d . ' dia(s)' ?><?php endif; ?></strong>
+            <?php if ($rs['inicio_fastcar']): ?><small>desde <?= e(date('d/m/Y', strtotime($rs['inicio_fastcar']))) ?><?= $rs['fim_fastcar'] ? ' até ' . e(date('d/m/Y', strtotime($rs['fim_fastcar']))) . ' (vendido)' : ' · ainda no estoque' ?></small><?php endif; ?></div>
+        <?php if ($db_): $totDeb = (float)($db_['ipva'] ?? 0) + (float)($db_['licenciamento'] ?? 0) + (float)($db_['multas'] ?? 0); ?>
+        <div><small>Débitos do veículo</small><strong><?= ($db_['ipva'] === null && $db_['licenciamento'] === null && $db_['multas'] === null) ? '— não informado' : 'R$ ' . number_format($totDeb, 2, ',', '.') ?></strong>
+            <small>IPVA <?= $db_['ipva'] !== null ? 'R$ ' . number_format($db_['ipva'], 2, ',', '.') : '—' ?> · Licenc. <?= $db_['licenciamento'] !== null ? 'R$ ' . number_format($db_['licenciamento'], 2, ',', '.') : '—' ?> · Multas <?= $db_['multas'] !== null ? 'R$ ' . number_format($db_['multas'], 2, ',', '.') : '—' ?></small>
+            <?php if ($db_['obs'] !== ''): ?><small><?= e($db_['obs']) ?></small><?php endif; ?></div>
+        <?php endif; ?>
+        <?php $totCom = array_sum(array_map(fn($c) => (float)$c['valor'], $h['comissoes'] ?? [])); ?>
+        <div><small>Comissões</small><strong><?= $totCom > 0 ? 'R$ ' . number_format($totCom, 2, ',', '.') : '—' ?></strong>
+            <?php foreach ($h['comissoes'] ?? [] as $cm): ?><small><?= $cm['origem'] === 'comissao_venda' ? '🛒 vendedor' : '🚗 consultor' ?> <?= e($cm['colaborador_nome'] ?: '') ?>: R$ <?= number_format((float)$cm['valor'], 2, ',', '.') ?> <?= $cm['status'] === 'pago' ? '✅ paga' : '⏳ ' . e($cm['status']) ?></small><?php endforeach; ?></div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($h['negociacoes'])): ?>
+<div class="card">
+    <h3 style="margin-top:0">🛒 Negociações de venda / locação</h3>
+    <?php foreach ($h['negociacoes'] as $n): $rec = $n['receita']; ?>
+        <div class="vh-pag">
+            <div><small>#<?= (int)$n['id'] ?> · <?= e(etapaVendaLabel($n['etapa'], $n['tipo_contrato'] ?? 'venda')) ?></small><a href="/admin/venda.php?id=<?= (int)$n['id'] ?>"><?= e($n['comprador_nome'] ?: ($n['comprador_telefone'] ?: '— sem comprador')) ?></a>
+                <small><?= $n['vendedor_nome'] ? 'vendedor: ' . e($n['vendedor_nome']) : '' ?></small></div>
+            <div><small>Preço</small><strong><?= $n['preco_venda'] ? 'R$ ' . number_format((float)$n['preco_venda'], 2, ',', '.') : '—' ?></strong>
+                <small>entrada <?= $n['valor_pago_contratacao'] ? 'R$ ' . number_format((float)$n['valor_pago_contratacao'], 2, ',', '.') : '—' ?><?= !empty($n['parcelamento_qtd_parcelas']) ? ' · ' . (int)$n['parcelamento_qtd_parcelas'] . 'x de R$ ' . number_format((float)$n['parcelamento_valor_parcela'], 2, ',', '.') . (($n['parcelamento_periodicidade'] ?? '') === 'semanal' ? ' (semanal)' : '') : '' ?></small></div>
+            <div><small>Contrato</small><?= $n['contrato_assinado_em'] ? '✍️ assinado ' . e(date('d/m/Y', strtotime($n['contrato_assinado_em']))) : '— não assinado' ?>
+                <?php if ($n['etapa'] === 'cancelada'): ?><small>🔙 <?= e($n['motivo_cancelamento'] ?: 'cancelada') ?></small><?php endif; ?></div>
+            <div><small>Recebido / a receber</small><?php if ($rec): ?><strong>R$ <?= number_format((float)$rec['recebido'], 2, ',', '.') ?></strong>
+                <small>a receber R$ <?= number_format((float)$rec['a_receber'], 2, ',', '.') ?><?= (float)$rec['atrasado'] > 0 ? ' · ⚠️ atrasado R$ ' . number_format((float)$rec['atrasado'], 2, ',', '.') : '' ?></small><?php else: ?>— nada no financeiro<?php endif; ?></div>
+        </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($h['pagamentos'])): ?>
 <div class="card">
