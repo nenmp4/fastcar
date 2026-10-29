@@ -68,17 +68,17 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
     }
     // 29/10/2026, "mostrar mensagens não lidas igual zap" — aba "Não lidas".
     if ($soNaoLidas) {
-        $whereResponsavel .= " AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.direcao = 'in' AND m4.lida = 0)";
+        $whereResponsavel .= " AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.canal = 'compra' AND m4.direcao = 'in' AND m4.lida = 0)";
     }
 
     $sql = "
         SELECT m.telefone, m.mensagem AS ultima_mensagem, m.direcao AS ultima_direcao,
                m.tipo AS ultima_tipo, m.created_at AS ultima_em, m.cliente_id, c.nome AS cliente_nome,
                c.foto_perfil_url,
-               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
+               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'compra' AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM whatsapp_mensagens m
-        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
+        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'compra' GROUP BY telefone) ult
           ON ult.telefone = m.telefone AND ult.max_id = m.id
         LEFT JOIN clientes c ON c.id = m.cliente_id
         LEFT JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone
@@ -102,7 +102,7 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
  */
 function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
     $db = getDB();
-    $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m WHERE m.direcao = 'in' AND m.lida = 0";
+    $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m WHERE m.canal = 'compra' AND m.direcao = 'in' AND m.lida = 0";
     $params = [];
     if ($responsavelFiltro !== null) {
         $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
@@ -118,13 +118,13 @@ function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
 }
 
 /** Últimas $limite mensagens de uma conversa, em ordem cronológica (mais antiga primeiro). */
-function buscarMensagensConversa(string $telefone, int $limite = 50): array {
+function buscarMensagensConversa(string $telefone, int $limite = 50, ?string $canal = null): array {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT m.*, u.nome AS usuario_nome
         FROM whatsapp_mensagens m
         LEFT JOIN usuarios u ON u.id = m.usuario_id
-        WHERE m.telefone = ?
+        WHERE m.telefone = ?" . ($canal ? " AND m.canal = " . getDB()->quote($canal) : '') . "
         ORDER BY m.id DESC LIMIT ?
     ");
     $stmt->execute([normalizarTelefone($telefone), $limite]);
@@ -139,13 +139,13 @@ function buscarMensagensConversa(string $telefone, int $limite = 50): array {
  * que veio antes disso; conversa mais longa que 50 mensagens simplesmente
  * cortava o começo sem avisar ninguém).
  */
-function buscarMensagensAntesId(string $telefone, int $antesDeId, int $limite = 50): array {
+function buscarMensagensAntesId(string $telefone, int $antesDeId, int $limite = 50, ?string $canal = null): array {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT m.*, u.nome AS usuario_nome
         FROM whatsapp_mensagens m
         LEFT JOIN usuarios u ON u.id = m.usuario_id
-        WHERE m.telefone = ? AND m.id < ?
+        WHERE m.telefone = ? AND m.id < ?" . ($canal ? " AND m.canal = " . getDB()->quote($canal) : '') . "
         ORDER BY m.id DESC LIMIT ?
     ");
     $stmt->execute([normalizarTelefone($telefone), $antesDeId, $limite]);
@@ -153,13 +153,13 @@ function buscarMensagensAntesId(string $telefone, int $antesDeId, int $limite = 
 }
 
 /** Mensagens novas desde $depoisDeId — usado pelo polling do front-end. */
-function buscarMensagensNovasConversa(string $telefone, int $depoisDeId): array {
+function buscarMensagensNovasConversa(string $telefone, int $depoisDeId, ?string $canal = null): array {
     $db = getDB();
     $stmt = $db->prepare("
         SELECT m.*, u.nome AS usuario_nome
         FROM whatsapp_mensagens m
         LEFT JOIN usuarios u ON u.id = m.usuario_id
-        WHERE m.telefone = ? AND m.id > ?
+        WHERE m.telefone = ? AND m.id > ?" . ($canal ? " AND m.canal = " . getDB()->quote($canal) : '') . "
         ORDER BY m.id ASC
     ");
     $stmt->execute([normalizarTelefone($telefone), $depoisDeId]);
@@ -334,14 +334,14 @@ function lerMidiaWhatsappComCache(?string $driveFileId, ?string $arquivoUrl): ?a
 }
 
 /** Marca toda mensagem recebida ('in') de um telefone como lida — chamado ao abrir a conversa. */
-function marcarConversaLida(string $telefone): void {
+function marcarConversaLida(string $telefone, ?string $canal = null): void {
     // 29/10/2026, "marca 4 não lidas mas já leu": a mensagem pode ter sido
     // gravada com o telefone num formato diferente (cru, com/sem o 9º dígito)
     // — antes só batia o formato normalizado e a conversa ficava "não lida" pra sempre.
     $db = getDB();
     $variantes = whatsappVariantesTelefone($telefone);
     $ph = implode(',', array_fill(0, count($variantes), '?'));
-    $db->prepare("UPDATE whatsapp_mensagens SET lida = 1 WHERE telefone IN ($ph) AND direcao = 'in' AND lida = 0")
+    $db->prepare("UPDATE whatsapp_mensagens SET lida = 1 WHERE telefone IN ($ph) AND direcao = 'in' AND lida = 0" . ($canal ? " AND canal = " . $db->quote($canal) : ''))
         ->execute($variantes);
 }
 

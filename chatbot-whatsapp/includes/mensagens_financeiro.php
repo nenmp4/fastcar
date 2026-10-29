@@ -34,6 +34,7 @@ require_once __DIR__ . '/mensagens.php'; // helpers genéricos de mídia/dedup/t
  * não fazem sentido aqui (sem oportunidade/venda, sem IA).
  */
 function processarMensagemFinanceiroZapi(array $payload, ?array $instancia = null): array {
+    whatsappCanalRegistro('financeiro');
     $instancia ??= zapiIdentificarInstancia((string)($payload['instanceId'] ?? ''));
 
     // ia_pausada sempre false — não existe IA nesta instância pra pausar,

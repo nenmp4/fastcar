@@ -130,6 +130,7 @@ function finInboxContato(string $telefone): array {
  * de um clique real de um humano nesta tela.
  */
 function enviarMensagemManualFinanceiro(string $telefone, string $texto, int $usuarioId): array {
+    whatsappCanalRegistro('financeiro');
     $telNorm = normalizarTelefone($telefone);
     $texto = trim($texto);
     if ($texto === '') {

@@ -242,11 +242,11 @@ if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admi
     }
     $stmtMsg = $db->prepare("
         SELECT m.telefone, COUNT(*) AS qtd, MAX(m.id) AS ultimo_id, MAX(m.created_at) AS created_at,
-               (SELECT m3.mensagem FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone AND m3.direcao = 'in' AND m3.id > ? ORDER BY m3.id DESC LIMIT 1) AS texto,
+               (SELECT m3.mensagem FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone AND m3.canal = m.canal AND m3.direcao = 'in' AND m3.id > ? ORDER BY m3.id DESC LIMIT 1) AS texto,
                (SELECT c.nome FROM clientes c WHERE c.telefone = m.telefone) AS nome_cliente,
                (SELECT v.comprador_nome FROM vendas v WHERE v.comprador_telefone = m.telefone ORDER BY v.id DESC LIMIT 1) AS nome_comprador
         FROM whatsapp_mensagens m
-        WHERE m.id > ? AND m.direcao = 'in' AND m.created_at >= datetime('now','localtime','-10 minutes') AND {$filtroConversa}
+        WHERE m.id > ? AND m.direcao = 'in' AND m.canal = '" . ($modulo === 'vendas' ? 'vendas' : 'compra') . "' AND m.created_at >= datetime('now','localtime','-10 minutes') AND {$filtroConversa}
         GROUP BY m.telefone ORDER BY ultimo_id ASC LIMIT 10
     ");
     $stmtMsg->execute(array_merge([$desdeMsgId, $desdeMsgId], $paramsConversa));

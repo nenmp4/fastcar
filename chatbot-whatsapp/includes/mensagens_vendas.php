@@ -33,6 +33,7 @@ require_once dirname(__DIR__, 2) . '/includes/vendas_formulario.php';
  * trocando 'oportunidade' por 'venda_lead'.
  */
 function processarMensagemVendasZapi(array $payload, ?array $instancia = null): array {
+    whatsappCanalRegistro('vendas');
     $instancia ??= zapiIdentificarInstancia((string)($payload['instanceId'] ?? ''));
     $credenciaisVendas = zapiCredenciaisVendas();
 

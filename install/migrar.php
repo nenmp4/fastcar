@@ -2325,4 +2325,30 @@ if (!colunaExiste($db, 'oportunidades', 'origem')) {
     echo "⏭️  oportunidades.origem: já existia\n";
 }
 
+// 29/10/2026, "verificar se inbox da compra/venda está misturando": cada
+// mensagem guarda o canal. Backfill: telefone que só existe como comprador
+// de venda → 'vendas'; telefone que é cliente de compra E comprador → cada
+// mensagem vai pro negócio (oportunidade ou venda) mais recente aberto antes
+// dela. O resto continua 'compra' (inclui financeiro antigo, sem como saber).
+if (!colunaExiste($db, 'whatsapp_mensagens', 'canal')) {
+    try {
+        $db->exec("ALTER TABLE whatsapp_mensagens ADD COLUMN canal TEXT NOT NULL DEFAULT 'compra'");
+        $n1 = $db->exec("UPDATE whatsapp_mensagens SET canal = 'vendas'
+            WHERE telefone IN (SELECT comprador_telefone FROM vendas WHERE COALESCE(comprador_telefone,'') != '')
+              AND telefone NOT IN (SELECT telefone FROM clientes)");
+        $n2 = $db->exec("UPDATE whatsapp_mensagens SET canal = 'vendas'
+            WHERE telefone IN (SELECT comprador_telefone FROM vendas WHERE COALESCE(comprador_telefone,'') != '')
+              AND telefone IN (SELECT telefone FROM clientes)
+              AND COALESCE((SELECT MAX(v.created_at) FROM vendas v WHERE v.comprador_telefone = whatsapp_mensagens.telefone AND v.created_at <= whatsapp_mensagens.created_at), '')
+                > COALESCE((SELECT MAX(o.created_at) FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                            WHERE c.telefone = whatsapp_mensagens.telefone AND o.created_at <= whatsapp_mensagens.created_at), '')");
+        echo "✅ whatsapp_mensagens.canal: adicionada ({$n1} só-venda + {$n2} de quem está nos dois funis marcadas como vendas)\n";
+    } catch (Throwable $e) {
+        echo "❌ whatsapp_mensagens.canal: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  whatsapp_mensagens.canal: já existia\n";
+}
+try { $db->exec("CREATE INDEX IF NOT EXISTS idx_wpp_canal_tel ON whatsapp_mensagens(canal, telefone, id)"); } catch (Throwable $e) {}
+
 echo "\n🎉 Migração concluída.\n";

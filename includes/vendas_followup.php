@@ -139,7 +139,7 @@ function vendasFollowupEnviarProximo(int $maxDia = VENDAS_FU_MAX_DIA): array {
     $hoje = (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d');
     setConfig('vendas_fu_form_' . $tel, date('Y-m-d H:i:s'));
     setConfig('vendas_fu_form_total_' . $hoje, (string)(vendasFollowupEnviadosHoje() + 1));
-    try { registrarMensagem($tel, 'out', $msg, null, true); } catch (Throwable $e) {}
+    try { whatsappCanalRegistro('vendas'); registrarMensagem($tel, 'out', $msg, null, true); } catch (Throwable $e) {}
     return ['status' => 'enviado', 'telefone' => $tel];
 }
 

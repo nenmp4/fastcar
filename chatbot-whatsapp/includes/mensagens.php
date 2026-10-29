@@ -469,6 +469,18 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
  * INSERT OR IGNORE porque zapi_message_id tem índice único (parcial) —
  * se a mesma mensagem chegar 2x (retry do Z-API), a 2ª vira no-op.
  */
+/**
+ * Canal da conversa (29/10/2026, "verificar se inbox da compra/venda está
+ * misturando"): compra, venda e financeiro gravam na MESMA tabela; cada
+ * mensagem passa a guardar de qual canal veio, e cada WhatsApp Box só mostra
+ * o seu. Quem processa venda/financeiro define o canal antes de gravar.
+ */
+function whatsappCanalRegistro(?string $novo = null): string {
+    static $canal = 'compra';
+    if ($novo !== null && in_array($novo, ['compra', 'vendas', 'financeiro'], true)) $canal = $novo;
+    return $canal;
+}
+
 function registrarMensagem(
     string $telefone,
     string $direcao,
@@ -489,8 +501,8 @@ function registrarMensagem(
     // INSERT OR IGNORE é idempotente, então tentar de novo é seguro.
     dbComRetry(fn() => $db->prepare("
         INSERT OR IGNORE INTO whatsapp_mensagens
-            (telefone, cliente_id, direcao, mensagem, tipo, enviado_por_ia, zapi_message_id, usuario_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            (telefone, cliente_id, direcao, mensagem, tipo, enviado_por_ia, zapi_message_id, usuario_id, canal, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
     ")->execute([
         $telNorm,
         $clienteId !== false ? (int)$clienteId : null,
@@ -500,6 +512,7 @@ function registrarMensagem(
         $enviadoPorIa ? 1 : 0,
         $zapiMessageId ?: '',
         $usuarioId,
+        whatsappCanalRegistro(),
     ]));
 
     // id da linha inserida — 0 se foi ignorado por dedup de zapi_message_id
@@ -610,6 +623,7 @@ function retomarIA(string $telefone): void {
  *   instancia: ['tipo' => 'principal'|'consultor'|'desconhecida', 'usuario_id' => ?int]
  */
 function processarMensagemZapi(array $payload, ?array $instancia = null): array {
+    whatsappCanalRegistro('compra');
     $instancia ??= zapiIdentificarInstancia((string)($payload['instanceId'] ?? ''));
     $usuarioId = $instancia['usuario_id'] ?? null;
 

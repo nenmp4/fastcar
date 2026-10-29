@@ -54,13 +54,13 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
                COALESCE(m.tipo, 'text') AS ultima_tipo,
                COALESCE(m.created_at, v.created_at) AS ultima_em,
                v.comprador_nome,
-               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = ultv.comprador_telefone AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
+               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = ultv.comprador_telefone AND m2.canal = 'vendas' AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM (SELECT comprador_telefone, MAX(id) AS max_id FROM vendas
               WHERE comprador_telefone IS NOT NULL AND comprador_telefone != ''
               GROUP BY comprador_telefone) ultv
         JOIN vendas v ON v.id = ultv.max_id
-        LEFT JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens GROUP BY telefone) ult
+        LEFT JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'vendas' GROUP BY telefone) ult
           ON ult.telefone = ultv.comprador_telefone
         LEFT JOIN whatsapp_mensagens m ON m.id = ult.max_id
         LEFT JOIN whatsapp_sessoes ws ON ws.telefone = ultv.comprador_telefone
@@ -95,6 +95,7 @@ function usuarioPodeVerConversaVendas(string $telefone, ?int $responsavelFiltro)
  * pela instância DEDICADA de vendas (zapiCredenciaisVendas()).
  */
 function enviarMensagemManualVendas(string $telefone, string $texto, int $usuarioId): array {
+    whatsappCanalRegistro('vendas');
     $telNorm = normalizarTelefone($telefone);
     $texto = trim($texto);
     if ($texto === '') {

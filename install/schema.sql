@@ -345,8 +345,12 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
     -- do cliente ainda não vista por ninguém da equipe; marcada 1 quando
     -- alguém abre a conversa, includes/whatsapp_inbox.php::marcarConversaLida()).
     lida INTEGER DEFAULT 0,
+    -- De qual canal veio: 'compra' (instância principal), 'vendas',
+    -- 'financeiro' — cada WhatsApp Box só mostra o seu (29/10/2026).
+    canal TEXT NOT NULL DEFAULT 'compra',
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
+CREATE INDEX IF NOT EXISTS idx_wpp_canal_tel ON whatsapp_mensagens(canal, telefone, id);
 CREATE INDEX IF NOT EXISTS idx_wpp_telefone ON whatsapp_mensagens(telefone, id DESC);
 CREATE INDEX IF NOT EXISTS idx_wpp_usuario ON whatsapp_mensagens(usuario_id, created_at);
 -- Índice parcial: contagem de "não lidas" (WhatsApp Box) só olha direcao='in'

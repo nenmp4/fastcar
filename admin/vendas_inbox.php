@@ -26,8 +26,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
         echo json_encode(['mensagens' => []]);
         exit;
     }
-    $novas = buscarMensagensNovasConversa($telefoneAtivo, $depoisDe);
-    if ($novas) marcarConversaLida($telefoneAtivo);
+    $novas = buscarMensagensNovasConversa($telefoneAtivo, $depoisDe, 'vendas');
+    if ($novas) marcarConversaLida($telefoneAtivo, 'vendas');
     echo json_encode(['mensagens' => $novas]);
     exit;
 }
@@ -39,7 +39,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
         echo json_encode(['mensagens' => []]);
         exit;
     }
-    echo json_encode(['mensagens' => buscarMensagensAntesId($telefoneAtivo, $antesDe)]);
+    echo json_encode(['mensagens' => buscarMensagensAntesId($telefoneAtivo, $antesDe, 50, 'vendas')]);
     exit;
 }
 
@@ -103,12 +103,12 @@ if ($telefoneAtivo && !usuarioPodeVerConversaVendas($telefoneAtivo, $responsavel
 }
 
 if ($telefoneAtivo) {
-    marcarConversaLida($telefoneAtivo);
+    marcarConversaLida($telefoneAtivo, 'vendas');
 }
 
 $busca = trim((string)($_GET['busca'] ?? ''));
 $conversas = listarConversasVendas($busca, $responsavelFiltro);
-$mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo) : [];
+$mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo, 50, 'vendas') : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
 $contatoAtivo = null;

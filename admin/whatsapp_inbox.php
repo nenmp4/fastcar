@@ -33,8 +33,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'novas') {
         echo json_encode(['mensagens' => []]);
         exit;
     }
-    $novas = buscarMensagensNovasConversa($telefoneAtivo, $depoisDe);
-    if ($novas) marcarConversaLida($telefoneAtivo);
+    $novas = buscarMensagensNovasConversa($telefoneAtivo, $depoisDe, 'compra');
+    if ($novas) marcarConversaLida($telefoneAtivo, 'compra');
     echo json_encode(['mensagens' => $novas]);
     exit;
 }
@@ -47,7 +47,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
         echo json_encode(['mensagens' => []]);
         exit;
     }
-    echo json_encode(['mensagens' => buscarMensagensAntesId($telefoneAtivo, $antesDe)]);
+    echo json_encode(['mensagens' => buscarMensagensAntesId($telefoneAtivo, $antesDe, 50, 'compra')]);
     exit;
 }
 
@@ -221,7 +221,7 @@ if ($telefoneAtivo && !usuarioPodeVerConversaWhatsapp($telefoneAtivo, $responsav
 
 if ($telefoneAtivo) {
     // telefone exato da lista (pode estar salvo fora do formato normalizado) + variantes.
-    marcarConversaLida($telefoneGet !== '' ? $telefoneGet : $telefoneAtivo);
+    marcarConversaLida($telefoneGet !== '' ? $telefoneGet : $telefoneAtivo, 'compra');
 }
 
 $busca = trim((string)($_GET['busca'] ?? ''));
@@ -230,7 +230,7 @@ $conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLida
 $temMaisConversas = count($conversas) > 100;
 $conversas = array_slice($conversas, 0, 100);
 $totalConversasNaoLidas = contarConversasNaoLidasWhatsapp($responsavelFiltro);
-$mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo) : [];
+$mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo, 50, 'compra') : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
 $contatoAtivo = null;
