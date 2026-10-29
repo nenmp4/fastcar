@@ -15,8 +15,9 @@
  *    admin/_bootstrap.php), não só na tela de login.
  *  - Supervisor ou super admin libera um usuário até o fim do dia
  *    (usuarios.acesso_liberado_ate) — fica na auditoria.
- *  - Fora do horário, aviso de lead qualificado não vai pro WhatsApp
- *    PESSOAL do consultor/vendedor (cai no aviso geral de Configurações).
+ *  - Aviso de lead no WhatsApp do consultor/vendedor continua indo a
+ *    qualquer hora: é aparelho da empresa, fica na Fastcar (29/10/2026,
+ *    "ele não leva embora" — revertido o corte desses avisos).
  * Liga/desliga em config.expediente_bloqueio_login (ligado por padrão).
  */
 

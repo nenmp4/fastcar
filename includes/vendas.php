@@ -1330,8 +1330,7 @@ function notificarVendedorLeadQualificado(int $vendaId, string $motivo = 'Qualif
              . ($v['resumo_ia'] ? "{$v['resumo_ia']}\n\n" : '')
              . $link;
 
-        // 29/10/2026: fora do expediente não manda pro celular pessoal do vendedor.
-        if (!empty($v['vendedor_whatsapp']) && expedienteAvisoPessoalPermitido((int)($v['responsavel_id'] ?? 0))) {
+        if (!empty($v['vendedor_whatsapp'])) {
             zapiEnviarTextoInterno($v['vendedor_whatsapp'], $msg);
             return;
         }

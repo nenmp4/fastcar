@@ -82,7 +82,7 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
     <h2>🌙 Acesso fora do expediente</h2>
     <p>Consultor, vendedor e avaliador só entram no sistema das <strong><?= e(filaHorarioAbertura()) ?></strong>
        às <strong><?= e(expedienteHorarioCorte()) ?></strong> (fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância), todos os dias.
-       Fora disso, quem estiver logado é desconectado e o aviso de lead não vai pro WhatsApp pessoal deles.
+       Fora disso, quem estiver logado é desconectado.
        Supervisor e super admin podem liberar alguém até o fim do dia.</p>
     <p>
         <?php if (!$ligado): ?><span class="badge badge-aviso">⏸️ Bloqueio desligado — todos entram a qualquer hora</span>

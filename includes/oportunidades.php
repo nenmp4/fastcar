@@ -776,9 +776,7 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
              . ($op['resumo_ia'] ? "{$op['resumo_ia']}\n\n" : '')
              . $link;
 
-        // 29/10/2026: fora do expediente o dado do lead não vai pro celular
-        // pessoal do consultor — cai no aviso geral abaixo.
-        if (!empty($op['consultor_whatsapp']) && expedienteAvisoPessoalPermitido((int)($op['responsavel_id'] ?? 0))) {
+        if (!empty($op['consultor_whatsapp'])) {
             zapiEnviarTextoInterno($op['consultor_whatsapp'], $msg);
             return;
         }
