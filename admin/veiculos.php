@@ -445,7 +445,7 @@ function mesesComAFastcar(?string $refPosse): int {
             <tr<?= $v['incompleto_import_antigo'] ? ' class="linha-sem-vinculo"' : '' ?>>
                 <td>
                     <a class="frota-veiculo" href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>"><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?></a>
-                    <br><span class="frota-placa"><?= e(strtoupper((string)$v['veiculo_placa']) ?: '— sem placa') ?></span>
+                    <br><?php if (trim((string)$v['veiculo_placa']) !== ''): ?><span class="placa-mercosul pm-sm" style="margin-top:4px"><span class="pm-faixa">BRASIL</span><span class="pm-num"><?= e(strtoupper((string)$v['veiculo_placa'])) ?></span></span><?php else: ?><small class="frota-sub">— sem placa</small><?php endif; ?>
                     <?php if ($v['veiculo_chassi']): ?><br><small class="frota-sub"><?= e($v['veiculo_chassi']) ?></small><?php endif; ?>
                     <?php if ($v['incompleto_import_antigo']): ?><br><span class="badge badge-aviso" title="Importado do CRM antigo, faltando documento obrigatório">⚠️ doc. incompleto</span><?php endif; ?>
                 </td>

@@ -46,7 +46,7 @@ function veiculoIdsMesmoCarro(int $oportunidadeId): array {
 function veiculoHistorico(int $oportunidadeId): array {
     $db = getDB();
     $ids = veiculoIdsMesmoCarro($oportunidadeId);
-    if (!$ids) return ['veiculo' => null, 'cadastros' => [], 'eventos' => []];
+    if (!$ids) return ['veiculo' => null, 'cadastros' => [], 'eventos' => [], 'pagamentos' => []];
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $nomeUsuario = function ($id) use ($db) {
         if (!$id) return '';
@@ -141,5 +141,30 @@ function veiculoHistorico(int $oportunidadeId): array {
     }
 
     usort($eventos, fn($a, $b) => strcmp((string)$b['data'], (string)$a['data']));
-    return ['veiculo' => $veiculo, 'cadastros' => $cadastros, 'eventos' => $eventos];
+
+    // Pagamentos ao vendedor original (29/10/2026, "coloca valores pagos pro
+    // vendedor do veículo"): valor da compra de cada cadastro fechado + o
+    // que está lançado no financeiro como despesa daquela compra.
+    $pagamentos = [];
+    foreach ($cadastros as $c) {
+        if ($c['etapa'] !== 'fechado') continue;
+        $pagamentos[] = ['oportunidade_id' => (int)$c['id'], 'vendedor' => $c['cliente_nome'] ?: $c['cliente_telefone'],
+            'valor_final' => $c['valor_final'] !== null ? (float)$c['valor_final'] : null, 'data_compra' => $c['data_compra'],
+            'pix' => (string)($c['pix_pagamento_cedente'] ?? ''), 'lancamentos' => []];
+    }
+    if ($pagamentos) {
+        try {
+            $st = $db->prepare("SELECT oportunidade_id, descricao, valor, status, data_pagamento, data_vencimento FROM fin_lancamentos
+                WHERE oportunidade_id IN ($ph) AND tipo = 'despesa' AND status != 'cancelado'
+                  AND (origem = 'fechamento_compra' OR categoria_id IN (SELECT id FROM fin_categorias WHERE nome LIKE 'Compra de veículo%'))
+                ORDER BY COALESCE(data_pagamento, data_vencimento)");
+            $st->execute($ids);
+            foreach ($st->fetchAll() as $l) {
+                foreach ($pagamentos as &$p) if ($p['oportunidade_id'] === (int)$l['oportunidade_id']) $p['lancamentos'][] = $l;
+                unset($p);
+            }
+        } catch (Throwable $e) {
+        }
+    }
+    return ['veiculo' => $veiculo, 'cadastros' => $cadastros, 'eventos' => $eventos, 'pagamentos' => $pagamentos];
 }

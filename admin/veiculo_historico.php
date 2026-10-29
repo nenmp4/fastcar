@@ -17,7 +17,7 @@ if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
 }
 
 $id = (int)($_GET['id'] ?? 0);
-$h = $id ? veiculoHistorico($id) : ['veiculo' => null, 'cadastros' => [], 'eventos' => []];
+$h = $id ? veiculoHistorico($id) : ['veiculo' => null, 'cadastros' => [], 'eventos' => [], 'pagamentos' => []];
 $v = $h['veiculo'];
 $voltar = (string)($_SERVER['HTTP_REFERER'] ?? '');
 if (!preg_match('#^https?://[^/]+/admin/#', $voltar)) $voltar = paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '');
@@ -33,6 +33,9 @@ $vhEstilo = function () { ?>
 .vh-linha .vh-data { font-size:12px; color:var(--texto-fraco); }
 .vh-linha a { color:inherit; text-decoration:none; display:block; }
 .vh-linha a:hover strong { color:var(--azul); }
+.vh-pag { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; background:var(--fundo); border-radius:var(--raio-sm); padding:10px 12px; margin-top:8px; }
+.vh-pag small, .vh-pag-vazio { display:block; color:var(--texto-fraco); font-size:12px; }
+.vh-lanc { margin:6px 0 10px; padding-left:18px; }
 </style>
 <?php };
 $vhMiolo = function () use ($v, $h, $cadastrosCompra) { ?>
@@ -42,7 +45,7 @@ $vhMiolo = function () use ($v, $h, $cadastrosCompra) { ?>
 <div class="card">
     <h2>⚙️ <?= e(trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'Veículo') ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?></h2>
     <div class="vh-ficha">
-        <div><small>Placa</small><strong><?= e($v['veiculo_placa'] ?? '—') ?: '—' ?></strong></div>
+        <div><small>Placa</small><?php if (trim((string)($v['veiculo_placa'] ?? '')) !== ''): ?><span class="placa-mercosul" style="margin-top:4px"><span class="pm-faixa">BRASIL</span><span class="pm-num"><?= e(strtoupper((string)$v['veiculo_placa'])) ?></span></span><?php else: ?><strong>—</strong><?php endif; ?></div>
         <div><small>Chassi</small><?= e($v['veiculo_chassi'] ?? '') ?: '—' ?></div>
         <div><small>Renavam</small><?= e($v['veiculo_renavam'] ?? '') ?: '—' ?></div>
         <div><small>FIPE ref.</small><?= !empty($v['valor_fipe_referencia']) ? 'R$ ' . number_format((float)$v['valor_fipe_referencia'], 2, ',', '.') : '—' ?></div>
@@ -56,6 +59,30 @@ $vhMiolo = function () use ($v, $h, $cadastrosCompra) { ?>
         </div>
     <?php endif; ?>
 </div>
+
+<?php if (!empty($h['pagamentos'])): ?>
+<div class="card">
+    <h3 style="margin-top:0">💸 Valores pagos ao vendedor</h3>
+    <?php foreach ($h['pagamentos'] as $pg): ?>
+        <div class="vh-pag">
+            <div><small>Vendedor</small><a href="/admin/oportunidade.php?id=<?= $pg['oportunidade_id'] ?>"><?= e(mb_convert_case(mb_strtolower((string)$pg['vendedor']), MB_CASE_TITLE)) ?></a></div>
+            <div><small>Valor da compra</small><strong><?= $pg['valor_final'] !== null ? 'R$ ' . number_format($pg['valor_final'], 2, ',', '.') : '—' ?></strong></div>
+            <div><small>Data</small><?= $pg['data_compra'] ? e(date('d/m/Y', strtotime($pg['data_compra']))) : '—' ?></div>
+            <div><small>PIX do vendedor</small><?= $pg['pix'] !== '' ? e($pg['pix']) : '—' ?></div>
+        </div>
+        <?php if ($pg['lancamentos']): ?>
+            <ul class="vh-lanc">
+            <?php foreach ($pg['lancamentos'] as $l): ?>
+                <li><?= $l['status'] === 'pago' ? '✅' : '⏳' ?> R$ <?= number_format((float)$l['valor'], 2, ',', '.') ?>
+                    <small>— <?= $l['status'] === 'pago' ? 'pago em ' . e(date('d/m/Y', strtotime((string)($l['data_pagamento'] ?: $l['data_vencimento'])))) : e($l['status']) . ($l['data_vencimento'] ? ' · vence ' . e(date('d/m/Y', strtotime($l['data_vencimento']))) : '') ?> · <?= e($l['descricao']) ?></small></li>
+            <?php endforeach; ?>
+            </ul>
+        <?php else: ?>
+            <p class="vh-pag-vazio" style="margin:4px 0 10px">Nenhum pagamento lançado no financeiro pra essa compra.</p>
+        <?php endif; ?>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <div class="card">
     <h3 style="margin-top:0">🕘 Linha do tempo</h3>
