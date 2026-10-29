@@ -173,10 +173,16 @@ function _pdfLinhaResumo(FPDF $pdf, string $label, string $valor): void {
     $labelPdf = _pdfTexto($label);
     $valorPdf = _pdfTexto($valor !== '' ? $valor : '—');
 
+    // 29/10/2026 — bug real (contrato de locação, "Canal oficial FASTCAR"):
+    // MultiCell() quebra em (largura - 2×cMargin) = largura - 2mm, mas a conta
+    // usava a largura cheia — texto entre 81 e 83mm quebrava em 2 linhas com a
+    // altura calculada pra 1, invadindo a linha de baixo. Conta com a mesma
+    // largura real que o MultiCell usa.
+    $larguraTexto = $larguraUtil - 2.1;
     $pdf->SetFont('Helvetica', 'B', 8.5);
-    $linhasLabel = _pdfContarLinhas($pdf, $labelPdf, $larguraUtil);
+    $linhasLabel = _pdfContarLinhas($pdf, $labelPdf, $larguraTexto);
     $pdf->SetFont('Helvetica', '', 8.5);
-    $linhasValor = _pdfContarLinhas($pdf, $valorPdf, $larguraUtil);
+    $linhasValor = _pdfContarLinhas($pdf, $valorPdf, $larguraTexto);
     $altura = max(6, max($linhasLabel, $linhasValor) * $alturaLinha + 1.5);
 
     // Garante que a linha INTEIRA (os 2 retângulos + rótulo + valor) nunca
