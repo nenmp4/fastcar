@@ -312,15 +312,16 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
 <div class="estoque-grid">
     <?php foreach ($veiculos as $v): $id = (int)$v['oportunidade_id']; $score = buscarScoreVistoriaRecente($id); ?>
     <div class="estoque-card">
-        <div class="estoque-foto">
+        <<?= $souSuperEstoque ? 'a' : 'div' ?> class="estoque-foto"<?= $souSuperEstoque ? ' href="/admin/veiculo_historico.php?id=' . $id . '" title="Ver histórico do veículo"' : '' ?>>
             <?php if (isset($fotoCapa[$id])): ?>
                 <img src="<?= e($fotoCapa[$id]) ?>" alt="" loading="lazy">
             <?php else: ?>
                 <?= $iconeTipo[$v['tipo_veiculo'] ?? ''] ?? '🚗' ?>
             <?php endif; ?>
-        </div>
+        </<?= $souSuperEstoque ? 'a' : 'div' ?>>
         <div class="estoque-info">
-            <h3><?= e(trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? ''))) ?: '(sem modelo)' ?></h3>
+            <?php $tituloCarro = e(trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? ''))) ?: '(sem modelo)'; ?>
+            <h3><?php if ($souSuperEstoque): ?><a class="estoque-link-hist" href="/admin/veiculo_historico.php?id=<?= $id ?>" title="Ver histórico do veículo"><?= $tituloCarro ?> <span style="font-size:14px">⚙️</span></a><?php else: ?><?= $tituloCarro ?><?php endif; ?></h3>
             <small><?= e((string)($v['veiculo_ano'] ?? '')) ?><?= !empty($v['veiculo_placa']) ? ' · ' . e($v['veiculo_placa']) : '' ?></small>
             <?php if ($v['valor_fipe_referencia']): ?>
                 <span>FIPE ref.: <strong>R$ <?= number_format((float)$v['valor_fipe_referencia'], 2, ',', '.') ?></strong></span>
@@ -355,7 +356,7 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             </details>
             <?php endif; ?>
             <a class="btn" style="margin-top:8px" href="/admin/veiculo_midias.php?id=<?= $id ?>">📸 Fotos e vídeos</a>
-            <a class="btn" style="margin-top:8px" href="/admin/veiculo_historico.php?id=<?= $id ?>">⚙️ Histórico do veículo</a>
+            <?php if ($souSuperEstoque): ?><a class="btn" style="margin-top:8px" href="/admin/veiculo_historico.php?id=<?= $id ?>">⚙️ Histórico do veículo</a><?php endif; ?>
         </div>
     </div>
     <?php endforeach; ?>
@@ -400,6 +401,10 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
     </div>
 </dialog>
 <style>
+a.estoque-foto { display:flex; text-decoration:none; color:inherit; cursor:pointer; }
+a.estoque-foto:hover img { opacity:.9; }
+.estoque-link-hist { color:inherit; text-decoration:none; }
+.estoque-link-hist:hover { color:var(--azul); text-decoration:underline; }
 .btn-sucesso-venda { width:100%; margin:0; background:#16a34a; color:#fff; border:none; border-radius:var(--raio); min-height:44px; font-weight:700; cursor:pointer; }
 .tipo-venda-opcoes { display:grid; gap:12px; }
 .tipo-venda-opcao { display:flex; flex-direction:column; gap:4px; padding:14px 16px; border:2px solid var(--borda); border-radius:var(--raio); background:#fff; color:inherit; text-decoration:none; cursor:pointer; box-shadow:none; }

@@ -5,13 +5,13 @@
  * todo histórico do veículo, simples"). Ficha única do carro físico + linha
  * do tempo de tudo que aconteceu com ele (compra, vistorias, FIPE,
  * venda/locação, contratos, devolução), cruzando por placa/chassi. Avisa
- * quando o mesmo carro tem mais de um cadastro. Só leitura.
+ * quando o mesmo carro tem mais de um cadastro. Só leitura. Só super admin.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/veiculo_historico.php';
 
-if (!in_array($_SESSION['admin_perfil'] ?? '', ['super_admin', 'supervisor', 'consultor', 'vendedor', 'avaliador'], true)) {
+if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
     http_response_code(403);
     exit('Sem acesso.');
 }

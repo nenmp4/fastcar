@@ -815,7 +815,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 
 <?php if (!in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
 <div class="card" data-aba="🚗 Veículo">
-    <?php if ($v['oportunidade_id']): ?>
+    <?php if ($v['oportunidade_id'] && ($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
         <p style="margin:0 0 10px"><a class="btn" href="/admin/veiculo_historico.php?id=<?= (int)$v['oportunidade_id'] ?>">⚙️ Histórico do veículo</a>
            <small>— compra, vistorias, vendas anteriores e contratos deste carro</small></p>
     <?php endif; ?>
