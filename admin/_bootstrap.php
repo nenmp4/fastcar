@@ -46,8 +46,26 @@ require_once __DIR__ . '/../includes/meta_ads.php';
 require_once __DIR__ . '/../includes/notificacoes.php';
 require_once __DIR__ . '/../includes/whatsapp_conformidade.php';
 require_once __DIR__ . '/../includes/ia_qualificacao.php';
+require_once __DIR__ . '/../includes/expediente_acesso.php';
 
 requireAdmin();
+
+// 29/10/2026 — fora do expediente, consultor/vendedor/avaliador é
+// derrubado (inclusive quem já estava logado no celular). Impersonação do
+// super admin nunca é derrubada. Ver includes/expediente_acesso.php.
+if (!estaImpersonando() && !expedienteAcessoPermitido((int)$_SESSION['admin_id'], (string)($_SESSION['admin_perfil'] ?? ''))) {
+    auditoriaRegistrar('logout_fora_expediente', (int)$_SESSION['admin_id'], (string)($_SESSION['admin_nome'] ?? ''), 'usuario', (int)$_SESSION['admin_id'], 'Sessão encerrada: fora do horário de expediente.');
+    $_SESSION = [];
+    session_destroy();
+    if (isset($_GET['ajax']) || str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json')) {
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode(['erro' => 'fora_expediente']);
+        exit;
+    }
+    header('Location: /admin/login.php?fora_expediente=1');
+    exit;
+}
 
 // 17/09/2026 — perfil `vendedor` (módulo de vendas) nunca acessa o funil
 // de COMPRA (dados de outro negócio/cliente) — checagem central aqui, que

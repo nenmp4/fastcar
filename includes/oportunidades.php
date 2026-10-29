@@ -8,6 +8,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/fila_leads.php';
+require_once __DIR__ . '/expediente_acesso.php';
 require_once __DIR__ . '/whatsapp_config.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
@@ -775,7 +776,9 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
              . ($op['resumo_ia'] ? "{$op['resumo_ia']}\n\n" : '')
              . $link;
 
-        if (!empty($op['consultor_whatsapp'])) {
+        // 29/10/2026: fora do expediente o dado do lead não vai pro celular
+        // pessoal do consultor — cai no aviso geral abaixo.
+        if (!empty($op['consultor_whatsapp']) && expedienteAvisoPessoalPermitido((int)($op['responsavel_id'] ?? 0))) {
             zapiEnviarTextoInterno($op['consultor_whatsapp'], $msg);
             return;
         }

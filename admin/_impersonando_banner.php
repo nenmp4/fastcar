@@ -25,3 +25,16 @@ if (estaImpersonando()):
     </form>
 </div>
 <?php endif; ?>
+<?php
+// 29/10/2026 — aviso 10 min antes do acesso cair no fim do expediente
+// (consultor/vendedor/avaliador sem liberação). Ver includes/expediente_acesso.php.
+if (!estaImpersonando() && function_exists('expedienteMinutosParaCorte')
+    && in_array($_SESSION['admin_perfil'] ?? '', EXPEDIENTE_PERFIS_BLOQUEADOS, true)
+    && expedienteBloqueioLigado() && !expedienteLiberado((int)($_SESSION['admin_id'] ?? 0))):
+    $minCorte = expedienteMinutosParaCorte();
+    if ($minCorte !== null && $minCorte <= 10):
+?>
+<div style="background:var(--laranja,#c2410c);color:#fff;padding:8px 16px;text-align:center;font-size:14px">
+    🌙 Fim do expediente: seu acesso cai às <strong><?= e(expedienteHorarioCorte()) ?></strong> (em <?= (int)$minCorte ?> min). Salve o que estiver fazendo.
+</div>
+<?php endif; endif; ?>

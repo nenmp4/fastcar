@@ -530,6 +530,8 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- (aplicarHorarioExpedienteFila()) também nunca liga de volta quem
     -- está marcado faltou_em = hoje no horário de abertura.
     faltou_em DATE DEFAULT NULL,
+    -- Liberação do supervisor pra usar o sistema fora do expediente (29/10/2026).
+    acesso_liberado_ate DATETIME DEFAULT NULL,
 
     -- 02/10/2026, "teria que adicionar o CPF do usuário, preencheria CPF
     -- no perfil do usuário" — testemunha 1/2 do contrato passaram a ser

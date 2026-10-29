@@ -194,6 +194,7 @@ $migracoes = [
     // fatou" — marca o consultor ausente HOJE (data, some sozinho no dia
     // seguinte por comparação, sem precisar desmarcar manualmente).
     'usuarios.faltou_em' => "ALTER TABLE usuarios ADD COLUMN faltou_em DATE DEFAULT NULL",
+    'usuarios.acesso_liberado_ate' => "ALTER TABLE usuarios ADD COLUMN acesso_liberado_ate DATETIME DEFAULT NULL",
 
     // 22/09/2026, "campo de preencher - debitos do veilucos como ipva
     // linciamento e multoas" — 3 campos numéricos separados no card

@@ -38,6 +38,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/expediente_acesso.php';
 require_once __DIR__ . '/fila_vendas.php';
 require_once __DIR__ . '/whatsapp_config.php';
 require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()/lerConteudoArquivoDocumento() — catálogo de mídia de revenda
@@ -1329,7 +1330,8 @@ function notificarVendedorLeadQualificado(int $vendaId, string $motivo = 'Qualif
              . ($v['resumo_ia'] ? "{$v['resumo_ia']}\n\n" : '')
              . $link;
 
-        if (!empty($v['vendedor_whatsapp'])) {
+        // 29/10/2026: fora do expediente não manda pro celular pessoal do vendedor.
+        if (!empty($v['vendedor_whatsapp']) && expedienteAvisoPessoalPermitido((int)($v['responsavel_id'] ?? 0))) {
             zapiEnviarTextoInterno($v['vendedor_whatsapp'], $msg);
             return;
         }

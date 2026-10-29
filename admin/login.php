@@ -30,6 +30,7 @@ require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';
 require_once __DIR__ . '/../includes/login_2fa.php';
 require_once __DIR__ . '/../includes/auditoria.php';
+require_once __DIR__ . '/../includes/expediente_acesso.php';
 
 startSecureSession();
 
@@ -43,6 +44,11 @@ if (!empty($_SESSION['admin_id'])) {
 
 /** Sempre a única saída de sucesso do fluxo — regenera a sessão, abre de verdade, audita e (opcional) renova/grava o cookie de dispositivo confiável. */
 function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?array $cookieDispositivo, string $via): void {
+    if (!expedienteAcessoPermitido($usuarioId, $perfil)) { // 2FA começado antes do corte
+        unset($_SESSION['2fa_pendente']);
+        header('Location: /admin/login.php?fora_expediente=1');
+        exit;
+    }
     session_regenerate_id(true);
     $_SESSION['admin_id']     = $usuarioId;
     $_SESSION['admin_nome']   = $nome;
@@ -63,6 +69,7 @@ function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?arra
 
 $erro = '';
 $aviso = '';
+if (!empty($_GET['fora_expediente'])) $erro = expedienteMensagemBloqueio();
 $acao = (string)($_POST['acao'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -91,6 +98,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
             $u = $resultado['user'];
             auditoriaRegistrar('login_falha', (int)$u['id'], $u['nome'], 'usuario', (int)$u['id'], 'Senha incorreta.');
         }
+    } elseif (!expedienteAcessoPermitido((int)$resultado['user']['id'], (string)$resultado['user']['perfil'])) {
+        $u = $resultado['user'];
+        $erro = expedienteMensagemBloqueio();
+        auditoriaRegistrar('login_fora_expediente', (int)$u['id'], $u['nome'], 'usuario', (int)$u['id'], 'Login recusado: fora do horário de expediente.');
     } else {
         $usuario = $resultado['user'];
 
