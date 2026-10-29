@@ -366,6 +366,15 @@ function mesesComAFastcar(?string $refPosse): int {
 <link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
 <script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 <?php include __DIR__ . '/_pwa_head.php'; ?>
+<style>
+.tabela-frota td { vertical-align: top; }
+.tabela-frota .frota-veiculo { font-weight: 600; color: var(--texto, inherit); text-decoration: none; }
+.tabela-frota .frota-veiculo:hover { color: var(--azul); text-decoration: underline; }
+.tabela-frota .frota-placa { font-family: monospace; font-size: 13px; letter-spacing: .5px; background: var(--fundo); padding: 1px 6px; border-radius: 4px; }
+.tabela-frota .frota-sub { color: var(--texto-fraco); font-size: 12px; overflow-wrap: anywhere; }
+.tabela-frota .frota-nowrap { white-space: nowrap; }
+.tabela-frota .badge { white-space: nowrap; }
+</style>
 </head>
 <body>
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
@@ -571,17 +580,17 @@ function lerCrlvManual() {
 </div>
 
 <div class="card">
-    <table class="tabela-oportunidades">
+    <div class="tabela-scroll">
+    <table class="tabela-oportunidades tabela-frota">
         <thead>
             <tr>
-                <th>Veículo</th><th>Placa / Chassi</th><th>Comprado de</th><th>Cidade/UF</th>
-                <th>Valor pago</th><th>Data da compra</th><th>Meses com a Fastcar</th>
-                <th>Contrato compra</th><th>Financiamento</th><th>Condição</th><th>Fotos/vídeos</th><th>Venda</th><th></th><th></th>
+                <th>Veículo</th><th>Comprado de</th><th>Compra</th>
+                <th>Contrato / Financiamento</th><th>Condição</th><th>Venda</th><th>Ações</th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="14"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="7"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <?php
@@ -595,26 +604,30 @@ function lerCrlvManual() {
             }
             ?>
             <tr<?= $v['incompleto_import_antigo'] ? ' class="linha-sem-vinculo"' : '' ?>>
-                <td><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?>
+                <td>
+                    <a class="frota-veiculo" href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>"><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?></a>
+                    <br><span class="frota-placa"><?= e(strtoupper((string)$v['veiculo_placa']) ?: '— sem placa') ?></span>
+                    <?php if ($v['veiculo_chassi']): ?><br><small class="frota-sub"><?= e($v['veiculo_chassi']) ?></small><?php endif; ?>
                     <?php if ($v['incompleto_import_antigo']): ?><br><span class="badge badge-aviso" title="Importado do CRM antigo, faltando documento obrigatório">⚠️ doc. incompleto</span><?php endif; ?>
                 </td>
-                <td><?= e($v['veiculo_placa'] ?: '—') ?><?php if ($v['veiculo_chassi']): ?><br><small><?= e($v['veiculo_chassi']) ?></small><?php endif; ?></td>
-                <td><a href="/admin/cliente_detalhe.php?id=<?= (int)$v['cliente_id'] ?>"><?= e($v['cliente_nome']) ?></a><br><small><?= e($v['cliente_telefone']) ?></small></td>
-                <td><?php $cidV = trim((string)($v['cliente_cidade'] ?? '')); $ufV = strtoupper(trim((string)($v['cliente_estado'] ?? ''))); ?><?= ($cidV !== '' || $ufV !== '') ? e($cidV . ($cidV !== '' && $ufV !== '' ? '/' : '') . $ufV) : '<small>—</small>' ?></td>
-                <td><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></td>
-                <td><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?></td>
                 <td>
-                    <?= $mesesFastcar ?> mês(es)
+                    <a href="/admin/cliente_detalhe.php?id=<?= (int)$v['cliente_id'] ?>"><?= e(mb_convert_case(mb_strtolower((string)$v['cliente_nome']), MB_CASE_TITLE)) ?></a>
+                    <br><small class="frota-sub"><?= e($v['cliente_telefone']) ?></small>
+                    <?php $cidV = trim((string)($v['cliente_cidade'] ?? '')); $ufV = strtoupper(trim((string)($v['cliente_estado'] ?? ''))); ?>
+                    <?php if ($cidV !== '' || $ufV !== ''): ?><br><small class="frota-sub">📍 <?= e($cidV . ($cidV !== '' && $ufV !== '' ? '/' : '') . $ufV) ?></small><?php endif; ?>
+                </td>
+                <td class="frota-nowrap">
+                    <strong><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></strong>
+                    <br><small class="frota-sub"><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?> · <?= $mesesFastcar ?> mês(es)</small>
                     <?php if ($faixaAlerta): ?><br><span class="badge badge-aviso">⏰ <?= $faixaAlerta ?> meses</span><?php endif; ?>
                 </td>
                 <td>
                     <?php if ($v['contrato_assinado'] ?? false): ?>
-                        <span class="badge badge-ok">✅ assinado</span>
+                        <span class="badge badge-ok">✅ contrato assinado</span>
                     <?php else: ?>
-                        <span class="badge badge-aviso">pendente</span>
+                        <span class="badge badge-aviso">contrato pendente</span>
                     <?php endif; ?>
-                </td>
-                <td>
+                    <br>
                     <?php if ($v['financiamento_quitado']): ?>
                         <span class="badge badge-ok">✅ quitado</span>
                         <?php if ($v['financiamento_quitado_em']): ?><br><small><?= date('d/m/Y', strtotime($v['financiamento_quitado_em'])) ?></small><?php endif; ?><br>
@@ -625,12 +638,12 @@ function lerCrlvManual() {
                             <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11px" class="secundario">↩️ Desfazer</button>
                         </form>
                     <?php else: ?>
-                        <span class="badge">⏳ em aberto</span><br>
+                        <span class="badge">⏳ financiamento em aberto</span><br>
                         <form method="post" class="inline">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="marcar_quitado">
                             <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
-                            <button type="submit" style="margin-top:2px;padding:3px 8px;font-size:11px">✅ Marcar quitado</button>
+                            <button type="submit" class="btn-texto" style="font-size:12px;margin-top:4px">✅ Marcar quitado</button>
                         </form>
                     <?php endif; ?>
                 </td>
@@ -650,15 +663,15 @@ function lerCrlvManual() {
                     <?php else: ?>
                         <small>— sem vistoria concluída</small>
                     <?php endif; ?>
+                    <br><a class="frota-sub frota-nowrap" href="/admin/veiculo_midias.php?id=<?= (int)$v['id'] ?>">📸 <?= (int)$v['total_midias'] ?> mídia(s)</a>
                 </td>
-                <td><a href="/admin/veiculo_midias.php?id=<?= (int)$v['id'] ?>">📸 <?= (int)$v['total_midias'] ?></a></td>
                 <td>
                     <?php if ($v['venda_id'] === null): ?>
                         <form method="post" class="inline">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="iniciar_venda">
                             <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
-                            <button type="submit" style="margin-top:0;padding:5px 10px;font-size:12px">💰 Vender</button>
+                            <button type="submit" style="margin-top:0;padding:5px 10px;font-size:12px;white-space:nowrap">💰 Vender</button>
                         </form>
                     <?php elseif ($v['venda_etapa'] === 'vendido'): ?>
                         <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge badge-ok"><?= ($v['venda_tipo_contrato'] ?? 'venda') === 'locacao' ? '🔑 locado' : '✅ vendido' ?></span></a>
@@ -673,9 +686,10 @@ function lerCrlvManual() {
                         <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'], $v['venda_tipo_contrato'] ?? 'venda')) ?></span></a>
                     <?php endif; ?>
                 </td>
-                <td><a href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
-                <td>
-                    <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Excluir este veículo da frota? Ação sem volta — nunca funciona se já tiver venda/contrato assinado/dinheiro pago vinculado.');">
+                <td class="frota-nowrap">
+                    <a href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>">Abrir →</a>
+                    <a href="/admin/veiculo_historico.php?id=<?= (int)$v['id'] ?>" title="Histórico do veículo" style="margin-left:6px">⚙️</a>
+                    <form method="post" class="inline" style="margin-left:6px" onsubmit="return confirmarAcao(this, 'Excluir este veículo da frota? Ação sem volta — nunca funciona se já tiver venda/contrato assinado/dinheiro pago vinculado.');">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="excluir_veiculo">
                         <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
@@ -686,6 +700,7 @@ function lerCrlvManual() {
         <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
     <?php renderPaginacao($totalVeiculos); ?>
 </div>
 </main>
