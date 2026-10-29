@@ -385,7 +385,7 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
  * certo. Tamanho travado no mesmo `WHATSAPP_MIDIA_MAX_BYTES` (20MB) já
  * usado pro download de mídia recebida, por consistência.
  */
-function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string $mime, int $usuarioId): array {
+function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string $mime, int $usuarioId, ?callable $responderAntesDaCopia = null): array {
     $tInicio = microtime(true);
     $telNorm = normalizarTelefone($telefone);
     if ($audioBase64 === '') {
@@ -411,6 +411,14 @@ function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string
     }
 
     $id = registrarMensagem($telNorm, 'out', '🎤 Áudio', null, false, 'audio', $usuarioId);
+    pausarIA($telNorm);
+    // 29/10/2026, "gravo e depois demora 20 segundos" — o áudio JÁ chegou no
+    // cliente aqui; a cópia pro Drive (pra tocar de novo no CRM) é só
+    // arquivo nosso. Quem chama pode responder pro navegador agora e deixar
+    // o upload terminar depois, sem o consultor ficar esperando.
+    if ($responderAntesDaCopia) {
+        try { $responderAntesDaCopia(['ok' => true, 'id' => $id]); } catch (Throwable $e) {}
+    }
     $tempoDrive = null;
     if ($id > 0) {
         $db = getDB();
@@ -423,7 +431,6 @@ function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string
             $tempoDrive = microtime(true) - $tAntesDrive;
         }
     }
-    pausarIA($telNorm);
     _logTimingAudioWhatsapp($telefone, strlen($bytes), $tempoEnvio, $tempoDrive, microtime(true) - $tInicio, true);
     return ['ok' => true, 'id' => $id];
 }

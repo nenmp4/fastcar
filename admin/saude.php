@@ -224,6 +224,21 @@ if (!$zapsignToken) {
         check('ZapSign', 'Conectividade', 'error', 'Erro de conexão', $e->getMessage());
     }
 }
+// Tempo dos últimos envios de áudio pelo WhatsApp Box (29/10/2026, "gravo e
+// depois demora 20 segundos") — envio_provedor = Evolution/Z-API convertendo
+// e mandando; drive = cópia pro CRM (hoje já roda depois de responder o navegador).
+$logAudioTiming = __DIR__ . '/../storage/logs/whatsapp_audio_timing.log';
+if (is_file($logAudioTiming)) {
+    $linhasAudio = array_slice(@file($logAudioTiming, FILE_IGNORE_NEW_LINES) ?: [], -5);
+    if ($linhasAudio) {
+        $ultAudio = end($linhasAudio);
+        preg_match('/envio_provedor=([\d.]+)s/', $ultAudio, $mEnv);
+        $segEnv = isset($mEnv[1]) ? (float)$mEnv[1] : 0;
+        check('WhatsApp', 'Envio de áudio (último)', $segEnv > 10 ? 'warn' : 'ok',
+            'provedor ' . number_format($segEnv, 1, ',', '') . 's',
+            implode(' | ', array_map(fn($l) => preg_replace('/telefone=\d+ /', '', $l), $linhasAudio)));
+    }
+}
 // Tentativas de envio de contrato que falharam nas últimas 24h
 // (storage/logs/zapsign_envio.log, gravado por zapsignCriarDocumentoEAssinatura()).
 $logZapsignEnvio = __DIR__ . '/../storage/logs/zapsign_envio.log';

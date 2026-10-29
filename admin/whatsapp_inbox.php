@@ -126,11 +126,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // sempre via AJAX (fetch do input de arquivo), nunca form
             // tradicional (base64 de um áudio de verdade é grande demais
             // pra ida e volta de página inteira).
+            // 29/10/2026 — responde pro navegador assim que o áudio sai pro
+            // WhatsApp; a cópia pro Drive continua depois da resposta
+            // (fastcgi_finish_request), o consultor não espera por ela.
+            liberarSessao();
+            $jaRespondeu = false;
             $resultado = enviarAudioManualWhatsapp(
-                $telPost, (string)($_POST['audio_base64'] ?? ''), (string)($_POST['mime'] ?? ''), (int)$_SESSION['admin_id']
+                $telPost, (string)($_POST['audio_base64'] ?? ''), (string)($_POST['mime'] ?? ''), (int)$_SESSION['admin_id'],
+                function (array $parcial) use (&$jaRespondeu) {
+                    if (!function_exists('fastcgi_finish_request')) return;
+                    header('Content-Type: application/json');
+                    echo json_encode($parcial);
+                    fastcgi_finish_request();
+                    $jaRespondeu = true;
+                }
             );
-            header('Content-Type: application/json');
-            echo json_encode($resultado);
+            if (!$jaRespondeu) {
+                header('Content-Type: application/json');
+                echo json_encode($resultado);
+            }
             exit;
         } elseif ($acao === 'enviar_anexo' && $telPost) {
             // 18/09/2026, "adicionei opção de enviar anexo para clientes no
@@ -969,9 +983,17 @@ if ($telefoneAtivo && !$contatoAtivo) {
         }
 
         function enviarAudioGravado(blob, mime) {
-            btnAudio.disabled = true;
-            statusAudio.style.display = 'block';
-            statusAudio.textContent = '🎤 Enviando áudio...';
+            // 29/10/2026, "gravo e depois demora 20 segundos" — a bolha com o
+            // áudio aparece NA HORA (tocando do próprio navegador) com
+            // "⏳ enviando…"; vira "✓ enviado" quando o servidor confirma.
+            // O consultor já pode gravar/escrever a próxima sem esperar.
+            var bolha = document.createElement('div');
+            bolha.className = 'msg msg-out';
+            bolha.innerHTML = '🎤 Áudio<audio controls preload="metadata" style="max-width:260px;display:block;margin-top:6px"></audio><small>⏳ enviando…</small>';
+            bolha.querySelector('audio').src = URL.createObjectURL(blob);
+            if (thread) { thread.appendChild(bolha); thread.scrollTop = thread.scrollHeight; }
+            var rodapeBolha = bolha.querySelector('small');
+            voltarAoEstadoInicial();
             var leitor = new FileReader();
             leitor.onload = function () {
                 var base64 = String(leitor.result).split(',')[1] || '';
@@ -985,20 +1007,27 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 fetch('', { method: 'POST', body: body })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
-                        // Nunca mexe em ultimoId aqui de propósito — o próximo
-                        // poll de 2s (setInterval já rodando) descobre a
-                        // mensagem nova sozinho e desenha a bolha certa,
-                        // com a URL de reprodução já pronta.
-                        if (!data.ok) alert(data.erro || 'Falha ao enviar áudio.');
+                        if (!data.ok) {
+                            rodapeBolha.textContent = '❌ não enviado';
+                            alert(data.erro || 'Falha ao enviar áudio.');
+                            return;
+                        }
+                        // O polling pode ter desenhado a mesma mensagem (ainda
+                        // sem o arquivo) no meio do caminho — fica só a nossa.
+                        if (data.id && thread) {
+                            thread.querySelectorAll('[data-id="' + data.id + '"]').forEach(function (el) { if (el !== bolha) el.remove(); });
+                            bolha.dataset.id = data.id;
+                        }
+                        rodapeBolha.textContent = '✓ enviado';
                     })
                     .catch(function () {
+                        rodapeBolha.textContent = '❌ não enviado';
                         alert('Falha ao enviar áudio — confira sua conexão.');
-                    })
-                    .finally(voltarAoEstadoInicial);
+                    });
             };
             leitor.onerror = function () {
+                rodapeBolha.textContent = '❌ não enviado';
                 alert('Não consegui processar o áudio gravado.');
-                voltarAoEstadoInicial();
             };
             leitor.readAsDataURL(blob);
         }
