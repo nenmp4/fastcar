@@ -43,8 +43,24 @@ $zapcarPrecoAtivo = zapcarAtivo() ? zapcarPrecoServico(zapcarServicoAtivo()) : n
 const CONDICAO_PAGAMENTO_5050 = '50% na assinatura e 50% após a regularização dos documentos pendentes';
 const COMPRA_ACOES_TRAVADAS = ['atualizar_veiculo', 'atualizar_contrato', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'mudar_etapa', 'marcar_perdida', 'atualizar_nome_cliente', 'excluir_documento_staff',
-    'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2', 'ler_consulta_debitos'];
+    'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2', 'ler_consulta_debitos', 'salvar_valor_pago'];
 $compraTravada = $op['etapa'] === 'fechado' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+/**
+ * Compra já fechada: grava o valor pago ao vendedor (valor_final + valor_ofertado)
+ * e lança/atualiza a despesa no financeiro e a comissão (29/10/2026).
+ */
+function salvarValorPagoCompraFechada(int $opId, float $valor): void {
+    $db = getDB();
+    $db->prepare("UPDATE oportunidades SET valor_final = ?, valor_ofertado = ?, data_compra = COALESCE(data_compra, date(updated_at)), updated_at = datetime('now','localtime') WHERE id = ?")
+       ->execute([$valor, $valor, $opId]);
+    $st = $db->prepare("SELECT data_compra, fechado_por, responsavel_id FROM oportunidades WHERE id = ?");
+    $st->execute([$opId]);
+    $o = $st->fetch();
+    $db->prepare("UPDATE fin_lancamentos SET valor = ? WHERE oportunidade_id = ? AND origem = 'fechamento_compra' AND status != 'cancelado'")
+       ->execute([$valor, $opId]);
+    finRegistrarDespesaCompraFechada($opId, $valor, (int)$_SESSION['admin_id'], $o['data_compra'] ?: null);
+    finRegistrarComissaoCompraFechada($opId, $valor, (int)($o['fechado_por'] ?: $o['responsavel_id'] ?: 0) ?: null, $o['data_compra'] ?: null);
+}
 function documentoCompraJaEnviado(int $opId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = ?
                             AND (COALESCE(arquivo_url,'') != '' OR COALESCE(drive_file_id,'') != '')");
@@ -180,16 +196,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // lança/atualiza a despesa no financeiro (e a comissão, se der).
                 $valorPagoNovo = valorMonetario($_POST['valor_ofertado'] ?? null);
                 if ($op['etapa'] === 'fechado' && $valorPagoNovo && $valorPagoNovo > 0) {
-                    $db->prepare("UPDATE oportunidades SET valor_final = ?, data_compra = COALESCE(data_compra, date(updated_at)) WHERE id = ?")
-                       ->execute([$valorPagoNovo, $id]);
-                    $stOp = $db->prepare("SELECT data_compra, fechado_por, responsavel_id FROM oportunidades WHERE id = ?");
-                    $stOp->execute([$id]);
-                    $opF = $stOp->fetch();
-                    $db->prepare("UPDATE fin_lancamentos SET valor = ? WHERE oportunidade_id = ? AND origem = 'fechamento_compra' AND status != 'cancelado'")
-                       ->execute([$valorPagoNovo, $id]);
-                    finRegistrarDespesaCompraFechada($id, $valorPagoNovo, (int)$_SESSION['admin_id'], $opF['data_compra'] ?: null);
-                    finRegistrarComissaoCompraFechada($id, $valorPagoNovo, (int)($opF['fechado_por'] ?: $opF['responsavel_id'] ?: 0) ?: null, $opF['data_compra'] ?: null);
+                    salvarValorPagoCompraFechada($id, $valorPagoNovo);
                     $sucesso = 'Dados do contrato atualizados — valor pago ao vendedor: R$ ' . number_format($valorPagoNovo, 2, ',', '.') . ' (lançado no financeiro).';
+                }
+            } elseif ($acao === 'salvar_valor_pago') {
+                $valorPagoNovo = valorMonetario($_POST['valor_pago'] ?? null);
+                if ($op['etapa'] !== 'fechado') {
+                    $erro = 'Só dá pra lançar valor pago em compra já fechada.';
+                } elseif (!$valorPagoNovo || $valorPagoNovo <= 0) {
+                    $erro = 'Digite o valor pago ao vendedor.';
+                } else {
+                    salvarValorPagoCompraFechada($id, $valorPagoNovo);
+                    $sucesso = 'Valor pago ao vendedor salvo: R$ ' . number_format($valorPagoNovo, 2, ',', '.') . ' — lançado no financeiro.';
                 }
             } elseif ($acao === 'salvar_testemunha2') {
                 // 02/10/2026, achado de acompanhamento: "ao pedir para gerar
@@ -760,6 +778,18 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 <div class="card" data-aba="🚗 Veículo">
     <h3>Dados do veículo <small>(marca é conferida contra a lista oficial da FIPE ao salvar)</small>
         <?php if (($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?><a class="btn" style="float:right;margin:0;font-size:13px" href="/admin/veiculo_historico.php?id=<?= (int)$op['id'] ?>" title="Tudo que aconteceu com este carro (compra, vistorias, vendas, contratos)">⚙️ Histórico do veículo</a><?php endif; ?></h3>
+    <?php if ($op['etapa'] === 'fechado' && !$compraTravada && ($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
+        <form method="post" class="valor-pago-box" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;background:var(--fundo);border-radius:var(--raio-sm);padding:12px;margin:8px 0 14px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="salvar_valor_pago">
+            <div style="flex:1;min-width:200px">
+                <label style="margin-top:0">💰 Valor pago ao vendedor (R$)</label>
+                <input type="text" inputmode="decimal" name="valor_pago" value="<?= $op['valor_final'] !== null && (float)$op['valor_final'] > 0 ? e(number_format((float)$op['valor_final'], 2, ',', '.')) : '' ?>" placeholder="Ex: 32.000,00" required>
+            </div>
+            <button type="submit" style="margin:0">Salvar valor pago</button>
+            <small style="flex-basis:100%;color:var(--texto-fraco)">Aparece na coluna "Valor pago" e entra no Financeiro como despesa da compra.</small>
+        </form>
+    <?php endif; ?>
     <?php if ($avisoDuplicidadeVeiculo): ?>
         <div class="alerta-erro">
             ⚠️ Essa placa já está cadastrada na frota (<strong>já fechado</strong>, veículo diferente desta
