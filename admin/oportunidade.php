@@ -173,6 +173,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         clean((string)($_POST['fipe_mes_ref'] ?? '')), (int)$_SESSION['admin_id']);
                 }
                 $sucesso = 'Dados do contrato atualizados.';
+                // 29/10/2026, "estou tentando colocar valor pago pra essa
+                // compra, salvo e não vai": em compra JÁ fechada, o "Valor pago"
+                // (valor_final) só era gravado no momento do fechamento — salvar
+                // o valor ofertado depois não mexia nele. Agora sincroniza e
+                // lança/atualiza a despesa no financeiro (e a comissão, se der).
+                $valorPagoNovo = valorMonetario($_POST['valor_ofertado'] ?? null);
+                if ($op['etapa'] === 'fechado' && $valorPagoNovo && $valorPagoNovo > 0) {
+                    $db->prepare("UPDATE oportunidades SET valor_final = ?, data_compra = COALESCE(data_compra, date(updated_at)) WHERE id = ?")
+                       ->execute([$valorPagoNovo, $id]);
+                    $stOp = $db->prepare("SELECT data_compra, fechado_por, responsavel_id FROM oportunidades WHERE id = ?");
+                    $stOp->execute([$id]);
+                    $opF = $stOp->fetch();
+                    $db->prepare("UPDATE fin_lancamentos SET valor = ? WHERE oportunidade_id = ? AND origem = 'fechamento_compra' AND status != 'cancelado'")
+                       ->execute([$valorPagoNovo, $id]);
+                    finRegistrarDespesaCompraFechada($id, $valorPagoNovo, (int)$_SESSION['admin_id'], $opF['data_compra'] ?: null);
+                    finRegistrarComissaoCompraFechada($id, $valorPagoNovo, (int)($opF['fechado_por'] ?: $opF['responsavel_id'] ?: 0) ?: null, $opF['data_compra'] ?: null);
+                    $sucesso = 'Dados do contrato atualizados — valor pago ao vendedor: R$ ' . number_format($valorPagoNovo, 2, ',', '.') . ' (lançado no financeiro).';
+                }
             } elseif ($acao === 'salvar_testemunha2') {
                 // 02/10/2026, achado de acompanhamento: "ao pedir para gerar
                 // contrato, selecione a 2ª testemunha" — mudou de lugar (do
@@ -911,8 +929,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <div>
                 <label>Valor FIPE de referência (R$)</label>
                 <input type="number" step="0.01" name="valor_fipe_referencia" id="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
-                <label>Valor ofertado ao vendedor (R$)</label>
-                <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)($op['valor_ofertado'] ?? '')) ?>">
+                <label><?= $op['etapa'] === 'fechado' ? 'Valor pago ao vendedor (R$)' : 'Valor ofertado ao vendedor (R$)' ?></label>
+                <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)(($op['valor_ofertado'] ?? '') !== '' && $op['valor_ofertado'] !== null ? $op['valor_ofertado'] : ($op['etapa'] === 'fechado' ? ($op['valor_final'] ?? '') : ''))) ?>">
                 <label>Chave PIX do vendedor/cedente (pra onde a Fastcar transfere o pagamento)</label>
                 <input type="text" name="pix_pagamento_cedente" value="<?= e($op['pix_pagamento_cedente'] ?? '') ?>" placeholder="CPF, e-mail, telefone ou chave aleatória">
                 <label>Condição de pagamento ao vendedor (opcional)</label>
