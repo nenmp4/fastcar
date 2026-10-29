@@ -54,7 +54,12 @@ $avisoIA = '';
 $avisoErroTipo = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+    if (!$_POST && !$_FILES && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        // Envio maior que o limite do servidor: o PHP descarta tudo (até o
+        // token) — antes isso aparecia como "Sessão expirada" e o cliente
+        // tentava de novo pra sempre (29/10/2026).
+        $erro = 'Arquivo grande demais pra enviar. Tire a foto de novo (ou envie um print/PDF menor) e tente outra vez.';
+    } elseif (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada — atualize a página e tente de novo.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
@@ -292,7 +297,7 @@ button { width: 100%; margin-top: 20px; padding: 13px; border: none; border-radi
                 <input type="hidden" name="acao" value="enviar_documento">
                 <input type="hidden" name="tipo" value="<?= e($tipoAtual) ?>">
                 <label><?= e($labelEtapaVenda[$tipoAtual]) ?></label>
-                <input type="file" name="arquivo" accept="image/jpeg,image/png,image/webp,application/pdf" required>
+                <input type="file" name="arquivo" accept="image/*,application/pdf" required>
                 <button type="submit">Enviar</button>
             </form>
         </div>
@@ -306,7 +311,7 @@ button { width: 100%; margin-top: 20px; padding: 13px; border: none; border-radi
                 <input type="hidden" name="token" value="<?= e($token) ?>">
                 <input type="hidden" name="acao" value="enviar_documento">
                 <input type="hidden" name="tipo" value="<?= e($tipoAtual) ?>">
-                <input type="file" name="arquivo" accept="image/jpeg,image/png,image/webp,application/pdf" required>
+                <input type="file" name="arquivo" accept="image/*,application/pdf" required>
                 <button type="submit">Substituir arquivo</button>
             </form>
         </details>
@@ -377,5 +382,6 @@ button { width: 100%; margin-top: 20px; padding: 13px; border: none; border-radi
         Alphaville Conde II, Barueri/SP — CEP 06473-073
     </footer>
 </div>
+<script src="/public/assets/compactar_upload.js?v=<?= @filemtime(__DIR__ . '/assets/compactar_upload.js') ?: 1 ?>"></script>
 </body>
 </html>

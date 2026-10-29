@@ -443,7 +443,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $baseUrl = getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'];
                         $link = rtrim($baseUrl, '/') . '/public/documentos_venda.php?token=' . $tokenDoc;
-                        $msg = "Olá! Pra continuar a compra do veículo, preencha seus dados e envie os documentos por aqui:\n{$link}";
+                        $msg = "Olá! Pra continuar a " . ($ehLocacao ? "locação" : "compra") . " do veículo, preencha seus dados e envie os documentos por aqui:\n{$link}";
 
                         $enviado = marcaLogoConfigurada()
                             ? zapiEnviarImagem($v['comprador_telefone'], rtrim($baseUrl, '/') . '/public/assets/logo.png', $msg, zapiCredenciaisVendas())
@@ -467,7 +467,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // canal independente, nunca troca com o WhatsApp acima.
                         if (!empty($v['comprador_email'])) {
                             $corpoEmail = "<p>Olá, " . e($v['comprador_nome'] ?: '') . "!</p>"
-                                . "<p>Pra continuar a compra do veículo, preencha seus dados e envie os documentos pelo link abaixo:</p>"
+                                . "<p>Pra continuar a " . ($ehLocacao ? "locação" : "compra") . " do veículo, preencha seus dados e envie os documentos pelo link abaixo:</p>"
                                 . emailBotao('Enviar documentos', $link)
                                 . "<p style=\"font-size:12.5px;color:#6b7280\">Se o botão não funcionar, copie e cole este link no navegador:<br>"
                                 . "<a href=\"" . e($link) . "\" style=\"color:#2f6fed\">" . e($link) . "</a></p>";
