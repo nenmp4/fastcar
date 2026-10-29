@@ -46,10 +46,10 @@ function dashboardConsultor(int $usuarioId): array {
     // (responsavel_id), pro card novo em admin/index.php. Mesma restrição
     // a ETAPAS_ATIVAS de lá — nunca conta lead já fechado/perdido/
     // sem_perfil, pra bater exatamente com o que ?filtro=hoje/ontem lista.
-    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
     $stmt->execute([$usuarioId, ...ETAPAS_ATIVAS]);
     $novasHoje = (int)$stmt->fetchColumn();
-    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE responsavel_id = ? AND origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
     $stmt->execute([$usuarioId, ...ETAPAS_ATIVAS]);
     $novasOntem = (int)$stmt->fetchColumn();
 
@@ -259,13 +259,13 @@ function dashboardSuperAdmin(): array {
     // ("listando exatamente o que o card está contando"), só a contagem
     // aqui nunca tinha sido alinhada com isso. Restringido a ETAPAS_ATIVAS
     // pra bater com o que a lista de verdade mostra ao clicar.
-    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
     $stmt->execute(ETAPAS_ATIVAS);
     $novasHoje = (int)$stmt->fetchColumn();
-    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
     $stmt->execute(ETAPAS_ATIVAS);
     $novasOntem = (int)$stmt->fetchColumn();
-    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE etapa IN ({$ph}) AND created_at >= datetime('now','-7 days','localtime')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM oportunidades WHERE origem = 'whatsapp' AND etapa IN ({$ph}) AND created_at >= datetime('now','-7 days','localtime')");
     $stmt->execute(ETAPAS_ATIVAS);
     $novasSemana = (int)$stmt->fetchColumn();
 

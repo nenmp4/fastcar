@@ -355,18 +355,18 @@ $extraWhere = '';
 switch ($filtroEspecial) {
     case 'hoje':
         $etapasEscopo = ETAPAS_ATIVAS;
-        $extraWhere = " AND date(o.created_at) = date('now','localtime')";
+        $extraWhere = " AND o.origem = 'whatsapp' AND date(o.created_at) = date('now','localtime')";
         break;
     case 'ontem':
         // 21/09/2026, "pode colocar fitro por dia ontem hoje para saber
         // lista por data dos leads" — mesmo padrão de 'hoje', só um dia
         // antes; permite conferir o que chegou no dia anterior, não só hoje.
         $etapasEscopo = ETAPAS_ATIVAS;
-        $extraWhere = " AND date(o.created_at) = date('now','localtime','-1 day')";
+        $extraWhere = " AND o.origem = 'whatsapp' AND date(o.created_at) = date('now','localtime','-1 day')";
         break;
     case 'semana':
         $etapasEscopo = ETAPAS_ATIVAS;
-        $extraWhere = " AND o.created_at >= datetime('now','localtime','-7 days')";
+        $extraWhere = " AND o.origem = 'whatsapp' AND o.created_at >= datetime('now','localtime','-7 days')";
         break;
     case 'atrasadas':
         $etapasEscopo = ETAPAS_ATIVAS;

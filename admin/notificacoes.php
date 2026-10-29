@@ -163,7 +163,7 @@ if ($modulo === 'vendas') {
     $stmt = $db->prepare("
         SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.created_at
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
-        WHERE o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
+        WHERE o.origem = 'whatsapp' AND o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
     ");
     $stmt->execute([$desde]);
     $leads = array_map(fn($o) => [
@@ -176,11 +176,21 @@ if ($modulo === 'vendas') {
     ], $stmt->fetchAll());
 } else {
     $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.updated_at AS created_at
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome,
+               MAX(o.created_at, COALESCE((SELECT MAX(h.created_at) FROM oportunidade_historico h
+                    WHERE h.oportunidade_id = o.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
+                      AND (h.observacao LIKE '%eatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%qualiza%')), '')) AS created_at
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
-        WHERE o.responsavel_id = ? AND o.updated_at > ? ORDER BY o.updated_at ASC LIMIT 20
+        WHERE o.responsavel_id = ?
+          -- 30/10/2026: antes era updated_at > desde — qualquer edição no lead
+          -- (e oportunidade criada à mão) disparava 'Novo lead'. Agora só lead
+          -- de WhatsApp novo de verdade, ou lead que acabou de ser passado pra mim.
+          AND ((o.origem = 'whatsapp' AND o.created_at > ?) OR EXISTS (SELECT 1 FROM oportunidade_historico h
+                    WHERE h.oportunidade_id = o.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
+                      AND (h.observacao LIKE '%eatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%qualiza%')))
+        ORDER BY created_at ASC LIMIT 20
     ");
-    $stmt->execute([$meuId, $desde]);
+    $stmt->execute([$desde, $meuId, $desde, $desde]);
     $leads = array_map(fn($o) => [
         'id'      => (int)$o['id'],
         'tipo'    => 'novo_lead',

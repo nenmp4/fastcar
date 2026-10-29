@@ -281,6 +281,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- informação, não duplica edição) — ver atualizarObservacaoManual()
     -- em includes/oportunidades.php.
     observacao_manual TEXT DEFAULT '',
+    origem TEXT NOT NULL DEFAULT 'whatsapp', -- 'whatsapp' (lead que chegou sozinho) | 'manual' (criada à mão: Nova oportunidade, Frota, importação) — 30/10/2026
 
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))

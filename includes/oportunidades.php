@@ -494,8 +494,8 @@ function criarOportunidadeManual(
     $db->prepare('
         INSERT INTO oportunidades
             (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa,
-             valor_pretendido, observacao_manual, responsavel_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             valor_pretendido, observacao_manual, responsavel_id, origem)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, \'manual\')
     ')->execute([
         $clienteId, 'crm_preenchido',
         clean($veiculoMarca), clean($veiculoModelo), clean($veiculoAno), clean($veiculoPlaca),
@@ -560,8 +560,8 @@ function criarVeiculoManualFrota(
 
     $db->prepare('
         INSERT INTO oportunidades
-            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, data_compra, fechado_por, responsavel_id)
-        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?)
+            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, data_compra, fechado_por, responsavel_id, origem)
+        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?, \'manual\')
     ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, $responsavelId, $responsavelId]);
     $opId = (int)$db->lastInsertId();
 

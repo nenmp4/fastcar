@@ -2305,4 +2305,23 @@ SQL);
     echo "❌ fipe_consultas: {$e->getMessage()}\n";
 }
 
+// 30/10/2026, "quando fazemos contrato de venda registra como lead — na
+// compra também": oportunidade criada à mão não conta como lead novo.
+if (!colunaExiste($db, 'oportunidades', 'origem')) {
+    try {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN origem TEXT NOT NULL DEFAULT 'whatsapp'");
+        // Backfill: criada à mão (histórico) ou cliente que nunca escreveu no WhatsApp.
+        $n = $db->exec("UPDATE oportunidades SET origem = 'manual' WHERE
+            EXISTS (SELECT 1 FROM oportunidade_historico h WHERE h.oportunidade_id = oportunidades.id
+                    AND (h.observacao LIKE 'Oportunidade criada manualmente%' OR h.observacao LIKE 'Veículo cadastrado manualmente%' OR h.observacao LIKE 'Importad%'))
+            OR NOT EXISTS (SELECT 1 FROM clientes c JOIN whatsapp_mensagens m ON m.telefone = c.telefone AND m.direcao = 'in'
+                           WHERE c.id = oportunidades.cliente_id)");
+        echo "✅ oportunidades.origem: adicionada ({$n} marcadas como manual)\n";
+    } catch (Throwable $e) {
+        echo "❌ oportunidades.origem: {$e->getMessage()}\n";
+    }
+} else {
+    echo "⏭️  oportunidades.origem: já existia\n";
+}
+
 echo "\n🎉 Migração concluída.\n";

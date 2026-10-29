@@ -682,8 +682,8 @@ function crmAntigoImportarLeadEncerrado(array $linha, int $criadoPor): array {
     $motivo = trim((string)($linha['lost_reason_notes'] ?? '')) ?: trim((string)($linha['lost_reason'] ?? '')) ?: 'Lead encerrado no CRM antigo (Yaqar/IACAR), motivo não detalhado.';
 
     $db->prepare("
-        INSERT INTO oportunidades (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, motivo_perda, responsavel_id)
-        VALUES (?, ?, '', ?, ?, ?, ?, NULL)
+        INSERT INTO oportunidades (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, motivo_perda, responsavel_id, origem)
+        VALUES (?, ?, '', ?, ?, ?, ?, NULL, 'manual')
     ")->execute([
         $clienteId, $etapaFinal,
         clean((string)($linha['vehicle'] ?? '')),
