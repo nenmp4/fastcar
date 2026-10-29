@@ -72,6 +72,10 @@ $notifModulo = $notifModulo ?? null;
     var LEADS_HIST_MAX = 20;
     var desde = localStorage.getItem(CHAVE) || '';
     var desdeNotifId = parseInt(localStorage.getItem(CHAVE_NOTIF_ID) || '0', 10) || 0;
+    // 29/10/2026 — cursor das mensagens novas de WhatsApp (popup clicável).
+    var CHAVE_MSG_ID = 'fastcar_notif_msg_<?= $meuId ?>' + SUF;
+    var desdeMsgId = 0;
+    try { desdeMsgId = parseInt(localStorage.getItem(CHAVE_MSG_ID) || '0', 10) || 0; } catch (e) {}
     var sino = document.getElementById('notif-sino');
     var contadorEl = document.getElementById('notif-contador');
     var toastsEl = document.getElementById('notif-toasts');
@@ -97,16 +101,25 @@ $notifModulo = $notifModulo ?? null;
         } catch (e) { /* navegador sem suporte a áudio — segue só visual */ }
     }
 
-    function mostrarToast(titulo, msg, href) {
+    function escNotif(t) {
+        return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+        });
+    }
+
+    // Texto vem do cliente (nome do WhatsApp, mensagem) — sempre escapado.
+    function mostrarToast(titulo, msg, href, duracaoMs) {
         var el = document.createElement('div');
         el.className = 'toast';
-        el.innerHTML = '<strong>' + titulo + '</strong><br>' + msg;
-        el.addEventListener('click', function () { window.location.href = href; });
+        el.innerHTML = '<strong>' + escNotif(titulo) + '</strong><br>' + escNotif(msg)
+            + (href ? '<br><small style="opacity:.75">toque pra abrir →</small>' : '');
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', function () { if (href) window.location.href = href; });
         toastsEl.appendChild(el);
         setTimeout(function () {
             el.classList.add('toast-saindo');
             setTimeout(function () { el.remove(); }, 300);
-        }, 7000);
+        }, duracaoMs || 7000);
     }
 
     function atualizarContador() {
@@ -123,9 +136,36 @@ $notifModulo = $notifModulo ?? null;
 
     // Rajada (mais de 3 eventos na mesma checagem): 1 toast agrupado, nunca
     // mais empilha um embaixo do outro — clique abre o painel completo.
+    // 29/10/2026, "se tiver múltiplos clientes mandando mensagens" — várias
+    // conversas na mesma checagem viram 1 popup com a lista, cada cliente
+    // clicável (abre a conversa dele) + atalho pra caixa de entrada.
+    function mostrarToastMensagens(msgs) {
+        var el = document.createElement('div');
+        el.className = 'toast toast-msgs';
+        var html = '<strong>💬 ' + msgs.length + ' clientes mandaram mensagem</strong>';
+        msgs.slice(0, 6).forEach(function (n) {
+            html += '<a class="toast-msg-linha" href="' + escNotif(n.url) + '">'
+                + '<b>' + escNotif(n.titulo.replace(/^💬\s*(\d+ mensagens de |Mensagem de )/, '')) + '</b>'
+                + '<span>' + escNotif(n.mensagem) + '</span></a>';
+        });
+        if (msgs.length > 6) html += '<small>+ ' + (msgs.length - 6) + ' outras conversas</small>';
+        var inbox = msgs[0].url.split('?')[0];
+        html += '<a class="toast-msg-todas" href="' + escNotif(inbox) + '?filtro=nao_lidas">Abrir não lidas →</a>';
+        el.innerHTML = html;
+        var fechar = function () { el.classList.add('toast-saindo'); setTimeout(function () { el.remove(); }, 300); };
+        toastsEl.appendChild(el);
+        setTimeout(fechar, 20000);
+    }
+
     function mostrarToasts(itens) {
         if (itens.length === 0) return;
         tocarSom();
+        var msgs = itens.filter(function (n) { return n.tipo === 'mensagem_whatsapp'; });
+        if (msgs.length > 1) {
+            mostrarToastMensagens(msgs);
+            itens = itens.filter(function (n) { return n.tipo !== 'mensagem_whatsapp'; });
+            if (itens.length === 0) return;
+        }
         if (itens.length > 3) {
             var el = document.createElement('div');
             el.className = 'toast';
@@ -137,7 +177,7 @@ $notifModulo = $notifModulo ?? null;
                 setTimeout(function () { el.remove(); }, 300);
             }, 7000);
         } else {
-            itens.forEach(function (n) { mostrarToast(n.titulo, n.mensagem, n.url); });
+            itens.forEach(function (n) { mostrarToast(n.titulo, n.mensagem, n.url, n.tipo === 'mensagem_whatsapp' ? 15000 : 7000); });
         }
     }
 
@@ -167,12 +207,17 @@ $notifModulo = $notifModulo ?? null;
 
     function checar() {
         if (document.hidden) return; // não gasta requisição com aba em segundo plano
-        var url = '/admin/notificacoes.php?desde=' + encodeURIComponent(desde) + '&desde_notif_id=' + desdeNotifId + SUFIXO_MODULO;
+        var url = '/admin/notificacoes.php?desde=' + encodeURIComponent(desde) + '&desde_notif_id=' + desdeNotifId + '&desde_msg_id=' + desdeMsgId + SUFIXO_MODULO;
         fetch(url, { credentials: 'same-origin' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (data) {
                 if (!data) return;
                 if (data.novos && data.novos.length > 0) {
+                    // Mensagem da conversa que já está aberta na tela não vira popup.
+                    var telAberto = new URLSearchParams(window.location.search).get('telefone') || '';
+                    data.novos = data.novos.filter(function (n) {
+                        return !(n.tipo === 'mensagem_whatsapp' && telAberto && n.telefone === telAberto);
+                    });
                     mostrarToasts(data.novos);
                     var novosLeads = [];
                     data.novos.forEach(function (n) {
@@ -187,6 +232,10 @@ $notifModulo = $notifModulo ?? null;
                 if (data.proximo_desde) {
                     desde = data.proximo_desde;
                     localStorage.setItem(CHAVE, desde);
+                }
+                if (data.proximo_msg_id) {
+                    desdeMsgId = data.proximo_msg_id;
+                    try { localStorage.setItem(CHAVE_MSG_ID, desdeMsgId); } catch (e) {}
                 }
                 if (data.proximo_notif_id) {
                     desdeNotifId = data.proximo_notif_id;

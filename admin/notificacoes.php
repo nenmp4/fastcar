@@ -207,8 +207,57 @@ $eventos = array_map(fn($n) => [
 ], $eventosLinhas);
 $proximoNotifId = $eventosLinhas ? (int)end($eventosLinhas)['id'] : $desdeNotifId;
 
+// 29/10/2026, "coloca popup do inbox clicável quando tiver mensagens" —
+// mensagem nova de cliente no WhatsApp vira popup (1 por conversa) que abre
+// a conversa direto. Cursor próprio por id (desde_msg_id); 1ª chamada só
+// pega a referência, nunca dispara popup de mensagem antiga. Só conversas
+// que o usuário pode ver: consultor = cliente com oportunidade ativa dele;
+// vendedor = comprador de negociação dele; super_admin/supervisor = todas
+// do módulo. Financeiro/avaliador não recebem.
+$desdeMsgId = (int)($_GET['desde_msg_id'] ?? 0);
+$msgs = [];
+$maxMsgId = (int)$db->query("SELECT COALESCE(MAX(id), 0) FROM whatsapp_mensagens")->fetchColumn();
+if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admin', 'supervisor', 'consultor', 'vendedor'], true)) {
+    $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+    if ($modulo === 'vendas') {
+        $filtroConversa = "EXISTS (SELECT 1 FROM vendas v WHERE v.comprador_telefone = m.telefone"
+            . (perfilVeTudo() ? '' : ' AND v.responsavel_id = ' . $meuId) . ")";
+        $paramsConversa = [];
+        $urlInbox = '/admin/vendas_inbox.php?telefone=';
+    } else {
+        $filtroConversa = "EXISTS (SELECT 1 FROM clientes c2 JOIN oportunidades o2 ON o2.cliente_id = c2.id
+            WHERE c2.telefone = m.telefone AND o2.etapa IN ($phEtapas)" . (perfilVeTudo() ? '' : ' AND o2.responsavel_id = ' . $meuId) . ")";
+        $paramsConversa = ETAPAS_ATIVAS;
+        $urlInbox = '/admin/whatsapp_inbox.php?telefone=';
+    }
+    $stmtMsg = $db->prepare("
+        SELECT m.telefone, COUNT(*) AS qtd, MAX(m.id) AS ultimo_id, MAX(m.created_at) AS created_at,
+               (SELECT m3.mensagem FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone AND m3.direcao = 'in' AND m3.id > ? ORDER BY m3.id DESC LIMIT 1) AS texto,
+               (SELECT c.nome FROM clientes c WHERE c.telefone = m.telefone) AS nome_cliente,
+               (SELECT v.comprador_nome FROM vendas v WHERE v.comprador_telefone = m.telefone ORDER BY v.id DESC LIMIT 1) AS nome_comprador
+        FROM whatsapp_mensagens m
+        WHERE m.id > ? AND m.direcao = 'in' AND m.created_at >= datetime('now','localtime','-10 minutes') AND {$filtroConversa}
+        GROUP BY m.telefone ORDER BY ultimo_id ASC LIMIT 10
+    ");
+    $stmtMsg->execute(array_merge([$desdeMsgId, $desdeMsgId], $paramsConversa));
+    foreach ($stmtMsg->fetchAll() as $r) {
+        $nome = ($modulo === 'vendas' ? ($r['nome_comprador'] ?: $r['nome_cliente']) : ($r['nome_cliente'] ?: $r['nome_comprador'])) ?: $r['telefone'];
+        $texto = trim((string)$r['texto']);
+        $msgs[] = [
+            'id'         => (int)$r['ultimo_id'],
+            'tipo'       => 'mensagem_whatsapp',
+            'telefone'   => $r['telefone'],
+            'titulo'     => '💬 ' . ((int)$r['qtd'] > 1 ? (int)$r['qtd'] . ' mensagens de ' : 'Mensagem de ') . $nome,
+            'mensagem'   => mb_strimwidth($texto !== '' ? $texto : '(mídia)', 0, 90, '…'),
+            'url'        => $urlInbox . rawurlencode($r['telefone']),
+            'created_at' => $r['created_at'],
+        ];
+    }
+}
+
 echo json_encode([
-    'novos'           => array_merge($leads, $eventos),
+    'novos'           => array_merge($leads, $eventos, $msgs),
+    'proximo_msg_id'  => $maxMsgId,
     'proximo_desde'   => $agora,
     'proximo_notif_id' => $proximoNotifId,
     'nao_lidos_notif' => contarNotificacoesNaoLidas($meuId, $tiposFiltro),

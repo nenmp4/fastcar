@@ -680,6 +680,14 @@ a.zapi-status-badge:hover { background: rgba(255,255,255,.22); text-decoration: 
 }
 .toast:hover { box-shadow: 0 10px 28px rgba(16,24,40,.18); }
 .toast strong { color: var(--azul-escuro); }
+/* Popup de mensagens de vários clientes (29/10/2026) — WhatsApp em verde. */
+.toast-msgs { border-left-color: #25d366; cursor: default; }
+.toast-msgs strong { color: #0b5c2e; display: block; margin-bottom: 6px; }
+.toast-msg-linha { display: block; padding: 8px 6px; border-radius: 6px; color: var(--texto); text-decoration: none; border-top: 1px solid var(--borda); min-height: 44px; }
+.toast-msg-linha:hover { background: #d9fdd3; }
+.toast-msg-linha b { display: block; }
+.toast-msg-linha span { display: block; color: var(--texto-fraco); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast-msg-todas { display: block; margin-top: 6px; font-weight: 700; color: #1fa855; text-decoration: none; }
 .toast-saindo { opacity: 0; transform: translateX(20px); transition: opacity .3s, transform .3s; }
 @keyframes toast-entrando {
     from { opacity: 0; transform: translateX(20px); }

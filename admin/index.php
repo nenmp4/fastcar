@@ -1005,8 +1005,6 @@ if ($filtroEspecialLabel !== ''): ?>
             $voltarQs = $voltarQsPartes ? '?' . implode('&', $voltarQsPartes) : '';
         ?><a href="/admin/index.php<?= $voltarQs ?>">Limpar busca</a><?php endif; ?>
     </form>
-    <button type="submit" form="form-bulk-marcar" name="acao" value="mover_vendas_massa" style="margin:0"
-            onclick="return window.confirm('Mover os selecionados pra VENDAS? Use pra quem quer COMPRAR um veículo. Saem do funil de compra e vão pro rodízio dos vendedores.')">🛒 Mover pra vendas (quer comprar)</button>
     <?php if (!$souDono):
         // 29/09/2026, "coloca fitro por super admin - puxar leads dos
         // consultores" — filtro por consultor, só pra quem vê a empresa
@@ -1175,6 +1173,8 @@ if ($podeSelecionarEmMassa):
            style="flex:1;min-width:220px;margin:0">
     <button type="submit" form="form-bulk-marcar" name="acao" value="marcar_perdida_massa" class="perigo" style="margin:0"
             onclick="return document.getElementById('bulk-motivo').value.trim() !== '' ? confirm('Marcar as oportunidades selecionadas como perdidas? Motivo fica gravado no histórico de cada uma, e dá pra reabrir depois se o negócio voltar.') : (alert('Motivo é obrigatório pra marcar como perdido.'), false)">🚫 Marcar como perdido</button>
+    <button type="submit" form="form-bulk-marcar" name="acao" value="mover_vendas_massa" style="margin:0"
+            onclick="return window.confirm('Mover os selecionados pra VENDAS? Use pra quem quer COMPRAR um veículo. Saem do funil de compra e vão pro rodízio dos vendedores.')">🛒 Mover pra vendas (quer comprar)</button>
     <?php if (!$souDono):
         // 29/09/2026, "coloca fitro por super admin - puxar leads dos
         // consultores" — "puxar" (reatribuir em massa) só faz sentido pra
