@@ -740,7 +740,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </div>
 
 <div class="card" data-aba="🚗 Veículo">
-    <h3>Dados do veículo <small>(marca é conferida contra a lista oficial da FIPE ao salvar)</small></h3>
+    <h3>Dados do veículo <small>(marca é conferida contra a lista oficial da FIPE ao salvar)</small>
+        <a class="btn" style="float:right;margin:0;font-size:13px" href="/admin/veiculo_historico.php?id=<?= (int)$op['id'] ?>" title="Tudo que aconteceu com este carro (compra, vistorias, vendas, contratos)">⚙️ Histórico do veículo</a></h3>
     <?php if ($avisoDuplicidadeVeiculo): ?>
         <div class="alerta-erro">
             ⚠️ Essa placa já está cadastrada na frota (<strong>já fechado</strong>, veículo diferente desta

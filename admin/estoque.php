@@ -355,6 +355,7 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             </details>
             <?php endif; ?>
             <a class="btn" style="margin-top:8px" href="/admin/veiculo_midias.php?id=<?= $id ?>">📸 Fotos e vídeos</a>
+            <a class="btn" style="margin-top:8px" href="/admin/veiculo_historico.php?id=<?= $id ?>">⚙️ Histórico do veículo</a>
         </div>
     </div>
     <?php endforeach; ?>
@@ -366,11 +367,13 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
         <button type="button" onclick="document.getElementById('modal-vender').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
     </div>
     <p id="modal-vender-titulo" style="font-weight:600;margin:8px 0 14px"></p>
-    <div class="grid-2" style="margin-bottom:10px">
-        <div><label>Quem comprou (nome)</label><input type="text" id="mv-comprador-nome" placeholder="Nome do comprador"></div>
-        <div><label>WhatsApp do comprador</label><input type="tel" inputmode="tel" id="mv-comprador-tel" placeholder="Ex: 11999998888"></div>
+    <p style="margin:0 0 6px"><strong>1. Pra quem a Fastcar está vendendo este carro?</strong> <small>(o cliente novo — opcional, dá pra preencher depois)</small></p>
+    <div class="grid-2" style="margin-bottom:4px">
+        <div><label>Nome do cliente que está comprando</label><input type="text" id="mv-comprador-nome" placeholder="Ex: João da Silva"></div>
+        <div><label>Celular (WhatsApp) desse cliente, com DDD</label><input type="tel" inputmode="tel" id="mv-comprador-tel" placeholder="Ex: 11 99999-8888"></div>
     </div>
-    <p style="margin:0 0 10px"><small>Escolha o tipo de contrato — abre a negociação já com o comprador:</small></p>
+    <p style="margin:0 0 12px"><small>É o número do <strong>cliente</strong> (não o seu nem o da Fastcar) — é pra onde vai o link dos documentos e o contrato pra assinar.</small></p>
+    <p style="margin:0 0 10px"><strong>2. Escolha o tipo de contrato</strong> <small>— abre a negociação já com esse cliente:</small></p>
     <div class="tipo-venda-opcoes">
         <a id="modal-vender-promissoria" class="tipo-venda-opcao" href="#">
             <span class="tv-icone">💳</span>

@@ -815,6 +815,10 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 
 <?php if (!in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)): ?>
 <div class="card" data-aba="🚗 Veículo">
+    <?php if ($v['oportunidade_id']): ?>
+        <p style="margin:0 0 10px"><a class="btn" href="/admin/veiculo_historico.php?id=<?= (int)$v['oportunidade_id'] ?>">⚙️ Histórico do veículo</a>
+           <small>— compra, vistorias, vendas anteriores e contratos deste carro</small></p>
+    <?php endif; ?>
     <?php if (!$v['oportunidade_id']): ?>
         <h3>🔗 Vincular veículo da frota</h3>
         <p><small>Essa negociação ainda não tem um veículo confirmado — o sistema NUNCA vincula sozinho
