@@ -20,9 +20,6 @@ $busca = trim((string)($_GET['busca'] ?? ''));
 $erro = '';
 
 $sucesso = '';
-$avisoDuplicidade = null;
-$avisoDuplicidadePlaca = null;
-$formularioManualRepetir = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar_venda') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -49,57 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
             UPDATE oportunidades SET financiamento_quitado = ?, financiamento_quitado_em = ? WHERE id = ?
         ")->execute([$quitar ? 1 : 0, $quitar ? date('Y-m-d H:i:s') : null, (int)$_POST['oportunidade_id']]);
         $sucesso = $quitar ? 'Veículo marcado como financiamento quitado.' : 'Veículo voltou a constar como financiamento em aberto.';
-    }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastrar_manual') {
-    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
-        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
-    } else {
-        // 28/09/2026, achado real (José Bonifácio — veículo cadastrado
-        // manualmente pro mesmo telefone que já tinha lead ativo travado no
-        // WhatsApp, sem ninguém saber da outra pasta): antes de criar,
-        // avisa se esse telefone já tem oportunidade ativa — nunca bloqueia
-        // (regra #1 permite +1 veículo de verdade), só exige confirmação
-        // explícita quando não é a 1ª tentativa.
-        //
-        // 06/10/2026, "como evitar duplicar veiculo" — mesmo racional, mas
-        // pro VEÍCULO em si (placa): mesma classe de bug já documentada em
-        // excluirVeiculoFrota() (2 "Bianca" duplicadas, mesma placa/chassi)
-        // — cadastrar o mesmo carro 2x nunca disparava aviso nenhum.
-        // Reaproveita o MESMO campo `confirmar_duplicidade` — 1
-        // confirmação cobre os dois avisos (telefone e/ou placa) juntos.
-        $duplicidadeAtiva = buscarOportunidadeAtivaPorTelefone((string)($_POST['vendedor_telefone'] ?? ''));
-        $duplicidadePlaca = buscarVeiculoAtivoPorPlaca((string)($_POST['veiculo_placa'] ?? ''));
-        if ($duplicidadePlaca) {
-            // 24/10/2026 — placa repetida virou bloqueio (nunca "cadastrar mesmo assim").
-            $avisoDuplicidade = null;
-            $avisoDuplicidadePlaca = $duplicidadePlaca;
-            $formularioManualRepetir = $_POST;
-        } elseif ($duplicidadeAtiva && empty($_POST['confirmar_duplicidade'])) {
-            $avisoDuplicidade = $duplicidadeAtiva;
-            $avisoDuplicidadePlaca = $duplicidadePlaca;
-            $formularioManualRepetir = $_POST;
-        } else {
-            try {
-                $valorPagoPost = trim((string)($_POST['valor_final'] ?? ''));
-                $r = criarVeiculoManualFrota(
-                    (string)($_POST['vendedor_nome'] ?? ''),
-                    (string)($_POST['vendedor_telefone'] ?? ''),
-                    (string)($_POST['veiculo_marca'] ?? ''),
-                    (string)($_POST['veiculo_modelo'] ?? ''),
-                    (string)($_POST['veiculo_ano'] ?? ''),
-                    (string)($_POST['veiculo_placa'] ?? ''),
-                    (string)($_POST['veiculo_chassi'] ?? ''),
-                    (string)($_POST['veiculo_renavam'] ?? ''),
-                    valorMonetario($valorPagoPost),
-                    (int)$_SESSION['admin_id'],
-                    !empty($_POST['responsavel_id']) ? (int)$_POST['responsavel_id'] : null
-                );
-                header('Location: /admin/veiculo_midias.php?id=' . $r['oportunidade_id'] . '&recem_cadastrado=1');
-                exit;
-            } catch (Throwable $e) {
-                $erro = $e->getMessage();
-            }
-        }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'devolucao_veiculo') {
     // 27/10/2026, "esse carro foi vendido, agora está de volta na Fastcar,
@@ -157,10 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
     }
 }
 
-$consultoresParaCompra = array_values(array_filter(
-    listarUsuarios(true),
-    fn($u) => in_array($u['perfil'], ['consultor', 'super_admin'], true)
-));
 
 // 19/09/2026, "usa dados da assinatura do contrato" — o "tempo que o
 // veículo está com a Fastcar" passou a preferir a data REAL de assinatura
@@ -424,109 +366,6 @@ function mesesComAFastcar(?string $refPosse): int {
             (nunca apagados, só fora do estoque até completar). <a href="?busca=<?= urlencode($busca) ?>&incompletos=1">Ver também incompletos →</a></small></p>
     <?php endif; ?>
 </div>
-
-<div class="card">
-    <h3>➕ Adicionar veículo manualmente</h3>
-    <p><small>Pra veículo que a Fastcar já tem, mas não passou pelo funil de compra pelo WhatsApp (negócio fechado
-       fora do CRM, frota legada, etc) — entra direto na frota, pronto pra ganhar fotos/vídeos e ir pro módulo de
-       vendas. Continua pedindo o vendedor/origem (nome + telefone), mesma disciplina de cadastro do resto do
-       sistema.</small></p>
-    <div class="form-group" style="max-width:420px;margin-bottom:14px">
-        <label>📄 Subir pelo CRLV (opcional) — a IA lê o documento e preenche os campos do veículo abaixo</label>
-        <input type="file" id="mv-crlv-arquivo" accept="image/jpeg,image/png,image/webp,application/pdf">
-        <button type="button" onclick="lerCrlvManual()" style="margin-top:.4rem" id="mv-crlv-btn">📄 Ler CRLV com IA</button>
-        <span id="mv-crlv-status" style="font-size:.8rem;color:var(--muted);margin-left:.5rem"></span>
-    </div>
-    <?php if ($avisoDuplicidade): ?>
-        <div class="alerta-erro">
-            ⚠️ Esse telefone já tem uma oportunidade <strong>ativa</strong> —
-            #<?= (int)$avisoDuplicidade['id'] ?> (<?= e($avisoDuplicidade['nome'] ?: '(sem nome)') ?>,
-            etapa <?= e($avisoDuplicidade['etapa']) ?><?php if ($avisoDuplicidade['veiculo_marca'] || $avisoDuplicidade['veiculo_modelo']): ?>,
-            <?= e(trim($avisoDuplicidade['veiculo_marca'] . ' ' . $avisoDuplicidade['veiculo_modelo'])) ?><?php endif; ?>).
-            <a href="/admin/oportunidade.php?id=<?= (int)$avisoDuplicidade['id'] ?>" target="_blank">Abrir essa oportunidade →</a><br>
-            Confere se não é o mesmo veículo duplicado antes de continuar. Se for mesmo um 2º veículo diferente
-            desse cliente, pode cadastrar normalmente.
-        </div>
-    <?php endif; ?>
-    <?php if ($avisoDuplicidadePlaca): ?>
-        <div class="alerta-erro">
-            ⚠️ Já existe veículo na frota com essa <strong>placa</strong> —
-            #<?= (int)$avisoDuplicidadePlaca['id'] ?> (<?= e(trim($avisoDuplicidadePlaca['veiculo_marca'] . ' ' . $avisoDuplicidadePlaca['veiculo_modelo'])) ?: 'sem marca/modelo' ?>,
-            vendedor <?= e($avisoDuplicidadePlaca['nome'] ?: '(sem nome)') ?>).
-            <a href="/admin/oportunidade.php?id=<?= (int)$avisoDuplicidadePlaca['id'] ?>" target="_blank">Abrir essa oportunidade →</a><br>
-            Não dá pra cadastrar o mesmo carro 2 vezes. Se a placa estiver digitada errada, corrija aqui
-            ou no cadastro que já existe.
-        </div>
-    <?php endif; ?>
-    <form method="post">
-        <?= csrfField() ?>
-        <input type="hidden" name="acao" value="cadastrar_manual">
-        <?php if ($avisoDuplicidade && !$avisoDuplicidadePlaca): ?><input type="hidden" name="confirmar_duplicidade" value="1"><?php endif; ?>
-        <div class="grid-2">
-            <div>
-                <label>Nome do vendedor/origem *</label>
-                <input type="text" name="vendedor_nome" required value="<?= e((string)($formularioManualRepetir['vendedor_nome'] ?? '')) ?>">
-                <label>Telefone do vendedor/origem *</label>
-                <input type="text" name="vendedor_telefone" required placeholder="Ex: 31999998888" value="<?= e((string)($formularioManualRepetir['vendedor_telefone'] ?? '')) ?>">
-                <label>Valor pago (R$)</label>
-                <input type="text" name="valor_final" placeholder="0,00" value="<?= e((string)($formularioManualRepetir['valor_final'] ?? '')) ?>">
-                <label>Consultor responsável pela compra</label>
-                <select name="responsavel_id">
-                    <option value="">— Eu mesmo (<?= e($_SESSION['admin_nome'] ?? '') ?>) —</option>
-                    <?php foreach ($consultoresParaCompra as $u): ?>
-                        <option value="<?= (int)$u['id'] ?>" <?= (string)($formularioManualRepetir['responsavel_id'] ?? '') === (string)$u['id'] ? 'selected' : '' ?>><?= e($u['nome']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div>
-                <label>Marca</label>
-                <input type="text" name="veiculo_marca" id="mv-marca" value="<?= e((string)($formularioManualRepetir['veiculo_marca'] ?? '')) ?>">
-                <label>Modelo</label>
-                <input type="text" name="veiculo_modelo" id="mv-modelo" value="<?= e((string)($formularioManualRepetir['veiculo_modelo'] ?? '')) ?>">
-                <label>Ano</label>
-                <input type="text" name="veiculo_ano" id="mv-ano" style="max-width:120px" value="<?= e((string)($formularioManualRepetir['veiculo_ano'] ?? '')) ?>">
-                <label>Placa</label>
-                <input type="text" name="veiculo_placa" id="mv-placa" style="max-width:160px" value="<?= e((string)($formularioManualRepetir['veiculo_placa'] ?? '')) ?>">
-                <label>Chassi</label>
-                <input type="text" name="veiculo_chassi" id="mv-chassi" value="<?= e((string)($formularioManualRepetir['veiculo_chassi'] ?? '')) ?>">
-                <label>RENAVAM</label>
-                <input type="text" name="veiculo_renavam" id="mv-renavam" value="<?= e((string)($formularioManualRepetir['veiculo_renavam'] ?? '')) ?>">
-            </div>
-        </div>
-        <button type="submit"><?= ($avisoDuplicidade && !$avisoDuplicidadePlaca) ? '⚠️ Cadastrar mesmo assim' : 'Cadastrar e adicionar fotos/vídeos →' ?></button>
-    </form>
-</div>
-
-<script>
-var csrfTokenVeiculos = <?= json_encode(generateCSRF()) ?>;
-
-function lerCrlvManual() {
-    var input = document.getElementById('mv-crlv-arquivo');
-    if (!input.files.length) { alert('Escolha o arquivo do CRLV primeiro.'); return; }
-    var status = document.getElementById('mv-crlv-status');
-    var btn = document.getElementById('mv-crlv-btn');
-    status.textContent = '🔄 Lendo CRLV...';
-    btn.disabled = true;
-
-    var fd = new FormData();
-    fd.append('crlv', input.files[0]);
-    fd.append('csrf_token', csrfTokenVeiculos);
-    fetch('/admin/veiculo_crlv_ajax.php', { method: 'POST', body: fd })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            btn.disabled = false;
-            if (!d.ok) { status.textContent = '⚠️ ' + d.erro; return; }
-            // fill-if-empty — nunca sobrescreve o que já foi digitado/corrigido na mão.
-            var campos = { marca: d.veiculo_marca, modelo: d.veiculo_modelo, ano: d.veiculo_ano, placa: d.veiculo_placa, chassi: d.veiculo_chassi, renavam: d.veiculo_renavam };
-            Object.keys(campos).forEach(function (k) {
-                var el = document.getElementById('mv-' + k);
-                if (el && !el.value && campos[k]) el.value = campos[k];
-            });
-            status.textContent = '✅ Preenchido! Confira antes de cadastrar.';
-        })
-        .catch(function (err) { btn.disabled = false; status.textContent = '⚠️ Erro ao ler o CRLV.'; console.error(err); });
-}
-</script>
 
 <div class="stat-grid">
     <div class="stat-card">
