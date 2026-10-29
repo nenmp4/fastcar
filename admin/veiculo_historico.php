@@ -22,17 +22,7 @@ $v = $h['veiculo'];
 $voltar = (string)($_SERVER['HTTP_REFERER'] ?? '');
 if (!preg_match('#^https?://[^/]+/admin/#', $voltar)) $voltar = paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '');
 $cadastrosCompra = array_values(array_filter($h['cadastros'], fn($c) => $c['etapa'] === 'fechado'));
-?>
-<!doctype html>
-<html lang="pt-br">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Histórico do veículo — Fastcar CRM</title>
-<link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
-<link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
-<script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
-<?php include __DIR__ . '/_pwa_head.php'; ?>
+$vhEstilo = function () { ?>
 <style>
 .vh-ficha { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:10px; }
 .vh-ficha div { background:var(--fundo); border-radius:var(--raio-sm); padding:8px 10px; }
@@ -44,16 +34,8 @@ $cadastrosCompra = array_values(array_filter($h['cadastros'], fn($c) => $c['etap
 .vh-linha a { color:inherit; text-decoration:none; display:block; }
 .vh-linha a:hover strong { color:var(--azul); }
 </style>
-</head>
-<body>
-<?php include __DIR__ . '/_impersonando_banner.php'; ?>
-<header class="topbar">
-    <a href="<?= e($voltar) ?>" style="color:#fff">← Voltar</a>
-    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
-    <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
-    <a href="/admin/logout.php">Sair</a>
-</header>
-<main>
+<?php };
+$vhMiolo = function () use ($v, $h, $cadastrosCompra) { ?>
 <?php if (!$v && !$h['cadastros']): ?>
     <div class="card"><h2>⚙️ Histórico do veículo</h2><p>Veículo não encontrado.</p></div>
 <?php else: ?>
@@ -90,6 +72,32 @@ $cadastrosCompra = array_values(array_filter($h['cadastros'], fn($c) => $c['etap
     <?php endif; ?>
 </div>
 <?php endif; ?>
+<?php };
+// ?parcial=1 → só o conteúdo, pro modal (admin/_historico_modal.php).
+if (!empty($_GET['parcial'])) { $vhEstilo(); $vhMiolo(); exit; }
+?>
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Histórico do veículo — Fastcar CRM</title>
+<link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
+<link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
+<script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
+<?php include __DIR__ . '/_pwa_head.php'; ?>
+<?php $vhEstilo(); ?>
+</head>
+<body>
+<?php include __DIR__ . '/_impersonando_banner.php'; ?>
+<header class="topbar">
+    <a href="<?= e($voltar) ?>" style="color:#fff">← Voltar</a>
+    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
+    <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
+    <a href="/admin/logout.php">Sair</a>
+</header>
+<main>
+<?php $vhMiolo(); ?>
 </main>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php include __DIR__ . '/_notify.php'; ?>
