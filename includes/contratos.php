@@ -27,6 +27,7 @@ require_once __DIR__ . '/oportunidades.php'; // mudarEtapa()/checklistFechamento
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
 require_once __DIR__ . '/promissoria.php'; // Quadro-Resumo do contrato de promissória (27/10/2026)
+require_once __DIR__ . '/notificacoes.php'; // criarNotificacao() — contrato assinado no sino (30/10/2026)
 require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — testemunha 1/2 dinâmicas, ver signatariosExtrasContrato()
 
 const CONTRATOS_STATUS_ZAPSIGN = [
@@ -1120,7 +1121,7 @@ function _dadosAvisoAssinaturaContrato(int $contratoId): ?array {
 
     if ($ehVenda) {
         $stmt = $db->prepare("
-            SELECT v.id AS ref_id, v.comprador_nome, o.veiculo_marca, o.veiculo_modelo,
+            SELECT v.id AS ref_id, v.comprador_nome, o.veiculo_marca, o.veiculo_modelo, v.responsavel_id, v.tipo_contrato,
                    u.whatsapp AS responsavel_whatsapp, u.email AS responsavel_email
             FROM contratos c
             JOIN vendas v ON v.id = c.venda_id
@@ -1137,7 +1138,7 @@ function _dadosAvisoAssinaturaContrato(int $contratoId): ?array {
         $rotuloContato = 'Comprador';
     } else {
         $stmt = $db->prepare("
-            SELECT o.id AS ref_id, cl.nome AS cliente_nome, o.veiculo_marca, o.veiculo_modelo,
+            SELECT o.id AS ref_id, cl.nome AS cliente_nome, o.veiculo_marca, o.veiculo_modelo, o.responsavel_id,
                    u.whatsapp AS responsavel_whatsapp, u.email AS responsavel_email
             FROM contratos c
             JOIN oportunidades o ON o.id = c.oportunidade_id
@@ -1165,6 +1166,10 @@ function _dadosAvisoAssinaturaContrato(int $contratoId): ?array {
         'veiculo' => $veiculo,
         'link' => $link,
         'responsavelWhatsapp' => $d['responsavel_whatsapp'] ?: null,
+        'responsavelId' => $d['responsavel_id'] ? (int)$d['responsavel_id'] : null,
+        'ehVenda' => $ehVenda,
+        'ehLocacao' => ($d['tipo_contrato'] ?? '') === 'locacao',
+        'urlRelativa' => $ehVenda ? '/admin/venda.php?id=' . (int)$d['ref_id'] : '/admin/oportunidade.php?id=' . (int)$d['ref_id'],
         'responsavelEmail' => $d['responsavel_email'] ?: null,
     ];
 }
@@ -1224,6 +1229,18 @@ function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
     try {
         $d = _dadosAvisoAssinaturaContrato($contratoId);
         if (!$d) return;
+
+        // 30/10/2026, "notificação de contrato assinado — esse importante":
+        // além de WhatsApp/e-mail, entra no SINO (popup clicável + histórico)
+        // pro responsável e pra todo super_admin/supervisor.
+        try {
+            $tituloSino = $d['ehLocacao'] ? '✅ Contrato de LOCAÇÃO assinado' : ($d['ehVenda'] ? '✅ Contrato de VENDA assinado' : '✅ Contrato de COMPRA assinado');
+            foreach (destinatariosNotificacao($d['responsavelId']) as $uid) {
+                criarNotificacao($uid, $d['ehVenda'] ? 'contrato_assinado_venda' : 'contrato_assinado', $tituloSino,
+                    ($d['ehLocacao'] ? 'Locatário' : $d['rotuloContato']) . ': ' . $d['nomeContato'] . ' — ' . $d['veiculo'], $d['urlRelativa']);
+            }
+        } catch (Throwable $e) {
+        }
 
         $whatsappOk = false;
         if (!empty($d['responsavelWhatsapp'])) {

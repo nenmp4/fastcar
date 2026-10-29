@@ -108,9 +108,9 @@ $notifModulo = $notifModulo ?? null;
     }
 
     // Texto vem do cliente (nome do WhatsApp, mensagem) — sempre escapado.
-    function mostrarToast(titulo, msg, href, duracaoMs) {
+    function mostrarToast(titulo, msg, href, duracaoMs, importante) {
         var el = document.createElement('div');
-        el.className = 'toast';
+        el.className = 'toast' + (importante ? ' toast-importante' : '');
         el.innerHTML = '<strong>' + escNotif(titulo) + '</strong><br>' + escNotif(msg)
             + (href ? '<br><small style="opacity:.75">toque pra abrir →</small>' : '');
         el.style.cursor = 'pointer';
@@ -160,6 +160,13 @@ $notifModulo = $notifModulo ?? null;
     function mostrarToasts(itens) {
         if (itens.length === 0) return;
         tocarSom();
+        // Contrato assinado nunca entra no agrupado "N novidades" — sempre
+        // popup próprio, destacado (30/10/2026, "esse importante").
+        itens.filter(function (n) { return n.tipo && n.tipo.indexOf('contrato_assinado') === 0; }).forEach(function (n) {
+            mostrarToast(n.titulo, n.mensagem, n.url, 60000, true);
+        });
+        itens = itens.filter(function (n) { return !(n.tipo && n.tipo.indexOf('contrato_assinado') === 0); });
+        if (itens.length === 0) return;
         var msgs = itens.filter(function (n) { return n.tipo === 'mensagem_whatsapp'; });
         if (msgs.length > 1) {
             mostrarToastMensagens(msgs);
@@ -177,7 +184,10 @@ $notifModulo = $notifModulo ?? null;
                 setTimeout(function () { el.remove(); }, 300);
             }, 7000);
         } else {
-            itens.forEach(function (n) { mostrarToast(n.titulo, n.mensagem, n.url, n.tipo === 'mensagem_whatsapp' ? 15000 : 7000); });
+            itens.forEach(function (n) {
+                var importante = n.tipo && n.tipo.indexOf('contrato_assinado') === 0;
+                mostrarToast(n.titulo, n.mensagem, n.url, importante ? 60000 : (n.tipo === 'mensagem_whatsapp' ? 15000 : 7000), importante);
+            });
         }
     }
 

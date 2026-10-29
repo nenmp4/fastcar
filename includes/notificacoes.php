@@ -31,7 +31,7 @@ function criarNotificacao(int $usuarioId, string $tipo, string $titulo, string $
  * em quem consome isso (listarNotificacoes()/contarNotificacoesNaoLidas()/
  * marcarNotificacoesLidas()).
  */
-const TIPOS_NOTIFICACAO_VENDAS = ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda', 'cliente_chegou_loja'];
+const TIPOS_NOTIFICACAO_VENDAS = ['documentos_confirmados_venda', 'visita_confirmada_venda', 'lead_quente_venda', 'cliente_chegou_loja', 'contrato_assinado_venda'];
 
 /**
  * 24/10/2026, "não misturar notificações vendas com compra" — 'vendas' só
