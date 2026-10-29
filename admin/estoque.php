@@ -22,6 +22,30 @@ $sucesso = '';
 // vendedor (mesma enviarMensagemManualVendas() da caixa de vendas). Se o
 // telefone ainda não tem negociação ativa, abre uma já com esse vendedor
 // de responsável — a conversa aparece no WhatsApp Vendas dele.
+// 29/10/2026, "em estoque carros sem vistoria aparecer botão pra fazer
+// vistoria" — cria a vistoria de recebimento (compra) direto do card, já com
+// o avaliador escolhido (avaliador logado = ele mesmo) e abre ela.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'fazer_vistoria') {
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $opIdV = (int)($_POST['oportunidade_id'] ?? 0);
+        $avalId = $_SESSION['admin_perfil'] === 'avaliador' ? (int)$_SESSION['admin_id'] : (int)($_POST['avaliador_id'] ?? 0);
+        $stA = $db->prepare("SELECT 1 FROM usuarios WHERE id = ? AND perfil = 'avaliador' AND bloqueado = 0");
+        $stA->execute([$avalId]);
+        if (!$stA->fetchColumn()) throw new RuntimeException('Escolha um avaliador pra fazer a vistoria.');
+        $stT = $db->prepare("SELECT tipo_veiculo FROM oportunidades WHERE id = ? AND etapa = 'fechado'");
+        $stT->execute([$opIdV]);
+        $tv = $stT->fetchColumn();
+        if ($tv === false) throw new RuntimeException('Veículo não encontrado no estoque.');
+        $avId = criarAvaliacao($opIdV, 'compra', null, $avalId, (int)$_SESSION['admin_id'], $tv === 'moto' ? 'moto' : 'carro');
+        header('Location: /admin/avaliacao.php?id=' . $avId);
+        exit;
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_link_cliente') {
     try {
         if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
@@ -132,6 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['oc
     }
 }
 $souSuperEstoque = $_SESSION['admin_perfil'] === 'super_admin';
+$avaliadoresEstoque = array_values(array_filter(listarUsuarios(true), fn($u) => $u['perfil'] === 'avaliador'));
+$vistoriaPorOp = [];
 $verOcultos = $souSuperEstoque && ($_GET['ocultos'] ?? '') === '1';
 $migradosNoEstoque = $souSuperEstoque ? idsVeiculosMigradosZapsignNoEstoque() : [];
 $duplicadosPlaca = $souSuperEstoque ? mesclarVeiculosDuplicadosPorPlaca(false) : [];
@@ -169,6 +195,15 @@ if ($veiculos) {
         if ($r['foto_id']) $fotoCapa[(int)$r['oportunidade_id']] = '/admin/ver_midia_revenda.php?id=' . (int)$r['foto_id'];
         $qtdMidia[(int)$r['oportunidade_id']] = (int)$r['qtd'];
     }
+    // Vistoria de recebimento mais recente de cada carro (pelo cadastro ou pela mesma placa).
+    $vistoriaPorOp = [];
+    $stmtV = $db->prepare("SELECT o.id AS op_id, va.id, va.status FROM oportunidades o
+        JOIN oportunidades o2 ON (o2.id = o.id OR (LENGTH(UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''),'-',''),' ',''))) >= 6
+             AND UPPER(REPLACE(REPLACE(COALESCE(o2.veiculo_placa,''),'-',''),' ','')) = UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''),'-',''),' ',''))))
+        JOIN veiculo_avaliacoes va ON va.oportunidade_id = o2.id AND va.tipo = 'compra'
+        WHERE o.id IN ({$ph}) ORDER BY va.id");
+    $stmtV->execute($ids);
+    foreach ($stmtV->fetchAll() as $r) $vistoriaPorOp[(int)$r['op_id']] = ['id' => (int)$r['id'], 'status' => $r['status']];
     // Sem foto de revenda ainda? Usa a 1ª foto da vistoria como capa.
     $stmt = $db->prepare("SELECT a.oportunidade_id, MIN(f.id) AS foto_id FROM veiculo_avaliacao_fotos f JOIN veiculo_avaliacoes a ON a.id = f.avaliacao_id WHERE f.tipo = 'foto' AND a.oportunidade_id IN ({$ph}) GROUP BY a.oportunidade_id");
     $stmt->execute($ids);
@@ -356,6 +391,31 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             </details>
             <?php endif; ?>
             <a class="btn" style="margin-top:8px" href="/admin/veiculo_midias.php?id=<?= $id ?>">📸 Fotos e vídeos</a>
+            <?php $vist = $vistoriaPorOp[$id] ?? null; ?>
+            <?php if ($vist): ?>
+                <a class="btn" style="margin-top:8px" href="/admin/avaliacao.php?id=<?= $vist['id'] ?>">🔍 Vistoria <?= $vist['status'] === 'concluida' ? '✅ concluída' : '⏳ em andamento' ?></a>
+            <?php elseif ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                <?php if ($_SESSION['admin_perfil'] === 'avaliador'): ?>
+                <form method="post" style="margin-top:8px">
+                    <?= csrfField() ?><input type="hidden" name="acao" value="fazer_vistoria"><input type="hidden" name="oportunidade_id" value="<?= $id ?>">
+                    <button type="submit" class="btn-vistoria">🔍 Fazer vistoria</button>
+                </form>
+                <?php elseif ($avaliadoresEstoque): ?>
+                <details style="margin-top:8px">
+                    <summary class="btn btn-vistoria" style="list-style:none;cursor:pointer;text-align:center">🔍 Fazer vistoria</summary>
+                    <form method="post" style="margin-top:8px">
+                        <?= csrfField() ?><input type="hidden" name="acao" value="fazer_vistoria"><input type="hidden" name="oportunidade_id" value="<?= $id ?>">
+                        <select name="avaliador_id" required>
+                            <option value="">— escolha o avaliador —</option>
+                            <?php foreach ($avaliadoresEstoque as $av): ?><option value="<?= (int)$av['id'] ?>"><?= e($av['nome']) ?></option><?php endforeach; ?>
+                        </select>
+                        <button type="submit" style="width:100%">Criar vistoria</button>
+                    </form>
+                </details>
+                <?php else: ?>
+                <small style="display:block;margin-top:8px;color:var(--texto-fraco)">🔍 Sem vistoria — nenhum avaliador cadastrado.</small>
+                <?php endif; ?>
+            <?php endif; ?>
             <?php if ($souSuperEstoque): ?><a class="btn" style="margin-top:8px" href="/admin/veiculo_historico.php?id=<?= $id ?>">⚙️ Histórico do veículo</a><?php endif; ?>
         </div>
     </div>
@@ -405,6 +465,7 @@ a.estoque-foto { display:flex; text-decoration:none; color:inherit; cursor:point
 a.estoque-foto:hover img { opacity:.9; }
 .estoque-link-hist { color:inherit; text-decoration:none; }
 .estoque-link-hist:hover { color:var(--azul); text-decoration:underline; }
+.btn-vistoria { display:block; width:100%; text-align:center; background:var(--laranja-bg); color:var(--laranja); border:1px solid var(--laranja); font-weight:600; }
 .btn-sucesso-venda { width:100%; margin:0; background:#16a34a; color:#fff; border:none; border-radius:var(--raio); min-height:44px; font-weight:700; cursor:pointer; }
 .tipo-venda-opcoes { display:grid; gap:12px; }
 .tipo-venda-opcao { display:flex; flex-direction:column; gap:4px; padding:14px 16px; border:2px solid var(--borda); border-radius:var(--raio); background:#fff; color:inherit; text-decoration:none; cursor:pointer; box-shadow:none; }
