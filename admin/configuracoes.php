@@ -657,6 +657,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sucesso = "{$resultado['ausente_nome']} marcado como ausente hoje. Sem negociações não-tocadas pra redistribuir (ou nenhum outro vendedor disponível agora).";
             }
+        } elseif ($acao === 'alternar_disponivel_consultor') {
+            // 29/10/2026 — "Anderson vai entrar mais cedo hoje": o botão do próprio
+            // consultor não liga fora do horário da fila (10:00–19:20); o super_admin
+            // liga/desliga daqui a qualquer hora. O fechamento automático do fim do
+            // dia continua desligando normalmente.
+            $stmtDisp = getDB()->prepare("UPDATE usuarios SET disponivel = CASE disponivel WHEN 1 THEN 0 ELSE 1 END WHERE id = ? AND perfil IN ('consultor','super_admin')");
+            $stmtDisp->execute([(int)($_POST['usuario_id'] ?? 0)]);
+            $sucesso = 'Disponibilidade na fila de compra atualizada.';
         } elseif ($acao === 'alternar_disponivel_vendedor') {
             // 24/10/2026 — não existia jeito nenhum de ligar vendedor/avaliador
             // na fila de vendas (o botão "Disponível" só fica nas telas de compra).
@@ -1950,12 +1958,19 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
                 <td>
                     <?php if ($faltouHoje): ?>
                         <span class="badge badge-atraso">🤒 faltou hoje</span>
-                    <?php elseif ($f['plantao_fim_expediente']): ?>
-                        <span class="badge">🌙 só plantão</span>
                     <?php elseif ($f['disponivel']): ?>
                         <span class="badge badge-ok">🟢 disponível</span>
                     <?php else: ?>
                         <span class="badge badge-atraso">⚪ offline</span>
+                    <?php endif; ?>
+                    <?php if ($f['plantao_fim_expediente']): ?><span class="badge">🌙 plantão</span><?php endif; ?>
+                    <?php if (!$faltouHoje): ?>
+                    <form method="post" class="inline" style="margin-top:4px">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="alternar_disponivel_consultor">
+                        <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
+                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px"><?= $f['disponivel'] ? 'Desligar' : 'Ligar na fila agora' ?></button>
+                    </form>
                     <?php endif; ?>
                 </td>
                 <td>
