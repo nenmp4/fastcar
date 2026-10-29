@@ -106,8 +106,9 @@ function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
     $params = [];
     if ($responsavelFiltro !== null) {
         $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
-        $sql .= " AND EXISTS (SELECT 1 FROM clientes c JOIN oportunidades o ON o.cliente_id = c.id
-                              WHERE c.telefone = m.telefone AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
+        // Mesmo critério da lista (m.cliente_id), senão o "(N)" contava conversa
+        // que nem aparece na lista do consultor (29/10/2026, "marca 4 não lidas mas já leu").
+        $sql .= " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
         foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
     }
@@ -334,9 +335,24 @@ function lerMidiaWhatsappComCache(?string $driveFileId, ?string $arquivoUrl): ?a
 
 /** Marca toda mensagem recebida ('in') de um telefone como lida — chamado ao abrir a conversa. */
 function marcarConversaLida(string $telefone): void {
+    // 29/10/2026, "marca 4 não lidas mas já leu": a mensagem pode ter sido
+    // gravada com o telefone num formato diferente (cru, com/sem o 9º dígito)
+    // — antes só batia o formato normalizado e a conversa ficava "não lida" pra sempre.
     $db = getDB();
-    $db->prepare("UPDATE whatsapp_mensagens SET lida = 1 WHERE telefone = ? AND direcao = 'in' AND lida = 0")
-        ->execute([normalizarTelefone($telefone)]);
+    $variantes = whatsappVariantesTelefone($telefone);
+    $ph = implode(',', array_fill(0, count($variantes), '?'));
+    $db->prepare("UPDATE whatsapp_mensagens SET lida = 1 WHERE telefone IN ($ph) AND direcao = 'in' AND lida = 0")
+        ->execute($variantes);
+}
+
+/** Formatos em que um mesmo número BR pode estar salvo (cru, com 55, com/sem o 9 do celular). */
+function whatsappVariantesTelefone(string $telefone): array {
+    $cru = preg_replace('/\D/', '', $telefone);
+    $norm = normalizarTelefone($telefone);
+    $v = [$telefone, $cru, $norm];
+    if (strlen($norm) === 13 && str_starts_with($norm, '55') && $norm[4] === '9') $v[] = substr($norm, 0, 4) . substr($norm, 5);
+    if (strlen($norm) === 12 && str_starts_with($norm, '55')) $v[] = substr($norm, 0, 4) . '9' . substr($norm, 4);
+    return array_values(array_unique(array_filter($v, fn($x) => $x !== '')));
 }
 
 /**

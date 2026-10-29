@@ -220,7 +220,8 @@ if ($telefoneAtivo && !usuarioPodeVerConversaWhatsapp($telefoneAtivo, $responsav
 }
 
 if ($telefoneAtivo) {
-    marcarConversaLida($telefoneAtivo);
+    // telefone exato da lista (pode estar salvo fora do formato normalizado) + variantes.
+    marcarConversaLida($telefoneGet !== '' ? $telefoneGet : $telefoneAtivo);
 }
 
 $busca = trim((string)($_GET['busca'] ?? ''));
