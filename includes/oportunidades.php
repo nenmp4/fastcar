@@ -1123,6 +1123,38 @@ function telefoneEhLeadDeVendasSemCompraAtiva(string $telefone): bool {
 }
 
 /**
+ * 30/10/2026, "está entrando leads de venda pro comercial" (Anderson/Hendrick)
+ * — comprador escrevendo no número de COMPRA virava lead de compra na 1ª
+ * mensagem e caía pro consultor, até a IA perceber. Devolve o motivo (texto)
+ * quando a mensagem é claramente de VENDA, ou null. Só vale pra quem NÃO tem
+ * compra ativa (cliente de compra em andamento segue normal):
+ *  - já tem negociação de venda ativa com esse telefone;
+ *  - a mensagem traz o código do formulário de vendas ("cód. FC123");
+ *  - fala de promissória / formulário / "quero comprar carro|moto".
+ */
+function motivoLeadDeVendaNoNumeroCompra(string $telefone, string $texto): ?string {
+    $tel = normalizarTelefone($telefone);
+    if (!$tel) return null;
+    $db = getDB();
+    $ph = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+    $st = $db->prepare("SELECT 1 FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE c.telefone = ? AND o.etapa IN ({$ph}) LIMIT 1");
+    $st->execute([$tel, ...ETAPAS_ATIVAS]);
+    if ($st->fetchColumn()) return null;
+
+    $st = $db->prepare("SELECT id FROM vendas WHERE comprador_telefone = ?
+        AND etapa IN ('whatsapp','qualificacao_ia','crm_preenchido','negociacao','contrato_enviado') ORDER BY id DESC LIMIT 1");
+    $st->execute([$tel]);
+    if ($idVenda = $st->fetchColumn()) return 'já tem negociação de venda #' . (int)$idVenda;
+
+    if (preg_match('/\bFC\d{1,9}\b/i', $texto)) return 'mandou o código do formulário de vendas';
+    $t = mb_strtolower($texto);
+    if (preg_match('/promiss[óo]ria|preenchi o formul|formul[áa]rio da fastcar|quero comprar (um |uma |o |a )?(carro|moto|ve[íi]culo|caminhonete|utilit)/u', $t)) {
+        return 'mensagem de quem quer COMPRAR (promissória/formulário)';
+    }
+    return null;
+}
+
+/**
  * 28/10/2026 — "os leads que está sendo encerrado está voltando": lead que a
  * EQUIPE encerrou na compra (perdido/sem perfil, com usuário no histórico —
  * nunca o encerramento automático por silêncio nem o "sem perfil" da IA)

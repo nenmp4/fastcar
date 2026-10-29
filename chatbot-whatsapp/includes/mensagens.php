@@ -786,6 +786,28 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         return ['ignored' => 'lead_de_vendas', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
+    // 30/10/2026 — comprador no número de COMPRA: vai direto pra vendas
+    // (rodízio de vendedores), nunca vira lead do consultor. Vendedor é
+    // avisado 1x por dia por telefone pra responder pelo WhatsApp Vendas.
+    $motivoVenda = motivoLeadDeVendaNoNumeroCompra($phone, $texto);
+    if ($motivoVenda !== null) {
+        try {
+            require_once dirname(__DIR__, 2) . '/includes/vendas.php';
+            $vl = criarOuAbrirVendaLead($phone, $nomeContato, $origemAnuncio);
+            $chaveAviso = 'venda_no_num_compra_' . $phone;
+            if (!empty($vl['venda_id']) && getConfig($chaveAviso) !== date('Y-m-d')) {
+                setConfig($chaveAviso, date('Y-m-d'));
+                getDB()->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
+                    SELECT id, etapa, etapa, NULL, ? FROM vendas WHERE id = ?")
+                    ->execute(['Cliente escreveu no WhatsApp de COMPRA (' . $motivoVenda . ') — responder pelo WhatsApp Vendas.', (int)$vl['venda_id']]);
+                notificarVendedorLeadQualificado((int)$vl['venda_id'], 'cliente escreveu no WhatsApp de COMPRA — responda pelo WhatsApp Vendas');
+            }
+        } catch (Throwable $e) {
+            error_log('[lead venda no número de compra] ' . $e->getMessage());
+        }
+        return ['ignored' => 'lead_de_vendas_no_numero_compra', 'motivo' => $motivoVenda, 'telefone' => $phone, 'texto' => $texto,
+                'tipo' => $tipoRegistro, 'ia_pausada' => iaPausada($phone)] + $vazio;
+    }
 
     try {
         $oportunidade = criarOuAbrirOportunidade($phone, $nomeContato, $origemAnuncio);

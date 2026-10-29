@@ -224,6 +224,34 @@ if (!$zapsignToken) {
         check('ZapSign', 'Conectividade', 'error', 'Erro de conexão', $e->getMessage());
     }
 }
+// 30/10/2026, "está entrando leads de venda pro comercial" — oportunidade
+// de COMPRA dos últimos 3 dias com cara de lead de venda (telefone com
+// negociação de venda, ou 1ª mensagem falando de promissória/formulário).
+try {
+    $suspeitos = $db->query("
+        SELECT o.id, c.nome, c.telefone, u.nome AS consultor
+        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        LEFT JOIN usuarios u ON u.id = o.responsavel_id
+        WHERE o.created_at >= datetime('now','localtime','-3 days')
+          AND (EXISTS (SELECT 1 FROM vendas v WHERE v.comprador_telefone = c.telefone)
+               OR EXISTS (SELECT 1 FROM whatsapp_mensagens m WHERE m.telefone = c.telefone AND m.direcao = 'in'
+                          AND m.created_at >= o.created_at
+                          AND (lower(m.mensagem) LIKE '%promiss%' OR m.mensagem LIKE '%cód. FC%' OR lower(m.mensagem) LIKE '%formul%rio da fastcar%')))
+        ORDER BY o.id DESC LIMIT 20
+    ")->fetchAll();
+    if ($suspeitos) {
+        check('Vendas', 'Leads de venda que caíram na compra (3 dias)', 'warn', count($suspeitos) . ' encontrado(s)',
+            implode(' | ', array_map(fn($r) => '#' . $r['id'] . ' ' . ($r['nome'] ?: $r['telefone']) . ' → ' . ($r['consultor'] ?: 'sem consultor'), $suspeitos))
+            . ' — abra cada um e use "🛒 Mover pra vendas".');
+    } else {
+        check('Vendas', 'Leads de venda que caíram na compra (3 dias)', 'ok', 'Nenhum', '');
+    }
+    $numVendasCfg = normalizarTelefone((string)getConfig('vendas_whatsapp_numero'));
+    check('Vendas', 'Número do botão do formulário', $numVendasCfg ? 'info' : 'warn',
+        $numVendasCfg ?: 'não configurado',
+        'Quem preenche o formulário clica e cai NESTE número. Tem que ser o WhatsApp de VENDAS (instância "Vendas"), nunca o de compra — senão o lead cai no comercial. Configurações → Formulário de vendas.');
+} catch (Throwable $e) {
+}
 // Tempo dos últimos envios de áudio pelo WhatsApp Box (29/10/2026, "gravo e
 // depois demora 20 segundos") — envio_provedor = Evolution/Z-API convertendo
 // e mandando; drive = cópia pro CRM (hoje já roda depois de responder o navegador).
