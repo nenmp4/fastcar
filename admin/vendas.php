@@ -366,15 +366,15 @@ $extraWhereVendas = '';
 switch ($filtroEspecialVendas) {
     case 'hoje':
         $etapasEscopo = ETAPAS_VENDA_ATIVAS;
-        $extraWhereVendas = " AND date(v.created_at) = date('now','localtime')";
+        $extraWhereVendas = " AND v.origem = 'whatsapp' AND date(v.created_at) = date('now','localtime')";
         break;
     case 'ontem':
         $etapasEscopo = ETAPAS_VENDA_ATIVAS;
-        $extraWhereVendas = " AND date(v.created_at) = date('now','localtime','-1 day')";
+        $extraWhereVendas = " AND v.origem = 'whatsapp' AND date(v.created_at) = date('now','localtime','-1 day')";
         break;
     case 'semana':
         $etapasEscopo = ETAPAS_VENDA_ATIVAS;
-        $extraWhereVendas = " AND v.created_at >= datetime('now','localtime','-7 days')";
+        $extraWhereVendas = " AND v.origem = 'whatsapp' AND v.created_at >= datetime('now','localtime','-7 days')";
         break;
     case 'agendados':
         // 24/10/2026, "colocar card de todos os agendamentos" — confirmou

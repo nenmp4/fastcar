@@ -123,9 +123,10 @@ function dashboardVendedor(int $usuarioId): array {
     $atrasadas = (int)$stmt->fetchColumn();
 
     $stmt = $db->prepare("
-        SELECT COUNT(DISTINCT venda_id) FROM venda_historico
-        WHERE responsavel_id = ? AND etapa_nova IN ('crm_preenchido', 'negociacao')
-          AND created_at >= datetime('now','-7 days','localtime')
+        SELECT COUNT(DISTINCT h.venda_id) FROM venda_historico h
+        JOIN vendas v ON v.id = h.venda_id AND v.origem = 'whatsapp'
+        WHERE h.responsavel_id = ? AND h.etapa_nova IN ('crm_preenchido', 'negociacao')
+          AND h.created_at >= datetime('now','-7 days','localtime')
     ");
     $stmt->execute([$usuarioId]);
     $recebidasSemana = (int)$stmt->fetchColumn();
@@ -135,10 +136,10 @@ function dashboardVendedor(int $usuarioId): array {
     // 08/10/2026 ("card clicavel leads de hoje leads de ontem"), nunca
     // tinha sido portado pra vendas. Mesmo cálculo, só trocando
     // oportunidades/ETAPAS_ATIVAS por vendas/ETAPAS_VENDA_ATIVAS.
-    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
     $stmt->execute([$usuarioId, ...ETAPAS_VENDA_ATIVAS]);
     $novasHoje = (int)$stmt->fetchColumn();
-    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE responsavel_id = ? AND origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
     $stmt->execute([$usuarioId, ...ETAPAS_VENDA_ATIVAS]);
     $novasOntem = (int)$stmt->fetchColumn();
 
@@ -202,13 +203,13 @@ function dashboardVendasGeral(): array {
     // 24/10/2026, "dasborda das vendas os leads chegando não tem igual de
     // compras" — mesmos contadores de dashboardSuperAdmin() (só etapa
     // ativa, batendo com a lista ao clicar no card ?filtro=hoje/ontem/semana).
-    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime')");
     $stmt->execute(ETAPAS_VENDA_ATIVAS);
     $novasHoje = (int)$stmt->fetchColumn();
-    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE origem = 'whatsapp' AND etapa IN ({$ph}) AND date(created_at) = date('now','localtime','-1 day')");
     $stmt->execute(ETAPAS_VENDA_ATIVAS);
     $novasOntem = (int)$stmt->fetchColumn();
-    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE etapa IN ({$ph}) AND created_at >= datetime('now','localtime','-7 days')");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM vendas WHERE origem = 'whatsapp' AND etapa IN ({$ph}) AND created_at >= datetime('now','localtime','-7 days')");
     $stmt->execute(ETAPAS_VENDA_ATIVAS);
     $novasSemana = (int)$stmt->fetchColumn();
 

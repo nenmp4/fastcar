@@ -118,7 +118,7 @@ if ($modulo === 'vendas') {
     if (perfilVeTudo()) {
         $stmt = $db->prepare("
             SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, v.created_at
-            FROM vendas v WHERE v.created_at > ? ORDER BY v.created_at ASC LIMIT 20
+            FROM vendas v WHERE v.origem = 'whatsapp' AND v.created_at > ? ORDER BY v.created_at ASC LIMIT 20
         ");
         $stmt->execute([$desde]);
     } else {
@@ -134,7 +134,7 @@ if ($modulo === 'vendas') {
                           AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')), '')) AS created_at
             FROM vendas v
             WHERE v.responsavel_id = ?
-              AND (v.created_at > ? OR EXISTS (SELECT 1 FROM venda_historico h
+              AND ((v.origem = 'whatsapp' AND v.created_at > ?) OR EXISTS (SELECT 1 FROM venda_historico h
                         WHERE h.venda_id = v.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
                           AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')))
             ORDER BY created_at ASC LIMIT 20
