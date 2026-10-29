@@ -329,7 +329,7 @@ if (!$souDono) {
 // gestão dos leads — filtro por data, tipo de lead quente etc" — temperatura
 // do lead + período de ENTRADA do lead (created_at). Combina com etapa/
 // busca/tipo/consultor e entra em todas as contagens da nav.
-[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at');
+[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista, $ufFiltro] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at', "(SELECT telefone FROM clientes WHERE id = o.cliente_id)");
 $qsGestao = $gestaoQsPartes ? '&' . implode('&', $gestaoQsPartes) : '';
 
 // 18/09/2026, "coloca clicavil os cads tipo leads de hoje clicar em cima
@@ -1059,7 +1059,7 @@ if ($filtroEspecialLabel !== ''): ?>
         if ($busca !== '') $gestaoHiddensBase['q'] = $busca;
         if ($tipoVeiculoFiltro !== '') $gestaoHiddensBase['tipo_veiculo'] = $tipoVeiculoFiltro;
         if ($consultorFiltro > 0) $gestaoHiddensBase['consultor'] = $consultorFiltro;
-        echo filtroGestaoForm('/admin/index.php', $gestaoHiddensBase, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista);
+        echo filtroGestaoForm('/admin/index.php', $gestaoHiddensBase, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista, $ufFiltro);
     ?>
     <?php
         // 21/09/2026, "coloca botão para gerar pdf relatório" — PDF lista
@@ -1341,7 +1341,7 @@ if ($podeSelecionarEmMassa):
                 <?php elseif ($op['temperatura_lead'] === 'frio'): ?>
                     <span class="badge">❄️ Frio</span>
                 <?php endif; ?>
-                <br><small><?= e($op['cliente_telefone']) ?></small>
+                <br><small><?= e($op['cliente_telefone']) ?></small><?php if ($ufTel = ufPorTelefone($op['cliente_telefone'])): ?> <span class="badge badge-info" title="Estado pelo DDD">📍 <?= $ufTel ?></span><?php endif; ?>
                 <?php $plNormRow = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($op['veiculo_placa'] ?? ''))); ?>
                 <?php if ($etapaBuscandoFechadas && $plNormRow !== '' && isset($placasRepetidasFech[$plNormRow])): ?>
                     <br><span class="badge badge-atraso">⚠️ placa repetida (<?= $placasRepetidasFech[$plNormRow] ?>x)</span>

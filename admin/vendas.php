@@ -359,7 +359,7 @@ $filtroDataVendaAtivo = (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $fDe) && (bool
 // compra, "evita o usuário cair numa combinação impossível").
 // 26/10/2026, "filtro no dashboard dos vendedores — por data, tipo de
 // lead quente etc" — mesmo filtro de gestão de admin/index.php.
-[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista] = filtroGestaoLeads($_GET, 'v.temperatura_lead', 'v.created_at');
+[$gestaoSql, $gestaoParams, $gestaoQsPartes, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista, $ufFiltro] = filtroGestaoLeads($_GET, 'v.temperatura_lead', 'v.created_at', "v.comprador_telefone");
 $qsGestao = $gestaoQsPartes ? '&' . implode('&', $gestaoQsPartes) : '';
 $filtroEspecialVendas = (string)($_GET['filtro'] ?? '');
 $extraWhereVendas = '';
@@ -1285,7 +1285,7 @@ function vitrineFiltrar(termo) {
         elseif ($etapaFiltro !== '') $gestaoManterV['etapa'] = $etapaFiltro;
         if ($busca !== '') $gestaoManterV['q'] = $busca;
         if ($mesVendidas !== '') $gestaoManterV['mes'] = $mesVendidas;
-        echo filtroGestaoForm('/admin/vendas.php', $gestaoManterV, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista);
+        echo filtroGestaoForm('/admin/vendas.php', $gestaoManterV, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista, $ufFiltro);
     ?>
 </div>
 
@@ -1359,7 +1359,7 @@ if ($podeSelecionarEmMassa):
                     <?= e(trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '') . ' ' . ($v['veiculo_ano'] ?? ''))) ?: '—' ?>
                     <?php if (!empty($v['veiculo_placa'])): ?><br><small><?= e(strtoupper($v['veiculo_placa'])) ?></small><?php endif; ?>
                 </td>
-                <td><?= e($v['comprador_nome'] ?: '—') ?><br><small><?= e($v['comprador_telefone'] ?: '') ?></small></td>
+                <td><?= e($v['comprador_nome'] ?: '—') ?><br><small><?= e($v['comprador_telefone'] ?: '') ?></small><?php if ($ufTel = ufPorTelefone($v['comprador_telefone'])): ?> <span class="badge badge-info" title="Estado pelo DDD">📍 <?= $ufTel ?></span><?php endif; ?></td>
                 <td><?= $v['valor_fipe_referencia'] ? moedaVenda((float)$v['valor_fipe_referencia']) : '<small>—</small>' ?></td>
                 <td>
                     <?= $v['preco_venda'] !== null ? moedaVenda((float)$v['preco_venda']) : '—' ?>
@@ -1449,7 +1449,7 @@ if ($podeSelecionarEmMassa):
                     <?php endif; ?>
                 </td>
                 <td>
-                    <?= e($v['comprador_nome'] ?: '(sem nome ainda)') ?><br><small><?= e($v['comprador_telefone'] ?: '') ?></small>
+                    <?= e($v['comprador_nome'] ?: '(sem nome ainda)') ?><br><small><?= e($v['comprador_telefone'] ?: '') ?></small><?php if ($ufTel = ufPorTelefone($v['comprador_telefone'])): ?> <span class="badge badge-info" title="Estado pelo DDD">📍 <?= $ufTel ?></span><?php endif; ?>
                     <?php if ($v['temperatura_lead'] === 'quente'): ?>
                         <br><span class="badge badge-quente">🔥 Quente</span>
                     <?php elseif ($v['temperatura_lead'] === 'morno'): ?>

@@ -305,8 +305,19 @@ function dashboardSuperAdmin(): array {
  * valor cru do GET no SQL.
  * Retorna [sql, params, qsPartes, temp, periodo, de, ate].
  */
-function filtroGestaoLeads(array $get, string $colTemp, string $colData): array {
+function filtroGestaoLeads(array $get, string $colTemp, string $colData, string $colTelefone = ''): array {
     $sql = ''; $params = []; $qs = [];
+    // 30/10/2026, "classificar estado dos leads pelo DDD" — ?uf=SP filtra
+    // pelo DDD do telefone (55 + DDD + número, normalizarTelefone()).
+    $uf = strtoupper((string)($get['uf'] ?? ''));
+    if ($colTelefone !== '' && isset(DDD_POR_UF[$uf])) {
+        $ph = implode(',', array_fill(0, count(DDD_POR_UF[$uf]), '?'));
+        $sql .= " AND substr({$colTelefone}, 3, 2) IN ({$ph})";
+        array_push($params, ...DDD_POR_UF[$uf]);
+        $qs[] = 'uf=' . $uf;
+    } else {
+        $uf = '';
+    }
     $temp = in_array($get['temp'] ?? '', ['quente', 'morno', 'frio', 'sem'], true) ? $get['temp'] : '';
     if ($temp === 'sem') {
         $sql .= " AND COALESCE({$colTemp}, '') = ''";
@@ -346,7 +357,26 @@ function filtroGestaoLeads(array $get, string $colTemp, string $colData): array 
     // tá por ordem de tipo de lead" — ordenação escolhida pelo usuário.
     $ordem = array_key_exists($get['ordem'] ?? '', FILTRO_GESTAO_ORDENS) && ($get['ordem'] ?? '') !== '' ? $get['ordem'] : '';
     if ($ordem !== '') $qs[] = 'ordem=' . $ordem;
-    return [$sql, $params, $qs, $temp, $periodo, $de, $ate, $ordem];
+    return [$sql, $params, $qs, $temp, $periodo, $de, $ate, $ordem, $uf];
+}
+
+/** DDDs por estado (Anatel). */
+const DDD_POR_UF = [
+    'AC' => ['68'], 'AL' => ['82'], 'AM' => ['92', '97'], 'AP' => ['96'], 'BA' => ['71', '73', '74', '75', '77'],
+    'CE' => ['85', '88'], 'DF' => ['61'], 'ES' => ['27', '28'], 'GO' => ['62', '64'], 'MA' => ['98', '99'],
+    'MG' => ['31', '32', '33', '34', '35', '37', '38'], 'MS' => ['67'], 'MT' => ['65', '66'], 'PA' => ['91', '93', '94'],
+    'PB' => ['83'], 'PE' => ['81', '87'], 'PI' => ['86', '89'], 'PR' => ['41', '42', '43', '44', '45', '46'],
+    'RJ' => ['21', '22', '24'], 'RN' => ['84'], 'RO' => ['69'], 'RR' => ['95'], 'RS' => ['51', '53', '54', '55'],
+    'SC' => ['47', '48', '49'], 'SE' => ['79'], 'SP' => ['11', '12', '13', '14', '15', '16', '17', '18', '19'], 'TO' => ['63'],
+];
+
+/** UF pelo DDD do telefone normalizado (55DDxxxx...), ou '' se não der pra saber. */
+function ufPorTelefone(?string $telefone): string {
+    $t = preg_replace('/\D/', '', (string)$telefone);
+    if (strlen($t) >= 12 && str_starts_with($t, '55')) $t = substr($t, 2);
+    $ddd = substr($t, 0, 2);
+    foreach (DDD_POR_UF as $uf => $ddds) if (in_array($ddd, $ddds, true)) return $uf;
+    return '';
 }
 
 const FILTRO_GESTAO_ORDENS = [
@@ -379,7 +409,7 @@ function filtroGestaoHiddens(array $qsPartes): string {
 }
 
 /** Barra de filtro (temperatura + período de entrada), formulário GET próprio. */
-function filtroGestaoForm(string $acao, array $manter, string $temp, string $periodo, string $de, string $ate, string $ordem = ''): string {
+function filtroGestaoForm(string $acao, array $manter, string $temp, string $periodo, string $de, string $ate, string $ordem = '', ?string $uf = null): string {
     $ops = fn(array $lista, string $atual) => implode('', array_map(
         fn($v, $r) => '<option value="' . e($v) . '"' . ($v === $atual ? ' selected' : '') . '>' . e($r) . '</option>',
         array_keys($lista), $lista));
@@ -391,12 +421,17 @@ function filtroGestaoForm(string $acao, array $manter, string $temp, string $per
     $h .= '<label style="margin:0">📅 Entrou:</label><select name="entrada" style="width:auto" onchange="var p=this.value===\'personalizado\';this.form.querySelectorAll(\'.fg-datas\').forEach(function(x){x.style.display=p?\'\':\'none\'});if(!p)this.form.submit()">'
         . $ops(['' => 'Qualquer data', 'hoje' => 'Hoje', 'ontem' => 'Ontem', '7' => 'Últimos 7 dias', '15' => 'Últimos 15 dias', '30' => 'Últimos 30 dias', 'personalizado' => 'Personalizado…'], $periodo)
         . '</select>';
+    if ($uf !== null) {
+        $ufs = ['' => 'Todos os estados'];
+        foreach (array_keys(DDD_POR_UF) as $sigla) $ufs[$sigla] = $sigla;
+        $h .= '<label style="margin:0">📍 Estado:</label><select name="uf" onchange="this.form.submit()" style="width:auto">' . $ops($ufs, $uf) . '</select>';
+    }
     $h .= '<label style="margin:0">↕️ Ordenar:</label><select name="ordem" onchange="this.form.submit()" style="width:auto">'
         . $ops(FILTRO_GESTAO_ORDENS, $ordem) . '</select>';
     $mostra = $periodo === 'personalizado' ? '' : 'display:none';
     $h .= '<span class="fg-datas" style="' . $mostra . '">de <input type="date" name="entrada_de" value="' . e($de) . '" style="width:auto"> até <input type="date" name="entrada_ate" value="' . e($ate) . '" style="width:auto"></span>';
     $h .= '<button type="submit" class="fg-datas" style="width:auto;margin:0;' . $mostra . '">Filtrar</button>';
-    if ($temp !== '' || $periodo !== '' || $ordem !== '') {
+    if ($temp !== '' || $periodo !== '' || $ordem !== '' || (string)$uf !== '') {
         $q = http_build_query($manter);
         $h .= '<a href="' . e($acao . ($q !== '' ? '?' . $q : '')) . '">Limpar filtro</a>';
     }

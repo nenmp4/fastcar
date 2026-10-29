@@ -113,7 +113,7 @@ if ($consultorFiltro > 0) {
     $params[] = $consultorFiltro;
 }
 require_once __DIR__ . '/../includes/dashboard.php';
-[$gestaoSql, $gestaoParams, , $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at');
+[$gestaoSql, $gestaoParams, , $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte] = filtroGestaoLeads($_GET, 'o.temperatura_lead', 'o.created_at', '(SELECT telefone FROM clientes WHERE id = o.cliente_id)');
 $where .= $gestaoSql;
 array_push($params, ...$gestaoParams);
 
