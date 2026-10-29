@@ -224,6 +224,21 @@ if (!$zapsignToken) {
         check('ZapSign', 'Conectividade', 'error', 'Erro de conexão', $e->getMessage());
     }
 }
+// Tentativas de envio de contrato que falharam nas últimas 24h
+// (storage/logs/zapsign_envio.log, gravado por zapsignCriarDocumentoEAssinatura()).
+$logZapsignEnvio = __DIR__ . '/../storage/logs/zapsign_envio.log';
+if (is_file($logZapsignEnvio)) {
+    $linhasZs = array_slice(@file($logZapsignEnvio, FILE_IGNORE_NEW_LINES) ?: [], -300);
+    $limiteZs = date('Y-m-d H:i:s', time() - 86400);
+    $falhasZs = array_values(array_filter($linhasZs, function ($l) use ($limiteZs) {
+        return preg_match('/^\[([^\]]+)\] (falhou|sem_token|nao_registrado) /', $l, $m) && $m[1] >= $limiteZs;
+    }));
+    if ($falhasZs) {
+        check('ZapSign', 'Envios com falha (24h)', 'warn', count($falhasZs) . ' falha(s)', mb_substr(end($falhasZs), 0, 300));
+    } else {
+        check('ZapSign', 'Envios com falha (24h)', 'ok', 'Nenhuma', '');
+    }
+}
 try {
     $porStatus = $db->query("SELECT status, COUNT(*) AS n FROM contratos GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
     if ($porStatus) {

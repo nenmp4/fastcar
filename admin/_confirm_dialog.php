@@ -76,3 +76,20 @@
     });
 })();
 </script>
+<script>
+// 29/10/2026, "tentativa de envio foi 5 vezes" — form com class="envio-unico"
+// (ex: gerar contrato e enviar pra ZapSign, que pode levar vários segundos)
+// trava o botão depois que o envio de verdade começa, pra um 2º clique nunca
+// criar outro documento/outro link pro cliente. Roda em bubble no document,
+// então só age se o confirmarAcao() inline deixou o submit seguir.
+document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (e.defaultPrevented || !f.classList || !f.classList.contains('envio-unico')) return;
+    if (f.dataset.enviando === '1') { e.preventDefault(); return; }
+    f.dataset.enviando = '1';
+    f.querySelectorAll('button[type=submit], button:not([type])').forEach(function (b) {
+        b.disabled = true;
+        b.textContent = '⏳ Enviando… aguarde, não clique de novo';
+    });
+});
+</script>

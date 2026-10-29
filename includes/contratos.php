@@ -458,6 +458,34 @@ function excluirContratoPreview(int $contratoId): array {
 }
 
 /**
+ * 29/10/2026, "tentativa de envio foi 5 vezes agora foi" — o documento já
+ * foi criado na ZapSign (e o link já saiu pro cliente) quando chega aqui;
+ * se o INSERT batesse em "database is locked", a exceção subia, a tela
+ * mostrava erro e a pessoa clicava de novo — gerando OUTRO documento e
+ * outro link. Tenta gravar até 3x; se ainda falhar, loga o doc_token
+ * (nunca perde o rastro) e devolve 0 pro caller avisar "não reenvie".
+ */
+function _contratoGravarEnviado(string $sql, array $params, string $docToken): int {
+    $db = getDB();
+    for ($tentativa = 1; $tentativa <= 3; $tentativa++) {
+        try {
+            $db->prepare($sql)->execute($params);
+            return (int)$db->lastInsertId();
+        } catch (PDOException $e) {
+            if ($tentativa < 3 && stripos($e->getMessage(), 'locked') !== false) {
+                usleep(800000);
+                continue;
+            }
+            if (function_exists('zapsignLogEnvio')) {
+                zapsignLogEnvio('nao_registrado', 'doc_token=' . $docToken, 200, $e->getMessage() . ' | params=' . json_encode($params, JSON_UNESCAPED_UNICODE));
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
+/**
  * Gera o PDF, sobe pra assinatura eletrônica e registra em `contratos`.
  * Retorna ['ok'=>bool, 'erro'=>?string, 'contrato_id'=>?int, 'sign_url'=>?string, 'aviso'=>?string].
  */
@@ -506,16 +534,18 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
     }
 
-    $db = getDB();
-    $db->prepare("
+    $contratoId = _contratoGravarEnviado("
         INSERT INTO contratos
             (oportunidade_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, zapsign_signers_extra_json, status, drive_file_id, arquivo_url, created_by)
         VALUES (?, 'compra', ?, ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
-    ")->execute([
+    ", [
         $oportunidadeId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
         $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
-    ]);
-    $contratoId = (int)$db->lastInsertId();
+    ], $docRes['doc_token']);
+    if ($contratoId === 0) {
+        return ['ok' => false, 'erro' => 'O contrato FOI enviado pra assinatura na ZapSign, mas o sistema não conseguiu registrar agora (banco ocupado). NÃO envie de novo — o cliente já recebeu o link. Avise o suporte (token ' . $docRes['doc_token'] . ').'];
+    }
+    $db = getDB();
     cancelarContratosAnterioresDaNegociacao('compra', $contratoId, $oportunidadeId, null);
 
     // Aviso complementar por e-mail (16/09/2026, "cria todos os templates")
@@ -729,16 +759,18 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
     }
 
-    $db = getDB();
-    $db->prepare("
+    $contratoId = _contratoGravarEnviado("
         INSERT INTO contratos
             (oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, zapsign_signers_extra_json, status, drive_file_id, arquivo_url, created_by)
         VALUES (?, ?, 'venda', ?, ?, ?, ?, ?, ?, 'enviado', ?, ?, ?)
-    ")->execute([
+    ", [
         $campos['_oportunidade_id'], $vendaId, $nomeDoc, json_encode($campos), $docRes['doc_token'], $docRes['signer_token'],
         $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
-    ]);
-    $contratoId = (int)$db->lastInsertId();
+    ], $docRes['doc_token']);
+    if ($contratoId === 0) {
+        return ['ok' => false, 'erro' => 'O contrato FOI enviado pra assinatura na ZapSign, mas o sistema não conseguiu registrar agora (banco ocupado). NÃO envie de novo — o cliente já recebeu o link. Avise o suporte (token ' . $docRes['doc_token'] . ').'];
+    }
+    $db = getDB();
     cancelarContratosAnterioresDaNegociacao('venda', $contratoId, $campos['_oportunidade_id'], $vendaId);
 
     // Aviso complementar por e-mail pro COMPRADOR, mesmo padrão do lado de

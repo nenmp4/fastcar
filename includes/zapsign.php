@@ -69,6 +69,39 @@ function zapsignRequest(string $method, string $endpoint, array $data = []): arr
 }
 
 /**
+ * 29/10/2026, "tentativa de envio foi 5 vezes agora foi" — antes só lia
+ * `error`/`message` da resposta; erro de validação da ZapSign costuma vir
+ * como `detail` ou por campo (ex: {"signers":[{},{"email":["Insira um
+ * endereço de email válido."]}]}), e a tela só mostrava "HTTP 400" sem dizer
+ * o quê. Junta qualquer texto que vier, de qualquer profundidade.
+ */
+function zapsignTextoErro(array $res): string {
+    $d = $res['data'] ?? [];
+    if ($res['code'] === 0) return 'sem resposta da ZapSign (' . ($d['error'] ?? 'conexão') . ')';
+    foreach (['error', 'message', 'detail'] as $k) {
+        if (isset($d[$k]) && is_string($d[$k]) && $d[$k] !== '') return $d[$k] . ' (HTTP ' . $res['code'] . ')';
+    }
+    $partes = [];
+    array_walk_recursive($d, function ($v, $k) use (&$partes) {
+        if (is_string($v) && $v !== '') $partes[] = (is_string($k) ? $k . ': ' : '') . $v;
+    });
+    $txt = implode('; ', array_slice(array_unique($partes), 0, 5));
+    return ($txt !== '' ? $txt . ' ' : '') . '(HTTP ' . $res['code'] . ')';
+}
+
+/** Registro de toda tentativa de envio pra ZapSign (sucesso e falha) — storage/logs/zapsign_envio.log. */
+function zapsignLogEnvio(string $resultado, string $nomeDoc, int $http, string $detalhe): void {
+    try {
+        $dir = __DIR__ . '/../storage/logs';
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        @file_put_contents($dir . '/zapsign_envio.log',
+            '[' . date('Y-m-d H:i:s') . "] {$resultado} http={$http} doc=\"{$nomeDoc}\" " . mb_substr($detalhe, 0, 1500) . "\n",
+            FILE_APPEND | LOCK_EX);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
  * Monta o objeto 'signer' pro payload da ZapSign a partir de nome/telefone/
  * email — usado pelo signatário principal e por cada extra (FASTCAR/
  * testemunhas).
@@ -180,7 +213,14 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
 
     $res = zapsignRequest('POST', '/docs/', $payload);
     if ($res['code'] < 200 || $res['code'] >= 300) {
-        $erro = $res['data']['error'] ?? $res['data']['message'] ?? ('HTTP ' . $res['code']);
+        $erro = zapsignTextoErro($res);
+        zapsignLogEnvio('falhou', $nomeDoc, $res['code'], $erro);
+        if ($res['code'] === 0) {
+            // Timeout/queda de conexão: a ZapSign pode ter criado o documento
+            // mesmo assim (só a resposta não chegou). Avisa pra conferir antes
+            // de tentar de novo — senão o cliente recebe 2 links.
+            $erro .= ' — a ZapSign pode ter recebido mesmo assim: confira no painel da ZapSign antes de reenviar.';
+        }
         return ['error' => 'Falha ao criar documento na ZapSign: ' . $erro];
     }
 
@@ -188,8 +228,10 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
     $assinantesRes = $res['data']['signers'] ?? [];
     $assinante = $assinantesRes[0] ?? [];
     if (!$docToken || empty($assinante['token'])) {
+        zapsignLogEnvio('sem_token', $nomeDoc, $res['code'], json_encode($res['data'], JSON_UNESCAPED_UNICODE));
         return ['error' => 'Resposta da ZapSign sem token de documento/signatário.'];
     }
+    zapsignLogEnvio('ok', $nomeDoc, $res['code'], 'doc_token=' . $docToken);
 
     $signersExtra = [];
     foreach ($chavesExtras as $i => $chave) {
