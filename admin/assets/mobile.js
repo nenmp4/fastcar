@@ -125,9 +125,26 @@
         Array.prototype.forEach.call((raiz || document).querySelectorAll('table'), tratarTabela);
     }
 
+    // Valor grande de card (ex: "R$ 1.024.751,00") não cabe e estoura a borda
+    // — diminui a fonte até caber (29/10/2026, "ux").
+    function ajustarValoresStat() {
+        Array.prototype.forEach.call(document.querySelectorAll('.stat-card .valor'), function (el) {
+            el.style.fontSize = '';
+            var tam = parseFloat(getComputedStyle(el).fontSize) || 28;
+            var guarda = 0;
+            while (el.scrollWidth > el.clientWidth + 1 && tam > 14 && guarda++ < 20) {
+                tam -= 1;
+                el.style.fontSize = tam + 'px';
+            }
+        });
+    }
+
     function iniciar() {
         montarMenu();
         tratarTudo();
+        ajustarValoresStat();
+        var tAjuste = null;
+        window.addEventListener('resize', function () { clearTimeout(tAjuste); tAjuste = setTimeout(ajustarValoresStat, 150); });
         if ('MutationObserver' in window) {
             var fila = null;
             new MutationObserver(function () {

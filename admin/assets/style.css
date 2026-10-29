@@ -564,7 +564,7 @@ body.pagina-login::before {
 }
 .stat-card:hover { box-shadow: var(--sombra-hover); }
 a.stat-card:hover { border-left-color: var(--azul-escuro); }
-.stat-card .valor { font-size: 28px; font-weight: 800; color: var(--texto); line-height: 1.15; letter-spacing: -.01em; }
+.stat-card .valor { font-size: 28px; font-weight: 800; color: var(--texto); line-height: 1.15; letter-spacing: -.01em;; white-space: nowrap; overflow: hidden; }
 .stat-card .rotulo { font-size: 12px; color: var(--texto-suave); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
 .stat-card.alerta { border-left-color: var(--vermelho); }
 .stat-card.alerta .valor { color: var(--vermelho); }
@@ -860,10 +860,9 @@ details.card-desativado[open] > summary { margin-bottom: 12px; }
 details.quadro-mais { margin-top: 10px; border: 1px dashed var(--borda); border-radius: var(--raio); padding: 8px 12px; }
 details.quadro-mais > summary { cursor: pointer; font-weight: 600; min-height: 40px; display: flex; align-items: center; }
 
-/* Placa estilo Mercosul (29/10/2026 — histórico do veículo / frota). */
-.placa-mercosul { display: inline-flex; flex-direction: column; align-items: stretch; min-width: 120px; background: #fff; border: 2px solid #111; border-radius: 6px; overflow: hidden; box-shadow: var(--sombra); vertical-align: middle; }
-.placa-mercosul .pm-faixa { background: #1e3a8a; color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 2px; text-align: center; padding: 1px 6px; line-height: 1.4; }
-.placa-mercosul .pm-num { font-family: "Arial Narrow", Arial, sans-serif; font-weight: 800; font-size: 22px; letter-spacing: 3px; color: #111; text-align: center; padding: 2px 10px 3px; line-height: 1.1; text-transform: uppercase; }
-.placa-mercosul.pm-sm { min-width: 92px; border-width: 1.5px; }
-.placa-mercosul.pm-sm .pm-faixa { font-size: 7px; letter-spacing: 1.5px; }
-.placa-mercosul.pm-sm .pm-num { font-size: 15px; letter-spacing: 2px; padding: 1px 8px 2px; }
+/* Placa desenhada — mesmo desenho da vitrine de Vendas (29/10/2026). */
+.placa-mercosul { display: inline-block; vertical-align: middle; background: #fff; border: 2px solid var(--navy); border-top-width: 6px; border-top-color: var(--azul); border-radius: 4px; padding: 2px 10px; }
+.placa-mercosul .pm-faixa { display: none; }
+.placa-mercosul .pm-num { font-family: monospace; font-weight: 700; font-size: 20px; letter-spacing: 2px; color: var(--texto); text-transform: uppercase; }
+.placa-mercosul.pm-sm { border-top-width: 5px; padding: 1px 6px; }
+.placa-mercosul.pm-sm .pm-num { font-size: 14px; letter-spacing: 1px; }
