@@ -30,6 +30,8 @@ $stmtVenda = $db->prepare("
 $stmtVenda->execute([$id]);
 $v = $stmtVenda->fetch();
 $ehLocacao = $v && ($v['tipo_contrato'] ?? 'venda') === 'locacao';
+// Tem contrato de venda assinado (ZapSign)? Sem isso, "Vendido" à mão é engano (30/10/2026).
+$contratoVendaAssinado = $v && (bool)$db->query("SELECT 1 FROM contratos WHERE venda_id = " . (int)$id . " AND tipo = 'venda' AND status = 'assinado'")->fetchColumn();
 
 if (!$v) {
     http_response_code(404);
@@ -564,9 +566,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $etapaNovaPost = (string)($_POST['etapa_nova'] ?? '');
                 if (in_array($etapaNovaPost, ['contrato_enviado', 'vendido'], true) && !$v['oportunidade_id']) {
                     $erro = 'Vincule um veículo da frota a esta negociação antes de avançar pra essa etapa.';
+                } elseif ($etapaNovaPost === 'vendido' && !$contratoVendaAssinado
+                          && !(($_SESSION['admin_perfil'] ?? '') === 'super_admin' && !empty($_POST['confirmar_sem_contrato']))) {
+                    // 30/10/2026, "Jean gerou venda sem contrato sem querer" — "Vendido"
+                    // gera comissão e trava a negociação; só vira Vendido sozinho quando
+                    // o contrato é assinado. À mão, só super admin confirmando contrato
+                    // assinado fora do sistema (papel).
+                    $erro = 'Só vira "Vendido" depois do contrato assinado (ZapSign marca sozinho). Contrato assinado em papel? Só o super admin, marcando a confirmação.';
                 } else {
                     mudarEtapaVenda($id, $etapaNovaPost, (int)$_SESSION['admin_id'], clean((string)($_POST['observacao'] ?? '')));
                     $sucesso = 'Etapa atualizada.';
+                }
+            } elseif ($acao === 'desfazer_vendido') {
+                // 30/10/2026 — desfaz "Vendido" marcado por engano (sem contrato
+                // assinado): volta pra negociação, apaga a data da venda e cancela
+                // a comissão automática que nasceu nessa hora. Parcelas/entrada
+                // continuam como estão. Só super admin.
+                if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
+                    $erro = 'Só o super admin pode desfazer uma venda.';
+                } elseif ($v['etapa'] !== 'vendido') {
+                    $erro = 'Essa negociação não está como Vendido.';
+                } elseif ($contratoVendaAssinado) {
+                    $erro = 'Essa venda tem contrato assinado — use "Registrar devolução do veículo".';
+                } else {
+                    $temEnviado = (bool)$db->query("SELECT 1 FROM contratos WHERE venda_id = " . (int)$id . " AND status IN ('enviado','visualizado')")->fetchColumn();
+                    $voltaPara = $temEnviado ? 'contrato_enviado' : 'negociacao';
+                    mudarEtapaVenda($id, $voltaPara, (int)$_SESSION['admin_id'], 'Desfeito: estava como Vendido por engano, sem contrato assinado.');
+                    $db->prepare("UPDATE vendas SET data_venda = NULL WHERE id = ?")->execute([$id]);
+                    $nCom = $db->prepare("UPDATE fin_lancamentos SET status = 'cancelado', observacoes = TRIM(COALESCE(observacoes,'') || ' [cancelado: venda desfeita, marcada como Vendido por engano]') WHERE venda_id = ? AND origem = 'comissao_venda' AND status != 'cancelado'");
+                    $nCom->execute([$id]);
+                    auditoriaRegistrar('venda_desfeita', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id, 'Vendido desfeito (sem contrato assinado) → ' . $voltaPara);
+                    $sucesso = 'Venda desfeita — voltou pra ' . etapaVendaLabel($voltaPara) . '.' . ($nCom->rowCount() ? ' A comissão automática foi cancelada no financeiro.' : '');
                 }
             } elseif ($acao === 'nao_qualificado') {
                 // 24/10/2026 — "marcar cliente não qualificado rápido".
@@ -1675,6 +1705,12 @@ function adicionarParteEntrada() {
                 </select>
                 <label>Observação</label>
                 <input type="text" name="observacao" placeholder="Opcional">
+                <?php if (!$contratoVendaAssinado): ?>
+                    <small style="display:block;color:var(--texto-fraco)">"Vendido" é marcado sozinho quando o contrato é assinado.</small>
+                    <?php if (($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
+                    <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="confirmar_sem_contrato" value="1" style="width:auto"> Contrato assinado fora do sistema (papel) — permitir marcar Vendido</label>
+                    <?php endif; ?>
+                <?php endif; ?>
                 <button type="submit">Confirmar</button>
             </form>
 
@@ -1688,6 +1724,14 @@ function adicionarParteEntrada() {
             </form>
         <?php elseif ($v['etapa'] === 'vendido'): ?>
             <p>✅ Vendido<?= $v['data_venda'] ? ' em ' . date('d/m/Y', strtotime($v['data_venda'])) : '' ?>.</p>
+            <?php if (!$contratoVendaAssinado && ($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
+                <div class="alerta-erro" style="margin:8px 0">⚠️ Marcado como Vendido <strong>sem contrato assinado</strong>.</div>
+                <form method="post" onsubmit="return confirmarAcao(this, 'Desfazer o Vendido? A negociação volta pra etapa anterior e a comissão automática é cancelada. As parcelas continuam como estão.');">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="desfazer_vendido">
+                    <button type="submit">↩️ Desfazer "Vendido" (marcado por engano)</button>
+                </form>
+            <?php endif; ?>
             <hr>
             <!-- 19/09/2026, "temos aquele problema de cliente devolver
                  veiculo agente vende para outro" — antes disso não existia
