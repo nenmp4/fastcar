@@ -247,6 +247,12 @@ if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admi
                (SELECT v.comprador_nome FROM vendas v WHERE v.comprador_telefone = m.telefone ORDER BY v.id DESC LIMIT 1) AS nome_comprador
         FROM whatsapp_mensagens m
         WHERE m.id > ? AND m.direcao = 'in' AND m.canal = '" . ($modulo === 'vendas' ? 'vendas' : 'compra') . "' AND m.created_at >= datetime('now','localtime','-10 minutes') AND {$filtroConversa}
+          -- 30/10/2026, \"notificação de IA em qualificação não — somente conversas
+          -- que eles iniciaram\": só avisa conversa em que alguém da equipe já
+          -- mandou mensagem pela caixa (ou pausou a IA). Lead ainda com a IA
+          -- qualificando não gera popup — evita o consultor entrar no meio.
+          AND (EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.telefone = m.telefone AND h.canal = m.canal AND h.direcao = 'out' AND h.usuario_id IS NOT NULL)
+               OR EXISTS (SELECT 1 FROM whatsapp_sessoes ws WHERE ws.telefone = m.telefone AND ws.ia_pausada = 1))
         GROUP BY m.telefone ORDER BY ultimo_id ASC LIMIT 10
     ");
     $stmtMsg->execute(array_merge([$desdeMsgId, $desdeMsgId], $paramsConversa));
