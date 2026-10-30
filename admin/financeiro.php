@@ -162,12 +162,14 @@ $asaasPendenteImportar = asaasConfigured();
  * raciocínio do card "⏰ Contas atrasadas" (todos_periodos).
  */
 $entradasVendaPendentes = $db->query("
-    SELECT l.id, l.valor, l.data_vencimento, l.cliente_nome_manual, l.venda_id,
+    SELECT l.id, l.valor, l.data_vencimento, l.cliente_nome_manual, l.venda_id, l.status,
            v.comprador_nome, o.veiculo_marca, o.veiculo_modelo
     FROM fin_lancamentos l
     LEFT JOIN vendas v ON v.id = l.venda_id
     LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
-    WHERE l.origem = 'parcelamento_venda' AND l.parcela_numero = 0 AND l.status = 'pendente'
+    -- 30/10/2026: entrada que passou do vencimento vira 'atrasado' sozinha
+    -- e sumia daqui — continua na fila até alguém dar baixa.
+    WHERE l.origem = 'parcelamento_venda' AND l.parcela_numero = 0 AND l.status IN ('pendente', 'atrasado')
     ORDER BY l.data_vencimento ASC, l.id ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
 $totalEntradasVendaPendentes = array_sum(array_column($entradasVendaPendentes, 'valor'));
@@ -432,7 +434,7 @@ $carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, '
       <tbody>
       <?php foreach ($entradasVendaPendentes as $e): ?>
         <tr>
-          <td><?= $e['data_vencimento'] ? date('d/m/Y', strtotime($e['data_vencimento'])) : '—' ?></td>
+          <td><?= $e['data_vencimento'] ? date('d/m/Y', strtotime($e['data_vencimento'])) : '—' ?><?= $e['status'] === 'atrasado' ? '<br><span class="badge badge-atraso">⚠️ atrasada</span>' : '' ?></td>
           <td><?= $e['venda_id'] ? '<a href="/admin/venda.php?id=' . (int)$e['venda_id'] . '">#' . (int)$e['venda_id'] . '</a>' : '—' ?></td>
           <td><?= e($e['comprador_nome'] ?: $e['cliente_nome_manual'] ?: '—') ?></td>
           <td><?= e(trim(($e['veiculo_marca'] ?? '') . ' ' . ($e['veiculo_modelo'] ?? '')) ?: '—') ?></td>
