@@ -464,6 +464,13 @@ $sql = "
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $vendas = $stmt->fetchAll();
+// 30/10/2026, "Jean gerou venda sem contrato sem querer — tem outro": vendas
+// marcadas Vendido sem nenhum contrato de venda assinado (pra conferir/desfazer).
+$vendidasSemContrato = $db->query("SELECT v.id, v.comprador_nome, v.data_venda FROM vendas v
+    WHERE v.etapa = 'vendido'
+      AND NOT EXISTS (SELECT 1 FROM contratos c WHERE c.venda_id = v.id AND c.status = 'assinado')
+    ORDER BY v.data_venda DESC, v.id DESC")->fetchAll();
+$idsSemContrato = array_flip(array_map(fn($r) => (int)$r['id'], $vendidasSemContrato));
 $resumoVendidas = null;
 if ($abaVendidas) {
     $stmtRes = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total, COALESCE(SUM(v.valor_pago_contratacao),0) AS entradas FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where}");
@@ -1338,6 +1345,12 @@ if ($podeSelecionarEmMassa):
 <?php endif; ?>
 <?php endif; ?>
 
+<?php if ($vendidasSemContrato && perfilVeTudo()): ?>
+<div class="alerta-erro" style="margin-bottom:12px">
+    ⚠️ <strong><?= count($vendidasSemContrato) ?> venda(s) marcada(s) como Vendido sem contrato assinado</strong> — confira; se foi engano, abra e use "↩️ Desfazer Vendido":
+    <?php foreach (array_slice($vendidasSemContrato, 0, 15) as $i => $sc): ?><?= $i ? ', ' : ' ' ?><a href="/admin/venda.php?id=<?= (int)$sc['id'] ?>">#<?= (int)$sc['id'] ?> <?= e($sc['comprador_nome'] ?: 'sem nome') ?></a><?php endforeach; ?><?= count($vendidasSemContrato) > 15 ? '…' : '' ?>
+</div>
+<?php endif; ?>
 <?php if ($abaVendidas): ?>
 <div class="card">
     <h3 style="margin-top:0">✅ Vendas fechadas<?= $mesVendidas ? ' — ' . e(date('m/Y', strtotime($mesVendidas . '-01'))) : '' ?></h3>
@@ -1403,7 +1416,7 @@ if ($podeSelecionarEmMassa):
                         <small>— sem entrada</small>
                     <?php endif; ?>
                 </td>
-                <td><?= $v['data_venda'] ? date('d/m/Y', strtotime($v['data_venda'])) : '—' ?></td>
+                <td><?= $v['data_venda'] ? date('d/m/Y', strtotime($v['data_venda'])) : '—' ?><?= isset($idsSemContrato[(int)$v['id']]) ? '<br><span class="badge badge-atraso">⚠️ sem contrato</span>' : '' ?></td>
                 <td><?= e($v['responsavel_nome'] ?? '—') ?></td>
                 <td><a class="link-abrir" href="/admin/venda.php?id=<?= (int)$v['id'] ?>">Abrir →</a></td>
             </tr>
@@ -1476,6 +1489,9 @@ if ($podeSelecionarEmMassa):
                         <br><span class="badge badge-ok">🏁 veio na loja</span>
                     <?php elseif ((int)($v['aceita_visitar_fastcar'] ?? 0) === 1): ?>
                         <br><span class="badge badge-info">📍 visita: <?= e(mb_strimwidth((string)$v['visita_dia_horario_texto'], 0, 30, '…') ?: 'confirmada') ?><?= !empty($v['visita_data_resolvida']) ? ' (' . date('d/m', strtotime($v['visita_data_resolvida'])) . ')' : '' ?></span>
+                    <?php endif; ?>
+                    <?php if ($v['etapa'] === 'vendido' && isset($idsSemContrato[(int)$v['id']])): ?>
+                        <br><span class="badge badge-atraso">⚠️ sem contrato assinado</span>
                     <?php endif; ?>
                     <?php if ($v['etapa'] === 'vendido' && $v['data_venda']): ?>
                         <br><small>vendido <?= date('d/m/Y', strtotime($v['data_venda'])) ?></small>
