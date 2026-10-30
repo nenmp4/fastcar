@@ -51,6 +51,23 @@ foreach ($pendentes as $c) {
     }
 }
 
+// 30/10/2026 (#127): negociação com contrato de venda JÁ assinado mas que
+// não virou 'vendido' (ex: marcada "sem perfil" depois do envio) — fecha
+// agora. O loop acima só olha contrato ainda pendente, então isso nunca
+// seria pego de novo sem esta varredura.
+$presas = $db->query("
+    SELECT DISTINCT v.id FROM vendas v
+    JOIN contratos c ON c.venda_id = v.id AND c.tipo = 'venda' AND c.status = 'assinado'
+    WHERE v.etapa NOT IN ('vendido', 'cancelada')
+")->fetchAll(PDO::FETCH_COLUMN);
+foreach ($presas as $vid) {
+    try {
+        if (vendaConcluirPorContratoAssinado((int)$vid)) log_zapsign_sync("Venda #{$vid}: contrato já assinado → vendido");
+    } catch (Throwable $e) {
+        log_zapsign_sync("Erro ao concluir venda #{$vid}: " . $e->getMessage());
+    }
+}
+
 // Termos de entrega/vistoria (módulo de checklist de avaliação) — mesmo
 // fallback, tabela própria, nunca passa por zapsignSincronizarContrato().
 $pendentesAval = $db->query("

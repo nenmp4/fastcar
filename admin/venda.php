@@ -607,11 +607,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     auditoriaRegistrar('venda_desfeita', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id, 'Vendido desfeito (sem contrato assinado) → ' . $voltaPara);
                     $sucesso = 'Venda desfeita — voltou pra ' . etapaVendaLabel($voltaPara) . '.' . ($nCom->rowCount() ? ' A comissão automática foi cancelada no financeiro.' : '');
                 }
+            } elseif ($acao === 'concluir_por_contrato') {
+                // 30/10/2026 (#127): contrato assinado mas negociação presa
+                // fora de 'vendido' (ex: marcada sem perfil depois do envio).
+                if (vendaConcluirPorContratoAssinado($id)) {
+                    $sucesso = 'Venda concluída pelo contrato assinado — o veículo saiu do estoque.';
+                } else {
+                    $erro = 'Nada a concluir (sem contrato assinado, ou a negociação já está vendida/cancelada).';
+                }
             } elseif ($acao === 'nao_qualificado') {
                 // 24/10/2026 — "marcar cliente não qualificado rápido".
                 $motivoNq = trim((string)($_POST['motivo'] ?? ''));
+                $temContratoVivo = (bool)$db->query("SELECT 1 FROM contratos WHERE venda_id = " . (int)$id . " AND tipo = 'venda' AND status IN ('enviado','visualizado','assinado')")->fetchColumn();
                 if ($motivoNq === '') {
                     $erro = 'Informe o motivo de não qualificado.';
+                } elseif ($temContratoVivo) {
+                    $erro = 'Essa negociação já tem contrato enviado/assinado — não dá pra marcar como não qualificado. Se desistiu, cancele a negociação.';
                 } elseif (!in_array($v['etapa'], ETAPAS_VENDA_ATIVAS, true)) {
                     $erro = 'Essa negociação já está encerrada.';
                 } else {
@@ -711,6 +722,19 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Venda concluída</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
+
+<?php if ($contratoVendaAssinado && !in_array($v['etapa'], ['vendido', 'cancelada'], true)): ?>
+<div class="card" style="border-left:4px solid var(--laranja);background:var(--laranja-bg)">
+    <strong>⚠️ Contrato assinado, mas a negociação não está como Vendida</strong>
+    <p style="margin:6px 0"><small>Etapa atual: <?= e(etapaVendaLabel($v['etapa'])) ?>. Por isso o veículo continua no estoque. O sistema conclui sozinho em até 5 minutos — ou clique abaixo.</small></p>
+    <?php if (($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
+    <form method="post" onsubmit="return confirmarAcao(this, 'Concluir a venda pelo contrato assinado? O veículo sai do estoque e o financeiro é lançado.');">
+        <?= csrfField() ?><input type="hidden" name="acao" value="concluir_por_contrato">
+        <button type="submit" style="margin:0">✅ Concluir venda (contrato assinado)</button>
+    </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <?php if (($_GET['criado'] ?? '') === '1'): ?>
 <?php

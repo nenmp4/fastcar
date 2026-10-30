@@ -1034,11 +1034,11 @@ function zapsignSincronizarContrato(int $contratoId): void {
                             updated_at = datetime('now','localtime')
                     ")->execute([$c['venda_id'], $driveFileId, $arquivoUrl]);
 
-                    $etapaVendaAtual = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
-                    $etapaVendaAtual->execute([$c['venda_id']]);
-                    if ($etapaVendaAtual->fetchColumn() === 'contrato_enviado') {
-                        mudarEtapaVenda((int)$c['venda_id'], 'vendido', null, 'Contrato assinado pelo comprador (ZapSign)');
-                    }
+                    // 30/10/2026 (#127): antes só fechava se estivesse em
+                    // 'contrato_enviado' — negociação marcada "sem perfil"
+                    // depois de mandar o contrato ficava presa e o carro
+                    // continuava no estoque. Ver vendaConcluirPorContratoAssinado().
+                    vendaConcluirPorContratoAssinado((int)$c['venda_id']);
                     notificarAssinaturaContrato($contratoId, true);
                 }
             } elseif ($driveFileId || $arquivoUrl) {
@@ -1396,3 +1396,34 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
 
     return ['ok' => true, 'erro' => null];
 }
+
+
+/**
+ * Contrato de venda assinado por todo mundo = venda concluída (30/10/2026,
+ * #127 "porque não virou venda e saiu do estoque"). Fecha como 'vendido'
+ * qualquer negociação que ainda não está vendida nem cancelada — inclusive
+ * 'sem_perfil' (marcada "não qualificado" depois do contrato ir) — e usa a
+ * data real da assinatura como data da venda. Idempotente; nunca mexe em
+ * negociação cancelada (devolução/cancelamento é decisão humana).
+ * Chamada pelo sync da ZapSign, pelo cron e pelo botão em admin/venda.php.
+ */
+function vendaConcluirPorContratoAssinado(int $vendaId): bool {
+    $db = getDB();
+    $st = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $etapa = $st->fetchColumn();
+    if ($etapa === false || in_array($etapa, ['vendido', 'cancelada'], true)) return false;
+
+    $st = $db->prepare("SELECT assinado_em FROM contratos WHERE venda_id = ? AND tipo = 'venda' AND status = 'assinado' ORDER BY id DESC LIMIT 1");
+    $st->execute([$vendaId]);
+    $assinadoEm = $st->fetchColumn();
+    if ($assinadoEm === false) return false;
+
+    $obs = 'Contrato assinado pelo comprador (ZapSign)' . ($etapa === 'contrato_enviado' ? '' : " — estava em {$etapa}, concluída pela assinatura");
+    mudarEtapaVenda($vendaId, 'vendido', null, $obs);
+    if ($assinadoEm) {
+        $db->prepare("UPDATE vendas SET data_venda = date(?) WHERE id = ?")->execute([$assinadoEm, $vendaId]);
+    }
+    return true;
+}
+
