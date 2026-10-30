@@ -246,7 +246,9 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
     mudarEtapa($opId, 'whatsapp', $responsavelId, 'Oportunidade criada — entrada pelo WhatsApp'
         . ($responsavelId ? ' (atribuída automaticamente)' : ''));
 
-    notificarNovoLeadWhatsapp($opId, $nome ?: '(sem nome)', $telNorm);
+    // 30/10/2026, "notificação de IA em qualificação não" — o aviso "🚗 Novo
+    // lead" na entrada saiu: a equipe só é avisada quando a IA termina
+    // (notificarConsultorLeadQualificado()), nunca no meio da qualificação.
 
     return ['cliente_id' => $clienteId, 'oportunidade_id' => $opId, 'nova' => true, 'responsavel_id' => $responsavelId];
 }
