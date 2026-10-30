@@ -431,6 +431,13 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         </form>
                     </details>
                 <?php endif; ?>
+                <?php $decIa = iaUltimaDecisao($telefoneAtivo); ?>
+                <?php if ($decIa): ?>
+                    <?php // 30/10/2026, "minha IA não está respondendo" — o que a IA decidiu na última mensagem. ?>
+                    <div style="flex-basis:100%;font-size:12.5px;margin-top:6px;padding:6px 10px;border-radius:8px;background:<?= $decIa['codigo'] === 'respondeu' ? 'var(--fundo)' : 'var(--vermelho-bg)' ?>;color:<?= $decIa['codigo'] === 'respondeu' ? 'var(--texto-fraco)' : 'var(--vermelho)' ?>">
+                        🤖 Última mensagem (<?= e(date('d/m H:i', strtotime($decIa['quando']))) ?>): <?= e(iaDecisaoTexto($decIa['codigo'])) ?><?= $decIa['detalhe'] !== '' ? ' — ' . e($decIa['detalhe']) : '' ?>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <div class="wpp-thread wpp-thread-scroll" id="wpp-thread">

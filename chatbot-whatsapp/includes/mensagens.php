@@ -539,6 +539,48 @@ function registrarMensagem(
  * @return bool true = pode responder agora (essa é a última mensagem do
  *   burst); false = abortar, uma request mais nova vai responder por ela.
  */
+/**
+ * 30/10/2026, "minha IA não está respondendo" — guarda, por telefone, o que a
+ * IA decidiu na última mensagem recebida (respondeu, por que não respondeu),
+ * pra aparecer no WhatsApp Box sem precisar de SSH/log. Nunca lança.
+ */
+function iaRegistrarDecisao(string $telefone, string $codigo, string $detalhe = ''): void {
+    try {
+        $tel = normalizarTelefone($telefone) ?: $telefone;
+        setConfig('ia_decisao_' . $tel, date('Y-m-d H:i:s') . '|' . json_encode(['c' => $codigo, 'd' => $detalhe], JSON_UNESCAPED_UNICODE));
+    } catch (Throwable $e) {}
+}
+
+function iaUltimaDecisao(string $telefone): ?array {
+    $tel = normalizarTelefone($telefone) ?: $telefone;
+    $v = (string)(getConfig('ia_decisao_' . $tel) ?? '');
+    if ($v === '' || !str_contains($v, '|')) return null;
+    [$quando, $json] = explode('|', $v, 2);
+    $d = json_decode($json, true);
+    return is_array($d) ? ['quando' => $quando, 'codigo' => (string)($d['c'] ?? ''), 'detalhe' => (string)($d['d'] ?? '')] : null;
+}
+
+function iaDecisaoTexto(string $codigo): string {
+    return [
+        'respondeu' => '✅ IA respondeu',
+        'encerrado_pela_equipe' => '🔒 Não respondeu: lead encerrado pela equipe nos últimos 60 dias (reabra a oportunidade pra IA voltar)',
+        'lead_de_vendas' => '🛒 Não respondeu: cliente foi encaminhado pra vendas — responda pelo WhatsApp Vendas',
+        'lead_de_vendas_no_numero_compra' => '🛒 Não respondeu: mensagem de quem quer COMPRAR — foi pra vendas (WhatsApp Vendas)',
+        'opt_out' => '🚫 Não respondeu: cliente pediu pra sair (SAIR/PARAR)',
+        'pedido_exclusao_dados' => '🗑️ Não respondeu: pedido de exclusão de dados (LGPD)',
+        'ia_pausada' => '⏸️ Não respondeu: IA pausada nessa conversa',
+        'instancia_nao_principal' => 'ℹ️ Não respondeu: mensagem chegou por instância que não é a de compra',
+        'sem_oportunidade' => '⚠️ Não respondeu: falhou ao criar/abrir a oportunidade',
+        'etapa_humana' => '👤 Não respondeu: lead já está com consultor (etapa fora da qualificação)',
+        'fora_horario' => '🌙 Não respondeu: fora do horário da IA (Configurações → Fila)',
+        'debounce' => '⏳ Juntou com a mensagem seguinte do cliente (responde na próxima)',
+        'midia' => '📎 Mídia não interpretada — mandou o aviso pedindo texto/áudio',
+        'ia_sem_resposta' => '❌ Não respondeu: a IA (Gemini/OpenAI) não devolveu resposta — confira chave/créditos em Configurações → IA',
+        'envio_falhou' => '❌ IA gerou a resposta mas o envio pelo WhatsApp falhou',
+        'erro' => '❌ Erro ao processar a IA',
+    ][$codigo] ?? $codigo;
+}
+
 function aguardarSilencioOuAbortar(string $telefone, int $idMensagem): bool {
     if (WHATSAPP_DEBOUNCE_SEGUNDOS <= 0 || $idMensagem <= 0) return true;
 
@@ -793,10 +835,12 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // compra nem roda a IA de compra — a mensagem já ficou salva e aparece
     // no WhatsApp de vendas pro vendedor responder.
     if (telefoneEncerradoPelaEquipeRecente($phone)) {
+        iaRegistrarDecisao($phone, 'encerrado_pela_equipe');
         return ['ignored' => 'encerrado_pela_equipe', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
     if (telefoneEhLeadDeVendasSemCompraAtiva($phone)) {
+        iaRegistrarDecisao($phone, 'lead_de_vendas');
         return ['ignored' => 'lead_de_vendas', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
@@ -805,6 +849,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // avisado 1x por dia por telefone pra responder pelo WhatsApp Vendas.
     $motivoVenda = motivoLeadDeVendaNoNumeroCompra($phone, $texto);
     if ($motivoVenda !== null) {
+        iaRegistrarDecisao($phone, 'lead_de_vendas_no_numero_compra', $motivoVenda);
         try {
             require_once dirname(__DIR__, 2) . '/includes/vendas.php';
             $vl = criarOuAbrirVendaLead($phone, $nomeContato, $origemAnuncio);
@@ -860,6 +905,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         if (zapiEnviarTextoPeloCanal($phone, $msgConfirmacao, $instancia['canal'] ?? null)) {
             registrarMensagem($phone, 'out', $msgConfirmacao, null, true);
         }
+        iaRegistrarDecisao($phone, 'opt_out');
         return ['ignored' => 'opt_out', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => $ia_pausada, 'oportunidade' => $oportunidade,
                 'erro_oportunidade' => $erroOportunidade, 'instancia' => $instancia, 'ia_resultado' => null];
@@ -877,6 +923,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         if (zapiEnviarTextoPeloCanal($phone, $msgExclusao, $instancia['canal'] ?? null)) {
             registrarMensagem($phone, 'out', $msgExclusao, null, true);
         }
+        iaRegistrarDecisao($phone, 'pedido_exclusao_dados');
         return ['ignored' => 'pedido_exclusao_dados', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => $ia_pausada, 'oportunidade' => $oportunidade,
                 'erro_oportunidade' => $erroOportunidade, 'instancia' => $instancia, 'ia_resultado' => null];
@@ -888,12 +935,22 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // está nos blocos 2/3 do funil. iaProcessarTurno() nunca lança — falha
     // de rede/API não pode derrubar o webhook, só significa "IA não
     // respondeu dessa vez", igual quando não tem chave configurada ainda.
+    if (!$oportunidade) {
+        iaRegistrarDecisao($phone, 'sem_oportunidade', (string)$erroOportunidade);
+    } elseif ($ia_pausada) {
+        iaRegistrarDecisao($phone, 'ia_pausada');
+    } elseif ($instancia['tipo'] !== 'principal') {
+        iaRegistrarDecisao($phone, 'instancia_nao_principal', (string)$instancia['tipo']);
+    }
     if ($oportunidade && !$ia_pausada && $instancia['tipo'] === 'principal') {
         $db = getDB();
         $stmtEtapa = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
         $stmtEtapa->execute([$oportunidade['oportunidade_id']]);
         $etapaAtual = $stmtEtapa->fetchColumn();
 
+        if (!in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
+            iaRegistrarDecisao($phone, 'etapa_humana', (string)$etapaAtual);
+        }
         if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
             if ($tipoRegistro === 'text') {
                 // 03/10/2026 — "deixar ia qualificando só no horário comercial"
@@ -901,6 +958,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 // Fora da janela, avisa 1x/dia e NÃO roda a IA — nunca finge
                 // qualificar fora do expediente.
                 if (!iaQualificacaoDentroHorarioComercial()) {
+                    iaRegistrarDecisao($phone, 'fora_horario');
                     if (!iaQualificacaoJaAvisouForaHorarioHoje($phone)) {
                         $msgForaHorario = iaQualificacaoMsgForaHorario();
                         if (zapiEnviarTextoPeloCanal($phone, $msgForaHorario, $instancia['canal'] ?? null)) {
@@ -916,7 +974,9 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                     // Debounce (ver aguardarSilencioOuAbortar) — se chegar mensagem
                     // mais nova desse telefone enquanto essa dorme, aborta: a mais
                     // nova vai responder pelas duas juntas.
-                    if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
+                    if (!aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
+                        iaRegistrarDecisao($phone, 'debounce');
+                    } else {
                         try {
                             // 06/10/2026 — modelo híbrido (menu fixo nas 3
                             // primeiras perguntas, ver iaHibridoProcessarTurno())
@@ -928,7 +988,19 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                             } else {
                                 $iaResultado = iaProcessarTurno($oportunidade['oportunidade_id'], $phone, $instancia['canal'] ?? null);
                             }
+                            if (is_array($iaResultado) && array_key_exists('resposta', $iaResultado)) {
+                                if (($iaResultado['resposta'] ?? '') === '') {
+                                    iaRegistrarDecisao($phone, 'ia_sem_resposta');
+                                } elseif (empty($iaResultado['enviada'])) {
+                                    iaRegistrarDecisao($phone, 'envio_falhou', function_exists('whatsappDetalheUltimoErro') ? whatsappDetalheUltimoErro() : '');
+                                } else {
+                                    iaRegistrarDecisao($phone, 'respondeu');
+                                }
+                            } else {
+                                iaRegistrarDecisao($phone, 'respondeu');
+                            }
                         } catch (Throwable $e) {
+                            iaRegistrarDecisao($phone, 'erro', $e->getMessage());
                             // Nunca deixa uma falha da IA quebrar o resto do webhook —
                             // mensagem do cliente já está salva, oportunidade já existe.
                         }
@@ -949,6 +1021,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                     'Recebi! Pode me contar em texto ou áudio, por favor? 😊',
                     'Chegou por aqui, obrigado! Consegue me passar isso em texto ou áudio?',
                 ]);
+                iaRegistrarDecisao($phone, 'midia');
                 if (zapiEnviarTextoPeloCanal($phone, $textoAck, $instancia['canal'] ?? null)) {
                     registrarMensagem($phone, 'out', $textoAck, null, true);
                 }
