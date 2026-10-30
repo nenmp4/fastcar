@@ -49,14 +49,22 @@ function e(string $str): string {
 // vírgula é sempre decimal, cobre reaproveitamento futuro em campo type="text".
 function valorMonetario(?string $bruto): ?float {
     if ($bruto === null) return null;
-    $s = trim($bruto);
+    $s = mb_strtolower(trim($bruto));
     if ($s === '') return null;
-    if (strpos($s, ',') !== false) {
+    // 30/10/2026, "será que colou 28 mesmo ou 2800": "28 mil"/"28k" virava 28,
+    // "R$ 28.000,00" virava 0 e "2,800" virava 2,80.
+    $mult = 1;
+    if (preg_match('/\d\s*(mil|k)\b/u', $s)) $mult = 1000;
+    $s = preg_replace('/[^0-9.,]/', '', $s);
+    if ($s === '') return null;
+    if (preg_match('/^\d{1,3}(,\d{3})+$/', $s)) {
+        $s = str_replace(',', '', $s); // "2,800" = dois mil e oitocentos
+    } elseif (strpos($s, ',') !== false) {
         $s = str_replace(',', '.', str_replace('.', '', $s));
     } elseif (preg_match('/^\d{1,3}(\.\d{3})+$/', $s)) {
         $s = str_replace('.', '', $s);
     }
-    return (float)$s;
+    return (float)$s * $mult;
 }
 
 function requireAdmin(): void {
