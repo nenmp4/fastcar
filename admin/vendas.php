@@ -426,6 +426,12 @@ if ($mesVendidas !== '') {
     $where .= " AND strftime('%Y-%m', COALESCE(v.data_venda, v.updated_at)) = ?";
     $params[] = $mesVendidas;
 }
+// 30/10/2026, "filtrar por contratos ok" — assinado x sem contrato assinado.
+$contratoFiltroVendidas = ($abaVendidas && in_array($_GET['contrato'] ?? '', ['ok', 'sem'], true)) ? (string)$_GET['contrato'] : '';
+if ($contratoFiltroVendidas !== '') {
+    $where .= ($contratoFiltroVendidas === 'ok' ? ' AND ' : ' AND NOT ')
+        . "EXISTS (SELECT 1 FROM contratos cf WHERE cf.venda_id = v.id AND cf.tipo = 'venda' AND cf.status = 'assinado')";
+}
 if ($filtroDataVendaAtivo) {
     $where .= " AND date({$refVendaExpr}) BETWEEN ? AND ?";
     $params[] = $fDe;
@@ -1301,6 +1307,7 @@ function vitrineFiltrar(termo) {
         elseif ($etapaFiltro !== '') $gestaoManterV['etapa'] = $etapaFiltro;
         if ($busca !== '') $gestaoManterV['q'] = $busca;
         if ($mesVendidas !== '') $gestaoManterV['mes'] = $mesVendidas;
+        if ($contratoFiltroVendidas !== '') $gestaoManterV['contrato'] = $contratoFiltroVendidas;
         echo filtroGestaoForm('/admin/vendas.php', $gestaoManterV, $tempFiltro, $periodoEntrada, $entradaDe, $entradaAte, $ordemLista, $ufFiltro);
     ?>
 </div>
@@ -1364,8 +1371,13 @@ if ($podeSelecionarEmMassa):
 <?= filtroGestaoHiddens($gestaoQsPartes) ?>
         <div style="flex:1;min-width:180px"><label>Buscar</label><input type="text" name="q" value="<?= e($busca) ?>" placeholder="Comprador, telefone, modelo ou placa"></div>
         <div><label>Mês da venda</label><input type="month" name="mes" value="<?= e($mesVendidas) ?>"></div>
+        <div><label>Contrato</label><select name="contrato">
+            <option value="">Todos</option>
+            <option value="ok" <?= $contratoFiltroVendidas === 'ok' ? 'selected' : '' ?>>✅ Contrato assinado</option>
+            <option value="sem" <?= $contratoFiltroVendidas === 'sem' ? 'selected' : '' ?>>⚠️ Sem contrato assinado</option>
+        </select></div>
         <button type="submit" style="width:auto;margin:0">Filtrar</button>
-        <?php if ($mesVendidas || $busca): ?><a class="btn" href="/admin/vendas.php?etapa=vendido">Limpar</a><?php endif; ?>
+        <?php if ($mesVendidas || $busca || $contratoFiltroVendidas): ?><a class="btn" href="/admin/vendas.php?etapa=vendido">Limpar</a><?php endif; ?>
     </form>
     <table class="tabela-oportunidades" style="margin-top:12px">
         <thead>
@@ -1373,7 +1385,7 @@ if ($podeSelecionarEmMassa):
         </thead>
         <tbody>
         <?php if (!$vendas): ?>
-            <tr><td colspan="10">Nenhuma venda fechada<?= ($mesVendidas || $busca) ? ' com esse filtro' : ' ainda' ?>.</td></tr>
+            <tr><td colspan="10">Nenhuma venda fechada<?= ($mesVendidas || $busca || $contratoFiltroVendidas) ? ' com esse filtro' : ' ainda' ?>.</td></tr>
         <?php endif; ?>
         <?php foreach ($vendas as $v): $pv = $parcVendidas[(int)$v['id']] ?? null; ?>
             <tr class="linha-clicavel" onclick="if (!event.target.closest('a')) location.href='/admin/venda.php?id=<?= (int)$v['id'] ?>'" style="cursor:pointer">
