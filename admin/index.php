@@ -45,13 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'classif
     $idPost = (int)($_POST['id'] ?? 0);
     $tipoPost = (string)($_POST['tipo'] ?? '');
     try {
-        if ($souDono) {
-            $stmtDono = $db->prepare('SELECT responsavel_id FROM oportunidades WHERE id = ?');
-            $stmtDono->execute([$idPost]);
-            if ((int)$stmtDono->fetchColumn() !== $meuId) {
-                throw new RuntimeException('Essa oportunidade não é da sua carteira.');
-            }
-        }
+        // 30/10/2026, "permita escolher" — tipo do veículo é só classificação,
+        // qualquer um (menos supervisor) pode marcar/trocar, mesmo lead de
+        // outra carteira ou sem responsável.
         classificarTipoVeiculo($idPost, $tipoPost);
     } catch (Throwable $e) {
         // 30/10/2026 — antes falhava calado; agora avisa o motivo no banner.
