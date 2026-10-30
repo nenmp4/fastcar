@@ -310,7 +310,11 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
     // transação já commitada só porque o lançamento financeiro deu
     // problema. 19/09/2026, pedido direto: "você faz mesma coinsa com
     // venda assinou contrato gera receita" — ver finGerarReceitaVendaAssinatura().
-    if ($etapaNova === 'vendido') {
+    // 30/10/2026, "sem contrato não registrar venda" — Vendido sem contrato
+    // assinado não entra no financeiro; lança quando a assinatura chegar
+    // (vendaConcluirPorContratoAssinado()).
+    $temContratoAssinado = (bool)$db->query("SELECT 1 FROM contratos WHERE venda_id = " . (int)$vendaId . " AND tipo = 'venda' AND status = 'assinado'")->fetchColumn();
+    if ($etapaNova === 'vendido' && $temContratoAssinado) {
         finGerarReceitaVendaAssinatura($vendaId, $responsavelId);
         // 24/09/2026, pedido direto: "na venda pagamos 5 por cento do valor
         // da entrada" — ver finRegistrarComissaoVendaFechada().

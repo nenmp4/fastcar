@@ -479,7 +479,7 @@ $vendidasSemContrato = $db->query("SELECT v.id, v.comprador_nome, v.data_venda F
 $idsSemContrato = array_flip(array_map(fn($r) => (int)$r['id'], $vendidasSemContrato));
 $resumoVendidas = null;
 if ($abaVendidas) {
-    $stmtRes = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total, COALESCE(SUM(v.valor_pago_contratacao),0) AS entradas FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where}");
+    $stmtRes = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total, COALESCE(SUM(v.valor_pago_contratacao),0) AS entradas FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where} AND EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = v.id AND csc.tipo = 'venda' AND csc.status = 'assinado')");
     $stmtRes->execute($params);
     $resumoVendidas = $stmtRes->fetch();
     // Situação das parcelas de cada venda da página (1 query só).
@@ -1354,7 +1354,7 @@ if ($podeSelecionarEmMassa):
 
 <?php if ($vendidasSemContrato && perfilVeTudo()): ?>
 <div class="alerta-erro" style="margin-bottom:12px">
-    ⚠️ <strong><?= count($vendidasSemContrato) ?> venda(s) marcada(s) como Vendido sem contrato assinado</strong> — confira; se foi engano, abra e use "↩️ Desfazer Vendido":
+    ⚠️ <strong><?= count($vendidasSemContrato) ?> venda(s) marcada(s) como Vendido sem contrato assinado</strong> — não entram nos totais de venda até o contrato ser assinado. Se foi engano, abra e use "↩️ Desfazer Vendido":
     <?php foreach (array_slice($vendidasSemContrato, 0, 15) as $i => $sc): ?><?= $i ? ', ' : ' ' ?><a href="/admin/venda.php?id=<?= (int)$sc['id'] ?>">#<?= (int)$sc['id'] ?> <?= e($sc['comprador_nome'] ?: 'sem nome') ?></a><?php endforeach; ?><?= count($vendidasSemContrato) > 15 ? '…' : '' ?>
 </div>
 <?php endif; ?>

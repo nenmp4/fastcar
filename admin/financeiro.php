@@ -227,6 +227,7 @@ $stmtCarrosVendidos = $db->prepare("
         GROUP BY venda_id
     ) ctrv ON ctrv.venda_id = v.id
     WHERE v.etapa = 'vendido'
+      AND EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = v.id AND csc.tipo = 'venda' AND csc.status = 'assinado')
       AND date(COALESCE(ctrv.assinado_em, v.data_venda)) BETWEEN ? AND ?
 ");
 $stmtCarrosVendidos->execute([$inicioMes, $fimMes]);

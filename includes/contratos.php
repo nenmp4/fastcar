@@ -1412,12 +1412,20 @@ function vendaConcluirPorContratoAssinado(int $vendaId): bool {
     $st = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
     $st->execute([$vendaId]);
     $etapa = $st->fetchColumn();
-    if ($etapa === false || in_array($etapa, ['vendido', 'cancelada'], true)) return false;
+    if ($etapa === false || $etapa === 'cancelada') return false;
 
     $st = $db->prepare("SELECT assinado_em FROM contratos WHERE venda_id = ? AND tipo = 'venda' AND status = 'assinado' ORDER BY id DESC LIMIT 1");
     $st->execute([$vendaId]);
     $assinadoEm = $st->fetchColumn();
     if ($assinadoEm === false) return false;
+
+    // Já estava Vendido sem contrato (financeiro não tinha sido lançado):
+    // lança agora — as duas funções nunca duplicam.
+    if ($etapa === 'vendido') {
+        finGerarReceitaVendaAssinatura($vendaId, null);
+        finRegistrarComissaoVendaFechada($vendaId);
+        return false;
+    }
 
     $obs = 'Contrato assinado pelo comprador (ZapSign)' . ($etapa === 'contrato_enviado' ? '' : " — estava em {$etapa}, concluída pela assinatura");
     mudarEtapaVenda($vendaId, 'vendido', null, $obs);

@@ -150,6 +150,7 @@ function dashboardVendedor(int $usuarioId): array {
     $stmt = $db->prepare("
         SELECT COUNT(*), COALESCE(SUM(preco_venda), 0)
         FROM vendas WHERE responsavel_id = ? AND etapa = 'vendido' AND data_venda >= date('now','localtime','start of month')
+          AND EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = vendas.id AND csc.tipo = 'venda' AND csc.status = 'assinado')
     ");
     $stmt->execute([$usuarioId]);
     [$vendidasMes, $valorVendidoMes] = $stmt->fetch(PDO::FETCH_NUM);
@@ -198,6 +199,7 @@ function dashboardVendasGeral(): array {
     $r = $db->query("
         SELECT COUNT(*) AS qtd, COALESCE(SUM(preco_venda), 0) AS total
         FROM vendas WHERE etapa = 'vendido' AND data_venda >= date('now','localtime','start of month')
+          AND EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = vendas.id AND csc.tipo = 'venda' AND csc.status = 'assinado')
     ")->fetch();
 
     // 24/10/2026, "dasborda das vendas os leads chegando não tem igual de
