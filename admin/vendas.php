@@ -1370,7 +1370,7 @@ if ($podeSelecionarEmMassa):
         <div class="stat-card sucesso"><div class="valor"><?= moedaVenda((float)$resumoVendidas['total']) ?></div><div class="rotulo">Valor total vendido</div></div>
         <div class="stat-card neutro"><div class="valor"><?= moedaVenda((float)$resumoVendidas['entradas']) ?></div><div class="rotulo">Entradas</div></div>
         <?php $qsSemC = $_GET; $qsSemC['etapa'] = 'vendido'; $qsSemC['contrato'] = 'sem'; unset($qsSemC['pagina']); ?>
-        <a class="stat-card alerta" href="/admin/vendas.php?<?= e(http_build_query($qsSemC)) ?>"><div class="valor"><?= (int)$resumoSemContrato['qtd'] ?></div><div class="rotulo">⚠️ Sem contrato assinado<?= (int)$resumoSemContrato['qtd'] ? ' · ' . moedaVenda((float)$resumoSemContrato['total']) . ' (fora dos totais)' : '' ?></div></a>
+        <a class="stat-card alerta" style="background:var(--vermelho-bg);border:1px solid var(--vermelho);border-left-width:4px" href="/admin/vendas.php?<?= e(http_build_query($qsSemC)) ?>"><div class="valor"><?= (int)$resumoSemContrato['qtd'] ?></div><div class="rotulo" style="color:var(--vermelho);font-weight:600">⚠️ Sem contrato assinado<?= (int)$resumoSemContrato['qtd'] ? ' · ' . moedaVenda((float)$resumoSemContrato['total']) . ' (fora dos totais)' : '' ?></div></a>
     </div>
     <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <input type="hidden" name="etapa" value="vendido">
