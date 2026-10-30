@@ -54,8 +54,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'classif
         }
         classificarTipoVeiculo($idPost, $tipoPost);
     } catch (Throwable $e) {
-        // best-effort — se falhar (id inválido, tipo inválido, não é dono),
-        // só não classifica; a lista recarrega igual, sem quebrar a página.
+        // 30/10/2026 — antes falhava calado; agora avisa o motivo no banner.
+        $qsErr = $_GET; unset($qsErr['bulk_sucesso'], $qsErr['bulk_ignorados'], $qsErr['bulk_erro']);
+        header('Location: /admin/index.php?' . http_build_query($qsErr + ['bulk_erro' => 'Não deu pra mudar o tipo: ' . $e->getMessage()]));
+        exit;
     }
     header('Location: /admin/index.php?' . http_build_query($_GET));
     exit;
@@ -1357,22 +1359,38 @@ if ($podeSelecionarEmMassa):
                 <?php endif; ?>
             </td>
             <td>
-                <?= ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'][$op['tipo_veiculo'] ?? ''] ?? '' ?> <?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?>
-                <?php if (empty($op['tipo_veiculo']) && $perfil !== 'supervisor'): ?>
-                    <?php
-                        // 28/09/2026, "sera tem aguma api que ver modelo de
-                        // carro e moto" — sem API confiável pra isso; sugestão
-                        // LOCAL por palavra-chave (nunca aplica sozinha, regra
-                        // #3) destaca qual botão clicar em vez do consultor
-                        // ter que adivinhar modelo por modelo.
-                        $sugestao = sugerirTipoVeiculo($op['veiculo_marca'] ?? '', $op['veiculo_modelo'] ?? '');
-                    ?>
+                <?php
+                    $iconesTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'];
+                    $tipoAtual = (string)($op['tipo_veiculo'] ?? '');
+                    $podeTrocarTipo = $perfil !== 'supervisor';
+                ?>
+                <?php if ($tipoAtual !== '' && $podeTrocarTipo): ?>
+                    <?php // 30/10/2026, "não consegue alterar ícone" — com tipo já marcado, clicar no ícone abre as opções pra trocar. ?>
+                    <details class="tipo-veic-troca" style="display:inline">
+                        <summary style="display:inline;cursor:pointer;list-style:none" title="Trocar tipo do veículo"><?= $iconesTipo[$tipoAtual] ?? '' ?></summary>
+                        <span style="display:inline-flex;gap:2px;vertical-align:middle">
+                        <?php foreach ($iconesTipo as $tv => $icone): ?>
+                        <form method="post" style="display:inline">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="classificar_tipo_veiculo">
+                            <input type="hidden" name="id" value="<?= (int)$op['id'] ?>">
+                            <input type="hidden" name="tipo" value="<?= $tv ?>">
+                            <button type="submit" class="btn-texto" style="padding:6px;font-size:18px;min-width:40px;min-height:40px<?= $tipoAtual === $tv ? ';border:2px solid var(--azul);border-radius:8px;background:var(--azul-claro)' : '' ?>" title="Marcar tipo: <?= $tv ?>"><?= $icone ?></button>
+                        </form>
+                        <?php endforeach; ?>
+                        </span>
+                    </details>
+                <?php else: ?>
+                    <?= $iconesTipo[$tipoAtual] ?? '' ?>
+                <?php endif; ?>
+                <?= e($op['veiculo_modelo'] ?: '—') ?> <?= e($op['veiculo_ano']) ?>
+                <?php if ($tipoAtual === '' && $podeTrocarTipo): ?>
+                    <?php $sugestao = sugerirTipoVeiculo($op['veiculo_marca'] ?? '', $op['veiculo_modelo'] ?? ''); ?>
                     <?php if ($sugestao): ?>
                         <br><small style="color:var(--azul)">🔮 sugestão: <?= ['carro' => 'Carro', 'moto' => 'Moto', 'caminhao' => 'Caminhão'][$sugestao] ?></small>
                     <?php endif; ?>
                     <br>
-                    <?php // "separa eses leads" — classificar rápido sem abrir a oportunidade, pra dar conta dos leads antigos sem tipo ainda. ?>
-                    <?php foreach (['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'outro' => '🚙'] as $tv => $icone): ?>
+                    <?php foreach ($iconesTipo as $tv => $icone): ?>
                     <form method="post" style="display:inline">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="classificar_tipo_veiculo">
