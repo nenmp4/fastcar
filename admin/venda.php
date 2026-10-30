@@ -10,6 +10,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/vendas_formulario.php';
 requireAcessoVendas();
 
 $db = getDB();
@@ -577,6 +578,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mudarEtapaVenda($id, $etapaNovaPost, (int)$_SESSION['admin_id'], clean((string)($_POST['observacao'] ?? '')));
                     $sucesso = 'Etapa atualizada.';
                 }
+            } elseif ($acao === 'requalificar_venda') {
+                $rq = requalificarVendaPorValores($id, valorMonetario($_POST['entrada'] ?? null), valorMonetario($_POST['parcela'] ?? null), (int)$_SESSION['admin_id']);
+                if (!$rq['ok']) {
+                    $erro = $rq['erro'];
+                } else {
+                    $sucesso = 'Requalificado: ' . ($rq['qualificado'] ? ($rq['temperatura'] === 'quente' ? '🔥 lead QUENTE' : '🌱 qualificado (' . $rq['temperatura'] . ')') : '❌ abaixo da entrada mínima')
+                        . ($rq['etapa_nova'] ? ' — etapa: ' . etapaVendaLabel($rq['etapa_nova']) : '') . '.';
+                }
             } elseif ($acao === 'desfazer_vendido') {
                 // 30/10/2026 — desfaz "Vendido" marcado por engano (sem contrato
                 // assinado): volta pra negociação, apaga a data da venda e cancela
@@ -815,6 +824,22 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php if ($v['resumo_ia']): ?><p><strong>Resumo da IA:</strong><br><?= nl2br(e($v['resumo_ia'])) ?></p><?php endif; ?>
     <?php if ($v['etapa'] === 'sem_perfil'): ?>
         <p><span class="badge badge-atraso">⚪ Sem perfil de compra<?= $v['motivo_perda'] ? ': ' . e($v['motivo_perda']) : '' ?></span></p>
+    <?php endif; ?>
+    <?php if (!in_array($v['etapa'], ['vendido', 'cancelada'], true) && $_SESSION['admin_perfil'] !== 'supervisor'): ?>
+    <details style="margin-top:10px"<?= $v['etapa'] === 'sem_perfil' ? ' open' : '' ?>>
+        <summary class="btn" style="list-style:none;cursor:pointer;display:inline-block">🔄 Requalificar (corrigir entrada/parcela)</summary>
+        <form method="post" style="margin-top:8px;max-width:520px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="requalificar_venda">
+            <p><small>Confirmou com o cliente os valores certos? Corrija aqui — o sistema refaz a conta do formulário
+               (entrada mínima, 🔥 quente a partir de R$ 15 mil) e muda a etapa sozinho.</small></p>
+            <div class="grid-2">
+                <div><label>Entrada (R$)</label><input type="text" inputmode="decimal" name="entrada" required placeholder="Ex: 28.000" value="<?= $v['valor_entrada_disponivel'] !== null ? e(number_format((float)$v['valor_entrada_disponivel'], 2, ',', '.')) : '' ?>"></div>
+                <div><label>Parcela que cabe (R$)</label><input type="text" inputmode="decimal" name="parcela" placeholder="Ex: 1.200" value="<?= $v['valor_parcela_orcamento'] !== null ? e(number_format((float)$v['valor_parcela_orcamento'], 2, ',', '.')) : '' ?>"></div>
+            </div>
+            <button type="submit">🔄 Requalificar</button>
+        </form>
+    </details>
     <?php endif; ?>
 </div>
 <?php endif; ?>

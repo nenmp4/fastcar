@@ -154,3 +154,51 @@ function vendaFormularioMsgLink(string $nome = ''): string {
         "Que bom que chamou! Preenche esse formulário rapidinho que um vendedor já te atende com as opções: {$link}",
     ]);
 }
+
+/**
+ * 🔄 Requalificar (30/10/2026, "será que ele é lead quente" — cliente
+ * digitou 28 no formulário querendo dizer 28 mil e caiu como sem perfil).
+ * O vendedor corrige entrada/parcela na venda e o sistema refaz a mesma
+ * conta do formulário: entrada mínima pelo tipo/uso, temperatura e etapa.
+ * Lead que já passou da negociação nunca é rebaixado — só atualiza valores.
+ */
+function requalificarVendaPorValores(int $vendaId, ?float $entrada, ?float $parcela, int $usuarioId): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT * FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v) return ['ok' => false, 'erro' => 'Negociação não encontrada.'];
+    if (in_array($v['etapa'], ['vendido', 'cancelada'], true)) return ['ok' => false, 'erro' => 'Negociação já encerrada — não dá pra requalificar.'];
+    if ($entrada === null || $entrada < 0) return ['ok' => false, 'erro' => 'Informe a entrada.'];
+
+    $interesse = mb_strtolower((string)$v['veiculo_interesse_texto']);
+    $tipo = str_starts_with($interesse, 'moto') ? 'moto' : (str_starts_with($interesse, 'utilit') ? 'utilitario' : 'carro');
+    $uso = array_key_exists((string)$v['tipo_uso_veiculo'], VENDA_FORM_USOS) ? (string)$v['tipo_uso_veiculo'] : 'passeio';
+    $minimo = vendaFormularioMinimo($tipo, $uso);
+    $temperatura = vendaFormularioTemperatura($entrada, $minimo);
+    $qualificado = $entrada >= $minimo;
+    $fmt = fn($x) => 'R$ ' . number_format((float)$x, 2, ',', '.');
+    $quem = (string)($db->query("SELECT nome FROM usuarios WHERE id = " . $usuarioId)->fetchColumn() ?: '');
+    $linha = "\n🔄 Requalificado" . ($quem ? " por {$quem}" : '') . ' em ' . date('d/m/Y H:i') . ': entrada ' . $fmt($entrada)
+        . ($parcela ? ', parcela até ' . $fmt($parcela) : '') . ' (mínimo ' . $fmt($minimo) . ') → '
+        . ($qualificado ? ($temperatura === 'quente' ? '🔥 quente' : '🌱 qualificado') : '❌ abaixo da entrada mínima');
+
+    $db->prepare("UPDATE vendas SET valor_entrada_disponivel = ?, valor_parcela_orcamento = ?, temperatura_lead = ?,
+                    resumo_ia = COALESCE(resumo_ia,'') || ?, updated_at = datetime('now','localtime') WHERE id = ?")
+       ->execute([$entrada, $parcela, $temperatura, $linha, $vendaId]);
+
+    $etapaNova = null;
+    if ($qualificado && in_array($v['etapa'], ['sem_perfil', 'whatsapp', 'qualificacao_ia'], true)) {
+        $etapaNova = 'crm_preenchido';
+        mudarEtapaVenda($vendaId, $etapaNova, $usuarioId, 'Requalificado: entrada ' . $fmt($entrada) . ' (mínimo ' . $fmt($minimo) . ')');
+        $db->prepare("UPDATE vendas SET motivo_perda = '' WHERE id = ?")->execute([$vendaId]);
+        if ($temperatura === 'quente') notificarLeadQuenteVenda($vendaId);
+        else notificarVendedorLeadQualificado($vendaId, 'Requalificado na tela');
+    } elseif ($qualificado && $temperatura === 'quente') {
+        notificarLeadQuenteVenda($vendaId); // 1x por negociação (a própria função deduplica)
+    } elseif (!$qualificado && in_array($v['etapa'], ['whatsapp', 'qualificacao_ia', 'crm_preenchido'], true)) {
+        $etapaNova = 'sem_perfil';
+        mudarEtapaVenda($vendaId, $etapaNova, $usuarioId, 'Requalificado: entrada ' . $fmt($entrada) . ' abaixo do mínimo de ' . $fmt($minimo));
+    }
+    return ['ok' => true, 'temperatura' => $temperatura, 'qualificado' => $qualificado, 'minimo' => $minimo, 'etapa_nova' => $etapaNova];
+}
