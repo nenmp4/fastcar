@@ -165,6 +165,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (iaPausada($telPost)) {
                 retomarIA($telPost);
                 $sucesso = 'IA reativada pra essa conversa.';
+                // 30/10/2026 — reativar com mensagem do cliente sem resposta:
+                // a IA responde na hora (antes só respondia a PRÓXIMA mensagem).
+                try {
+                    require_once dirname(__DIR__) . '/includes/ia_qualificacao.php';
+                    $stUlt = getDB()->prepare("SELECT direcao FROM whatsapp_mensagens WHERE telefone = ? ORDER BY id DESC LIMIT 1");
+                    $stUlt->execute([normalizarTelefone($telPost) ?: $telPost]);
+                    $opAtiva = buscarOportunidadeAtivaPorTelefone($telPost);
+                    if ($stUlt->fetchColumn() === 'in' && $opAtiva && in_array($opAtiva['etapa'], ['whatsapp', 'qualificacao_ia'], true)
+                        && iaQualificacaoDentroHorarioComercial()) {
+                        if ($opAtiva['etapa'] === 'whatsapp') {
+                            mudarEtapa((int)$opAtiva['id'], 'qualificacao_ia', (int)$_SESSION['admin_id'], 'IA reativada — iniciou qualificação');
+                        }
+                        $r = iaProcessarTurno((int)$opAtiva['id'], $telPost, null);
+                        if (($r['resposta'] ?? '') === '') {
+                            iaRegistrarDecisao($telPost, 'ia_sem_resposta');
+                            $sucesso .= ' ⚠️ A IA não conseguiu gerar resposta agora (confira Configurações → IA).';
+                        } elseif (empty($r['enviada'])) {
+                            iaRegistrarDecisao($telPost, 'envio_falhou', whatsappDetalheUltimoErro());
+                            $sucesso .= ' ⚠️ A IA gerou a resposta mas o envio pelo WhatsApp falhou.';
+                        } else {
+                            iaRegistrarDecisao($telPost, 'respondeu');
+                            $sucesso .= ' E já respondeu a última mensagem do cliente.';
+                        }
+                    }
+                } catch (Throwable $e) {
+                    iaRegistrarDecisao($telPost, 'erro', $e->getMessage());
+                }
             } else {
                 pausarIA($telPost);
                 $sucesso = 'IA pausada — só a equipe responde por aqui até reativar.';
