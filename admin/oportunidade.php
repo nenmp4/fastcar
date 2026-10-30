@@ -44,7 +44,21 @@ const CONDICAO_PAGAMENTO_5050 = '50% na assinatura e 50% após a regularização
 const COMPRA_ACOES_TRAVADAS = ['atualizar_veiculo', 'atualizar_contrato', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'mudar_etapa', 'marcar_perdida', 'atualizar_nome_cliente', 'excluir_documento_staff',
     'confirmar_documento_staff', 'enviar_link_documentos', 'atualizar_proxima_acao', 'salvar_testemunha2', 'ler_consulta_debitos', 'salvar_valor_pago'];
-$compraTravada = $op['etapa'] === 'fechado' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+// 30/10/2026, "todos contratos assinados não permitir editar as informações
+// somente super admin" — trava também quando o contrato de compra já está
+// assinado, mesmo antes da pasta fechar. Nesse caso ainda dá pra mudar a
+// etapa só pra 'fechado' (completar documentos e fechar a pasta).
+$compraContratoAssinado = (bool)getDB()->query("SELECT 1 FROM contratos WHERE oportunidade_id = " . (int)$id . " AND tipo = 'compra' AND status = 'assinado'")->fetchColumn();
+$compraTravada = ($op['etapa'] === 'fechado' || $compraContratoAssinado) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+$compraAcoesTravadas = COMPRA_ACOES_TRAVADAS;
+if ($compraTravada && $op['etapa'] !== 'fechado' && ($_POST['acao'] ?? '') === 'mudar_etapa' && ($_POST['etapa_nova'] ?? '') === 'fechado') {
+    $compraAcoesTravadas = array_values(array_diff($compraAcoesTravadas, ['mudar_etapa']));
+}
+// Encerrar com contrato assinado continua possível pra qualquer um, mas pede
+// a senha (checada no handler de marcar_perdida) e vai pra auditoria.
+if ($compraTravada && $op['etapa'] !== 'fechado') {
+    $compraAcoesTravadas = array_values(array_diff($compraAcoesTravadas, ['marcar_perdida']));
+}
 /**
  * Compra já fechada: grava o valor pago ao vendedor (valor_final + valor_ofertado)
  * e lança/atualiza a despesa no financeiro e a comissão (29/10/2026).
@@ -77,16 +91,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // está fazendo") — vê tudo, mas não age em nome de ninguém.
         http_response_code(403);
         $erro = 'Perfil de supervisão só acompanha, não altera oportunidades.';
-    } elseif ($compraTravada && in_array((string)($_POST['acao'] ?? ''), COMPRA_ACOES_TRAVADAS, true)
+    } elseif ($compraTravada && in_array((string)($_POST['acao'] ?? ''), $compraAcoesTravadas, true)
               || ($compraTravada && ($_POST['acao'] ?? '') === 'upload_documento_staff' && documentoCompraJaEnviado($id, (string)($_POST['tipo_documento'] ?? '')))) {
         // 27/10/2026, "todos contratos fechados não ter possibilidade de
         // alterar as informações" — compra fechada (contrato assinado) fica
         // travada; só o super admin corrige. Pendência pós-venda, vistoria,
         // anexar documento que ainda falta e reenviar/sincronizar continuam.
         http_response_code(403);
-        $erro = '🔒 Compra fechada — os dados do contrato não podem mais ser alterados. Só o super admin pode corrigir.';
+        $erro = '🔒 Contrato assinado — os dados não podem mais ser alterados. Só o super admin pode corrigir.';
+        auditoriaRegistrar('edicao_bloqueada_contrato', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
+            'Ação bloqueada: ' . (string)($_POST['acao'] ?? ''));
     } else {
         $acao = (string)($_POST['acao'] ?? '');
+        if (($_SESSION['admin_perfil'] ?? '') === 'super_admin' && ($op['etapa'] === 'fechado' || $compraContratoAssinado)
+            && in_array($acao, COMPRA_ACOES_TRAVADAS, true) && $acao !== 'marcar_perdida') {
+            auditoriaRegistrar('edicao_contrato_assinado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
+                'Ação: ' . $acao);
+        }
         try {
             if ($acao === 'atualizar_veiculo') {
                 // 06/10/2026, achado real (screenshot) — oportunidade #272
@@ -287,7 +308,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($acao === 'mudar_etapa') {
                 mudarEtapa($id, (string)$_POST['etapa_nova'], (int)$_SESSION['admin_id'], clean((string)($_POST['observacao'] ?? '')));
                 $sucesso = 'Etapa atualizada.';
+            } elseif ($acao === 'marcar_perdida' && $compraContratoAssinado && !confirmarSenhaUsuarioLogado((string)($_POST['senha_confirmacao'] ?? ''))) {
+                $erro = 'Senha incorreta — essa oportunidade tem contrato assinado, confirme com a sua senha pra encerrar.';
+                auditoriaRegistrar('senha_confirmacao_falhou', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
+                    'Encerrar oportunidade com contrato de compra assinado');
             } elseif ($acao === 'marcar_perdida') {
+                if ($compraContratoAssinado) {
+                    auditoriaRegistrar('contrato_assinado_cancelado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
+                        'Compra com contrato assinado encerrada. Motivo: ' . clean((string)($_POST['motivo'] ?? '')));
+                }
                 marcarPerdida($id, clean((string)($_POST['motivo'] ?? '')), (int)$_SESSION['admin_id'], !empty($_POST['sem_perfil']));
                 $sucesso = 'Oportunidade encerrada.';
             } elseif ($acao === 'mover_para_vendas') {
@@ -676,7 +705,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </header>
 
 <main data-abas-ordem="👤 Cliente|🚗 Veículo|📝 Contrato|📎 Documentos|📅 Andamento|💬 Conversa">
-<?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Compra fechada</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
+<?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $op['etapa'] === 'fechado' ? 'Compra fechada' : 'Contrato assinado' ?></strong><?= $op['etapa'] !== 'fechado' ? ' — dá pra completar os documentos e fechar a pasta, mas' : ' —' ?> os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <?php if ($marcaFeedback): ?>
@@ -1348,6 +1377,10 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <input type="hidden" name="acao" value="marcar_perdida">
                 <label>Motivo (obrigatório)</label>
                 <input type="text" name="motivo" required placeholder="Ex: desistiu, achou proposta baixa, sem perfil...">
+                <?php if ($compraContratoAssinado): ?>
+                    <label>🔑 Sua senha (contrato já assinado — fica registrado na auditoria)</label>
+                    <input type="password" name="senha_confirmacao" required autocomplete="current-password">
+                <?php endif; ?>
                 <label><input type="checkbox" name="sem_perfil" value="1" style="width:auto;display:inline-block"> Marcar como "sem perfil de compra" (em vez de "perdido")</label>
                 <button type="submit" class="perigo">Encerrar oportunidade</button>
             </form>
@@ -2016,7 +2049,7 @@ function copiarTextoFallback(texto, callback) {
 <script>
 // Trava visual (o servidor já bloqueia): desabilita os formulários das ações travadas.
 (function () {
-    var travadas = <?= json_encode(COMPRA_ACOES_TRAVADAS) ?>;
+    var travadas = <?= json_encode($op['etapa'] === 'fechado' ? COMPRA_ACOES_TRAVADAS : array_values(array_diff(COMPRA_ACOES_TRAVADAS, ['mudar_etapa', 'marcar_perdida']))) ?>;
     document.querySelectorAll('main form').forEach(function (f) {
         var a = f.querySelector('input[name=acao]');
         if (!a || travadas.indexOf(a.value) === -1) return;

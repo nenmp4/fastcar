@@ -46,7 +46,9 @@ const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atuali
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
     'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria', 'salvar_fipe_venda'];
-$vendaTravada = $v['etapa'] === 'vendido' && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+// 30/10/2026 — trava também com contrato de venda assinado, mesmo antes de
+// virar 'vendido' (concluir/devolução continuam liberados).
+$vendaTravada = ($v['etapa'] === 'vendido' || ($contratoVendaAssinado && $v['etapa'] !== 'cancelada')) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
 function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM venda_documentos WHERE venda_id = ? AND tipo = ?
                             AND (COALESCE(arquivo_url,'') != '' OR COALESCE(drive_file_id,'') != '')");
@@ -69,9 +71,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // super admin corrige. Devolução do veículo, cobrança Asaas pós-
         // assinatura, fotos, vistoria e anexar documento que falta seguem.
         http_response_code(403);
-        $erro = '🔒 Venda concluída — os dados do contrato não podem mais ser alterados. Só o super admin pode corrigir.';
+        $erro = '🔒 Contrato assinado — os dados não podem mais ser alterados. Só o super admin pode corrigir.';
+        auditoriaRegistrar('edicao_bloqueada_contrato', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+            'Ação bloqueada: ' . (string)($_POST['acao'] ?? ''));
     } else {
         $acao = (string)($_POST['acao'] ?? '');
+        if (($_SESSION['admin_perfil'] ?? '') === 'super_admin' && ($v['etapa'] === 'vendido' || $contratoVendaAssinado)
+            && in_array($acao, VENDA_ACOES_TRAVADAS, true)) {
+            auditoriaRegistrar('edicao_contrato_assinado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+                'Ação: ' . $acao);
+        }
         try {
             if ($acao === 'upload_midia_revenda') {
                 if (!$v['oportunidade_id']) {
@@ -629,7 +638,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mudarEtapaVenda($id, 'sem_perfil', (int)$_SESSION['admin_id'], 'Não qualificado: ' . clean($motivoNq));
                     $sucesso = 'Lead marcado como não qualificado.';
                 }
+            } elseif ($acao === 'cancelar_venda' && $contratoVendaAssinado && !confirmarSenhaUsuarioLogado((string)($_POST['senha_confirmacao'] ?? ''))) {
+                $erro = 'Senha incorreta — essa negociação tem contrato assinado, confirme com a sua senha pra cancelar.';
+                auditoriaRegistrar('senha_confirmacao_falhou', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+                    'Cancelar/devolver venda com contrato assinado');
             } elseif ($acao === 'cancelar_venda') {
+                if ($contratoVendaAssinado) {
+                    auditoriaRegistrar('contrato_assinado_cancelado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+                        ($v['etapa'] === 'vendido' ? 'Devolução' : 'Cancelamento') . ' com contrato assinado. Motivo: ' . clean((string)($_POST['motivo'] ?? '')));
+                }
                 // 19/09/2026, "cliente devolver veiculo agente vende para
                 // outro" — a mesma ação/etapa ('cancelada') cobre cancelar
                 // ANTES de vender e devolução DEPOIS de já vendido; captura
@@ -719,7 +736,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 </header>
 
 <main data-abas-ordem="👤 Comprador|🚗 Veículo|📝 Contrato|💳 Financeiro|📎 Documentos|📅 Andamento">
-<?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong>Venda concluída</strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
+<?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $v['etapa'] === 'vendido' ? 'Venda concluída' : 'Contrato assinado' ?></strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
@@ -1769,6 +1786,10 @@ function adicionarParteEntrada() {
                 <input type="hidden" name="acao" value="cancelar_venda">
                 <label>Motivo do cancelamento (obrigatório)</label>
                 <input type="text" name="motivo" required placeholder="Ex: comprador desistiu, não fechou preço...">
+                <?php if ($contratoVendaAssinado): ?>
+                    <label>🔑 Sua senha (contrato já assinado — fica registrado na auditoria)</label>
+                    <input type="password" name="senha_confirmacao" required autocomplete="current-password">
+                <?php endif; ?>
                 <button type="submit" class="perigo">Cancelar negociação</button>
             </form>
         <?php elseif ($v['etapa'] === 'vendido'): ?>
@@ -1802,6 +1823,10 @@ function adicionarParteEntrada() {
                 <input type="hidden" name="acao" value="cancelar_venda">
                 <label>Motivo da devolução (obrigatório)</label>
                 <input type="text" name="motivo" required placeholder="Ex: comprador devolveu o veículo, inadimplência...">
+                <?php if ($contratoVendaAssinado): ?>
+                    <label>🔑 Sua senha (contrato já assinado — fica registrado na auditoria)</label>
+                    <input type="password" name="senha_confirmacao" required autocomplete="current-password">
+                <?php endif; ?>
                 <button type="submit" class="perigo">🔙 Registrar devolução do veículo</button>
             </form>
         <?php elseif (in_array($v['etapa'], ['whatsapp', 'qualificacao_ia'], true)): ?>

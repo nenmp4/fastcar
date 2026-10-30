@@ -193,3 +193,19 @@ function atualizarPerfilProprio(int $id, string $nome, string $email, string $wh
 
     return ['ok' => true, 'erro' => null, 'campos_alterados' => $camposAlterados];
 }
+
+
+/**
+ * Confirma a senha do usuário logado antes de uma ação sensível (30/10/2026,
+ * "opção de cancelar contrato continua mas pedir a senha"). Não conta como
+ * tentativa de login nem bloqueia a conta — só nega a ação.
+ */
+function confirmarSenhaUsuarioLogado(string $senha): bool {
+    $uid = (int)($_SESSION['admin_id'] ?? 0);
+    if (!$uid || $senha === '') return false;
+    $st = getDB()->prepare("SELECT senha_hash FROM usuarios WHERE id = ?");
+    $st->execute([$uid]);
+    $hash = (string)($st->fetchColumn() ?: '');
+    return $hash !== '' && password_verify($senha, $hash);
+}
+
