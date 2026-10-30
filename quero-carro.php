@@ -38,16 +38,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $erro = 'Muitas tentativas. Tente de novo daqui a pouco.';
     } else {
         setConfig($ipChave, (string)($tentativas + 1));
-        $semEntrada = ($_POST['sem_entrada'] ?? '') === '1';
         try {
+            // 30/10/2026, "as pessoas não gostam de preencher" — entrada virou
+            // botão de faixa; parcela e dia da visita saíram (vendedor pergunta).
             $res = registrarFormularioVenda([
                 'nome' => $_POST['nome'] ?? '',
                 'telefone' => $_POST['telefone'] ?? '',
                 'tipo' => $_POST['tipo'] ?? '',
                 'uso' => $_POST['uso'] ?? '',
-                'entrada' => $semEntrada ? 0.0 : valorMonetario($_POST['entrada'] ?? null),
-                'parcela' => valorMonetario($_POST['parcela'] ?? null),
-                'visita' => $_POST['visita'] ?? '',
+                'entrada_faixa' => (string)($_POST['entrada_faixa'] ?? ''),
             ] + $utm);
             if (!$res['ok']) { $erro = $res['erro']; $res = null; }
         } catch (Throwable $e) {
@@ -68,7 +67,7 @@ $sel = fn($campo, $valor) => (($f[$campo] ?? '') === $valor) ? 'checked' : '';
 <meta name="robots" content="noindex, nofollow">
 <title>Fastcar — seu carro na promissória</title>
 <meta property="og:title" content="Fastcar — carro e moto na promissória">
-<meta property="og:description" content="Sem consulta ao SPC/Serasa. Preencha em 1 minuto e veja as opções que cabem no seu bolso.">
+<meta property="og:description" content="Sem consulta ao SPC/Serasa. Responda em 20 segundos e veja as opções que cabem no seu bolso.">
 <?php if ($pixelId !== ''): ?>
 <script>
 !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
@@ -113,7 +112,6 @@ small { color:#666; }
 .wizard .passo.atual { display:block; animation:entra .2s ease; }
 @keyframes entra { from { opacity:0; transform:translateX(12px); } to { opacity:1; transform:none; } }
 footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top:3px solid var(--azul); background:#fff; margin-top:30px; }
-.qc-previa { display:block; color:#2f6fed; font-weight:600; margin:-4px 0 8px; min-height:1.2em; }
 </style>
 </head>
 <body>
@@ -145,7 +143,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     </div>
 <?php else: ?>
     <h1>🚗 Seu carro ou moto na promissória</h1>
-    <p class="sub">Sem consulta ao SPC/Serasa. Preencha em 1 minuto e veja as opções que cabem no seu bolso.</p>
+    <p class="sub">Sem consulta ao SPC/Serasa. Responda em 20 segundos e veja as opções que cabem no seu bolso.</p>
     <?php if ($erro): ?><div class="erro"><?= e($erro) ?></div><?php endif; ?>
     <form method="post" class="card" id="qc-form">
         <?= csrfField() ?>
@@ -174,22 +172,15 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
         </div>
 
         <div class="passo" data-passo="3">
-            <label class="t" for="entrada">Quanto você tem de entrada? (R$)</label>
-            <input type="text" id="entrada" name="entrada" inputmode="decimal" placeholder="Ex: 10.000" value="<?= e($f['entrada'] ?? '') ?>">
-            <small class="qc-previa" data-para="entrada"></small>
-            <label class="check"><input type="checkbox" name="sem_entrada" value="1" <?= ($f['sem_entrada'] ?? '') === '1' ? 'checked' : '' ?>
-                onchange="var e=document.getElementById('entrada');e.disabled=this.checked;if(this.checked)e.value='';"> Não tenho entrada</label>
+            <label class="t">Quanto você tem de entrada?</label>
+            <div class="opcoes">
+                <?php foreach (VENDA_FORM_FAIXAS as $k => $fx): ?>
+                    <label><input type="radio" name="entrada_faixa" value="<?= e($k) ?>" required <?= $sel('entrada_faixa', $k) ?>> <?= e($fx[2]) ?></label>
+                <?php endforeach; ?>
+            </div>
         </div>
 
         <div class="passo" data-passo="4">
-            <label class="t" for="parcela">Quanto cabe de parcela por mês? (R$)</label>
-            <input type="text" id="parcela" name="parcela" inputmode="decimal" placeholder="Ex: 900" value="<?= e($f['parcela'] ?? '') ?>">
-            <small class="qc-previa" data-para="parcela"></small>
-            <label class="t" for="visita">Melhor dia e horário pra vir conhecer a loja <small>(opcional)</small></label>
-            <input type="text" id="visita" name="visita" placeholder="Ex: sábado de manhã" value="<?= e($f['visita'] ?? '') ?>">
-        </div>
-
-        <div class="passo" data-passo="5">
             <label class="t" for="nome">Seu nome</label>
             <input type="text" id="nome" name="nome" required autocomplete="name" value="<?= e($f['nome'] ?? '') ?>">
             <label class="t" for="telefone">Seu WhatsApp (com DDD)</label>
@@ -209,8 +200,6 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
 <footer><strong>FASTCAR SOLUTIONS</strong> · CNPJ 66.934.500/0001-09<br>Av. Sagitário, 138 — Alphaville Conde II, Barueri/SP</footer>
 <script>
 (function(){
-    var c = document.querySelector('input[name=sem_entrada]');
-    if (c && c.checked) document.getElementById('entrada').disabled = true;
     var form = document.getElementById('qc-form');
     if (!form) return;
     var passos = Array.prototype.slice.call(form.querySelectorAll('.passo'));
@@ -233,39 +222,10 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     function valido(i) {
         var p = passos[i];
         if (p.querySelector('input[type=radio]') && !p.querySelector('input[type=radio]:checked')) { alert('Escolha uma opção pra continuar.'); return false; }
-        if (p.dataset.passo === '3' && !c.checked && document.getElementById('entrada').value.trim() === '') {
-            alert('Informe quanto tem de entrada, ou marque "Não tenho entrada".'); return false;
-        }
-        // 30/10/2026, "será que colou 28 mesmo ou 2800": valor pequeno demais
-        // quase sempre é o cliente pensando em "mil" — confirma antes de seguir.
-        if (p.dataset.passo === '3' && !c.checked) {
-            var ve = lerValor(document.getElementById('entrada').value);
-            if (ve !== null && ve > 0 && ve < 1000 && !confirm('Você digitou ' + brl(ve) + ' de entrada. É isso mesmo?\n\nSe for ' + brl(ve * 1000) + ', toque em Cancelar e escreva assim: ' + Math.round(ve * 1000).toLocaleString('pt-BR'))) return false;
-        }
-        if (p.dataset.passo === '4') {
-            var vp = lerValor(document.getElementById('parcela').value);
-            if (vp !== null && vp > 0 && vp < 100 && !confirm('Você digitou ' + brl(vp) + ' de parcela por mês. É isso mesmo?')) return false;
-        }
         var campos = p.querySelectorAll('input[required]:not([type=radio])');
         for (var k = 0; k < campos.length; k++) { if (!campos[k].reportValidity()) return false; }
         return true;
     }
-    // Mesmo jeito de ler valor do servidor (valorMonetario): "28 mil", "R$ 28.000,00", "2,800".
-    function lerValor(t) {
-        t = String(t || '').toLowerCase().trim(); if (!t) return null;
-        var mult = /\d\s*(mil|k)\b/.test(t) ? 1000 : 1;
-        t = t.replace(/[^0-9.,]/g, ''); if (!t) return null;
-        if (/^\d{1,3}(,\d{3})+$/.test(t)) t = t.replace(/,/g, '');
-        else if (t.indexOf(',') >= 0) t = t.replace(/\./g, '').replace(',', '.');
-        else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
-        var n = parseFloat(t); return isNaN(n) ? null : n * mult;
-    }
-    function brl(n) { return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-    form.querySelectorAll('.qc-previa').forEach(function (s) {
-        var inp = document.getElementById(s.dataset.para);
-        function atualizar() { var v = lerValor(inp.value); s.textContent = v === null ? '' : '= ' + brl(v); }
-        inp.addEventListener('input', atualizar); atualizar();
-    });
     bProx.addEventListener('click', function () { if (valido(atual)) mostrar(atual + 1); });
     bVoltar.addEventListener('click', function () { if (atual > 0) mostrar(atual - 1); });
     // Escolher uma opção já avança sozinho (passos 1 e 2).

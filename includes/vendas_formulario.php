@@ -23,6 +23,21 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // p
 const VENDA_FORM_TIPOS = ['carro' => 'Carro', 'utilitario' => 'Utilitário (picape/van/furgão)', 'moto' => 'Moto'];
 const VENDA_FORM_USOS = ['passeio' => 'Passeio / família', 'aplicativo' => 'Aplicativo (Uber/99/entrega)', 'utilitario' => 'Trabalho / carga'];
 
+/**
+ * Faixas de entrada (30/10/2026, "as pessoas não gostam de preencher") — no
+ * formulário a entrada virou botão de faixa em vez de digitar valor.
+ * [mínimo, máximo (null = sem teto), rótulo]. Passa na entrada mínima quando
+ * o mínimo do caso cabe na faixa; 🔥 quente quem tem o PISO ≥ R$ 15 mil.
+ */
+const VENDA_FORM_FAIXAS = [
+    'nao'  => [0, 0, 'Não tenho entrada'],
+    'ate5' => [1, 5000, 'Até R$ 5 mil'],
+    '5a10' => [5000, 10000, 'R$ 5 a 10 mil'],
+    '10a15' => [10000, 15000, 'R$ 10 a 15 mil'],
+    '15a25' => [15000, 25000, 'R$ 15 a 25 mil'],
+    '25mais' => [25000, null, 'Mais de R$ 25 mil'],
+];
+
 /** Entrada mínima (R$) pro caso — moto R$ 5 mil, aplicativo R$ 14 mil, passeio/trabalho R$ 10 mil, utilitário R$ 20 mil (Jean, 26/10/2026). */
 function vendaFormularioMinimo(string $tipo, string $uso): float {
     if ($tipo === 'moto') return 5000.0;
@@ -85,6 +100,17 @@ function registrarFormularioVenda(array $d): array {
     $minimo = vendaFormularioMinimo($tipo, $uso);
     $qualificado = $entrada >= $minimo;
     $temperatura = vendaFormularioTemperatura($entrada, $minimo);
+    $faixaRotulo = '';
+    if (isset($d['entrada_faixa'])) {
+        if (!isset(VENDA_FORM_FAIXAS[$d['entrada_faixa']])) return ['ok' => false, 'erro' => 'Escolha quanto você tem de entrada.'];
+        [$fMin, $fMax, $faixaRotulo] = VENDA_FORM_FAIXAS[$d['entrada_faixa']];
+        $entrada = (float)$fMin;
+        // Passa se o piso da faixa já cobre o mínimo, ou se o mínimo cai DENTRO da
+        // faixa (ex: aplicativo R$ 14 mil na faixa 10–15). Teto igual ao mínimo não
+        // passa: quem tem exatamente R$ 5 mil marca "5 a 10", não "até 5".
+        $qualificado = $d['entrada_faixa'] !== 'nao' && ($fMin >= $minimo || $fMax === null || $fMax > $minimo);
+        $temperatura = !$qualificado ? 'frio' : ($fMin >= 15000 ? 'quente' : 'morno');
+    }
 
     $origem = [
         'canal_origem' => 'formulario_site',
@@ -100,7 +126,8 @@ function registrarFormularioVenda(array $d): array {
         . "✅ Nome: {$nome}\n"
         . "✅ Procura: {$interesse}\n"
         . "✅ Forma de pagamento: promissória (formulário)\n"
-        . ($entrada > 0 ? "✅ Entrada disponível: {$fmt($entrada)}\n" : "⚠️ Não tem entrada\n")
+        . ($faixaRotulo !== '' ? ($entrada > 0 || $qualificado ? "✅ Entrada disponível: {$faixaRotulo}\n" : "⚠️ Não tem entrada\n")
+            : ($entrada > 0 ? "✅ Entrada disponível: {$fmt($entrada)}\n" : "⚠️ Não tem entrada\n"))
         . ($parcela ? "✅ Parcela que cabe no bolso: até {$fmt($parcela)}\n" : "⚠️ Parcela: não informou\n")
         . ($visita !== '' ? "✅ Melhor dia/horário pra visita: {$visita}\n" : "⚠️ Visita: ainda não combinou dia\n")
         . "Entrada mínima pro caso: {$fmt($minimo)}\n"
@@ -138,7 +165,7 @@ function registrarFormularioVenda(array $d): array {
         }
     } elseif (in_array($etapa, ['whatsapp', 'qualificacao_ia'], true)) {
         mudarEtapaVenda($vendaId, 'sem_perfil', null,
-            'Formulário: entrada ' . $fmt($entrada) . ' abaixo do mínimo de ' . $fmt($minimo) . ' pra ' . $interesse);
+            'Formulário: entrada ' . ($faixaRotulo !== '' ? $faixaRotulo : $fmt($entrada)) . ' abaixo do mínimo de ' . $fmt($minimo) . ' pra ' . $interesse);
     }
     return ['ok' => true, 'venda_id' => $vendaId, 'qualificado' => $qualificado, 'minimo' => $minimo, 'temperatura' => $temperatura];
 }
