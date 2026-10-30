@@ -203,7 +203,7 @@ function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     if ($principal !== null && $principal !== $oportunidadeId) return false;
 
     $stmt = $db->prepare("
-        SELECT COUNT(*) FROM vendas WHERE oportunidade_id = ? AND etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+        SELECT COUNT(*) FROM vendas vx WHERE vx.oportunidade_id = ? AND ((vx.etapa IN ('negociacao', 'contrato_enviado', 'vendido')) OR (vx.etapa != 'cancelada' AND EXISTS (SELECT 1 FROM contratos cva WHERE cva.venda_id = vx.id AND cva.tipo = 'venda' AND cva.status = 'assinado')))
     ");
     $stmt->execute([$oportunidadeId]);
     if ((int)$stmt->fetchColumn() > 0) return false;
@@ -215,7 +215,7 @@ function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
             JOIN vendas v2 ON v2.oportunidade_id = o2.id
             WHERE o2.id != ? AND o2.etapa = 'fechado'
               AND UPPER(REPLACE(REPLACE(o2.veiculo_placa, '-', ''), ' ', '')) = ?
-              AND v2.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+              AND ((v2.etapa IN ('negociacao', 'contrato_enviado', 'vendido')) OR (v2.etapa != 'cancelada' AND EXISTS (SELECT 1 FROM contratos cva WHERE cva.venda_id = v2.id AND cva.tipo = 'venda' AND cva.status = 'assinado')))
         ");
         $stmtDup->execute([$oportunidadeId, $placaNorm]);
         if ((int)$stmtDup->fetchColumn() > 0) return false;
@@ -515,7 +515,7 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
           AND COALESCE(o.oculto_estoque, 0) = 0
           AND NOT EXISTS (
               SELECT 1 FROM vendas v
-              WHERE v.oportunidade_id = o.id AND v.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+              WHERE v.oportunidade_id = o.id AND ((v.etapa IN ('negociacao', 'contrato_enviado', 'vendido')) OR (v.etapa != 'cancelada' AND EXISTS (SELECT 1 FROM contratos cva WHERE cva.venda_id = v.id AND cva.tipo = 'venda' AND cva.status = 'assinado')))
           )
           AND (
               TRIM(COALESCE(o.veiculo_placa, '')) = ''
@@ -525,7 +525,7 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
                   WHERE o2.id != o.id AND o2.etapa = 'fechado'
                     AND UPPER(REPLACE(REPLACE(o2.veiculo_placa, '-', ''), ' ', ''))
                       = UPPER(REPLACE(REPLACE(o.veiculo_placa, '-', ''), ' ', ''))
-                    AND v2.etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+                    AND ((v2.etapa IN ('negociacao', 'contrato_enviado', 'vendido')) OR (v2.etapa != 'cancelada' AND EXISTS (SELECT 1 FROM contratos cva WHERE cva.venda_id = v2.id AND cva.tipo = 'venda' AND cva.status = 'assinado')))
               )
           )
         ORDER BY o.data_compra DESC
@@ -798,7 +798,7 @@ function veiculoPrincipalPorPlaca(string $placa): ?int {
     if (strlen($norm) < 6) return null;
     $stmt = getDB()->prepare("
         SELECT o.id,
-               EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = o.id AND v.etapa IN ('negociacao','contrato_enviado','vendido')) AS tem_venda,
+               EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = o.id AND ((v.etapa IN ('negociacao', 'contrato_enviado', 'vendido')) OR (v.etapa != 'cancelada' AND EXISTS (SELECT 1 FROM contratos cva WHERE cva.venda_id = v.id AND cva.tipo = 'venda' AND cva.status = 'assinado')))) AS tem_venda,
                EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status NOT IN ('gerado','cancelado')) AS tem_contrato,
                EXISTS (SELECT 1 FROM veiculo_avaliacoes a WHERE a.oportunidade_id = o.id AND a.status = 'concluida') AS tem_vistoria,
                EXISTS (SELECT 1 FROM veiculo_midias_revenda m WHERE m.oportunidade_id = o.id) AS tem_midia
