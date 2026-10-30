@@ -787,7 +787,7 @@ function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = nul
     try {
         $db = getDB();
 
-        $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE venda_id = ? AND origem = 'comissao_venda'");
+        $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE venda_id = ? AND origem = 'comissao_venda' AND status != 'cancelado'");
         $existe->execute([$vendaId]);
         if ($existe->fetchColumn()) return;
         // Locação (27/10/2026) nunca gera receita/comissão de VENDA — aluguel
