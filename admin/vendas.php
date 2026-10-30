@@ -482,6 +482,10 @@ if ($abaVendidas) {
     $stmtRes = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total, COALESCE(SUM(v.valor_pago_contratacao),0) AS entradas FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where} AND EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = v.id AND csc.tipo = 'venda' AND csc.status = 'assinado')");
     $stmtRes->execute($params);
     $resumoVendidas = $stmtRes->fetch();
+    // 30/10/2026, "adicione card sem contratos pra sabermos" — mesmos filtros, só os sem contrato assinado.
+    $stmtSemC = $db->prepare("SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id {$joinContratoVendaAssinado} {$where} AND NOT EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = v.id AND csc.tipo = 'venda' AND csc.status = 'assinado')");
+    $stmtSemC->execute($params);
+    $resumoSemContrato = $stmtSemC->fetch();
     // Situação das parcelas de cada venda da página (1 query só).
     $parcVendidas = [];
     $comissaoVendidas = [];
@@ -1365,6 +1369,8 @@ if ($podeSelecionarEmMassa):
         <div class="stat-card sucesso"><div class="valor"><?= (int)$resumoVendidas['qtd'] ?></div><div class="rotulo">Carros vendidos</div></div>
         <div class="stat-card sucesso"><div class="valor"><?= moedaVenda((float)$resumoVendidas['total']) ?></div><div class="rotulo">Valor total vendido</div></div>
         <div class="stat-card neutro"><div class="valor"><?= moedaVenda((float)$resumoVendidas['entradas']) ?></div><div class="rotulo">Entradas</div></div>
+        <?php $qsSemC = $_GET; $qsSemC['etapa'] = 'vendido'; $qsSemC['contrato'] = 'sem'; unset($qsSemC['pagina']); ?>
+        <a class="stat-card alerta" href="/admin/vendas.php?<?= e(http_build_query($qsSemC)) ?>"><div class="valor"><?= (int)$resumoSemContrato['qtd'] ?></div><div class="rotulo">⚠️ Sem contrato assinado<?= (int)$resumoSemContrato['qtd'] ? ' · ' . moedaVenda((float)$resumoSemContrato['total']) . ' (fora dos totais)' : '' ?></div></a>
     </div>
     <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <input type="hidden" name="etapa" value="vendido">
