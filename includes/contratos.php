@@ -1407,6 +1407,58 @@ function reenviarLinkAssinaturaContratoMeta(int $contratoId): array {
  * negociação cancelada (devolução/cancelamento é decisão humana).
  * Chamada pelo sync da ZapSign, pelo cron e pelo botão em admin/venda.php.
  */
+/**
+ * Contrato de venda assinado FORA do sistema (papel, outra plataforma) —
+ * 31/10/2026, "vendas que ficaram sem contrato assinado: só subir contrato
+ * que ela fecha venda?". Sobe o PDF/foto, registra em `contratos` como
+ * 'assinado' na data informada e fecha a venda pelo mesmo caminho da
+ * ZapSign. Venda que já estava Vendida ganha receita/comissão com a DATA
+ * DO CONTRATO (retroativo — nunca cria cobrança no Asaas). Só super admin
+ * chama isto (admin/venda.php).
+ */
+function registrarContratoVendaAssinadoManual(int $vendaId, array $arquivo, string $dataAssinatura, int $usuarioId): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT id, etapa, oportunidade_id, comprador_nome FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v) return ['ok' => false, 'erro' => 'Negociação não encontrada.'];
+    if ($v['etapa'] === 'cancelada') return ['ok' => false, 'erro' => 'Negociação cancelada — não dá pra subir contrato nela.'];
+    if (!$v['oportunidade_id']) return ['ok' => false, 'erro' => 'Vincule o veículo da frota antes de subir o contrato.'];
+    $dt = DateTime::createFromFormat('Y-m-d', $dataAssinatura);
+    if (!$dt || $dt->format('Y-m-d') !== $dataAssinatura || $dataAssinatura > date('Y-m-d')) {
+        return ['ok' => false, 'erro' => 'Informe a data em que o contrato foi assinado (não pode ser no futuro).'];
+    }
+    $ja = $db->prepare("SELECT 1 FROM contratos WHERE venda_id = ? AND tipo = 'venda' AND status = 'assinado'");
+    $ja->execute([$vendaId]);
+    if ($ja->fetchColumn()) return ['ok' => false, 'erro' => 'Essa venda já tem contrato assinado.'];
+
+    require_once __DIR__ . '/venda_documentos.php';
+    $up = salvarUploadDocumentoVenda($vendaId, 'contrato_venda', $arquivo, false);
+    if (!$up['ok']) return ['ok' => false, 'erro' => $up['erro'] ?: 'Selecione o arquivo do contrato assinado.'];
+    $doc = $db->prepare("SELECT drive_file_id, arquivo_url FROM venda_documentos WHERE venda_id = ? AND tipo = 'contrato_venda'");
+    $doc->execute([$vendaId]);
+    $d = $doc->fetch() ?: ['drive_file_id' => '', 'arquivo_url' => ''];
+
+    $db->prepare("
+        INSERT INTO contratos (oportunidade_id, venda_id, tipo, nome, campos_json, status, assinado_em, drive_file_id, arquivo_url, created_by)
+        VALUES (?, ?, 'venda', ?, ?, 'assinado', ?, ?, ?, ?)
+    ")->execute([
+        $v['oportunidade_id'], $vendaId, 'Contrato de venda assinado fora do sistema — ' . ($v['comprador_nome'] ?: "venda #{$vendaId}"),
+        json_encode(['origem' => 'upload_manual']), $dataAssinatura . ' 12:00:00', $d['drive_file_id'] ?? '', $d['arquivo_url'] ?? '', $usuarioId,
+    ]);
+
+    if ($v['etapa'] === 'vendido') {
+        // Já estava Vendida: financeiro com a data do contrato (retroativo).
+        finGerarReceitaVendaAssinatura($vendaId, $usuarioId, $dataAssinatura);
+        finRegistrarComissaoVendaFechada($vendaId, $dataAssinatura);
+        $db->prepare("UPDATE vendas SET data_venda = COALESCE(data_venda, ?) WHERE id = ?")->execute([$dataAssinatura, $vendaId]);
+    } else {
+        mudarEtapaVenda($vendaId, 'vendido', $usuarioId, 'Contrato assinado fora do sistema (arquivo enviado pela equipe)');
+        $db->prepare("UPDATE vendas SET data_venda = ? WHERE id = ?")->execute([$dataAssinatura, $vendaId]);
+    }
+    return ['ok' => true];
+}
+
 function vendaConcluirPorContratoAssinado(int $vendaId): bool {
     $db = getDB();
     $st = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");

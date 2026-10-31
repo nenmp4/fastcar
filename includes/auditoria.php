@@ -77,6 +77,7 @@ function auditoriaRotuloEvento(string $evento): string {
     return match ($evento) {
         'login' => '🔓 Login',
         'relatorio_mes_exportado' => '📈 Resumo do mês baixado',
+        'contrato_venda_subido_manual' => '📄 Contrato de venda assinado enviado (fora do sistema)',
         'login_falha' => '⚠️ Senha errada',
         'login_bloqueado' => '🚫 Conta bloqueada (tentativas)',
         'login_fora_expediente' => '🌙 Login recusado (fora do expediente)',

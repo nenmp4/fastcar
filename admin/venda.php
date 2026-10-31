@@ -618,6 +618,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     auditoriaRegistrar('venda_desfeita', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id, 'Vendido desfeito (sem contrato assinado) → ' . $voltaPara);
                     $sucesso = 'Venda desfeita — voltou pra ' . etapaVendaLabel($voltaPara) . '.' . ($nCom->rowCount() ? ' A comissão automática foi cancelada no financeiro.' : '');
                 }
+            } elseif ($acao === 'subir_contrato_assinado') {
+                // 31/10/2026 — contrato assinado fora do sistema (papel):
+                // super admin sobe o arquivo e a venda passa a contar.
+                if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
+                    http_response_code(403);
+                    $erro = 'Só o super admin pode subir contrato assinado fora do sistema.';
+                } else {
+                    $resCt = registrarContratoVendaAssinadoManual($id, $_FILES['arquivo_contrato'] ?? ['error' => UPLOAD_ERR_NO_FILE],
+                        (string)($_POST['data_assinatura'] ?? ''), (int)$_SESSION['admin_id']);
+                    if ($resCt['ok']) {
+                        auditoriaRegistrar('contrato_venda_subido_manual', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+                            'Contrato assinado fora do sistema enviado — assinado em ' . date('d/m/Y', strtotime((string)$_POST['data_assinatura'])));
+                        $sucesso = '✅ Contrato assinado registrado — a venda agora conta como fechada (data do contrato: ' . date('d/m/Y', strtotime((string)$_POST['data_assinatura'])) . ').';
+                    } else {
+                        $erro = $resCt['erro'];
+                    }
+                }
             } elseif ($acao === 'concluir_por_contrato') {
                 // 30/10/2026 (#127): contrato assinado mas negociação presa
                 // fora de 'vendido' (ex: marcada sem perfil depois do envio).
@@ -752,6 +769,22 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         <button type="submit" style="margin:0">✅ Concluir venda (contrato assinado)</button>
     </form>
     <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if (!$contratoVendaAssinado && $v['etapa'] !== 'cancelada' && $v['oportunidade_id'] && ($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
+<div class="card" style="<?= $v['etapa'] === 'vendido' ? 'border-left:4px solid var(--vermelho);background:var(--vermelho-bg)' : '' ?>">
+    <strong>📄 <?= $v['etapa'] === 'vendido' ? 'Vendida sem contrato assinado — não conta como venda' : 'Contrato assinado fora do sistema?' ?></strong>
+    <p style="margin:6px 0"><small>Se o contrato foi assinado em papel (ou fora da ZapSign), suba o arquivo assinado aqui.
+       A venda passa a contar como fechada na data da assinatura<?= $v['etapa'] === 'vendido' ? ', e o financeiro (entrada, parcelas e comissão) é lançado com essa data' : ', o veículo sai do estoque e o financeiro é lançado' ?>.</small></p>
+    <form method="post" enctype="multipart/form-data" onsubmit="return confirmarAcao(this, 'Registrar este contrato como assinado? A venda passa a contar como fechada.');">
+        <?= csrfField() ?><input type="hidden" name="acao" value="subir_contrato_assinado">
+        <div class="grid-2">
+            <div><label>Contrato assinado (PDF ou foto)</label><input type="file" name="arquivo_contrato" accept="application/pdf,image/*" required></div>
+            <div><label>Data da assinatura</label><input type="date" name="data_assinatura" max="<?= date('Y-m-d') ?>" value="<?= e($v['data_venda'] ?: '') ?>" required></div>
+        </div>
+        <button type="submit" style="width:auto">📄 Subir contrato assinado</button>
+    </form>
 </div>
 <?php endif; ?>
 
