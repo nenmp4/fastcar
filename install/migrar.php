@@ -1619,6 +1619,14 @@ try {
     ");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_venda_entrada_partes_venda ON venda_entrada_partes(venda_id)");
     echo "✅ venda_entrada_partes: tabela pronta\n";
+    // 31/10/2026 — "colocar uma opção de recebido em espécie": cada parte da
+    // entrada passa a dizer se veio por PIX ou em dinheiro.
+    if (!colunaExiste($db, 'venda_entrada_partes', 'forma')) {
+        $db->exec("ALTER TABLE venda_entrada_partes ADD COLUMN forma TEXT NOT NULL DEFAULT 'pix' CHECK (forma IN ('pix','especie'))");
+        echo "✅ venda_entrada_partes.forma: coluna criada\n";
+    } else {
+        echo "ℹ️  venda_entrada_partes.forma: já existia\n";
+    }
 } catch (Throwable $e) {
     echo "❌ venda_entrada_partes: {$e->getMessage()}\n";
 }

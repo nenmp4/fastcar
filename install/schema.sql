@@ -963,6 +963,7 @@ CREATE TABLE IF NOT EXISTS venda_entrada_partes (
     parte_numero INTEGER NOT NULL,
     valor REAL NOT NULL,
     data_prevista DATE,
+    forma TEXT NOT NULL DEFAULT 'pix' CHECK (forma IN ('pix','especie')), -- 31/10/2026: PIX ou dinheiro em espécie
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     UNIQUE(venda_id, parte_numero)
 );

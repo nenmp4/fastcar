@@ -606,10 +606,13 @@ function gerarPdfContratoVenda(array $c): string {
         ? PROMISSORIA_COMISSAO_PCT . '% da FIPE: ' . _fmtMoeda($q['comissao'])
         : ($q['comissao_aplicavel'] ? 'FIPE de referência não informada' : $na));
     _pdfLinhaResumo($pdf, 'Entrada total e forma de pagamento', _fmtMoeda((float)$c['valor_pago_contratacao']) . ' / ' . ($c['forma_pagamento'] ?: '—'));
-    if (count($c['_entrada_partes'] ?? []) > 1) {
-        foreach ($c['_entrada_partes'] as $i => $parte) {
+    $partesEntrada = $c['_entrada_partes'] ?? [];
+    $temEspecie = (bool)array_filter($partesEntrada, fn($p) => ($p['forma'] ?? 'pix') === 'especie');
+    if (count($partesEntrada) > 1 || $temEspecie) {
+        foreach ($partesEntrada as $i => $parte) {
             $dataParte = $parte['data_prevista'] ? date('d/m/Y', strtotime($parte['data_prevista'])) : 'sem data';
-            _pdfLinhaResumo($pdf, "  · Entrada, parte " . ($i + 1) . " (PIX)", _fmtMoeda($parte['valor']) . " — {$dataParte}");
+            $formaParte = ($parte['forma'] ?? 'pix') === 'especie' ? 'em espécie' : 'PIX';
+            _pdfLinhaResumo($pdf, "  · Entrada, parte " . ($i + 1) . " ({$formaParte})", _fmtMoeda($parte['valor']) . " — {$dataParte}");
         }
     }
     if (!empty($c['bem_troca_recebido'])) {

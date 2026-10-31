@@ -90,10 +90,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
             $entradaPartesPost = [];
             $valoresPartesPost = $_POST['parte_valor'] ?? [];
             $datasPartesPost = $_POST['parte_data'] ?? [];
+            $formasPartesPost = $_POST['parte_forma'] ?? [];
             foreach ((array)$valoresPartesPost as $i => $valorBruto) {
                 $valorParte = valorMonetario((string)$valorBruto);
                 if ($valorParte === null || $valorParte <= 0) continue;
-                $entradaPartesPost[] = ['valor' => $valorParte, 'data_prevista' => (string)($datasPartesPost[$i] ?? '') ?: null];
+                $entradaPartesPost[] = ['valor' => $valorParte, 'data_prevista' => (string)($datasPartesPost[$i] ?? '') ?: null,
+                                        'forma' => ($formasPartesPost[$i] ?? '') === 'especie' ? 'especie' : 'pix'];
             }
 
             $bemTrocaPost = [
@@ -734,17 +736,17 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     if (!empty($postVp['parte_valor'])) {
         foreach ((array)$postVp['parte_valor'] as $i => $val) {
             if (trim((string)$val) === '') continue;
-            $vpPartes[] = ['valor' => $val, 'data_prevista' => $postVp['parte_data'][$i] ?? ''];
+            $vpPartes[] = ['valor' => $val, 'data_prevista' => $postVp['parte_data'][$i] ?? '', 'forma' => $postVp['parte_forma'][$i] ?? 'pix'];
         }
     }
-    if (!$vpPartes) $vpPartes = [['valor' => '', 'data_prevista' => '']];
+    if (!$vpPartes) $vpPartes = [['valor' => '', 'data_prevista' => '', 'forma' => 'pix']];
 ?>
 <dialog id="modal-promissoria" class="modal-lancamento">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
         <h2 style="margin:0">💳 Vender na Promissória</h2>
         <button type="button" onclick="document.getElementById('modal-promissoria').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
     </div>
-    <p><small>Registra a negociação inteira numa passada só — comprador, condições, entrada em partes (PIX) e bem de
+    <p><small>Registra a negociação inteira numa passada só — comprador, condições, entrada em partes (PIX ou espécie) e bem de
        troca, tudo junto — igual o sistema antigo fazia. Depois de registrar, o link do wizard de documentos já vem
        pronto pra copiar (enviar continua sendo um passo separado). Gerar o plano de parcelamento do saldo financiado
        (Asaas ou local) continua no card próprio da tela da negociação, depois de registrar aqui.</small></p>
@@ -844,19 +846,26 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             </div>
         </div>
 
-        <h3 style="margin-top:1.4rem">💰 Entrada — pago via PIX (em partes)</h3>
+        <h3 style="margin-top:1.4rem">💰 Entrada — PIX ou espécie (em partes)</h3>
         <p><small>A entrada pode ser paga em mais de uma parte, cada uma com valor e data próprios — o total das
            partes abaixo é sempre o "valor pago pelo comprador na contratação".</small></p>
         <div id="vp-partes-linhas">
             <?php foreach ($vpPartes as $i => $parte): ?>
                 <div class="grid-2 vp-parte-linha" style="align-items:end">
                     <div>
-                        <label>Valor da <?= $i + 1 ?>ª parte no PIX (R$)</label>
+                        <label>Valor da <?= $i + 1 ?>ª parte (R$)</label>
                         <input type="number" step="0.01" inputmode="decimal" name="parte_valor[]" value="<?= e((string)($parte['valor'] ?? '')) ?>">
                     </div>
-                    <div style="display:flex;gap:8px;align-items:end">
-                        <div style="flex:1">
-                            <label>Data da <?= $i + 1 ?>ª parte no PIX</label>
+                    <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+                        <div style="flex:1;min-width:120px">
+                            <label>Como recebeu</label>
+                            <select name="parte_forma[]">
+                                <option value="pix" <?= ($parte['forma'] ?? 'pix') !== 'especie' ? 'selected' : '' ?>>PIX</option>
+                                <option value="especie" <?= ($parte['forma'] ?? '') === 'especie' ? 'selected' : '' ?>>Espécie (dinheiro)</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;min-width:140px">
+                            <label>Data da <?= $i + 1 ?>ª parte</label>
                             <input type="date" name="parte_data[]" value="<?= e($parte['data_prevista'] ?? '') ?>">
                         </div>
                         <button type="button" class="btn-texto perigo" onclick="this.closest('.vp-parte-linha').remove()" style="margin-bottom:2px">🗑️ remover</button>
@@ -864,7 +873,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
                 </div>
             <?php endforeach; ?>
         </div>
-        <button type="button" class="secundario" onclick="vpAdicionarParteEntrada()">➕ Adicionar outra parte no PIX</button>
+        <button type="button" class="secundario" onclick="vpAdicionarParteEntrada()">➕ Adicionar outra parte</button>
 
         <h3 style="margin-top:1.4rem">🔁 Bem recebido como parte da entrada</h3>
         <label>
@@ -1038,17 +1047,18 @@ function vpRevisar() {
     document.querySelectorAll('.vp-parte-linha').forEach(function (linha) {
         var valorEl = linha.querySelector('[name="parte_valor[]"]');
         var dataEl = linha.querySelector('[name="parte_data[]"]');
+        var formaEl = linha.querySelector('[name="parte_forma[]"]');
         var v = parseFloat(String(valorEl.value || '').replace(',', '.'));
         if (!v) return;
         totalEntrada += v;
         var d = vpFmtData(dataEl.value);
-        partesTexto.push(vpFmtMoeda(v) + (d ? ' em ' + d : ''));
+        partesTexto.push(vpFmtMoeda(v) + (formaEl && formaEl.value === 'especie' ? ' em espécie' : ' no PIX') + (d ? ' em ' + d : ''));
     });
     if (partesTexto.length) {
-        linhas.push('<p><strong>💰 Entrada via PIX (' + partesTexto.length + ' parte' + (partesTexto.length > 1 ? 's' : '') + '):</strong> ' +
+        linhas.push('<p><strong>💰 Entrada (' + partesTexto.length + ' parte' + (partesTexto.length > 1 ? 's' : '') + '):</strong> ' +
             partesTexto.join(', ') + ' — total ' + vpFmtMoeda(totalEntrada) + '</p>');
     } else {
-        linhas.push('<p><strong>💰 Entrada via PIX:</strong> nenhuma informada</p>');
+        linhas.push('<p><strong>💰 Entrada:</strong> nenhuma informada</p>');
     }
 
     // Bem de troca
@@ -1088,12 +1098,16 @@ function vpAdicionarParteEntrada() {
     div.style.alignItems = 'end';
     div.innerHTML = ''
         + '<div>'
-        + '<label>Valor da ' + n + 'ª parte no PIX (R$)</label>'
+        + '<label>Valor da ' + n + 'ª parte (R$)</label>'
         + '<input type="number" step="0.01" inputmode="decimal" name="parte_valor[]" value="">'
         + '</div>'
-        + '<div style="display:flex;gap:8px;align-items:end">'
-        + '<div style="flex:1">'
-        + '<label>Data da ' + n + 'ª parte no PIX</label>'
+        + '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">'
+        + '<div style="flex:1;min-width:120px">'
+        + '<label>Como recebeu</label>'
+        + '<select name="parte_forma[]"><option value="pix">PIX</option><option value="especie">Espécie (dinheiro)</option></select>'
+        + '</div>'
+        + '<div style="flex:1;min-width:140px">'
+        + '<label>Data da ' + n + 'ª parte</label>'
         + '<input type="date" name="parte_data[]" value="">'
         + '</div>'
         + '<button type="button" class="btn-texto perigo" onclick="this.closest(\'.vp-parte-linha\').remove()" style="margin-bottom:2px">🗑️ remover</button>'

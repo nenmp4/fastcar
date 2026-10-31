@@ -863,7 +863,8 @@ function vincularVeiculoVenda(int $vendaId, int $oportunidadeId): bool {
  * das partes — esse campo é o que finGerarReceitaVendaAssinatura() usa
  * pra gerar a receita real, então precisa refletir só dinheiro de
  * verdade (nunca o valor do bem de troca, ver salvarBemTrocaVenda()).
- * $partes: lista de ['valor' => float, 'data_prevista' => 'AAAA-MM-DD'|null].
+ * $partes: lista de ['valor' => float, 'data_prevista' => 'AAAA-MM-DD'|null,
+ *          'forma' => 'pix'|'especie' (31/10/2026 — dinheiro em espécie; padrão pix)].
  */
 function salvarEntradaPartesVenda(int $vendaId, array $partes): float {
     $db = getDB();
@@ -872,12 +873,13 @@ function salvarEntradaPartesVenda(int $vendaId, array $partes): float {
         $db->prepare("DELETE FROM venda_entrada_partes WHERE venda_id = ?")->execute([$vendaId]);
         $numero = 0;
         $total = 0.0;
-        $stmt = $db->prepare("INSERT INTO venda_entrada_partes (venda_id, parte_numero, valor, data_prevista) VALUES (?, ?, ?, ?)");
+        $stmt = $db->prepare("INSERT INTO venda_entrada_partes (venda_id, parte_numero, valor, data_prevista, forma) VALUES (?, ?, ?, ?, ?)");
         foreach ($partes as $p) {
             $valor = (float)($p['valor'] ?? 0);
             if ($valor <= 0) continue;
             $numero++;
-            $stmt->execute([$vendaId, $numero, $valor, $p['data_prevista'] ?: null]);
+            $forma = ($p['forma'] ?? 'pix') === 'especie' ? 'especie' : 'pix';
+            $stmt->execute([$vendaId, $numero, $valor, $p['data_prevista'] ?: null, $forma]);
             $total += $valor;
         }
         $db->prepare("UPDATE vendas SET valor_pago_contratacao = ?, updated_at = datetime('now','localtime') WHERE id = ?")
@@ -888,6 +890,11 @@ function salvarEntradaPartesVenda(int $vendaId, array $partes): float {
         $db->rollBack();
         throw $e;
     }
+}
+
+/** Rótulo da forma de pagamento de uma parte da entrada. */
+function entradaParteFormaLabel(?string $forma): string {
+    return $forma === 'especie' ? 'Espécie (dinheiro)' : 'PIX';
 }
 
 function listarEntradaPartesVenda(int $vendaId): array {

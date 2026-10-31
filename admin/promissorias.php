@@ -292,7 +292,7 @@ function rotuloStatusParcelaPromissoria(string $status): string {
                 <td>
                     <?= $v['preco_venda'] !== null ? moedaPromissoria((float)$v['preco_venda']) : '—' ?>
                     <?php if ($v['valor_pago_contratacao']): ?>
-                        <br><small>entrada <?= moedaPromissoria((float)$v['valor_pago_contratacao']) ?><?= count($partes) > 1 ? ' em ' . count($partes) . ' partes' : '' ?></small>
+                        <br><small>entrada <?= moedaPromissoria((float)$v['valor_pago_contratacao']) ?><?= count($partes) > 1 ? ' em ' . count($partes) . ' partes' : '' ?><?php $esp = array_sum(array_map(fn($p) => ($p['forma'] ?? 'pix') === 'especie' ? (float)$p['valor'] : 0, $partes)); ?><?= $esp > 0 ? ' · 💵 ' . moedaPromissoria($esp) . ' em espécie' : '' ?></small>
                     <?php endif; ?>
                     <?php if ($v['bem_troca_recebido']): ?>
                         <br><small>🔁 + bem de troca (<?= moedaPromissoria((float)($v['bem_troca_valor'] ?? 0)) ?>)</small>

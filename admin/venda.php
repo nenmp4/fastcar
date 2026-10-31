@@ -255,10 +255,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $partesPost = [];
                 $valoresPost = $_POST['parte_valor'] ?? [];
                 $datasPost = $_POST['parte_data'] ?? [];
+                $formasPost = $_POST['parte_forma'] ?? [];
                 foreach ((array)$valoresPost as $i => $valorBruto) {
                     $valor = valorMonetario((string)$valorBruto);
                     if ($valor === null || $valor <= 0) continue;
-                    $partesPost[] = ['valor' => $valor, 'data_prevista' => (string)($datasPost[$i] ?? '') ?: null];
+                    $partesPost[] = ['valor' => $valor, 'data_prevista' => (string)($datasPost[$i] ?? '') ?: null,
+                                     'forma' => ($formasPost[$i] ?? '') === 'especie' ? 'especie' : 'pix'];
                 }
                 $totalPartes = salvarEntradaPartesVenda($id, $partesPost);
                 $sucesso = 'Entrada atualizada — total de ' . count($partesPost) . ' parte(s), somando ' . number_format($totalPartes, 2, ',', '.') . '.';
@@ -774,7 +776,8 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php endif; ?>
     <?php if ($entradaPartes): ?>
         <p style="margin:0 0 6px"><strong>Entrada:</strong> R$ <?= number_format((float)($v['valor_pago_contratacao'] ?? 0), 2, ',', '.') ?>
-           em <?= count($entradaPartes) ?> parte(s)</p>
+           em <?= count($entradaPartes) ?> parte(s)
+           (<?= e(implode(', ', array_map(fn($p) => 'R$ ' . number_format((float)$p['valor'], 2, ',', '.') . ' ' . (($p['forma'] ?? 'pix') === 'especie' ? 'em espécie' : 'no PIX'), $entradaPartes))) ?>)</p>
     <?php endif; ?>
     <?php if ($v['bem_troca_recebido']): ?>
         <p style="margin:0 0 6px"><strong>Bem recebido como parte da entrada:</strong> <?= e($v['bem_troca_nome'] ?: '—') ?><?= $v['bem_troca_valor'] ? ' (R$ ' . number_format((float)$v['bem_troca_valor'], 2, ',', '.') . ')' : '' ?></p>
@@ -1200,7 +1203,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 
 <?php if (!$ehLocacao): // locação não tem entrada/bem de troca ?>
 <div class="card" data-aba="📝 Contrato">
-    <h3>💰 Entrada — pago via PIX (em partes)</h3>
+    <h3>💰 Entrada — PIX ou espécie (em partes)</h3>
     <p><small>Réplica do fluxo do sistema antigo: a entrada pode ser paga em mais de uma parte, cada uma com valor e
        data próprios. O total das partes abaixo é sempre o "Valor pago pelo comprador na contratação" do Quadro-Resumo
        — nunca digitado direto, sempre a soma daqui.</small></p>
@@ -1208,16 +1211,23 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_entrada_partes">
         <div id="entrada-partes-linhas">
-            <?php if (!$entradaPartes): $entradaPartes = [['valor' => '', 'data_prevista' => '']]; endif; ?>
+            <?php if (!$entradaPartes): $entradaPartes = [['valor' => '', 'data_prevista' => '', 'forma' => 'pix']]; endif; ?>
             <?php foreach ($entradaPartes as $i => $parte): ?>
                 <div class="grid-2 entrada-parte-linha" style="align-items:end">
                     <div>
-                        <label>Valor da <?= $i + 1 ?>ª parte no PIX (R$)</label>
+                        <label>Valor da <?= $i + 1 ?>ª parte (R$)</label>
                         <input type="number" step="0.01" inputmode="decimal" name="parte_valor[]" value="<?= e((string)($parte['valor'] ?? '')) ?>">
                     </div>
-                    <div style="display:flex;gap:8px;align-items:end">
-                        <div style="flex:1">
-                            <label>Data da <?= $i + 1 ?>ª parte no PIX</label>
+                    <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+                        <div style="flex:1;min-width:120px">
+                            <label>Como recebeu</label>
+                            <select name="parte_forma[]">
+                                <option value="pix" <?= ($parte['forma'] ?? 'pix') !== 'especie' ? 'selected' : '' ?>>PIX</option>
+                                <option value="especie" <?= ($parte['forma'] ?? '') === 'especie' ? 'selected' : '' ?>>Espécie (dinheiro)</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;min-width:140px">
+                            <label>Data da <?= $i + 1 ?>ª parte</label>
                             <input type="date" name="parte_data[]" value="<?= e($parte['data_prevista'] ?? '') ?>">
                         </div>
                         <button type="button" class="btn-texto perigo" onclick="this.closest('.entrada-parte-linha').remove()" style="margin-bottom:2px">🗑️ remover</button>
@@ -1225,7 +1235,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 </div>
             <?php endforeach; ?>
         </div>
-        <button type="button" class="secundario" onclick="adicionarParteEntrada()">➕ Adicionar outra parte no PIX</button>
+        <button type="button" class="secundario" onclick="adicionarParteEntrada()">➕ Adicionar outra parte</button>
         <button type="submit">Salvar entrada</button>
     </form>
     <p><strong>Total da entrada: R$ <?= number_format((float)($v['valor_pago_contratacao'] ?? 0), 2, ',', '.') ?></strong></p>
@@ -1239,12 +1249,16 @@ function adicionarParteEntrada() {
     div.style.alignItems = 'end';
     div.innerHTML = `
         <div>
-            <label>Valor da ${n}ª parte no PIX (R$)</label>
+            <label>Valor da ${n}ª parte (R$)</label>
             <input type="number" step="0.01" inputmode="decimal" name="parte_valor[]" value="">
         </div>
-        <div style="display:flex;gap:8px;align-items:end">
-            <div style="flex:1">
-                <label>Data da ${n}ª parte no PIX</label>
+        <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+            <div style="flex:1;min-width:120px">
+                <label>Como recebeu</label>
+                <select name="parte_forma[]"><option value="pix">PIX</option><option value="especie">Espécie (dinheiro)</option></select>
+            </div>
+            <div style="flex:1;min-width:140px">
+                <label>Data da ${n}ª parte</label>
                 <input type="date" name="parte_data[]" value="">
             </div>
             <button type="button" class="btn-texto perigo" onclick="this.closest('.entrada-parte-linha').remove()" style="margin-bottom:2px">🗑️ remover</button>
@@ -1397,7 +1411,7 @@ function adicionarParteEntrada() {
                 <input type="number" name="km_entrega" value="<?= e((string)($v['km_entrega'] ?? '')) ?>">
                 <label>Preço ajustado (R$)</label>
                 <input type="number" step="0.01" name="preco_venda" value="<?= e((string)($v['preco_venda'] ?? '')) ?>">
-                <label>Valor pago pelo comprador na contratação (R$) — soma das partes do PIX acima, somente leitura</label>
+                <label>Valor pago pelo comprador na contratação (R$) — soma das partes da entrada acima (PIX ou espécie), somente leitura</label>
                 <input type="number" step="0.01" value="<?= e((string)($v['valor_pago_contratacao'] ?? '')) ?>" disabled>
                 <label>Forma de pagamento</label>
                 <input type="text" name="forma_pagamento" value="<?= e($v['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas...">
