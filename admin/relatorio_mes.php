@@ -21,6 +21,27 @@ $fim = date('Y-m-t', strtotime($ini));
 $nomesMes = ['01'=>'janeiro','02'=>'fevereiro','03'=>'março','04'=>'abril','05'=>'maio','06'=>'junho','07'=>'julho','08'=>'agosto','09'=>'setembro','10'=>'outubro','11'=>'novembro','12'=>'dezembro'];
 $rotuloMes = $nomesMes[substr($mes, 5, 2)] . ' de ' . substr($mes, 0, 4);
 
+// Puxa da Meta o MÊS INTEIRO (o cron só reprocessa os últimos 3 dias) —
+// pra garantir que os anúncios do mês estão completos antes de exportar.
+$sincMsg = ''; $sincErro = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'sincronizar_meta_mes') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $sincErro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif (!metaAdsConfigured()) {
+        $sincErro = 'Meta Ads ainda não configurado — cadastre o token e as contas em Configurações.';
+    } else {
+        $ateSinc = min($fim, date('Y-m-d'));
+        $linhas = 0; $gasto = 0.0; $falhas = [];
+        foreach (metaAdsContas() as $conta) {
+            $r = metaAdsSincronizarConta($conta, $ini, $ateSinc);
+            if ($r['ok']) { $linhas += count($r['linhas']); $gasto += (float)$r['gasto']; }
+            else $falhas[] = "{$conta} ({$r['erro']})";
+        }
+        if ($falhas) $sincErro = 'Falha ao puxar da Meta: ' . implode(', ', $falhas);
+        else $sincMsg = "✅ Anúncios de {$rotuloMes} puxados da Meta — {$linhas} linha(s), R$ " . number_format($gasto, 2, ',', '.') . ' de gasto.';
+    }
+}
+
 // ---- Compras (pasta fechada, data do contrato de compra assinado)
 $st = $db->prepare("
     SELECT o.id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.tipo_veiculo,
@@ -110,6 +131,71 @@ $totalLeads = $leadsCompra + $leadsVenda;
 $cpl = ($gastoAds > 0 && $totalLeads > 0) ? $gastoAds / $totalLeads : null;
 $convCompra = $leadsCompra ? count($compras) / $leadsCompra * 100 : null;
 
+// ---- Anúncios reais do mês (Meta Ads): gasto/impressões/cliques/conversas
+// sincronizados pela Marketing API + leads/vendas atribuídos pelo clique
+// (lead_origem_anuncio) + o texto real do anúncio que o cliente clicou.
+// Inclui anúncio que gerou lead mesmo sem gasto sincronizado ainda.
+$anuncios = [];
+$st = $db->prepare("SELECT ad_id, MAX(ad_account_id) AS conta, MAX(campaign_name) AS campanha, MAX(adset_name) AS conjunto,
+                           MAX(ad_name) AS anuncio, SUM(spend) AS gasto, SUM(impressions) AS impressoes,
+                           SUM(clicks) AS cliques, SUM(conversas_meta) AS conversas, MIN(data) AS primeiro_dia, MAX(data) AS ultimo_dia
+                    FROM anuncio_gasto_diario WHERE data BETWEEN ? AND ? GROUP BY ad_id");
+$st->execute([$ini, $fim]);
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $anuncios[$r['ad_id']] = $r + ['leads' => 0, 'vendas' => 0, 'titulo' => '', 'texto' => '', 'link' => '', 'midia' => ''];
+}
+$st = $db->prepare("SELECT l.ad_id, l.cliente_id, l.venda_id, l.headline, l.corpo, l.source_url, l.media_type,
+                           (SELECT COUNT(*) FROM oportunidades o WHERE o.cliente_id = l.cliente_id AND o.etapa = 'fechado') AS comprou,
+                           (SELECT COUNT(*) FROM vendas v WHERE v.id = l.venda_id AND v.etapa = 'vendido') AS vendeu
+                    FROM lead_origem_anuncio l WHERE l.recebido_em BETWEEN ? AND ? AND l.ad_id != '' ORDER BY l.recebido_em");
+$st->execute([$ini . ' 00:00:00', $fim . ' 23:59:59']);
+$vistos = [];
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $ad = $r['ad_id'];
+    if (!isset($anuncios[$ad])) {
+        $anuncios[$ad] = ['ad_id' => $ad, 'conta' => '', 'campanha' => '', 'conjunto' => '', 'anuncio' => '', 'gasto' => 0,
+            'impressoes' => 0, 'cliques' => 0, 'conversas' => 0, 'primeiro_dia' => '', 'ultimo_dia' => '',
+            'leads' => 0, 'vendas' => 0, 'titulo' => '', 'texto' => '', 'link' => '', 'midia' => ''];
+    }
+    $chave = $ad . '|' . ($r['cliente_id'] ?? '') . '|' . ($r['venda_id'] ?? '');
+    if (!isset($vistos[$chave])) { // 1 lead conta 1x por anúncio, mesmo clicando várias vezes
+        $vistos[$chave] = true;
+        $anuncios[$ad]['leads']++;
+        if ($r['comprou'] || $r['vendeu']) $anuncios[$ad]['vendas']++;
+    }
+    foreach (['titulo' => 'headline', 'texto' => 'corpo', 'link' => 'source_url', 'midia' => 'media_type'] as $k => $col) {
+        if ((string)$r[$col] !== '') $anuncios[$ad][$k] = (string)$r[$col];
+    }
+}
+foreach ($anuncios as &$a) {
+    $a['gasto'] = (float)$a['gasto'];
+    $a['cpl'] = ($a['gasto'] > 0 && $a['leads'] > 0) ? $a['gasto'] / $a['leads'] : null;
+    $a['ctr'] = (int)$a['impressoes'] > 0 ? (int)$a['cliques'] / (int)$a['impressoes'] * 100 : null;
+    $a['custo_por_conversa'] = ($a['gasto'] > 0 && (int)$a['conversas'] > 0) ? $a['gasto'] / (int)$a['conversas'] : null;
+}
+unset($a);
+// Melhor primeiro: mais leads; empate → menor CPL; depois maior gasto.
+uasort($anuncios, fn($x, $y) => [$y['leads'], $x['cpl'] ?? PHP_FLOAT_MAX, $y['gasto']] <=> [$x['leads'], $y['cpl'] ?? PHP_FLOAT_MAX, $x['gasto']]);
+$anuncios = array_values($anuncios);
+
+if (($_GET['formato'] ?? '') === 'anuncios_csv') {
+    auditoriaRegistrar('relatorio_mes_exportado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'relatorio', null, "Anúncios do mês {$mes} exportados (planilha).");
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="fastcar_anuncios_' . $mes . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF"); // BOM: Excel abre acentuado certo
+    $num = fn($v, $d = 2) => $v === null ? '' : number_format((float)$v, $d, ',', '');
+    fputcsv($out, ['Posição', 'Campanha', 'Conjunto', 'Anúncio', 'ID do anúncio', 'Gasto (R$)', 'Impressões', 'Cliques', 'CTR (%)',
+        'Conversas (Meta)', 'Custo por conversa (R$)', 'Leads no CRM', 'CPL (R$)', 'Negócios fechados', 'Título do anúncio',
+        'Texto do anúncio', 'Link', 'Mídia', 'Primeiro dia', 'Último dia'], ';');
+    foreach ($anuncios as $i => $a) {
+        fputcsv($out, [$i + 1, $a['campanha'], $a['conjunto'], $a['anuncio'], $a['ad_id'], $num($a['gasto']), (int)$a['impressoes'],
+            (int)$a['cliques'], $num($a['ctr']), (int)$a['conversas'], $num($a['custo_por_conversa']), $a['leads'], $num($a['cpl']),
+            $a['vendas'], $a['titulo'], $a['texto'], $a['link'], $a['midia'], $a['primeiro_dia'], $a['ultimo_dia']], ';');
+    }
+    exit;
+}
+
 $dados = [
     'mes' => $mes, 'gerado_em' => date('Y-m-d H:i'),
     'compras' => ['qtd' => count($compras), 'total_pago_vendedores' => $cTotalPago, 'total_fipe' => $cTotalFipe,
@@ -130,6 +216,7 @@ $dados = [
     'leads' => ['compra' => $leadsCompra, 'venda' => $leadsVenda, 'temperatura_compra' => $temps,
         'investimento_trafego' => $gastoAds, 'conversas_meta' => (int)$conversasAds, 'custo_por_lead' => $cpl,
         'conversao_lead_compra_pct' => $convCompra],
+    'anuncios' => $anuncios,
 ];
 
 if (($_GET['formato'] ?? '') === 'json') {
@@ -168,7 +255,17 @@ $m = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
         <div><label>Mês</label><input type="month" name="mes" value="<?= e($mes) ?>"></div>
         <button type="submit" style="width:auto;margin:0">Ver</button>
         <a class="btn" href="?mes=<?= e($mes) ?>&formato=json">⬇️ Baixar dados (arquivo)</a>
+        <a class="btn" href="?mes=<?= e($mes) ?>&formato=anuncios_csv">📣 Exportar anúncios (planilha)</a>
     </form>
+    <?php if ($sincErro): ?><div class="alerta-erro"><?= e($sincErro) ?></div><?php endif; ?>
+    <?php if ($sincMsg): ?><div class="alerta-sucesso"><?= e($sincMsg) ?></div><?php endif; ?>
+    <?php if (metaAdsConfigured()): ?>
+    <form method="post" style="margin-top:8px">
+        <?= csrfField() ?><input type="hidden" name="acao" value="sincronizar_meta_mes">
+        <button type="submit" style="width:auto">🔄 Puxar anúncios do mês inteiro da Meta</button>
+        <small>Use antes de exportar — o automático só atualiza os últimos 3 dias.</small>
+    </form>
+    <?php endif; ?>
     <p><small>Números reais do sistema. Compra e venda contam pela data do <b>contrato assinado</b> (venda sem contrato fica de fora<?= $vSemContrato ? " — {$vSemContrato} neste mês" : '' ?>). Financeiro em regime de caixa: só o que foi pago. Sem nome de cliente — pode usar em apresentação.</small></p>
 </div>
 
@@ -220,6 +317,29 @@ $m = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
                 <td><?= $m($r['valor_pago_contratacao']) ?></td>
                 <td><?= (int)$r['parcelamento_qtd_parcelas'] ? (int)$r['parcelamento_qtd_parcelas'] . 'x ' . $m($r['parcelamento_valor_parcela']) : '—' ?></td>
                 <td><?= (float)$r['valor_fipe_referencia'] > 0 ? $m($r['valor_fipe_referencia']) : '—' ?></td></tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table></div>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0">📣 Anúncios do mês (Meta Ads)</h3>
+    <p><small>Ordenado pelo que mais trouxe lead pro CRM. Gasto, impressões, cliques e conversas vêm da Meta; leads e negócios fechados são contados pelo clique no anúncio que chegou no WhatsApp. O texto é o do anúncio que o cliente clicou.</small></p>
+    <div class="tabela-scroll"><table class="tabela-oportunidades">
+        <thead><tr><th>Anúncio</th><th>Campanha</th><th>Gasto</th><th>Impressões</th><th>Cliques</th><th>Conversas</th><th>Leads</th><th>CPL</th><th>Fechados</th><th>Texto do anúncio</th></tr></thead>
+        <tbody>
+        <?php if (!$anuncios): ?><tr><td colspan="10">Nenhum anúncio com gasto ou lead neste mês. Confira em Configurações se o Meta Ads está conectado e clique em "🔄 Sincronizar agora" no Custo por Lead.</td></tr><?php endif; ?>
+        <?php foreach ($anuncios as $i => $a): ?>
+            <tr><td><?= $i === 0 ? '🏆 ' : '' ?><?= e($a['anuncio'] ?: ($a['titulo'] ?: 'Anúncio ' . $a['ad_id'])) ?></td>
+                <td><?= e($a['campanha'] ?: '—') ?></td>
+                <td><?= $a['gasto'] > 0 ? $m($a['gasto']) : '—' ?></td>
+                <td><?= (int)$a['impressoes'] ? number_format((int)$a['impressoes'], 0, ',', '.') : '—' ?></td>
+                <td><?= (int)$a['cliques'] ? number_format((int)$a['cliques'], 0, ',', '.') : '—' ?></td>
+                <td><?= (int)$a['conversas'] ?: '—' ?></td>
+                <td><?= (int)$a['leads'] ?></td>
+                <td><?= $a['cpl'] !== null ? $m($a['cpl']) : '—' ?></td>
+                <td><?= (int)$a['vendas'] ?></td>
+                <td style="overflow-wrap:anywhere;max-width:320px"><?= e(mb_strimwidth(trim($a['titulo'] . ($a['titulo'] && $a['texto'] ? ' — ' : '') . $a['texto']), 0, 160, '…')) ?: '—' ?></td></tr>
         <?php endforeach; ?>
         </tbody>
     </table></div>

@@ -107,6 +107,9 @@ function cplFmt(?float $v): string {
 <main>
 <div class="card">
     <h2>📣 Custo por Lead (CPL) das campanhas Meta</h2>
+    <?php if (($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
+        <p><a class="btn" href="/admin/relatorio_mes.php?mes=<?= e(substr($de, 0, 7)) ?>">📣 Ranking e exportação dos anúncios do mês</a></p>
+    <?php endif; ?>
     <p><small>Gasto puxado da Marketing API (<code>cron/meta_insights.php</code>, a cada 3h) cruzado com os leads que
        entraram por clique de anúncio (<code>lead_origem_anuncio</code>, capturado automaticamente no webhook).
        CPL = gasto ÷ leads · Custo por venda = gasto ÷ leads que fecharam compra ou venda no CRM.</small></p>
