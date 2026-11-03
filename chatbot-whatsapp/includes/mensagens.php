@@ -577,6 +577,7 @@ function iaDecisaoTexto(string $codigo): string {
     return [
         'respondeu' => '✅ IA respondeu',
         'encerrado_pela_equipe' => '🔒 Não respondeu: lead encerrado pela equipe nos últimos 60 dias (reabra a oportunidade pra IA voltar)',
+        'sem_perfil_pela_ia_recente' => '🚫 Não respondeu: a IA encerrou como sem perfil nos últimos 3 dias (reabra a oportunidade pra IA voltar)',
         'lead_de_vendas' => '🛒 Não respondeu: cliente foi encaminhado pra vendas — responda pelo WhatsApp Vendas',
         'lead_de_vendas_no_numero_compra' => '🛒 Não respondeu: mensagem de quem quer COMPRAR — foi pra vendas (WhatsApp Vendas)',
         'opt_out' => '🚫 Não respondeu: cliente pediu pra sair (SAIR/PARAR)',
@@ -869,6 +870,11 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         $salvarMidiaSePendente(0);
         iaRegistrarDecisao($phone, 'encerrado_pela_equipe');
         return ['ignored' => 'encerrado_pela_equipe', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => iaPausada($phone)] + $vazio;
+    }
+    if (telefoneSemPerfilPelaIARecente($phone)) {
+        iaRegistrarDecisao($phone, 'sem_perfil_pela_ia_recente');
+        return ['ignored' => 'sem_perfil_pela_ia_recente', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
     if (telefoneEhLeadDeVendasSemCompraAtiva($phone)) {

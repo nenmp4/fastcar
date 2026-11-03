@@ -1182,6 +1182,32 @@ function telefoneEncerradoPelaEquipeRecente(string $telefone): bool {
         && strtotime((string)$h['created_at']) >= strtotime('-60 days');
 }
 
+/**
+ * 03/11/2026, achado real: "porque registra notificação mesmo lead" — o sino
+ * mostrava "Novo lead de compra" 3x pra mesma cliente em 4 minutos. A IA
+ * marcava "sem perfil" (ex: veículo quitado), a cliente respondia ("ok",
+ * "obrigada", mais uma dúvida) e cada resposta abria uma OPORTUNIDADE NOVA,
+ * que caía no rodízio, gerava notificação e a IA encerrava de novo — loop.
+ * Lead que a IA encerrou como "sem perfil" nos últimos $dias não abre lead
+ * novo; a mensagem continua salva no WhatsApp Box.
+ */
+function telefoneSemPerfilPelaIARecente(string $telefone, int $dias = 3): bool {
+    $tel = normalizarTelefone($telefone);
+    if (!$tel) return false;
+    $db = getDB();
+    $st = $db->prepare("SELECT o.id, o.etapa FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE c.telefone = ? ORDER BY o.id DESC LIMIT 1");
+    $st->execute([$tel]);
+    $ult = $st->fetch();
+    if (!$ult || $ult['etapa'] !== 'sem_perfil') return false;
+    $st = $db->prepare("SELECT responsavel_id, created_at FROM oportunidade_historico
+        WHERE oportunidade_id = ? AND etapa_nova = 'sem_perfil' ORDER BY id DESC LIMIT 1");
+    $st->execute([(int)$ult['id']]);
+    $h = $st->fetch();
+    return $h && $h['responsavel_id'] === null
+        && strtotime((string)$h['created_at']) >= strtotime("-{$dias} days");
+}
+
 function moverOportunidadeParaVendas(int $oportunidadeId, ?int $usuarioId = null, string $observacao = ''): array {
     require_once __DIR__ . '/vendas.php';
     $db = getDB();
