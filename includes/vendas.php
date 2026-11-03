@@ -466,6 +466,25 @@ function criarOuAbrirVendaLead(string $telefone, string $nome = '', array $orige
         return ['venda_id' => (int)$existente['id'], 'nova' => false, 'responsavel_id' => $existente['responsavel_id'] !== null ? (int)$existente['responsavel_id'] : null];
     }
 
+    // 03/11/2026 — mesmo loop achado na compra ("registra notificação
+    // mesmo lead"): a IA de vendas encerrava como "sem perfil" (ex: sem
+    // entrada), o comprador respondia e cada resposta abria uma negociação
+    // NOVA — rodízio + notificação de novo, e a IA encerrava outra vez. Se a
+    // IA encerrou nos últimos 3 dias, devolve essa mesma (sem IA, sem
+    // rodízio); a mensagem segue salva no WhatsApp de vendas.
+    $stmtUlt = $db->prepare("SELECT id, etapa, responsavel_id FROM vendas WHERE comprador_telefone = ? ORDER BY id DESC LIMIT 1");
+    $stmtUlt->execute([$telNorm]);
+    $ultimaVenda = $stmtUlt->fetch();
+    if ($ultimaVenda && $ultimaVenda['etapa'] === 'sem_perfil') {
+        $stmtH = $db->prepare("SELECT responsavel_id, created_at FROM venda_historico WHERE venda_id = ? AND etapa_nova = 'sem_perfil' ORDER BY id DESC LIMIT 1");
+        $stmtH->execute([(int)$ultimaVenda['id']]);
+        $hSp = $stmtH->fetch();
+        if ($hSp && $hSp['responsavel_id'] === null && strtotime((string)$hSp['created_at']) >= strtotime('-3 days')) {
+            return ['venda_id' => (int)$ultimaVenda['id'], 'nova' => false, 'encerrada_pela_ia' => true,
+                    'responsavel_id' => $ultimaVenda['responsavel_id'] !== null ? (int)$ultimaVenda['responsavel_id'] : null];
+        }
+    }
+
     $db->prepare("
         INSERT INTO vendas (etapa, origem, comprador_nome, comprador_telefone, canal_origem, campanha_origem, anuncio_origem)
         VALUES ('whatsapp', 'whatsapp', ?, ?, ?, ?, ?)
