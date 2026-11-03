@@ -33,3 +33,6 @@ storage/resumo_produtividade.lock
 config/google_drive_credentials.json
 
 .DS_Store
+
+# Travas de processo (cron/follow-up) — arquivo de runtime, nunca versionado
+storage/*.lock
