@@ -1175,9 +1175,9 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     <?php $cronVisto = (string)getConfig('vendas_followup_cron_visto'); ?>
     <p><small>
         <?php if ($cronVisto === ''): ?>
-            ⚠️ O agendamento automático ainda não rodou nenhuma vez neste servidor — se continuar assim depois de ~10 min, use "📤 Enviar 1 agora" (ou peça pra instalar o crontab).
+            ℹ️ O agendamento da VPS não rodou ainda — sem problema: com o sistema aberto em qualquer tela, o envio sai sozinho mesmo assim.
         <?php else: $minCron = (int)floor((time() - strtotime($cronVisto)) / 60); ?>
-            <?= $minCron <= 10 ? '✅' : '⚠️' ?> Agendamento automático visto há <?= $minCron ?> min (<?= e(date('d/m H:i', strtotime($cronVisto))) ?>)
+            <?= $minCron <= 10 ? '✅' : 'ℹ️' ?> Agendamento da VPS visto há <?= $minCron ?> min (<?= e(date('d/m H:i', strtotime($cronVisto))) ?>)<?= $minCron > 10 ? ' — o envio continua saindo sozinho enquanto o sistema estiver aberto em qualquer tela' : '' ?>
         <?php endif; ?>
     </small></p>
     <?php if (getConfig('vendas_followup_ultimo_log')): ?>

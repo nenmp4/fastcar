@@ -148,6 +148,34 @@ function vendasFollowupEnviarProximo(int $maxDia = VENDAS_FU_MAX_DIA): array {
  * botão "📤 Enviar 1 agora" de Configurações — o botão existe pra não depender
  * do crontab da VPS (SSH bloqueado) caso o agendamento não esteja instalado.
  */
+/**
+ * 03/11/2026, achado real: "follow-up não está enviando sozinho, tenho que
+ * fazer manualmente" — o "📤 Enviar 1 agora" funcionava, só o agendamento
+ * da VPS (cron) não disparava, e sem SSH não dá pra conferir o crontab.
+ * Agora a rodada pode sair de 2 lugares: o cron (se estiver rodando) e o
+ * próprio sistema aberto no navegador (admin/notificacoes.php, que toda
+ * tela do admin consulta a cada ~20s). Os dois passam por aqui: no máximo
+ * 1 mensagem a cada 5–6,5 min (intervalo sorteado), com trava pra nunca
+ * sair 2 ao mesmo tempo.
+ */
+function vendasFollowupTalvezRodar(): ?array {
+    if (!vendasFollowupAtivo() || !vendasFollowupDentroHorario()) return null;
+    $proxima = (int)getConfig('vendas_followup_proxima_em');
+    if ($proxima && time() < $proxima) return null;
+    $lock = @fopen(dirname(__DIR__) . '/storage/vendas_followup.lock', 'c');
+    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return null;
+    try {
+        // Relê depois de pegar a trava — outro processo pode ter acabado de rodar.
+        $proxima = (int)getConfig('vendas_followup_proxima_em');
+        if ($proxima && time() < $proxima) return null;
+        setConfig('vendas_followup_proxima_em', (string)(time() + 300 + random_int(0, 90)));
+        return vendasFollowupRodada();
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
+}
+
 function vendasFollowupRodada(): array {
     $r = vendasFollowupEnviarProximo();
     $log = '[' . date('d/m H:i:s') . '] ' . $r['status'] . (isset($r['telefone']) ? ' ' . $r['telefone'] : '') . (!empty($r['erro']) ? ' — ' . $r['erro'] : '');

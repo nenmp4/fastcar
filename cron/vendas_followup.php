@@ -11,11 +11,7 @@ require_once __DIR__ . '/../includes/vendas_followup.php';
 
 // Sinal de vida: mostra em Configurações se o cron está mesmo rodando na VPS.
 setConfig('vendas_followup_cron_visto', date('Y-m-d H:i:s'));
-if (!vendasFollowupAtivo()) exit(0);
-$lock = fopen(dirname(__DIR__) . '/storage/vendas_followup.lock', 'c');
-if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit(0);
-
-// Pequeno atraso sorteado (0–90s) pra não sair sempre no mesmo segundo.
-sleep(random_int(0, 90));
-$r = vendasFollowupRodada();
-echo $r['log'] . "\n";
+// Mesmo ritmo/trava da rodada disparada pelo navegador — ver
+// vendasFollowupTalvezRodar() (includes/vendas_followup.php).
+$r = vendasFollowupTalvezRodar();
+if ($r) echo $r['log'] . "\n";

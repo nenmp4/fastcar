@@ -293,3 +293,14 @@ echo json_encode([
     'proximo_notif_id' => $proximoNotifId,
     'nao_lidos_notif' => contarNotificacoesNaoLidas($meuId, $tiposFiltro),
 ]);
+
+// 03/11/2026 — follow-up de vendas sem depender só do cron da VPS: depois
+// de responder o sino, aproveita a consulta pra disparar a rodada se já
+// estiver na hora (vendasFollowupTalvezRodar() decide e trava sozinha).
+if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+try {
+    require_once __DIR__ . '/../includes/vendas_followup.php';
+    vendasFollowupTalvezRodar();
+} catch (Throwable $e) {
+    error_log('[follow-up vendas via sino] ' . $e->getMessage());
+}
