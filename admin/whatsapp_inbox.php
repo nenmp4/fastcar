@@ -51,6 +51,22 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
     exit;
 }
 
+// ── AJAX: baixar de novo mídia que não ficou salva (03/11/2026) ──────────
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'recuperar_midia') {
+    header('Content-Type: application/json');
+    $midId = (int)($_GET['id'] ?? 0);
+    $stMid = getDB()->prepare("SELECT telefone FROM whatsapp_mensagens WHERE id = ?");
+    $stMid->execute([$midId]);
+    $telMid = (string)$stMid->fetchColumn();
+    if (!$telMid || !usuarioPodeVerConversaWhatsapp($telMid, $responsavelFiltro)) {
+        echo json_encode(['ok' => false, 'erro' => 'sem acesso']);
+        exit;
+    }
+    $resMid = recuperarMidiaMensagemWhatsapp($midId);
+    echo json_encode(['ok' => $resMid['ok'], 'html' => $resMid['ok'] && $resMid['mensagem'] ? renderizarMidiaWhatsapp($resMid['mensagem']) : '', 'erro' => $resMid['erro']]);
+    exit;
+}
+
 // ── AJAX: lista de conversas (refresca a barra lateral sem recarregar tudo) ─
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
@@ -629,13 +645,44 @@ if ($telefoneAtivo && !$contatoAtivo) {
 
     function renderizarMidiaMsg(m) {
         var midia = tipoMidiaMsg(m);
-        if (!midia) return '';
+        if (!midia) {
+            var falta = m.direcao === 'in' && m.zapi_message_id && (['audio','image','video','document'].indexOf(m.tipo) >= 0 || /^(📷|🎤|🎥)/.test(m.mensagem || ''));
+            return falta ? '<div class="midia-faltando" data-mid="' + m.id + '" style="margin-top:6px;font-size:.8rem;color:var(--texto-fraco)">🔄 carregando mídia…</div>' : '';
+        }
         var url = '/admin/ver_midia_whatsapp.php?id=' + m.id;
         if (midia === 'audio') return '<audio controls preload="none" src="' + url + '" style="max-width:260px;display:block;margin-top:6px"></audio>';
         if (midia === 'video') return '<video controls preload="none" src="' + url + '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>';
         if (midia === 'document') return '<a href="' + url + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:inherit;font-size:.85rem">📎 ' + escapeHtml(m.mensagem.replace(/^📎\s*/, '')) + '</a>';
         return '<a href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>';
     }
+
+    // Mídia que não ficou salva: pede pro servidor baixar de novo do
+    // WhatsApp (03/11/2026). Uma por vez, nunca repete a mesma na página.
+    var midiaTentadas = {}, midiaFila = [], midiaRodando = false;
+    function recuperarMidias() {
+        document.querySelectorAll('.midia-faltando[data-mid]').forEach(function (el) {
+            var id = el.dataset.mid;
+            if (midiaTentadas[id]) return;
+            midiaTentadas[id] = true;
+            midiaFila.push(el);
+        });
+        if (midiaRodando) return;
+        (function proxima() {
+            var el = midiaFila.shift();
+            if (!el) { midiaRodando = false; return; }
+            midiaRodando = true;
+            fetch('?ajax=recuperar_midia&id=' + encodeURIComponent(el.dataset.mid))
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok && d.html) { el.outerHTML = d.html; }
+                    else { el.textContent = '⚠️ Mídia não disponível — o WhatsApp não liberou o arquivo (peça pro cliente reenviar).'; }
+                })
+                .catch(function () { el.textContent = '⚠️ Não deu pra carregar agora — recarregue a página.'; })
+                .then(proxima);
+        })();
+    }
+    setTimeout(recuperarMidias, 300);
+    setInterval(recuperarMidias, 4000);
 
     function renderMsg(m) {
         var div = document.createElement('div');

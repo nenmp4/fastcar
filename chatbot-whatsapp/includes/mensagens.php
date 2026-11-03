@@ -413,14 +413,27 @@ function extensaoPorMime(string $mime): string {
  * jeito; só fica sem a cópia visível dessa vez.
  */
 function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mime, string $tipo, int $clienteId, string $nomeCliente): void {
-    if ($mensagemId <= 0 || !$bytes || $clienteId <= 0) return;
+    if ($mensagemId <= 0 || !$bytes) return;
     try {
-        $tmp = tempnam(sys_get_temp_dir(), 'wpp_midia_');
-        if (!$tmp) return;
-        file_put_contents($tmp, $bytes);
         $nomeArquivo = $tipo . '_' . $mensagemId . '.' . extensaoPorMime($mime);
-        $copia = salvarArquivoGeradoComoDocumento($clienteId, $nomeCliente, $tmp, $nomeArquivo, $mime, 'whatsapp');
-        @unlink($tmp);
+        if ($clienteId <= 0) {
+            // 03/11/2026, achado real: "uma foto abriu, outras a IA descreveu
+            // mas não carregou" — mensagem sem cliente cadastrado (ex: lead
+            // encaminhado pra vendas, conversa encerrada) nunca salvava a
+            // cópia. Sem pasta de cliente no Drive, guarda local.
+            $dir = UPLOADS_DIR . '/whatsapp';
+            if (!is_dir($dir)) @mkdir($dir, 0755, true);
+            $copia = ['drive_file_id' => '', 'arquivo_url' => '', 'erro' => 'falha ao gravar local'];
+            if (is_dir($dir) && file_put_contents($dir . '/' . $nomeArquivo, $bytes) !== false) {
+                $copia = ['drive_file_id' => '', 'arquivo_url' => 'whatsapp/' . $nomeArquivo, 'erro' => ''];
+            }
+        } else {
+            $tmp = tempnam(sys_get_temp_dir(), 'wpp_midia_');
+            if (!$tmp) return;
+            file_put_contents($tmp, $bytes);
+            $copia = salvarArquivoGeradoComoDocumento($clienteId, $nomeCliente, $tmp, $nomeArquivo, $mime, 'whatsapp');
+            @unlink($tmp);
+        }
         if ($copia['drive_file_id'] || $copia['arquivo_url']) {
             $db = getDB();
             // 23/10/2026, achado real: "as imgens do inbox está dando
@@ -815,6 +828,24 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
 
     $idMensagemRecebida = registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro, $usuarioId);
 
+    // 03/11/2026 — salva a mídia já aqui quando o cliente existe (antes, só
+    // depois de criarOuAbrirOportunidade(); os desvios logo abaixo —
+    // encerrado pela equipe, lead de vendas — retornavam antes e a foto
+    // ficava só com a descrição da IA, sem carregar).
+    $midiaSalva = false;
+    $salvarMidiaSePendente = function (int $clienteId) use (&$midiaSalva, $bytesMidia, $idMensagemRecebida, $mime, &$tipoBruto, $payload) {
+        if ($midiaSalva || $bytesMidia === null) return;
+        $midiaSalva = true;
+        $nome = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
+        salvarMidiaWhatsappRecebida($idMensagemRecebida, $bytesMidia, $mime, (string)$tipoBruto, $clienteId, $nome);
+    };
+    if ($bytesMidia !== null) {
+        $stCliMidia = getDB()->prepare("SELECT id FROM clientes WHERE telefone = ?");
+        $stCliMidia->execute([$phone]);
+        $cliMidia = (int)$stCliMidia->fetchColumn();
+        if ($cliMidia > 0) $salvarMidiaSePendente($cliMidia);
+    }
+
     // Cria/abre a oportunidade desde o 1º contato (regra #2) — nunca esperar
     // a qualificação terminar pra existir registro. Idempotente: se já
     // existe oportunidade ativa (ex: cliente já em atendimento com um
@@ -835,11 +866,13 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // compra nem roda a IA de compra — a mensagem já ficou salva e aparece
     // no WhatsApp de vendas pro vendedor responder.
     if (telefoneEncerradoPelaEquipeRecente($phone)) {
+        $salvarMidiaSePendente(0);
         iaRegistrarDecisao($phone, 'encerrado_pela_equipe');
         return ['ignored' => 'encerrado_pela_equipe', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
     if (telefoneEhLeadDeVendasSemCompraAtiva($phone)) {
+        $salvarMidiaSePendente(0);
         iaRegistrarDecisao($phone, 'lead_de_vendas');
         return ['ignored' => 'lead_de_vendas', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
@@ -849,6 +882,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // avisado 1x por dia por telefone pra responder pelo WhatsApp Vendas.
     $motivoVenda = motivoLeadDeVendaNoNumeroCompra($phone, $texto);
     if ($motivoVenda !== null) {
+        $salvarMidiaSePendente(0);
         iaRegistrarDecisao($phone, 'lead_de_vendas_no_numero_compra', $motivoVenda);
         try {
             require_once dirname(__DIR__, 2) . '/includes/vendas.php';
@@ -883,9 +917,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     // foto/áudio/vídeo em si. Precisa do cliente_id (pasta no Drive), por
     // isso só depois de criarOuAbrirOportunidade(); sem oportunidade (falha
     // rara) fica só com a descrição em texto mesmo, nunca trava o webhook.
-    if ($bytesMidia !== null && $oportunidade) {
-        salvarMidiaWhatsappRecebida($idMensagemRecebida, $bytesMidia, $mime, $tipoBruto, $oportunidade['cliente_id'], $nomeContato);
-    }
+    $salvarMidiaSePendente($oportunidade ? (int)$oportunidade['cliente_id'] : 0);
 
     $ia_pausada = iaPausada($phone);
     $iaResultado = null;

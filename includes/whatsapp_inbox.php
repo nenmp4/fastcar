@@ -212,6 +212,63 @@ function tipoMidiaMensagemWhatsapp(array $m): ?string {
 }
 
 /**
+ * Mídia recebida que ficou sem cópia salva (03/11/2026, achado real: "umas
+ * fotos abriram, outras a IA descreveu mas não carregou") — devolve o tipo
+ * esperado ('image'/'audio'/'video'/'document') ou null. Só mensagem do
+ * cliente, com id da mensagem no WhatsApp (precisa dele pra baixar de novo).
+ */
+function midiaFaltandoMensagemWhatsapp(array $m): ?string {
+    if (($m['direcao'] ?? '') !== 'in' || !empty($m['drive_file_id']) || !empty($m['arquivo_url'])) return null;
+    if (empty($m['zapi_message_id'])) return null;
+    $tipo = (string)($m['tipo'] ?? '');
+    if (in_array($tipo, ['audio', 'image', 'video', 'document'], true)) return $tipo;
+    $texto = (string)($m['mensagem'] ?? '');
+    if (str_starts_with($texto, '🎤')) return 'audio';
+    if (str_starts_with($texto, '🎥')) return 'video';
+    if (str_starts_with($texto, '📷')) return 'image';
+    return null;
+}
+
+/**
+ * Baixa de novo pela Evolution uma mídia recebida que não ficou salva e
+ * guarda a cópia. Tenta no máximo 1x a cada 30 min por mensagem (mídia
+ * expirada no WhatsApp nunca vai voltar — não fica batendo à toa).
+ * Retorna ['ok'=>bool, 'mensagem'=>linha atualizada|null, 'erro'=>string].
+ */
+function recuperarMidiaMensagemWhatsapp(int $mensagemId): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT * FROM whatsapp_mensagens WHERE id = ?");
+    $st->execute([$mensagemId]);
+    $m = $st->fetch();
+    if (!$m) return ['ok' => false, 'mensagem' => null, 'erro' => 'Mensagem não encontrada.'];
+    $tipo = midiaFaltandoMensagemWhatsapp($m);
+    if ($tipo === null) return ['ok' => (bool)($m['drive_file_id'] || $m['arquivo_url']), 'mensagem' => $m, 'erro' => ''];
+
+    $chave = 'midia_retry_' . $mensagemId;
+    $ultima = (int)getConfig($chave);
+    if ($ultima && time() - $ultima < 1800) return ['ok' => false, 'mensagem' => $m, 'erro' => 'Já tentei há pouco — a mídia pode ter expirado no WhatsApp.'];
+    setConfig($chave, (string)time());
+
+    require_once __DIR__ . '/whatsapp_evolution.php';
+    $cred = null;
+    if (($m['canal'] ?? '') === 'vendas' && function_exists('evolutionConfiguredVendas') && evolutionConfiguredVendas()) $cred = evolutionCredenciaisVendas();
+    elseif (($m['canal'] ?? '') === 'financeiro' && function_exists('evolutionConfiguredFinanceiro') && evolutionConfiguredFinanceiro()) $cred = evolutionCredenciaisFinanceiro();
+    $res = evolutionBaixarMidiaRecebida((string)$m['zapi_message_id'], $tipo, $cred);
+    if ($res === null) {
+        return ['ok' => false, 'mensagem' => $m, 'erro' => 'Não deu pra baixar do WhatsApp (' . (evolutionUltimoErro() ?: 'sem detalhe') . ').'];
+    }
+    $stC = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
+    $stC->execute([$m['telefone']]);
+    $cli = $stC->fetch() ?: ['id' => 0, 'nome' => ''];
+    $mime = $res['mime'] ?: ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4', 'document' => 'application/octet-stream'][$tipo];
+    salvarMidiaWhatsappRecebida($mensagemId, $res['bytes'], $mime, $tipo, (int)$cli['id'], (string)$cli['nome']);
+    $st->execute([$mensagemId]);
+    $m = $st->fetch();
+    $ok = (bool)($m['drive_file_id'] || $m['arquivo_url']);
+    return ['ok' => $ok, 'mensagem' => $m, 'erro' => $ok ? '' : 'Baixou, mas não conseguiu salvar a cópia.'];
+}
+
+/**
  * HTML do player/preview inline (<audio>/<video>/<img>) pra mídia salva de
  * uma mensagem — ou '' se não tem mídia. Sempre serve via
  * admin/ver_midia_whatsapp.php (nunca a URL do Drive/local direto — mesma
@@ -219,7 +276,10 @@ function tipoMidiaMensagemWhatsapp(array $m): ?string {
  */
 function renderizarMidiaWhatsapp(array $m): string {
     $midia = tipoMidiaMensagemWhatsapp($m);
-    if (!$midia) return '';
+    if (!$midia) {
+        $faltando = midiaFaltandoMensagemWhatsapp($m);
+        return $faltando ? '<div class="midia-faltando" data-mid="' . (int)$m['id'] . '" style="margin-top:6px;font-size:.8rem;color:var(--texto-fraco)">🔄 carregando ' . ($faltando === 'audio' ? 'áudio' : ($faltando === 'video' ? 'vídeo' : ($faltando === 'document' ? 'arquivo' : 'foto'))) . '…</div>' : '';
+    }
     $url = '/admin/ver_midia_whatsapp.php?id=' . (int)$m['id'];
     return match ($midia) {
         'audio' => '<audio controls preload="none" src="' . e($url) . '" style="max-width:260px;display:block;margin-top:6px"></audio>',

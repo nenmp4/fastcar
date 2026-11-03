@@ -689,8 +689,9 @@ function evolutionBuscarContato(string $phone): ?array {
  * Retorna ['bytes'=>string, 'mime'=>string] ou null — nunca lança, mesmo
  * contrato de oficialBaixarMidiaRecebida()/baixarMidiaZapi().
  */
-function evolutionBaixarMidiaRecebida(string $messageId, string $tipo): ?array {
-    [$base, $instance, $apiKey] = evolutionCredenciais();
+function evolutionBaixarMidiaRecebida(string $messageId, string $tipo, ?array $credenciais = null): ?array {
+    // $credenciais (03/11/2026): instância de vendas/financeiro — padrão é a principal.
+    [$base, $instance, $apiKey] = $credenciais ?: evolutionCredenciais();
     if (!$base || !$instance || !$apiKey || !$messageId) {
         _evolutionSetUltimoErro('Sem URL/instância/API key configurados, ou messageId vazio.');
         return null;
