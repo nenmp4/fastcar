@@ -116,9 +116,17 @@ if ($modulo === 'vendas') {
     // supervisor ver todo lead de venda novo, mesmo padrão "acompanha
     // tudo" já usado no resto do projeto.
     if (perfilVeTudo()) {
+        // 03/11/2026, "não notificar mensagens que a IA está qualificando" —
+        // o aviso sai quando a IA TERMINA (vai pra Negociação), nunca na
+        // chegada do lead.
         $stmt = $db->prepare("
-            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, v.created_at
-            FROM vendas v WHERE v.origem = 'whatsapp' AND v.created_at > ? ORDER BY v.created_at ASC LIMIT 20
+            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, ev.created_at
+            FROM (SELECT h.venda_id, MAX(h.created_at) AS created_at FROM venda_historico h
+                  WHERE h.created_at > ? AND h.etapa_nova = 'negociacao' AND h.etapa_anterior IN ('whatsapp', 'qualificacao_ia')
+                  GROUP BY h.venda_id) ev
+            JOIN vendas v ON v.id = ev.venda_id
+            WHERE v.origem = 'whatsapp' AND v.etapa NOT IN ('whatsapp', 'qualificacao_ia')
+            ORDER BY ev.created_at ASC LIMIT 20
         ");
         $stmt->execute([$desde]);
     } else {
@@ -127,19 +135,20 @@ if ($modulo === 'vendas') {
         // mesmo lead disparava "novo lead" toda hora. Agora só quando o lead
         // é NOVO de verdade (criado agora) ou acabou de ser PASSADO pra mim
         // (reatribuição/redistribuição gravada no histórico).
+        // 03/11/2026 — avisa quando a IA terminou de qualificar (Negociação)
+        // ou quando o lead foi passado pra mim; nunca enquanto a IA conversa.
         $stmt = $db->prepare("
-            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id,
-                   MAX(v.created_at, COALESCE((SELECT MAX(h.created_at) FROM venda_historico h
-                        WHERE h.venda_id = v.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
-                          AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')), '')) AS created_at
-            FROM vendas v
-            WHERE v.responsavel_id = ?
-              AND ((v.origem = 'whatsapp' AND v.created_at > ?) OR EXISTS (SELECT 1 FROM venda_historico h
-                        WHERE h.venda_id = v.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
-                          AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')))
-            ORDER BY created_at ASC LIMIT 20
+            SELECT v.id, v.comprador_nome, v.veiculo_interesse_texto, v.oportunidade_id, ev.created_at
+            FROM (SELECT h.venda_id, MAX(h.created_at) AS created_at FROM venda_historico h
+                  WHERE h.created_at > ?
+                    AND ((h.etapa_nova = 'negociacao' AND h.etapa_anterior IN ('whatsapp', 'qualificacao_ia'))
+                         OR (h.etapa_anterior = h.etapa_nova AND (h.observacao LIKE '%Reatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%devolvido%')))
+                  GROUP BY h.venda_id) ev
+            JOIN vendas v ON v.id = ev.venda_id
+            WHERE v.responsavel_id = ? AND v.etapa NOT IN ('whatsapp', 'qualificacao_ia')
+            ORDER BY ev.created_at ASC LIMIT 20
         ");
-        $stmt->execute([$desde, $meuId, $desde, $desde]);
+        $stmt->execute([$desde, $meuId]);
     }
     $leads = array_map(function ($v) use ($db) {
         $veiculo = trim((string)($v['veiculo_interesse_texto'] ?? ''));
@@ -153,7 +162,7 @@ if ($modulo === 'vendas') {
         return [
             'id'         => (int)$v['id'],
             'tipo'       => 'novo_lead_venda',
-            'titulo'     => '🛒 Novo lead de venda',
+            'titulo'     => '🛒 Lead de venda qualificado',
             'mensagem'   => ($v['comprador_nome'] ?: '(sem nome)') . ($veiculo !== '' ? ' — ' . $veiculo : ''),
             'url'        => '/admin/venda.php?id=' . $v['id'],
             'created_at' => $v['created_at'],
@@ -161,40 +170,46 @@ if ($modulo === 'vendas') {
     }, $stmt->fetchAll());
 } elseif ($perfil === 'super_admin') {
     $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, o.created_at
-        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
-        WHERE o.origem = 'whatsapp' AND o.created_at > ? ORDER BY o.created_at ASC LIMIT 20
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, ev.created_at
+        FROM (SELECT h.oportunidade_id, MAX(h.created_at) AS created_at FROM oportunidade_historico h
+              WHERE h.created_at > ? AND h.etapa_nova = 'crm_preenchido' AND h.etapa_anterior IN ('whatsapp', 'qualificacao_ia')
+              GROUP BY h.oportunidade_id) ev
+        JOIN oportunidades o ON o.id = ev.oportunidade_id JOIN clientes c ON c.id = o.cliente_id
+        -- 03/11/2026 (não notificar mensagens que a IA está qualificando):
+        -- avisa quando a IA TERMINA (CRM preenchido), nunca na chegada.
+        WHERE o.origem = 'whatsapp' AND o.etapa NOT IN ('whatsapp', 'qualificacao_ia')
+        ORDER BY ev.created_at ASC LIMIT 20
     ");
     $stmt->execute([$desde]);
     $leads = array_map(fn($o) => [
         'id'      => (int)$o['id'],
         'tipo'    => 'novo_lead',
-        'titulo'  => '🚗 Novo lead de compra',
+        'titulo'  => '🚗 Lead qualificado pela IA',
         'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
         'url'     => '/admin/oportunidade.php?id=' . $o['id'],
         'created_at' => $o['created_at'],
     ], $stmt->fetchAll());
 } else {
     $stmt = $db->prepare("
-        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome,
-               MAX(o.created_at, COALESCE((SELECT MAX(h.created_at) FROM oportunidade_historico h
-                    WHERE h.oportunidade_id = o.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
-                      AND (h.observacao LIKE '%eatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%qualiza%')), '')) AS created_at
-        FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
-        WHERE o.responsavel_id = ?
-          -- 30/10/2026: antes era updated_at > desde — qualquer edição no lead
-          -- (e oportunidade criada à mão) disparava 'Novo lead'. Agora só lead
-          -- de WhatsApp novo de verdade, ou lead que acabou de ser passado pra mim.
-          AND ((o.origem = 'whatsapp' AND o.created_at > ?) OR EXISTS (SELECT 1 FROM oportunidade_historico h
-                    WHERE h.oportunidade_id = o.id AND h.created_at > ? AND h.etapa_anterior = h.etapa_nova
-                      AND (h.observacao LIKE '%eatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%qualiza%')))
-        ORDER BY created_at ASC LIMIT 20
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, ev.created_at
+        FROM (SELECT h.oportunidade_id, MAX(h.created_at) AS created_at FROM oportunidade_historico h
+              WHERE h.created_at > ?
+                AND ((h.etapa_nova = 'crm_preenchido' AND h.etapa_anterior IN ('whatsapp', 'qualificacao_ia'))
+                     OR (h.etapa_anterior = h.etapa_nova AND (h.observacao LIKE '%eatribu%' OR h.observacao LIKE '%edistribu%' OR h.observacao LIKE '%qualiza%')))
+              GROUP BY h.oportunidade_id) ev
+        JOIN oportunidades o ON o.id = ev.oportunidade_id JOIN clientes c ON c.id = o.cliente_id
+        -- 30/10/2026: antes era updated_at > desde (qualquer edição disparava).
+        -- 03/11/2026 (não notificar mensagens que a IA está qualificando):
+        -- só quando a IA TERMINA (CRM preenchido) ou o lead é passado pra mim,
+        -- nunca enquanto ainda está em WhatsApp/Qualificação IA.
+        WHERE o.responsavel_id = ? AND o.etapa NOT IN ('whatsapp', 'qualificacao_ia')
+        ORDER BY ev.created_at ASC LIMIT 20
     ");
-    $stmt->execute([$desde, $meuId, $desde, $desde]);
+    $stmt->execute([$desde, $meuId]);
     $leads = array_map(fn($o) => [
         'id'      => (int)$o['id'],
         'tipo'    => 'novo_lead',
-        'titulo'  => '🚗 Novo lead de compra',
+        'titulo'  => '🚗 Lead qualificado pela IA',
         'mensagem' => ($o['cliente_nome'] ?: '(sem nome)') . (trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) !== '' ? ' — ' . trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '')) : ''),
         'url'     => '/admin/oportunidade.php?id=' . $o['id'],
         'created_at' => $o['created_at'],

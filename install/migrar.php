@@ -1655,6 +1655,8 @@ try {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_oportunidades_tipo_veiculo ON oportunidades(tipo_veiculo)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_vendas_responsavel ON vendas(responsavel_id, etapa)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_fin_lancamentos_vencimento ON fin_lancamentos(status, data_vencimento)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_historico_created ON oportunidade_historico(created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_venda_historico_created ON venda_historico(created_at)");
     echo "✅ índices de performance (oportunidades/vendas/fin_lancamentos): prontos\n";
 } catch (Throwable $e) {
     echo "❌ índices de performance: {$e->getMessage()}\n";

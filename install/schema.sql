@@ -312,6 +312,7 @@ CREATE TABLE IF NOT EXISTS oportunidade_historico (
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_historico_oportunidade ON oportunidade_historico(oportunidade_id);
+CREATE INDEX IF NOT EXISTS idx_historico_created ON oportunidade_historico(created_at); -- sino (03/11/2026)
 
 -- Inbox unificado do WhatsApp — mesmo padrão do JurídicoSaaS
 -- (whatsapp_mensagens). "Salvar desde o primeiro contato": toda mensagem
@@ -1143,6 +1144,7 @@ CREATE TABLE IF NOT EXISTS venda_historico (
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_venda_historico_venda ON venda_historico(venda_id);
+CREATE INDEX IF NOT EXISTS idx_venda_historico_created ON venda_historico(created_at); -- sino (03/11/2026)
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_documentos_token
     ON vendas(documentos_token) WHERE documentos_token IS NOT NULL;
