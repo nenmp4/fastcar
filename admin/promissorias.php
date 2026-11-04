@@ -84,7 +84,7 @@ if ($verModo === 'parcelas') {
     // Só entrada/parcela de verdade (parcela_numero preenchido) — nunca
     // mistura com comissão de venda ou outro lançamento tocado por
     // venda_id que não é parcelamento propriamente dito.
-    $whereP = 'WHERE fl.venda_id IS NOT NULL AND fl.parcela_numero IS NOT NULL';
+    $whereP = "WHERE fl.venda_id IS NOT NULL AND (fl.parcela_numero IS NOT NULL OR fl.origem = 'asaas')";
     $paramsP = [];
     if ($souDono) {
         $whereP .= ' AND v.responsavel_id = ?';
@@ -167,6 +167,7 @@ if ($verModo === 'parcelas') {
 
 function moedaPromissoria(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.'); }
 function rotuloParcelaPromissoria(array $l): string {
+    if ($l['parcela_numero'] === null) return 'Cobrança Asaas';
     if ((int)$l['parcela_numero'] === 0) return 'Entrada';
     return (int)$l['parcela_numero'] . ($l['parcela_total'] ? ' de ' . (int)$l['parcela_total'] : '');
 }
@@ -307,8 +308,9 @@ function rotuloStatusParcelaPromissoria(string $status): string {
                         <small style="color:var(--texto-fraco)">sem lançamento ainda</small>
                     <?php else: ?>
                         <?php
-                        $lancs = array_values(array_filter(finListarLancamentosVenda((int)$v['id']), fn($l) => $l['status'] !== 'cancelado' && $l['parcela_numero'] !== null));
-                        $parcs = array_values(array_filter($lancs, fn($l) => (int)$l['parcela_numero'] > 0));
+                        $lancs = array_values(array_filter(finListarLancamentosVenda((int)$v['id']), fn($l) => $l['status'] !== 'cancelado' && ($l['parcela_numero'] !== null || ($l['origem'] ?? '') === 'asaas')));
+                        // Cobrança avulsa do Asaas (sem nº de parcela) também conta como parcela a receber.
+                        $parcs = array_values(array_filter($lancs, fn($l) => $l['parcela_numero'] === null || (int)$l['parcela_numero'] > 0));
                         $pagas = count(array_filter($parcs, fn($l) => $l['status'] === 'pago'));
                         $prox = null;
                         foreach ($parcs as $l) { if ($l['status'] !== 'pago') { $prox = $l; break; } }
