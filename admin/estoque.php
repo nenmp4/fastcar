@@ -293,13 +293,20 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
         <?php if ($erro && $formManual): ?><div class="alerta-erro" style="margin-top:10px"><?= e($erro) ?></div><?php endif; ?>
         <input type="hidden" name="csrf_token" value="<?= generateCSRF() ?>">
         <input type="hidden" name="acao" value="cadastrar_manual_estoque">
+        <div class="card" style="margin:10px 0;padding:12px">
+            <strong>📄 Subir o documento do veículo (CRLV)</strong>
+            <p style="margin:4px 0 8px"><small>A IA lê o documento e preenche marca, modelo, ano, placa, chassi e renavam. Confira antes de salvar.</small></p>
+            <input type="file" id="vm-crlv-arquivo" accept="image/*,application/pdf">
+            <button type="button" id="vm-crlv-btn" class="btn-primary" onclick="vmLerCrlv()">🤖 Ler documento</button>
+            <span id="vm-crlv-status" style="display:block;margin-top:6px"></span>
+        </div>
         <div class="grid-2">
-            <label>Marca *<input type="text" name="veiculo_marca" required value="<?= e($formManual['veiculo_marca'] ?? '') ?>"></label>
-            <label>Modelo *<input type="text" name="veiculo_modelo" required value="<?= e($formManual['veiculo_modelo'] ?? '') ?>"></label>
-            <label>Ano<input type="text" name="veiculo_ano" placeholder="2019/2020" value="<?= e($formManual['veiculo_ano'] ?? '') ?>"></label>
-            <label>Placa<input type="text" name="veiculo_placa" placeholder="ABC1D23" value="<?= e($formManual['veiculo_placa'] ?? '') ?>"></label>
-            <label>Chassi<input type="text" name="veiculo_chassi" value="<?= e($formManual['veiculo_chassi'] ?? '') ?>"></label>
-            <label>Renavam<input type="text" name="veiculo_renavam" inputmode="numeric" value="<?= e($formManual['veiculo_renavam'] ?? '') ?>"></label>
+            <label>Marca *<input type="text" id="vm-marca" name="veiculo_marca" required value="<?= e($formManual['veiculo_marca'] ?? '') ?>"></label>
+            <label>Modelo *<input type="text" id="vm-modelo" name="veiculo_modelo" required value="<?= e($formManual['veiculo_modelo'] ?? '') ?>"></label>
+            <label>Ano<input type="text" id="vm-ano" name="veiculo_ano" placeholder="2019/2020" value="<?= e($formManual['veiculo_ano'] ?? '') ?>"></label>
+            <label>Placa<input type="text" id="vm-placa" name="veiculo_placa" placeholder="ABC1D23" value="<?= e($formManual['veiculo_placa'] ?? '') ?>"></label>
+            <label>Chassi<input type="text" id="vm-chassi" name="veiculo_chassi" value="<?= e($formManual['veiculo_chassi'] ?? '') ?>"></label>
+            <label>Renavam<input type="text" id="vm-renavam" name="veiculo_renavam" inputmode="numeric" value="<?= e($formManual['veiculo_renavam'] ?? '') ?>"></label>
             <label>Tipo
                 <select name="tipo_veiculo">
                     <?php foreach (['carro' => '🚗 Carro', 'moto' => '🏍️ Moto', 'caminhao' => '🚚 Caminhão', 'outro' => '🚙 Outro'] as $tv => $tl): ?>
@@ -316,6 +323,32 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
     </form>
 </dialog>
 <?php if ($erro && $formManual): ?><script>document.getElementById('modal-veiculo-manual').showModal();</script><?php endif; ?>
+<script>
+function vmLerCrlv() {
+    var input = document.getElementById('vm-crlv-arquivo');
+    var status = document.getElementById('vm-crlv-status');
+    var btn = document.getElementById('vm-crlv-btn');
+    if (!input.files.length) { status.textContent = '⚠️ Escolha o arquivo do documento primeiro.'; return; }
+    status.textContent = '🔄 Lendo documento...';
+    btn.disabled = true;
+    var fd = new FormData();
+    fd.append('crlv', input.files[0]);
+    fd.append('csrf_token', <?= json_encode(generateCSRF()) ?>);
+    fetch('/admin/veiculo_crlv_ajax.php', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false;
+            if (!d.ok) { status.textContent = '⚠️ ' + d.erro; return; }
+            var campos = { marca: d.veiculo_marca, modelo: d.veiculo_modelo, ano: d.veiculo_ano, placa: d.veiculo_placa, chassi: d.veiculo_chassi, renavam: d.veiculo_renavam };
+            Object.keys(campos).forEach(function (k) {
+                var el = document.getElementById('vm-' + k);
+                if (el && !el.value && campos[k]) el.value = campos[k];
+            });
+            status.textContent = '✅ Preenchido! Confira antes de salvar.';
+        })
+        .catch(function () { btn.disabled = false; status.textContent = '⚠️ Erro ao ler o documento.'; });
+}
+</script>
 <?php endif; ?>
 
 <div class="card">
