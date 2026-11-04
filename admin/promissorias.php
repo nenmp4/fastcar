@@ -132,7 +132,10 @@ if ($verModo === 'parcelas') {
     $stmt->execute($paramsFinal);
     $parcelas = $stmt->fetchAll();
 } else {
-    $where = 'WHERE 1=1';
+    // 04/11/2026, "promissórias mostrar as parcelas de clientes fechados" —
+    // lead/negociação em andamento sai daqui (continua em Vendas); só
+    // negócio fechado, com as parcelas dele.
+    $where = "WHERE v.etapa = 'vendido'";
     $params = [];
     if ($souDono) {
         $where .= ' AND v.responsavel_id = ?';
@@ -155,7 +158,7 @@ if ($verModo === 'parcelas') {
         LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
         LEFT JOIN usuarios u ON u.id = v.responsavel_id
         {$where}
-        ORDER BY v.created_at DESC
+        ORDER BY COALESCE(v.data_venda, v.created_at) DESC, v.id DESC
         LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
@@ -209,7 +212,7 @@ function rotuloStatusParcelaPromissoria(string $status): string {
 <?php if ($sucesso): ?><p class="alerta alerta-ok"><?= e($sucesso) ?></p><?php endif; ?>
 
 <nav class="etapas-nav">
-    <a href="?ver=vendas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $verModo === 'vendas' ? 'ativo' : '' ?>">📋 Todas as vendas</a>
+    <a href="?ver=vendas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $verModo === 'vendas' ? 'ativo' : '' ?>">📋 Clientes fechados</a>
     <a href="?ver=parcelas<?= $busca !== '' ? '&q=' . urlencode($busca) : '' ?>" class="<?= $verModo === 'parcelas' ? 'ativo' : '' ?>">📆 Todas as parcelas</a>
 </nav>
 
@@ -303,10 +306,34 @@ function rotuloStatusParcelaPromissoria(string $status): string {
                     <?php if ($resumo['qtd'] === 0): ?>
                         <small style="color:var(--texto-fraco)">sem lançamento ainda</small>
                     <?php else: ?>
+                        <?php
+                        $lancs = array_values(array_filter(finListarLancamentosVenda((int)$v['id']), fn($l) => $l['status'] !== 'cancelado' && $l['parcela_numero'] !== null));
+                        $parcs = array_values(array_filter($lancs, fn($l) => (int)$l['parcela_numero'] > 0));
+                        $pagas = count(array_filter($parcs, fn($l) => $l['status'] === 'pago'));
+                        $prox = null;
+                        foreach ($parcs as $l) { if ($l['status'] !== 'pago') { $prox = $l; break; } }
+                        ?>
+                        <?php if ($parcs): ?><strong><?= $pagas ?>/<?= count($parcs) ?> parcelas pagas</strong><br><?php endif; ?>
+                        <?php if ($prox): ?><small>próxima: <?= rotuloParcelaPromissoria($prox) ?> · <?= $prox['data_vencimento'] ? date('d/m/Y', strtotime($prox['data_vencimento'])) : '—' ?> · <?= moedaPromissoria((float)$prox['valor']) ?><?= $prox['status'] === 'atrasado' ? ' ⚠️' : '' ?></small><br><?php endif; ?>
                         <small>✅ pago <?= moedaPromissoria($resumo['total_pago']) ?></small><br>
                         <small>⏳ pendente <?= moedaPromissoria($resumo['total_pendente']) ?></small>
                         <?php if ($resumo['atrasados'] > 0): ?>
                             <br><span class="badge badge-atraso">⚠️ <?= $resumo['atrasados'] ?> atrasada(s)</span>
+                        <?php endif; ?>
+                        <?php if ($lancs): ?>
+                        <details style="margin-top:4px"><summary style="cursor:pointer;font-size:13px">📆 Ver parcelas (<?= count($lancs) ?>)</summary>
+                            <table class="sem-cards" style="font-size:12.5px;margin-top:4px">
+                                <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead>
+                                <tbody>
+                                <?php foreach ($lancs as $l): ?>
+                                    <tr><td><?= rotuloParcelaPromissoria($l) ?></td>
+                                        <td><?= $l['data_vencimento'] ? date('d/m/Y', strtotime($l['data_vencimento'])) : '—' ?></td>
+                                        <td><?= moedaPromissoria((float)$l['valor']) ?></td>
+                                        <td><?= rotuloStatusParcelaPromissoria((string)$l['status']) ?></td></tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </details>
                         <?php endif; ?>
                     <?php endif; ?>
                 </td>
