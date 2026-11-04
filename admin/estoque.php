@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_
 
 // 24/10/2026, "ocultar todos carros no estoque que vieram migrados do
 // ZapSign — já foram vendidos". Só super_admin; nunca apaga nada, reversível.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['ocultar_migrados', 'ocultar_um', 'mostrar_um', 'mesclar_duplicados'], true)) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['ocultar_migrados', 'ocultar_um', 'mostrar_um', 'mesclar_duplicados', 'uso_empresa'], true)) {
     try {
         if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
         if ($_SESSION['admin_perfil'] !== 'super_admin') throw new RuntimeException('Só o super admin oculta carros do estoque.');
@@ -142,6 +142,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['oc
         } elseif ($acaoOc === 'ocultar_migrados') {
             $n = ocultarVeiculosEstoque(idsVeiculosMigradosZapsignNoEstoque(), 'Migrado do ZapSign (CRM antigo) — já vendido');
             $sucesso = "{$n} carro(s) migrado(s) do ZapSign ocultado(s) do estoque.";
+        } elseif ($acaoOc === 'uso_empresa') {
+            // 04/11/2026, "coloca uma no veiculo para sair do estoque pois
+            // ficou de uso da empresa" — sai do estoque/vitrine/IA de vendas,
+            // continua na Frota e no histórico; "Mostrar de novo" desfaz.
+            $opUso = (int)$_POST['oportunidade_id'];
+            $obsUso = trim((string)($_POST['obs_uso'] ?? ''));
+            $motivoUso = 'Uso da empresa' . ($obsUso !== '' ? ' — ' . $obsUso : '');
+            if (ocultarVeiculosEstoque([$opUso], $motivoUso) < 1) throw new RuntimeException('Veículo não encontrado no estoque.');
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+               ->execute([$opUso, (int)$_SESSION['admin_id'], 'Veículo tirado do estoque: ' . clean($motivoUso) . '.']);
+            $sucesso = 'Veículo saiu do estoque — marcado como uso da empresa. Fica em "Ver ocultos" se precisar voltar.';
         } elseif ($acaoOc === 'ocultar_um') {
             ocultarVeiculosEstoque([(int)$_POST['oportunidade_id']], 'Ocultado manualmente — já vendido');
             $sucesso = 'Carro ocultado do estoque.';
@@ -521,6 +532,16 @@ function vmLerCrlv() {
                 <?php endif; ?>
             <?php endif; ?>
             <?php if ($souSuperEstoque): ?><a class="btn" style="margin-top:8px" href="/admin/veiculo_historico.php?id=<?= $id ?>">⚙️ Histórico do veículo</a><?php endif; ?>
+            <?php if ($souSuperEstoque): ?>
+            <details style="margin-top:8px">
+                <summary style="cursor:pointer">🏢 Tirar do estoque (uso da empresa)</summary>
+                <form method="post" style="margin-top:6px" onsubmit="return confirmarAcao(this, 'Tirar este veículo do estoque como uso da empresa? Ele sai da vitrine e da IA de vendas (dá pra voltar em Ver ocultos).');">
+                    <?= csrfField() ?><input type="hidden" name="acao" value="uso_empresa"><input type="hidden" name="oportunidade_id" value="<?= $id ?>">
+                    <input type="text" name="obs_uso" maxlength="120" placeholder="Observação (opcional) — ex: carro do Jean">
+                    <button type="submit" class="perigo" style="width:100%">🏢 Confirmar uso da empresa</button>
+                </form>
+            </details>
+            <?php endif; ?>
         </div>
     </div>
     <?php endforeach; ?>
