@@ -25,7 +25,8 @@ $vejoTudo = perfilVeTudo(); // super_admin/supervisor
 // (cadastroAtivoPorPlaca()); (2) placa que já tem vistoria de compra em
 // aberto (em qualquer cadastro) abre a existente em vez de criar outra
 // (vistoriaAtivaPorPlaca(), também aplicada dentro de criarAvaliacao()).
-$souAvaliador = $perfil === 'avaliador';
+// Consultor com "também faz avaliação" (Usuários) cria a própria vistoria igual ao avaliador.
+$souAvaliador = souAvaliadorHabilitado();
 $podeCriarVistoria = $souAvaliador || $perfil === 'super_admin';
 
 if ($podeCriarVistoria && ($_GET['ajax'] ?? '') === 'buscar') {
@@ -52,9 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if ($avaliadorNova <= 0) throw new RuntimeException('Escolha o avaliador.');
             if (!$souAvaliador) {
-                $stAv = getDB()->prepare("SELECT 1 FROM usuarios WHERE id = ? AND perfil = 'avaliador' AND bloqueado = 0");
-                $stAv->execute([$avaliadorNova]);
-                if (!$stAv->fetchColumn()) throw new RuntimeException('Avaliador inválido.');
+                if (!usuarioIdEhAvaliador($avaliadorNova)) throw new RuntimeException('Avaliador inválido.');
             }
             $opNova = (int)($_POST['oportunidade_id'] ?? 0);
             $vendaNova = $tipoNova === 'venda' ? (int)($_POST['venda_id'] ?? 0) : null;
@@ -92,13 +91,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $avaliadoresLista = ($podeCriarVistoria && !$souAvaliador)
-    ? array_values(array_filter(listarUsuarios(), fn($u) => $u['perfil'] === 'avaliador'))
+    ? array_values(array_filter(listarUsuarios(), 'usuarioEhAvaliador'))
     : [];
 
 // avaliador só vê as próprias; super_admin/supervisor veem todas;
 // consultor/vendedor também veem todas (precisam achar a do próprio
 // negócio pra acompanhar, não têm "carteira de avaliador" própria).
-$filtroAvaliador = ($souAvaliador && !$vejoTudo) ? $meuId : null;
+// Avaliador vê só as próprias. Consultor que também avalia continua vendo todas
+// (acompanha o negócio dele), com o atalho "Só as minhas" (?minhas=1).
+$soMinhas = $perfil === 'avaliador' || ($souAvaliador && !empty($_GET['minhas']));
+$filtroAvaliador = ($soMinhas && !$vejoTudo) ? $meuId : null;
 
 $aba = (string)($_GET['aba'] ?? 'pendentes');
 // 05/10/2026, "listagem de veículos vistoriados pra ele conferir todas
@@ -152,6 +154,9 @@ function avStatusBadge(string $status): string {
 <nav class="etapas-nav">
     <a href="/admin/avaliacoes.php?aba=pendentes" class="<?= $aba !== 'concluidas' ? 'ativo' : '' ?>">⏳ Pendentes/em andamento (<?= count($pendentes) ?>)</a>
     <a href="/admin/avaliacoes.php?aba=concluidas" class="<?= $aba === 'concluidas' ? 'ativo' : '' ?>">✅ Concluídas</a>
+    <?php if ($souAvaliador && $perfil !== 'avaliador'): ?>
+        <a href="/admin/avaliacoes.php?<?= e(http_build_query(['aba' => $aba, 'minhas' => empty($_GET['minhas']) ? 1 : null])) ?>" class="<?= !empty($_GET['minhas']) ? 'ativo' : '' ?>">👤 Só as minhas</a>
+    <?php endif; ?>
 </nav>
 
 <main>

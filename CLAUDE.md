@@ -3434,6 +3434,19 @@ segue no schema sem uso novo, não removida sem ganho real),
   concluída") via HTTP real (sessão primed, servidor PHP embutido, banco
   isolado) contra as 4 telas + `php -l` nos 5 arquivos tocados +
   `tests/smoke.php` limpo. Sem migração de schema.
+  **Consultor que também faz vistoria** (04/11/2026, "coloque no usuarios
+  de consultores opção para eles realizarem também avaliação") — checkbox
+  "🔍 Também faz avaliação/vistoria" em `admin/usuarios.php` (só vale pro
+  perfil consultor, `usuarios.pode_avaliar`; trocar o perfil zera). Regra
+  única em `includes/usuarios.php`: `usuarioEhAvaliador()`/
+  `usuarioIdEhAvaliador()`/`souAvaliadorHabilitado()` — usada nas listas de
+  avaliador (oportunidade/venda/avaliação/fila/estoque), na validação do
+  avaliador escolhido, na edição do checklist (só o atribuído), em "Nova
+  vistoria"/"Fazer vistoria" e no sino. O consultor habilitado continua
+  vendo todas as vistorias, com atalho "👤 Só as minhas". Testado via HTTP
+  em banco isolado (consultor habilitado aparece na lista e preenche o
+  checklist; consultor sem a opção é ignorado) + migração contra schema
+  anterior + smoke.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

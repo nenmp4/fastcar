@@ -71,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 try {
                     $novoId = criarUsuario($nome, $email, $senha, $perfil, $whatsapp, $cpf);
+                    definirPodeAvaliar($novoId, $perfil === 'consultor' && !empty($_POST['pode_avaliar']));
                     auditoriaRegistrar('usuario_criado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'usuario', $novoId, "Criou {$nome} ({$email}) como {$perfil}.");
                     $sucesso = "Usuário {$nome} criado.";
                 } catch (Throwable $e) {
@@ -109,6 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $quemFez = (int)$_SESSION['admin_id'];
                         $nomeQuemFez = (string)$_SESSION['admin_nome'];
                         atualizarUsuario($id, $nome, $email, $whatsapp, $perfil, $bloqueado, $cpf);
+                        $podeAvaliarNovo = $perfil === 'consultor' && !empty($_POST['pode_avaliar']);
+                        definirPodeAvaliar($id, $podeAvaliarNovo);
+                        if ((bool)($alvo['pode_avaliar'] ?? 0) !== $podeAvaliarNovo) {
+                            auditoriaRegistrar('usuario_perfil_alterado', $quemFez, $nomeQuemFez, 'usuario', $id, "{$nome}: " . ($podeAvaliarNovo ? 'passou a fazer avaliação/vistoria' : 'deixou de fazer avaliação/vistoria') . '.');
+                        }
 
                         if ($alvo['perfil'] !== $perfil) {
                             auditoriaRegistrar('usuario_perfil_alterado', $quemFez, $nomeQuemFez, 'usuario', $id, "{$nome}: {$alvo['perfil']} → {$perfil}.");
@@ -155,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, disponivel, tentativas_falhas, bloqueado_ate FROM usuarios ORDER BY (perfil = 'super_admin') DESC, perfil, nome")->fetchAll();
+$usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, disponivel, tentativas_falhas, bloqueado_ate, pode_avaliar FROM usuarios ORDER BY (perfil = 'super_admin') DESC, perfil, nome")->fetchAll();
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
 
@@ -222,6 +228,10 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                         <option value="avaliador" <?= $perfilAtual === 'avaliador' ? 'selected' : '' ?>>Avaliador (checklist de vistoria do veículo)</option>
                         <option value="super_admin" <?= $perfilAtual === 'super_admin' ? 'selected' : '' ?>>⚠️ Super admin (acesso total ao sistema)</option>
                     </select>
+                    <label style="font-weight:normal">
+                        <input type="checkbox" name="pode_avaliar" value="1" <?= !empty($editando['pode_avaliar']) ? 'checked' : '' ?> style="width:auto;display:inline-block">
+                        🔍 Também faz avaliação/vistoria de veículo <small>(vale só pro perfil Consultor — ele aparece na lista de avaliadores e pode preencher o checklist)</small>
+                    </label>
                     <?php if (($_POST['perfil'] ?? $perfilAtual) === 'super_admin' || $perfilAtual === 'super_admin'): ?>
                         <small style="color:#991b1b">⚠️ Super admin tem acesso total — inclusive Configurações, credenciais de API e outros usuários.</small>
                     <?php endif; ?>
@@ -253,7 +263,7 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
             <tr>
                 <td><?= e($u['nome']) ?></td>
                 <td><?= e($u['email']) ?></td>
-                <td><?= e($labelPerfil[$u['perfil']] ?? $u['perfil']) ?></td>
+                <td><?= e($labelPerfil[$u['perfil']] ?? $u['perfil']) ?><?php if ($u['perfil'] === 'consultor' && !empty($u['pode_avaliar'])): ?> <span class="badge" title="Também faz avaliação/vistoria">🔍 avalia</span><?php endif; ?></td>
                 <td>
                     <?php if ($u['bloqueado']): ?>
                         <span class="badge badge-atraso">🚫 bloqueado</span>

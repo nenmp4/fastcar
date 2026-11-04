@@ -634,7 +634,7 @@ $stmtMsg->execute([$op['cliente_telefone']]);
 $mensagens = array_reverse($stmtMsg->fetchAll());
 
 $usuarios = listarUsuarios();
-$avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
+$avaliadoresDisponiveis = array_values(array_filter($usuarios, 'usuarioEhAvaliador'));
 // 02/10/2026, "próprio consultor vira testemunha fixa pois eles
 // responsável direto" — testemunha 1 do contrato é sempre o responsável
 // ATUAL desta oportunidade (nunca precisa ser escolhido aqui, só exibido).

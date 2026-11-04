@@ -26,7 +26,7 @@ function buscarUsuario(int $id): ?array {
 
 function listarUsuarios(bool $apenasAtivos = true): array {
     $db = getDB();
-    $sql = "SELECT id, nome, email, perfil, bloqueado FROM usuarios";
+    $sql = "SELECT id, nome, email, perfil, bloqueado, pode_avaliar FROM usuarios";
     if ($apenasAtivos) $sql .= " WHERE bloqueado = 0";
     $sql .= " ORDER BY nome";
     return $db->query($sql)->fetchAll();
@@ -115,6 +115,41 @@ function registrarTentativaLoginFalha(int $usuarioId): void {
 /** Senha certa zera o contador de tentativas erradas e qualquer bloqueio automático em andamento. */
 function resetarTentativasLogin(int $usuarioId): void {
     getDB()->prepare("UPDATE usuarios SET tentativas_falhas = 0, bloqueado_ate = NULL WHERE id = ?")->execute([$usuarioId]);
+}
+
+/**
+ * Quem pode ser avaliador de vistoria (04/11/2026, "coloque no usuarios de
+ * consultores opção para eles realizarem também avaliação"): o perfil
+ * avaliador de sempre OU consultor com a opção "também faz avaliação"
+ * marcada em Usuários (usuarios.pode_avaliar).
+ */
+function usuarioEhAvaliador(array $u): bool {
+    return ($u['perfil'] ?? '') === 'avaliador'
+        || (($u['perfil'] ?? '') === 'consultor' && !empty($u['pode_avaliar']));
+}
+
+/** Mesma regra, pelo id (validar avaliador escolhido num POST). */
+function usuarioIdEhAvaliador(int $id): bool {
+    if ($id <= 0) return false;
+    $st = getDB()->prepare("SELECT 1 FROM usuarios WHERE id = ? AND bloqueado = 0
+        AND (perfil = 'avaliador' OR (perfil = 'consultor' AND pode_avaliar = 1))");
+    $st->execute([$id]);
+    return (bool)$st->fetchColumn();
+}
+
+/** O usuário logado pode fazer vistoria (avaliador ou consultor habilitado)? */
+function souAvaliadorHabilitado(): bool {
+    $perfil = $_SESSION['admin_perfil'] ?? '';
+    if ($perfil === 'avaliador') return true;
+    if ($perfil !== 'consultor') return false;
+    static $cache = [];
+    $id = (int)($_SESSION['admin_id'] ?? 0);
+    if (!array_key_exists($id, $cache)) $cache[$id] = usuarioIdEhAvaliador($id);
+    return $cache[$id];
+}
+
+function definirPodeAvaliar(int $id, bool $pode): void {
+    getDB()->prepare("UPDATE usuarios SET pode_avaliar = ? WHERE id = ?")->execute([$pode ? 1 : 0, $id]);
 }
 
 function criarUsuario(string $nome, string $email, string $senha, string $perfil = 'consultor', string $whatsapp = '', string $cpf = ''): int {

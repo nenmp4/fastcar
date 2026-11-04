@@ -68,7 +68,7 @@ if (isset($_GET['historico'])) {
     // novo" (computado AO VIVO, nunca persistido em `notificacoes` — não
     // é um evento pontual, é um ESTADO atual: "o que está atribuído a
     // mim agora"), com as 7 atribuições mais recentes.
-    if ($perfil === 'avaliador') {
+    if (souAvaliadorHabilitado()) {
         $pendentesAval = array_slice(array_reverse(listarAvaliacoesPendentes($meuId)), 0, 7);
         foreach ($pendentesAval as $a) {
             $veiculo = trim(($a['veiculo_marca'] ?? '') . ' ' . ($a['veiculo_modelo'] ?? ''));

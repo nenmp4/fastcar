@@ -33,7 +33,7 @@ if (!$av) {
     exit('Avaliação não encontrada.');
 }
 
-$souAvaliadorAtribuido = $perfil === 'avaliador' && (int)$av['avaliador_id'] === $meuId;
+$souAvaliadorAtribuido = souAvaliadorHabilitado() && (int)$av['avaliador_id'] === $meuId;
 $podeEditarChecklist = $perfil === 'super_admin' || $souAvaliadorAtribuido;
 
 // Compra: QUALQUER consultor atribui (não só o responsável daquela
@@ -149,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
 $itens = listarItensAvaliacao($id);
 $score = veiculoAvaliacaoScore($itens);
 $fotos = listarFotosAvaliacao($id);
-$avaliadores = array_values(array_filter(listarUsuarios(), fn($u) => $u['perfil'] === 'avaliador'));
+$avaliadores = array_values(array_filter(listarUsuarios(), 'usuarioEhAvaliador'));
 
 // Link do Termo Ciente — sempre reconstruído a partir do token já salvo
 // (nunca gera um novo aqui, só exibe), pra "Copiar link" funcionar mesmo

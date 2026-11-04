@@ -721,7 +721,7 @@ $stmtContratos->execute([$id]);
 $contratos = $stmtContratos->fetchAll();
 
 $usuarios = listarUsuarios();
-$avaliadoresDisponiveis = array_values(array_filter($usuarios, fn($u) => $u['perfil'] === 'avaliador'));
+$avaliadoresDisponiveis = array_values(array_filter($usuarios, 'usuarioEhAvaliador'));
 // 02/10/2026 — mesma mecânica do lado de compra: testemunha 1 é sempre o
 // vendedor responsável atual, testemunha 2 é escolhida por negociação.
 $respIdAtualVenda = $v['responsavel_id'] ? (int)$v['responsavel_id'] : null;

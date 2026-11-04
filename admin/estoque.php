@@ -30,10 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'fazer_v
         if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
         if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
         $opIdV = (int)($_POST['oportunidade_id'] ?? 0);
-        $avalId = $_SESSION['admin_perfil'] === 'avaliador' ? (int)$_SESSION['admin_id'] : (int)($_POST['avaliador_id'] ?? 0);
-        $stA = $db->prepare("SELECT 1 FROM usuarios WHERE id = ? AND perfil = 'avaliador' AND bloqueado = 0");
-        $stA->execute([$avalId]);
-        if (!$stA->fetchColumn()) throw new RuntimeException('Escolha um avaliador pra fazer a vistoria.');
+        $avalId = souAvaliadorHabilitado() ? (int)$_SESSION['admin_id'] : (int)($_POST['avaliador_id'] ?? 0);
+        if (!usuarioIdEhAvaliador($avalId)) throw new RuntimeException('Escolha um avaliador pra fazer a vistoria.');
         $stT = $db->prepare("SELECT tipo_veiculo FROM oportunidades WHERE id = ? AND etapa = 'fechado'");
         $stT->execute([$opIdV]);
         $tv = $stT->fetchColumn();
@@ -156,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['oc
     }
 }
 $souSuperEstoque = $_SESSION['admin_perfil'] === 'super_admin';
-$avaliadoresEstoque = array_values(array_filter(listarUsuarios(true), fn($u) => $u['perfil'] === 'avaliador'));
+$avaliadoresEstoque = array_values(array_filter(listarUsuarios(true), 'usuarioEhAvaliador'));
 $vistoriaPorOp = [];
 $verOcultos = $souSuperEstoque && ($_GET['ocultos'] ?? '') === '1';
 $migradosNoEstoque = $souSuperEstoque ? idsVeiculosMigradosZapsignNoEstoque() : [];
@@ -395,7 +393,7 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
             <?php if ($vist): ?>
                 <a class="btn" style="margin-top:8px" href="/admin/avaliacao.php?id=<?= $vist['id'] ?>">🔍 Vistoria <?= $vist['status'] === 'concluida' ? '✅ concluída' : '⏳ em andamento' ?></a>
             <?php elseif ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
-                <?php if ($_SESSION['admin_perfil'] === 'avaliador'): ?>
+                <?php if (souAvaliadorHabilitado()): ?>
                 <form method="post" style="margin-top:8px">
                     <?= csrfField() ?><input type="hidden" name="acao" value="fazer_vistoria"><input type="hidden" name="oportunidade_id" value="<?= $id ?>">
                     <button type="submit" class="btn-vistoria">🔍 Fazer vistoria</button>
