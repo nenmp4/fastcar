@@ -233,6 +233,33 @@ function finGerarDrePdf(PDO $db, string $de, string $ate, bool $incluirParcelasV
     $pdf->Cell(0, 9, _pdfTexto(($resultadoLiquido < 0 ? '-' : '') . 'R$ ' . number_format(abs($resultadoLiquido), 2, ',', '.') . $situacao), 0, 1, 'R', true);
     $pdf->SetTextColor(0, 0, 0);
 
+    // 04/11/2026, "seria total de compras de veiculos e vendas do veiculos"
+    // — na visão mentoria, o volume de negócios do período pelo valor de
+    // CONTRATO (mesma referência dos cards de admin/financeiro.php: data
+    // de assinatura do contrato, senão data_compra/data_venda).
+    if ($incluirParcelasVenda) {
+        $cv = finDreComprasVendasVeiculos($db, $de, $ate);
+        $pdf->Ln(6);
+        $pdf->SetFont('Helvetica', 'B', 11);
+        $pdf->Cell(0, 7, _pdfTexto('COMPRAS E VENDAS DE VEÍCULOS NO PERÍODO (valor de contrato)'), 0, 1, 'L');
+        $pdf->Line(20, $pdf->GetY(), 190, $pdf->GetY());
+        $pdf->Ln(2);
+        $linhaTotal("Veículos comprados: {$cv['compras_qtd']}", $cv['compras_total'], true, [153, 27, 27]);
+        $linhaDetalhe('Valor pago aos vendedores (soma dos contratos de compra)', $cv['compras_total']);
+        $pdf->Ln(1);
+        $linhaTotal("Veículos vendidos: {$cv['vendas_qtd']}", $cv['vendas_total'], true, [22, 101, 52]);
+        $linhaDetalhe('Preço total dos contratos de venda', $cv['vendas_total']);
+        $linhaDetalhe('Entradas dos contratos de venda', $cv['vendas_entrada']);
+        $linhaDetalhe('Saldo a receber em parcelas (meses seguintes)', max(0, $cv['vendas_total'] - $cv['vendas_entrada']));
+        $pdf->Ln(1);
+        $dif = $cv['vendas_total'] - $cv['compras_total'];
+        $linhaTotal('(=) Vendas menos compras do período', $dif, true, $dif >= 0 ? [22, 101, 52] : [153, 27, 27]);
+        $pdf->SetFont('Helvetica', '', 7.5);
+        $pdf->SetTextColor(120, 120, 120);
+        $pdf->MultiCell(0, 4, _pdfTexto('Compras e vendas do mês são de veículos diferentes: a diferença mostra o volume de giro, não o lucro de cada carro. Locações não entram.'));
+        $pdf->SetTextColor(0, 0, 0);
+    }
+
     $pdf->Ln(8);
     // 19/09/2026, pergunta direta do usuário sobre reconhecimento de
     // receita de parcela de venda — este relatório é regime de CAIXA
@@ -285,4 +312,48 @@ function finGerarDrePdf(PDO $db, string $de, string $ate, bool $incluirParcelasV
     $pdf->SetTextColor(0, 0, 0);
 
     return $pdf;
+}
+
+
+/**
+ * Compras fechadas e vendas assinadas no período pelo valor de contrato —
+ * mesma referência de data dos cards "Carros comprados/vendidos" de
+ * admin/financeiro.php. Locação (tipo_contrato='locacao') fica de fora.
+ */
+function finDreComprasVendasVeiculos(PDO $db, string $de, string $ate): array {
+    $c = $db->prepare("
+        SELECT COUNT(*) AS qtd, COALESCE(SUM(o.valor_final),0) AS total
+        FROM oportunidades o
+        LEFT JOIN (
+            SELECT oportunidade_id, MAX(assinado_em) AS assinado_em
+            FROM contratos WHERE tipo = 'compra' AND assinado_em IS NOT NULL
+            GROUP BY oportunidade_id
+        ) ctr ON ctr.oportunidade_id = o.id
+        WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+          AND date(COALESCE(ctr.assinado_em, o.data_compra, o.updated_at)) BETWEEN ? AND ?
+    ");
+    $c->execute([$de, $ate]);
+    $compras = $c->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, 'total' => 0];
+
+    $v = $db->prepare("
+        SELECT COUNT(*) AS qtd, COALESCE(SUM(v.preco_venda),0) AS total,
+               COALESCE(SUM(v.valor_pago_contratacao),0) AS entrada
+        FROM vendas v
+        LEFT JOIN (
+            SELECT venda_id, MAX(assinado_em) AS assinado_em
+            FROM contratos WHERE tipo = 'venda' AND venda_id IS NOT NULL AND assinado_em IS NOT NULL
+            GROUP BY venda_id
+        ) ctrv ON ctrv.venda_id = v.id
+        WHERE v.etapa = 'vendido' AND COALESCE(v.tipo_contrato, 'venda') != 'locacao'
+          AND EXISTS (SELECT 1 FROM contratos csc WHERE csc.venda_id = v.id AND csc.tipo = 'venda' AND csc.status = 'assinado')
+          AND date(COALESCE(ctrv.assinado_em, v.data_venda)) BETWEEN ? AND ?
+    ");
+    $v->execute([$de, $ate]);
+    $vendas = $v->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, 'total' => 0, 'entrada' => 0];
+
+    return [
+        'compras_qtd' => (int)$compras['qtd'], 'compras_total' => (float)$compras['total'],
+        'vendas_qtd' => (int)$vendas['qtd'], 'vendas_total' => (float)$vendas['total'],
+        'vendas_entrada' => (float)$vendas['entrada'],
+    ];
 }
