@@ -39,12 +39,21 @@ if (!asaasConfigured()) {
     exit;
 }
 
+// 04/11/2026 — clientes primeiro (cliente novo criado no Asaas entra
+// no cache), depois cobranças, depois o vínculo automático com a venda.
+$rc = asaasImportarClientes();
+log_asaas_sync($rc['ok'] ? "Clientes: {$rc['importados']} lido(s)." : 'Erro ao importar clientes: ' . $rc['erro']);
+
 $ri = asaasImportarCobrancas();
 if (!$ri['ok']) {
     log_asaas_sync('Erro ao importar cobranças: ' . $ri['erro']);
 } else {
     log_asaas_sync("Importação: {$ri['novos']} nova(s), {$ri['atualizados']} atualizada(s).");
 }
+
+$rv = asaasVincularClientesAutomatico();
+foreach ($rv['vinculados'] as $vv) log_asaas_sync("Vinculado: {$vv['cliente']} → venda #{$vv['venda_id']} (por {$vv['via']}).");
+if ($rv['ambiguos']) log_asaas_sync("{$rv['ambiguos']} cliente(s) batem com mais de uma venda — vincular na mão em Financeiro → Asaas.");
 
 $r = asaasSincronizarPendentes(100);
 if (!$r['ok']) {

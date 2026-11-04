@@ -447,3 +447,69 @@ function asaasGerarCobrancaParceladaVenda(int $vendaId, string $asaasCustomerId,
 
     return ['ok' => true, 'criadas' => $criadas];
 }
+
+/**
+ * 04/11/2026, "Ingrid gera as parcelas lá no Asaas... como vamos
+ * sincronizar" → confirmado "vincular automático": liga sozinho o cliente
+ * do Asaas (ainda sem vínculo) à venda FECHADA cujo comprador tem o mesmo
+ * CPF/CNPJ — ou, sem CPF, o mesmo telefone. Só vincula quando bate com
+ * EXATAMENTE 1 venda (cliente que comprou 2 carros fica pra escolher na
+ * mão em Financeiro → Asaas, nunca chuta). Ao vincular:
+ *   - as cobranças já importadas desse cliente ganham o venda_id;
+ *   - se o Asaas já tem parcela desse cliente, as parcelas LOCAIS ainda
+ *     pendentes da venda são canceladas (mesmo que o botão "Gerar cobrança
+ *     real no Asaas" faz) — nunca conta a mesma parcela 2x; entrada e o que
+ *     já foi pago nunca são tocados;
+ *   - grava no histórico da venda.
+ */
+function asaasVincularClientesAutomatico(): array {
+    require_once __DIR__ . '/financeiro.php';
+    $db = getDB();
+    $digitos = fn($s) => preg_replace('/\D/', '', (string)$s);
+
+    $porCpf = [];
+    $porTel = [];
+    foreach ($db->query("SELECT id, comprador_cpf, comprador_telefone FROM vendas WHERE etapa = 'vendido'")->fetchAll(PDO::FETCH_ASSOC) as $v) {
+        $cpf = $digitos($v['comprador_cpf']);
+        if (strlen($cpf) === 11 || strlen($cpf) === 14) $porCpf[$cpf][] = (int)$v['id'];
+        $tel = $v['comprador_telefone'] ? normalizarTelefone((string)$v['comprador_telefone']) : '';
+        if (strlen($tel) >= 12) $porTel[$tel][] = (int)$v['id'];
+    }
+
+    $vinculados = [];
+    $ambiguos = 0;
+    $clientes = $db->query("SELECT id, asaas_id, nome, cpf_cnpj, telefone FROM fin_asaas_clientes WHERE venda_id IS NULL")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($clientes as $c) {
+        $vendaId = null;
+        $via = '';
+        $cpf = $digitos($c['cpf_cnpj']);
+        if (isset($porCpf[$cpf])) {
+            if (count($porCpf[$cpf]) === 1) { $vendaId = $porCpf[$cpf][0]; $via = 'CPF'; } else { $ambiguos++; continue; }
+        } else {
+            $tel = $c['telefone'] ? normalizarTelefone((string)$c['telefone']) : '';
+            if ($tel !== '' && isset($porTel[$tel])) {
+                if (count($porTel[$tel]) === 1) { $vendaId = $porTel[$tel][0]; $via = 'telefone'; } else { $ambiguos++; continue; }
+            }
+        }
+        if (!$vendaId) continue;
+
+        try {
+            $db->beginTransaction();
+            $db->prepare("UPDATE fin_asaas_clientes SET venda_id = ?, updated_at = datetime('now','localtime') WHERE id = ? AND venda_id IS NULL")
+               ->execute([$vendaId, (int)$c['id']]);
+            $db->prepare("UPDATE fin_lancamentos SET venda_id = ? WHERE asaas_customer_id = ? AND venda_id IS NULL")
+               ->execute([$vendaId, $c['asaas_id']]);
+            $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'vendido', 'vendido', NULL, ?)")
+               ->execute([$vendaId, "Cliente do Asaas \"" . ($c['nome'] ?: $c['asaas_id']) . "\" vinculado automaticamente (mesmo {$via}) — parcelas do Asaas sincronizadas."]);
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            continue;
+        }
+
+        $temParcelaAsaas = (bool)$db->query("SELECT 1 FROM fin_lancamentos WHERE venda_id = " . (int)$vendaId . " AND origem = 'asaas' AND status != 'cancelado' LIMIT 1")->fetchColumn();
+        if ($temParcelaAsaas) finCancelarParcelasPendentesVenda($vendaId);
+        $vinculados[] = ['venda_id' => $vendaId, 'cliente' => $c['nome'], 'via' => $via];
+    }
+    return ['vinculados' => $vinculados, 'ambiguos' => $ambiguos];
+}

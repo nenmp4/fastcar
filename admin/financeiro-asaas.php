@@ -25,7 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $erro = $r['ok'] ? '' : ('Falha ao importar clientes: ' . $r['erro']);
         } elseif ($acao === 'importar_cobrancas') {
             $r = asaasImportarCobrancas();
-            $sucesso = $r['ok'] ? "✅ {$r['novos']} cobrança(s) nova(s), {$r['atualizados']} atualizada(s)." : null;
+            $rv = $r['ok'] ? asaasVincularClientesAutomatico() : ['vinculados' => [], 'ambiguos' => 0];
+            $sucesso = $r['ok'] ? "✅ {$r['novos']} cobrança(s) nova(s), {$r['atualizados']} atualizada(s)." . ($rv['vinculados'] ? ' 🔗 ' . count($rv['vinculados']) . ' cliente(s) vinculado(s) automaticamente à venda.' : '') . ($rv['ambiguos'] ? " ⚠️ {$rv['ambiguos']} bate(m) com mais de uma venda — vincule na mão." : '') : null;
             $erro = $r['ok'] ? '' : ('Falha ao importar cobranças: ' . $r['erro']);
         } elseif ($acao === 'vincular') {
             $id = (int)($_POST['id'] ?? 0);
