@@ -642,7 +642,14 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 </div>
 <?php endif; ?>
 
-<div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+<div style="display:flex;justify-content:flex-end;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:1rem">
+    <?php // 04/11/2026, "adciona filtro buscar vendas por mês" — atalho direto pra aba ✅ Vendidas no mês escolhido (com os totais do mês). ?>
+    <form method="get" action="/admin/vendas.php" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin:0">
+        <input type="hidden" name="etapa" value="vendido">
+        <div><label style="font-size:13px">📅 Vendas do mês</label>
+            <input type="month" name="mes" value="<?= e($mesVendidas ?: date('Y-m')) ?>" style="max-width:180px"></div>
+        <button type="submit" class="btn" style="width:auto;margin:0">🔎 Buscar vendas</button>
+    </form>
     <button type="button" class="btn-primary" style="width:auto" onclick="document.getElementById('modal-tipo-contrato').showModal()">📄 Novo contrato</button>
 </div>
 
