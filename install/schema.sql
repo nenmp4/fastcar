@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- financiamento" em admin/veiculos.php.
     financiamento_quitado INTEGER NOT NULL DEFAULT 0,
     financiamento_quitado_em DATETIME,
+    valor_quitacao REAL,               -- 04/11/2026: quanto a Fastcar pagou pra quitar o financiamento (custo; relatório de lucro por veículo)
 
     -- Bloco 7 — Presencial/fechamento
     reuniao_agendada_em DATETIME,

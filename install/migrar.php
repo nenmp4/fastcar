@@ -202,6 +202,9 @@ $migracoes = [
     // linciamento e multoas" — 3 campos numéricos separados no card
     // "Dados do veículo" da oportunidade de compra, sem DEFAULT de
     // propósito (regra #3, nunca chutado).
+    // 04/11/2026 — relatório de lucro por veículo: valor pago pra quitar o
+    // financiamento junto ao banco (custo), digitado à mão no relatório.
+    'oportunidades.valor_quitacao' => "ALTER TABLE oportunidades ADD COLUMN valor_quitacao REAL",
     'oportunidades.debito_ipva' => "ALTER TABLE oportunidades ADD COLUMN debito_ipva REAL",
     'oportunidades.debito_licenciamento' => "ALTER TABLE oportunidades ADD COLUMN debito_licenciamento REAL",
     'oportunidades.debito_multas' => "ALTER TABLE oportunidades ADD COLUMN debito_multas REAL",
