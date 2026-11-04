@@ -783,6 +783,34 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $
  * Passado explícito só por install/gerar_lancamentos_vendas_retroativos.php,
  * pra nunca datar comissão de venda antiga como se fosse de hoje.
  */
+/**
+ * Entrada recebida NO ATO da venda — base da comissão do vendedor (04/11/2026,
+ * "comissão da entrada sempre do valor que recebe no ato — se entra 20 e o
+ * cliente só dá 15, os 5 parcelados, comissão sempre dos 15"). Soma só as
+ * partes da entrada (venda_entrada_partes) com data até a data da venda
+ * (assinatura) ou sem data; parte com data depois disso é entrada
+ * parcelada e não entra. Se nenhuma parte cair nessa regra, vale a 1ª parte
+ * (a do ato). Venda sem partes cadastradas usa valor_pago_contratacao.
+ */
+function finEntradaNoAtoVenda(int $vendaId, ?string $dataRef = null): float {
+    $db = getDB();
+    $st = $db->prepare("SELECT valor_pago_contratacao, data_venda FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v) return 0.0;
+    $st = $db->prepare("SELECT valor, data_prevista FROM venda_entrada_partes WHERE venda_id = ? AND valor > 0 ORDER BY COALESCE(NULLIF(data_prevista,''),'0000-00-00'), parte_numero");
+    $st->execute([$vendaId]);
+    $partes = $st->fetchAll();
+    if (!$partes) return (float)($v['valor_pago_contratacao'] ?? 0);
+    $ref = substr((string)($dataRef ?: ($v['data_venda'] ?: date('Y-m-d'))), 0, 10);
+    $soma = 0.0;
+    foreach ($partes as $pt) {
+        $d = (string)($pt['data_prevista'] ?? '');
+        if ($d === '' || substr($d, 0, 10) <= $ref) $soma += (float)$pt['valor'];
+    }
+    return round($soma > 0 ? $soma : (float)$partes[0]['valor'], 2);
+}
+
 function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = null): void {
     try {
         $db = getDB();
@@ -807,7 +835,7 @@ function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = nul
         $v = $stmt->fetch();
         if (!$v) return;
 
-        $valorEntrada = (float)($v['valor_pago_contratacao'] ?? 0);
+        $valorEntrada = finEntradaNoAtoVenda($vendaId, $dataVenda);
         if ($valorEntrada <= 0) return;
 
         $vendedorId = $v['responsavel_id'] ? (int)$v['responsavel_id'] : null;
@@ -824,7 +852,7 @@ function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = nul
         $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Comissão de consultor/vendedor'")->fetchColumn();
         $veiculo = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'veículo';
         $descricao = sprintf(
-            'Comissão de venda — %s — comprador %s (venda #%d) — 5%% da entrada (R$ %s)',
+            'Comissão de venda — %s — comprador %s (venda #%d) — 5%% da entrada recebida no ato (R$ %s)',
             $veiculo, $v['comprador_nome'] ?: '—', $vendaId, number_format($valorEntrada, 2, ',', '.')
         );
 

@@ -98,11 +98,12 @@ $vendas = $db->query("
 echo "--- VENDA (" . count($vendas) . " candidata(s)) ---\n";
 foreach ($vendas as $v) {
     $veiculo = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'veículo';
-    $valorComissao = round((float)$v['valor_pago_contratacao'] * 5 / 100, 2);
+    $entradaAto = finEntradaNoAtoVenda((int)$v['id'], $v['data_venda'] ?: null);
+    $valorComissao = round($entradaAto * 5 / 100, 2);
     printf(
-        "  #%d %s pra %s (%s) — vendedor %s — geraria R\$ %s (5%% da entrada de R\$ %s)\n",
+        "  #%d %s pra %s (%s) — vendedor %s — geraria R\$ %s (5%% da entrada no ato de R\$ %s)\n",
         $v['id'], $veiculo, $v['comprador_nome'], $v['data_venda'], $v['responsavel_nome'],
-        number_format($valorComissao, 2, ',', '.'), number_format((float)$v['valor_pago_contratacao'], 2, ',', '.')
+        number_format($valorComissao, 2, ',', '.'), number_format($entradaAto, 2, ',', '.')
     );
 }
 if (!$vendas) echo "  (nenhuma)\n";
