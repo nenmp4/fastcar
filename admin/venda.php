@@ -1921,7 +1921,7 @@ if ($v['oportunidade_id']) {
             <tr>
                 <td><?= e($on['comprador_nome'] ?: ($on['comprador_telefone'] ?: '— sem comprador')) ?></td>
                 <td><?= e(etapaVendaLabel($on['etapa'], $on['tipo_contrato'] ?? 'venda')) ?><?= ($on['etapa'] === 'cancelada' && $on['motivo_cancelamento']) ? '<br><small>' . e($on['motivo_cancelamento']) . '</small>' : '' ?></td>
-                <td><?= $on['preco_venda'] ? moeda((float)$on['preco_venda']) : '—' ?></td>
+                <td><?= $on['preco_venda'] ? 'R$ ' . number_format((float)$on['preco_venda'], 2, ',', '.') : '—' ?></td>
                 <td><?= e(date('d/m/Y', strtotime($on['created_at']))) ?></td>
                 <td><a class="btn" href="/admin/venda.php?id=<?= (int)$on['id'] ?>">Abrir venda #<?= (int)$on['id'] ?></a></td>
             </tr>
