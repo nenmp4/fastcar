@@ -40,6 +40,18 @@ function e(string $str): string {
     return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Texto de histórico escapado, com "venda #N" e "oportunidade #N"/"mesclado
+ * no #N" virando link pra tela certa (04/11/2026, "registrar no histórico
+ * com os links").
+ */
+function historicoComLinks(string $txt): string {
+    $h = e($txt);
+    $h = preg_replace('/\b([Vv]enda) #(\d+)/u', '<a href="/admin/venda.php?id=$2">$1 #$2</a>', $h);
+    $h = preg_replace('/\b([Oo]portunidade|mesclado no) #(\d+)/u', '$1 <a href="/admin/oportunidade.php?id=$2">#$2</a>', $h);
+    return $h;
+}
+
 // Converte valor digitado em formulário pra float, corrigindo o hábito
 // brasileiro de digitar separador de milhar com ponto num campo
 // type="number" (que só entende ponto como decimal) — "1.380" digitado pra

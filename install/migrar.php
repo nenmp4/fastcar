@@ -2364,3 +2364,34 @@ if (!colunaExiste($db, 'whatsapp_mensagens', 'canal')) {
 try { $db->exec("CREATE INDEX IF NOT EXISTS idx_wpp_canal_tel ON whatsapp_mensagens(canal, telefone, id)"); } catch (Throwable $e) {}
 
 echo "\n🎉 Migração concluída.\n";
+
+// 04/11/2026, "quando cancela contrato carro tem voltar para estoque" —
+// 1x só: carro cuja(s) venda(s) foram TODAS canceladas mas continuou
+// oculto do estoque volta a aparecer (daqui pra frente mudarEtapaVenda()
+// já faz isso sozinho). Cadastro duplicado nunca reaparece.
+try {
+    if (getConfig('migracao_estoque_vendas_canceladas_feita') !== '1') {
+        $dbEc = getDB();
+        $idsEc = $dbEc->query("
+            SELECT id FROM oportunidades
+            WHERE etapa = 'fechado' AND COALESCE(oculto_estoque, 0) = 1
+              AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+              AND EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = oportunidades.id)
+              AND NOT EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = oportunidades.id AND v.etapa != 'cancelada')
+        ")->fetchAll(PDO::FETCH_COLUMN);
+        $insEc = $dbEc->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao) VALUES (?, 'fechado', 'fechado', 'Venda cancelada — veículo voltou pro estoque (correção automática)')");
+        foreach ($idsEc as $idEc) $insEc->execute([(int)$idEc]);
+        $stEc = $dbEc->prepare("
+            UPDATE oportunidades SET oculto_estoque = 0, oculto_estoque_motivo = '', updated_at = datetime('now','localtime')
+            WHERE etapa = 'fechado' AND COALESCE(oculto_estoque, 0) = 1
+              AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+              AND EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = oportunidades.id)
+              AND NOT EXISTS (SELECT 1 FROM vendas v WHERE v.oportunidade_id = oportunidades.id AND v.etapa != 'cancelada')
+        ");
+        $stEc->execute();
+        setConfig('migracao_estoque_vendas_canceladas_feita', '1');
+        echo "✅ estoque: {$stEc->rowCount()} carro(s) com venda cancelada voltaram pro estoque\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ estoque (vendas canceladas): {$e->getMessage()}\n";
+}

@@ -71,8 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
                 $obsDev = 'Devolução — veículo voltou pra Fastcar: ' . $motivoDev;
                 mudarEtapaVenda($vendaIdDev, 'cancelada', (int)$_SESSION['admin_id'], $obsDev);
                 $opDev = (int)$vDev['oportunidade_id'];
-                $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
-                   ->execute([$opDev, (int)$_SESSION['admin_id'], "Veículo voltou pra Fastcar (venda #{$vendaIdDev} pra " . ($vDev['comprador_nome'] ?: 'comprador') . " desfeita) — disponível pra nova venda. Motivo: {$motivoDev}"]);
+                // Histórico do veículo: gravado por mudarEtapaVenda() (04/11/2026).
                 // Se estava escondido do estoque por já ter sido vendido, volta a aparecer.
                 $db->prepare("UPDATE oportunidades SET oculto_estoque = 0, oculto_estoque_motivo = '', updated_at = datetime('now','localtime')
                               WHERE id = ? AND COALESCE(oculto_estoque, 0) = 1 AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'")->execute([$opDev]);

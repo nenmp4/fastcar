@@ -326,6 +326,29 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
         // futuras já rodando) com o mesmo gatilho — ver
         // finCancelarLancamentosPendentesVenda().
         finCancelarLancamentosPendentesVenda($vendaId);
+        // 04/11/2026, "quando cancela contrato carro tem voltar para
+        // estoque" — o carro podia continuar oculto do estoque (ex: migrado
+        // do ZapSign "já vendido", ou ocultado na mão ao vender). Cancelar
+        // a venda/devolução por QUALQUER tela (venda.php, vendas.php em
+        // massa, Frota) devolve o veículo ao estoque. Cadastro duplicado
+        // nunca reaparece (é cópia mesclada de outro).
+        $db->prepare("
+            UPDATE oportunidades SET oculto_estoque = 0, oculto_estoque_motivo = '', updated_at = datetime('now','localtime')
+            WHERE id = (SELECT oportunidade_id FROM vendas WHERE id = ?)
+              AND COALESCE(oculto_estoque, 0) = 1
+              AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+        ")->execute([$vendaId]);
+        // "registrar no histórico" — fica no histórico do VEÍCULO (a venda
+        // já grava o dela em venda_historico, acima).
+        $stOp = $db->prepare("SELECT oportunidade_id, comprador_nome FROM vendas WHERE id = ?");
+        $stOp->execute([$vendaId]);
+        $vOp = $stOp->fetch();
+        if ($vOp && (int)$vOp['oportunidade_id'] > 0) {
+            $txt = ($atual === 'vendido' ? "Devolução — venda #{$vendaId}" : "Negociação de venda #{$vendaId}")
+                 . ' pra ' . ($vOp['comprador_nome'] ?: 'comprador') . ' cancelada; veículo voltou pro estoque. Motivo: ' . clean($observacao);
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+               ->execute([(int)$vOp['oportunidade_id'], $responsavelId, $txt]);
+        }
     }
 
     return true;

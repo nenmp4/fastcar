@@ -1894,7 +1894,7 @@ function adicionarParteEntrada() {
         <div class="historico-item">
             <div class="quando"><?= date('d/m/Y H:i', strtotime($h['created_at'])) ?> — <?= e($h['responsavel_nome'] ?? 'sistema') ?></div>
             <?= e($h['etapa_anterior'] ?: '(criação)') ?> → <strong><?= e(etapaVendaLabel($h['etapa_nova'])) ?></strong>
-            <?= $h['observacao'] ? '— ' . e($h['observacao']) : '' ?>
+            <?= $h['observacao'] ? '— ' . historicoComLinks($h['observacao']) : '' ?>
         </div>
     <?php endforeach; ?>
 </div>
