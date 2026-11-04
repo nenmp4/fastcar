@@ -1600,7 +1600,11 @@ function adicionarParteEntrada() {
                                 // cron/zapsign_sync.php), não só no momento final.
                                 $signatariosStatus = contratoSignatariosComStatus($ct);
                             ?>
-                            <?php if ($ct['status'] !== 'cancelado'): ?>
+                            <?php if ($ct['status'] === 'gerado'): ?>
+                                <div class="status-linha" style="display:block;margin-top:4px;color:var(--texto-fraco)">
+                                    📝 Rascunho só pra conferir — não foi enviado pra assinatura.
+                                </div>
+                            <?php elseif ($ct['status'] !== 'cancelado'): ?>
                                 <div class="status-linha" style="display:block;margin-top:4px">
                                     <strong>Assinaturas:</strong>
                                     <?php foreach ($signatariosStatus as $sig): ?>
