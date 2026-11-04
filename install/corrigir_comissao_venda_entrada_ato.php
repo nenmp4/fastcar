@@ -11,6 +11,10 @@
  * vendedor já recebeu o valor antigo, corrigir aqui não devolve dinheiro —
  * acerto fica com o financeiro.
  */
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    exit('Só via linha de comando.');
+}
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/financeiro.php';
 
