@@ -1899,6 +1899,38 @@ function adicionarParteEntrada() {
     <?php endforeach; ?>
 </div>
 
+<?php
+// 04/11/2026, "cancela pode aparecer outro comprador mais sempre manter
+// histórico" — outras negociações (anteriores ou não) do MESMO veículo,
+// nunca apagadas: cada comprador continua com a sua venda/histórico.
+$outrasNegociacoes = [];
+if ($v['oportunidade_id']) {
+    $stON = $db->prepare("SELECT id, etapa, comprador_nome, comprador_telefone, motivo_cancelamento, preco_venda, created_at, tipo_contrato
+                          FROM vendas WHERE oportunidade_id = ? AND id != ? ORDER BY id DESC");
+    $stON->execute([(int)$v['oportunidade_id'], $id]);
+    $outrasNegociacoes = $stON->fetchAll();
+}
+?>
+<?php if ($outrasNegociacoes): ?>
+<div class="card" data-aba="📅 Andamento">
+    <h3>📜 Outros compradores deste veículo (<?= count($outrasNegociacoes) ?>)</h3>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Comprador</th><th>Situação</th><th>Preço</th><th>Aberta em</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach ($outrasNegociacoes as $on): ?>
+            <tr>
+                <td><?= e($on['comprador_nome'] ?: ($on['comprador_telefone'] ?: '— sem comprador')) ?></td>
+                <td><?= e(etapaVendaLabel($on['etapa'], $on['tipo_contrato'] ?? 'venda')) ?><?= ($on['etapa'] === 'cancelada' && $on['motivo_cancelamento']) ? '<br><small>' . e($on['motivo_cancelamento']) . '</small>' : '' ?></td>
+                <td><?= $on['preco_venda'] ? moeda((float)$on['preco_venda']) : '—' ?></td>
+                <td><?= e(date('d/m/Y', strtotime($on['created_at']))) ?></td>
+                <td><a class="btn" href="/admin/venda.php?id=<?= (int)$on['id'] ?>">Abrir venda #<?= (int)$on['id'] ?></a></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
+
 <?php if ($v['oportunidade_id']): ?>
 <div class="card" data-aba="🚗 Veículo">
     <h3>🔍 Checklist de vistoria do veículo</h3>
