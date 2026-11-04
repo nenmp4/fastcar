@@ -21,6 +21,43 @@ $meuId = (int)$_SESSION['admin_id'];
 // vendedor só vê a própria carteira; super_admin/supervisor veem tudo.
 $souDono = in_array($perfil, ['vendedor', 'avaliador'], true); // 24/10/2026: avaliador atende vendas igual vendedor
 
+// 04/11/2026, "na pesquisa se eu preencher as iniciais da placa o sistema
+// busca o nome tipo Civic Honda" — sugestões enquanto digita (placa sem
+// hífen/espaço, ou marca/modelo). Carro com negociação abre a venda; carro
+// só no estoque abre o estoque. Só leitura.
+if (($_GET['ajax'] ?? '') === 'sugestao_placa') {
+    header('Content-Type: application/json; charset=utf-8');
+    liberarSessao();
+    $q = trim((string)($_GET['q'] ?? ''));
+    $qPlaca = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $q));
+    if (mb_strlen($q) < 2) { echo '[]'; exit; }
+    $st = $db->prepare("
+        SELECT o.id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+               (SELECT v.id FROM vendas v WHERE v.oportunidade_id = o.id ORDER BY (v.etapa = 'cancelada'), v.id DESC LIMIT 1) AS venda_id,
+               (SELECT v.comprador_nome FROM vendas v WHERE v.oportunidade_id = o.id ORDER BY (v.etapa = 'cancelada'), v.id DESC LIMIT 1) AS comprador,
+               (SELECT v.etapa FROM vendas v WHERE v.oportunidade_id = o.id ORDER BY (v.etapa = 'cancelada'), v.id DESC LIMIT 1) AS venda_etapa
+        FROM oportunidades o
+        WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+          AND ((? != '' AND UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) LIKE ?)
+               OR (COALESCE(o.veiculo_marca,'') || ' ' || COALESCE(o.veiculo_modelo,'')) LIKE ?
+               OR (COALESCE(o.veiculo_modelo,'') || ' ' || COALESCE(o.veiculo_marca,'')) LIKE ?)
+        ORDER BY o.id DESC LIMIT 8
+    ");
+    $likeQ = '%' . $q . '%';
+    $st->execute([$qPlaca, $qPlaca . '%', $likeQ, $likeQ]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) {
+        $out[] = [
+            'titulo' => trim(($r['veiculo_marca'] ?? '') . ' ' . ($r['veiculo_modelo'] ?? '') . ' ' . ($r['veiculo_ano'] ?? '')),
+            'placa' => strtoupper((string)($r['veiculo_placa'] ?? '')),
+            'extra' => $r['venda_id'] ? (etapaVendaLabel((string)$r['venda_etapa']) . ($r['comprador'] ? ' · ' . $r['comprador'] : '')) : '🚘 no estoque',
+            'url' => $r['venda_id'] ? '/admin/venda.php?id=' . (int)$r['venda_id'] : '/admin/estoque.php?q=' . urlencode((string)($r['veiculo_placa'] ?: $r['veiculo_modelo'])),
+        ];
+    }
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 /*
  * "Vender na Promissória" (26/09/2026) — modal único que registra a
  * negociação inteira numa passada só, consolidando o que hoje vive
@@ -326,6 +363,14 @@ $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
+// Busca por placa aceita só o começo e ignora hífen/espaço ("ABC1" acha "ABC-1D23");
+// marca e modelo em qualquer ordem ("civic honda").
+$buscaPlacaNorm = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $busca));
+$buscaSqlVendas = "(v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ? OR o.veiculo_placa LIKE ?
+    OR (? != '' AND UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) LIKE ?)
+    OR (COALESCE(o.veiculo_marca,'') || ' ' || COALESCE(o.veiculo_modelo,'')) LIKE ? OR (COALESCE(o.veiculo_modelo,'') || ' ' || COALESCE(o.veiculo_marca,'')) LIKE ?)";
+$likeB = '%' . $busca . '%';
+$buscaParamsVendas = [$likeB, $likeB, $likeB, $likeB, $likeB, $likeB, $buscaPlacaNorm, $buscaPlacaNorm . '%', $likeB, $likeB];
 
 // 06/10/2026, "no finaceiro da exibir cads... carros vendidos esses mes"
 // — vem do card "🚙 Carros vendidos" em admin/financeiro.php. Mesma lógica
@@ -414,9 +459,9 @@ if ($filtroEspecialVendas === '' && in_array($etapaFiltro, ETAPAS_VENDA_ATIVAS, 
     $params[] = $etapaFiltro;
 }
 if ($busca !== '') {
-    $where .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ? OR o.veiculo_placa LIKE ?)";
+    $where .= " AND {$buscaSqlVendas}";
     $like = '%' . $busca . '%';
-    array_push($params, $like, $like, $like, $like, $like, $like);
+    array_push($params, ...$buscaParamsVendas);
 }
 $where .= $gestaoSql;
 array_push($params, ...$gestaoParams);
@@ -525,8 +570,8 @@ if ($souDono) {
     $paramsContagem[] = $meuId;
 }
 if ($busca !== '') {
-    $sqlContagem .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
-    array_push($paramsContagem, $like, $like, $like, $like, $like);
+    $sqlContagem .= " AND {$buscaSqlVendas}";
+    array_push($paramsContagem, ...$buscaParamsVendas);
 }
 $sqlContagem .= $gestaoSql;
 array_push($paramsContagem, ...$gestaoParams);
@@ -542,8 +587,8 @@ $sqlVendidas = "SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades o ON o.id 
 $paramsVendidas = [];
 if ($souDono) { $sqlVendidas .= " AND v.responsavel_id = ?"; $paramsVendidas[] = $meuId; }
 if ($busca !== '') {
-    $sqlVendidas .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
-    array_push($paramsVendidas, $like, $like, $like, $like, $like);
+    $sqlVendidas .= " AND {$buscaSqlVendas}";
+    array_push($paramsVendidas, ...$buscaParamsVendas);
 }
 $sqlVendidas .= $gestaoSql;
 array_push($paramsVendidas, ...$gestaoParams);
@@ -556,8 +601,8 @@ $sqlEncerradasVenda = "SELECT COUNT(*) FROM vendas v LEFT JOIN oportunidades o O
 $paramsEncerradasVenda = [];
 if ($souDono) { $sqlEncerradasVenda .= " AND v.responsavel_id = ?"; $paramsEncerradasVenda[] = $meuId; }
 if ($busca !== '') {
-    $sqlEncerradasVenda .= " AND (v.comprador_nome LIKE ? OR v.comprador_telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR v.veiculo_interesse_texto LIKE ?)";
-    array_push($paramsEncerradasVenda, $like, $like, $like, $like, $like);
+    $sqlEncerradasVenda .= " AND {$buscaSqlVendas}";
+    array_push($paramsEncerradasVenda, ...$buscaParamsVendas);
 }
 $sqlEncerradasVenda .= $gestaoSql;
 array_push($paramsEncerradasVenda, ...$gestaoParams);
@@ -1315,7 +1360,10 @@ function vitrineFiltrar(termo) {
         <?php if ($filtroEspecialVendas !== ''): ?><input type="hidden" name="filtro" value="<?= e($filtroEspecialVendas) ?>">
         <?php elseif ($etapaFiltro): ?><input type="hidden" name="etapa" value="<?= e($etapaFiltro) ?>"><?php endif; ?>
         <?= filtroGestaoHiddens($gestaoQsPartes) ?>
-        <input type="text" name="q" value="<?= e($busca) ?>" placeholder="Buscar por comprador, telefone ou veículo..." style="flex:1;margin:0">
+        <div style="flex:1;position:relative">
+            <input type="text" name="q" id="vendas-busca-q" value="<?= e($busca) ?>" placeholder="Buscar por comprador, telefone, placa ou veículo..." style="width:100%;margin:0" autocomplete="off">
+            <div id="vendas-sugestoes" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:50;background:#fff;border:1px solid var(--borda);border-radius:var(--raio-sm);box-shadow:var(--sombra);max-height:320px;overflow:auto"></div>
+        </div>
         <button type="submit" style="margin:0">Buscar</button>
         <?php if ($busca):
             // 22/10/2026 — mesma disciplina de admin/index.php: "Limpar"
@@ -1628,6 +1676,36 @@ function bulkLimparSelecao() {
 }
 </script>
 <?php endif; ?>
+<script>
+(function () {
+    var inp = document.getElementById('vendas-busca-q'), box = document.getElementById('vendas-sugestoes');
+    if (!inp || !box) return;
+    var timer = null, ultimo = '';
+    function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    inp.addEventListener('input', function () {
+        clearTimeout(timer);
+        var q = inp.value.trim();
+        if (q.length < 2) { box.style.display = 'none'; return; }
+        timer = setTimeout(function () {
+            ultimo = q;
+            fetch('/admin/vendas.php?ajax=sugestao_placa&q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (lista) {
+                    if (q !== ultimo) return;
+                    if (!lista.length) { box.style.display = 'none'; return; }
+                    box.innerHTML = lista.map(function (c) {
+                        return '<a href="' + esc(c.url) + '" style="display:block;padding:10px 12px;border-bottom:1px solid var(--borda);color:inherit;text-decoration:none;min-height:44px">'
+                            + '<strong>' + esc(c.titulo || 'Veículo') + '</strong>' + (c.placa ? ' <span class="vitrine-placa" style="font-size:12px">' + esc(c.placa) + '</span>' : '')
+                            + '<br><small style="color:var(--texto-fraco)">' + esc(c.extra) + '</small></a>';
+                    }).join('');
+                    box.style.display = '';
+                }).catch(function () { box.style.display = 'none'; });
+        }, 250);
+    });
+    document.addEventListener('click', function (e) { if (e.target !== inp && !box.contains(e.target)) box.style.display = 'none'; });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Escape') box.style.display = 'none'; });
+})();
+</script>
 <?php include __DIR__ . '/_pwa_register.php'; ?>
 <?php $notifModulo = 'vendas'; include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
