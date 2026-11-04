@@ -13,7 +13,10 @@
  *   recebido = receitas da venda já marcadas pagas no financeiro
  * Locação fica de fora do cálculo (aluguel não é preço de venda).
  */
+// ob_start antes de tudo: o fpdf.php vaza uma quebra de linha no fim do arquivo e quebraria o PDF.
+ob_start();
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/contratos_pdf.php';
 requireSuperAdmin();
 
 $db = getDB();
@@ -41,11 +44,17 @@ if (!empty($_GET['salvo'])) $sucesso = 'Valor da quitação salvo.';
 
 $filtro = in_array($_GET['filtro'] ?? '', ['vendidos', 'estoque', 'todos'], true) ? $_GET['filtro'] : 'vendidos';
 $busca = trim((string)($_GET['q'] ?? ''));
+// Mês (AAAA-MM): vendido pela data da venda; sem venda pela data da compra.
+$mes = preg_match('/^\d{4}-\d{2}$/', (string)($_GET['mes'] ?? '')) ? $_GET['mes'] : '';
 
 $where = ["o.etapa = 'fechado'", "COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'"];
 $params = [];
 if ($filtro === 'vendidos') $where[] = "v.id IS NOT NULL AND v.etapa = 'vendido'";
 if ($filtro === 'estoque') $where[] = 'v.id IS NULL';
+if ($mes !== '') {
+    $where[] = "substr(COALESCE(v.data_venda, o.data_compra), 1, 7) = ?";
+    $params[] = $mes;
+}
 if ($busca !== '') {
     $buscaPlaca = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $busca));
     $where[] = "(o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR (o.veiculo_marca || ' ' || o.veiculo_modelo) LIKE ? OR v.comprador_nome LIKE ?"
@@ -78,7 +87,7 @@ $st = $db->prepare($sql);
 $st->execute($params);
 $linhas = $st->fetchAll();
 
-$tot = ['pago' => 0, 'quitacao' => 0, 'venda' => 0, 'entrada' => 0, 'recebido' => 0, 'lucro' => 0, 'n_lucro' => 0, 'sem_quitacao' => 0];
+$tot = ['pago' => 0, 'quitacao' => 0, 'venda' => 0, 'entrada' => 0, 'recebido' => 0, 'lucro' => 0, 'n_lucro' => 0, 'sem_quitacao' => 0, 'sem_pago' => 0];
 foreach ($linhas as &$l) {
     $pago = (float)($l['valor_final'] ?? 0);
     $quit = $l['valor_quitacao'] !== null ? (float)$l['valor_quitacao'] : null;
@@ -93,6 +102,7 @@ foreach ($linhas as &$l) {
     $l['_venda_total'] = $vendaTotal;
     $l['_lucro'] = $vendaTotal !== null ? $vendaTotal - $l['_custo'] : null;
     $tot['pago'] += $pago;
+    if ($pago <= 0) $tot['sem_pago']++;
     $tot['quitacao'] += $quit ?? 0;
     if ($quit === null) $tot['sem_quitacao']++;
     $tot['entrada'] += $entrada;
@@ -108,6 +118,131 @@ unset($l);
 function rlMoeda(?float $v): string {
     return $v === null ? '—' : 'R$ ' . number_format($v, 2, ',', '.');
 }
+
+$mesesNome = ['01'=>'janeiro','02'=>'fevereiro','03'=>'março','04'=>'abril','05'=>'maio','06'=>'junho','07'=>'julho','08'=>'agosto','09'=>'setembro','10'=>'outubro','11'=>'novembro','12'=>'dezembro'];
+$rotuloPeriodo = $mes !== '' ? ucfirst($mesesNome[substr($mes, 5, 2)] ?? '') . '/' . substr($mes, 0, 4) : 'Todo o período';
+
+if (!empty($_GET['pdf'])) {
+    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf->SetMargins(10, 12, 10);
+    $pdf->SetAutoPageBreak(true, 14);
+    $pdf->AddPage();
+    $pdf->SetFillColor(21, 23, 34);
+    $pdf->Rect(0, 0, 297, 20, 'F');
+    $logoPath = dirname(__DIR__) . '/public/assets/logo.png';
+    if (is_file($logoPath)) { try { if (@getimagesize($logoPath)) $pdf->Image($logoPath, 10, 3, 0, 14); } catch (Throwable $e) {} }
+    $pdf->SetY(4);
+    $pdf->SetTextColor(255, 255, 255);
+    $pdf->SetFont('Helvetica', 'B', 12);
+    $pdf->Cell(0, 7, _pdfTexto('FASTCAR SOLUTIONS'), 0, 1, 'C');
+    $pdf->SetFont('Helvetica', '', 8);
+    $pdf->Cell(0, 6, _pdfTexto('RELATÓRIO DE LUCRO POR VEÍCULO'), 0, 1, 'C');
+    $pdf->SetFillColor(47, 111, 237);
+    $pdf->Rect(0, 20, 297, 1.2, 'F');
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetY(25);
+    $rotFiltro = ['vendidos' => 'Vendidos', 'estoque' => 'Ainda sem venda', 'todos' => 'Todos'][$filtro];
+    $pdf->SetFont('Helvetica', 'B', 12);
+    $pdf->Cell(0, 7, _pdfTexto('Período: ' . $rotuloPeriodo . '   |   ' . $rotFiltro . ($busca !== '' ? '   |   busca: ' . $busca : '')), 0, 1);
+    $pdf->SetFont('Helvetica', '', 8);
+    $pdf->SetTextColor(90, 90, 90);
+    $pdf->Cell(0, 5, _pdfTexto(count($linhas) . ' veículo(s) — gerado em ' . date('d/m/Y H:i')), 0, 1);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Ln(1);
+
+    // Resumo
+    $resumo = [
+        ['Pago aos vendedores', $tot['pago']], ['Quitações', $tot['quitacao']],
+        ['Total das vendas', $tot['venda']], ['Já recebido', $tot['recebido']],
+        ['Lucro previsto', $tot['lucro']],
+    ];
+    $w = 277 / count($resumo);
+    $y = $pdf->GetY();
+    foreach ($resumo as $i => [$rot, $val]) {
+        $x = 10 + $i * $w;
+        $pdf->SetFillColor(244, 244, 247);
+        $pdf->Rect($x + 1, $y, $w - 2, 15, 'F');
+        $pdf->SetXY($x + 1, $y + 1.5);
+        $pdf->SetFont('Helvetica', '', 7.5);
+        $pdf->SetTextColor(90, 90, 90);
+        $pdf->Cell($w - 2, 4, _pdfTexto($rot), 0, 2, 'C');
+        $pdf->SetFont('Helvetica', 'B', 11);
+        if ($rot === 'Lucro previsto') $pdf->SetTextColor($val < 0 ? 220 : 21, $val < 0 ? 38 : 128, $val < 0 ? 38 : 61);
+        else $pdf->SetTextColor(21, 23, 34);
+        $pdf->Cell($w - 2, 7, _pdfTexto(rlMoeda((float)$val)), 0, 0, 'C');
+    }
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetY($y + 18);
+    if ($tot['sem_quitacao']) {
+        $pdf->SetFont('Helvetica', 'I', 7.5);
+        $pdf->SetTextColor(150, 90, 0);
+        $pdf->Cell(0, 4, _pdfTexto($tot['sem_quitacao'] . ' veículo(s) sem valor de quitação preenchido — entra como zero no custo, o lucro desses aparece maior.'), 0, 1);
+        $pdf->SetTextColor(0, 0, 0);
+    }
+    $pdf->Ln(1);
+
+    $cols = [
+        ['Veículo / placa', 52, 'L'], ['Comprador', 34, 'L'], ['Data venda', 18, 'C'], ['Valor pago', 22, 'R'],
+        ['Quitação', 20, 'R'], ['Custo total', 22, 'R'], ['Entrada', 21, 'R'], ['Parcelas', 27, 'C'],
+        ['Total venda', 22, 'R'], ['Recebido', 19, 'R'], ['Lucro', 20, 'R'],
+    ];
+    $cab = function () use ($pdf, $cols) {
+        $pdf->SetFont('Helvetica', 'B', 7.5);
+        $pdf->SetFillColor(21, 23, 34);
+        $pdf->SetTextColor(255, 255, 255);
+        foreach ($cols as [$t, $cw, $al]) $pdf->Cell($cw, 6, _pdfTexto($t), 0, 0, 'C', true);
+        $pdf->Ln();
+        $pdf->SetTextColor(0, 0, 0);
+    };
+    $cab();
+    $fill = false;
+    foreach ($linhas as $l) {
+        if ($pdf->GetY() > 190) { $pdf->AddPage(); $cab(); }
+        $veic = trim($l['veiculo_marca'] . ' ' . $l['veiculo_modelo'] . ' ' . $l['veiculo_ano']) . ($l['veiculo_placa'] ? ' · ' . strtoupper($l['veiculo_placa']) : '');
+        $parcTxt = ((int)$l['parcelamento_qtd_parcelas'] > 0 && (float)$l['parcelamento_valor_parcela'] > 0)
+            ? (int)$l['parcelamento_qtd_parcelas'] . 'x ' . rlMoeda((float)$l['parcelamento_valor_parcela']) . (($l['parcelamento_periodicidade'] ?? '') === 'semanal' ? ' sem.' : '')
+            : ($l['venda_id'] ? 'à vista' : '—');
+        $vals = [
+            $veic, $l['venda_id'] ? ($l['comprador_nome'] ?: '—') : 'sem venda',
+            $l['data_venda'] ? date('d/m/Y', strtotime($l['data_venda'])) : '—',
+            rlMoeda($l['valor_final'] !== null ? (float)$l['valor_final'] : null),
+            rlMoeda($l['valor_quitacao'] !== null ? (float)$l['valor_quitacao'] : null),
+            rlMoeda($l['_custo']),
+            $l['venda_id'] ? rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) : '—',
+            $parcTxt, rlMoeda($l['_venda_total']),
+            $l['venda_id'] ? rlMoeda((float)$l['recebido']) : '—',
+            rlMoeda($l['_lucro']),
+        ];
+        $pdf->SetFillColor(246, 247, 250);
+        $pdf->SetFont('Helvetica', '', 7.2);
+        foreach ($cols as $i => [$t, $cw, $al]) {
+            $txt = _pdfTexto((string)$vals[$i]);
+            while ($pdf->GetStringWidth($txt) > $cw - 1.5 && strlen($txt) > 3) $txt = substr($txt, 0, -2);
+            if ($i === 10 && $l['_lucro'] !== null) {
+                $pdf->SetFont('Helvetica', 'B', 7.2);
+                $pdf->SetTextColor($l['_lucro'] < 0 ? 220 : 21, $l['_lucro'] < 0 ? 38 : 128, $l['_lucro'] < 0 ? 38 : 61);
+            }
+            $pdf->Cell($cw, 6, $txt, 0, 0, $al, $fill);
+            $pdf->SetTextColor(0, 0, 0);
+        }
+        $pdf->Ln();
+        $fill = !$fill;
+    }
+    // Total
+    $pdf->SetFont('Helvetica', 'B', 7.5);
+    $pdf->SetFillColor(225, 232, 252);
+    $totVals = ['TOTAL', '', '', rlMoeda($tot['pago']), rlMoeda($tot['quitacao']), rlMoeda($tot['pago'] + $tot['quitacao']),
+        rlMoeda($tot['entrada']), '', rlMoeda($tot['venda']), rlMoeda($tot['recebido']), rlMoeda($tot['lucro'])];
+    foreach ($cols as $i => [$t, $cw, $al]) $pdf->Cell($cw, 7, _pdfTexto($totVals[$i]), 0, 0, $al, true);
+    $pdf->Ln(9);
+    $pdf->SetFont('Helvetica', '', 7);
+    $pdf->SetTextColor(110, 110, 110);
+    $pdf->MultiCell(0, 4, _pdfTexto('Custo = valor pago ao vendedor + quitação do financiamento. Total da venda = entrada + parcelas (quantidade × valor) ou o preço da venda quando não há parcelamento. Lucro previsto = total da venda − custo, contando parcelas ainda não pagas; "Recebido" é o que já está marcado como pago no financeiro. Locação fica de fora.'));
+    ob_end_clean();
+    $pdf->Output('I', 'lucro_por_veiculo_' . ($mes ?: 'todos') . '.pdf');
+    exit;
+}
+ob_end_flush();
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -120,11 +255,32 @@ function rlMoeda(?float $v): string {
 <script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 <style>
-.rl-lucro-pos { color: var(--verde, #15803d); font-weight: 700; }
-.rl-lucro-neg { color: var(--vermelho, #dc2626); font-weight: 700; }
+@media (min-width: 1100px) { main { max-width: 1680px; } }
+.rl-tabela td, .rl-tabela th { white-space: nowrap; vertical-align: top; padding-left: 10px; padding-right: 10px; }
+.rl-tabela td.rl-veic { white-space: normal; min-width: 220px; max-width: 280px; }
+.rl-veic .rl-nome { font-weight: 700; font-size: 13px; line-height: 1.3; display: block; overflow-wrap: anywhere; }
+.rl-veic .rl-sub { font-size: 12px; color: var(--texto-suave); display: block; margin-top: 2px; }
+.rl-tabela td.rl-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rl-tabela th.rl-num { text-align: right; }
+.rl-lucro-pos { color: var(--verde); font-weight: 800; }
+.rl-lucro-neg { color: var(--vermelho); font-weight: 800; }
 .rl-quit-form { display: flex; gap: 6px; align-items: center; margin: 0; }
-.rl-quit-form input { max-width: 130px; margin: 0; }
-.rl-quit-form button { margin: 0; width: auto; padding: 8px 10px; }
+.rl-quit-form input { width: 120px; min-width: 120px; margin: 0; padding: 8px 10px; text-align: right; }
+.rl-quit-form button { margin: 0; width: 40px; min-width: 40px; height: 40px; padding: 0; }
+.rl-aviso { display: block; font-size: 11px; color: var(--laranja); font-weight: 600; margin-top: 3px; white-space: normal; }
+.rl-stats .stat-card .valor { font-size: 22px; }
+.rl-stats .stat-card small { display: block; color: var(--laranja); font-weight: 600; margin-top: 4px; }
+.rl-filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 0; }
+.rl-filtros > div { min-width: 140px; }
+.rl-filtros .rl-busca { flex: 1; min-width: 220px; }
+.rl-filtros button, .rl-filtros .btn { margin: 0; width: auto; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
+.rl-filtros > div.rl-acao { min-width: 0; }
+.rl-tabela tfoot td { font-weight: 800; background: var(--azul-claro, #eef3fe); white-space: nowrap; }
+@media (max-width: 700px) {
+    .rl-tabela tfoot tr { display: block; width: auto; background: var(--azul-claro, #eef3fe); }
+    .rl-tabela tfoot td { background: transparent; }
+    .rl-tabela tfoot td:empty { display: none; }
+}
 </style>
 </head>
 <body>
@@ -136,13 +292,13 @@ function rlMoeda(?float $v): string {
     <a href="/admin/logout.php">Sair</a>
 </header>
 <main>
-<h2>📊 Lucro por veículo</h2>
+<h2>📊 Lucro por veículo — <?= e($rotuloPeriodo) ?></h2>
 <p><small>Custo = valor pago ao vendedor + quitação do financiamento. Venda = entrada + parcela × quantidade (ou o preço da venda, se não tiver parcelamento). Lucro previsto conta também as parcelas que ainda não foram pagas. Locação fica de fora.</small></p>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
-<div class="stat-grid">
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['pago']) ?></div><div class="rotulo">Pago aos vendedores</div></div>
+<div class="stat-grid rl-stats">
+    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['pago']) ?></div><div class="rotulo">Pago aos vendedores</div><?php if ($tot['sem_pago']): ?><small><?= $tot['sem_pago'] ?> sem valor pago</small><?php endif; ?></div>
     <div class="stat-card"><div class="valor"><?= rlMoeda($tot['quitacao']) ?></div><div class="rotulo">Quitações</div><?php if ($tot['sem_quitacao']): ?><small><?= $tot['sem_quitacao'] ?> sem valor preenchido</small><?php endif; ?></div>
     <div class="stat-card"><div class="valor"><?= rlMoeda($tot['venda']) ?></div><div class="rotulo">Total das vendas</div></div>
     <div class="stat-card"><div class="valor"><?= rlMoeda($tot['recebido']) ?></div><div class="rotulo">Já recebido</div></div>
@@ -150,8 +306,8 @@ function rlMoeda(?float $v): string {
 </div>
 
 <div class="card">
-    <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0">
-        <div style="flex:1;min-width:200px"><label>Buscar</label><input type="text" name="q" value="<?= e($busca) ?>" placeholder="Placa, marca, modelo ou comprador"></div>
+    <form method="get" class="rl-filtros">
+        <div class="rl-busca"><label>Buscar</label><input type="text" name="q" value="<?= e($busca) ?>" placeholder="Placa, marca, modelo ou comprador"></div>
         <div><label>Mostrar</label>
             <select name="filtro">
                 <option value="vendidos" <?= $filtro === 'vendidos' ? 'selected' : '' ?>>Vendidos</option>
@@ -159,38 +315,41 @@ function rlMoeda(?float $v): string {
                 <option value="todos" <?= $filtro === 'todos' ? 'selected' : '' ?>>Todos</option>
             </select>
         </div>
-        <div><button type="submit" style="margin:0;width:auto">🔎 Filtrar</button></div>
+        <div><label>Mês</label><input type="month" name="mes" value="<?= e($mes) ?>"></div>
+        <div class="rl-acao"><button type="submit">🔎 Filtrar</button></div>
+        <?php if ($mes !== ''): ?><div class="rl-acao"><a class="btn" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca])) ?>">Limpar mês</a></div><?php endif; ?>
+        <div class="rl-acao"><a class="btn btn-primary" target="_blank" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'pdf' => 1])) ?>">📄 Gerar PDF completo</a></div>
     </form>
 </div>
 
 <div class="card">
-<table class="tabela-oportunidades">
+<table class="tabela-oportunidades rl-tabela">
     <thead><tr>
-        <th>Veículo</th><th>Valor pago</th><th>Quitação</th><th>Custo total</th>
-        <th>Entrada</th><th>Parcelas</th><th>Total da venda</th><th>Já recebido</th><th>Lucro</th>
+        <th>Veículo</th><th class="rl-num">Valor pago</th><th>Quitação</th><th class="rl-num">Custo total</th>
+        <th class="rl-num">Entrada</th><th>Parcelas</th><th class="rl-num">Total da venda</th><th class="rl-num">Já recebido</th><th class="rl-num">Lucro</th>
     </tr></thead>
     <tbody>
     <?php if (!$linhas): ?><tr><td colspan="9">Nenhum veículo encontrado.</td></tr><?php endif; ?>
     <?php foreach ($linhas as $l): ?>
         <tr id="op<?= (int)$l['op_id'] ?>">
-            <td>
-                <a href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>"><strong><?= e(trim($l['veiculo_marca'] . ' ' . $l['veiculo_modelo'] . ' ' . $l['veiculo_ano'])) ?: 'Veículo #' . (int)$l['op_id'] ?></strong></a>
-                <?= $l['veiculo_placa'] ? '<br><small>' . e(strtoupper($l['veiculo_placa'])) . '</small>' : '' ?>
-                <?php if ($l['venda_id']): ?><br><small><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></small><?php else: ?><br><small>sem venda</small><?php endif; ?>
+            <td class="rl-veic">
+                <a class="rl-nome" href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>"><?= e(trim($l['veiculo_marca'] . ' ' . $l['veiculo_modelo'] . ' ' . $l['veiculo_ano'])) ?: 'Veículo #' . (int)$l['op_id'] ?></a>
+                <?php if ($l['veiculo_placa']): ?><span class="rl-sub">🔖 <?= e(strtoupper($l['veiculo_placa'])) ?></span><?php endif; ?>
+                <?php if ($l['venda_id']): ?><span class="rl-sub"><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['data_venda'] ? ' · ' . date('d/m/Y', strtotime($l['data_venda'])) : '' ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></span><?php else: ?><span class="rl-sub">sem venda</span><?php endif; ?>
             </td>
-            <td><?= rlMoeda($l['valor_final'] !== null ? (float)$l['valor_final'] : null) ?></td>
+            <td class="rl-num"><?= rlMoeda($l['valor_final'] !== null && (float)$l['valor_final'] > 0 ? (float)$l['valor_final'] : null) ?><?php if (!((float)$l['valor_final'] > 0)): ?><span class="rl-aviso">⚠️ sem valor pago</span><?php endif; ?></td>
             <td data-label="Quitação">
                 <form method="post" class="rl-quit-form">
                     <?= csrfField() ?>
                     <input type="hidden" name="acao" value="salvar_quitacao">
                     <input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
-                    <input type="text" name="valor_quitacao" inputmode="decimal" placeholder="R$ 0,00" value="<?= $l['valor_quitacao'] !== null ? e(number_format((float)$l['valor_quitacao'], 2, ',', '.')) : '' ?>">
+                    <input type="text" name="valor_quitacao" inputmode="decimal" placeholder="0,00" aria-label="Valor da quitação" value="<?= $l['valor_quitacao'] !== null ? e(number_format((float)$l['valor_quitacao'], 2, ',', '.')) : '' ?>">
                     <button type="submit" title="Salvar quitação">💾</button>
                 </form>
                 <?php if ($l['financiamento_quitado']): ?><small>✅ financiamento quitado</small><?php endif; ?>
             </td>
-            <td><?= rlMoeda($l['_custo']) ?></td>
-            <td><?= $l['venda_id'] ? rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) : '—' ?></td>
+            <td class="rl-num"><?= rlMoeda($l['_custo']) ?></td>
+            <td class="rl-num"><?= $l['venda_id'] ? rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) : '—' ?></td>
             <td>
                 <?php if ((int)$l['parcelamento_qtd_parcelas'] > 0 && (float)$l['parcelamento_valor_parcela'] > 0): ?>
                     <?= (int)$l['parcelamento_qtd_parcelas'] ?>× <?= rlMoeda((float)$l['parcelamento_valor_parcela']) ?><?= ($l['parcelamento_periodicidade'] ?? '') === 'semanal' ? ' <small>(semanal)</small>' : '' ?>
@@ -198,12 +357,25 @@ function rlMoeda(?float $v): string {
                     <?= $l['venda_id'] ? '<small>à vista / sem parcelas</small>' : '—' ?>
                 <?php endif; ?>
             </td>
-            <td><?= rlMoeda($l['_venda_total']) ?></td>
-            <td><?= $l['venda_id'] ? rlMoeda((float)$l['recebido']) : '—' ?></td>
-            <td><?php if ($l['_lucro'] === null): ?>—<?php else: ?><span class="<?= $l['_lucro'] < 0 ? 'rl-lucro-neg' : 'rl-lucro-pos' ?>"><?= rlMoeda($l['_lucro']) ?></span><?php endif; ?></td>
+            <td class="rl-num"><?= rlMoeda($l['_venda_total']) ?></td>
+            <td class="rl-num"><?= $l['venda_id'] ? rlMoeda((float)$l['recebido']) : '—' ?></td>
+            <td class="rl-num"><?php if ($l['_lucro'] === null): ?>—<?php else: ?><span class="<?= $l['_lucro'] < 0 ? 'rl-lucro-neg' : 'rl-lucro-pos' ?>"><?= rlMoeda($l['_lucro']) ?></span><?php endif; ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>
+    <?php if ($linhas): ?>
+    <tfoot><tr>
+        <td>Total (<?= count($linhas) ?>)</td>
+        <td class="rl-num"><?= rlMoeda($tot['pago']) ?></td>
+        <td class="rl-num"><?= rlMoeda($tot['quitacao']) ?></td>
+        <td class="rl-num"><?= rlMoeda($tot['pago'] + $tot['quitacao']) ?></td>
+        <td class="rl-num"><?= rlMoeda($tot['entrada']) ?></td>
+        <td data-label="Parcelas">—</td>
+        <td class="rl-num"><?= rlMoeda($tot['venda']) ?></td>
+        <td class="rl-num"><?= rlMoeda($tot['recebido']) ?></td>
+        <td class="rl-num"><span class="<?= $tot['lucro'] < 0 ? 'rl-lucro-neg' : 'rl-lucro-pos' ?>"><?= rlMoeda($tot['lucro']) ?></span></td>
+    </tr></tfoot>
+    <?php endif; ?>
 </table>
 </div>
 </main>
