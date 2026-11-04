@@ -153,6 +153,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['oc
         $erro = $e->getMessage();
     }
 }
+// 04/11/2026, "adcione botão no estoque abrir modal subir veiculo manual vai
+// sei veiculo não entrou pro sistema" — cadastra direto no estoque um veículo
+// que a Fastcar já tem mas nunca passou pelo funil (mesma
+// criarVeiculoManualFrota() da Frota). Placa já no estoque bloqueia (abre o
+// existente). Vendedor/telefone opcionais: sem eles vira "veículo sem
+// vendedor identificado" com telefone placeholder (DDD 00, nunca real).
+$formManual = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastrar_manual_estoque') {
+    $formManual = $_POST;
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $dup = buscarVeiculoAtivoPorPlaca((string)($_POST['veiculo_placa'] ?? ''));
+        if ($dup) {
+            throw new RuntimeException("Essa placa já está no estoque — oportunidade #{$dup['id']} ({$dup['veiculo_marca']} {$dup['veiculo_modelo']}). Busque por ela na lista em vez de cadastrar de novo.");
+        }
+        $vendNome = trim((string)($_POST['vendedor_nome'] ?? ''));
+        $vendTel = preg_replace('/\D/', '', (string)($_POST['vendedor_telefone'] ?? ''));
+        if ($vendTel === '') $vendTel = gerarTelefonePlaceholderVeiculoRecuperado();
+        if ($vendNome === '') $vendNome = 'Veículo cadastrado manualmente (sem vendedor identificado)';
+        $novo = criarVeiculoManualFrota(
+            $vendNome, $vendTel,
+            (string)($_POST['veiculo_marca'] ?? ''), (string)($_POST['veiculo_modelo'] ?? ''),
+            (string)($_POST['veiculo_ano'] ?? ''), (string)($_POST['veiculo_placa'] ?? ''),
+            (string)($_POST['veiculo_chassi'] ?? ''), (string)($_POST['veiculo_renavam'] ?? ''),
+            valorMonetario((string)($_POST['veiculo_valor_final'] ?? '')),
+            (int)$_SESSION['admin_id']
+        );
+        $novoOpId = (int)$novo['oportunidade_id'];
+        $tipoV = in_array($_POST['tipo_veiculo'] ?? '', ['carro', 'moto', 'caminhao', 'outro'], true) ? $_POST['tipo_veiculo'] : null;
+        if ($tipoV) $db->prepare("UPDATE oportunidades SET tipo_veiculo = ? WHERE id = ?")->execute([$tipoV, $novoOpId]);
+        header('Location: /admin/veiculo_midias.php?id=' . $novoOpId . '&criado=1');
+        exit;
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
 $souSuperEstoque = $_SESSION['admin_perfil'] === 'super_admin';
 $avaliadoresEstoque = array_values(array_filter(listarUsuarios(true), 'usuarioEhAvaliador'));
 $vistoriaPorOp = [];
@@ -244,6 +281,42 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
 <main>
 <h2>🚘 Estoque — disponíveis pra venda (<?= count($veiculos) ?><?= count($veiculos) !== count($todos) ? ' de ' . count($todos) : '' ?>)</h2>
 <p><small>Todo veículo com a compra finalizada (pasta fechada) e sem negociação de venda em andamento.</small></p>
+<?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+<p><button type="button" class="btn-primary" onclick="document.getElementById('modal-veiculo-manual').showModal()">➕ Cadastrar veículo manual</button>
+<small> — pra carro que a Fastcar já tem mas nunca entrou no sistema.</small></p>
+<dialog id="modal-veiculo-manual" class="modal-lancamento">
+    <form method="post">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <h3 style="margin:0">➕ Cadastrar veículo no estoque</h3>
+            <button type="button" class="btn-texto" onclick="this.closest('dialog').close()" aria-label="Fechar">✕</button>
+        </div>
+        <?php if ($erro && $formManual): ?><div class="alerta-erro" style="margin-top:10px"><?= e($erro) ?></div><?php endif; ?>
+        <input type="hidden" name="csrf_token" value="<?= generateCSRF() ?>">
+        <input type="hidden" name="acao" value="cadastrar_manual_estoque">
+        <div class="grid-2">
+            <label>Marca *<input type="text" name="veiculo_marca" required value="<?= e($formManual['veiculo_marca'] ?? '') ?>"></label>
+            <label>Modelo *<input type="text" name="veiculo_modelo" required value="<?= e($formManual['veiculo_modelo'] ?? '') ?>"></label>
+            <label>Ano<input type="text" name="veiculo_ano" placeholder="2019/2020" value="<?= e($formManual['veiculo_ano'] ?? '') ?>"></label>
+            <label>Placa<input type="text" name="veiculo_placa" placeholder="ABC1D23" value="<?= e($formManual['veiculo_placa'] ?? '') ?>"></label>
+            <label>Chassi<input type="text" name="veiculo_chassi" value="<?= e($formManual['veiculo_chassi'] ?? '') ?>"></label>
+            <label>Renavam<input type="text" name="veiculo_renavam" inputmode="numeric" value="<?= e($formManual['veiculo_renavam'] ?? '') ?>"></label>
+            <label>Tipo
+                <select name="tipo_veiculo">
+                    <?php foreach (['carro' => '🚗 Carro', 'moto' => '🏍️ Moto', 'caminhao' => '🚚 Caminhão', 'outro' => '🚙 Outro'] as $tv => $tl): ?>
+                        <option value="<?= $tv ?>" <?= ($formManual['tipo_veiculo'] ?? 'carro') === $tv ? 'selected' : '' ?>><?= $tl ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Valor pago (R$)<input type="text" name="veiculo_valor_final" inputmode="decimal" placeholder="opcional" value="<?= e($formManual['veiculo_valor_final'] ?? '') ?>"></label>
+            <label>Nome do vendedor/origem<input type="text" name="vendedor_nome" placeholder="opcional" value="<?= e($formManual['vendedor_nome'] ?? '') ?>"></label>
+            <label>Telefone do vendedor<input type="tel" name="vendedor_telefone" placeholder="opcional" value="<?= e($formManual['vendedor_telefone'] ?? '') ?>"></label>
+        </div>
+        <p><small>Depois de salvar você já cai na tela de fotos/vídeos do veículo.</small></p>
+        <button type="submit" class="btn-primary">💾 Cadastrar no estoque</button>
+    </form>
+</dialog>
+<?php if ($erro && $formManual): ?><script>document.getElementById('modal-veiculo-manual').showModal();</script><?php endif; ?>
+<?php endif; ?>
 
 <div class="card">
     <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
