@@ -79,6 +79,9 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ate)) $ate = date('Y-m-t');
   <a href="/admin/financeiro-relatorio-dre.php?de=<?= e($de) ?>&ate=<?= e($ate) ?>" target="_blank" class="btn-primary" style="display:block;text-align:center;text-decoration:none">
     📊 Ver / Baixar DRE Gerencial
   </a>
+  <a href="/admin/financeiro-relatorio-dre.php?de=<?= e($de) ?>&ate=<?= e($ate) ?>&parcelas=1" target="_blank" class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:.6rem;background:#0369a1;color:#fff;border:none">
+    📈 DRE com parcelas de venda a receber (mentoria)
+  </a>
   <a href="/admin/financeiro-relatorio-extrato.php?de=<?= e($de) ?>&ate=<?= e($ate) ?>" target="_blank" class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:.6rem;background:#0f766e;color:#fff;border:none">
     📄 Ver / Baixar Extrato Completo (PDF)
   </a>

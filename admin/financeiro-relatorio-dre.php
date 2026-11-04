@@ -21,6 +21,7 @@ $ate = (string)($_GET['ate'] ?? date('Y-m-t'));
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $de)) $de = date('Y-m-01');
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ate)) $ate = date('Y-m-t');
 
-$pdf = finGerarDrePdf($db, $de, $ate);
+$comParcelas = !empty($_GET['parcelas']);
+$pdf = finGerarDrePdf($db, $de, $ate, $comParcelas);
 ob_end_clean();
-$pdf->Output('I', 'dre_gerencial_' . $de . '_a_' . $ate . '.pdf');
+$pdf->Output('I', ($comParcelas ? 'dre_com_parcelas_' : 'dre_gerencial_') . $de . '_a_' . $ate . '.pdf');

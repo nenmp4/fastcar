@@ -73,17 +73,29 @@ function finGruposDreComRotulos(): array {
  * fora por ainda estar pendente/atrasado — nunca esconde o dado, só não
  * mistura com o que já é dinheiro de verdade.
  */
-function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
+function finGerarDrePdf(PDO $db, string $de, string $ate, bool $incluirParcelasVenda = false): FPDF {
+    // 04/11/2026, "dr da para considera receitas vendas do veiculos todas
+    // as parcelas / mesmo não paga para mentoria" — visão GERENCIAL extra
+    // (nunca a do contador): receita de venda de veículo (entrada/parcela)
+    // que vence no período entra mesmo ainda pendente/atrasada. O resto
+    // (despesas, outras receitas) continua só o que foi pago.
+    $sqlVendaVeiculo = "(l.venda_id IS NOT NULL OR c.nome LIKE 'Venda de veículo%')";
+    $sqlStatus = $incluirParcelasVenda
+        ? "(l.status = 'pago' OR (l.status IN ('pendente','atrasado') AND l.tipo = 'receita' AND {$sqlVendaVeiculo}))"
+        : "l.status = 'pago'";
     $stmt = $db->prepare("
-        SELECT c.grupo_dre, c.nome AS categoria_nome, c.icone, l.tipo, SUM(l.valor) AS total
+        SELECT c.grupo_dre, c.nome AS categoria_nome, c.icone, l.tipo, SUM(l.valor) AS total,
+               SUM(CASE WHEN l.status != 'pago' THEN l.valor ELSE 0 END) AS a_receber
         FROM fin_lancamentos l
         JOIN fin_categorias c ON c.id = l.categoria_id
-        WHERE l.status = 'pago' AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
+        WHERE {$sqlStatus} AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
         GROUP BY c.grupo_dre, c.id
         ORDER BY c.grupo_dre, categoria_nome
     ");
     $stmt->execute([$de, $ate]);
     $linhas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $totalAReceberIncluido = 0.0;
+    foreach ($linhas as $l) $totalAReceberIncluido += (float)$l['a_receber'];
 
     $totalReceita = 0.0;
     $categoriasReceita = [];
@@ -93,7 +105,9 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
         $valor = (float)$l['total'];
         if ($grupo === 'receita' || $l['tipo'] === 'receita') {
             $totalReceita += $valor;
-            $categoriasReceita[] = ['nome' => $l['categoria_nome'], 'icone' => $l['icone'], 'valor' => $valor];
+            $nomeCat = $l['categoria_nome'];
+            if ((float)$l['a_receber'] > 0) $nomeCat .= ' (inclui R$ ' . number_format((float)$l['a_receber'], 2, ',', '.') . ' a receber)';
+            $categoriasReceita[] = ['nome' => $nomeCat, 'icone' => $l['icone'], 'valor' => $valor];
         } else {
             if (!isset($gruposDespesa[$grupo])) $gruposDespesa[$grupo] = ['total' => 0.0, 'categorias' => []];
             $gruposDespesa[$grupo]['total'] += $valor;
@@ -121,12 +135,16 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
     // esconder, só deixar claro que esse valor é PREVISÃO, não resultado
     // do período. Soma à parte de receita/despesa pendente/atrasado,
     // independente de ter categoria ou não.
+    // Na visão mentoria, o previsto de venda de veículo já entrou na
+    // receita acima — sai daqui pra nunca contar 2x.
+    $exclVenda = $incluirParcelasVenda ? "AND NOT (l.tipo = 'receita' AND {$sqlVendaVeiculo})" : '';
     $stmtPrevisto = $db->prepare("
-        SELECT tipo, COUNT(*) AS qtd, COALESCE(SUM(valor),0) AS total
-        FROM fin_lancamentos
-        WHERE status IN ('pendente','atrasado')
-          AND COALESCE(data_pagamento, data_vencimento) BETWEEN ? AND ?
-        GROUP BY tipo
+        SELECT l.tipo, COUNT(*) AS qtd, COALESCE(SUM(l.valor),0) AS total
+        FROM fin_lancamentos l
+        LEFT JOIN fin_categorias c ON c.id = l.categoria_id
+        WHERE l.status IN ('pendente','atrasado') {$exclVenda}
+          AND COALESCE(l.data_pagamento, l.data_vencimento) BETWEEN ? AND ?
+        GROUP BY l.tipo
     ");
     $stmtPrevisto->execute([$de, $ate]);
     $previsto = ['receita' => ['qtd' => 0, 'total' => 0.0], 'despesa' => ['qtd' => 0, 'total' => 0.0]];
@@ -136,7 +154,7 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
 
     // ── PDF ────────────────────────────────────────────────────────────
     $pdf = _pdfNovo();
-    _pdfCabecalho($pdf, 'DRE GERENCIAL');
+    _pdfCabecalho($pdf, $incluirParcelasVenda ? 'DRE GERENCIAL — COM PARCELAS A RECEBER' : 'DRE GERENCIAL');
 
     // 19/09/2026, "tem parta cadastrar os dados da empresa com logo para
     // ficar bacana dre" — razão social/CNPJ/endereço vêm de
@@ -165,6 +183,11 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
     $pdf->SetFont('Helvetica', 'I', 8);
     $pdf->SetTextColor(120, 120, 120);
     $pdf->Cell(0, 5, _pdfTexto('Relatório de uso interno/gerencial — não substitui o DRE contábil oficial do contador.'), 0, 1, 'L');
+    if ($incluirParcelasVenda) {
+        $pdf->SetFont('Helvetica', 'B', 8.5);
+        $pdf->SetTextColor(8, 120, 160);
+        $pdf->MultiCell(0, 4.5, _pdfTexto('Receita de venda de veículo considera TODAS as entradas/parcelas com vencimento no período, pagas ou não — R$ ' . number_format($totalAReceberIncluido, 2, ',', '.') . ' desse total ainda não foram recebidos. Despesas e demais receitas: só o que foi pago.'));
+    }
     $pdf->SetTextColor(0, 0, 0);
     $pdf->Ln(2);
     $pdf->SetDrawColor(180, 180, 180);
@@ -221,7 +244,7 @@ function finGerarDrePdf(PDO $db, string $de, string $ate): FPDF {
     // controle gerencial interno de fluxo de caixa.
     $pdf->SetFont('Helvetica', '', 7.5);
     $pdf->SetTextColor(120, 120, 120);
-    $pdf->MultiCell(0, 4, _pdfTexto('ℹ Regime de caixa: cada valor entra nesta soma na data em que foi efetivamente pago/recebido (entrada e cada parcela de venda são lançadas separadamente, conforme o vencimento) — não é o regime de competência da escrituração contábil oficial, que normalmente reconheceria o valor total do contrato na data da venda. O contrato assinado de cada negociação (armazenado no sistema) é o documento de suporte de cada lançamento.'));
+    if (!$incluirParcelasVenda) $pdf->MultiCell(0, 4, _pdfTexto('ℹ Regime de caixa: cada valor entra nesta soma na data em que foi efetivamente pago/recebido (entrada e cada parcela de venda são lançadas separadamente, conforme o vencimento) — não é o regime de competência da escrituração contábil oficial, que normalmente reconheceria o valor total do contrato na data da venda. O contrato assinado de cada negociação (armazenado no sistema) é o documento de suporte de cada lançamento.'));
     $pdf->SetTextColor(0, 0, 0);
     $pdf->Ln(2);
 
