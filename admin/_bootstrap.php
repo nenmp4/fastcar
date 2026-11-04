@@ -78,7 +78,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     // venda e aprovar foto pro catálogo, mesmo em vistoria de COMPRA de um
     // veículo que ele ainda vai revender (a aprovação de foto não é presa a
     // uma negociação específica).
-    $permitidasVendedor = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
+    $permitidasVendedor = ['vendas.php', 'venda.php', 'clientes.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
         'avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
         // 08/10/2026 — assinatura presencial na retirada do veículo,
         // serve a imagem desenhada na tela (mesma trava de
