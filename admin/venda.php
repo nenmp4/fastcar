@@ -45,7 +45,7 @@ $sucesso = '';
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
-    'nao_qualificado', 'atualizar_proxima_acao', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria', 'salvar_fipe_venda'];
+    'nao_qualificado', 'atualizar_proxima_acao', 'preencher_pelos_documentos', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria', 'salvar_fipe_venda'];
 // 30/10/2026 — trava também com contrato de venda assinado, mesmo antes de
 // virar 'vendido' (concluir/devolução continuam liberados).
 $vendaTravada = ($v['etapa'] === 'vendido' || ($contratoVendaAssinado && $v['etapa'] !== 'cancelada')) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
@@ -521,6 +521,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $erro = $resultado['erro'] ?? 'Falha ao anexar documento.';
                     }
+                }
+            } elseif ($acao === 'preencher_pelos_documentos') {
+                $rp = preencherCompradorPelosDocumentos($id);
+                if (!$rp['ok']) {
+                    $erro = $rp['erro'];
+                } else {
+                    $sucesso = $rp['preenchidos']
+                        ? '✅ Preenchido a partir dos documentos: ' . implode(', ', $rp['preenchidos']) . '. Confira no card "Dados do comprador".'
+                        : 'Documentos lidos — nada novo pra preencher (os campos já estavam preenchidos ou o documento não trazia o dado).';
+                    if ($rp['avisos']) $sucesso .= ' ⚠️ ' . implode('; ', $rp['avisos']) . '.';
                 }
             } elseif ($acao === 'confirmar_documento_staff_venda') {
                 // "Aceite em nome do comprador" — mesmo espírito de
@@ -1117,6 +1127,18 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
             : null;
         $documentosVenda = listarDocumentosVenda($id);
     ?>
+
+    <?php
+        $temDocComprador = documentoVendaJaEnviado($id, 'cnh') || documentoVendaJaEnviado($id, 'comprovante_endereco');
+    ?>
+    <?php if ($temDocComprador && !$vendaTravada && ($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
+        <form method="post" style="margin:0 0 10px">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="preencher_pelos_documentos">
+            <button type="submit" class="btn" style="width:auto">🤖 Preencher dados do comprador pelos documentos</button>
+            <small style="display:block;color:var(--texto-fraco)">Lê a CNH/RG e o comprovante já enviados e completa nome, CPF, RG, CNH e endereço que estiverem vazios.</small>
+        </form>
+    <?php endif; ?>
 
     <?php if ($v['documentos_confirmados_em']): ?>
         <div class="alerta-sucesso" style="padding:8px 12px;border-radius:6px;background:#e3f3e6;color:#2a7a3b;margin-bottom:10px">

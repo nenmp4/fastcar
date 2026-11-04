@@ -282,6 +282,8 @@ function aplicarDadosExtraidosDocumentoVenda(int $vendaId, array $dados): void {
     foreach ($dados as $campo => $valorBruto) {
         $valor = trim((string)$valorBruto);
         if ($valor === '' || !isset($mapa[$campo])) continue;
+        // Mesmo guard da compra: CPF sempre 11 dígitos — truncado nunca entra.
+        if ($campo === 'cpf' && strlen(preg_replace('/\D/', '', $valor)) !== 11) continue;
         $coluna = $mapa[$campo];
         $sets[] = "{$coluna} = CASE WHEN {$coluna} IS NULL OR {$coluna} = '' THEN ? ELSE {$coluna} END";
         $params[] = $valor;
@@ -291,4 +293,52 @@ function aplicarDadosExtraidosDocumentoVenda(int $vendaId, array $dados): void {
         $params[] = $vendaId;
         $db->prepare("UPDATE vendas SET " . implode(', ', $sets) . " WHERE id = ?")->execute($params);
     }
+}
+
+/**
+ * 04/11/2026, "enviamos link pro cliente subir documentos, não preencheu
+ * as informações do cliente" — relê com a IA a CNH/RG e o comprovante de
+ * endereço JÁ enviados e preenche o card do comprador. Mesma regra de
+ * sempre (fill-if-empty: nunca apaga o que já foi digitado), com uma
+ * exceção: o nome que veio do WhatsApp (1 palavra só, apelido) é trocado
+ * pelo nome completo do documento. Nunca aplica dado de documento que a IA
+ * achou que não é do tipo certo.
+ */
+function preencherCompradorPelosDocumentos(int $vendaId): array {
+    require_once __DIR__ . '/extracao_documentos.php';
+    if (!getConfig('gemini_api_key')) return ['ok' => false, 'erro' => 'IA (Gemini) não configurada em Configurações — não dá pra ler os documentos.'];
+    $db = getDB();
+    $docs = listarDocumentosVenda($vendaId);
+    $antes = $db->prepare("SELECT comprador_nome, comprador_cpf, comprador_rg, comprador_cnh, comprador_endereco FROM vendas WHERE id = ?");
+    $antes->execute([$vendaId]);
+    $a = $antes->fetch(PDO::FETCH_ASSOC) ?: [];
+    $lidos = 0;
+    $avisos = [];
+    foreach (['cnh', 'comprovante_endereco'] as $tipo) {
+        $d = $docs[$tipo] ?? null;
+        if (!$d || (($d['arquivo_url'] ?? '') === '' && ($d['drive_file_id'] ?? '') === '')) continue;
+        $arq = lerConteudoArquivoDocumento($d['drive_file_id'] ?: null, $d['arquivo_url'] ?: null);
+        if (!$arq) { $avisos[] = 'não consegui abrir o arquivo de ' . (TIPOS_DOCUMENTOS_COMPRADOR[$tipo] ?? $tipo); continue; }
+        $dados = extrairDadosDocumentoComIA($tipo, $arq);
+        if (!$dados) { $avisos[] = 'a IA não conseguiu ler ' . (TIPOS_DOCUMENTOS_COMPRADOR[$tipo] ?? $tipo); continue; }
+        if (empty($dados['_documento_correto'])) {
+            $avisos[] = 'o arquivo enviado como ' . (TIPOS_DOCUMENTOS_COMPRADOR[$tipo] ?? $tipo) . ' parece ser ' . ($dados['_tipo_real_se_diferente'] ?: 'outro documento');
+            continue;
+        }
+        $lidos++;
+        $nomeAtual = trim((string)($a['comprador_nome'] ?? ''));
+        $nomeDoc = trim((string)($dados['nome'] ?? ''));
+        if ($nomeDoc !== '' && count(preg_split('/\s+/', $nomeAtual, -1, PREG_SPLIT_NO_EMPTY)) < 2) {
+            $db->prepare("UPDATE vendas SET comprador_nome = ? WHERE id = ?")->execute([clean($nomeDoc), $vendaId]);
+        }
+        aplicarDadosExtraidosDocumentoVenda($vendaId, $dados);
+    }
+    $depois = $db->prepare("SELECT comprador_nome, comprador_cpf, comprador_rg, comprador_cnh, comprador_endereco FROM vendas WHERE id = ?");
+    $depois->execute([$vendaId]);
+    $b = $depois->fetch(PDO::FETCH_ASSOC) ?: [];
+    $rot = ['comprador_nome' => 'nome', 'comprador_cpf' => 'CPF', 'comprador_rg' => 'RG', 'comprador_cnh' => 'CNH', 'comprador_endereco' => 'endereço'];
+    $preenchidos = [];
+    foreach ($rot as $col => $r) if ((string)($a[$col] ?? '') !== (string)($b[$col] ?? '')) $preenchidos[] = $r;
+    if (!$lidos && !$avisos) return ['ok' => false, 'erro' => 'Nenhum documento do comprador (CNH/RG ou comprovante) foi enviado ainda.'];
+    return ['ok' => true, 'preenchidos' => $preenchidos, 'avisos' => $avisos];
 }

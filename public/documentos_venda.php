@@ -328,7 +328,7 @@ button { width: 100%; margin-top: 20px; padding: 13px; border: none; border-radi
                     <label>CPF</label>
                     <input type="text" name="cpf" value="<?= e($v['comprador_cpf'] ?? '') ?>" placeholder="000.000.000-00">
                     <label>E-mail</label>
-                    <input type="email" name="email" value="<?= e($v['comprador_email'] ?? '') ?>" placeholder="voce@email.com" required>
+                    <input type="email" name="email" value="<?= e($v['comprador_email'] ?? '') ?>" placeholder="voce@email.com (se tiver)">
                     <label>RG</label>
                     <input type="text" name="rg" value="<?= e($v['comprador_rg'] ?? '') ?>">
                     <label>Nº da CNH (se tiver)</label>

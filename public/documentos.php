@@ -402,7 +402,7 @@ button.secundario { background: #e5e8ef; color: var(--texto); margin-top: 8px; }
                     <label>CPF</label>
                     <input type="text" name="cpf" value="<?= e($op['cpf'] ?? '') ?>" placeholder="000.000.000-00">
                     <label>E-mail</label>
-                    <input type="email" name="email" value="<?= e($op['email'] ?? '') ?>" placeholder="voce@email.com" required>
+                    <input type="email" name="email" value="<?= e($op['email'] ?? '') ?>" placeholder="voce@email.com (se tiver)">
                     <label>RG</label>
                     <input type="text" name="rg" value="<?= e($op['rg'] ?? '') ?>">
                     <label>Nº da CNH (se tiver)</label>
