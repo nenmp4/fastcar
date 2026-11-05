@@ -42,6 +42,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar_
     }
 }
 if (!empty($_GET['salvo'])) $sucesso = 'Valor da quitação salvo.';
+
+// 05/11/2026, "coloca opção digitar FIPE" — mesmo esquema da quitação.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar_fipe') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página.';
+    } else {
+        $opId = (int)($_POST['oportunidade_id'] ?? 0);
+        $valorFipe = valorMonetario((string)($_POST['valor_fipe'] ?? ''));
+        if ($valorFipe !== null && $valorFipe <= 0) $valorFipe = null;
+        $st = $db->prepare("UPDATE oportunidades SET valor_fipe_referencia = ?, updated_at = datetime('now','localtime') WHERE id = ? AND etapa = 'fechado'");
+        $st->execute([$valorFipe, $opId]);
+        if ($st->rowCount()) {
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+               ->execute([$opId, (int)$_SESSION['admin_id'], 'FIPE ' . ($valorFipe !== null ? 'definida em R$ ' . number_format($valorFipe, 2, ',', '.') : 'apagada') . ' pelo relatório de lucro.']);
+            $_SESSION['rl_msg'] = ['ok', 'FIPE salva.'];
+            header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET) . '#op' . $opId);
+            exit;
+        }
+        $erro = 'Veículo não encontrado.';
+    }
+}
 if (!empty($_SESSION['rl_msg'])) { [$tipoMsg, $txtMsg] = $_SESSION['rl_msg']; unset($_SESSION['rl_msg']); if ($tipoMsg === 'ok') $sucesso = $txtMsg; else $erro = $txtMsg; }
 
 // 05/11/2026, "FIPE: coloca botão IA ler informações do contrato ZapSign" —
@@ -363,7 +384,7 @@ ob_end_flush();
 .rl-tabela td { font-size: 13px; }
 .rl-tabela th { white-space: normal; line-height: 1.25; }
 .rl-tabela th small { display: block; font-weight: 600; text-transform: none; }
-.rl-tabela td.rl-veic { white-space: normal; min-width: 170px; max-width: 230px; }
+.rl-tabela td.rl-veic { white-space: normal; min-width: 150px; max-width: 210px; }
 .rl-veic .rl-nome { font-weight: 700; font-size: 13px; line-height: 1.3; display: block; overflow-wrap: anywhere; }
 .rl-veic .rl-sub { font-size: 12px; color: var(--texto-suave); display: block; margin-top: 2px; }
 .rl-tabela td.rl-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -371,8 +392,8 @@ ob_end_flush();
 .rl-lucro-pos { color: var(--verde); font-weight: 800; }
 .rl-lucro-neg { color: var(--vermelho); font-weight: 800; }
 .rl-quit-form { display: flex; gap: 6px; align-items: center; margin: 0; }
-.rl-quit-form input { width: 105px; min-width: 105px; margin: 0; padding: 8px 10px; text-align: right; }
-.rl-quit-form button { margin: 0; width: 40px; min-width: 40px; height: 40px; padding: 0; }
+.rl-quit-form input { width: 100px; min-width: 100px; margin: 0; padding: 8px 10px; text-align: right; }
+.rl-quit-form button { margin: 0; width: 38px; min-width: 38px; height: 40px; padding: 0; }
 .rl-estimada { display: block; font-size: 11px; color: var(--texto-suave); margin-top: 3px; white-space: normal; }
 .rl-aviso { display: block; font-size: 11px; color: var(--laranja); font-weight: 600; margin-top: 3px; white-space: normal; }
 .rl-stats .stat-card .valor { font-size: 22px; }
@@ -459,7 +480,7 @@ ob_end_flush();
 <div class="card">
 <table class="tabela-oportunidades rl-tabela">
     <thead><tr>
-        <th>Veículo</th><th class="rl-num">FIPE</th><th class="rl-num">Quitação prevista<small><?= RL_QUITACAO_PCT_FIPE ?>% da FIPE</small></th><th class="rl-num">Valor pago</th><th>Quitação real</th><th class="rl-num">Custo total</th>
+        <th>Veículo</th><th>FIPE</th><th class="rl-num">Quitação prevista<small><?= RL_QUITACAO_PCT_FIPE ?>% da FIPE</small></th><th class="rl-num">Valor pago</th><th>Quitação real</th><th class="rl-num">Custo total</th>
         <th class="rl-num">Entrada</th><th>Parcelas</th><th class="rl-num">Total venda</th><th class="rl-num">Recebido</th><th class="rl-num">Lucro</th>
     </tr></thead>
     <tbody>
@@ -472,7 +493,15 @@ ob_end_flush();
                 <?php if ($l['veiculo_placa']): ?><span class="rl-sub">🔖 <?= e(strtoupper($l['veiculo_placa'])) ?></span><?php endif; ?>
                 <?php if ($l['venda_id']): ?><span class="rl-sub"><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['data_venda'] ? ' · ' . date('d/m/Y', strtotime($l['data_venda'])) : '' ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></span><?php else: ?><span class="rl-sub">sem venda</span><?php endif; ?>
             </td>
-            <td class="rl-num"><a class="rl-lnk" href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>" title="Abrir o veículo (busca FIPE por placa)"><?= rlMoeda((float)$l['valor_fipe_referencia'] > 0 ? (float)$l['valor_fipe_referencia'] : null) ?></a><?php if (!((float)$l['valor_fipe_referencia'] > 0)): ?><span class="rl-aviso">sem FIPE</span><?php endif; ?>
+            <td data-label="FIPE">
+                <form method="post" class="rl-quit-form">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="salvar_fipe">
+                    <input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
+                    <input type="text" name="valor_fipe" inputmode="decimal" placeholder="digitar FIPE" aria-label="Valor FIPE" value="<?= (float)$l['valor_fipe_referencia'] > 0 ? e(number_format((float)$l['valor_fipe_referencia'], 2, ',', '.')) : '' ?>">
+                    <button type="submit" title="Salvar FIPE">💾</button>
+                </form>
+                <?php if (!((float)$l['valor_fipe_referencia'] > 0)): ?><span class="rl-aviso">sem FIPE</span><?php endif; ?>
                 <?php if (!((float)$l['valor_fipe_referencia'] > 0) || !((float)$l['valor_final'] > 0)): ?>
                 <form method="post" style="margin:4px 0 0"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contrato"><input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
                     <button type="submit" class="btn-texto" title="A IA lê o contrato assinado e preenche FIPE e valor pago">🤖 ler contrato</button></form>
