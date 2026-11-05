@@ -614,16 +614,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sucesso = 'Documento confirmado em nome do comprador.';
                 }
             } elseif ($acao === 'atualizar_proxima_acao') {
+                // 05/11/2026, "leads estão sumindo" — este form regravava o
+                // responsável junto com a próxima ação, sem histórico: dono
+                // bloqueado/inativo não aparecia no select, o campo vinha
+                // "sem responsável" e salvar só a próxima ação tirava o lead
+                // da carteira. Agora: sem o campo, ou vazio vindo de quem não
+                // vê tudo, mantém o dono atual; toda troca grava histórico.
+                $respAtual = $v['responsavel_id'] !== null ? (int)$v['responsavel_id'] : null;
+                $respPost = (string)($_POST['responsavel_id'] ?? '__ausente__');
+                if ($respPost === '__ausente__') {
+                    $respNovo = $respAtual;
+                } elseif ($respPost === '') {
+                    $respNovo = perfilVeTudo() ? null : $respAtual;
+                } else {
+                    $respNovo = (int)$respPost;
+                    $existe = $db->prepare("SELECT 1 FROM usuarios WHERE id = ?");
+                    $existe->execute([$respNovo]);
+                    if (!$existe->fetchColumn()) $respNovo = $respAtual;
+                }
                 $db->prepare("
                     UPDATE vendas
                     SET responsavel_id = ?, proxima_acao = ?, proxima_acao_em = ?, updated_at = datetime('now','localtime')
                     WHERE id = ?
                 ")->execute([
-                    $_POST['responsavel_id'] !== '' ? (int)$_POST['responsavel_id'] : null,
+                    $respNovo,
                     clean((string)($_POST['proxima_acao'] ?? '')),
                     $_POST['proxima_acao_em'] !== '' ? str_replace('T', ' ', (string)$_POST['proxima_acao_em']) . ':00' : null,
                     $id,
                 ]);
+                if ($respNovo !== $respAtual) {
+                    $nomeResp = static function (?int $uid) use ($db): string {
+                        if (!$uid) return 'sem responsável';
+                        $st = $db->prepare("SELECT nome FROM usuarios WHERE id = ?");
+                        $st->execute([$uid]);
+                        return (string)($st->fetchColumn() ?: "usuário #{$uid}");
+                    };
+                    $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, ?, ?, ?, ?)")
+                       ->execute([$id, $v['etapa'], $v['etapa'], (int)$_SESSION['admin_id'],
+                           'Responsável alterado no card "Próxima ação" por ' . (string)$_SESSION['admin_nome'] . ': de ' . $nomeResp($respAtual) . ' pra ' . $nomeResp($respNovo) . '.']);
+                }
                 $sucesso = 'Próxima ação atualizada.';
             } elseif ($acao === 'marcar_compareceu') {
                 // 22/10/2026, "vim até local e cliente confirmar" —
@@ -1899,12 +1928,16 @@ function adicionarParteEntrada() {
             <input type="hidden" name="acao" value="atualizar_proxima_acao">
             <label>Responsável</label>
             <select name="responsavel_id">
-                <option value="">— sem responsável —</option>
-                <?php foreach ($usuarios as $u): ?>
+                <?php if (perfilVeTudo() || !$v['responsavel_id']): ?><option value="">— sem responsável —</option><?php endif; ?>
+                <?php $respNaLista = false; foreach ($usuarios as $u): if ((int)$v['responsavel_id'] === (int)$u['id']) $respNaLista = true; ?>
                     <option value="<?= (int)$u['id'] ?>" <?= (int)$v['responsavel_id'] === (int)$u['id'] ? 'selected' : '' ?>>
                         <?= e($u['nome']) ?> (<?= e($u['perfil']) ?>)
                     </option>
                 <?php endforeach; ?>
+                <?php if ($v['responsavel_id'] && !$respNaLista):
+                    $stRespAt = $db->prepare("SELECT nome FROM usuarios WHERE id = ?"); $stRespAt->execute([(int)$v['responsavel_id']]); ?>
+                    <option value="<?= (int)$v['responsavel_id'] ?>" selected><?= e((string)($stRespAt->fetchColumn() ?: 'usuário #' . (int)$v['responsavel_id'])) ?> (inativo)</option>
+                <?php endif; ?>
             </select>
             <label>Descrição da próxima ação</label>
             <input type="text" name="proxima_acao" value="<?= e($v['proxima_acao'] ?? '') ?>" placeholder="Ex: ligar às 15h">

@@ -763,6 +763,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <?php if (podeAcessarAvaliacoes()): ?><a href="/admin/avaliacoes.php">🔍 Vistorias</a><?php endif; ?>
     <a href="/admin/pendencias_pos_venda.php">📋 Pendências</a>
     <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
+    <a href="/admin/leads_rastreio.php">🔎 Pra onde foram os leads</a>
     <?php if (perfilVeTudo()): ?>
         <a href="/admin/produtividade.php">📊 Produtividade</a>
         <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
