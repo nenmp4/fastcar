@@ -67,6 +67,17 @@ $filtro = in_array($_GET['filtro'] ?? '', ['vendidos', 'estoque', 'todos'], true
 $busca = trim((string)($_GET['q'] ?? ''));
 // Mês (AAAA-MM): vendido pela data da venda; sem venda pela data da compra.
 $mes = preg_match('/^\d{4}-\d{2}$/', (string)($_GET['mes'] ?? '')) ? $_GET['mes'] : '';
+// 05/11/2026, "coloca filtro pra facilitar" — atalhos de pendência e ordenação.
+const RL_PENDENCIAS = [
+    'sem_fipe' => '❗ Sem FIPE',
+    'sem_pago' => '❗ Sem valor pago',
+    'sem_quitacao' => '✏️ Sem quitação real',
+    'lucro_neg' => '🔻 Lucro negativo',
+    'lucro_zero' => '⚠️ Lucro zerado',
+    'zapsign' => '📥 Migrados da ZapSign',
+];
+$pend = array_key_exists($_GET['pend'] ?? '', RL_PENDENCIAS) ? $_GET['pend'] : '';
+$ordem = in_array($_GET['ordem'] ?? '', ['data', 'lucro_maior', 'lucro_menor'], true) ? $_GET['ordem'] : 'data';
 
 $where = ["o.etapa = 'fechado'", "COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'"];
 $params = [];
@@ -97,6 +108,7 @@ $sql = "
            v.id AS venda_id, v.etapa AS venda_etapa, v.comprador_nome, v.data_venda, v.preco_venda,
            v.valor_pago_contratacao, v.parcelamento_valor_parcela, v.parcelamento_qtd_parcelas,
            v.parcelamento_periodicidade,
+           EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.campos_json LIKE '%importado_zapsign%') AS migrado_zapsign,
            (SELECT COALESCE(SUM(l.valor), 0) FROM fin_lancamentos l
               WHERE l.venda_id = v.id AND l.tipo = 'receita' AND l.status = 'pago') AS recebido
     FROM oportunidades o
@@ -114,12 +126,13 @@ $st->execute($params);
 $linhas = $st->fetchAll();
 
 $tot = ['pago' => 0, 'quitacao' => 0, 'venda' => 0, 'entrada' => 0, 'recebido' => 0, 'lucro' => 0, 'n_lucro' => 0, 'sem_quitacao' => 0, 'sem_pago' => 0, 'fipe' => 0, 'quit_estimada' => 0, 'quit_prevista' => 0];
+$contPend = [];
+$totalSemPend = count($linhas);
 foreach ($linhas as &$l) {
     $pago = (float)($l['valor_final'] ?? 0);
     $fipe = (float)($l['valor_fipe_referencia'] ?? 0);
     $quit = $l['valor_quitacao'] !== null ? (float)$l['valor_quitacao'] : null;
     $l['_quit_prevista'] = $fipe > 0 ? round($fipe * RL_QUITACAO_PCT_FIPE / 100, 2) : null;
-    $tot['quit_prevista'] = ($tot['quit_prevista'] ?? 0) + ($l['_quit_prevista'] ?? 0);
     $l['_quit_estimada'] = false;
     if ($quit === null && $fipe > 0) {
         $quit = round($fipe * RL_QUITACAO_PCT_FIPE / 100, 2);
@@ -136,6 +149,17 @@ foreach ($linhas as &$l) {
     $l['_custo'] = $pago + ($quit ?? 0);
     $l['_venda_total'] = $vendaTotal;
     $l['_lucro'] = $vendaTotal !== null ? $vendaTotal - $l['_custo'] : null;
+    $marcas = [
+        'sem_fipe' => !($fipe > 0),
+        'sem_pago' => !($pago > 0),
+        'sem_quitacao' => $l['valor_quitacao'] === null,
+        'lucro_neg' => $l['_lucro'] !== null && $l['_lucro'] < -0.005,
+        'lucro_zero' => $l['_lucro'] !== null && abs($l['_lucro']) < 0.005,
+        'zapsign' => (bool)$l['migrado_zapsign'],
+    ];
+    foreach ($marcas as $k => $sim) if ($sim) $contPend[$k] = ($contPend[$k] ?? 0) + 1;
+    if ($pend !== '' && !$marcas[$pend]) { $l['_fora'] = true; continue; }
+    $tot['quit_prevista'] += $l['_quit_prevista'] ?? 0;
     $tot['pago'] += $pago;
     if ($pago <= 0) $tot['sem_pago']++;
     $tot['quitacao'] += $quit ?? 0;
@@ -151,6 +175,14 @@ foreach ($linhas as &$l) {
     }
 }
 unset($l);
+$linhas = array_values(array_filter($linhas, fn($l) => empty($l['_fora'])));
+if ($ordem !== 'data') {
+    usort($linhas, function ($a, $b) use ($ordem) {
+        $la = $a['_lucro'] ?? ($ordem === 'lucro_maior' ? -INF : INF);
+        $lb = $b['_lucro'] ?? ($ordem === 'lucro_maior' ? -INF : INF);
+        return $ordem === 'lucro_maior' ? $lb <=> $la : $la <=> $lb;
+    });
+}
 
 // Lote: lê até RL_LOTE_LEITURA contratos dos veículos da lista atual que
 // estão sem FIPE ou sem valor pago (limite por clique pra não estourar o
@@ -206,7 +238,7 @@ if (!empty($_GET['pdf'])) {
     $pdf->SetY(25);
     $rotFiltro = ['vendidos' => 'Vendidos', 'estoque' => 'Ainda sem venda', 'todos' => 'Todos'][$filtro];
     $pdf->SetFont('Helvetica', 'B', 12);
-    $pdf->Cell(0, 7, _pdfTexto('Período: ' . $rotuloPeriodo . '   |   ' . $rotFiltro . ($busca !== '' ? '   |   busca: ' . $busca : '')), 0, 1);
+    $pdf->Cell(0, 7, _pdfTexto('Período: ' . $rotuloPeriodo . '   |   ' . $rotFiltro . ($pend !== '' ? '   |   ' . preg_replace('/^\S+\s+/u', '', RL_PENDENCIAS[$pend]) : '') . ($busca !== '' ? '   |   busca: ' . $busca : '')), 0, 1);
     $pdf->SetFont('Helvetica', '', 8);
     $pdf->SetTextColor(90, 90, 90);
     $pdf->Cell(0, 5, _pdfTexto(count($linhas) . ' veículo(s) — gerado em ' . date('d/m/Y H:i')), 0, 1);
@@ -393,13 +425,28 @@ ob_end_flush();
             </select>
         </div>
         <div><label>Mês</label><input type="month" name="mes" value="<?= e($mes) ?>"></div>
+        <div><label>Ordenar</label>
+            <select name="ordem">
+                <option value="data" <?= $ordem === 'data' ? 'selected' : '' ?>>Mais recentes</option>
+                <option value="lucro_maior" <?= $ordem === 'lucro_maior' ? 'selected' : '' ?>>Maior lucro</option>
+                <option value="lucro_menor" <?= $ordem === 'lucro_menor' ? 'selected' : '' ?>>Menor lucro</option>
+            </select>
+        </div>
+        <?php if ($pend !== ''): ?><input type="hidden" name="pend" value="<?= e($pend) ?>"><?php endif; ?>
         <div class="rl-acao"><button type="submit">🔎 Filtrar</button></div>
-        <?php if ($mes !== ''): ?><div class="rl-acao"><a class="btn" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca])) ?>">Limpar mês</a></div><?php endif; ?>
+        <?php if ($mes !== ''): ?><div class="rl-acao"><a class="btn" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'pend' => $pend, 'ordem' => $ordem])) ?>">Limpar mês</a></div><?php endif; ?>
         <?php if ($qtdLerLote): ?><div class="rl-acao"><button type="submit" form="rl-form-lote" title="Lê o contrato assinado e preenche FIPE/valor pago vazios">🤖 Ler contratos com IA (<?= min($qtdLerLote, RL_LOTE_LEITURA) ?> de <?= $qtdLerLote ?>)</button></div><?php endif; ?>
-        <div class="rl-acao"><a class="btn btn-primary" target="_blank" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'pdf' => 1])) ?>">📄 Gerar PDF completo</a></div>
+        <div class="rl-acao"><a class="btn btn-primary" target="_blank" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'pend' => $pend, 'ordem' => $ordem, 'pdf' => 1])) ?>">📄 Gerar PDF completo</a></div>
     </form>
 </div>
 
+<?php $baseQ = ['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'ordem' => $ordem]; ?>
+<nav class="etapas-nav rl-pend">
+    <a class="<?= $pend === '' ? 'ativo' : '' ?>" href="?<?= e(http_build_query($baseQ)) ?>">Todos (<?= $totalSemPend ?>)</a>
+    <?php foreach (RL_PENDENCIAS as $k => $rot): ?>
+        <a class="<?= $pend === $k ? 'ativo' : '' ?>" href="?<?= e(http_build_query($baseQ + ['pend' => $k])) ?>"><?= e($rot) ?> (<?= (int)($contPend[$k] ?? 0) ?>)</a>
+    <?php endforeach; ?>
+</nav>
 <form id="rl-form-lote" method="post" style="display:none"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contratos_lote"></form>
 <div class="card">
 <table class="tabela-oportunidades rl-tabela">
@@ -413,6 +460,7 @@ ob_end_flush();
         <tr id="op<?= (int)$l['op_id'] ?>">
             <td class="rl-veic">
                 <a class="rl-nome" href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>"><?= e(trim($l['veiculo_marca'] . ' ' . $l['veiculo_modelo'] . ' ' . $l['veiculo_ano'])) ?: 'Veículo #' . (int)$l['op_id'] ?></a>
+                <?php if ($l['migrado_zapsign']): ?><span class="rl-sub">📥 migrado da ZapSign</span><?php endif; ?>
                 <?php if ($l['veiculo_placa']): ?><span class="rl-sub">🔖 <?= e(strtoupper($l['veiculo_placa'])) ?></span><?php endif; ?>
                 <?php if ($l['venda_id']): ?><span class="rl-sub"><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['data_venda'] ? ' · ' . date('d/m/Y', strtotime($l['data_venda'])) : '' ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></span><?php else: ?><span class="rl-sub">sem venda</span><?php endif; ?>
             </td>
