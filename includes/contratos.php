@@ -1746,7 +1746,32 @@ PROMPT;
         'parcelas_financiamento_restantes' => (isset($n['parcelas_financiamento_restantes']) && (int)$n['parcelas_financiamento_restantes'] > 0) ? (int)$n['parcelas_financiamento_restantes'] : null,
         'valor_parcela_financiamento' => $num($n['valor_parcela_financiamento'] ?? null),
     ];
-    return ['ok' => true, 'contrato_id' => $contratoId, 'tipo_contrato' => $tipo, 'parte' => $parte, 'negociacao' => $negoc];
+    $res = ['ok' => true, 'contrato_id' => $contratoId, 'tipo_contrato' => $tipo, 'parte' => $parte, 'negociacao' => $negoc];
+    // Grava o que a IA achou no próprio contrato — a marca "é compra" aparece
+    // no relatório de lucro e na venda sem precisar ler de novo.
+    if ($contratoId && $tipo) {
+        try {
+            $cj = json_decode((string)$db->query("SELECT campos_json FROM contratos WHERE id = " . (int)$contratoId)->fetchColumn(), true);
+            if (!is_array($cj)) $cj = [];
+            $cj['ia_tipo_detectado'] = $tipo;
+            $cj['ia_leitura'] = ['parte' => $parte, 'negociacao' => $negoc];
+            $db->prepare("UPDATE contratos SET campos_json = ? WHERE id = ?")->execute([json_encode($cj, JSON_UNESCAPED_UNICODE), $contratoId]);
+        } catch (Throwable $e) {}
+    }
+    return $res;
+}
+
+/** Leitura da IA já gravada num contrato da venda que foi marcado como COMPRA (ou null). */
+function contratoCompraDetectadoNaVenda(int $vendaId): ?array {
+    $st = getDB()->prepare("SELECT id, campos_json FROM contratos WHERE venda_id = ? AND tipo = 'venda' AND status != 'cancelado'
+        AND campos_json LIKE '%\"ia_tipo_detectado\":\"compra\"%' ORDER BY id DESC LIMIT 1");
+    $st->execute([$vendaId]);
+    $c = $st->fetch();
+    if (!$c) return null;
+    $cj = json_decode((string)$c['campos_json'], true) ?: [];
+    $l = $cj['ia_leitura'] ?? [];
+    return ['ok' => true, 'contrato_id' => (int)$c['id'], 'tipo_contrato' => 'compra',
+        'parte' => (array)($l['parte'] ?? []), 'negociacao' => (array)($l['negociacao'] ?? [])];
 }
 
 /** Nome de comprador que é só placeholder de importação ("Comprador (ZapSign)" etc). */

@@ -553,7 +553,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         : 'Contrato lido — nada novo pra preencher (campos já preenchidos ou o contrato não trazia o dado).';
                 }
             } elseif ($acao === 'mover_contrato_compra') {
-                $lc = $_SESSION['venda_leitura_contrato'][$id] ?? null;
+                $lc = $_SESSION['venda_leitura_contrato'][$id] ?? contratoCompraDetectadoNaVenda($id);
                 if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
                     http_response_code(403);
                     $erro = 'Só o super admin pode mover o contrato.';
@@ -569,7 +569,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'Contrato #' . (int)$lc['contrato_id'] . ' → compra (oportunidade #' . $rm['oportunidade_id'] . ')' . ($rm['cancelou'] ? '; venda cancelada' : ''));
                         $sucesso = '✅ Contrato movido pra compra do veículo (oportunidade #' . $rm['oportunidade_id'] . ')'
                             . ($rm['preenchidos'] ? ' — preenchido: ' . implode(', ', $rm['preenchidos']) : '')
-                            . ($rm['cancelou'] ? '. Esta venda foi cancelada (importada por engano).' : '.');
+                            . ($rm['cancelou'] ? '. Esta venda foi cancelada (importada por engano).'
+                                : '. Agora suba o contrato de VENDA e preencha o comprador (pra quem o carro foi vendido) logo abaixo.');
                     }
                 }
             } elseif ($acao === 'puxar_docs_crm_antigo') {
@@ -866,7 +867,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php endif; ?>
 
 <?php if (!$contratoVendaAssinado && $v['etapa'] !== 'cancelada' && $v['oportunidade_id'] && ($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
-<div class="card" style="<?= $v['etapa'] === 'vendido' ? 'border-left:4px solid var(--vermelho);background:var(--vermelho-bg)' : '' ?>">
+<div class="card" id="subir-contrato-venda" style="<?= $v['etapa'] === 'vendido' ? 'border-left:4px solid var(--vermelho);background:var(--vermelho-bg)' : '' ?>">
     <strong>📄 <?= $v['etapa'] === 'vendido' ? 'Vendida sem contrato assinado — não conta como venda' : 'Contrato assinado fora do sistema?' ?></strong>
     <p style="margin:6px 0"><small>Se o contrato foi assinado em papel (ou fora da ZapSign), suba o arquivo assinado aqui.
        A venda passa a contar como fechada na data da assinatura<?= $v['etapa'] === 'vendido' ? ', e o financeiro (entrada, parcelas e comissão) é lançado com essa data' : ', o veículo sai do estoque e o financeiro é lançado' ?>.</small></p>
@@ -1196,7 +1197,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php
         $temContratoArquivo = (bool)$db->query("SELECT 1 FROM contratos WHERE venda_id = " . (int)$id . " AND status != 'cancelado'
             AND (COALESCE(drive_file_id,'') != '' OR COALESCE(arquivo_url,'') != '' OR COALESCE(zapsign_doc_token,'') != '')")->fetchColumn();
-        $leituraCompra = $_SESSION['venda_leitura_contrato'][$id] ?? null;
+        $leituraCompra = $_SESSION['venda_leitura_contrato'][$id] ?? contratoCompraDetectadoNaVenda($id);
     ?>
     <?php if ($temContratoArquivo && ($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
         <form method="post" style="margin-top:12px" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='🤖 Lendo o contrato...';">
@@ -1215,9 +1216,10 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 <form method="post" style="margin-top:8px" onsubmit="return confirmarAcao(this, 'Mover este contrato pra compra do veículo?')">
                     <?= csrfField() ?>
                     <input type="hidden" name="acao" value="mover_contrato_compra">
-                    <label style="display:flex;gap:6px;align-items:center;font-weight:normal"><input type="checkbox" name="cancelar_venda" value="1" checked style="width:auto"> Cancelar esta venda (foi importada por engano)</label>
+                    <label style="display:flex;gap:6px;align-items:center;font-weight:normal"><input type="checkbox" name="cancelar_venda" value="1" style="width:auto"> Cancelar esta venda (o carro NÃO foi vendido — foi importada por engano)</label>
                     <button type="submit" class="btn" style="width:auto">🔁 Mover pra compra do veículo</button>
-                    <small style="display:block">O contrato passa pra compra, os dados do vendedor e os valores completam o cadastro do carro (só o que estiver vazio).</small>
+                    <small style="display:block">O contrato passa pra compra, os dados do vendedor e os valores completam o cadastro do carro (só o que estiver vazio).
+                        Se o carro foi vendido de verdade, deixe a venda aberta e depois suba o contrato de venda em <a href="#subir-contrato-venda">📄 Contrato de venda</a> e preencha o comprador.</small>
                 </form>
             <?php else: ?>
                 <small style="display:block">Peça ao super admin pra mover o contrato pra compra.</small>

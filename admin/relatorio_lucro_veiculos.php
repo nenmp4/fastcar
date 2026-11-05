@@ -113,6 +113,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_con
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'mover_contrato_compra_rl') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página.';
+    } else {
+        $vId = (int)($_POST['venda_id'] ?? 0);
+        $lc = contratoCompraDetectadoNaVenda($vId);
+        if (!$lc) {
+            $_SESSION['rl_msg'] = ['erro', 'Contrato de compra não encontrado nessa venda — leia o contrato de novo.'];
+        } else {
+            $rm = moverContratoVendaParaCompra($vId, (int)$lc['contrato_id'], $lc, false, (int)$_SESSION['admin_id']);
+            if ($rm['ok']) {
+                auditoriaRegistrar('contrato_movido_para_compra', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $vId,
+                    'Contrato #' . (int)$lc['contrato_id'] . ' → compra (pelo relatório de lucro)');
+                $_SESSION['rl_msg'] = ['ok', "🔁 Contrato movido pra compra" . ($rm['preenchidos'] ? ' (preencheu ' . implode(', ', $rm['preenchidos']) . ')' : '')
+                    . ". Agora suba o contrato de venda da venda #{$vId} e diga pra quem foi."];
+            } else {
+                $_SESSION['rl_msg'] = ['erro', $rm['erro']];
+            }
+        }
+        header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET) . '#op' . (int)($_POST['oportunidade_id'] ?? 0));
+        exit;
+    }
+}
+
 $filtro = in_array($_GET['filtro'] ?? '', ['vendidos', 'estoque', 'todos'], true) ? $_GET['filtro'] : 'vendidos';
 $busca = trim((string)($_GET['q'] ?? ''));
 // Mês (AAAA-MM): vendido pela data da venda; sem venda pela data da compra.
@@ -126,6 +150,8 @@ const RL_PENDENCIAS = [
     'lucro_zero' => '⚠️ Lucro zerado',
     'zapsign' => '📥 Migrados da ZapSign',
     'sem_entrada' => '💳 Venda sem entrada/parcelas',
+    'contrato_compra' => '⚠️ Contrato da venda é de compra',
+    'sem_contrato_venda' => '📄 Vendido sem contrato de venda',
 ];
 $pend = array_key_exists($_GET['pend'] ?? '', RL_PENDENCIAS) ? $_GET['pend'] : '';
 $ordem = in_array($_GET['ordem'] ?? '', ['data', 'lucro_maior', 'lucro_menor'], true) ? $_GET['ordem'] : 'data';
@@ -160,6 +186,10 @@ $sql = "
            v.valor_pago_contratacao, v.parcelamento_valor_parcela, v.parcelamento_qtd_parcelas,
            v.parcelamento_periodicidade,
            EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.campos_json LIKE '%importado_zapsign%') AS migrado_zapsign,
+           EXISTS (SELECT 1 FROM contratos cc WHERE cc.venda_id = v.id AND cc.tipo = 'venda' AND cc.status != 'cancelado'
+                   AND cc.campos_json LIKE '%\"ia_tipo_detectado\":\"compra\"%') AS contrato_e_compra,
+           EXISTS (SELECT 1 FROM contratos cv WHERE cv.venda_id = v.id AND cv.tipo = 'venda' AND cv.status = 'assinado'
+                   AND cv.campos_json NOT LIKE '%\"ia_tipo_detectado\":\"compra\"%') AS tem_contrato_venda,
            (SELECT COALESCE(SUM(l.valor), 0) FROM fin_lancamentos l
               WHERE l.venda_id = v.id AND l.tipo = 'receita' AND l.status = 'pago') AS recebido,
            (SELECT COALESCE(SUM(l.valor), 0) FROM fin_lancamentos l
@@ -214,6 +244,8 @@ foreach ($linhas as &$l) {
         'lucro_zero' => $l['_lucro'] !== null && abs($l['_lucro']) < 0.005,
         'zapsign' => (bool)$l['migrado_zapsign'],
         'sem_entrada' => $l['venda_id'] && !($entrada > 0) && !($parcela > 0 && $qtd > 0),
+        'contrato_compra' => (bool)$l['contrato_e_compra'],
+        'sem_contrato_venda' => $l['venda_id'] && $l['venda_etapa'] === 'vendido' && !$l['tem_contrato_venda'],
     ];
     foreach ($marcas as $k => $sim) if ($sim) $contPend[$k] = ($contPend[$k] ?? 0) + 1;
     if ($pend !== '' && !$marcas[$pend]) { $l['_fora'] = true; continue; }
@@ -464,6 +496,7 @@ ob_end_flush();
 .rl-aviso { display: block; font-size: 11px; color: var(--laranja); font-weight: 600; margin-top: 3px; white-space: normal; }
 .rl-stats .stat-card .valor { font-size: 22px; }
 .rl-stats a.stat-card { cursor: pointer; }
+.rl-veic .rl-sub.rl-alerta-compra, .rl-veic a.rl-alerta-compra { color: var(--vermelho); font-weight: 600; }
 .rl-stats a.stat-card small { color: var(--azul); }
 .rl-stats a.stat-card small.rl-alerta { color: var(--laranja); }
 .rl-lnk { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--borda); }
@@ -560,6 +593,14 @@ ob_end_flush();
                 <a class="rl-nome" href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>"><?= e(trim($l['veiculo_marca'] . ' ' . $l['veiculo_modelo'] . ' ' . $l['veiculo_ano'])) ?: 'Veículo #' . (int)$l['op_id'] ?></a>
                 <?php if ($l['migrado_zapsign']): ?><span class="rl-sub">📥 migrado da ZapSign</span><?php endif; ?>
                 <?php if ($l['veiculo_placa']): ?><span class="rl-sub">🔖 <?= e(strtoupper($l['veiculo_placa'])) ?></span><?php endif; ?>
+                <?php if ($l['contrato_e_compra']): ?>
+                    <span class="rl-sub rl-alerta-compra">⚠️ o contrato desta venda é a COMPRA do carro</span>
+                    <form method="post" style="margin:4px 0 0" onsubmit="return confirmarAcao(this, 'Mover este contrato pra compra do veículo? A venda continua aberta pra você subir o contrato de venda verdadeiro.')"><?= csrfField() ?>
+                        <input type="hidden" name="acao" value="mover_contrato_compra_rl"><input type="hidden" name="venda_id" value="<?= (int)$l['venda_id'] ?>"><input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
+                        <button type="submit" class="btn-texto">🔁 mover pra compra</button></form>
+                <?php elseif ($l['venda_id'] && $l['venda_etapa'] === 'vendido' && !$l['tem_contrato_venda']): ?>
+                    <a class="rl-sub rl-alerta-compra" href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>#subir-contrato-venda">📄 falta o contrato de venda — subir e dizer pra quem foi →</a>
+                <?php endif; ?>
                 <?php if ($l['venda_id']): ?><span class="rl-sub"><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['data_venda'] ? ' · ' . date('d/m/Y', strtotime($l['data_venda'])) : '' ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></span><?php else: ?><span class="rl-sub">sem venda</span><?php endif; ?>
             </td>
             <td data-label="FIPE">
