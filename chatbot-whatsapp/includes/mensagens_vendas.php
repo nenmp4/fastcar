@@ -201,8 +201,19 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
     }
     if (!empty($idForm)) {
         pausarIA($phone);
+        vendaFormularioResponderJaPreencheu((int)$idForm, $phone, $credenciaisVendas);
         return ['ignored' => 'formulario_site', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => true, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                'instancia' => $instancia, 'ia_resultado' => null];
+    }
+
+    // 05/11/2026 — já preencheu o formulário e segue escrevendo: 1 resposta
+    // única ("o vendedor vai entrar em contato"); depois disso, silêncio
+    // (a IA continua pausada, o vendedor vê tudo no WhatsApp Vendas).
+    if ($vendaLead && $instancia['tipo'] === 'vendas'
+        && vendaFormularioResponderJaPreencheu((int)$vendaLead['venda_id'], $phone, $credenciaisVendas)) {
+        return ['ignored' => 'formulario_ja_preenchido', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
                 'instancia' => $instancia, 'ia_resultado' => null];
     }
 

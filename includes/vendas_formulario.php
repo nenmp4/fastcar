@@ -183,6 +183,44 @@ function vendaFormularioMsgLink(string $nome = ''): string {
 }
 
 /**
+ * 05/11/2026, "manda única resposta: já preencheu, nossos vendedores entrarão
+ * em contato, se ficar mandando mensagem" — cliente que já preencheu o
+ * formulário (qualificado, IA pausada) e continua escrevendo recebe UMA vez
+ * só a confirmação de que o vendedor vai chamar. Nunca manda se: não veio do
+ * formulário; ficou sem perfil (não prometemos contato que não vai haver);
+ * negociação já encerrada; ou um vendedor já respondeu essa conversa.
+ * Devolve true se mandou agora.
+ */
+function vendaFormularioResponderJaPreencheu(int $vendaId, string $phone, ?array $credenciais): bool {
+    $chave = 'formvenda_ack_' . $vendaId;
+    if (getConfig($chave) === '1') return false;
+    $db = getDB();
+    $st = $db->prepare("SELECT etapa, comprador_nome, resumo_ia, comprador_telefone FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v || !str_starts_with((string)$v['resumo_ia'], '📝 Preenchido pelo formulário')) return false;
+    if (!in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true)) return false;
+    $tels = array_unique(array_filter([normalizarTelefone($phone), normalizarTelefone((string)$v['comprador_telefone'])]));
+    $ph = implode(',', array_fill(0, count($tels), '?'));
+    $stH = $db->prepare("SELECT 1 FROM whatsapp_mensagens WHERE telefone IN ($ph) AND direcao = 'out' AND usuario_id IS NOT NULL LIMIT 1");
+    $stH->execute(array_values($tels));
+    if ($stH->fetchColumn()) { setConfig($chave, '1'); return false; } // vendedor já está na conversa
+    $primeiro = trim(explode(' ', trim((string)$v['comprador_nome']))[0] ?? '');
+    $oi = ($primeiro !== '' && $primeiro !== '(sem') ? "Oi, {$primeiro}! " : 'Oi! ';
+    $msg = $oi . variarMensagem([
+        'Já recebemos o seu cadastro ✅ Um dos nossos vendedores vai entrar em contato com você em breve por aqui.',
+        'Seu formulário já chegou aqui ✅ Nosso vendedor vai te chamar em breve com as opções.',
+        'Tudo certo, seu cadastro já está com a gente ✅ Em breve um vendedor da Fastcar entra em contato.',
+    ]);
+    if (!zapiEnviarTexto($phone, $msg, $credenciais)) return false;
+    registrarMensagem($phone, 'out', $msg, null, true);
+    setConfig($chave, '1');
+    $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, ?, ?, ?)")
+        ->execute([$vendaId, $v['etapa'], $v['etapa'], 'Resposta automática: cliente já preencheu o formulário, vendedor vai entrar em contato']);
+    return true;
+}
+
+/**
  * 🔄 Requalificar (30/10/2026, "será que ele é lead quente" — cliente
  * digitou 28 no formulário querendo dizer 28 mil e caiu como sem perfil).
  * O vendedor corrige entrada/parcela na venda e o sistema refaz a mesma
