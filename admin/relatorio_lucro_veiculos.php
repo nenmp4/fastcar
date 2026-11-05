@@ -85,6 +85,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_con
     }
 }
 
+// 05/11/2026, "contratos antigos puxados do CRM antigo: valor da parcela/
+// entrada continua zerado mas tem contrato — botão pra ler" — lê o contrato
+// da VENDA com IA e preenche entrada/parcelas/preço vazios. Contrato que na
+// verdade é a COMPRA do carro (importação antiga) nunca preenche a venda:
+// avisa e manda pra tela da venda, onde dá pra mover pra compra.
+function rlLerContratoVenda(int $vendaId): array {
+    $lc = lerContratoImportadoVendaIA($vendaId);
+    if (!$lc['ok']) return ['tipo' => 'erro', 'msg' => $lc['erro']];
+    if ($lc['tipo_contrato'] === 'compra') {
+        $_SESSION['venda_leitura_contrato'][$vendaId] = $lc;
+        return ['tipo' => 'compra', 'msg' => "venda #{$vendaId}: o contrato é da COMPRA do carro (" . ($lc['parte']['nome'] ?: 'vendedor') . ' vendeu pra Fastcar) — abra a venda e use "Mover pra compra"'];
+    }
+    $pre = aplicarLeituraContratoNaVenda($vendaId, $lc, (int)$_SESSION['admin_id']);
+    return ['tipo' => $pre ? 'ok' : 'nada', 'msg' => "venda #{$vendaId}: " . ($pre ? 'preencheu ' . implode(', ', $pre) : 'nada novo no contrato')];
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_contrato_venda') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página.';
+    } else {
+        @set_time_limit(120);
+        $vId = (int)($_POST['venda_id'] ?? 0);
+        $r = rlLerContratoVenda($vId);
+        $_SESSION['rl_msg'] = [$r['tipo'] === 'erro' || $r['tipo'] === 'compra' ? 'erro' : 'ok', '🤖 ' . $r['msg'] . '.'];
+        header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET) . '#op' . (int)($_POST['oportunidade_id'] ?? 0));
+        exit;
+    }
+}
+
 $filtro = in_array($_GET['filtro'] ?? '', ['vendidos', 'estoque', 'todos'], true) ? $_GET['filtro'] : 'vendidos';
 $busca = trim((string)($_GET['q'] ?? ''));
 // Mês (AAAA-MM): vendido pela data da venda; sem venda pela data da compra.
@@ -97,6 +125,7 @@ const RL_PENDENCIAS = [
     'lucro_neg' => '🔻 Lucro negativo',
     'lucro_zero' => '⚠️ Lucro zerado',
     'zapsign' => '📥 Migrados da ZapSign',
+    'sem_entrada' => '💳 Venda sem entrada/parcelas',
 ];
 $pend = array_key_exists($_GET['pend'] ?? '', RL_PENDENCIAS) ? $_GET['pend'] : '';
 $ordem = in_array($_GET['ordem'] ?? '', ['data', 'lucro_maior', 'lucro_menor'], true) ? $_GET['ordem'] : 'data';
@@ -184,6 +213,7 @@ foreach ($linhas as &$l) {
         'lucro_neg' => $l['_lucro'] !== null && $l['_lucro'] < -0.005,
         'lucro_zero' => $l['_lucro'] !== null && abs($l['_lucro']) < 0.005,
         'zapsign' => (bool)$l['migrado_zapsign'],
+        'sem_entrada' => $l['venda_id'] && !($entrada > 0) && !($parcela > 0 && $qtd > 0),
     ];
     foreach ($marcas as $k => $sim) if ($sim) $contPend[$k] = ($contPend[$k] ?? 0) + 1;
     if ($pend !== '' && !$marcas[$pend]) { $l['_fora'] = true; continue; }
@@ -236,6 +266,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_con
     header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET));
     exit;
 }
+// Lote das vendas sem entrada/parcelas (mesmo limite por clique).
+$pendentesVenda = array_values(array_filter($linhas, fn($l) => $l['venda_id'] && !((float)$l['valor_pago_contratacao'] > 0)
+    && !((float)$l['parcelamento_valor_parcela'] > 0 && (int)$l['parcelamento_qtd_parcelas'] > 0)));
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_vendas_lote' && validateCSRF($_POST['csrf_token'] ?? '')) {
+    @set_time_limit(300);
+    $ignorarV = array_map('intval', $_SESSION['rl_lote_venda_ignorar'] ?? []);
+    $feitos = 0; $cont = ['ok' => 0, 'nada' => 0, 'compra' => [], 'erro' => 0];
+    foreach ($pendentesVenda as $pv) {
+        if ($feitos >= RL_LOTE_LEITURA) break;
+        if (in_array((int)$pv['venda_id'], $ignorarV, true)) continue;
+        $r = rlLerContratoVenda((int)$pv['venda_id']);
+        $feitos++;
+        $ignorarV[] = (int)$pv['venda_id'];
+        if ($r['tipo'] === 'compra') $cont['compra'][] = '#' . (int)$pv['venda_id'];
+        else $cont[$r['tipo']]++;
+    }
+    $_SESSION['rl_lote_venda_ignorar'] = $ignorarV;
+    $msg = "🤖 {$feitos} contrato(s) de venda lido(s): {$cont['ok']} preenchido(s)";
+    if ($cont['nada']) $msg .= ", {$cont['nada']} sem valor novo";
+    if ($cont['erro']) $msg .= ", {$cont['erro']} sem contrato/erro";
+    if ($cont['compra']) $msg .= '. ⚠️ ' . count($cont['compra']) . ' na verdade são contrato de COMPRA (vendas ' . implode(', ', $cont['compra']) . ') — abra cada venda e use "Mover pra compra"';
+    $_SESSION['rl_msg'] = [$cont['compra'] ? 'erro' : 'ok', $msg . '.'];
+    header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET));
+    exit;
+}
+$ignoradosVenda = array_map('intval', $_SESSION['rl_lote_venda_ignorar'] ?? []);
+$qtdLerVendas = count(array_filter($pendentesVenda, fn($l) => !in_array((int)$l['venda_id'], $ignoradosVenda, true)));
 $ignoradosLote = array_map('intval', $_SESSION['rl_lote_ignorar'] ?? []);
 $qtdLerLote = count(array_filter($pendentesLeitura, fn($l) => !in_array((int)$l['op_id'], $ignoradosLote, true)));
 
@@ -476,6 +533,7 @@ ob_end_flush();
         <div class="rl-acao"><button type="submit">🔎 Filtrar</button></div>
         <?php if ($mes !== ''): ?><div class="rl-acao"><a class="btn" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'pend' => $pend, 'ordem' => $ordem])) ?>">Limpar mês</a></div><?php endif; ?>
         <?php if ($qtdLerLote): ?><div class="rl-acao"><button type="submit" form="rl-form-lote" title="Lê o contrato assinado e preenche FIPE/valor pago vazios">🤖 Ler contratos com IA (<?= min($qtdLerLote, RL_LOTE_LEITURA) ?> de <?= $qtdLerLote ?>)</button></div><?php endif; ?>
+        <?php if ($qtdLerVendas): ?><div class="rl-acao"><button type="submit" form="rl-form-lote-venda" title="Lê o contrato de venda e preenche entrada/parcelas/preço vazios">💳 Ler entrada/parcelas das vendas (<?= min($qtdLerVendas, RL_LOTE_LEITURA) ?> de <?= $qtdLerVendas ?>)</button></div><?php endif; ?>
         <div class="rl-acao"><a class="btn btn-primary" target="_blank" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'pend' => $pend, 'ordem' => $ordem, 'pdf' => 1])) ?>">📄 Gerar PDF completo</a></div>
     </form>
 </div>
@@ -487,6 +545,7 @@ ob_end_flush();
     <?php endforeach; ?>
 </nav>
 <form id="rl-form-lote" method="post" style="display:none"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contratos_lote"></form>
+<form id="rl-form-lote-venda" method="post" style="display:none"><?= csrfField() ?><input type="hidden" name="acao" value="ler_vendas_lote"></form>
 <div class="card">
 <table class="tabela-oportunidades rl-tabela">
     <thead><tr>
@@ -537,6 +596,10 @@ ob_end_flush();
                     <?= (int)$l['parcelamento_qtd_parcelas'] ?>× <?= rlMoeda((float)$l['parcelamento_valor_parcela']) ?><?= ($l['parcelamento_periodicidade'] ?? '') === 'semanal' ? ' <small>(semanal)</small>' : '' ?>
                 <?php else: ?>
                     <?= $l['venda_id'] ? '<small>à vista / sem parcelas</small>' : '—' ?>
+                    <?php if ($l['venda_id'] && !((float)$l['valor_pago_contratacao'] > 0)): ?>
+                        <form method="post" style="margin:4px 0 0"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contrato_venda"><input type="hidden" name="venda_id" value="<?= (int)$l['venda_id'] ?>"><input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
+                            <button type="submit" class="btn-texto" title="A IA lê o contrato da venda e preenche entrada, parcelas e preço" onclick="this.textContent='🤖 lendo...'">🤖 ler entrada/parcelas</button></form>
+                    <?php endif; ?>
                 <?php endif; ?>
             </td>
             <td class="rl-num"><?php if ($l['venda_id']): ?><a class="rl-lnk" href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>"><?= rlMoeda($l['_venda_total']) ?></a><?php else: ?>—<?php endif; ?></td>
