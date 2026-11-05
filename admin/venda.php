@@ -11,6 +11,7 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/vendas_formulario.php';
+require_once __DIR__ . '/../includes/importar_crm_antigo.php';
 requireAcessoVendas();
 
 $db = getDB();
@@ -531,6 +532,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ? '✅ Preenchido a partir dos documentos: ' . implode(', ', $rp['preenchidos']) . '. Confira no card "Dados do comprador".'
                         : 'Documentos lidos — nada novo pra preencher (os campos já estavam preenchidos ou o documento não trazia o dado).';
                     if ($rp['avisos']) $sucesso .= ' ⚠️ ' . implode('; ', $rp['avisos']) . '.';
+                }
+            } elseif ($acao === 'puxar_docs_crm_antigo') {
+                // 05/11/2026, "botão pra puxar documentos da venda do antigo CRM".
+                @set_time_limit(180);
+                $rc = crmAntigoPuxarDocumentosVenda($id);
+                if (!$rc['ok']) {
+                    $erro = '📥 ' . $rc['erro'];
+                } elseif ($rc['baixados']) {
+                    $nomesDoc = array_map(fn($t) => TIPOS_DOCUMENTOS_COMPRADOR[$t] ?? TIPOS_DOCUMENTOS_VENDA_CONTRATO[$t] ?? crmAntigoRotuloDocumento($t), $rc['baixados']);
+                    $sucesso = '📥 ' . count($rc['baixados']) . ' documento(s) trazido(s) do CRM antigo (venda de ' . $rc['venda_antiga'] . '): '
+                        . implode('; ', array_map(fn($n) => preg_replace('/ \(.*$/', '', $n), $nomesDoc)) . '.'
+                        . ($rc['pulados'] ? ' Já existiam/pulados: ' . count($rc['pulados']) . '.' : '');
+                } else {
+                    $sucesso = '📥 Achei a venda no CRM antigo (' . $rc['venda_antiga'] . '), mas não tinha documento novo — os que existem lá já estão aqui.';
                 }
             } elseif ($acao === 'confirmar_documento_staff_venda') {
                 // "Aceite em nome do comprador" — mesmo espírito de
@@ -1140,6 +1155,15 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         </form>
     <?php endif; ?>
 
+    <?php if (($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
+        <form method="post" style="margin:0 0 10px" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='📥 Buscando no CRM antigo...';">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="puxar_docs_crm_antigo">
+            <button type="submit" class="btn" style="width:auto">📥 Puxar documentos do CRM antigo</button>
+            <small style="display:block;color:var(--texto-fraco)">Acha essa venda no export do CRM antigo (pelo CPF/telefone/nome do comprador ou pela placa) e traz os documentos que faltam aqui. Nunca substitui documento já anexado.</small>
+        </form>
+    <?php endif; ?>
+
     <?php if ($v['documentos_confirmados_em']): ?>
         <div class="alerta-sucesso" style="padding:8px 12px;border-radius:6px;background:#e3f3e6;color:#2a7a3b;margin-bottom:10px">
             ✅ Dados e documentos confirmados em <?= date('d/m/Y H:i', strtotime($v['documentos_confirmados_em'])) ?>
@@ -1212,6 +1236,14 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                 </td>
                 <td>equipe</td>
                 <td><?= $temArquivo ? '<a href="/admin/ver_documento_venda.php?id=' . (int)$doc['id'] . '" target="_blank">ver</a>' : '' ?></td>
+            </tr>
+        <?php endforeach; ?>
+        <?php foreach ($documentosVenda as $tipo => $doc): if (!str_starts_with($tipo, 'crm_antigo_') || !($doc['arquivo_url'] || $doc['drive_file_id'])) continue; ?>
+            <tr>
+                <td><?= e(crmAntigoRotuloDocumento($tipo)) ?></td>
+                <td><span class="badge badge-ok">📥 trazido <?= date('d/m', strtotime($doc['updated_at'])) ?></span></td>
+                <td>CRM antigo</td>
+                <td><a href="/admin/ver_documento_venda.php?id=<?= (int)$doc['id'] ?>" target="_blank">ver</a></td>
             </tr>
         <?php endforeach; ?>
         <?php foreach (TIPOS_DOCUMENTOS_VENDA_EXTRA as $tipo => $label): ?>

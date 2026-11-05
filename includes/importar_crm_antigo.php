@@ -700,3 +700,157 @@ function crmAntigoImportarLeadEncerrado(array $linha, int $criadoPor): array {
 
     return ['ok' => true, 'motivo' => null, 'cliente_id' => $clienteId, 'oportunidade_id' => $oportunidadeId];
 }
+
+// ---------------------------------------------------------------------
+// Botão "📥 Puxar documentos do CRM antigo" (admin/venda.php) — 05/11/2026,
+// "dá pra colocar botão pra puxar documentos da venda do antigo CRM".
+// Acha a venda correspondente no export (sales.csv) e baixa os documentos
+// dela (sale_documents.csv) pra venda_documentos — só o que ainda estiver
+// vazio (nunca substitui documento já anexado).
+// ---------------------------------------------------------------------
+
+/** Pasta raiz do export do CRM antigo no Drive (a mesma usada no install/importar_crm_antigo.php). */
+const CRM_ANTIGO_PASTA_PADRAO = '0APRv7sMXUiwWUk9PVA';
+
+function crmAntigoPastaRaiz(): string {
+    return trim((string)(getConfig('crm_antigo_pasta_id') ?: CRM_ANTIGO_PASTA_PADRAO));
+}
+
+/** Lê um CSV do export com cache em disco de 6h (cada clique não rebaixa tudo). */
+function crmAntigoLerCsvCache(GoogleDrive $drive, string $tabelasId, string $nome): array {
+    $dir = dirname(__DIR__) . '/storage/cache/crm_antigo';
+    $arq = $dir . '/' . md5($tabelasId . '|' . $nome) . '.json';
+    if (is_file($arq) && filemtime($arq) > time() - 6 * 3600) {
+        $d = json_decode((string)file_get_contents($arq), true);
+        if (is_array($d)) return $d;
+    }
+    try {
+        $linhas = crmAntigoLerCsv($drive, $tabelasId, $nome);
+    } catch (RuntimeException $e) {
+        return []; // CSV opcional ausente
+    }
+    @mkdir($dir, 0775, true);
+    @file_put_contents($arq, json_encode($linhas, JSON_UNESCAPED_UNICODE));
+    return $linhas;
+}
+
+function _crmAntigoNomeNorm(string $s): string {
+    $s = mb_strtolower(trim($s), 'UTF-8');
+    $s = strtr($s, ['á'=>'a','à'=>'a','â'=>'a','ã'=>'a','é'=>'e','ê'=>'e','í'=>'i','ó'=>'o','ô'=>'o','õ'=>'o','ú'=>'u','ç'=>'c']);
+    return preg_replace('/\s+/', ' ', preg_replace('/[^a-z ]/', '', $s));
+}
+
+/**
+ * @return array{ok:bool, erro?:string, baixados?:string[], pulados?:string[], venda_antiga?:string}
+ */
+function crmAntigoPuxarDocumentosVenda(int $vendaId): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT v.id, v.oportunidade_id, v.comprador_nome, v.comprador_cpf, v.comprador_telefone, o.veiculo_placa, o.cliente_id, c.nome AS cliente_nome
+        FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id LEFT JOIN clientes c ON c.id = o.cliente_id WHERE v.id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v) return ['ok' => false, 'erro' => 'Venda não encontrada.'];
+    if (!$v['oportunidade_id']) return ['ok' => false, 'erro' => 'Vincule o veículo a essa venda antes de puxar documentos.'];
+
+    try {
+        $drive = crmAntigoAutenticarDrive();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'erro' => $e->getMessage()];
+    }
+    $raiz = crmAntigoPastaRaiz();
+    $tabelasId = crmAntigoAcharSubpasta($drive, $raiz, 'tabelas');
+    $arquivosId = crmAntigoAcharSubpasta($drive, $raiz, 'arquivos');
+    if (!$tabelasId || !$arquivosId) {
+        return ['ok' => false, 'erro' => 'Não achei a pasta do export do CRM antigo no Drive (pastas "tabelas" e "arquivos"). Confira se ela continua compartilhada com o sistema.'];
+    }
+
+    $sales = crmAntigoLerCsvCache($drive, $tabelasId, 'sales.csv');
+    if (!$sales) return ['ok' => false, 'erro' => 'Não consegui ler o sales.csv do CRM antigo.'];
+    $vehicles = crmAntigoLerCsvCache($drive, $tabelasId, 'vehicles.csv');
+    $clients = crmAntigoLerCsvCache($drive, $tabelasId, 'clients.csv');
+
+    // Placa de cada vehicle_id do export (vehicles.csv direto, ou via o cliente de origem).
+    $placaCliente = [];
+    foreach ($clients as $c) $placaCliente[(string)($c['id'] ?? '')] = crmAntigoNormalizarPlaca((string)($c['vehicle_plate'] ?? ''));
+    $placaVeiculo = [];
+    foreach ($vehicles as $ve) {
+        $p = '';
+        foreach (['plate', 'vehicle_plate', 'placa', 'license_plate'] as $k) if (!empty($ve[$k])) { $p = crmAntigoNormalizarPlaca((string)$ve[$k]); break; }
+        if ($p === '') $p = $placaCliente[(string)($ve['source_client_id'] ?? '')] ?? '';
+        $placaVeiculo[(string)($ve['id'] ?? '')] = $p;
+    }
+
+    $cpf = preg_replace('/\D/', '', (string)$v['comprador_cpf']);
+    $tel = normalizarTelefone((string)$v['comprador_telefone']);
+    $placa = crmAntigoNormalizarPlaca((string)$v['veiculo_placa']);
+    $nome = _crmAntigoNomeNorm((string)$v['comprador_nome']);
+    $candidatas = [];
+    foreach ($sales as $s) {
+        $bateComprador = ($cpf !== '' && strlen($cpf) === 11 && preg_replace('/\D/', '', (string)($s['buyer_cpf'] ?? '')) === $cpf)
+            || ($tel !== '' && strlen($tel) >= 12 && normalizarTelefone((string)($s['buyer_whatsapp'] ?? '')) === $tel)
+            || ($nome !== '' && str_contains($nome, ' ') && _crmAntigoNomeNorm((string)($s['buyer_name'] ?? '')) === $nome);
+        $batePlaca = $placa !== '' && ($placaVeiculo[(string)($s['vehicle_id'] ?? '')] ?? '') === $placa;
+        if ($bateComprador || $batePlaca) $candidatas[] = ['s' => $s, 'pontos' => ($bateComprador ? 1 : 0) + ($batePlaca ? 1 : 0)];
+    }
+    if (!$candidatas) return ['ok' => false, 'erro' => 'Não achei essa venda no CRM antigo (nem pelo CPF/telefone/nome do comprador, nem pela placa).'];
+    usort($candidatas, fn($a, $b) => $b['pontos'] <=> $a['pontos']);
+    $melhores = array_values(array_filter($candidatas, fn($c) => $c['pontos'] === $candidatas[0]['pontos']));
+    if (count($melhores) > 1) {
+        $nomes = implode(', ', array_map(fn($c) => (string)($c['s']['buyer_name'] ?? '?'), array_slice($melhores, 0, 4)));
+        return ['ok' => false, 'erro' => 'Achei ' . count($melhores) . " vendas parecidas no CRM antigo ({$nomes}) — confira CPF e telefone do comprador nessa venda pra eu saber qual é."];
+    }
+    $saleAntiga = $melhores[0]['s'];
+    $saleId = (string)($saleAntiga['id'] ?? '');
+
+    $docs = array_values(array_filter(crmAntigoLerCsvCache($drive, $tabelasId, 'sale_documents.csv'), fn($d) => (string)($d['sale_id'] ?? '') === $saleId));
+    if (!$docs) return ['ok' => false, 'erro' => 'Achei a venda no CRM antigo (comprador ' . ($saleAntiga['buyer_name'] ?? '?') . '), mas ela não tem documentos lá.'];
+
+    $mapa = ['cnh' => 'cnh', 'rg' => 'cnh', 'identity' => 'cnh', 'proof_of_address' => 'comprovante_endereco',
+             'contract' => 'contrato_venda', 'signed_contract' => 'contrato_venda'];
+    $existentes = listarDocumentosVenda($vendaId);
+    $baixados = []; $pulados = []; $contOutros = [];
+    foreach ($docs as $d) {
+        $tipoAntigo = (string)($d['type'] ?? 'outro');
+        $tipo = $mapa[$tipoAntigo] ?? null;
+        if ($tipo === null) {
+            $slug = preg_replace('/[^a-z0-9_]/', '_', strtolower($tipoAntigo)) ?: 'outro';
+            $contOutros[$slug] = ($contOutros[$slug] ?? 0) + 1;
+            $tipo = 'crm_antigo_' . $slug . ($contOutros[$slug] > 1 ? '_' . $contOutros[$slug] : '');
+        }
+        $ex = $existentes[$tipo] ?? null;
+        if ($ex && ($ex['arquivo_url'] || $ex['drive_file_id'])) { $pulados[] = $tipo; continue; }
+        try {
+            $baixado = crmAntigoBaixarArquivoPorCaminho($drive, $arquivosId, (string)($d['storage_path'] ?? ''));
+            if (!$baixado) { $pulados[] = $tipo . ' (arquivo não achado no Drive)'; continue; }
+            $tmp = tempnam(sys_get_temp_dir(), 'crmv');
+            file_put_contents($tmp, $baixado['content']);
+            $copia = salvarArquivoGeradoComoDocumento((int)$v['cliente_id'], (string)$v['cliente_nome'], $tmp,
+                $baixado['name'], $baixado['mime'], 'documentos_venda/' . $vendaId);
+            @unlink($tmp);
+            if (($copia['drive_file_id'] ?? '') === '' && ($copia['arquivo_url'] ?? '') === '') { $pulados[] = $tipo . ' (falha ao salvar)'; continue; }
+            $db->prepare("INSERT INTO venda_documentos (venda_id, tipo, arquivo_url, drive_file_id, obrigatorio, enviado_pelo_cliente, dados_confirmados)
+                VALUES (?, ?, ?, ?, ?, 0, 1)
+                ON CONFLICT(venda_id, tipo) DO UPDATE SET arquivo_url = excluded.arquivo_url, drive_file_id = excluded.drive_file_id, updated_at = datetime('now','localtime')")
+               ->execute([$vendaId, $tipo, $copia['arquivo_url'], $copia['drive_file_id'], in_array($tipo, ['cnh', 'comprovante_endereco'], true) ? 1 : 0]);
+            $baixados[] = $tipo;
+        } catch (Throwable $e) {
+            crmAntigoLogDiagnostico("Botão puxar documentos (venda #{$vendaId}, {$tipoAntigo}): " . $e->getMessage());
+            $pulados[] = $tipo . ' (erro)';
+        }
+    }
+    if ($baixados) {
+        $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
+            SELECT id, etapa, etapa, ?, ? FROM vendas WHERE id = ?")
+           ->execute([$_SESSION['admin_id'] ?? null, 'Documentos puxados do CRM antigo: ' . implode(', ', $baixados) . '.', $vendaId]);
+    }
+    return ['ok' => true, 'baixados' => $baixados, 'pulados' => $pulados, 'venda_antiga' => (string)($saleAntiga['buyer_name'] ?? '')];
+}
+
+/** Rótulo legível pros tipos de documento vindos do CRM antigo. */
+function crmAntigoRotuloDocumento(string $tipo): string {
+    $base = preg_replace('/^crm_antigo_/', '', $tipo);
+    $nomes = ['other' => 'Outro documento', 'outro' => 'Outro documento', 'receipt' => 'Comprovante', 'payment_receipt' => 'Comprovante de pagamento',
+              'vehicle_document' => 'Documento do veículo (CRLV)', 'promissory_note' => 'Nota promissória', 'photo' => 'Foto'];
+    $semNum = preg_replace('/_\d+$/', '', $base);
+    return ($nomes[$semNum] ?? ucfirst(str_replace('_', ' ', $semNum))) . ' (CRM antigo)';
+}
