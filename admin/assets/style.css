@@ -580,8 +580,9 @@ a.stat-card:hover { border-left-color: var(--azul-escuro); }
 .funil-barra { margin: 12px 0 4px; }
 .funil-linha { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }
 .funil-linha .etapa-nome { width: 150px; flex-shrink: 0; color: var(--texto-suave); font-weight: 600; }
-.funil-linha .barra-fundo { flex: 1; background: var(--fundo); border-radius: 999px; height: 20px; overflow: hidden; }
+.funil-linha .barra-fundo { display: block; flex: 1; background: var(--fundo); border-radius: 999px; height: 20px; overflow: hidden; }
 .funil-linha .barra-preenchida {
+    display: block; /* 05/11/2026 (A5): era <span> inline — largura ignorada, barra nunca aparecia */
     background: linear-gradient(90deg, var(--azul), #818cf8);
     height: 100%;
     border-radius: 999px;
@@ -866,3 +867,30 @@ details.quadro-mais > summary { cursor: pointer; font-weight: 600; min-height: 4
 .placa-mercosul .pm-num { font-family: monospace; font-weight: 700; font-size: 20px; letter-spacing: 2px; color: var(--texto); text-transform: uppercase; }
 .placa-mercosul.pm-sm { border-top-width: 5px; padding: 1px 6px; }
 .placa-mercosul.pm-sm .pm-num { font-size: 14px; letter-spacing: 1px; }
+
+
+/* ── 05/11/2026 (plano de UX, A2) — aviso NO FLUXO da página ─────────────
+   Pra estado/pendência persistente (não resultado de ação): nunca
+   position:fixed, nunca cobre conteúdo. Ação principal + "Dispensar"
+   (lembra por sessão, data-aviso-id) + lista longa dentro de <details>. */
+.aviso { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; margin: 0 0 14px;
+    border: 1px solid var(--borda); border-left: 4px solid var(--laranja); border-radius: var(--raio);
+    background: var(--laranja-bg); color: var(--texto); font-size: 14px; }
+.aviso.aviso-perigo { border-left-color: var(--vermelho); background: var(--vermelho-bg); }
+.aviso.aviso-info { border-left-color: var(--azul); background: var(--azul-claro, #eef3fe); }
+.aviso .aviso-icone { font-size: 18px; line-height: 1.2; flex-shrink: 0; }
+.aviso .aviso-corpo { flex: 1; min-width: 0; }
+.aviso .aviso-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+.aviso .aviso-acoes a.btn, .aviso .aviso-acoes button { margin: 0; width: auto; min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.aviso details { margin-top: 6px; font-size: 13px; }
+.aviso details summary { cursor: pointer; color: var(--azul); font-weight: 600; }
+.aviso details ul { margin: 6px 0 0; padding-left: 18px; max-height: 220px; overflow: auto; }
+.aviso[hidden] { display: none; }
+
+/* 05/11/2026 (plano de UX, A3) — tabela larga rola DENTRO do card, nunca a
+   página inteira (topbar cortada junto). Só desktop/tablet: no celular o
+   mobile.js transforma a tabela em cards. */
+main { min-width: 0; }
+@media (min-width: 701px) {
+    .card:has(> table), .card:has(> form > table) { overflow-x: auto; }
+}

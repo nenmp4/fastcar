@@ -1343,8 +1343,9 @@ function vitrineFiltrar(termo) {
 <div class="card">
     <h3>Funil (negociações ativas)</h3>
     <div class="funil-barra">
+        <?php $maxFunil = max(1, max(array_map(fn($x) => (int)($contagemPorEtapa[$x] ?? 0), ETAPAS_VENDA_ATIVAS))); ?>
         <?php foreach (ETAPAS_VENDA_ATIVAS as $et): ?>
-            <?php $qtd = (int)($contagemPorEtapa[$et] ?? 0); $pct = $totalAtivas > 0 ? round($qtd / $totalAtivas * 100) : 0; ?>
+            <?php $qtd = (int)($contagemPorEtapa[$et] ?? 0); $pct = round($qtd / $maxFunil * 100); /* 05/11/2026 (A5): proporcional ao maior */ ?>
             <div class="funil-linha">
                 <span class="etapa-nome"><?= e(etapaVendaLabel($et)) ?></span>
                 <span class="barra-fundo"><span class="barra-preenchida" style="width:<?= $pct ?>%"></span></span>
@@ -1427,9 +1428,19 @@ if ($podeSelecionarEmMassa):
 <?php endif; ?>
 
 <?php if ($vendidasSemContrato && perfilVeTudo()): ?>
-<div class="alerta-erro" style="margin-bottom:12px">
-    ⚠️ <strong><?= count($vendidasSemContrato) ?> venda(s) marcada(s) como Vendido sem contrato assinado</strong> — não entram nos totais de venda até o contrato ser assinado. Se foi engano, abra e use "↩️ Desfazer Vendido":
-    <?php foreach (array_slice($vendidasSemContrato, 0, 15) as $i => $sc): ?><?= $i ? ', ' : ' ' ?><a href="/admin/venda.php?id=<?= (int)$sc['id'] ?>">#<?= (int)$sc['id'] ?> <?= e($sc['comprador_nome'] ?: 'sem nome') ?></a><?php endforeach; ?><?= count($vendidasSemContrato) > 15 ? '…' : '' ?>
+<?php $qsAvisoSemC = ['etapa' => 'vendido', 'contrato' => 'sem']; ?>
+<div class="aviso aviso-perigo" data-aviso-id="vendas-sem-contrato-<?= count($vendidasSemContrato) ?>" role="status">
+    <span class="aviso-icone" aria-hidden="true">⚠️</span>
+    <div class="aviso-corpo">
+        <strong><?= count($vendidasSemContrato) ?> venda(s) marcada(s) como Vendido sem contrato assinado</strong> — não entram nos totais até o contrato ser assinado.
+        <div class="aviso-acoes">
+            <a class="btn btn-primary" href="?<?= e(http_build_query($qsAvisoSemC)) ?>">Ver as <?= count($vendidasSemContrato) ?> vendas</a>
+            <button type="button" class="btn-texto aviso-dispensar">Dispensar</button>
+        </div>
+        <details><summary>Ver lista</summary><ul>
+            <?php foreach ($vendidasSemContrato as $sc): ?><li><a href="/admin/venda.php?id=<?= (int)$sc['id'] ?>">#<?= (int)$sc['id'] ?> <?= e($sc['comprador_nome'] ?: 'sem nome') ?></a></li><?php endforeach; ?>
+        </ul><small>Se foi engano, abra a venda e use "↩️ Desfazer Vendido".</small></details>
+    </div>
 </div>
 <?php endif; ?>
 <?php if ($abaVendidas): ?>

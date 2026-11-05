@@ -957,8 +957,9 @@ if ($filtroEspecialLabel !== ''): ?>
     <div class="card">
         <h3>Funil (oportunidades ativas)</h3>
         <div class="funil-barra">
+            <?php $maxFunil = max(1, max(array_map(fn($x) => (int)($contagemPorEtapa[$x] ?? 0), ETAPAS_ATIVAS))); ?>
             <?php foreach (ETAPAS_ATIVAS as $et): ?>
-                <?php $qtd = (int)($contagemPorEtapa[$et] ?? 0); $pct = $totalAtivas > 0 ? round($qtd / $totalAtivas * 100) : 0; ?>
+                <?php $qtd = (int)($contagemPorEtapa[$et] ?? 0); $pct = round($qtd / $maxFunil * 100); /* 05/11/2026 (A5): proporcional ao maior */ ?>
                 <div class="funil-linha">
                     <span class="etapa-nome"><?= e(etapaLabel($et)) ?></span>
                     <span class="barra-fundo"><span class="barra-preenchida" style="width:<?= $pct ?>%"></span></span>

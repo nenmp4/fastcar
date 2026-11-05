@@ -362,8 +362,9 @@ function mesesComAFastcar(?string $refPosse): int {
         <p style="margin-top:10px"><small>⚠️ Mostrando também <?= $totalIncompletosImportAntigo ?> veículo(s) importado(s) do CRM antigo com documento incompleto (marcados abaixo).
             <a href="?busca=<?= urlencode($busca) ?>">Esconder de novo →</a></small></p>
     <?php elseif ($totalIncompletosImportAntigo > 0): ?>
-        <p style="margin-top:10px"><small>⚠️ <?= $totalIncompletosImportAntigo ?> veículo(s) importado(s) do CRM antigo com documento incompleto estão escondidos desta listagem
-            (nunca apagados, só fora do estoque até completar). <a href="?busca=<?= urlencode($busca) ?>&incompletos=1">Ver também incompletos →</a></small></p>
+        <div class="aviso" style="margin-top:10px"><span class="aviso-icone" aria-hidden="true">🧩</span><div class="aviso-corpo">
+            <strong><?= $totalIncompletosImportAntigo ?> veículo(s) do CRM antigo com documento incompleto</strong> estão fora desta lista (nunca apagados).
+            <div class="aviso-acoes"><a class="btn" href="?busca=<?= urlencode($busca) ?>&incompletos=1">Ver incompletos</a></div></div></div>
     <?php endif; ?>
 </div>
 

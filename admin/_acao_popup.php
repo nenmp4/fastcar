@@ -26,6 +26,15 @@
  */
 ?>
 <script>
+// 05/11/2026 (A2) — "Dispensar" dos avisos .aviso[data-aviso-id] (lembra na sessão do navegador).
+(function () {
+    document.querySelectorAll('.aviso[data-aviso-id]').forEach(function (av) {
+        var k = 'aviso_dispensado_' + av.getAttribute('data-aviso-id');
+        try { if (sessionStorage.getItem(k)) { av.hidden = true; return; } } catch (e) {}
+        var b = av.querySelector('.aviso-dispensar');
+        if (b) b.addEventListener('click', function () { av.hidden = true; try { sessionStorage.setItem(k, '1'); } catch (e) {} });
+    });
+})();
 (function () {
     var alvos = document.querySelectorAll(
         'main > .alerta-sucesso, main > .alerta-erro, body > .alerta-sucesso, body > .alerta-erro'
