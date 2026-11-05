@@ -420,6 +420,112 @@ function rlCondicaoTxt(array $l): string {
 $mesesNome = ['01'=>'janeiro','02'=>'fevereiro','03'=>'março','04'=>'abril','05'=>'maio','06'=>'junho','07'=>'julho','08'=>'agosto','09'=>'setembro','10'=>'outubro','11'=>'novembro','12'=>'dezembro'];
 $rotuloPeriodo = $mes !== '' ? ucfirst($mesesNome[substr($mes, 5, 2)] ?? '') . '/' . substr($mes, 0, 4) : 'Todo o período';
 
+// 05/11/2026, "preciso gerar PDF com clientes antigos sem contrato" —
+// lista pra cobrar o contrato: (1) compras sem contrato de compra assinado
+// (vendedor original) e (2) vendas concluídas sem contrato de venda (ou com
+// o contrato da compra pendurado nela). Respeita a busca e o mês da tela.
+if (($_GET['pdf'] ?? '') === 'sem_contrato') {
+    $filtroExtra = ''; $pp = [];
+    if ($mes !== '') { $filtroExtra .= " AND substr(COALESCE(v.data_venda, o.data_compra), 1, 7) = ?"; $pp[] = $mes; }
+    if ($busca !== '') {
+        $filtroExtra .= " AND (o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR o.veiculo_placa LIKE ? OR c.nome LIKE ? OR v.comprador_nome LIKE ?)";
+        array_push($pp, "%{$busca}%", "%{$busca}%", "%{$busca}%", "%{$busca}%", "%{$busca}%");
+    }
+    $compraSemContrato = "NOT EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status = 'assinado')
+        AND NOT EXISTS (SELECT 1 FROM oportunidade_documentos od WHERE od.oportunidade_id = o.id AND od.tipo = 'contrato_compra'
+            AND (COALESCE(od.drive_file_id,'') != '' OR COALESCE(od.arquivo_url,'') != ''))";
+    $migrado = "EXISTS (SELECT 1 FROM contratos cz WHERE cz.oportunidade_id = o.id AND cz.campos_json LIKE '%importado_zapsign%')";
+    $baseJoin = "FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        LEFT JOIN vendas v ON v.id = (SELECT v2.id FROM vendas v2 WHERE v2.oportunidade_id = o.id AND v2.etapa NOT IN ('cancelada','sem_perfil')
+            AND COALESCE(v2.tipo_contrato,'venda') != 'locacao' ORDER BY v2.id DESC LIMIT 1)
+        WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo,'') NOT LIKE 'Cadastro duplicado%'";
+    $st = $db->prepare("SELECT 'Compra' AS lado, c.nome, c.cpf, c.telefone, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
+            o.data_compra AS data, {$migrado} AS migrado, 'Contrato de compra assinado' AS falta
+        {$baseJoin} AND {$compraSemContrato} {$filtroExtra} ORDER BY o.data_compra DESC, o.id DESC");
+    $st->execute($pp);
+    $itens = $st->fetchAll();
+    $st = $db->prepare("SELECT 'Venda' AS lado, v.comprador_nome AS nome, v.comprador_cpf AS cpf, v.comprador_telefone AS telefone,
+            o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, v.data_venda AS data, {$migrado} AS migrado,
+            CASE WHEN EXISTS (SELECT 1 FROM contratos cc WHERE cc.venda_id = v.id AND cc.tipo = 'venda' AND cc.status != 'cancelado'
+                    AND cc.campos_json LIKE '%\"ia_tipo_detectado\":\"compra\"%')
+                 THEN 'Contrato de venda (o anexado é a compra)' ELSE 'Contrato de venda assinado' END AS falta
+        {$baseJoin} AND v.id IS NOT NULL AND v.etapa = 'vendido'
+            AND NOT EXISTS (SELECT 1 FROM contratos cv WHERE cv.venda_id = v.id AND cv.tipo = 'venda' AND cv.status = 'assinado'
+                AND cv.campos_json NOT LIKE '%\"ia_tipo_detectado\":\"compra\"%') {$filtroExtra}
+        ORDER BY v.data_venda DESC, v.id DESC");
+    $st->execute($pp);
+    $itens = array_merge($itens, $st->fetchAll());
+
+    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf->SetMargins(10, 12, 10);
+    $pdf->SetAutoPageBreak(true, 14);
+    $pdf->AddPage();
+    $pdf->SetFillColor(21, 23, 34);
+    $pdf->Rect(0, 0, 297, 20, 'F');
+    $logoPath = dirname(__DIR__) . '/public/assets/logo.png';
+    if (is_file($logoPath)) { try { if (@getimagesize($logoPath)) $pdf->Image($logoPath, 10, 3, 0, 14); } catch (Throwable $e) {} }
+    $pdf->SetY(4);
+    $pdf->SetTextColor(255, 255, 255);
+    $pdf->SetFont('Helvetica', 'B', 12);
+    $pdf->Cell(0, 7, _pdfTexto('FASTCAR SOLUTIONS'), 0, 1, 'C');
+    $pdf->SetFont('Helvetica', '', 8);
+    $pdf->Cell(0, 6, _pdfTexto('CLIENTES SEM CONTRATO ASSINADO'), 0, 1, 'C');
+    $pdf->SetFillColor(47, 111, 237);
+    $pdf->Rect(0, 20, 297, 1.2, 'F');
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetY(25);
+    $nCompra = count(array_filter($itens, fn($x) => $x['lado'] === 'Compra'));
+    $nVenda = count($itens) - $nCompra;
+    $pdf->SetFont('Helvetica', 'B', 12);
+    $pdf->Cell(0, 7, _pdfTexto("{$nCompra} compra(s) e {$nVenda} venda(s) sem contrato" . ($mes !== '' ? '   |   ' . $rotuloPeriodo : '') . ($busca !== '' ? '   |   busca: ' . $busca : '')), 0, 1);
+    $pdf->SetFont('Helvetica', '', 8);
+    $pdf->SetTextColor(90, 90, 90);
+    $pdf->Cell(0, 5, _pdfTexto('Compra: vendedor original sem contrato de compra assinado. Venda: carro marcado como vendido sem contrato de venda. Gerado em ' . date('d/m/Y H:i') . '.'), 0, 1);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Ln(2);
+    $cols = [['Lado', 16, 'C'], ['Cliente', 58, 'L'], ['CPF', 28, 'L'], ['Telefone', 30, 'L'], ['Veículo / placa', 63, 'L'], ['Data', 18, 'C'], ['Origem', 20, 'C'], ['O que falta', 44, 'L']];
+    $cab = function () use ($pdf, $cols) {
+        $pdf->SetFont('Helvetica', 'B', 7.5);
+        $pdf->SetFillColor(21, 23, 34);
+        $pdf->SetTextColor(255, 255, 255);
+        foreach ($cols as [$t, $cw, $al]) $pdf->Cell($cw, 6, _pdfTexto($t), 0, 0, 'C', true);
+        $pdf->Ln();
+        $pdf->SetTextColor(0, 0, 0);
+    };
+    $cab();
+    $fill = false;
+    $fone = function (?string $t): string {
+        $d = preg_replace('/\D/', '', (string)$t);
+        if (str_starts_with($d, '55') && strlen($d) >= 12) $d = substr($d, 2);
+        if (strlen($d) === 11) return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 5) . '-' . substr($d, 7);
+        if (strlen($d) === 10) return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 4) . '-' . substr($d, 6);
+        return $d ?: '—';
+    };
+    foreach ($itens as $x) {
+        if ($pdf->GetY() > 190) { $pdf->AddPage(); $cab(); }
+        $nomeCli = trim((string)$x['nome']);
+        if ($nomeCli === '' || compradorNomeEhPlaceholder($nomeCli)) $nomeCli = '(sem nome cadastrado)';
+        $vals = [
+            $x['lado'], $nomeCli, $x['cpf'] ?: '—', $fone($x['telefone']),
+            trim($x['veiculo_marca'] . ' ' . $x['veiculo_modelo'] . ' ' . $x['veiculo_ano']) . ($x['veiculo_placa'] ? ' | ' . strtoupper($x['veiculo_placa']) : ''),
+            $x['data'] ? date('d/m/Y', strtotime($x['data'])) : '—',
+            $x['migrado'] ? 'ZapSign' : 'Sistema', $x['falta'],
+        ];
+        $pdf->SetFillColor(246, 247, 250);
+        $pdf->SetFont('Helvetica', '', 7.4);
+        foreach ($cols as $i => [$t, $cw, $al]) {
+            $txt = _pdfTexto((string)$vals[$i]);
+            while ($pdf->GetStringWidth($txt) > $cw - 1.5 && strlen($txt) > 3) $txt = substr($txt, 0, -2);
+            $pdf->Cell($cw, 6, $txt, 0, 0, $al, $fill);
+        }
+        $pdf->Ln();
+        $fill = !$fill;
+    }
+    if (!$itens) { $pdf->SetFont('Helvetica', '', 10); $pdf->Cell(0, 10, _pdfTexto('Nenhum cliente sem contrato.'), 0, 1); }
+    ob_end_clean();
+    $pdf->Output('I', 'clientes_sem_contrato_' . date('Y-m-d') . '.pdf');
+    exit;
+}
 if (!empty($_GET['pdf'])) {
     $pdf = new FPDF('L', 'mm', 'A4');
     $pdf->SetMargins(10, 12, 10);
@@ -786,6 +892,7 @@ $chip = function (string $k, bool $ambar) use ($pend, $baseQ, $contPend): string
     </div>
     <div class="rl-grupo"><span>Corrigir dados</span>
         <?php foreach ($chipsCorrigir as $k) echo $chip($k, true); ?>
+        <a class="rl-chip ambar rl-chip-acao" target="_blank" href="?<?= e(http_build_query(['q' => $busca, 'mes' => $mes, 'pdf' => 'sem_contrato'])) ?>" title="Compras sem contrato de compra assinado e vendas concluídas sem contrato de venda">📄 PDF clientes sem contrato</a>
         <?php if ($qtdLerLote): ?><span class="rl-chip ambar rl-chip-acao"><button type="submit" form="rl-form-lote" title="Lê o contrato assinado e preenche FIPE/valor pago vazios">🤖 Ler FIPE/pago (<?= min($qtdLerLote, RL_LOTE_LEITURA) ?> de <?= $qtdLerLote ?>)</button></span><?php endif; ?>
         <?php if ($qtdLerVendas): ?><span class="rl-chip ambar rl-chip-acao"><button type="submit" form="rl-form-lote-venda" title="Lê o contrato de venda e preenche entrada/parcelas/preço vazios">💳 Ler entrada/parcelas (<?= min($qtdLerVendas, RL_LOTE_LEITURA) ?> de <?= $qtdLerVendas ?>)</button></span><?php endif; ?>
     </div>
