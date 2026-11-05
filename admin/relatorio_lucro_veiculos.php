@@ -376,6 +376,11 @@ ob_end_flush();
 .rl-estimada { display: block; font-size: 11px; color: var(--texto-suave); margin-top: 3px; white-space: normal; }
 .rl-aviso { display: block; font-size: 11px; color: var(--laranja); font-weight: 600; margin-top: 3px; white-space: normal; }
 .rl-stats .stat-card .valor { font-size: 22px; }
+.rl-stats a.stat-card { cursor: pointer; }
+.rl-stats a.stat-card small { color: var(--azul); }
+.rl-stats a.stat-card small.rl-alerta { color: var(--laranja); }
+.rl-lnk { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--borda); }
+.rl-lnk:hover { color: var(--azul); border-bottom-color: var(--azul); text-decoration: none; }
 .rl-stats .stat-card small { display: block; color: var(--laranja); font-weight: 600; margin-top: 4px; }
 .rl-filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 0; }
 .rl-filtros > div { min-width: 140px; }
@@ -405,13 +410,17 @@ ob_end_flush();
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
 <div class="stat-grid rl-stats">
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['fipe']) ?></div><div class="rotulo">FIPE dos veículos</div></div>
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['quit_prevista']) ?></div><div class="rotulo">Quitação prevista (<?= RL_QUITACAO_PCT_FIPE ?>% FIPE)</div></div>
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['pago']) ?></div><div class="rotulo">Pago aos vendedores</div><?php if ($tot['sem_pago']): ?><small><?= $tot['sem_pago'] ?> sem valor pago</small><?php endif; ?></div>
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['quitacao']) ?></div><div class="rotulo">Quitações (real + prevista)</div><?php if ($tot['quit_estimada']): ?><small><?= $tot['quit_estimada'] ?> ainda sem valor real</small><?php endif; ?><?php if ($tot['sem_quitacao']): ?><small><?= $tot['sem_quitacao'] ?> sem quitação e sem FIPE</small><?php endif; ?></div>
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['venda']) ?></div><div class="rotulo">Total das vendas</div></div>
-    <div class="stat-card"><div class="valor"><?= rlMoeda($tot['recebido']) ?></div><div class="rotulo">Já recebido</div></div>
-    <div class="stat-card <?= $tot['lucro'] < 0 ? 'alerta' : 'sucesso' ?>"><div class="valor"><?= rlMoeda($tot['lucro']) ?></div><div class="rotulo">Lucro previsto (<?= $tot['n_lucro'] ?> vendido<?= $tot['n_lucro'] === 1 ? '' : 's' ?>)</div></div>
+    <?php
+    $baseQ = ['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'ordem' => $ordem];
+    $lnk = fn(array $extra) => '?' . e(http_build_query(array_merge($baseQ, $extra)));
+    ?>
+    <a class="stat-card" href="<?= $lnk(['pend' => 'sem_fipe']) ?>" title="Ver os veículos sem FIPE"><div class="valor"><?= rlMoeda($tot['fipe']) ?></div><div class="rotulo">FIPE dos veículos</div><small>ver sem FIPE →</small></a>
+    <a class="stat-card" href="<?= $lnk(['pend' => 'sem_quitacao']) ?>" title="Ver quem ainda usa a quitação prevista"><div class="valor"><?= rlMoeda($tot['quit_prevista']) ?></div><div class="rotulo">Quitação prevista (<?= RL_QUITACAO_PCT_FIPE ?>% FIPE)</div><small>ver sem quitação real →</small></a>
+    <a class="stat-card" href="<?= $lnk(['pend' => 'sem_pago']) ?>" title="Ver os veículos sem valor pago"><div class="valor"><?= rlMoeda($tot['pago']) ?></div><div class="rotulo">Pago aos vendedores</div><?php if ($tot['sem_pago']): ?><small class="rl-alerta"><?= $tot['sem_pago'] ?> sem valor pago →</small><?php endif; ?></a>
+    <a class="stat-card" href="<?= $lnk(['pend' => 'sem_quitacao']) ?>" title="Ver os veículos sem quitação real"><div class="valor"><?= rlMoeda($tot['quitacao']) ?></div><div class="rotulo">Quitações (real + prevista)</div><?php if ($tot['quit_estimada']): ?><small class="rl-alerta"><?= $tot['quit_estimada'] ?> ainda sem valor real →</small><?php endif; ?><?php if ($tot['sem_quitacao']): ?><small class="rl-alerta"><?= $tot['sem_quitacao'] ?> sem quitação e sem FIPE</small><?php endif; ?></a>
+    <a class="stat-card" href="<?= $lnk(['pend' => '', 'ordem' => 'lucro_maior']) ?>" title="Ordenar pelo maior lucro"><div class="valor"><?= rlMoeda($tot['venda']) ?></div><div class="rotulo">Total das vendas</div><small>ordenar por maior lucro →</small></a>
+    <a class="stat-card" href="/admin/promissorias.php" title="Ver parcelas recebidas em Promissórias"><div class="valor"><?= rlMoeda($tot['recebido']) ?></div><div class="rotulo">Já recebido</div><small>ver parcelas →</small></a>
+    <a class="stat-card <?= $tot['lucro'] < 0 ? 'alerta' : 'sucesso' ?>" href="<?= $lnk(['pend' => 'lucro_neg', 'ordem' => 'lucro_menor']) ?>" title="Ver os veículos com prejuízo"><div class="valor"><?= rlMoeda($tot['lucro']) ?></div><div class="rotulo">Lucro previsto (<?= $tot['n_lucro'] ?> vendido<?= $tot['n_lucro'] === 1 ? '' : 's' ?>)</div><small>ver com prejuízo →</small></a>
 </div>
 
 <div class="card">
@@ -440,7 +449,6 @@ ob_end_flush();
     </form>
 </div>
 
-<?php $baseQ = ['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'ordem' => $ordem]; ?>
 <nav class="etapas-nav rl-pend">
     <a class="<?= $pend === '' ? 'ativo' : '' ?>" href="?<?= e(http_build_query($baseQ)) ?>">Todos (<?= $totalSemPend ?>)</a>
     <?php foreach (RL_PENDENCIAS as $k => $rot): ?>
@@ -464,13 +472,13 @@ ob_end_flush();
                 <?php if ($l['veiculo_placa']): ?><span class="rl-sub">🔖 <?= e(strtoupper($l['veiculo_placa'])) ?></span><?php endif; ?>
                 <?php if ($l['venda_id']): ?><span class="rl-sub"><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['data_venda'] ? ' · ' . date('d/m/Y', strtotime($l['data_venda'])) : '' ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></span><?php else: ?><span class="rl-sub">sem venda</span><?php endif; ?>
             </td>
-            <td class="rl-num"><?= rlMoeda((float)$l['valor_fipe_referencia'] > 0 ? (float)$l['valor_fipe_referencia'] : null) ?><?php if (!((float)$l['valor_fipe_referencia'] > 0)): ?><span class="rl-aviso">sem FIPE</span><?php endif; ?>
+            <td class="rl-num"><a class="rl-lnk" href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>" title="Abrir o veículo (busca FIPE por placa)"><?= rlMoeda((float)$l['valor_fipe_referencia'] > 0 ? (float)$l['valor_fipe_referencia'] : null) ?></a><?php if (!((float)$l['valor_fipe_referencia'] > 0)): ?><span class="rl-aviso">sem FIPE</span><?php endif; ?>
                 <?php if (!((float)$l['valor_fipe_referencia'] > 0) || !((float)$l['valor_final'] > 0)): ?>
                 <form method="post" style="margin:4px 0 0"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contrato"><input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
                     <button type="submit" class="btn-texto" title="A IA lê o contrato assinado e preenche FIPE e valor pago">🤖 ler contrato</button></form>
                 <?php endif; ?></td>
             <td class="rl-num"><?= rlMoeda($l['_quit_prevista']) ?></td>
-            <td class="rl-num"><?= rlMoeda($l['valor_final'] !== null && (float)$l['valor_final'] > 0 ? (float)$l['valor_final'] : null) ?><?php if (!((float)$l['valor_final'] > 0)): ?><span class="rl-aviso">⚠️ sem valor pago</span><?php endif; ?></td>
+            <td class="rl-num"><a class="rl-lnk" href="/admin/oportunidade.php?id=<?= (int)$l['op_id'] ?>" title="Abrir o veículo"><?= rlMoeda($l['valor_final'] !== null && (float)$l['valor_final'] > 0 ? (float)$l['valor_final'] : null) ?><?php if (!((float)$l['valor_final'] > 0)): ?><span class="rl-aviso">⚠️ sem valor pago</span><?php endif; ?></a></td>
             <td data-label="Quitação">
                 <form method="post" class="rl-quit-form">
                     <?= csrfField() ?>
@@ -483,7 +491,7 @@ ob_end_flush();
                 <?php if ($l['financiamento_quitado']): ?><small>✅ financiamento quitado</small><?php endif; ?>
             </td>
             <td class="rl-num"><?= rlMoeda($l['_custo']) ?></td>
-            <td class="rl-num"><?= $l['venda_id'] ? rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) : '—' ?></td>
+            <td class="rl-num"><?php if ($l['venda_id']): ?><a class="rl-lnk" href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>"><?= rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) ?></a><?php else: ?>—<?php endif; ?></td>
             <td>
                 <?php if ((int)$l['parcelamento_qtd_parcelas'] > 0 && (float)$l['parcelamento_valor_parcela'] > 0): ?>
                     <?= (int)$l['parcelamento_qtd_parcelas'] ?>× <?= rlMoeda((float)$l['parcelamento_valor_parcela']) ?><?= ($l['parcelamento_periodicidade'] ?? '') === 'semanal' ? ' <small>(semanal)</small>' : '' ?>
@@ -491,8 +499,8 @@ ob_end_flush();
                     <?= $l['venda_id'] ? '<small>à vista / sem parcelas</small>' : '—' ?>
                 <?php endif; ?>
             </td>
-            <td class="rl-num"><?= rlMoeda($l['_venda_total']) ?></td>
-            <td class="rl-num"><?= $l['venda_id'] ? rlMoeda((float)$l['recebido']) : '—' ?></td>
+            <td class="rl-num"><?php if ($l['venda_id']): ?><a class="rl-lnk" href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>"><?= rlMoeda($l['_venda_total']) ?></a><?php else: ?>—<?php endif; ?></td>
+            <td class="rl-num"><?php if ($l['venda_id']): ?><a class="rl-lnk" href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>" title="Ver parcelas da venda"><?= rlMoeda((float)$l['recebido']) ?></a><?php else: ?>—<?php endif; ?></td>
             <td class="rl-num"><?php if ($l['_lucro'] === null): ?>—<?php else: ?><span class="<?= $l['_lucro'] < 0 ? 'rl-lucro-neg' : 'rl-lucro-pos' ?>"><?= rlMoeda($l['_lucro']) ?></span><?php endif; ?></td>
         </tr>
     <?php endforeach; ?>
