@@ -1505,7 +1505,8 @@ function lerContratoCompraValoresIA(int $oportunidadeId): array {
     if (!$geminiKey) return ['ok' => false, 'erro' => 'Chave da IA (Gemini) não configurada.'];
 
     $arquivo = null;
-    $st = $db->prepare("SELECT drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
+    $baixadoZapsign = null; // [contrato_id, tipo] quando o PDF veio direto da ZapSign
+    $st = $db->prepare("SELECT id, drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
         WHERE oportunidade_id = ? AND tipo = 'compra' AND status = 'assinado' ORDER BY id DESC");
     $st->execute([$oportunidadeId]);
     $contratos = $st->fetchAll();
@@ -1526,7 +1527,7 @@ function lerContratoCompraValoresIA(int $oportunidadeId): array {
         foreach ($contratos as $c) {
             if (!$c['zapsign_doc_token']) continue;
             $bytes = zapsignBaixarAssinado($c['zapsign_doc_token']);
-            if ($bytes) { $arquivo = ['content' => $bytes, 'mime' => 'application/pdf']; break; }
+            if ($bytes) { $arquivo = ['content' => $bytes, 'mime' => 'application/pdf']; $baixadoZapsign = [(int)$c['id'], 'compra']; break; }
         }
     }
     // Sem contrato de compra (ex: carro migrado do CRM antigo): tenta o de
@@ -1534,19 +1535,27 @@ function lerContratoCompraValoresIA(int $oportunidadeId): array {
     // a FIPE é aproveitada (o "valor pago" lá é o do comprador, não o nosso).
     $fonte = 'compra';
     if (!$arquivo) {
-        $st = $db->prepare("SELECT drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
+        $st = $db->prepare("SELECT id, drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
             WHERE oportunidade_id = ? AND tipo = 'venda' AND status = 'assinado' ORDER BY id DESC");
         $st->execute([$oportunidadeId]);
         foreach ($st->fetchAll() as $c) {
             if ($c['drive_file_id'] || $c['arquivo_url']) $arquivo = lerConteudoArquivoDocumento($c['drive_file_id'] ?: null, $c['arquivo_url'] ?: null);
             if (!$arquivo && $c['zapsign_doc_token']) {
                 $bytes = zapsignBaixarAssinado($c['zapsign_doc_token']);
-                if ($bytes) $arquivo = ['content' => $bytes, 'mime' => 'application/pdf'];
+                if ($bytes) { $arquivo = ['content' => $bytes, 'mime' => 'application/pdf']; $baixadoZapsign = [(int)$c['id'], 'venda']; }
             }
             if ($arquivo) { $fonte = 'venda'; break; }
         }
     }
     if (!$arquivo) return ['ok' => false, 'erro' => 'Nenhum contrato assinado (compra ou venda) encontrado pra esse veículo.'];
+
+    // "muitos do ZapSign vieram sem documentação" — o PDF veio direto da
+    // ZapSign porque o carro não tinha cópia salva: guarda a cópia agora
+    // (Drive/local, mesma pasta do cliente) e vincula no contrato, pra ele
+    // aparecer nos documentos do veículo. Best-effort.
+    if ($baixadoZapsign) {
+        try { _contratoSalvarCopiaBaixada($baixadoZapsign[0], $oportunidadeId, $arquivo['content'], $baixadoZapsign[1]); } catch (Throwable $e) {}
+    }
 
     $mime = (string)($arquivo['mime'] ?? 'application/pdf');
     if (!str_starts_with($mime, 'image/') && $mime !== 'application/pdf') $mime = 'application/pdf';
@@ -1614,4 +1623,31 @@ function preencherValoresPeloContratoCompra(int $oportunidadeId): array {
            ->execute([$oportunidadeId, $_SESSION['admin_id'] ?? null, 'Lido do contrato de ' . $r['fonte'] . ' pela IA: ' . implode(', ', $preenchidos) . '.']);
     }
     return ['ok' => true, 'preenchidos' => $preenchidos, 'lidos' => $r];
+}
+
+/** Salva a cópia do contrato baixada da ZapSign e grava no contrato (e, se for
+ *  de compra, no documento "contrato_compra" da pasta, fill-if-empty). */
+function _contratoSalvarCopiaBaixada(int $contratoId, int $oportunidadeId, string $bytes, string $tipo): void {
+    $db = getDB();
+    $st = $db->prepare("SELECT o.cliente_id, c.nome FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?");
+    $st->execute([$oportunidadeId]);
+    $cli = $st->fetch();
+    if (!$cli) return;
+    $tmp = tempnam(sys_get_temp_dir(), 'ctz');
+    file_put_contents($tmp, $bytes);
+    $copia = salvarArquivoGeradoComoDocumento((int)$cli['cliente_id'], (string)$cli['nome'], $tmp,
+        "contrato_{$tipo}_zapsign_{$contratoId}.pdf", 'application/pdf', 'contratos');
+    @unlink($tmp);
+    $drive = (string)($copia['drive_file_id'] ?? '');
+    $local = (string)($copia['arquivo_url'] ?? '');
+    if ($drive === '' && $local === '') return;
+    $db->prepare("UPDATE contratos SET drive_file_id = ?, arquivo_url = ? WHERE id = ? AND COALESCE(drive_file_id,'') = '' AND COALESCE(arquivo_url,'') = ''")
+       ->execute([$drive, $local, $contratoId]);
+    if ($tipo === 'compra') {
+        $db->prepare("INSERT INTO oportunidade_documentos (oportunidade_id, tipo, obrigatorio, drive_file_id, arquivo_url)
+            VALUES (?, 'contrato_compra', 1, ?, ?)
+            ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET drive_file_id = excluded.drive_file_id, arquivo_url = excluded.arquivo_url
+            WHERE COALESCE(oportunidade_documentos.drive_file_id,'') = '' AND COALESCE(oportunidade_documentos.arquivo_url,'') = ''")
+           ->execute([$oportunidadeId, $drive, $local]);
+    }
 }
