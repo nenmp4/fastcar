@@ -533,6 +533,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         : 'Documentos lidos — nada novo pra preencher (os campos já estavam preenchidos ou o documento não trazia o dado).';
                     if ($rp['avisos']) $sucesso .= ' ⚠️ ' . implode('; ', $rp['avisos']) . '.';
                 }
+            } elseif ($acao === 'ler_contrato_importado') {
+                // 05/11/2026 — venda migrada da ZapSign sem dados do comprador:
+                // lê o contrato com IA (pessoa + negociação), fill-if-empty.
+                @set_time_limit(120);
+                $lc = lerContratoImportadoVendaIA($id);
+                if (!$lc['ok']) {
+                    $erro = $lc['erro'];
+                } elseif ($lc['tipo_contrato'] === 'compra') {
+                    $_SESSION['venda_leitura_contrato'][$id] = $lc;
+                    $erro = '⚠️ Esse contrato é a COMPRA do veículo (' . ($lc['parte']['nome'] ?: 'vendedor') . ' vendeu pra Fastcar), não uma venda — '
+                        . 'por isso não tem comprador. Veja a opção "Mover pra compra" no card "Dados do comprador".';
+                } else {
+                    $pre = aplicarLeituraContratoNaVenda($id, $lc, (int)$_SESSION['admin_id']);
+                    auditoriaRegistrar('venda_lida_contrato_ia', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+                        $pre ? 'Preenchido: ' . implode(', ', $pre) : 'Nada novo.');
+                    $sucesso = $pre
+                        ? '✅ Lido do contrato: ' . implode(', ', $pre) . '. Confira os dados abaixo.'
+                        : 'Contrato lido — nada novo pra preencher (campos já preenchidos ou o contrato não trazia o dado).';
+                }
+            } elseif ($acao === 'mover_contrato_compra') {
+                $lc = $_SESSION['venda_leitura_contrato'][$id] ?? null;
+                if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') {
+                    http_response_code(403);
+                    $erro = 'Só o super admin pode mover o contrato.';
+                } elseif (!$lc || empty($lc['contrato_id'])) {
+                    $erro = 'Leia o contrato de novo antes de mover.';
+                } else {
+                    $rm = moverContratoVendaParaCompra($id, (int)$lc['contrato_id'], $lc, !empty($_POST['cancelar_venda']), (int)$_SESSION['admin_id']);
+                    if (!$rm['ok']) {
+                        $erro = $rm['erro'];
+                    } else {
+                        unset($_SESSION['venda_leitura_contrato'][$id]);
+                        auditoriaRegistrar('contrato_movido_para_compra', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
+                            'Contrato #' . (int)$lc['contrato_id'] . ' → compra (oportunidade #' . $rm['oportunidade_id'] . ')' . ($rm['cancelou'] ? '; venda cancelada' : ''));
+                        $sucesso = '✅ Contrato movido pra compra do veículo (oportunidade #' . $rm['oportunidade_id'] . ')'
+                            . ($rm['preenchidos'] ? ' — preenchido: ' . implode(', ', $rm['preenchidos']) : '')
+                            . ($rm['cancelou'] ? '. Esta venda foi cancelada (importada por engano).' : '.');
+                    }
+                }
             } elseif ($acao === 'puxar_docs_crm_antigo') {
                 // 05/11/2026, "botão pra puxar documentos da venda do antigo CRM".
                 @set_time_limit(180);
@@ -1125,6 +1164,37 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         </div>
         <button type="submit">Salvar dados do comprador</button>
     </form>
+    <?php
+        $temContratoArquivo = (bool)$db->query("SELECT 1 FROM contratos WHERE venda_id = " . (int)$id . " AND status != 'cancelado'
+            AND (COALESCE(drive_file_id,'') != '' OR COALESCE(arquivo_url,'') != '' OR COALESCE(zapsign_doc_token,'') != '')")->fetchColumn();
+        $leituraCompra = $_SESSION['venda_leitura_contrato'][$id] ?? null;
+    ?>
+    <?php if ($temContratoArquivo && ($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
+        <form method="post" style="margin-top:12px" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='🤖 Lendo o contrato...';">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="ler_contrato_importado">
+            <button type="submit" class="btn" style="width:auto">🤖 Ler contrato (comprador + negociação)</button>
+            <small style="display:block;color:var(--texto-fraco)">A IA lê o contrato desta venda e completa só o que estiver vazio: dados do comprador, preço, entrada, parcelas e FIPE.</small>
+        </form>
+    <?php endif; ?>
+    <?php if ($leituraCompra && !empty($leituraCompra['contrato_id'])): $lp = $leituraCompra['parte']; $ln = $leituraCompra['negociacao']; ?>
+        <div class="alerta-info" style="margin-top:12px">
+            <strong>Esse contrato é a COMPRA do veículo</strong> — <?= e($lp['nome'] ?: 'vendedor') ?><?= $lp['cpf'] ? ' (CPF ' . e($lp['cpf']) . ')' : '' ?> vendeu pra Fastcar.
+            <?php if (!empty($ln['valor_total'])): ?> Valor: R$ <?= number_format((float)$ln['valor_total'], 2, ',', '.') ?>.<?php endif; ?>
+            <?php if (!empty($ln['saldo_financiamento'])): ?> Saldo do financiamento: R$ <?= number_format((float)$ln['saldo_financiamento'], 2, ',', '.') ?><?= $ln['banco_financiamento'] ? ' (' . e($ln['banco_financiamento']) . ')' : '' ?>.<?php endif; ?>
+            <?php if (($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
+                <form method="post" style="margin-top:8px" onsubmit="return confirmarAcao(this, 'Mover este contrato pra compra do veículo?')">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="mover_contrato_compra">
+                    <label style="display:flex;gap:6px;align-items:center;font-weight:normal"><input type="checkbox" name="cancelar_venda" value="1" checked style="width:auto"> Cancelar esta venda (foi importada por engano)</label>
+                    <button type="submit" class="btn" style="width:auto">🔁 Mover pra compra do veículo</button>
+                    <small style="display:block">O contrato passa pra compra, os dados do vendedor e os valores completam o cadastro do carro (só o que estiver vazio).</small>
+                </form>
+            <?php else: ?>
+                <small style="display:block">Peça ao super admin pra mover o contrato pra compra.</small>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 </div>
 
 <?php if ($v['oportunidade_id']): ?>

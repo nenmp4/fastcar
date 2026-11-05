@@ -1651,3 +1651,221 @@ function _contratoSalvarCopiaBaixada(int $contratoId, int $oportunidadeId, strin
            ->execute([$oportunidadeId, $drive, $local]);
     }
 }
+
+/**
+ * 05/11/2026 — "Dados do comprador" vazio em venda migrada da ZapSign +
+ * "dá pra ler informações da negociação". Lê com IA o contrato anexado à
+ * venda e devolve: tipo real do contrato (compra x venda — importação
+ * antiga às vezes pendurou contrato de COMPRA numa venda), os dados da
+ * parte que NÃO é a FASTCAR (seja qual for o rótulo: COMPRADOR, CEDENTE,
+ * CESSIONÁRIO...) e os valores da negociação. Nunca grava nada — quem
+ * aplica é aplicarLeituraContratoNaVenda()/moverContratoVendaParaCompra().
+ */
+function lerContratoImportadoVendaIA(int $vendaId): array {
+    $db = getDB();
+    $geminiKey = getConfig('gemini_api_key') ?: '';
+    if (!$geminiKey) return ['ok' => false, 'erro' => 'Chave da IA (Gemini) não configurada.'];
+    $st = $db->prepare("SELECT id, oportunidade_id, drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
+        WHERE venda_id = ? AND status != 'cancelado'
+        ORDER BY CASE WHEN status = 'assinado' THEN 0 ELSE 1 END, id DESC");
+    $st->execute([$vendaId]);
+    $arquivo = null; $contratoId = null;
+    foreach ($st->fetchAll() as $c) {
+        if ($c['drive_file_id'] || $c['arquivo_url']) {
+            $arquivo = lerConteudoArquivoDocumento($c['drive_file_id'] ?: null, $c['arquivo_url'] ?: null);
+        }
+        if (!$arquivo && $c['zapsign_doc_token']) {
+            $bytes = zapsignBaixarAssinado($c['zapsign_doc_token']);
+            if ($bytes) {
+                $arquivo = ['content' => $bytes, 'mime' => 'application/pdf'];
+                if ($c['oportunidade_id']) {
+                    try { _contratoSalvarCopiaBaixada((int)$c['id'], (int)$c['oportunidade_id'], $bytes, 'venda'); } catch (Throwable $e) {}
+                }
+            }
+        }
+        if ($arquivo) { $contratoId = (int)$c['id']; break; }
+    }
+    if (!$arquivo) return ['ok' => false, 'erro' => 'Nenhum contrato com arquivo encontrado nesta venda.'];
+    $mime = (string)($arquivo['mime'] ?? 'application/pdf');
+    if (!str_starts_with($mime, 'image/') && $mime !== 'application/pdf') $mime = 'application/pdf';
+
+    $prompt = <<<PROMPT
+Você vai ler um contrato de veículo em que uma das partes é a FASTCAR (FASTCAR SOLUTIONS). Extraia SOMENTE o que está escrito claramente. NUNCA invente, calcule ou deduza. O que não estiver escrito fica null.
+
+1) "tipo_contrato": "compra" se a FASTCAR RECEBE/ADQUIRE o veículo (ex: outra parte é VENDEDOR ou CEDENTE e a FASTCAR é COMPRADORA ou CESSIONÁRIA); "venda" se a FASTCAR ENTREGA/VENDE o veículo pra outra pessoa (outra parte é COMPRADOR/ADQUIRENTE/LOCATÁRIO). Se não der pra saber, null.
+2) "parte": os dados da pessoa que NÃO é a FASTCAR (seja qual for o rótulo no contrato). Nunca os dados da FASTCAR, de testemunha ou de representante.
+3) "negociacao": valores combinados.
+
+Responda SOMENTE em JSON, neste formato exato:
+{"tipo_contrato": null,
+ "parte": {"nome": null, "cpf": null, "rg": null, "nacionalidade": null, "estado_civil": null, "profissao": null, "endereco": null, "email": null, "telefone": null},
+ "negociacao": {"valor_total": null, "entrada": null, "qtd_parcelas": null, "valor_parcela": null, "primeira_parcela": null, "forma_pagamento": null, "fipe": null, "saldo_financiamento": null, "banco_financiamento": null, "parcelas_financiamento_restantes": null, "valor_parcela_financiamento": null}}
+
+- "valor_total": preço total do veículo combinado entre as partes; "entrada": valor pago na assinatura/sinal.
+- "qtd_parcelas"/"valor_parcela"/"primeira_parcela": parcelamento do preço entre as partes (data em AAAA-MM-DD).
+- "saldo_financiamento"/"banco_financiamento"/"parcelas_financiamento_restantes"/"valor_parcela_financiamento": financiamento bancário em aberto do veículo, se houver.
+- "endereco": endereço completo numa linha só (rua, número, complemento, bairro, cidade/UF, CEP).
+- Números sem "R$" e sem pontuação de milhar, com ponto decimal (ex: 45230.50).
+PROMPT;
+
+    $resposta = geminiCallComMidia($prompt, $mime, base64_encode($arquivo['content']),
+        $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 900, 0.1, 90);
+    if ($resposta === '') return ['ok' => false, 'erro' => 'A IA não conseguiu ler o contrato agora — tente de novo.'];
+    $limpo = preg_replace('/```(?:json)?/i', '', $resposta);
+    preg_match('/\{[\s\S]*\}/', $limpo, $m);
+    $dados = json_decode(trim($m[0] ?? ''), true);
+    if (!is_array($dados)) return ['ok' => false, 'erro' => 'Resposta da IA em formato inesperado.'];
+
+    $txt = static fn($v) => is_scalar($v) ? trim((string)$v) : '';
+    $num = static function ($v): ?float {
+        if ($v === null || $v === '') return null;
+        if (is_numeric($v)) return (float)$v > 0 ? round((float)$v, 2) : null;
+        $f = valorMonetario((string)$v);
+        return ($f !== null && $f > 0) ? $f : null;
+    };
+    $tipo = in_array($dados['tipo_contrato'] ?? null, ['compra', 'venda'], true) ? $dados['tipo_contrato'] : null;
+    $p = is_array($dados['parte'] ?? null) ? $dados['parte'] : [];
+    $n = is_array($dados['negociacao'] ?? null) ? $dados['negociacao'] : [];
+    $parte = [];
+    foreach (['nome', 'cpf', 'rg', 'nacionalidade', 'estado_civil', 'profissao', 'endereco', 'email', 'telefone'] as $k) $parte[$k] = $txt($p[$k] ?? '');
+    // CPF só com 11 dígitos (mesma trava da extração de CNH); telefone só se parecer real.
+    if ($parte['cpf'] !== '' && strlen(preg_replace('/\D/', '', $parte['cpf'])) !== 11) $parte['cpf'] = '';
+    if ($parte['telefone'] !== '' && !normalizarTelefone($parte['telefone'])) $parte['telefone'] = '';
+    if ($parte['email'] !== '' && !filter_var($parte['email'], FILTER_VALIDATE_EMAIL)) $parte['email'] = '';
+    $prim = $txt($n['primeira_parcela'] ?? '');
+    $negoc = [
+        'valor_total' => $num($n['valor_total'] ?? null),
+        'entrada' => $num($n['entrada'] ?? null),
+        'qtd_parcelas' => (isset($n['qtd_parcelas']) && (int)$n['qtd_parcelas'] > 0) ? (int)$n['qtd_parcelas'] : null,
+        'valor_parcela' => $num($n['valor_parcela'] ?? null),
+        'primeira_parcela' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $prim) ? $prim : null,
+        'forma_pagamento' => $txt($n['forma_pagamento'] ?? ''),
+        'fipe' => $num($n['fipe'] ?? null),
+        'saldo_financiamento' => $num($n['saldo_financiamento'] ?? null),
+        'banco_financiamento' => $txt($n['banco_financiamento'] ?? ''),
+        'parcelas_financiamento_restantes' => (isset($n['parcelas_financiamento_restantes']) && (int)$n['parcelas_financiamento_restantes'] > 0) ? (int)$n['parcelas_financiamento_restantes'] : null,
+        'valor_parcela_financiamento' => $num($n['valor_parcela_financiamento'] ?? null),
+    ];
+    return ['ok' => true, 'contrato_id' => $contratoId, 'tipo_contrato' => $tipo, 'parte' => $parte, 'negociacao' => $negoc];
+}
+
+/** Nome de comprador que é só placeholder de importação ("Comprador (ZapSign)" etc). */
+function compradorNomeEhPlaceholder(string $nome): bool {
+    $n = trim($nome);
+    return $n === '' || stripos($n, '(zapsign)') !== false || preg_match('/^comprador\b/i', $n) === 1;
+}
+
+/** Aplica a leitura (contrato de VENDA) na venda — fill-if-empty, nunca sobrescreve. */
+function aplicarLeituraContratoNaVenda(int $vendaId, array $leitura, ?int $usuarioId): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT * FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v) return [];
+    $p = $leitura['parte'] ?? []; $n = $leitura['negociacao'] ?? [];
+    $set = []; $par = []; $nomes = [];
+    $campo = function (string $col, $valor, string $rotulo, bool $vazio) use (&$set, &$par, &$nomes) {
+        if ($valor === null || $valor === '' || !$vazio) return;
+        $set[] = "$col = ?"; $par[] = $valor; $nomes[] = $rotulo;
+    };
+    $vz = static fn($x) => trim((string)($x ?? '')) === '';
+    $campo('comprador_nome', $p['nome'] ?? '', 'nome', compradorNomeEhPlaceholder((string)$v['comprador_nome']));
+    $campo('comprador_cpf', $p['cpf'] ?? '', 'CPF', $vz($v['comprador_cpf']));
+    $campo('comprador_rg', $p['rg'] ?? '', 'RG', $vz($v['comprador_rg']));
+    $nac = trim((string)$v['comprador_nacionalidade']);
+    $campo('comprador_nacionalidade', $p['nacionalidade'] ?? '', 'nacionalidade', $nac === '' || $nac === 'brasileiro(a)');
+    $campo('comprador_estado_civil', $p['estado_civil'] ?? '', 'estado civil', $vz($v['comprador_estado_civil']));
+    $campo('comprador_profissao', $p['profissao'] ?? '', 'profissão', $vz($v['comprador_profissao']));
+    $campo('comprador_endereco', $p['endereco'] ?? '', 'endereço', $vz($v['comprador_endereco']));
+    $campo('comprador_email', $p['email'] ?? '', 'e-mail', $vz($v['comprador_email']));
+    $tel = ($p['telefone'] ?? '') !== '' ? (normalizarTelefone($p['telefone']) ?: '') : '';
+    $campo('comprador_telefone', $tel, 'telefone', $vz($v['comprador_telefone']));
+    $campo('preco_venda', $n['valor_total'] ?? null, 'preço', !((float)$v['preco_venda'] > 0));
+    $campo('valor_pago_contratacao', $n['entrada'] ?? null, 'entrada', !((float)$v['valor_pago_contratacao'] > 0));
+    $campo('parcelamento_qtd_parcelas', $n['qtd_parcelas'] ?? null, 'nº de parcelas', !((int)($v['parcelamento_qtd_parcelas'] ?? 0) > 0));
+    $campo('parcelamento_valor_parcela', $n['valor_parcela'] ?? null, 'valor da parcela', !((float)($v['parcelamento_valor_parcela'] ?? 0) > 0));
+    $campo('parcelamento_primeira_parcela_data', $n['primeira_parcela'] ?? null, '1ª parcela', $vz($v['parcelamento_primeira_parcela_data'] ?? ''));
+    $campo('forma_pagamento', $n['forma_pagamento'] ?? '', 'forma de pagamento', $vz($v['forma_pagamento']));
+    if ($set) {
+        $par[] = $vendaId;
+        $db->prepare("UPDATE vendas SET " . implode(', ', $set) . ", updated_at = datetime('now','localtime') WHERE id = ?")->execute($par);
+        $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, ?, ?, ?, ?)")
+           ->execute([$vendaId, $v['etapa'], $v['etapa'], $usuarioId, 'Preenchido lendo o contrato com IA: ' . implode(', ', $nomes) . '.']);
+    }
+    // FIPE do veículo, se ainda faltar (mesma oportunidade).
+    if (!empty($n['fipe']) && $v['oportunidade_id']) {
+        $db->prepare("UPDATE oportunidades SET valor_fipe_referencia = ? WHERE id = ? AND (valor_fipe_referencia IS NULL OR valor_fipe_referencia <= 0)")
+           ->execute([$n['fipe'], $v['oportunidade_id']]);
+    }
+    return $nomes;
+}
+
+/**
+ * Contrato pendurado na venda é, na verdade, a COMPRA do veículo (importação
+ * antiga). Move pro lado da compra: contrato vira tipo 'compra' (sem
+ * venda_id), entra como documento contrato_compra, e os dados do vendedor
+ * original/valores completam cliente e oportunidade (fill-if-empty).
+ * Opcionalmente cancela a venda importada por engano.
+ */
+function moverContratoVendaParaCompra(int $vendaId, int $contratoId, array $leitura, bool $cancelarVenda, ?int $usuarioId): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT c.*, v.etapa AS venda_etapa FROM contratos c JOIN vendas v ON v.id = c.venda_id WHERE c.id = ? AND c.venda_id = ?");
+    $st->execute([$contratoId, $vendaId]);
+    $c = $st->fetch();
+    if (!$c) return ['ok' => false, 'erro' => 'Contrato não encontrado nesta venda.'];
+    $opId = (int)$c['oportunidade_id'];
+    if (!$opId) return ['ok' => false, 'erro' => 'A venda não tem veículo vinculado.'];
+    $nomes = [];
+    $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE contratos SET tipo = 'compra', venda_id = NULL WHERE id = ?")->execute([$contratoId]);
+        if ($c['drive_file_id'] || $c['arquivo_url']) {
+            $db->prepare("INSERT INTO oportunidade_documentos (oportunidade_id, tipo, obrigatorio, drive_file_id, arquivo_url)
+                VALUES (?, 'contrato_compra', 1, ?, ?)
+                ON CONFLICT(oportunidade_id, tipo) DO UPDATE SET drive_file_id = excluded.drive_file_id, arquivo_url = excluded.arquivo_url
+                WHERE COALESCE(oportunidade_documentos.drive_file_id,'') = '' AND COALESCE(oportunidade_documentos.arquivo_url,'') = ''")
+               ->execute([$opId, (string)$c['drive_file_id'], (string)$c['arquivo_url']]);
+        }
+        $p = $leitura['parte'] ?? []; $n = $leitura['negociacao'] ?? [];
+        $op = $db->query("SELECT o.*, cl.nome AS cli_nome, cl.cpf AS cli_cpf, cl.rg AS cli_rg, cl.email AS cli_email, cl.endereco AS cli_endereco,
+            cl.nacionalidade AS cli_nac, cl.estado_civil AS cli_ec, cl.profissao AS cli_prof
+            FROM oportunidades o JOIN clientes cl ON cl.id = o.cliente_id WHERE o.id = " . $opId)->fetch();
+        if ($op) {
+            $vz = static fn($x) => trim((string)($x ?? '')) === '';
+            $cset = []; $cpar = [];
+            foreach ([['nome', 'cli_nome', 'nome'], ['cpf', 'cli_cpf', 'CPF'], ['rg', 'cli_rg', 'RG'], ['email', 'cli_email', 'e-mail'],
+                      ['endereco', 'cli_endereco', 'endereço'], ['nacionalidade', 'cli_nac', 'nacionalidade'],
+                      ['estado_civil', 'cli_ec', 'estado civil'], ['profissao', 'cli_prof', 'profissão']] as [$col, $atual, $rot]) {
+                $novo = (string)($p[$col] ?? '');
+                $vazio = $col === 'nome' ? ($vz($op[$atual]) || compradorNomeEhPlaceholder((string)$op[$atual])) : $vz($op[$atual]);
+                if ($novo !== '' && $vazio) { $cset[] = "$col = ?"; $cpar[] = $novo; $nomes[] = $rot; }
+            }
+            if ($cset) { $cpar[] = $op['cliente_id']; $db->prepare("UPDATE clientes SET " . implode(', ', $cset) . " WHERE id = ?")->execute($cpar); }
+            $oset = []; $opar = [];
+            foreach ([['valor_final', 'valor_total', 'valor pago'], ['valor_fipe_referencia', 'fipe', 'FIPE'],
+                      ['saldo_financiamento_atual', 'saldo_financiamento', 'saldo do financiamento'],
+                      ['valor_parcela', 'valor_parcela_financiamento', 'parcela do financiamento'],
+                      ['parcelas_restantes', 'parcelas_financiamento_restantes', 'parcelas restantes']] as [$col, $k, $rot]) {
+                if (!empty($n[$k]) && !((float)($op[$col] ?? 0) > 0)) { $oset[] = "$col = ?"; $opar[] = $n[$k]; $nomes[] = $rot; }
+            }
+            if (($n['banco_financiamento'] ?? '') !== '' && $vz($op['banco_financiamento'])) { $oset[] = 'banco_financiamento = ?'; $opar[] = $n['banco_financiamento']; $nomes[] = 'banco'; }
+            if ($oset) { $opar[] = $opId; $db->prepare("UPDATE oportunidades SET " . implode(', ', $oset) . " WHERE id = ?")->execute($opar); }
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, ?, ?, ?, ?)")
+               ->execute([$opId, $op['etapa'], $op['etapa'], $usuarioId, "Contrato #{$contratoId} estava na venda #{$vendaId} mas é a COMPRA do veículo — movido pra compra"
+                   . ($nomes ? '; preenchido pelo contrato: ' . implode(', ', $nomes) : '') . '.']);
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        return ['ok' => false, 'erro' => 'Falha ao mover o contrato: ' . $e->getMessage()];
+    }
+    $cancelou = false;
+    if ($cancelarVenda && !in_array($c['venda_etapa'], ['cancelada', 'sem_perfil'], true)) {
+        try {
+            mudarEtapaVenda($vendaId, 'cancelada', $usuarioId, 'Venda importada por engano — o contrato era a compra do veículo (movido pra compra).');
+            $db->prepare("UPDATE vendas SET motivo_cancelamento = ? WHERE id = ?")->execute(['Importada por engano: contrato era de compra.', $vendaId]);
+            $cancelou = true;
+        } catch (Throwable $e) {}
+    }
+    return ['ok' => true, 'preenchidos' => $nomes, 'oportunidade_id' => $opId, 'cancelou' => $cancelou];
+}
