@@ -17,6 +17,7 @@
 ob_start();
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/contratos_pdf.php';
+require_once __DIR__ . '/../includes/contratos.php';
 requireSuperAdmin();
 
 $db = getDB();
@@ -41,6 +42,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar_
     }
 }
 if (!empty($_GET['salvo'])) $sucesso = 'Valor da quitação salvo.';
+if (!empty($_SESSION['rl_msg'])) { [$tipoMsg, $txtMsg] = $_SESSION['rl_msg']; unset($_SESSION['rl_msg']); if ($tipoMsg === 'ok') $sucesso = $txtMsg; else $erro = $txtMsg; }
+
+// 05/11/2026, "FIPE: coloca botão IA ler informações do contrato ZapSign" —
+// lê o contrato assinado e preenche FIPE / valor pago / saldo do
+// financiamento que estiverem vazios (nunca sobrescreve).
+function rlTextoLeitura(array $r): string {
+    if (!$r['ok']) return $r['erro'];
+    return $r['preenchidos'] ? 'preencheu ' . implode(', ', $r['preenchidos']) : 'nada novo no contrato';
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_contrato') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página.';
+    } else {
+        $opId = (int)($_POST['oportunidade_id'] ?? 0);
+        $r = preencherValoresPeloContratoCompra($opId);
+        $_SESSION['rl_msg'] = [$r['ok'] ? 'ok' : 'erro', '🤖 Contrato lido: ' . rlTextoLeitura($r) . '.'];
+        header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET) . '#op' . $opId);
+        exit;
+    }
+}
 
 $filtro = in_array($_GET['filtro'] ?? '', ['vendidos', 'estoque', 'todos'], true) ? $_GET['filtro'] : 'vendidos';
 $busca = trim((string)($_GET['q'] ?? ''));
@@ -130,6 +151,32 @@ foreach ($linhas as &$l) {
     }
 }
 unset($l);
+
+// Lote: lê até RL_LOTE_LEITURA contratos dos veículos da lista atual que
+// estão sem FIPE ou sem valor pago (limite por clique pra não estourar o
+// tempo da página — clicar de novo continua de onde parou).
+const RL_LOTE_LEITURA = 8;
+$pendentesLeitura = array_values(array_filter($linhas, fn($l) => !((float)$l['valor_fipe_referencia'] > 0) || !((float)$l['valor_final'] > 0)));
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'ler_contratos_lote' && validateCSRF($_POST['csrf_token'] ?? '')) {
+    @set_time_limit(300);
+    $ignorar = array_map('intval', $_SESSION['rl_lote_ignorar'] ?? []);
+    $feitos = 0; $preencheu = 0; $falhas = 0;
+    foreach ($pendentesLeitura as $pl) {
+        if ($feitos >= RL_LOTE_LEITURA) break;
+        if (in_array((int)$pl['op_id'], $ignorar, true)) continue;
+        $r = preencherValoresPeloContratoCompra((int)$pl['op_id']);
+        $feitos++;
+        $ignorar[] = (int)$pl['op_id']; // já lido — o próximo clique segue pros outros
+        if ($r['ok'] && $r['preenchidos']) $preencheu++;
+        else $falhas++;
+    }
+    $_SESSION['rl_lote_ignorar'] = $ignorar;
+    $_SESSION['rl_msg'] = ['ok', "🤖 {$feitos} contrato(s) lido(s): {$preencheu} veículo(s) preenchido(s)" . ($falhas ? ", {$falhas} sem contrato ou sem valor novo" : '') . '.'];
+    header('Location: /admin/relatorio_lucro_veiculos.php?' . http_build_query($_GET));
+    exit;
+}
+$ignoradosLote = array_map('intval', $_SESSION['rl_lote_ignorar'] ?? []);
+$qtdLerLote = count(array_filter($pendentesLeitura, fn($l) => !in_array((int)$l['op_id'], $ignoradosLote, true)));
 
 function rlMoeda(?float $v): string {
     return $v === null ? '—' : 'R$ ' . number_format($v, 2, ',', '.');
@@ -348,10 +395,12 @@ ob_end_flush();
         <div><label>Mês</label><input type="month" name="mes" value="<?= e($mes) ?>"></div>
         <div class="rl-acao"><button type="submit">🔎 Filtrar</button></div>
         <?php if ($mes !== ''): ?><div class="rl-acao"><a class="btn" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca])) ?>">Limpar mês</a></div><?php endif; ?>
+        <?php if ($qtdLerLote): ?><div class="rl-acao"><button type="submit" form="rl-form-lote" title="Lê o contrato assinado e preenche FIPE/valor pago vazios">🤖 Ler contratos com IA (<?= min($qtdLerLote, RL_LOTE_LEITURA) ?> de <?= $qtdLerLote ?>)</button></div><?php endif; ?>
         <div class="rl-acao"><a class="btn btn-primary" target="_blank" href="?<?= e(http_build_query(['filtro' => $filtro, 'q' => $busca, 'mes' => $mes, 'pdf' => 1])) ?>">📄 Gerar PDF completo</a></div>
     </form>
 </div>
 
+<form id="rl-form-lote" method="post" style="display:none"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contratos_lote"></form>
 <div class="card">
 <table class="tabela-oportunidades rl-tabela">
     <thead><tr>
@@ -367,7 +416,11 @@ ob_end_flush();
                 <?php if ($l['veiculo_placa']): ?><span class="rl-sub">🔖 <?= e(strtoupper($l['veiculo_placa'])) ?></span><?php endif; ?>
                 <?php if ($l['venda_id']): ?><span class="rl-sub"><a href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>">venda #<?= (int)$l['venda_id'] ?></a> · <?= e($l['comprador_nome'] ?: '—') ?><?= $l['data_venda'] ? ' · ' . date('d/m/Y', strtotime($l['data_venda'])) : '' ?><?= $l['venda_etapa'] !== 'vendido' ? ' (em negociação)' : '' ?></span><?php else: ?><span class="rl-sub">sem venda</span><?php endif; ?>
             </td>
-            <td class="rl-num"><?= rlMoeda((float)$l['valor_fipe_referencia'] > 0 ? (float)$l['valor_fipe_referencia'] : null) ?><?php if (!((float)$l['valor_fipe_referencia'] > 0)): ?><span class="rl-aviso">sem FIPE</span><?php endif; ?></td>
+            <td class="rl-num"><?= rlMoeda((float)$l['valor_fipe_referencia'] > 0 ? (float)$l['valor_fipe_referencia'] : null) ?><?php if (!((float)$l['valor_fipe_referencia'] > 0)): ?><span class="rl-aviso">sem FIPE</span><?php endif; ?>
+                <?php if (!((float)$l['valor_fipe_referencia'] > 0) || !((float)$l['valor_final'] > 0)): ?>
+                <form method="post" style="margin:4px 0 0"><?= csrfField() ?><input type="hidden" name="acao" value="ler_contrato"><input type="hidden" name="oportunidade_id" value="<?= (int)$l['op_id'] ?>">
+                    <button type="submit" class="btn-texto" title="A IA lê o contrato assinado e preenche FIPE e valor pago">🤖 ler contrato</button></form>
+                <?php endif; ?></td>
             <td class="rl-num"><?= rlMoeda($l['_quit_prevista']) ?></td>
             <td class="rl-num"><?= rlMoeda($l['valor_final'] !== null && (float)$l['valor_final'] > 0 ? (float)$l['valor_final'] : null) ?><?php if (!((float)$l['valor_final'] > 0)): ?><span class="rl-aviso">⚠️ sem valor pago</span><?php endif; ?></td>
             <td data-label="Quitação">

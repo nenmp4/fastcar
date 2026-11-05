@@ -1487,3 +1487,131 @@ function vendaConcluirPorContratoAssinado(int $vendaId): bool {
     return true;
 }
 
+
+/**
+ * Lê o CONTRATO DE COMPRA de um veículo com IA e devolve FIPE, valor pago ao
+ * vendedor e saldo do financiamento (05/11/2026, "FIPE: coloca botão IA ler
+ * informações do contrato ZapSign" — relatório de lucro por veículo).
+ * Procura o PDF nesta ordem: contrato de compra assinado salvo
+ * (contratos.drive_file_id/arquivo_url), documento "contrato_compra" anexado
+ * na pasta, e por fim o PDF assinado direto na ZapSign. Nunca inventa:
+ * campo que não estiver escrito no contrato volta null (regra #3).
+ *
+ * @return array{ok: bool, erro?: string, fipe?: ?float, valor_pago?: ?float, saldo_financiamento?: ?float}
+ */
+function lerContratoCompraValoresIA(int $oportunidadeId): array {
+    $db = getDB();
+    $geminiKey = getConfig('gemini_api_key') ?: '';
+    if (!$geminiKey) return ['ok' => false, 'erro' => 'Chave da IA (Gemini) não configurada.'];
+
+    $arquivo = null;
+    $st = $db->prepare("SELECT drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
+        WHERE oportunidade_id = ? AND tipo = 'compra' AND status = 'assinado' ORDER BY id DESC");
+    $st->execute([$oportunidadeId]);
+    $contratos = $st->fetchAll();
+    foreach ($contratos as $c) {
+        if ($c['drive_file_id'] || $c['arquivo_url']) {
+            $arquivo = lerConteudoArquivoDocumento($c['drive_file_id'] ?: null, $c['arquivo_url'] ?: null);
+            if ($arquivo) break;
+        }
+    }
+    if (!$arquivo) {
+        $st = $db->prepare("SELECT drive_file_id, arquivo_url FROM oportunidade_documentos WHERE oportunidade_id = ? AND tipo = 'contrato_compra'");
+        $st->execute([$oportunidadeId]);
+        if ($d = $st->fetch()) {
+            if ($d['drive_file_id'] || $d['arquivo_url']) $arquivo = lerConteudoArquivoDocumento($d['drive_file_id'] ?: null, $d['arquivo_url'] ?: null);
+        }
+    }
+    if (!$arquivo) {
+        foreach ($contratos as $c) {
+            if (!$c['zapsign_doc_token']) continue;
+            $bytes = zapsignBaixarAssinado($c['zapsign_doc_token']);
+            if ($bytes) { $arquivo = ['content' => $bytes, 'mime' => 'application/pdf']; break; }
+        }
+    }
+    // Sem contrato de compra (ex: carro migrado do CRM antigo): tenta o de
+    // VENDA do mesmo veículo — também traz a FIPE no Quadro-Resumo; dele só
+    // a FIPE é aproveitada (o "valor pago" lá é o do comprador, não o nosso).
+    $fonte = 'compra';
+    if (!$arquivo) {
+        $st = $db->prepare("SELECT drive_file_id, arquivo_url, zapsign_doc_token FROM contratos
+            WHERE oportunidade_id = ? AND tipo = 'venda' AND status = 'assinado' ORDER BY id DESC");
+        $st->execute([$oportunidadeId]);
+        foreach ($st->fetchAll() as $c) {
+            if ($c['drive_file_id'] || $c['arquivo_url']) $arquivo = lerConteudoArquivoDocumento($c['drive_file_id'] ?: null, $c['arquivo_url'] ?: null);
+            if (!$arquivo && $c['zapsign_doc_token']) {
+                $bytes = zapsignBaixarAssinado($c['zapsign_doc_token']);
+                if ($bytes) $arquivo = ['content' => $bytes, 'mime' => 'application/pdf'];
+            }
+            if ($arquivo) { $fonte = 'venda'; break; }
+        }
+    }
+    if (!$arquivo) return ['ok' => false, 'erro' => 'Nenhum contrato assinado (compra ou venda) encontrado pra esse veículo.'];
+
+    $mime = (string)($arquivo['mime'] ?? 'application/pdf');
+    if (!str_starts_with($mime, 'image/') && $mime !== 'application/pdf') $mime = 'application/pdf';
+
+    $prompt = <<<PROMPT
+Você vai ler um contrato de veículo da FASTCAR (compra, venda ou promissória). Extraia SOMENTE valores escritos claramente no documento (em geral no Quadro-Resumo). NUNCA invente, calcule ou deduza. Se não estiver escrito, use null.
+
+Responda SOMENTE em JSON, neste formato exato:
+{"fipe": null, "valor_pago": null, "saldo_financiamento": null}
+
+- "fipe": o valor FIPE de referência do veículo (ex: "Valor FIPE de referência na contratação").
+- "valor_pago": o valor que a FASTCAR paga ao VENDEDOR pelo veículo (ex: "Valor pago ao VENDEDOR"); null se o contrato for de venda.
+- "saldo_financiamento": o saldo devedor do financiamento em aberto que a FASTCAR assume/quita.
+Números sem "R$" e sem pontuação de milhar, com ponto decimal (ex: 45230.50).
+PROMPT;
+
+    $resposta = geminiCallComMidia(
+        $prompt, $mime, base64_encode($arquivo['content']),
+        $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 300, 0.1, 60
+    );
+    if ($resposta === '') return ['ok' => false, 'erro' => 'A IA não conseguiu ler o contrato agora — tente de novo.'];
+    $limpo = preg_replace('/```(?:json)?/i', '', $resposta);
+    preg_match('/\{[\s\S]*\}/', $limpo, $m);
+    $dados = json_decode(trim($m[0] ?? ''), true);
+    if (!is_array($dados)) return ['ok' => false, 'erro' => 'Resposta da IA em formato inesperado.'];
+
+    $num = static function ($v): ?float {
+        if ($v === null || $v === '') return null;
+        if (is_numeric($v)) return (float)$v > 0 ? round((float)$v, 2) : null;
+        $f = valorMonetario((string)$v);
+        return ($f !== null && $f > 0) ? $f : null;
+    };
+    return [
+        'ok' => true,
+        'fonte' => $fonte,
+        'fipe' => $num($dados['fipe'] ?? null),
+        'valor_pago' => $fonte === 'compra' ? $num($dados['valor_pago'] ?? null) : null,
+        'saldo_financiamento' => $fonte === 'compra' ? $num($dados['saldo_financiamento'] ?? null) : null,
+    ];
+}
+
+/**
+ * Lê o contrato (lerContratoCompraValoresIA) e grava na oportunidade só o que
+ * estiver VAZIO (fill-if-empty — nunca sobrescreve valor já conferido).
+ * @return array{ok: bool, erro?: string, preenchidos?: string[], lidos?: array}
+ */
+function preencherValoresPeloContratoCompra(int $oportunidadeId): array {
+    $r = lerContratoCompraValoresIA($oportunidadeId);
+    if (!$r['ok']) return $r;
+    $db = getDB();
+    $st = $db->prepare("SELECT valor_fipe_referencia, valor_final, saldo_financiamento_atual FROM oportunidades WHERE id = ?");
+    $st->execute([$oportunidadeId]);
+    $o = $st->fetch();
+    if (!$o) return ['ok' => false, 'erro' => 'Veículo não encontrado.'];
+    $mapa = ['valor_fipe_referencia' => ['fipe', 'FIPE'], 'valor_final' => ['valor_pago', 'valor pago'], 'saldo_financiamento_atual' => ['saldo_financiamento', 'saldo do financiamento']];
+    $preenchidos = [];
+    foreach ($mapa as $col => [$chave, $rotulo]) {
+        if (!((float)($o[$col] ?? 0) > 0) && $r[$chave] !== null) {
+            $db->prepare("UPDATE oportunidades SET {$col} = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$r[$chave], $oportunidadeId]);
+            $preenchidos[] = $rotulo;
+        }
+    }
+    if ($preenchidos) {
+        $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+           ->execute([$oportunidadeId, $_SESSION['admin_id'] ?? null, 'Lido do contrato de ' . $r['fonte'] . ' pela IA: ' . implode(', ', $preenchidos) . '.']);
+    }
+    return ['ok' => true, 'preenchidos' => $preenchidos, 'lidos' => $r];
+}
