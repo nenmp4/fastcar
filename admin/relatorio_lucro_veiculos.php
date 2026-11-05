@@ -6,6 +6,7 @@
  *
  * Uma linha por veículo comprado (oportunidade etapa='fechado'):
  *   custo  = valor pago ao vendedor (valor_final) + quitação do financiamento
+ *            + comissões (compra + venda, fin_lancamentos não cancelados)
  *            (oportunidades.valor_quitacao, digitada aqui — nunca chutada)
  *   venda  = entrada + parcela × quantidade (termos salvos na venda);
  *            sem parcelamento, usa o preço da venda
@@ -131,7 +132,11 @@ $sql = "
            v.parcelamento_periodicidade,
            EXISTS (SELECT 1 FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.campos_json LIKE '%importado_zapsign%') AS migrado_zapsign,
            (SELECT COALESCE(SUM(l.valor), 0) FROM fin_lancamentos l
-              WHERE l.venda_id = v.id AND l.tipo = 'receita' AND l.status = 'pago') AS recebido
+              WHERE l.venda_id = v.id AND l.tipo = 'receita' AND l.status = 'pago') AS recebido,
+           (SELECT COALESCE(SUM(l.valor), 0) FROM fin_lancamentos l
+              WHERE l.oportunidade_id = o.id AND l.origem = 'comissao_compra' AND l.status != 'cancelado') AS comissao_compra,
+           (SELECT COALESCE(SUM(l.valor), 0) FROM fin_lancamentos l
+              WHERE l.venda_id = v.id AND l.origem = 'comissao_venda' AND l.status != 'cancelado') AS comissao_venda
     FROM oportunidades o
     LEFT JOIN vendas v ON v.id = (
         SELECT v2.id FROM vendas v2
@@ -146,7 +151,7 @@ $st = $db->prepare($sql);
 $st->execute($params);
 $linhas = $st->fetchAll();
 
-$tot = ['pago' => 0, 'quitacao' => 0, 'venda' => 0, 'entrada' => 0, 'recebido' => 0, 'lucro' => 0, 'n_lucro' => 0, 'sem_quitacao' => 0, 'sem_pago' => 0, 'fipe' => 0, 'quit_estimada' => 0, 'quit_prevista' => 0];
+$tot = ['pago' => 0, 'quitacao' => 0, 'venda' => 0, 'entrada' => 0, 'recebido' => 0, 'lucro' => 0, 'n_lucro' => 0, 'sem_quitacao' => 0, 'sem_pago' => 0, 'fipe' => 0, 'quit_estimada' => 0, 'quit_prevista' => 0, 'comissao' => 0];
 $contPend = [];
 $totalSemPend = count($linhas);
 foreach ($linhas as &$l) {
@@ -167,7 +172,9 @@ foreach ($linhas as &$l) {
     if ($l['venda_id']) {
         $vendaTotal = ($parcela > 0 && $qtd > 0) ? $entrada + $parcela * $qtd : ((float)($l['preco_venda'] ?? 0) ?: ($entrada ?: null));
     }
-    $l['_custo'] = $pago + ($quit ?? 0);
+    // 05/11/2026 — comissões (consultor na compra + vendedor na venda) entram no custo.
+    $l['_comissao'] = (float)$l['comissao_compra'] + (float)$l['comissao_venda'];
+    $l['_custo'] = $pago + ($quit ?? 0) + $l['_comissao'];
     $l['_venda_total'] = $vendaTotal;
     $l['_lucro'] = $vendaTotal !== null ? $vendaTotal - $l['_custo'] : null;
     $marcas = [
@@ -187,6 +194,7 @@ foreach ($linhas as &$l) {
     if ($quit === null) $tot['sem_quitacao']++;
     if ($l['_quit_estimada']) $tot['quit_estimada']++;
     $tot['fipe'] += $fipe;
+    $tot['comissao'] += $l['_comissao'];
     $tot['entrada'] += $entrada;
     $tot['recebido'] += (float)$l['recebido'];
     if ($vendaTotal !== null) {
@@ -268,7 +276,7 @@ if (!empty($_GET['pdf'])) {
 
     // Resumo
     $resumo = [
-        ['FIPE dos veículos', $tot['fipe']], ['Quitação prevista (' . RL_QUITACAO_PCT_FIPE . '% FIPE)', $tot['quit_prevista']], ['Pago aos vendedores', $tot['pago']], ['Quitações (real+prev.)', $tot['quitacao']],
+        ['FIPE dos veículos', $tot['fipe']], ['Quitação prevista (' . RL_QUITACAO_PCT_FIPE . '% FIPE)', $tot['quit_prevista']], ['Pago aos vendedores', $tot['pago']], ['Quitações (real+prev.)', $tot['quitacao']], ['Comissões (compra+venda)', $tot['comissao']],
         ['Total das vendas', $tot['venda']], ['Já recebido', $tot['recebido']],
         ['Lucro previsto', $tot['lucro']],
     ];
@@ -304,9 +312,9 @@ if (!empty($_GET['pdf'])) {
     $pdf->Ln(1);
 
     $cols = [
-        ['Veículo / placa', 38, 'L'], ['Comprador', 25, 'L'], ['Data venda', 16, 'C'], ['FIPE', 20, 'R'], ['Quit. prevista', 20, 'R'], ['Valor pago', 20, 'R'],
-        ['Quitação', 20, 'R'], ['Custo total', 20, 'R'], ['Entrada', 19, 'R'], ['Parcelas', 22, 'C'],
-        ['Total venda', 20, 'R'], ['Recebido', 17, 'R'], ['Lucro', 20, 'R'],
+        ['Veículo / placa', 33, 'L'], ['Comprador', 22, 'L'], ['Data venda', 15, 'C'], ['FIPE', 19, 'R'], ['Quit. prevista', 19, 'R'], ['Valor pago', 19, 'R'],
+        ['Quitação', 19, 'R'], ['Comissões', 17, 'R'], ['Custo total', 20, 'R'], ['Entrada', 18, 'R'], ['Parcelas', 20, 'C'],
+        ['Total venda', 20, 'R'], ['Recebido', 16, 'R'], ['Lucro', 20, 'R'],
     ];
     $cab = function () use ($pdf, $cols) {
         $pdf->SetFont('Helvetica', 'B', 7.5);
@@ -331,6 +339,7 @@ if (!empty($_GET['pdf'])) {
             rlMoeda($l['_quit_prevista']),
             rlMoeda($l['valor_final'] !== null ? (float)$l['valor_final'] : null),
             rlMoeda($l['_quitacao']) . ($l['_quit_estimada'] ? '*' : ''),
+            $l['_comissao'] > 0 ? rlMoeda($l['_comissao']) : '—',
             rlMoeda($l['_custo']),
             $l['venda_id'] ? rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) : '—',
             $parcTxt, rlMoeda($l['_venda_total']),
@@ -342,7 +351,7 @@ if (!empty($_GET['pdf'])) {
         foreach ($cols as $i => [$t, $cw, $al]) {
             $txt = _pdfTexto((string)$vals[$i]);
             while ($pdf->GetStringWidth($txt) > $cw - 1.5 && strlen($txt) > 3) $txt = substr($txt, 0, -2);
-            if ($i === 12 && $l['_lucro'] !== null) {
+            if ($i === 13 && $l['_lucro'] !== null) {
                 $pdf->SetFont('Helvetica', 'B', 7.2);
                 $pdf->SetTextColor($l['_lucro'] < 0 ? 220 : 21, $l['_lucro'] < 0 ? 38 : 128, $l['_lucro'] < 0 ? 38 : 61);
             }
@@ -355,13 +364,13 @@ if (!empty($_GET['pdf'])) {
     // Total
     $pdf->SetFont('Helvetica', 'B', 7.5);
     $pdf->SetFillColor(225, 232, 252);
-    $totVals = ['TOTAL', '', '', rlMoeda($tot['fipe']), rlMoeda($tot['quit_prevista']), rlMoeda($tot['pago']), rlMoeda($tot['quitacao']), rlMoeda($tot['pago'] + $tot['quitacao']),
+    $totVals = ['TOTAL', '', '', rlMoeda($tot['fipe']), rlMoeda($tot['quit_prevista']), rlMoeda($tot['pago']), rlMoeda($tot['quitacao']), rlMoeda($tot['comissao']), rlMoeda($tot['pago'] + $tot['quitacao'] + $tot['comissao']),
         rlMoeda($tot['entrada']), '', rlMoeda($tot['venda']), rlMoeda($tot['recebido']), rlMoeda($tot['lucro'])];
     foreach ($cols as $i => [$t, $cw, $al]) $pdf->Cell($cw, 7, _pdfTexto($totVals[$i]), 0, 0, $al, true);
     $pdf->Ln(9);
     $pdf->SetFont('Helvetica', '', 7);
     $pdf->SetTextColor(110, 110, 110);
-    $pdf->MultiCell(0, 4, _pdfTexto('Custo = valor pago ao vendedor + quitação do financiamento (sem valor digitado, estimada em ' . RL_QUITACAO_PCT_FIPE . '% da FIPE, marcada com *). Total da venda = entrada + parcelas (quantidade × valor) ou o preço da venda quando não há parcelamento. Lucro previsto = total da venda − custo, contando parcelas ainda não pagas; "Recebido" é o que já está marcado como pago no financeiro. Locação fica de fora.'));
+    $pdf->MultiCell(0, 4, _pdfTexto('Custo = valor pago ao vendedor + quitação do financiamento (sem valor digitado, estimada em ' . RL_QUITACAO_PCT_FIPE . '% da FIPE, marcada com *) + comissões (consultor na compra + vendedor na venda, lançadas no financeiro). Total da venda = entrada + parcelas (quantidade × valor) ou o preço da venda quando não há parcelamento. Lucro previsto = total da venda − custo, contando parcelas ainda não pagas; "Recebido" é o que já está marcado como pago no financeiro. Locação fica de fora.'));
     ob_end_clean();
     $pdf->Output('I', 'lucro_por_veiculo_' . ($mes ?: 'todos') . '.pdf');
     exit;
@@ -439,6 +448,7 @@ ob_end_flush();
     <a class="stat-card" href="<?= $lnk(['pend' => 'sem_quitacao']) ?>" title="Ver quem ainda usa a quitação prevista"><div class="valor"><?= rlMoeda($tot['quit_prevista']) ?></div><div class="rotulo">Quitação prevista (<?= RL_QUITACAO_PCT_FIPE ?>% FIPE)</div><small>ver sem quitação real →</small></a>
     <a class="stat-card" href="<?= $lnk(['pend' => 'sem_pago']) ?>" title="Ver os veículos sem valor pago"><div class="valor"><?= rlMoeda($tot['pago']) ?></div><div class="rotulo">Pago aos vendedores</div><?php if ($tot['sem_pago']): ?><small class="rl-alerta"><?= $tot['sem_pago'] ?> sem valor pago →</small><?php endif; ?></a>
     <a class="stat-card" href="<?= $lnk(['pend' => 'sem_quitacao']) ?>" title="Ver os veículos sem quitação real"><div class="valor"><?= rlMoeda($tot['quitacao']) ?></div><div class="rotulo">Quitações (real + prevista)</div><?php if ($tot['quit_estimada']): ?><small class="rl-alerta"><?= $tot['quit_estimada'] ?> ainda sem valor real →</small><?php endif; ?><?php if ($tot['sem_quitacao']): ?><small class="rl-alerta"><?= $tot['sem_quitacao'] ?> sem quitação e sem FIPE</small><?php endif; ?></a>
+    <a class="stat-card" href="/admin/financeiro-lancamentos.php?origem=comissao_compra&amp;todos_periodos=1" title="Ver comissões lançadas no financeiro"><div class="valor"><?= rlMoeda($tot['comissao']) ?></div><div class="rotulo">Comissões (compra + venda)</div><small>já descontadas do lucro →</small></a>
     <a class="stat-card" href="<?= $lnk(['pend' => '', 'ordem' => 'lucro_maior']) ?>" title="Ordenar pelo maior lucro"><div class="valor"><?= rlMoeda($tot['venda']) ?></div><div class="rotulo">Total das vendas</div><small>ordenar por maior lucro →</small></a>
     <a class="stat-card" href="/admin/promissorias.php" title="Ver parcelas recebidas em Promissórias"><div class="valor"><?= rlMoeda($tot['recebido']) ?></div><div class="rotulo">Já recebido</div><small>ver parcelas →</small></a>
     <a class="stat-card <?= $tot['lucro'] < 0 ? 'alerta' : 'sucesso' ?>" href="<?= $lnk(['pend' => 'lucro_neg', 'ordem' => 'lucro_menor']) ?>" title="Ver os veículos com prejuízo"><div class="valor"><?= rlMoeda($tot['lucro']) ?></div><div class="rotulo">Lucro previsto (<?= $tot['n_lucro'] ?> vendido<?= $tot['n_lucro'] === 1 ? '' : 's' ?>)</div><small>ver com prejuízo →</small></a>
@@ -480,7 +490,7 @@ ob_end_flush();
 <div class="card">
 <table class="tabela-oportunidades rl-tabela">
     <thead><tr>
-        <th>Veículo</th><th>FIPE</th><th class="rl-num">Quitação prevista<small><?= RL_QUITACAO_PCT_FIPE ?>% da FIPE</small></th><th class="rl-num">Valor pago</th><th>Quitação real</th><th class="rl-num">Custo total</th>
+        <th>Veículo</th><th>FIPE</th><th class="rl-num">Quitação prevista<small><?= RL_QUITACAO_PCT_FIPE ?>% da FIPE</small></th><th class="rl-num">Valor pago</th><th>Quitação real</th><th class="rl-num">Comissões<small>compra + venda</small></th><th class="rl-num">Custo total</th>
         <th class="rl-num">Entrada</th><th>Parcelas</th><th class="rl-num">Total venda</th><th class="rl-num">Recebido</th><th class="rl-num">Lucro</th>
     </tr></thead>
     <tbody>
@@ -519,6 +529,7 @@ ob_end_flush();
                 <?php if ($l['_quit_estimada']): ?><span class="rl-estimada">usando a prevista</span><?php endif; ?>
                 <?php if ($l['financiamento_quitado']): ?><small>✅ financiamento quitado</small><?php endif; ?>
             </td>
+            <td class="rl-num" data-label="Comissões"><?php if ($l['_comissao'] > 0): ?><span title="Compra: <?= e(rlMoeda((float)$l['comissao_compra'])) ?> · Venda: <?= e(rlMoeda((float)$l['comissao_venda'])) ?>"><?= rlMoeda($l['_comissao']) ?></span><small style="display:block;color:var(--texto-fraco)"><?= (float)$l['comissao_compra'] > 0 ? 'C ' . rlMoeda((float)$l['comissao_compra']) : '' ?><?= (float)$l['comissao_compra'] > 0 && (float)$l['comissao_venda'] > 0 ? ' · ' : '' ?><?= (float)$l['comissao_venda'] > 0 ? 'V ' . rlMoeda((float)$l['comissao_venda']) : '' ?></small><?php else: ?>—<?php endif; ?></td>
             <td class="rl-num"><?= rlMoeda($l['_custo']) ?></td>
             <td class="rl-num"><?php if ($l['venda_id']): ?><a class="rl-lnk" href="/admin/venda.php?id=<?= (int)$l['venda_id'] ?>"><?= rlMoeda((float)($l['valor_pago_contratacao'] ?? 0)) ?></a><?php else: ?>—<?php endif; ?></td>
             <td>
@@ -541,7 +552,8 @@ ob_end_flush();
         <td class="rl-num"><?= rlMoeda($tot['quit_prevista']) ?></td>
         <td class="rl-num"><?= rlMoeda($tot['pago']) ?></td>
         <td class="rl-num"><?= rlMoeda($tot['quitacao']) ?></td>
-        <td class="rl-num"><?= rlMoeda($tot['pago'] + $tot['quitacao']) ?></td>
+        <td class="rl-num"><?= rlMoeda($tot['comissao']) ?></td>
+        <td class="rl-num"><?= rlMoeda($tot['pago'] + $tot['quitacao'] + $tot['comissao']) ?></td>
         <td class="rl-num"><?= rlMoeda($tot['entrada']) ?></td>
         <td data-label="Parcelas">—</td>
         <td class="rl-num"><?= rlMoeda($tot['venda']) ?></td>
