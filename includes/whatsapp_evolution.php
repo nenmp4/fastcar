@@ -965,5 +965,21 @@ function evolutionAdaptarPayloadParaZapi(array $body): ?array {
     // Tipo desconhecido/evento de ack/reação: fica só com os campos base,
     // tipoMidia() retorna 'desconhecido', mesmo guard silencioso de sempre.
 
+    // 05/11/2026, campanha de vendas "direto pro WhatsApp" — o clique no
+    // anúncio (Click-to-WhatsApp) chega no Baileys como
+    // contextInfo.externalAdReply, ou no nível de `data` (Evolution v2) ou
+    // dentro do próprio bloco da mensagem (extendedTextMessage etc). Sem
+    // repassar isso, extrairOrigemAnuncio() nunca via o anúncio e todo lead
+    // da campanha caía como "direto / sem anúncio" (CPL zerado).
+    $ctx = $data['contextInfo'] ?? null;
+    if (!is_array($ctx) || empty($ctx['externalAdReply'])) {
+        foreach ($mensagem as $bloco) {
+            if (is_array($bloco) && !empty($bloco['contextInfo']['externalAdReply'])) { $ctx = $bloco['contextInfo']; break; }
+        }
+    }
+    if (is_array($ctx) && !empty($ctx['externalAdReply'])) {
+        $adaptado['contextInfo'] = $ctx;
+    }
+
     return $adaptado;
 }
