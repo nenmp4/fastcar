@@ -18,7 +18,10 @@
         // dentro da gaveta do menu junto dos links de nav de verdade (duplicado,
         // sem sentido — ele já fica sempre visível na própria barra).
         var links = Array.prototype.slice.call(topbar.querySelectorAll(':scope > a:not(.topbar-brand)'));
-        if (!links.length) return;
+        // 05/11/2026 — topbar única (_topbar.php): links ficam dentro dos
+        // grupos <details>; a gaveta repete os grupos com título.
+        var grupos = Array.prototype.slice.call(topbar.querySelectorAll('.tb-grupo, .tb-conta'));
+        if (!links.length && !grupos.length) return;
 
         var menu = document.createElement('nav');
         menu.className = 'topbar-menu';
@@ -26,6 +29,8 @@
         menu.setAttribute('aria-label', 'Menu principal');
 
         var ola = topbar.querySelector(':scope > span');
+        var conta = topbar.querySelector('.tb-conta');
+        if (conta && conta.dataset.nome) ola = { textContent: 'Olá, ' + conta.dataset.nome };
         if (ola && ola.textContent.trim()) {
             var o = document.createElement('div');
             o.className = 'topbar-menu-ola';
@@ -42,6 +47,20 @@
             if (alvo && alvo === aqui) { c.classList.add('atual'); c.setAttribute('aria-current', 'page'); }
             if (/logout/.test(a.getAttribute('href') || '')) c.classList.add('topbar-sair');
             menu.appendChild(c);
+        });
+
+        grupos.forEach(function (g) {
+            if (g.dataset.grupo) {
+                var h = document.createElement('div');
+                h.className = 'topbar-menu-grupo';
+                h.textContent = g.dataset.grupo;
+                menu.appendChild(h);
+            }
+            g.querySelectorAll('.tb-drop a').forEach(function (a) {
+                var c = a.cloneNode(true);
+                if (c.classList.contains('tb-sair')) c.classList.add('topbar-sair');
+                menu.appendChild(c);
+            });
         });
 
         var btn = document.createElement('button');

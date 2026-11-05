@@ -173,13 +173,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 </head>
 <body class="<?= ($telefoneAtivo && $contatoAtivo) ? 'wpp-tem-conversa' : '' ?>">
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
-<header class="topbar">
-    <a href="/admin/vendas.php" style="color:#fff">← Vendas</a>
-    <a href="/admin/estoque.php" style="color:#fff">🚘 Estoque</a>
-    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
-    <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
-    <a href="/admin/logout.php">Sair</a>
-</header>
+<?php include __DIR__ . '/_topbar.php'; ?>
 
 <?php if ($erro): ?><div class="alerta-erro" style="margin:12px 20px"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso" style="margin:12px 20px"><?= e($sucesso) ?></div><?php endif; ?>

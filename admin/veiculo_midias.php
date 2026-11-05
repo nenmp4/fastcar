@@ -85,12 +85,7 @@ $midias = listarMidiasRevenda($id);
 </head>
 <body>
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
-<header class="topbar">
-    <a href="/admin/veiculos.php" style="color:#fff">← Veículos</a>
-    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
-    <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
-    <a href="/admin/logout.php">Sair</a>
-</header>
+<?php include __DIR__ . '/_topbar.php'; ?>
 <main>
 <?php if (!empty($_GET['recem_cadastrado'])): ?>
     <div class="alerta-sucesso">✅ Veículo cadastrado na frota. Já pode adicionar fotos/vídeos abaixo — a IA de vendas usa esse catálogo pra mandar mídia sozinha pro comprador.</div>

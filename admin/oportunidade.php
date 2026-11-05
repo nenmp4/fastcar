@@ -706,32 +706,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 </head>
 <body>
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
-<header class="topbar">
-    <a href="/admin/index.php" style="color:#fff">← Voltar</a>
-    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
-    <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
-    <?php if ($_SESSION['admin_perfil'] === 'consultor'): ?>
-        <?php $euAtual = buscarUsuario((int)$_SESSION['admin_id']); ?>
-        <form method="post" action="/admin/toggle_disponivel.php" class="inline">
-            <?= csrfField() ?>
-            <input type="hidden" name="voltar" value="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>">
-            <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
-                <?= $euAtual['disponivel'] ? '🟢 Disponível' : '⚪ Offline' ?>
-            </button>
-        </form>
-    <?php endif; ?>
-    <a href="/admin/clientes.php">👥 Clientes</a>
-    <a href="/admin/vendas.php">💰 Vendas</a>
-    <a href="/admin/pendencias_pos_venda.php">📋 Pendências</a>
-    <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
-    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
-        <a href="/admin/produtividade.php">📊 Produtividade</a>
-        <a href="/admin/veiculos.php">🚗 Veículos</a>
-        <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
-        <a href="/admin/configuracoes.php">⚙️ Configurações</a>
-    <?php endif; ?>
-    <a href="/admin/logout.php">Sair</a>
-</header>
+<?php $tbTitulo = 'Oportunidade #' . (int)$op['id'] . (!empty($op['cliente_nome']) ? ' — ' . $op['cliente_nome'] : ''); include __DIR__ . '/_topbar.php'; ?>
 
 <main data-abas-ordem="👤 Cliente|🚗 Veículo|📝 Contrato|📎 Documentos|📅 Andamento|💬 Conversa">
 <?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $op['etapa'] === 'fechado' ? 'Compra fechada' : 'Contrato assinado' ?></strong><?= $op['etapa'] !== 'fechado' ? ' — dá pra completar os documentos e fechar a pasta, mas' : ' —' ?> os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>

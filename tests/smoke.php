@@ -545,6 +545,9 @@ foreach (glob($root . '/admin/*.php') as $f) {
     if (!str_contains($conteudo, '_scroll_restore.php')) $faltando[] = 'scroll-restore';
     if (!str_contains($conteudo, '_acao_popup.php')) $faltando[] = 'acao-popup';
     if (!str_contains($conteudo, '_confirm_dialog.php')) $faltando[] = 'confirm-dialog';
+    // 05/11/2026 — topbar única (admin/_topbar.php, CLAUDE_2.md A1): nunca
+    // mais uma topbar copiada à mão numa página (links divergentes por tela).
+    if (!str_contains($conteudo, '_topbar.php') || str_contains($conteudo, '<header class="topbar"')) $faltando[] = 'topbar-unica';
     if ($faltando) $semPwa[] = "{$rel} (falta " . implode('+', $faltando) . ')';
 }
 if ($semPwa) {

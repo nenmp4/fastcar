@@ -744,46 +744,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 </head>
 <body>
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
-<header class="topbar">
-    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
-    <span>Olá, <?= e($_SESSION['admin_nome']) ?> (<?= e($_SESSION['admin_perfil']) ?>)</span>
-    <?php if ($_SESSION['admin_perfil'] === 'consultor'): ?>
-        <?php $euAtual = buscarUsuario((int)$_SESSION['admin_id']); ?>
-        <form method="post" action="/admin/toggle_disponivel.php" class="inline">
-            <?= csrfField() ?>
-            <input type="hidden" name="voltar" value="/admin/index.php">
-            <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
-                <?= $euAtual['disponivel'] ? '🟢 Disponível' : '⚪ Offline' ?>
-            </button>
-        </form>
-    <?php endif; ?>
-    <a href="/admin/clientes.php">👥 Clientes</a>
-    <?php if (podeAcessarVendas()): ?><a href="/admin/vendas.php">💰 Vendas</a><a href="/admin/estoque.php">🚘 Estoque</a><?php endif; ?>
-    <?php if (podeAcessarFinanceiro()): ?><a href="/admin/financeiro.php">🧾 Financeiro</a><?php endif; ?>
-    <?php if (podeAcessarAvaliacoes()): ?><a href="/admin/avaliacoes.php">🔍 Vistorias</a><?php endif; ?>
-    <a href="/admin/pendencias_pos_venda.php">📋 Pendências</a>
-    <a href="/admin/whatsapp_inbox.php">💬 WhatsApp</a>
-    <a href="/admin/leads_rastreio.php">🔎 Pra onde foram os leads</a>
-    <?php if (perfilVeTudo()): ?>
-        <a href="/admin/produtividade.php">📊 Produtividade</a>
-        <a href="/admin/origem_leads.php">📣 Origem dos leads</a>
-        <a href="/admin/relatorio_cpl.php">💰 Custo por Lead</a>
-        <a href="/admin/qualidade_ia.php">🤖 Qualidade da IA</a>
-        <a href="/admin/acesso_expediente.php">🌙 Acesso fora do horário</a>
-    <?php endif; ?>
-    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
-        <a href="/admin/veiculos.php">🚗 Veículos</a>
-        <a href="/admin/relatorio_lucro_veiculos.php">📊 Lucro por veículo</a>
-        <a href="/admin/patrimonio.php">📦 Patrimônio</a>
-        <a href="/admin/usuarios.php">👤 Usuários</a>
-        <a href="/admin/auditoria.php">🕵️ Auditoria</a>
-        <a href="/admin/backup.php">💾 Backup</a>
-        <a href="/admin/saude.php">🩺 Saúde do sistema</a>
-        <a href="/admin/configuracoes.php">⚙️ Configurações</a>
-    <?php endif; ?>
-    <a href="/admin/meu_perfil.php">🙋 Meu perfil</a>
-    <a href="/admin/logout.php">Sair</a>
-</header>
+<?php include __DIR__ . '/_topbar.php'; ?>
 
 <?php
     $qsBusca = $busca !== '' ? '&q=' . urlencode($busca) : '';

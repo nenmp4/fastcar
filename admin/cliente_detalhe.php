@@ -181,12 +181,7 @@ $convertido = (bool)array_filter($oportunidades, fn($op) => $op['etapa'] === 'fe
 </head>
 <body>
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
-<header class="topbar">
-    <a href="/admin/clientes.php" style="color:#fff">← Clientes</a>
-    <a class="topbar-brand" href="<?= e(paginaInicialPorPerfil($_SESSION['admin_perfil'] ?? '')) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
-    <span>Olá, <?= e($_SESSION['admin_nome']) ?></span>
-    <a href="/admin/logout.php">Sair</a>
-</header>
+<?php $tbTitulo = (string)($cliente['nome'] ?: 'Cliente'); include __DIR__ . '/_topbar.php'; ?>
 
 <main>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
