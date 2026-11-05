@@ -186,8 +186,9 @@ function vendaFormularioMsgLink(string $nome = ''): string {
  * 05/11/2026, "manda única resposta: já preencheu, nossos vendedores entrarão
  * em contato, se ficar mandando mensagem" — cliente que já preencheu o
  * formulário (qualificado, IA pausada) e continua escrevendo recebe UMA vez
- * só a confirmação de que o vendedor vai chamar. Nunca manda se: não veio do
- * formulário; ficou sem perfil (não prometemos contato que não vai haver);
+ * só a confirmação de que o vendedor vai chamar. Sem perfil (entrada abaixo do
+ * mínimo) recebe 1x o mínimo + link pra preencher de novo, nunca promessa de
+ * contato. Nunca manda se: não veio do formulário;
  * negociação já encerrada; ou um vendedor já respondeu essa conversa.
  * Devolve true se mandou agora.
  */
@@ -199,7 +200,8 @@ function vendaFormularioResponderJaPreencheu(int $vendaId, string $phone, ?array
     $st->execute([$vendaId]);
     $v = $st->fetch();
     if (!$v || !str_starts_with((string)$v['resumo_ia'], '📝 Preenchido pelo formulário')) return false;
-    if (!in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true)) return false;
+    $semPerfil = $v['etapa'] === 'sem_perfil';
+    if (!$semPerfil && !in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true)) return false;
     $tels = array_unique(array_filter([normalizarTelefone($phone), normalizarTelefone((string)$v['comprador_telefone'])]));
     $ph = implode(',', array_fill(0, count($tels), '?'));
     $stH = $db->prepare("SELECT 1 FROM whatsapp_mensagens WHERE telefone IN ($ph) AND direcao = 'out' AND usuario_id IS NOT NULL LIMIT 1");
@@ -207,7 +209,15 @@ function vendaFormularioResponderJaPreencheu(int $vendaId, string $phone, ?array
     if ($stH->fetchColumn()) { setConfig($chave, '1'); return false; } // vendedor já está na conversa
     $primeiro = trim(explode(' ', trim((string)$v['comprador_nome']))[0] ?? '');
     $oi = ($primeiro !== '' && $primeiro !== '(sem') ? "Oi, {$primeiro}! " : 'Oi! ';
-    $msg = $oi . variarMensagem([
+    if ($semPerfil) {
+        // 05/11/2026 ("sim") — sem perfil que insiste: resposta honesta, 1x,
+        // nunca promete contato. Mínimo vem do próprio resumo do formulário.
+        $minTxt = preg_match('/Entrada mínima pro caso: (R\$ [\d.,]+)/u', (string)$v['resumo_ia'], $mm) ? $mm[1] : '';
+        $msg = $oi . 'Obrigado pelo interesse! No momento as nossas opções na promissória pedem uma entrada '
+            . ($minTxt !== '' ? "a partir de {$minTxt} " : 'maior ')
+            . 'pra esse tipo de veículo. Guardamos o seu contato 🙂 Quando você tiver esse valor de entrada, é só preencher de novo: '
+            . vendaFormularioUrlCurta('w');
+    } else $msg = $oi . variarMensagem([
         'Já recebemos o seu cadastro ✅ Um dos nossos vendedores vai entrar em contato com você em breve por aqui.',
         'Seu formulário já chegou aqui ✅ Nosso vendedor vai te chamar em breve com as opções.',
         'Tudo certo, seu cadastro já está com a gente ✅ Em breve um vendedor da Fastcar entra em contato.',
@@ -216,7 +226,9 @@ function vendaFormularioResponderJaPreencheu(int $vendaId, string $phone, ?array
     registrarMensagem($phone, 'out', $msg, null, true);
     setConfig($chave, '1');
     $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, ?, ?, ?)")
-        ->execute([$vendaId, $v['etapa'], $v['etapa'], 'Resposta automática: cliente já preencheu o formulário, vendedor vai entrar em contato']);
+        ->execute([$vendaId, $v['etapa'], $v['etapa'], $semPerfil
+            ? 'Resposta automática: sem perfil pela entrada — avisado do mínimo e do link pra preencher de novo'
+            : 'Resposta automática: cliente já preencheu o formulário, vendedor vai entrar em contato']);
     return true;
 }
 
