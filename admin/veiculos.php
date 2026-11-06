@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
                               WHERE id = ? AND COALESCE(oculto_estoque, 0) = 1 AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'")->execute([$opDev]);
                 auditoriaRegistrar('veiculo_devolvido', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $opDev,
                     "Venda #{$vendaIdDev} desfeita (devolução). Motivo: {$motivoDev}");
-                $sucesso = 'Devolução registrada — o veículo está disponível pra vender de novo (botão 💰 Vender). Parcelas futuras pendentes foram canceladas no financeiro; o que já foi pago continua como receita.';
+                $sucesso = 'Devolução registrada — o veículo voltou pro estoque e já aparece pra vistoria de entrada (🚘 Estoque → 🔍 Fazer vistoria, ou Vistorias → Nova vistoria). Também está disponível pra vender de novo (botão 💰 Vender). Parcelas futuras pendentes foram canceladas no financeiro; o que já foi pago continua como receita.';
             } catch (Throwable $e) {
                 $erro = $e->getMessage();
             }

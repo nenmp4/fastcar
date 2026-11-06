@@ -247,7 +247,10 @@ if ($veiculos) {
         JOIN oportunidades o2 ON (o2.id = o.id OR (LENGTH(UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''),'-',''),' ',''))) >= 6
              AND UPPER(REPLACE(REPLACE(COALESCE(o2.veiculo_placa,''),'-',''),' ','')) = UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''),'-',''),' ',''))))
         JOIN veiculo_avaliacoes va ON va.oportunidade_id = o2.id AND va.tipo = 'compra'
-        WHERE o.id IN ({$ph}) ORDER BY va.id");
+        WHERE o.id IN ({$ph})
+          -- 06/11/2026: carro que voltou pra Fastcar precisa de vistoria de entrada nova.
+          AND va.created_at > " . veiculoUltimaDevolucaoSql('o') . "
+        ORDER BY va.id");
     $stmtV->execute($ids);
     foreach ($stmtV->fetchAll() as $r) $vistoriaPorOp[(int)$r['op_id']] = ['id' => (int)$r['id'], 'status' => $r['status']];
     // Sem foto de revenda ainda? Usa a 1ª foto da vistoria como capa.

@@ -340,6 +340,19 @@ function vistoriaAtivaPorPlaca(string $placa): ?int {
  * candidato diz se já tem vistoria em aberto (pra abrir a existente).
  */
 /**
+ * 06/11/2026, "quando apertar voltou pra estoque, ficar disponível pra
+ * vistoria de entrada" — carro que foi vendido e voltou (🔙 Voltou pra
+ * Fastcar = venda 'vendido' → 'cancelada') precisa de vistoria de entrada
+ * NOVA: a da 1ª compra não vale mais. Devolve a expressão SQL com a data da
+ * última devolução do veículo ($alias = alias de oportunidades na query),
+ * ou '' quando nunca voltou. Vistoria de compra só "conta" se criada depois.
+ */
+function veiculoUltimaDevolucaoSql(string $alias): string {
+    return "COALESCE((SELECT MAX(vhd.created_at) FROM venda_historico vhd JOIN vendas vvd ON vvd.id = vhd.venda_id
+              WHERE vvd.oportunidade_id = {$alias}.id AND vhd.etapa_anterior = 'vendido' AND vhd.etapa_nova = 'cancelada'), '')";
+}
+
+/**
  * 29/10/2026, "na vistoria só mostrar veículos que não têm vistoria ainda":
  * carro que já tem QUALQUER vistoria do mesmo tipo (pendente, em andamento
  * ou concluída — pela oportunidade ou pela mesma placa) não aparece mais na busca.
@@ -364,11 +377,13 @@ function buscarCandidatosVistoria(string $tipo, string $termo): array {
             ORDER BY v.created_at DESC LIMIT 15
         ");
     } else {
+        $devolucao = veiculoUltimaDevolucaoSql('o');
         $stmt = $db->prepare("
             SELECT o.id AS oportunidade_id, NULL AS venda_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa,
                    c.nome AS pessoa_nome, c.telefone AS pessoa_telefone,
                    (SELECT va.id FROM veiculo_avaliacoes va JOIN oportunidades o2 ON o2.id = va.oportunidade_id
                      WHERE va.tipo = 'compra' AND va.status IN ('pendente','em_andamento')
+                       AND va.created_at > {$devolucao}
                        AND (va.oportunidade_id = o.id OR (LENGTH({$placaExpr}) >= 6
                             AND UPPER(REPLACE(REPLACE(COALESCE(o2.veiculo_placa,''), '-', ''), ' ', '')) = {$placaExpr}))
                      ORDER BY va.id DESC LIMIT 1) AS vistoria_ativa_id
@@ -376,7 +391,7 @@ function buscarCandidatosVistoria(string $tipo, string $termo): array {
             WHERE o.etapa NOT IN ('perdido', 'sem_perfil')
               AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
               AND NOT EXISTS (SELECT 1 FROM veiculo_avaliacoes vx JOIN oportunidades ox ON ox.id = vx.oportunidade_id
-                   WHERE vx.tipo = 'compra' AND (vx.oportunidade_id = o.id OR (LENGTH({$placaExpr}) >= 6
+                   WHERE vx.tipo = 'compra' AND vx.created_at > {$devolucao} AND (vx.oportunidade_id = o.id OR (LENGTH({$placaExpr}) >= 6
                         AND UPPER(REPLACE(REPLACE(COALESCE(ox.veiculo_placa,''), '-', ''), ' ', '')) = {$placaExpr})))
               AND (c.nome LIKE ? OR c.telefone LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR {$placaExpr} LIKE ?)
             ORDER BY (o.etapa = 'fechado') DESC, o.created_at DESC LIMIT 15
