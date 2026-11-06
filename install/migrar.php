@@ -2398,3 +2398,33 @@ try {
 } catch (Throwable $e) {
     echo "❌ estoque (vendas canceladas): {$e->getMessage()}\n";
 }
+
+// 06/11/2026, "porque lead de venda chega no inbox consultores" — 1x só:
+// conversas de quem foi encaminhado pra vendas (ou já é lead de vendas sem
+// compra ativa) saem do WhatsApp Box dos consultores e vão pro WhatsApp
+// Vendas. Daqui pra frente moverMensagensCompraParaVendas() faz sozinho.
+try {
+    if (getConfig('migracao_msgs_lead_venda_canal_feita') !== '1') {
+        require_once __DIR__ . '/../includes/oportunidades.php';
+        $dbMv = getDB();
+        $totalMv = 0;
+        $ops = $dbMv->query("SELECT o.created_at, c.telefone FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+            WHERE o.etapa IN ('perdido','sem_perfil') AND o.motivo_perda LIKE 'Quer comprar ve%'")->fetchAll();
+        foreach ($ops as $r) $totalMv += moverMensagensCompraParaVendas((string)$r['telefone'], (string)$r['created_at']);
+        $ph = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $stV = $dbMv->prepare("SELECT v.comprador_telefone AS telefone, MIN(v.created_at) AS desde FROM vendas v
+            WHERE v.origem = 'whatsapp' AND COALESCE(v.comprador_telefone, '') != ''
+              AND NOT EXISTS (SELECT 1 FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                              WHERE c.telefone = v.comprador_telefone AND o.etapa IN ({$ph}))
+              AND NOT EXISTS (SELECT 1 FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                              WHERE c.telefone = v.comprador_telefone AND o.created_at >= v.created_at
+                                AND COALESCE(o.motivo_perda, '') NOT LIKE 'Quer comprar ve%')
+            GROUP BY v.comprador_telefone");
+        $stV->execute(ETAPAS_ATIVAS);
+        foreach ($stV->fetchAll() as $r) $totalMv += moverMensagensCompraParaVendas((string)$r['telefone'], (string)$r['desde']);
+        setConfig('migracao_msgs_lead_venda_canal_feita', '1');
+        echo "✅ WhatsApp: {$totalMv} mensagem(ns) de lead de venda saíram do inbox de compra pro de vendas\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ WhatsApp (mensagens de lead de venda): {$e->getMessage()}\n";
+}

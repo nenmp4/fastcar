@@ -880,6 +880,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     if (telefoneEhLeadDeVendasSemCompraAtiva($phone)) {
         $salvarMidiaSePendente(0);
         iaRegistrarDecisao($phone, 'lead_de_vendas');
+        moverMensagensCompraParaVendas($phone, null, $idMensagemRecebida);
         return ['ignored' => 'lead_de_vendas', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
                 'ia_pausada' => iaPausada($phone)] + $vazio;
     }
@@ -890,6 +891,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
     if ($motivoVenda !== null) {
         $salvarMidiaSePendente(0);
         iaRegistrarDecisao($phone, 'lead_de_vendas_no_numero_compra', $motivoVenda);
+        moverMensagensCompraParaVendas($phone, null, $idMensagemRecebida);
         try {
             require_once dirname(__DIR__, 2) . '/includes/vendas.php';
             $vl = criarOuAbrirVendaLead($phone, $nomeContato, $origemAnuncio);

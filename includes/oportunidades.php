@@ -1183,6 +1183,36 @@ function telefoneEncerradoPelaEquipeRecente(string $telefone): bool {
 }
 
 /**
+ * 06/11/2026, "porque lead de venda chega no inbox consultores": quem quer
+ * COMPRAR e escreve no número de compra era desviado pra vendas, mas as
+ * mensagens ficavam gravadas com canal='compra' — a conversa continuava
+ * no WhatsApp Box dos consultores e nunca aparecia no WhatsApp Vendas.
+ * Passa as mensagens dessa conversa pro canal de vendas: só a mensagem
+ * `$mensagemId` (quando informada) ou tudo de compra desse telefone a
+ * partir de `$desde`. Nunca lança.
+ */
+function moverMensagensCompraParaVendas(string $telefone, ?string $desde = null, ?int $mensagemId = null): int {
+    try {
+        $tel = normalizarTelefone($telefone);
+        if (!$tel) return 0;
+        $db = getDB();
+        if ($mensagemId) {
+            $st = $db->prepare("UPDATE whatsapp_mensagens SET canal = 'vendas' WHERE id = ? AND canal = 'compra'");
+            $st->execute([$mensagemId]);
+        } elseif ($desde !== null) {
+            $st = $db->prepare("UPDATE whatsapp_mensagens SET canal = 'vendas' WHERE telefone = ? AND canal = 'compra' AND created_at >= ?");
+            $st->execute([$tel, $desde]);
+        } else {
+            return 0;
+        }
+        return $st->rowCount();
+    } catch (Throwable $e) {
+        error_log('[moverMensagensCompraParaVendas] ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
  * 03/11/2026, achado real: "porque registra notificação mesmo lead" — o sino
  * mostrava "Novo lead de compra" 3x pra mesma cliente em 4 minutos. A IA
  * marcava "sem perfil" (ex: veículo quitado), a cliente respondia ("ok",
@@ -1212,7 +1242,7 @@ function moverOportunidadeParaVendas(int $oportunidadeId, ?int $usuarioId = null
     require_once __DIR__ . '/vendas.php';
     $db = getDB();
     $stmt = $db->prepare("
-        SELECT o.etapa, o.resumo_ia, c.nome, c.telefone, c.canal_origem, c.campanha_origem, c.anuncio_origem
+        SELECT o.etapa, o.resumo_ia, o.created_at, c.nome, c.telefone, c.canal_origem, c.campanha_origem, c.anuncio_origem
         FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?
     ");
     $stmt->execute([$oportunidadeId]);
@@ -1234,6 +1264,7 @@ function moverOportunidadeParaVendas(int $oportunidadeId, ?int $usuarioId = null
     $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao) SELECT id, etapa, etapa, ?, ? FROM vendas WHERE id = ?")
        ->execute([$usuarioId, $nota . (trim((string)$op['resumo_ia']) !== '' ? "\n\nResumo da conversa na compra:\n" . $op['resumo_ia'] : ''), $vendaId]);
     marcarPerdida($oportunidadeId, "Quer comprar veículo — encaminhado pra vendas (negociação #{$vendaId})", $usuarioId, true);
+    moverMensagensCompraParaVendas((string)$op['telefone'], (string)$op['created_at']);
     return ['ok' => true, 'venda_id' => $vendaId, 'nova' => (bool)$v['nova']];
 }
 
