@@ -113,7 +113,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // leva 302 pra vendas.php.
         'zapi_status_vendas_ajax.php',
         // 24/10/2026 — catálogo/estoque de veículos disponíveis + fotos.
-        'estoque.php', 'veiculo_midias.php'];
+        'estoque.php', 'veiculo_midias.php',
+        // 06/11/2026 — botão 🟢 Disponível (fila de vendas) na topbar.
+        'toggle_disponivel.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -177,7 +179,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // 24/10/2026 — avaliador também atende vendas, igual vendedor
         // ("perfil de vistoria vai ter acesso aos carros pra vender/leads").
         'vendas.php', 'venda.php', 'vendas_inbox.php', 'promissorias.php',
-        'veiculo_crlv_ajax.php', 'zapi_status_vendas_ajax.php', 'estoque.php'];
+        'veiculo_crlv_ajax.php', 'zapi_status_vendas_ajax.php', 'estoque.php',
+        // 06/11/2026 — botão 🟢 Disponível (fila de vendas) na topbar.
+        'toggle_disponivel.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

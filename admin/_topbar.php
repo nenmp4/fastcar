@@ -168,7 +168,8 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
             </details>
         <?php endforeach; ?>
     </nav>
-    <?php if ($tbPerfil === 'consultor' && function_exists('buscarUsuario')):
+    <?php // 06/11/2026, "onde vendedor fica online" — vendedor/avaliador (fila de vendas) também ligam o próprio Disponível.
+    if (in_array($tbPerfil, ['consultor', 'vendedor', 'avaliador'], true) && function_exists('buscarUsuario')):
         $tbEu = buscarUsuario((int)$_SESSION['admin_id']); ?>
         <form method="post" action="/admin/toggle_disponivel.php" class="inline tb-disponivel">
             <?= csrfField() ?>
@@ -192,6 +193,9 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
     <?php endforeach; ?>
     <span aria-hidden="true">›</span><span aria-current="page"><?= e($tbTituloAtual) ?></span>
 </nav>
+<?php endif; ?>
+<?php if (isset($_GET['disponivel_bloqueado']) && $tbAqui !== 'index.php'): ?>
+<div class="aviso" style="margin:12px 24px 0"><span class="aviso-icone">⏰</span><div class="aviso-corpo">Fora do horário de expediente (<?= e(filaHorarioAbertura()) ?>–<?= e(filaHorarioFechamento()) ?>) — o "Disponível" só liga dentro do horário. Se precisar, o super admin liga em Configurações → Fila. A IA continua respondendo normalmente.</div></div>
 <?php endif; ?>
 <script>
 (function () {
