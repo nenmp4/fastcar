@@ -556,6 +556,17 @@ if ($semPwa) {
     ok('[admin-pagina-sem-pwa] limpo');
 }
 
+// topbar-vaza-variavel guard — 06/11/2026, achado real: admin/_topbar.php
+// rodava no escopo da página e o foreach dele sobrescrevia $itens do
+// checklist (admin/avaliacao.php → "Erro interno" em toda vistoria). O
+// partial tem que rodar inteiro dentro de uma função.
+$tbSrc = (string)@file_get_contents($root . '/admin/_topbar.php');
+if (!preg_match('/^\(static function \(/m', $tbSrc) || !preg_match('/\}\)\(isset\(\$tbTitulo\)/', $tbSrc)) {
+    falha('[topbar-vaza-variavel] admin/_topbar.php precisa rodar dentro de (static function (...) {...})(...) — senão sobrescreve variáveis da página');
+} else {
+    ok('[topbar-vaza-variavel] limpo');
+}
+
 // confirm-nativo-nao-substituido guard — 30/09/2026, "essa ações da para
 // deixar ux bonito... acho feio" + "faz todo sistema": todo
 // `onsubmit="return confirm(...)"` do admin/public foi trocado por

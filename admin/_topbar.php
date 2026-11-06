@@ -19,6 +19,12 @@
  *   $tbPai     — [rótulo, url] pai no breadcrumb, quando difere do mapa
  */
 
+// 06/11/2026 — TUDO roda dentro de uma função: incluído direto no escopo da
+// página, o foreach daqui sobrescrevia variáveis da própria página (ex:
+// $itens do checklist em admin/avaliacao.php → "Erro interno" em toda
+// vistoria). Nada deste arquivo pode vazar pro escopo de quem inclui.
+(static function (?string $tbTitulo, ?array $tbPai): void {
+
 $tbPerfil = (string)($_SESSION['admin_perfil'] ?? '');
 $tbAqui = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
 $tbSuper = $tbPerfil === 'super_admin';
@@ -135,13 +141,13 @@ $tbAtivo = static function (string $href) use ($tbAqui): bool {
 $tbMigalhas = [];
 $tbInfo = $tbMapa[$tbAqui] ?? null;
 $tbPaiArq = $tbInfo[1] ?? null;
-if (isset($tbPai) && is_array($tbPai)) {
+if ($tbPai !== null) {
     $tbMigalhas[] = [$tbPai[0], $tbPai[1]];
 } elseif ($tbPaiArq && !empty($tbVisiveis[$tbPaiArq]) && '/admin/' . $tbPaiArq !== $tbHome) {
     $tbMigalhas[] = [$tbMapa[$tbPaiArq][0] ?? $tbPaiArq, $tbVisiveis[$tbPaiArq]];
 }
-$tbTituloAtual = isset($tbTitulo) && $tbTitulo !== '' ? (string)$tbTitulo : ($tbInfo[0] ?? '');
-$tbEhHome = '/admin/' . $tbAqui === $tbHome && !isset($tbTitulo);
+$tbTituloAtual = $tbTitulo !== null && $tbTitulo !== '' ? $tbTitulo : ($tbInfo[0] ?? '');
+$tbEhHome = '/admin/' . $tbAqui === $tbHome && $tbTitulo === null;
 $tbNome = (string)($_SESSION['admin_nome'] ?? '');
 ?>
 <header class="topbar topbar-v2">
@@ -206,3 +212,5 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
     });
 })();
 </script>
+<?php
+})(isset($tbTitulo) ? (string)$tbTitulo : null, isset($tbPai) && is_array($tbPai) ? $tbPai : null);

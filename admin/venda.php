@@ -1203,9 +1203,9 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php endif; ?>
     <?php if ($leituraCompra && !empty($leituraCompra['contrato_id'])): $lp = $leituraCompra['parte']; $ln = $leituraCompra['negociacao']; ?>
         <div class="alerta-info" style="margin-top:12px">
-            <strong>Esse contrato é a COMPRA do veículo</strong> — <?= e($lp['nome'] ?: 'vendedor') ?><?= $lp['cpf'] ? ' (CPF ' . e($lp['cpf']) . ')' : '' ?> vendeu pra Fastcar.
+            <strong>Esse contrato é a COMPRA do veículo</strong> — <?= e(($lp['nome'] ?? '') ?: 'vendedor') ?><?= !empty($lp['cpf']) ? ' (CPF ' . e($lp['cpf']) . ')' : '' ?> vendeu pra Fastcar.
             <?php if (!empty($ln['valor_total'])): ?> Valor: R$ <?= number_format((float)$ln['valor_total'], 2, ',', '.') ?>.<?php endif; ?>
-            <?php if (!empty($ln['saldo_financiamento'])): ?> Saldo do financiamento: R$ <?= number_format((float)$ln['saldo_financiamento'], 2, ',', '.') ?><?= $ln['banco_financiamento'] ? ' (' . e($ln['banco_financiamento']) . ')' : '' ?>.<?php endif; ?>
+            <?php if (!empty($ln['saldo_financiamento'])): ?> Saldo do financiamento: R$ <?= number_format((float)$ln['saldo_financiamento'], 2, ',', '.') ?><?= !empty($ln['banco_financiamento']) ? ' (' . e($ln['banco_financiamento']) . ')' : '' ?>.<?php endif; ?>
             <?php if (($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?>
                 <form method="post" style="margin-top:8px" onsubmit="return confirmarAcao(this, 'Mover este contrato pra compra do veículo?')">
                     <?= csrfField() ?>
