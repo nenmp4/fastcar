@@ -40,7 +40,16 @@ $tbHome = paginaInicialPorPerfil($tbPerfil);
 $tbAtalhos = [];
 if (in_array($tbPerfil, ['vendedor', 'avaliador'], true)) $tbAtalhos[] = ['WhatsApp', '/admin/vendas_inbox.php'];
 elseif ($tbPerfil === 'financeiro') $tbAtalhos[] = ['WhatsApp', '/admin/financeiro_inbox.php'];
-elseif ($tbPerfil !== '') $tbAtalhos[] = ['WhatsApp', '/admin/whatsapp_inbox.php'];
+elseif ($tbPerfil !== '') {
+    // 06/11/2026, "inbox de vendas tá conversa dos consultores" — quem vê
+    // os dois funis (super admin/supervisor) cai no WhatsApp do módulo em
+    // que está: nas telas de vendas, o de vendas; no financeiro, o de
+    // cobrança; no resto, o de compra.
+    $tbModuloVendas = ['vendas.php', 'venda.php', 'vendas_inbox.php', 'promissorias.php', 'estoque.php'];
+    if ($tbVendas && in_array($tbAqui, $tbModuloVendas, true)) $tbAtalhos[] = ['WhatsApp vendas', '/admin/vendas_inbox.php'];
+    elseif ($tbFin && str_starts_with($tbAqui, 'financeiro')) $tbAtalhos[] = ['WhatsApp cobrança', '/admin/financeiro_inbox.php'];
+    elseif ($tbCompra) $tbAtalhos[] = ['WhatsApp', '/admin/whatsapp_inbox.php'];
+}
 
 // [rótulo, href, visível]
 $tbGrupos = [
