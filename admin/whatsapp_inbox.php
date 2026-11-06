@@ -8,6 +8,10 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+// 06/11/2026, "tirar opção de enviar áudio" — o botão 🎤 saiu da caixa de
+// compra e o servidor recusa o envio (áudio recebido do cliente continua
+// tocando normal). Pra voltar, é só trocar pra true.
+const WPP_INBOX_AUDIO_ATIVO = false;
 
 // normalizarTelefone() (não só strip de dígitos) garante que um número
 // digitado sem o DDI 55 (ex: pela caixa "+ Iniciar conversa") já bate
@@ -137,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!$resultado['ok']) $erro = $resultado['erro'];
             $telefoneAtivo = $telPost;
-        } elseif ($acao === 'enviar_audio' && $telPost) {
+        } elseif ($acao === 'enviar_audio' && $telPost && WPP_INBOX_AUDIO_ATIVO) {
             // 17/09/2026, "permita enviar audio no inbox para o cliente" —
             // sempre via AJAX (fetch do input de arquivo), nunca form
             // tradicional (base64 de um áudio de verdade é grande demais
@@ -511,12 +515,9 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
                     <button type="button" id="wpp-btn-anexo" title="Anexar arquivo (foto ou documento)" style="padding:0 12px">📎</button>
                     <input type="file" id="wpp-input-anexo" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none">
-                    <button type="button" id="wpp-btn-audio" title="Gravar áudio" style="padding:0 12px">🎤</button>
-                    <button type="button" id="wpp-btn-audio-cancelar" title="Cancelar gravação" style="padding:0 12px;display:none;color:#c0392b">✕</button>
                     <button type="submit">Enviar</button>
                 </form>
                 <p id="wpp-anexo-status" style="display:none;font-size:12.5px;color:var(--texto-fraco);margin:4px 0 0"></p>
-                <p id="wpp-audio-status" style="display:none;font-size:12.5px;color:var(--texto-fraco);margin:4px 0 0"></p>
             <?php endif; ?>
         <?php endif; ?>
     </section>
