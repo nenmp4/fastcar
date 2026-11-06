@@ -115,7 +115,7 @@ if ($modulo === 'vendas') {
     // código novo, sem comportamento antigo pra preservar) deixa o
     // supervisor ver todo lead de venda novo, mesmo padrão "acompanha
     // tudo" já usado no resto do projeto.
-    if (perfilVeTudo()) {
+    if (perfilVeTudo() || !vendasCarteiraRestrita((string)$perfil)) {
         // 03/11/2026, "não notificar mensagens que a IA está qualificando" —
         // o aviso sai quando a IA TERMINA (vai pra Negociação), nunca na
         // chegada do lead.

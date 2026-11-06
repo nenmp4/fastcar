@@ -188,7 +188,8 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
         <?php endforeach; ?>
     </nav>
     <?php // 06/11/2026, "onde vendedor fica online" — vendedor/avaliador (fila de vendas) também ligam o próprio Disponível.
-    if (in_array($tbPerfil, ['consultor', 'vendedor', 'avaliador'], true) && function_exists('buscarUsuario')):
+    // 06/11/2026 — sem fila de vendas (padrão), vendedor/avaliador não têm o que ligar.
+    if (($tbPerfil === 'consultor' || (in_array($tbPerfil, ['vendedor', 'avaliador'], true) && function_exists('filaVendasAtiva') && filaVendasAtiva())) && function_exists('buscarUsuario')):
         $tbEu = buscarUsuario((int)$_SESSION['admin_id']); ?>
         <form method="post" action="/admin/toggle_disponivel.php" class="inline tb-disponivel">
             <?= csrfField() ?>

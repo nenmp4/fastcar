@@ -15,7 +15,7 @@ $telefoneGet = trim((string)($_GET['telefone'] ?? ''));
 $telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
 // perfilVeTudo() (super_admin/supervisor) vê a caixa inteira; vendedor só
 // vê conversa de comprador onde ele é responsavel_id em alguma negociação.
-$responsavelFiltro = perfilVeTudo() ? null : (int)$_SESSION['admin_id'];
+$responsavelFiltro = (perfilVeTudo() || !vendasCarteiraRestrita((string)$_SESSION['admin_perfil'])) ? null : (int)$_SESSION['admin_id']; // 06/11/2026: sem fila, todo vendedor vê a caixa inteira
 
 if (isset($_GET['ajax'])) liberarSessao(); // polling só lê sessão, nunca escreve
 

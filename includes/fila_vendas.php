@@ -18,6 +18,21 @@ require_once __DIR__ . '/db.php';
 /** Teto de vendas ATIVAS por vendedor no rodízio automático — mesmo
  *  conceito de filaLeadsMaxAtivas(), config própria (não compartilha
  *  limite com a fila de compra: volumes e equipes são diferentes). */
+/**
+ * 06/11/2026, "vamos eliminar fila de lead no caso dos vendedores" — fila
+ * DESLIGADA por padrão: lead novo de vendas nasce sem dono e TODO vendedor/
+ * avaliador vê todas as negociações e conversas do WhatsApp Vendas. Religar
+ * é marcar em Configurações → 🛒 Fila de vendas (volta o rodízio de antes).
+ */
+function filaVendasAtiva(): bool {
+    return getConfig('fila_vendas_ativa') === '1';
+}
+
+/** Vendedor/avaliador só vê a própria carteira? Só com a fila ligada. */
+function vendasCarteiraRestrita(string $perfil): bool {
+    return in_array($perfil, ['vendedor', 'avaliador'], true) && filaVendasAtiva();
+}
+
 function filaVendasMaxAtivas(): int {
     $valor = (int)(getConfig('fila_vendas_max_ativas') ?: 5);
     return $valor > 0 ? $valor : 5;
@@ -50,6 +65,7 @@ function contarVendasAtivas(int $usuarioId): int {
  * defesa em profundidade, mesmo risco de concorrência, mesma classe de bug.
  */
 function atribuirVendedorAutomatico(): ?int {
+    if (!filaVendasAtiva()) return null; // 06/11/2026 — sem fila: lead fica sem dono, todos veem.
     $db = getDB();
     $db->exec('BEGIN IMMEDIATE');
     try {

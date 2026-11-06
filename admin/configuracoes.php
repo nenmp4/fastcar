@@ -643,6 +643,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'desmarcar_falta') {
             desmarcarConsultorFaltou((int)($_POST['usuario_id'] ?? 0));
             $sucesso = 'Falta desmarcada — o consultor volta a ser candidato normal na fila.';
+        } elseif ($acao === 'salvar_fila_vendas_ativa') {
+            // 06/11/2026, "vamos eliminar fila de lead no caso dos vendedores".
+            setConfig('fila_vendas_ativa', !empty($_POST['fila_vendas_ativa']) ? '1' : '0');
+            $sucesso = filaVendasAtiva()
+                ? 'Fila de vendas LIGADA — lead novo volta a ir pro rodízio e cada vendedor vê só a própria carteira.'
+                : 'Fila de vendas DESLIGADA — lead novo fica sem dono e todo vendedor vê todos os leads de vendas.';
         } elseif ($acao === 'marcar_falta_vendedor') {
             $resultado = marcarVendedorFaltou((int)($_POST['usuario_id'] ?? 0), (int)($_SESSION['admin_id'] ?? 0));
             if (!$resultado['ok']) {
@@ -2030,8 +2036,18 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 
 <div class="card">
     <h3>🛒 Fila de vendas (vendedores)</h3>
-    <p><small>Mesmo mecanismo da fila de compra acima, espelhado pro lado de vendas — 29/09/2026,
-       "permita super admin deixar offline usuario que faltar e pegar os lead que chegar".</small></p>
+    <form method="post" class="inline" style="margin-bottom:10px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_fila_vendas_ativa">
+        <label style="display:flex;gap:8px;align-items:center;font-weight:600">
+            <input type="checkbox" name="fila_vendas_ativa" value="1" <?= filaVendasAtiva() ? 'checked' : '' ?> onchange="this.form.submit()" style="width:auto;margin:0">
+            Usar fila (rodízio) pros vendedores
+        </label>
+        <p><small><?= filaVendasAtiva()
+            ? '🟢 Ligada: cada lead novo vai pro próximo vendedor disponível e cada um vê só a própria carteira.'
+            : '⚪ Desligada (padrão): lead novo de vendas fica sem dono e <b>todo vendedor vê todos os leads</b> e todas as conversas do WhatsApp Vendas. A tabela abaixo só vale com a fila ligada.' ?></small></p>
+        <noscript><button type="submit">Salvar</button></noscript>
+    </form>
 
     <?php if (!$filaVendas): ?>
         <p><small>Nenhum vendedor cadastrado ainda.</small></p>

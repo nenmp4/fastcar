@@ -27,7 +27,7 @@ requireAcessoVendas();
 $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId = (int)$_SESSION['admin_id'];
-$souDono = in_array($perfil, ['vendedor', 'avaliador'], true);
+$souDono = vendasCarteiraRestrita($perfil);
 
 $erro = '';
 $sucesso = '';

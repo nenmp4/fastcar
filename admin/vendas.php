@@ -19,7 +19,7 @@ $db = getDB();
 $perfil = $_SESSION['admin_perfil'];
 $meuId = (int)$_SESSION['admin_id'];
 // vendedor só vê a própria carteira; super_admin/supervisor veem tudo.
-$souDono = in_array($perfil, ['vendedor', 'avaliador'], true); // 24/10/2026: avaliador atende vendas igual vendedor
+$souDono = vendasCarteiraRestrita($perfil); // 24/10/2026: avaliador atende vendas igual vendedor; 06/11/2026: sem fila, todos veem tudo
 
 // 04/11/2026, "na pesquisa se eu preencher as iniciais da placa o sistema
 // busca o nome tipo Civic Honda" — sugestões enquanto digita (placa sem
