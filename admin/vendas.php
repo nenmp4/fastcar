@@ -1035,7 +1035,7 @@ function vpLerCrlv() {
 }
 
 function vpFmtMoeda(v) {
-    var n = parseFloat(String(v || '').replace(',', '.'));
+    var n = lerValorBR(v);
     if (isNaN(n) || n === 0) return null;
     return 'R$ ' + n.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d)(?=,))/g, '.');
 }
@@ -1089,7 +1089,7 @@ function vpRevisar() {
         var valorEl = linha.querySelector('[name="parte_valor[]"]');
         var dataEl = linha.querySelector('[name="parte_data[]"]');
         var formaEl = linha.querySelector('[name="parte_forma[]"]');
-        var v = parseFloat(String(valorEl.value || '').replace(',', '.'));
+        var v = lerValorBR(valorEl.value);
         if (!v) return;
         totalEntrada += v;
         var d = vpFmtData(dataEl.value);

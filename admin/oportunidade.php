@@ -1580,7 +1580,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                     btn.textContent = 'Usar este valor';
                     btn.style.cssText = 'margin:0;padding:5px 10px;font-size:12px;white-space:nowrap';
                     btn.addEventListener('click', function () {
-                        if (campoValor && c.valor_numero !== null) campoValor.value = c.valor_numero;
+                        if (campoValor && c.valor_numero !== null) campoValor.value = formatarValorBR(Number(c.valor_numero));
                         document.getElementById('fipe-h-codigo').value = c.codigo_fipe || '';
                         document.getElementById('fipe-h-descricao').value = (c.marca + ' ' + c.modelo + ' ' + c.ano_modelo + ' ' + c.combustivel).trim();
                         document.getElementById('fipe-h-mes').value = c.mes_referencia || '';
@@ -1862,18 +1862,18 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
     function mostrar(dica) { if (dica) dica.style.display = 'block'; }
 
     function recalcularTudo() {
-        var p = parseFloat(campoParcela.value);
+        var p = lerValorBR(campoParcela.value);
         var n = parseInt(campoParcelasRestantes.value, 10);
-        var s = parseFloat(campoSaldo.value);
+        var s = lerValorBR(campoSaldo.value);
         var pOk = campoParcela.value !== '' && p > 0;
         var nOk = campoParcelasRestantes.value !== '' && n > 0;
         var sOk = campoSaldo.value !== '' && s > 0;
         var vazios = (pOk ? 0 : 1) + (nOk ? 0 : 1) + (sOk ? 0 : 1);
         if (vazios !== 1) return; // só dá pra calcular com exatamente 1 incógnita
 
-        if (!sOk) { campoSaldo.value = (p * n).toFixed(2); mostrar(dicaSaldo); }
+        if (!sOk) { campoSaldo.value = campoSaldo.dataset.moeda ? formatarValorBR(p * n) : (p * n).toFixed(2); mostrar(dicaSaldo); }
         else if (!nOk) { campoParcelasRestantes.value = String(Math.round(s / p)); mostrar(dicaParcelasRestantes); }
-        else if (!pOk) { campoParcela.value = (s / n).toFixed(2); mostrar(dicaParcela); }
+        else if (!pOk) { campoParcela.value = campoParcela.dataset.moeda ? formatarValorBR(s / n) : (s / n).toFixed(2); mostrar(dicaParcela); }
     }
 
     campoParcela.addEventListener('input', function () { esconder(dicaParcela); recalcularTudo(); });
@@ -1898,11 +1898,11 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 
     function recalcularTotal() {
         var soma = [campoIpva, campoLicenciamento, campoMultas].reduce(function (acc, campo) {
-            var v = parseFloat(campo.value);
+            var v = lerValorBR(campo.value);
             return acc + (isNaN(v) ? 0 : v);
         }, 0);
         if (soma > 0) {
-            totalEl.textContent = 'Total: R$ ' + soma.toFixed(2).replace('.', ',');
+            totalEl.textContent = 'Total: R$ ' + formatarValorBR(soma);
         } else {
             totalEl.textContent = '';
         }

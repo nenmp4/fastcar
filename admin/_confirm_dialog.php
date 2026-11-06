@@ -118,3 +118,40 @@ window.addEventListener('pageshow', function () {
 @keyframes carregando-gira { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .carregando-spinner { animation-duration: 2.4s; } }
 </style>
+<script>
+// 06/11/2026, "estou tentando preencher 180.080,00" — campo de R$ era
+// type=number: no celular o ponto de milhar virava vírgula decimal e o valor
+// salvava 180,08. Todo campo de dinheiro (type=number step=0.01) vira texto
+// com teclado numérico, aceita "180.080,00", "180080" ou "180080,5", mostra
+// formatado ao sair do campo e manda pro servidor como "180080.00".
+(function () {
+    function preparar(inp) {
+        if (inp.dataset.moeda) return;
+        inp.dataset.moeda = '1';
+        inp.type = 'text';
+        inp.setAttribute('inputmode', 'decimal');
+        inp.removeAttribute('step');
+        if (!inp.placeholder) inp.placeholder = '0,00';
+        var n = lerValorBR(inp.value);
+        if (inp.value !== '' && !isNaN(n)) inp.value = formatarValorBR(n);
+        inp.addEventListener('blur', function () {
+            var x = lerValorBR(inp.value);
+            if (inp.value.trim() !== '' && !isNaN(x)) inp.value = formatarValorBR(x);
+        });
+    }
+    function prepararTodos(raiz) {
+        (raiz.querySelectorAll ? raiz : document).querySelectorAll('input[type="number"][step="0.01"]').forEach(preparar);
+    }
+    prepararTodos(document);
+    new MutationObserver(function (ms) {
+        ms.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.nodeType === 1) prepararTodos(n); }); });
+    }).observe(document.body, { childList: true, subtree: true });
+    // Antes de enviar, normaliza pra "180080.00" (o servidor entende sempre).
+    document.addEventListener('submit', function (e) {
+        e.target.querySelectorAll && e.target.querySelectorAll('input[data-moeda]').forEach(function (inp) {
+            var x = lerValorBR(inp.value);
+            if (inp.value.trim() !== '' && !isNaN(x)) inp.value = x.toFixed(2);
+        });
+    }, true);
+})();
+</script>

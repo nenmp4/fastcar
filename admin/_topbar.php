@@ -166,6 +166,19 @@ $tbTituloAtual = $tbTitulo !== null && $tbTitulo !== '' ? $tbTitulo : ($tbInfo[0
 $tbEhHome = '/admin/' . $tbAqui === $tbHome && $tbTitulo === null;
 $tbNome = (string)($_SESSION['admin_nome'] ?? '');
 ?>
+<script>
+// 06/11/2026 — leitura/formatação de valor em R$ (ver admin/_confirm_dialog.php). Aqui no topo pra os scripts das páginas já poderem usar.
+window.lerValorBR = function (v) {
+    var t = String(v == null ? '' : v).trim().replace(/[R$\s]/g, '');
+    if (t === '') return NaN;
+    if (t.indexOf(',') >= 0) t = t.replace(/\./g, '').replace(',', '.');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    return parseFloat(t);
+};
+window.formatarValorBR = function (n) {
+    return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+</script>
 <header class="topbar topbar-v2">
     <a class="topbar-brand" href="<?= e($tbHome) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
     <nav class="tb-nav" aria-label="Menu principal">
