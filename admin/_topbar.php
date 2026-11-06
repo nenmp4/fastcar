@@ -169,7 +169,7 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
 <script>
 // 06/11/2026 — leitura/formatação de valor em R$ (ver admin/_confirm_dialog.php). Aqui no topo pra os scripts das páginas já poderem usar.
 window.lerValorBR = function (v) {
-    var t = String(v == null ? '' : v).trim().replace(/[R$\s]/g, '');
+    var t = String(v == null ? '' : v).replace(/[^\d.,-]/g, ''); // aceita colado "R$ 180.080,00", "Valor: 180.080" etc
     if (t === '') return NaN;
     if (t.indexOf(',') >= 0) t = t.replace(/\./g, '').replace(',', '.');
     else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');

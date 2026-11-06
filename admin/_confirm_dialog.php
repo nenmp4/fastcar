@@ -134,6 +134,13 @@ window.addEventListener('pageshow', function () {
         if (!inp.placeholder) inp.placeholder = '0,00';
         var n = lerValorBR(inp.value);
         if (inp.value !== '' && !isNaN(n)) inp.value = formatarValorBR(n);
+        // 06/11/2026, "permita colar" — colou "R$ 180.080,00" (site da FIPE,
+        // WhatsApp...)? já limpa e formata na hora.
+        inp.addEventListener('paste', function (e) {
+            var txt = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).getData('text') : '';
+            var x = lerValorBR(txt);
+            if (txt && !isNaN(x)) { e.preventDefault(); inp.value = formatarValorBR(x); inp.dispatchEvent(new Event('input', { bubbles: true })); }
+        });
         inp.addEventListener('blur', function () {
             var x = lerValorBR(inp.value);
             if (inp.value.trim() !== '' && !isNaN(x)) inp.value = formatarValorBR(x);
