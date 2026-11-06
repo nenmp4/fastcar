@@ -91,5 +91,30 @@ document.addEventListener('submit', function (e) {
         b.disabled = true;
         b.textContent = '⏳ Enviando… aguarde, não clique de novo';
     });
+    // 06/11/2026, "coloca algum loading ao gerar contrato" — tela de espera
+    // por cima da página enquanto o servidor trabalha (data-carregando="texto").
+    var msg = f.getAttribute('data-carregando');
+    if (msg) {
+        var ov = document.createElement('div');
+        ov.className = 'carregando-overlay';
+        ov.setAttribute('role', 'status');
+        ov.setAttribute('aria-live', 'polite');
+        ov.innerHTML = '<div class="carregando-caixa"><div class="carregando-spinner"></div><b></b><small>Isso pode levar até 1 minuto. Não feche nem recarregue a página.</small></div>';
+        ov.querySelector('b').textContent = msg;
+        document.body.appendChild(ov);
+    }
+});
+// Voltar pelo navegador nunca deixa a tela de espera presa.
+window.addEventListener('pageshow', function () {
+    document.querySelectorAll('.carregando-overlay').forEach(function (o) { o.remove(); });
+    document.querySelectorAll('form.envio-unico[data-enviando]').forEach(function (f) { delete f.dataset.enviando; });
 });
 </script>
+<style>
+.carregando-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(21, 23, 34, .55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.carregando-caixa { background: var(--superficie, #fff); color: var(--texto, #151722); border-radius: var(--raio, 12px); padding: 24px 28px; max-width: 360px; width: 100%; text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; box-shadow: var(--sombra, 0 8px 30px rgba(0,0,0,.2)); }
+.carregando-caixa small { color: var(--texto-suave, #6b7280); }
+.carregando-spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid var(--borda, #e5e7eb); border-top-color: var(--azul, #2f6fed); animation: carregando-gira .8s linear infinite; }
+@keyframes carregando-gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .carregando-spinner { animation-duration: 2.4s; } }
+</style>

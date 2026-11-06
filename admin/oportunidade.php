@@ -1090,12 +1090,12 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         </form>
     </div>
 
-    <form method="post" style="display:inline-block;margin-right:8px">
+    <form method="post" class="envio-unico" data-carregando="Gerando o contrato pra você conferir…" style="display:inline-block;margin-right:8px">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="gerar_contrato_preview">
         <button type="submit" class="secundario">👁️ Gerar contrato (só visualizar)</button>
     </form>
-    <form method="post" class="envio-unico" style="display:inline-block" onsubmit="return confirmarAcao(this, 'Gerar o contrato e enviar pra assinatura eletrônica?');">
+    <form method="post" class="envio-unico" data-carregando="Gerando o contrato e enviando pra assinatura…" style="display:inline-block" onsubmit="return confirmarAcao(this, 'Gerar o contrato e enviar pra assinatura eletrônica?');">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="gerar_contrato">
         <button type="submit">📄 Gerar contrato e enviar pra assinatura</button>
