@@ -111,3 +111,142 @@ function enviarMensagemManualVendas(string $telefone, string $texto, int $usuari
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * 06/11/2026, "adicione opção de enviar fotos no inbox do vendedor, cria aba
+ * em cards no inbox com carros do estoque" (mockup aprovado: "top").
+ * 📷 manda uma foto do aparelho; 🚘 Estoque manda fotos do catálogo de
+ * revenda de um veículo DISPONÍVEL. Tudo pela instância de vendas, fica na
+ * conversa como foto (servida por admin/ver_midia_vendas.php) e pausa a IA.
+ * ───────────────────────────────────────────────────────────────────────── */
+require_once __DIR__ . '/documentos.php'; // UPLOADS_DIR, lerConteudoArquivoDocumento()
+
+const VENDAS_INBOX_FOTO_MIMES = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+const VENDAS_INBOX_MAX_ITENS_ESTOQUE = 10;
+
+function _vendasInboxAnexarArquivo(int $msgId, string $driveFileId, string $arquivoUrl): void {
+    if ($msgId <= 0) return;
+    getDB()->prepare("UPDATE whatsapp_mensagens SET drive_file_id = ?, arquivo_url = ? WHERE id = ?")
+        ->execute([$driveFileId, $arquivoUrl, $msgId]);
+}
+
+function _vendasInboxAssinatura(int $usuarioId): string {
+    $nome = trim((string)(buscarUsuario($usuarioId)['nome'] ?? ''));
+    return $nome !== '' ? "*{$nome}:*" : '';
+}
+
+/** 📷 Foto do aparelho do vendedor. */
+function enviarFotoManualVendas(string $telefone, string $conteudoBase64, string $legenda, int $usuarioId): array {
+    whatsappCanalRegistro('vendas');
+    $telNorm = normalizarTelefone($telefone);
+    $bytes = base64_decode($conteudoBase64, true);
+    if ($bytes === false || $bytes === '') return ['ok' => false, 'erro' => 'Nenhuma foto selecionada.'];
+    if (strlen($bytes) > WHATSAPP_MIDIA_MAX_BYTES) {
+        return ['ok' => false, 'erro' => 'Foto maior que ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
+    }
+    // Nunca confia no tipo que o navegador diz — olha os bytes.
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
+    if (!isset(VENDAS_INBOX_FOTO_MIMES[$mime])) return ['ok' => false, 'erro' => 'Só foto (JPG, PNG ou WEBP).'];
+
+    $legenda = trim(clean($legenda));
+    $caption = trim(_vendasInboxAssinatura($usuarioId) . ($legenda !== '' ? "\n{$legenda}" : ''));
+    $dataUri = 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    if (!zapiEnviarImagem($telNorm, $dataUri, $caption, zapiCredenciaisVendas())) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar a foto — confira a instância de vendas em Configurações.' . whatsappDetalheUltimoErro()];
+    }
+
+    // Cópia local pra foto aparecer na conversa (best-effort).
+    $rel = 'whatsapp_vendas/' . date('Y-m') . '/' . bin2hex(random_bytes(8)) . '.' . VENDAS_INBOX_FOTO_MIMES[$mime];
+    $arquivoUrl = '';
+    if (@is_dir(dirname(UPLOADS_DIR . '/' . $rel)) || @mkdir(dirname(UPLOADS_DIR . '/' . $rel), 0775, true)) {
+        if (@file_put_contents(UPLOADS_DIR . '/' . $rel, $bytes) !== false) $arquivoUrl = $rel;
+    }
+    $id = registrarMensagem($telNorm, 'out', '📷 Foto' . ($legenda !== '' ? ": {$legenda}" : ''), null, false, 'image', $usuarioId);
+    _vendasInboxAnexarArquivo($id, '', $arquivoUrl);
+    pausarIA($telNorm);
+    return ['ok' => true, 'id' => $id];
+}
+
+/** Veículos disponíveis com o catálogo de fotos — cards do 🚘 Estoque. */
+function listarEstoqueParaInboxVendas(): array {
+    $db = getDB();
+    $saida = [];
+    $stmtM = $db->prepare("SELECT id, tipo, legenda FROM veiculo_midias_revenda WHERE oportunidade_id = ? ORDER BY tipo, id");
+    foreach (listarFrotaDisponivelParaVenda(300) as $v) {
+        $stmtM->execute([(int)$v['oportunidade_id']]);
+        $midias = array_map(fn($m) => ['id' => (int)$m['id'], 'tipo' => $m['tipo'], 'legenda' => (string)$m['legenda']], $stmtM->fetchAll());
+        $capa = null;
+        foreach ($midias as $m) { if ($m['tipo'] === 'foto') { $capa = $m['id']; break; } }
+        $saida[] = [
+            'id' => (int)$v['oportunidade_id'],
+            'titulo' => trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'Veículo sem modelo',
+            'ano' => (string)($v['veiculo_ano'] ?? ''),
+            'placa' => (string)($v['veiculo_placa'] ?? ''),
+            'moto' => ($v['tipo_veiculo'] ?? '') === 'moto',
+            'capa' => $capa,
+            'midias' => $midias,
+        ];
+    }
+    return $saida;
+}
+
+/** 🚘 Manda as fotos escolhidas de um veículo do estoque. */
+function enviarFotosEstoqueVendas(string $telefone, int $oportunidadeId, array $midiaIds, string $legenda, int $usuarioId): array {
+    whatsappCanalRegistro('vendas');
+    $telNorm = normalizarTelefone($telefone);
+    if (!veiculoDisponivelParaVenda($oportunidadeId)) return ['ok' => false, 'erro' => 'Esse veículo não está mais disponível no estoque.'];
+    $midiaIds = array_values(array_unique(array_filter(array_map('intval', $midiaIds))));
+    if (!$midiaIds) return ['ok' => false, 'erro' => 'Marque pelo menos uma foto.'];
+    if (count($midiaIds) > VENDAS_INBOX_MAX_ITENS_ESTOQUE) return ['ok' => false, 'erro' => 'No máximo ' . VENDAS_INBOX_MAX_ITENS_ESTOQUE . ' por vez.'];
+
+    $db = getDB();
+    $ph = implode(',', array_fill(0, count($midiaIds), '?'));
+    $st = $db->prepare("SELECT * FROM veiculo_midias_revenda WHERE oportunidade_id = ? AND id IN ($ph) ORDER BY tipo, id");
+    $st->execute(array_merge([$oportunidadeId], $midiaIds));
+    $midias = $st->fetchAll();
+    if (!$midias) return ['ok' => false, 'erro' => 'Fotos não encontradas pra esse veículo.'];
+
+    $legenda = trim(clean($legenda));
+    $cred = zapiCredenciaisVendas();
+    $assinatura = _vendasInboxAssinatura($usuarioId);
+    $enviados = 0;
+    $falhas = 0;
+    $ultimoId = 0;
+    $total = count($midias);
+    foreach ($midias as $i => $m) {
+        $arq = lerConteudoArquivoDocumento($m['drive_file_id'] ?: null, $m['arquivo_url'] ?: null);
+        if (!$arq || strlen($arq['content']) > WHATSAPP_MIDIA_MAX_BYTES) { $falhas++; continue; }
+        // Assinatura + legenda só na 1ª; as outras vão sem texto (não vira spam de legenda repetida).
+        $caption = $enviados === 0 ? trim($assinatura . ($legenda !== '' ? "\n{$legenda}" : '')) : '';
+        $dataUri = 'data:' . $arq['mime'] . ';base64,' . base64_encode($arq['content']);
+        $ehVideo = $m['tipo'] === 'video';
+        $ok = $ehVideo ? zapiEnviarVideo($telNorm, $dataUri, $caption, $cred) : zapiEnviarImagem($telNorm, $dataUri, $caption, $cred);
+        if (!$ok) { $falhas++; continue; }
+        $enviados++;
+        $texto = ($ehVideo ? '🎥 ' : '📷 ') . ($legenda !== '' ? $legenda : 'Foto do estoque') . " ({$enviados}/{$total})";
+        $ultimoId = registrarMensagem($telNorm, 'out', $texto, null, false, $ehVideo ? 'video' : 'image', $usuarioId);
+        _vendasInboxAnexarArquivo($ultimoId, (string)$m['drive_file_id'], (string)$m['arquivo_url']);
+    }
+    if ($enviados === 0) {
+        return ['ok' => false, 'erro' => 'Nenhuma foto saiu — confira a instância de vendas em Configurações.' . whatsappDetalheUltimoErro()];
+    }
+    pausarIA($telNorm);
+    return ['ok' => true, 'enviados' => $enviados, 'falhas' => $falhas, 'id' => $ultimoId];
+}
+
+/** 🔗 Manda o link público do carro (public/veiculo.php — com og:image, vira card com foto no WhatsApp). */
+function enviarLinkEstoqueVendas(string $telefone, int $oportunidadeId, string $legenda, int $usuarioId): array {
+    whatsappCanalRegistro('vendas');
+    $telNorm = normalizarTelefone($telefone);
+    if (!veiculoDisponivelParaVenda($oportunidadeId)) return ['ok' => false, 'erro' => 'Esse veículo não está mais disponível no estoque.'];
+    $url = veiculoLinkPublicoUrl($oportunidadeId, $usuarioId);
+    $legenda = trim(clean($legenda));
+    $texto = ($legenda !== '' ? "{$legenda}\n" : '') . "Fotos e detalhes aqui 👇\n{$url}";
+    $assinatura = _vendasInboxAssinatura($usuarioId);
+    if (!zapiEnviarTexto($telNorm, trim($assinatura . "\n" . $texto), zapiCredenciaisVendas())) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar — confira a instância de vendas em Configurações.' . whatsappDetalheUltimoErro()];
+    }
+    $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
+    pausarIA($telNorm);
+    return ['ok' => true, 'id' => $id];
+}

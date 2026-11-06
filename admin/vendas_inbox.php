@@ -43,6 +43,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
     exit;
 }
 
+// 06/11/2026 — cards do 🚘 Estoque (veículos disponíveis + catálogo de fotos).
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'estoque') {
+    header('Content-Type: application/json');
+    echo json_encode(['veiculos' => listarEstoqueParaInboxVendas()]);
+    exit;
+}
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
     echo json_encode(['conversas' => listarConversasVendas(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro)]);
@@ -84,6 +91,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!$resultado['ok']) $erro = $resultado['erro'];
             $telefoneAtivo = $telPost;
+        } elseif (in_array($acao, ['enviar_foto', 'enviar_estoque', 'enviar_link_estoque'], true) && $telPost) {
+            // 06/11/2026 — 📷 foto do aparelho / 🚘 fotos ou link de um carro do estoque.
+            $uid = (int)$_SESSION['admin_id'];
+            $leg = (string)($_POST['legenda'] ?? '');
+            $resultado = match ($acao) {
+                'enviar_foto' => enviarFotoManualVendas($telPost, (string)($_POST['foto_base64'] ?? ''), $leg, $uid),
+                'enviar_estoque' => enviarFotosEstoqueVendas($telPost, (int)($_POST['oportunidade_id'] ?? 0),
+                    array_map('intval', explode(',', (string)($_POST['midias'] ?? ''))), $leg, $uid),
+                default => enviarLinkEstoqueVendas($telPost, (int)($_POST['oportunidade_id'] ?? 0), $leg, $uid),
+            };
+            header('Content-Type: application/json');
+            echo json_encode($resultado);
+            exit;
         } elseif ($acao === 'toggle_ia' && $telPost) {
             if (iaPausada($telPost)) {
                 retomarIA($telPost);
@@ -163,6 +183,39 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-form button { margin: 0; white-space: nowrap; }
 .wpp-vazio { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--texto-fraco); text-align: center; padding: 40px; }
 .wpp-voltar-mobile { display: none; }
+/* 06/11/2026 — 📷 foto / 🚘 Estoque */
+.wpp-midia { display: block; max-width: 240px; max-height: 240px; border-radius: 8px; margin-bottom: 4px; object-fit: cover; }
+.wpp-form .vi-btn-claro, .vi-mf .vi-btn-claro { background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); box-shadow: none; }
+.wpp-form .vi-btn-estoque { background: var(--laranja-bg); color: var(--laranja); border: 1px solid var(--laranja); box-shadow: none; }
+.vi-modal { width: min(680px, 96vw); }
+.vi-mh { display: flex; align-items: center; gap: 8px; }
+.vi-mh h3 { margin: 0; flex: 1; font-size: 16px; }
+.vi-mh .btn-texto { font-size: 20px; min-width: 44px; min-height: 44px; }
+.vi-chips { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+.vi-chip { margin: 0; padding: 6px 12px; font-size: 13px; border-radius: 999px; background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); box-shadow: none; }
+.vi-chip.on { background: var(--azul); color: #fff; border-color: var(--azul); }
+.vi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; max-height: 60vh; overflow-y: auto; }
+.vi-card { margin: 0; padding: 0; text-align: left; background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); border-radius: var(--raio-sm); overflow: hidden; box-shadow: none; display: flex; flex-direction: column; }
+.vi-card:hover { border-color: var(--azul); }
+.vi-capa { position: relative; height: 100px; background: var(--fundo); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.vi-capa img { width: 100%; height: 100%; object-fit: cover; }
+.vi-qtd { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: 6px; font-size: 11px; padding: 1px 6px; }
+.vi-ci { padding: 8px 10px; font-size: 12.5px; display: flex; flex-direction: column; }
+.vi-ci span { color: var(--texto-suave); }
+.vi-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 8px 0 12px; max-height: 45vh; overflow-y: auto; }
+.vi-ft { position: relative; display: block; height: 90px; border-radius: 8px; overflow: hidden; background: var(--fundo); cursor: pointer; }
+.vi-ft img { width: 100%; height: 100%; object-fit: cover; }
+.vi-ft input { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; margin: 0; }
+.vi-video { display: flex; height: 100%; align-items: center; justify-content: center; font-size: 28px; }
+.vi-mf { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; margin-top: 10px; }
+.vi-mf button { margin: 0; }
+.vi-dica, .vi-vazio { font-size: 13px; color: var(--texto-suave); }
+@media (max-width: 700px) {
+    .wpp-form { flex-wrap: wrap; }
+    .wpp-form textarea { flex-basis: 100%; }
+    .wpp-form .vi-txt { display: none; }
+    .vi-grid { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 700px) {
     .wpp-sidebar { width: 100%; }
     body.wpp-tem-conversa .wpp-sidebar { display: none; }
@@ -245,6 +298,10 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 <?php endif; ?>
                 <?php foreach ($mensagens as $m): ?>
                     <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>" data-id="<?= (int)$m['id'] ?>">
+                        <?php if (in_array($m['tipo'], ['image', 'video'], true) && ($m['drive_file_id'] || $m['arquivo_url'])): $urlM = '/admin/ver_midia_vendas.php?id=' . (int)$m['id']; ?>
+                            <?php if ($m['tipo'] === 'video'): ?><video class="wpp-midia" controls preload="none" src="<?= e($urlM) ?>"></video>
+                            <?php else: ?><a href="<?= e($urlM) ?>" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" src="<?= e($urlM) ?>" alt=""></a><?php endif; ?>
+                        <?php endif; ?>
                         <?= nl2br(e($m['mensagem'])) ?>
                         <small>
                             <?= date('d/m H:i', strtotime($m['created_at'])) ?>
@@ -266,12 +323,45 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                     <input type="hidden" name="ajax" value="1">
                     <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                    <button type="button" id="vi-btn-foto" class="vi-btn-claro" title="Mandar foto do celular/computador" aria-label="Mandar foto">📷</button>
+                    <input type="file" id="vi-input-foto" accept="image/*" hidden>
+                    <button type="button" id="vi-btn-estoque" class="vi-btn-estoque" title="Mandar fotos ou link de um carro do estoque">🚘<span class="vi-txt"> Estoque</span></button>
                     <button type="submit">Enviar</button>
                 </form>
             <?php endif; ?>
         <?php endif; ?>
     </section>
 </div>
+
+<?php if ($telefoneAtivo && $contatoAtivo && $_SESSION['admin_perfil'] !== 'supervisor'): ?>
+<dialog class="modal-lancamento vi-modal" id="vi-modal" aria-labelledby="vi-modal-titulo">
+    <div class="vi-mh">
+        <button type="button" class="btn-texto" id="vi-voltar" hidden>←</button>
+        <h3 id="vi-modal-titulo">🚘 Mandar carro do estoque</h3>
+        <button type="button" class="btn-texto vi-fechar" id="vi-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div id="vi-lista">
+        <input type="search" id="vi-busca" placeholder="🔎 Buscar modelo ou placa…">
+        <div class="vi-chips" id="vi-chips">
+            <button type="button" class="vi-chip on" data-f="">Todos</button>
+            <button type="button" class="vi-chip" data-f="carro">🚗 Carros</button>
+            <button type="button" class="vi-chip" data-f="moto">🏍️ Motos</button>
+        </div>
+        <div class="vi-grid" id="vi-grid"><p class="vi-vazio">Carregando…</p></div>
+    </div>
+    <div id="vi-detalhe" hidden>
+        <p class="vi-dica">Marque as fotos que vão pro cliente (no máximo 10 por vez).</p>
+        <div class="vi-fotos" id="vi-fotos"></div>
+        <label for="vi-legenda">Legenda (vai na 1ª foto)</label>
+        <input type="text" id="vi-legenda" maxlength="200">
+        <div class="vi-mf">
+            <button type="button" class="vi-btn-claro" id="vi-link">🔗 Mandar link do anúncio</button>
+            <button type="button" id="vi-enviar">📤 Enviar fotos</button>
+        </div>
+        <p class="vi-dica">O link abre a página do carro com todas as fotos e já aparece no WhatsApp com a foto de capa.</p>
+    </div>
+</dialog>
+<?php endif; ?>
 
 <script>
 (function () {
@@ -298,7 +388,14 @@ if ($telefoneAtivo && !$contatoAtivo) {
         var rodape = new Date(m.created_at.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
         if (m.enviado_por_ia == 1) rodape += ' · 🤖 IA';
         if (m.usuario_nome) rodape += ' · 👤 ' + m.usuario_nome;
-        div.innerHTML = escapeHtml(m.mensagem).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodape) + '</small>';
+        var midia = '';
+        if ((m.tipo === 'image' || m.tipo === 'video') && (m.drive_file_id || m.arquivo_url)) {
+            var u = '/admin/ver_midia_vendas.php?id=' + encodeURIComponent(m.id);
+            midia = m.tipo === 'video'
+                ? '<video class="wpp-midia" controls preload="none" src="' + u + '"></video>'
+                : '<a href="' + u + '" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" src="' + u + '" alt=""></a>';
+        }
+        div.innerHTML = midia + escapeHtml(m.mensagem).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodape) + '</small>';
         return div;
     }
 
@@ -436,6 +533,125 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 ev.preventDefault();
                 form.requestSubmit();
             }
+        });
+    }
+
+    // ── 06/11/2026 — 📷 foto do aparelho e 🚘 carros do estoque ──────────
+    function postar(campos, btn, rotuloOk) {
+        var body = new URLSearchParams();
+        body.set('csrf_token', csrf.value);
+        body.set('telefone', telefone);
+        body.set('ajax', '1');
+        Object.keys(campos).forEach(function (k) { body.set(k, campos[k]); });
+        var rot = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+        return fetch('', { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (btn) { btn.disabled = false; btn.textContent = rot; }
+                if (!d.ok) { alert(d.erro || 'Falha ao enviar.'); return false; }
+                if (d.falhas) alert(d.enviados + ' enviada(s); ' + d.falhas + ' não saiu(íram).');
+                return true;
+            })
+            .catch(function () { if (btn) { btn.disabled = false; btn.textContent = rot; } alert('Falha ao enviar — confira sua conexão.'); return false; });
+    }
+
+    var btnFoto = document.getElementById('vi-btn-foto');
+    var inputFoto = document.getElementById('vi-input-foto');
+    if (btnFoto && inputFoto) {
+        btnFoto.addEventListener('click', function () { inputFoto.click(); });
+        inputFoto.addEventListener('change', function () {
+            var f = inputFoto.files && inputFoto.files[0];
+            inputFoto.value = '';
+            if (!f) return;
+            if (f.size > 20 * 1024 * 1024) { alert('Foto maior que 20MB.'); return; }
+            var leitor = new FileReader();
+            leitor.onload = function () {
+                var b64 = String(leitor.result).split(',')[1] || '';
+                var leg = form.querySelector('textarea').value.trim();
+                postar({ acao: 'enviar_foto', foto_base64: b64, legenda: leg }, btnFoto).then(function (ok) {
+                    if (ok) form.querySelector('textarea').value = '';
+                });
+            };
+            leitor.readAsDataURL(f);
+        });
+    }
+
+    var modal = document.getElementById('vi-modal');
+    var btnEstoque = document.getElementById('vi-btn-estoque');
+    if (modal && btnEstoque) {
+        var grid = document.getElementById('vi-grid'), busca = document.getElementById('vi-busca');
+        var lista = document.getElementById('vi-lista'), detalhe = document.getElementById('vi-detalhe');
+        var fotosBox = document.getElementById('vi-fotos'), legenda = document.getElementById('vi-legenda');
+        var titulo = document.getElementById('vi-modal-titulo'), voltar = document.getElementById('vi-voltar');
+        var veiculos = null, filtro = '', atual = null;
+
+        function urlMidia(id) { return '/admin/ver_midia_revenda.php?id=' + id; }
+        function nomeV(v) { return v.titulo + (v.ano ? ' ' + v.ano : ''); }
+        function desenharLista() {
+            var q = (busca.value || '').toLowerCase().replace(/[-\s]/g, '');
+            var itens = (veiculos || []).filter(function (v) {
+                if (filtro === 'moto' && !v.moto) return false;
+                if (filtro === 'carro' && v.moto) return false;
+                if (!q) return true;
+                return (v.titulo + v.ano + v.placa).toLowerCase().replace(/[-\s]/g, '').indexOf(q) >= 0;
+            });
+            if (!itens.length) { grid.innerHTML = '<p class="vi-vazio">Nenhum veículo disponível' + (q ? ' pra essa busca' : '') + '.</p>'; return; }
+            grid.innerHTML = '';
+            itens.forEach(function (v) {
+                var b = document.createElement('button');
+                b.type = 'button'; b.className = 'vi-card';
+                var qtd = v.midias.length;
+                b.innerHTML = '<span class="vi-capa">' + (v.capa ? '<img loading="lazy" src="' + urlMidia(v.capa) + '" alt="">' : (v.moto ? '🏍️' : '🚗')) +
+                    '<span class="vi-qtd">' + (qtd ? '📷 ' + qtd : 'sem foto') + '</span></span>' +
+                    '<span class="vi-ci"><b>' + escapeHtml(v.titulo) + '</b><span>' + escapeHtml([v.ano, v.placa].filter(Boolean).join(' · ')) + '</span></span>';
+                b.addEventListener('click', function () { abrirVeiculo(v); });
+                grid.appendChild(b);
+            });
+        }
+        function abrirVeiculo(v) {
+            atual = v;
+            lista.hidden = true; detalhe.hidden = false; voltar.hidden = false;
+            titulo.textContent = nomeV(v);
+            legenda.value = nomeV(v);
+            fotosBox.innerHTML = v.midias.length ? '' : '<p class="vi-vazio">Esse veículo ainda não tem fotos no catálogo — mande o link do anúncio ou cadastre fotos em 🚘 Estoque.</p>';
+            v.midias.forEach(function (m, i) {
+                var l = document.createElement('label');
+                l.className = 'vi-ft';
+                l.innerHTML = '<input type="checkbox" value="' + m.id + '"' + (i < 3 ? ' checked' : '') + '>' +
+                    (m.tipo === 'video' ? '<span class="vi-video">🎥</span>' : '<img loading="lazy" src="' + urlMidia(m.id) + '" alt="">');
+                fotosBox.appendChild(l);
+            });
+            document.getElementById('vi-enviar').hidden = !v.midias.length;
+        }
+        function voltarLista() { atual = null; lista.hidden = false; detalhe.hidden = true; voltar.hidden = true; titulo.textContent = '🚘 Mandar carro do estoque'; }
+
+        btnEstoque.addEventListener('click', function () {
+            voltarLista();
+            if (typeof modal.showModal === 'function') modal.showModal(); else modal.setAttribute('open', '');
+            if (veiculos) { desenharLista(); return; }
+            fetch('?ajax=estoque').then(function (r) { return r.json(); }).then(function (d) { veiculos = d.veiculos || []; desenharLista(); })
+                .catch(function () { grid.innerHTML = '<p class="vi-vazio">Não deu pra carregar o estoque.</p>'; });
+        });
+        document.getElementById('vi-fechar').addEventListener('click', function () { modal.close(); });
+        voltar.addEventListener('click', voltarLista);
+        busca.addEventListener('input', desenharLista);
+        document.querySelectorAll('#vi-chips .vi-chip').forEach(function (c) {
+            c.addEventListener('click', function () {
+                document.querySelectorAll('#vi-chips .vi-chip').forEach(function (o) { o.classList.toggle('on', o === c); });
+                filtro = c.dataset.f; desenharLista();
+            });
+        });
+        document.getElementById('vi-enviar').addEventListener('click', function () {
+            var ids = Array.prototype.map.call(fotosBox.querySelectorAll('input:checked'), function (i) { return i.value; });
+            if (!ids.length) { alert('Marque pelo menos uma foto.'); return; }
+            if (ids.length > 10) { alert('No máximo 10 por vez.'); return; }
+            postar({ acao: 'enviar_estoque', oportunidade_id: atual.id, midias: ids.join(','), legenda: legenda.value }, this)
+                .then(function (ok) { if (ok) modal.close(); });
+        });
+        document.getElementById('vi-link').addEventListener('click', function () {
+            postar({ acao: 'enviar_link_estoque', oportunidade_id: atual.id, legenda: legenda.value }, this)
+                .then(function (ok) { if (ok) modal.close(); });
         });
     }
 })();

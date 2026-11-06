@@ -51,8 +51,22 @@ if ($vendedor && !empty($vendedor['whatsapp'])) {
 <title><?= e($titulo) ?> — Fastcar</title>
 <?php if ($disponivel): ?>
 <meta property="og:title" content="<?= e($titulo) ?> — Fastcar">
-<meta property="og:description" content="Veículo disponível na Fastcar. Venha conhecer!">
-<?php if ($fotos): ?><meta property="og:image" content="<?= e($base . $urlMidia($fotos[0])) ?>"><?php endif; ?>
+<?php $ogDesc = 'Disponível na Fastcar — ' . count($fotos) . ' foto(s)' . ($videos ? ' e vídeo' : '') . '. Compra facilitada, com entrada pequena. Toque pra ver e chamar no WhatsApp.'; ?>
+<meta name="description" content="<?= e($ogDesc) ?>">
+<meta property="og:type" content="product">
+<meta property="og:site_name" content="Fastcar Solutions">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:url" content="<?= e($base . '/public/veiculo.php?o=' . $o . '&v=' . $vid . '&t=' . urlencode($t)) ?>">
+<meta property="og:description" content="<?= e($ogDesc) ?>">
+<meta name="twitter:card" content="<?= $fotos ? 'summary_large_image' : 'summary' ?>">
+<meta name="twitter:title" content="<?= e($titulo) ?> — Fastcar">
+<meta name="twitter:description" content="<?= e($ogDesc) ?>">
+<?php if ($fotos): $ogImg = $base . $urlMidia($fotos[0]); ?>
+<meta property="og:image" content="<?= e($ogImg) ?>">
+<meta property="og:image:secure_url" content="<?= e($ogImg) ?>">
+<meta property="og:image:alt" content="<?= e($titulo) ?>">
+<meta name="twitter:image" content="<?= e($ogImg) ?>">
+<?php endif; ?>
 <?php endif; ?>
 <style>
 :root { --navy:#151722; --azul:#2f6fed; --borda:#e5e7eb; }
