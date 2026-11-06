@@ -480,10 +480,122 @@ function _contratoGravarEnviado(string $sql, array $params, string $docToken): i
             if (function_exists('zapsignLogEnvio')) {
                 zapsignLogEnvio('nao_registrado', 'doc_token=' . $docToken, 200, $e->getMessage() . ' | params=' . json_encode($params, JSON_UNESCAPED_UNICODE));
             }
+            // 06/11/2026 — guarda o INSERT inteiro pra cron/zapsign_sync.php
+            // registrar sozinho daqui a pouco (contratosRecuperarNaoRegistrados()).
+            try {
+                $dirP = __DIR__ . '/../storage/contratos_pendentes';
+                if (!is_dir($dirP)) @mkdir($dirP, 0775, true);
+                @file_put_contents($dirP . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '', $docToken) . '.json',
+                    json_encode(['doc_token' => $docToken, 'sql' => $sql, 'params' => $params], JSON_UNESCAPED_UNICODE));
+            } catch (Throwable $e2) {
+            }
             return 0;
         }
     }
     return 0;
+}
+
+/**
+ * 06/11/2026, log real: "nao_registrado ... database is locked" — o contrato
+ * de venda do Jocimar saiu pra ZapSign (cliente recebeu o link) mas não
+ * ficou registrado, porque o banco estava ocupado. Chamado pelo
+ * cron/zapsign_sync.php (a cada 5 min): registra de novo o que ficou de
+ * fora, de 2 fontes —
+ *  1) storage/contratos_pendentes/{doc_token}.json (INSERT completo
+ *     guardado por _contratoGravarEnviado() daqui pra frente);
+ *  2) linhas "nao_registrado" antigas do storage/logs/zapsign_envio.log
+ *     (só traz doc_token + oportunidade/venda — refaz os campos a partir
+ *     da negociação e pega os links de assinatura direto da ZapSign).
+ * Idempotente: doc_token que já está em `contratos` nunca é inserido de
+ * novo. Depois de registrar faz o mesmo que o envio normal faz depois do
+ * INSERT (cancela contrato anterior da mesma negociação; venda vai pra
+ * "contrato enviado"). Devolve quantos registrou.
+ */
+function contratosRecuperarNaoRegistrados(?callable $log = null): int {
+    $db = getDB();
+    $log ??= static function (string $m): void {};
+    $existe = $db->prepare("SELECT id FROM contratos WHERE zapsign_doc_token = ?");
+    $registrados = 0;
+
+    $posInsert = function (int $contratoId) use ($db, $log): void {
+        $c = $db->query("SELECT tipo, oportunidade_id, venda_id, created_by FROM contratos WHERE id = " . $contratoId)->fetch();
+        if (!$c) return;
+        cancelarContratosAnterioresDaNegociacao((string)$c['tipo'], $contratoId, (int)$c['oportunidade_id'], $c['venda_id'] !== null ? (int)$c['venda_id'] : null);
+        if ($c['tipo'] === 'venda' && $c['venda_id']) {
+            $et = $db->query("SELECT etapa FROM vendas WHERE id = " . (int)$c['venda_id'])->fetchColumn();
+            if (in_array($et, ['crm_preenchido', 'negociacao'], true)) {
+                mudarEtapaVenda((int)$c['venda_id'], 'contrato_enviado', $c['created_by'] ? (int)$c['created_by'] : null, 'Contrato enviado pra assinatura (registrado depois — o banco estava ocupado na hora do envio)');
+            }
+        }
+    };
+
+    // 1) pendentes completos
+    $dirP = __DIR__ . '/../storage/contratos_pendentes';
+    foreach (glob($dirP . '/*.json') ?: [] as $arq) {
+        $p = json_decode((string)@file_get_contents($arq), true);
+        if (!is_array($p) || empty($p['doc_token']) || empty($p['sql'])) { @unlink($arq); continue; }
+        $existe->execute([$p['doc_token']]);
+        if ($existe->fetchColumn()) { @unlink($arq); continue; }
+        try {
+            $db->prepare($p['sql'])->execute($p['params']);
+            $id = (int)$db->lastInsertId();
+            @unlink($arq);
+            $posInsert($id);
+            $registrados++;
+            $log("Contrato #{$id} registrado depois (doc_token {$p['doc_token']}).");
+        } catch (Throwable $e) {
+            $log("Pendente {$p['doc_token']} ainda não registrou: " . $e->getMessage());
+        }
+    }
+
+    // 2) linhas antigas do log
+    $logArq = __DIR__ . '/../storage/logs/zapsign_envio.log';
+    if (!is_file($logArq)) return $registrados;
+    $linhas = @file($logArq, FILE_IGNORE_NEW_LINES) ?: [];
+    foreach ($linhas as $l) {
+        if (!preg_match('/\] nao_registrado .*doc="doc_token=([a-zA-Z0-9-]+)".*\| params=\[(\d+),(?:(\d+|null),)?"/', $l, $m)) continue;
+        $docToken = $m[1];
+        $opId = (int)$m[2];
+        $vendaId = (isset($m[3]) && $m[3] !== '' && $m[3] !== 'null') ? (int)$m[3] : null;
+        $existe->execute([$docToken]);
+        if ($existe->fetchColumn()) continue;
+        if (getConfig('contrato_recuperar_desistiu_' . $docToken) === '1') continue;
+        try {
+            $st = zapsignStatusDocumento($docToken);
+            if (isset($st['error'])) { $log("ZapSign não achou {$docToken}: {$st['error']}"); continue; }
+            $signers = $st['signers'];
+            if ($vendaId) {
+                $campos = montarCamposContratoVenda($vendaId);
+                if (!$campos) { setConfig('contrato_recuperar_desistiu_' . $docToken, '1'); continue; }
+                $tipo = 'venda';
+                $nomeDoc = (($campos['_tipo_contrato'] ?? 'venda') === 'locacao' ? 'Contrato de Locação - ' : 'Contrato de Venda - ') . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+                $opId = (int)($campos['_oportunidade_id'] ?: $opId);
+            } else {
+                $campos = montarCamposContratoCompra($opId);
+                if (!$campos) { setConfig('contrato_recuperar_desistiu_' . $docToken, '1'); continue; }
+                $tipo = 'compra';
+                $nomeDoc = 'Contrato de Compra - ' . ($campos['vendedor_nome'] ?: "Oportunidade #{$opId}");
+            }
+            $extras = [];
+            $i = 1;
+            foreach (signatariosExtrasContrato($campos['_testemunha1_usuario_id'] ?? null, $campos['_testemunha2_usuario_id'] ?? null) as $x) {
+                $sg = $signers[$i++] ?? null;
+                if ($sg && !empty($sg['token'])) $extras[$x['chave']] = ['token' => (string)$sg['token'], 'sign_url' => (string)($sg['sign_url'] ?? '')];
+            }
+            $db->prepare("
+                INSERT INTO contratos (oportunidade_id, venda_id, tipo, nome, campos_json, zapsign_doc_token, zapsign_signer_token, sign_url, zapsign_signers_extra_json, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviado')
+            ")->execute([$opId, $vendaId, $tipo, $nomeDoc, json_encode($campos), $docToken,
+                (string)($signers[0]['token'] ?? ''), (string)($signers[0]['sign_url'] ?? ''), json_encode($extras)]);
+            $id = (int)$db->lastInsertId();
+            $posInsert($id);
+            $registrados++;
+            $log("Contrato #{$id} recuperado do log (doc_token {$docToken}, " . ($vendaId ? "venda #{$vendaId}" : "oportunidade #{$opId}") . ').');
+        } catch (Throwable $e) {
+            $log("Recuperar {$docToken}: " . $e->getMessage());
+        }
+    }
+    return $registrados;
 }
 
 /**
@@ -544,7 +656,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
         $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ], $docRes['doc_token']);
     if ($contratoId === 0) {
-        return ['ok' => false, 'erro' => 'O contrato FOI enviado pra assinatura na ZapSign, mas o sistema não conseguiu registrar agora (banco ocupado). NÃO envie de novo — o cliente já recebeu o link. Avise o suporte (token ' . $docRes['doc_token'] . ').'];
+        return ['ok' => false, 'erro' => 'O contrato FOI enviado pra assinatura na ZapSign, mas o sistema não conseguiu registrar agora (banco ocupado). NÃO envie de novo — o cliente já recebeu o link. Ele vai aparecer aqui sozinho em até 5 minutos (token ' . $docRes['doc_token'] . ').'];
     }
     $db = getDB();
     cancelarContratosAnterioresDaNegociacao('compra', $contratoId, $oportunidadeId, null);
@@ -769,7 +881,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         $docRes['sign_url'], json_encode($docRes['signers_extra'] ?? []), $copia['drive_file_id'], $copia['arquivo_url'], $usuarioId,
     ], $docRes['doc_token']);
     if ($contratoId === 0) {
-        return ['ok' => false, 'erro' => 'O contrato FOI enviado pra assinatura na ZapSign, mas o sistema não conseguiu registrar agora (banco ocupado). NÃO envie de novo — o cliente já recebeu o link. Avise o suporte (token ' . $docRes['doc_token'] . ').'];
+        return ['ok' => false, 'erro' => 'O contrato FOI enviado pra assinatura na ZapSign, mas o sistema não conseguiu registrar agora (banco ocupado). NÃO envie de novo — o cliente já recebeu o link. Ele vai aparecer aqui sozinho em até 5 minutos (token ' . $docRes['doc_token'] . ').'];
     }
     $db = getDB();
     cancelarContratosAnterioresDaNegociacao('venda', $contratoId, $campos['_oportunidade_id'], $vendaId);

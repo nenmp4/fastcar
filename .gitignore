@@ -36,3 +36,4 @@ config/google_drive_credentials.json
 
 # Travas de processo (cron/follow-up) — arquivo de runtime, nunca versionado
 storage/*.lock
+storage/contratos_pendentes/

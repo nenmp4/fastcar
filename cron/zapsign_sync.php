@@ -25,6 +25,15 @@ function log_zapsign_sync(string $msg): void {
 $db = getDB();
 log_zapsign_sync('Iniciando em ' . date('d/m/Y H:i'));
 
+// 06/11/2026 — contrato que saiu pra ZapSign mas não ficou registrado
+// (banco ocupado na hora): registra agora, antes de sincronizar.
+try {
+    $recuperados = contratosRecuperarNaoRegistrados('log_zapsign_sync');
+    if ($recuperados) log_zapsign_sync("{$recuperados} contrato(s) não registrado(s) recuperado(s).");
+} catch (Throwable $e) {
+    log_zapsign_sync('Erro ao recuperar contratos não registrados: ' . $e->getMessage());
+}
+
 $pendentes = $db->query("
     SELECT id FROM contratos WHERE status IN ('enviado', 'visualizado') AND zapsign_doc_token != ''
 ")->fetchAll();
