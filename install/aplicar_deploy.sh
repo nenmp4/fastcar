@@ -32,6 +32,14 @@ set -o pipefail # sem isso, "cmd | tee" sempre "sucede" (o status vira o do tee,
 # storage/logs/, ver install/SETUP_VPS.md) pra funcionar nos dois sentidos.
 umask 002
 
+# 06/11/2026 — o site caiu (Cloudflare 522) 2 min depois de um deploy: o
+# smoke test + migração disputavam CPU/disco com o PHP-FPM atendendo gente.
+# Roda tudo daqui pra baixo com prioridade mínima (CPU e disco) — o deploy
+# demora um pouco mais, mas nunca tira fôlego do site. Best-effort: sem
+# renice/ionice no sistema, segue normal.
+command -v renice >/dev/null 2>&1 && renice -n 19 -p $$ >/dev/null 2>&1
+command -v ionice >/dev/null 2>&1 && ionice -c3 -p $$ >/dev/null 2>&1
+
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$BASE_DIR" || exit 1
 PHP_BIN="$(command -v php)"
