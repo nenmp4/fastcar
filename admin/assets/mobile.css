@@ -54,9 +54,14 @@ pre, code { overflow-x: auto; max-width: 100%; }
        dois agora são <a> filho direto de .topbar. */
     .topbar > a:not(.topbar-brand) { display: none; }
     /* 05/11/2026 — topbar única (_topbar.php): grupos e conta viram a gaveta. */
-    .topbar-v2 .tb-nav, .topbar-v2 .tb-conta { display: none; }
+    .topbar-v2 .tb-conta, .topbar-v2 .tb-grupo { display: none; }
+    /* Atalho do WhatsApp continua na barra (só o ícone) — 06/11/2026. */
+    .topbar-v2 .tb-nav { flex: 0 0 auto; margin-left: auto; }
+    .topbar-v2 .tb-atalho { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 20px; margin: 0; }
+    .topbar-v2 .tb-atalho-txt { display: none; }
+    .topbar-v2 .tb-nav + .tb-disponivel { margin-left: 6px; }
     .topbar-v2 .tb-disponivel { margin-left: auto; }
-    .topbar-v2 .tb-disponivel + .topbar-toggle { margin-left: 8px; }
+    .topbar-v2 .topbar-toggle { margin-left: 6px; }
     .topbar-menu .topbar-menu-grupo { color: #94a3b8; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 14px 14px 4px; }
     .breadcrumb { padding: 8px 16px; }
     .breadcrumb a { min-height: 32px; display: inline-flex; align-items: center; }
@@ -101,6 +106,12 @@ pre, code { overflow-x: auto; max-width: 100%; }
     .notif-toasts { left: 12px; right: 12px; top: 70px; max-width: none; }
 
     main { padding: 16px; }
+}
+
+/* Celular estreito: só o logo e o ícone do Disponível, pra caber 💬 + ☰ + badge + sino (06/11/2026). */
+@media (max-width: 480px) {
+    .topbar-v2 .topbar-wordmark, .topbar-v2 .tb-disp-txt { display: none; }
+    .topbar-v2 .tb-disponivel button { min-width: 44px; min-height: 44px; padding: 0 8px; font-size: 18px; }
 }
 
 /* ── Celular (até 700px) ─────────────────────────────────────────────────── */

@@ -34,6 +34,13 @@ $tbVendas = podeAcessarVendas();
 $tbFin = podeAcessarFinanceiro();
 $tbAval = podeAcessarAvaliacoes();
 $tbHome = paginaInicialPorPerfil($tbPerfil);
+// 06/11/2026, "no dashboard do vendedor não apareceu inbox" — o WhatsApp de
+// cada perfil fica como atalho direto na barra (além de dentro de "Funil"),
+// do jeito que era antes do menu agrupado.
+$tbAtalhos = [];
+if (in_array($tbPerfil, ['vendedor', 'avaliador'], true)) $tbAtalhos[] = ['WhatsApp', '/admin/vendas_inbox.php'];
+elseif ($tbPerfil === 'financeiro') $tbAtalhos[] = ['WhatsApp', '/admin/financeiro_inbox.php'];
+elseif ($tbPerfil !== '') $tbAtalhos[] = ['WhatsApp', '/admin/whatsapp_inbox.php'];
 
 // [rótulo, href, visível]
 $tbGrupos = [
@@ -153,6 +160,9 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
 <header class="topbar topbar-v2">
     <a class="topbar-brand" href="<?= e($tbHome) ?>"><img class="topbar-logo" src="/admin/assets/img/icon-192.png" alt="Fastcar" onerror="this.style.display='none'"><span class="topbar-wordmark">Fast<b>Car</b></span></a>
     <nav class="tb-nav" aria-label="Menu principal">
+        <?php foreach ($tbAtalhos as [$rot, $href]): ?>
+            <a class="tb-atalho<?= $tbAtivo($href) ? ' atual' : '' ?>" href="<?= e($href) ?>"<?= $tbAtivo($href) ? ' aria-current="page"' : '' ?> title="<?= e($rot) ?>">💬<span class="tb-atalho-txt"> <?= e($rot) ?></span></a>
+        <?php endforeach; ?>
         <?php foreach ($tbGrupos as $grupo => $itens):
             $vis = array_filter($itens, static fn($i) => $i[2]);
             if (!$vis) continue;
@@ -174,7 +184,7 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
         <form method="post" action="/admin/toggle_disponivel.php" class="inline tb-disponivel">
             <?= csrfField() ?>
             <input type="hidden" name="voltar" value="<?= e((string)($_SERVER['REQUEST_URI'] ?? '/admin/index.php')) ?>">
-            <button type="submit"><?= !empty($tbEu['disponivel']) ? '🟢 Disponível' : '⚪ Offline' ?></button>
+            <button type="submit" title="<?= !empty($tbEu['disponivel']) ? 'Disponível na fila — clique pra ficar offline' : 'Offline — clique pra ficar disponível' ?>"><?= !empty($tbEu['disponivel']) ? '🟢<span class="tb-disp-txt"> Disponível</span>' : '⚪<span class="tb-disp-txt"> Offline</span>' ?></button>
         </form>
     <?php endif; ?>
     <details class="tb-conta" data-nome="<?= e($tbNome) ?>">
