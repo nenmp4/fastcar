@@ -2428,3 +2428,15 @@ try {
 } catch (Throwable $e) {
     echo "❌ WhatsApp (mensagens de lead de venda): {$e->getMessage()}\n";
 }
+
+// 07/11/2026, "deixa uma opção para foto de destaque do veículo".
+try {
+    if (!colunaExiste($db, 'veiculo_midias_revenda', 'destaque')) {
+        $db->exec("ALTER TABLE veiculo_midias_revenda ADD COLUMN destaque INTEGER NOT NULL DEFAULT 0");
+        echo "✅ veiculo_midias_revenda.destaque\n";
+    } else {
+        echo "⏭️  veiculo_midias_revenda.destaque: já existia\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ veiculo_midias_revenda.destaque: {$e->getMessage()}\n";
+}

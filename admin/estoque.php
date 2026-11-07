@@ -231,7 +231,7 @@ if ($veiculos) {
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $stmt = $db->prepare("
         SELECT oportunidade_id,
-               MIN(CASE WHEN tipo = 'foto' THEN id END) AS foto_id,
+               COALESCE(MIN(CASE WHEN tipo = 'foto' AND destaque = 1 THEN id END), MIN(CASE WHEN tipo = 'foto' THEN id END)) AS foto_id, -- 07/11/2026: foto de destaque primeiro
                COUNT(*) AS qtd
         FROM veiculo_midias_revenda WHERE oportunidade_id IN ({$ph})
         GROUP BY oportunidade_id

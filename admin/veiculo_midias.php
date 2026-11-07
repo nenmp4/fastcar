@@ -63,6 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $erro = $resultado['erros'] ? implode(' | ', $resultado['erros']) : 'Nenhum arquivo enviado.';
             }
+        } elseif ($acao === 'destaque_midia_revenda') {
+            if (marcarFotoDestaqueRevenda($id, (int)($_POST['midia_id'] ?? 0))) $sucesso = '⭐ Foto de destaque definida — ela vira a capa do carro no catálogo e no link.';
+            else $erro = 'Não deu pra marcar essa foto como destaque.';
         } elseif ($acao === 'excluir_midia_revenda') {
             excluirMidiaRevenda((int)($_POST['midia_id'] ?? 0));
             $sucesso = 'Mídia removida do catálogo.';
@@ -116,6 +119,18 @@ $midias = listarMidiasRevenda($id);
                         <video src="/admin/ver_midia_revenda.php?id=<?= (int)$m['id'] ?>" controls preload="metadata" style="width:100%;border-radius:8px"></video>
                     <?php endif; ?>
                     <?php if ($m['legenda']): ?><small><?= e($m['legenda']) ?></small><?php endif; ?>
+                    <?php if ($m['tipo'] === 'foto'): ?>
+                        <?php if (!empty($m['destaque'])): ?>
+                            <span class="badge badge-ok" style="display:inline-block;margin-top:4px">⭐ Destaque (capa)</span>
+                        <?php else: ?>
+                            <form method="post" style="margin-top:4px">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="destaque_midia_revenda">
+                                <input type="hidden" name="midia_id" value="<?= (int)$m['id'] ?>">
+                                <button type="submit" class="secundario" style="margin-top:0;padding:3px 8px;font-size:11.5px">⭐ Usar como destaque</button>
+                            </form>
+                        <?php endif; ?>
+                    <?php endif; ?>
                     <form method="post" onsubmit="return confirmarAcao(this, 'Remover essa mídia do catálogo?');" style="margin-top:4px">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="excluir_midia_revenda">

@@ -1154,7 +1154,9 @@ const VEICULO_MIDIA_MIME_PERMITIDOS = [
  */
 function listarMidiasRevenda(int $oportunidadeId): array {
     $db = getDB();
-    $stmt = $db->prepare("SELECT * FROM veiculo_midias_revenda WHERE oportunidade_id = ? ORDER BY tipo, id");
+    // 07/11/2026 — foto de destaque sempre primeiro (capa no catálogo, no
+    // link do carro, no WhatsApp Vendas e nas fotos que a IA manda).
+    $stmt = $db->prepare("SELECT * FROM veiculo_midias_revenda WHERE oportunidade_id = ? ORDER BY tipo, COALESCE(destaque, 0) DESC, id");
     $stmt->execute([$oportunidadeId]);
     return $stmt->fetchAll();
 }
@@ -1489,4 +1491,26 @@ function simulacaoPromissoriaEstoque($fipe): ?array {
         $parcelas[$n] = (int)ceil($saldo * (1 + 0.0399 * $n) / $n);
     }
     return ['entrada' => (int)ceil($entrada), 'parcelas' => $parcelas];
+}
+
+/**
+ * 07/11/2026, "deixa uma opção para foto de destaque do veículo" — marca 1
+ * foto do catálogo de revenda como capa (só 1 por veículo; marcar outra
+ * troca). Só aceita foto que é do próprio veículo. Devolve true se marcou.
+ */
+function marcarFotoDestaqueRevenda(int $oportunidadeId, int $midiaId): bool {
+    $db = getDB();
+    $st = $db->prepare("SELECT 1 FROM veiculo_midias_revenda WHERE id = ? AND oportunidade_id = ? AND tipo = 'foto'");
+    $st->execute([$midiaId, $oportunidadeId]);
+    if (!$st->fetchColumn()) return false;
+    $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE veiculo_midias_revenda SET destaque = 0 WHERE oportunidade_id = ?")->execute([$oportunidadeId]);
+        $db->prepare("UPDATE veiculo_midias_revenda SET destaque = 1 WHERE id = ?")->execute([$midiaId]);
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        return false;
+    }
+    return true;
 }

@@ -991,6 +991,7 @@ CREATE TABLE IF NOT EXISTS veiculo_midias_revenda (
     drive_file_id TEXT DEFAULT '',
     arquivo_url TEXT DEFAULT '',
     legenda TEXT DEFAULT '',
+    destaque INTEGER NOT NULL DEFAULT 0, -- 07/11/2026: foto de capa do carro (1 por veículo)
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_veiculo_midias_oportunidade ON veiculo_midias_revenda(oportunidade_id);
