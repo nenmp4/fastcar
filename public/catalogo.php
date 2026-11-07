@@ -112,9 +112,6 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
                 <?php if ($sim = simulacaoPromissoriaEstoque($v['valor_fipe_referencia'] ?? null)): ?>
                 <div class="sim">
                     <div class="sim-entrada">Entrada <b>R$ <?= number_format($sim['entrada'], 0, ',', '.') ?></b></div>
-                    <?php foreach ($sim['parcelas'] as $n => $p): ?>
-                        <div><?= $n ?>x <b>R$ <?= number_format($p, 0, ',', '.') ?></b></div>
-                    <?php endforeach; ?>
                 </div>
                 <?php endif; ?>
                 <span class="ver">Ver fotos e detalhes →</span>

@@ -62,4 +62,8 @@ if (!$r['ok']) {
     log_asaas_sync("{$r['atualizados']} cobrança(s) resincronizada(s).");
 }
 
+// 07/11/2026 — comissão do vendedor sobre a entrada já paga (aguardando aprovação).
+require_once ROOT . '/includes/financeiro.php';
+finSincronizarComissoesVendas();
+
 log_asaas_sync('Concluído.');

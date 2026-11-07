@@ -1496,7 +1496,7 @@ if ($podeSelecionarEmMassa):
                     <?php $cv = $comissaoVendidas[(int)$v['id']] ?? null; ?>
                     <?php if ($cv): ?>
                         <?= moedaVenda((float)$cv['valor']) ?>
-                        <br><span class="badge <?= $cv['status'] === 'pago' ? 'badge-ok' : 'badge-aviso' ?>"><?= $cv['status'] === 'pago' ? '✅ lançada/paga' : '⏳ ' . e($cv['status']) ?></span>
+                        <br><span class="badge <?= $cv['status'] === 'pago' ? 'badge-ok' : 'badge-aviso' ?>"><?= $cv['status'] === 'pago' ? '✅ lançada/paga' : '⏳ aguardando aprovação' ?></span>
                     <?php elseif ($v['valor_pago_contratacao'] > 0): ?>
                         <small>não lançada</small><br><small>(5% da entrada no ato = <?= moedaVenda(finEntradaNoAtoVenda((int)$v['id']) * 0.05) ?>)</small>
                     <?php else: ?>

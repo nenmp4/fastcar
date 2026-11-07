@@ -78,6 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             WHERE id=?
                         ")->execute([$tipo, $categoriaId, $descricao, $valor, $natureza, $vencimento, $pagamento, $status, $clienteId, $clienteNomeManual, $oportunidadeId, $vendaId, $funcionarioId, $fornecedorId, $formaPgto, $recorrente, $recIntervalo, $driveFileId, $arquivoUrl, $obs, $id]);
                         $sucesso = 'Lançamento atualizado.';
+                        $vendaIdEd = $db->query("SELECT venda_id FROM fin_lancamentos WHERE id = " . (int)$id)->fetchColumn();
+                        if ($vendaIdEd) finRegistrarComissaoVendaFechada((int)$vendaIdEd);
                     } else {
                         $db->prepare("
                             INSERT INTO fin_lancamentos
@@ -92,6 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($_POST['id'] ?? 0);
             $db->prepare("UPDATE fin_lancamentos SET data_pagamento=date('now','localtime'), status='pago', updated_at=datetime('now','localtime') WHERE id=? AND origem != 'asaas'")->execute([$id]);
             $sucesso = 'Marcado como pago.';
+            // 07/11/2026 — entrada de venda paga gera a comissão do vendedor (aguardando aprovação).
+            $vendaIdPago = $db->query("SELECT venda_id FROM fin_lancamentos WHERE id = " . $id)->fetchColumn();
+            if ($vendaIdPago) finRegistrarComissaoVendaFechada((int)$vendaIdPago);
         } elseif ($acao === 'excluir') {
             $id = (int)($_POST['id'] ?? 0);
             $db->prepare("DELETE FROM fin_lancamentos WHERE id=? AND origem != 'asaas'")->execute([$id]);

@@ -109,9 +109,6 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     <div class="sim">
         <h2>💳 Na promissória</h2>
         <div class="sim-entrada">Entrada <b>R$ <?= number_format($sim['entrada'], 0, ',', '.') ?></b></div>
-        <?php foreach ($sim['parcelas'] as $n => $p): ?>
-            <div><?= $n ?>x de <b>R$ <?= number_format($p, 0, ',', '.') ?></b></div>
-        <?php endforeach; ?>
         <small>Simulação sujeita a análise e confirmação do vendedor.</small>
     </div>
     <?php endif; ?>

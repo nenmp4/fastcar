@@ -850,60 +850,82 @@ function finEntradaNoAtoVenda(int $vendaId, ?string $dataRef = null): float {
     return round($soma > 0 ? $soma : (float)$partes[0]['valor'], 2);
 }
 
+/**
+ * Comissão do vendedor = 5% da ENTRADA QUE ENTRA NO SISTEMA (07/11/2026,
+ * "entrada tem que ser lançada no sistema / para aprovação / valor que entra
+ * no sistema"). Substitui a regra "entrada no ato" (04/11): a base agora é a
+ * soma dos lançamentos de ENTRADA da venda já marcados como PAGOS no
+ * Financeiro (origem 'parcelamento_venda', parcela_numero=0) — entrada que
+ * ainda não foi lançada/conferida não gera nada. Gera a DIFERENÇA entre o
+ * devido (5% do pago) e o que já existe de comissão dessa venda (não
+ * cancelada), então cada parte paga vira 1 comissão nova e nada duplica —
+ * inclusive com comissão antiga já lançada pela regra anterior. Nasce
+ * 'pendente' = AGUARDANDO APROVAÇÃO: quem aprova é o financeiro/super admin
+ * marcando como pago em Financeiro → Lançamentos. Idempotente; chamada ao
+ * virar 'vendido', ao marcar qualquer lançamento da venda como pago e pelo
+ * cron de sincronização. $dataVenda é ignorado (mantido pros callers antigos).
+ */
 function finRegistrarComissaoVendaFechada(int $vendaId, ?string $dataVenda = null): void {
     try {
         $db = getDB();
-
-        $existe = $db->prepare("SELECT 1 FROM fin_lancamentos WHERE venda_id = ? AND origem = 'comissao_venda' AND status != 'cancelado'");
-        $existe->execute([$vendaId]);
-        if ($existe->fetchColumn()) return;
-        // Locação (27/10/2026) nunca gera receita/comissão de VENDA — aluguel
-        // não é preço de compra, lançamento fica manual em Financeiro.
-        $tipoContratoFin = getDB()->prepare("SELECT tipo_contrato FROM vendas WHERE id = ?");
-        $tipoContratoFin->execute([$vendaId]);
-        if ($tipoContratoFin->fetchColumn() === 'locacao') return;
-
-        $stmt = $db->prepare("
-            SELECT v.responsavel_id, v.valor_pago_contratacao, v.comprador_nome,
+        $st = $db->prepare("
+            SELECT v.responsavel_id, v.comprador_nome, v.tipo_contrato, v.etapa,
                    o.veiculo_marca, o.veiculo_modelo
-            FROM vendas v
-            LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
+            FROM vendas v LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
             WHERE v.id = ?
         ");
-        $stmt->execute([$vendaId]);
-        $v = $stmt->fetch();
-        if (!$v) return;
-
-        $valorEntrada = finEntradaNoAtoVenda($vendaId, $dataVenda);
-        if ($valorEntrada <= 0) return;
-
+        $st->execute([$vendaId]);
+        $v = $st->fetch();
+        // Locação (27/10/2026) nunca gera comissão de venda; venda cancelada também não.
+        if (!$v || ($v['tipo_contrato'] ?? 'venda') === 'locacao' || $v['etapa'] === 'cancelada') return;
         $vendedorId = $v['responsavel_id'] ? (int)$v['responsavel_id'] : null;
         if (!$vendedorId) return;
-
         $stmtColab = $db->prepare("SELECT id FROM fin_colaboradores WHERE usuario_id = ? AND status = 'ativo'");
         $stmtColab->execute([$vendedorId]);
         $colaboradorId = $stmtColab->fetchColumn();
         if (!$colaboradorId) return;
 
-        $valorComissao = round($valorEntrada * 5 / 100, 2);
-        if ($valorComissao <= 0) return;
+        $st = $db->prepare("SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
+                            WHERE venda_id = ? AND origem = 'parcelamento_venda' AND parcela_numero = 0 AND status = 'pago'");
+        $st->execute([$vendaId]);
+        $entradaPaga = (float)$st->fetchColumn();
+        if ($entradaPaga <= 0) return;
+
+        $st = $db->prepare("SELECT COALESCE(SUM(valor),0) FROM fin_lancamentos
+                            WHERE venda_id = ? AND origem = 'comissao_venda' AND status != 'cancelado'");
+        $st->execute([$vendaId]);
+        $jaLancada = (float)$st->fetchColumn();
+
+        $devida = round($entradaPaga * 5 / 100, 2);
+        $diferenca = round($devida - $jaLancada, 2);
+        if ($diferenca < 0.01) return;
 
         $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Comissão de consultor/vendedor'")->fetchColumn();
         $veiculo = trim(($v['veiculo_marca'] ?? '') . ' ' . ($v['veiculo_modelo'] ?? '')) ?: 'veículo';
         $descricao = sprintf(
-            'Comissão de venda — %s — comprador %s (venda #%d) — 5%% da entrada recebida no ato (R$ %s)',
-            $veiculo, $v['comprador_nome'] ?: '—', $vendaId, number_format($valorEntrada, 2, ',', '.')
+            'Comissão de venda — %s — comprador %s (venda #%d) — 5%% da entrada já paga (R$ %s) — aguardando aprovação',
+            $veiculo, $v['comprador_nome'] ?: '—', $vendaId, number_format($entradaPaga, 2, ',', '.')
         );
-
-        $data = $dataVenda ?: date('Y-m-d');
+        $hoje = date('Y-m-d');
         $db->prepare("
             INSERT INTO fin_lancamentos
-                (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, venda_id, funcionario_id, origem, created_by)
-            VALUES ('despesa', ?, ?, ?, ?, ?, 'pago', ?, ?, 'comissao_venda', ?)
-        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $data, $data, $vendaId, $colaboradorId, $vendedorId]);
+                (tipo, categoria_id, descricao, valor, data_vencimento, status, venda_id, funcionario_id, origem, created_by)
+            VALUES ('despesa', ?, ?, ?, ?, 'pendente', ?, ?, 'comissao_venda', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $diferenca, $hoje, $vendaId, $colaboradorId, $vendedorId]);
     } catch (Throwable $e) {
-        // best-effort — nunca pode travar a transição de etapa da venda
+        // best-effort — nunca pode travar a transição de etapa nem a baixa do lançamento
     }
+}
+
+/** Varredura (cron): vendas recentes com entrada paga e comissão ainda não lançada. */
+function finSincronizarComissoesVendas(): int {
+    $ids = getDB()->query("
+        SELECT DISTINCT venda_id FROM fin_lancamentos
+        WHERE venda_id IS NOT NULL AND origem = 'parcelamento_venda' AND parcela_numero = 0
+          AND status = 'pago' AND COALESCE(data_pagamento, '') >= '2026-11-01'
+    ")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($ids as $vid) finRegistrarComissaoVendaFechada((int)$vid);
+    return count($ids);
 }
 
 /**
