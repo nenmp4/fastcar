@@ -171,6 +171,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['oc
 // existente). Vendedor/telefone opcionais: sem eles vira "veículo sem
 // vendedor identificado" com telefone placeholder (DDD 00, nunca real).
 $formManual = [];
+// 07/11/2026, "tem carro entra manual temos colocar fipe no que não puxa" —
+// FIPE de referência digitada direto no card do estoque (sem ela, o carro
+// fica sem a simulação da promissória no catálogo/link público).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar_fipe_estoque') {
+    $qs = $_GET;
+    unset($qs['fipe_ok'], $qs['fipe_erro']);
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $idF = (int)($_POST['oportunidade_id'] ?? 0);
+        $fipeF = valorMonetario((string)($_POST['valor_fipe_referencia'] ?? ''));
+        if (!$fipeF || $fipeF <= 0) throw new RuntimeException('Digite o valor da FIPE.');
+        $stF = $db->prepare("UPDATE oportunidades SET valor_fipe_referencia = ?, updated_at = datetime('now','localtime') WHERE id = ? AND etapa = 'fechado'");
+        $stF->execute([$fipeF, $idF]);
+        if (!$stF->rowCount()) throw new RuntimeException('Veículo não encontrado no estoque.');
+        $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+           ->execute([$idF, (int)$_SESSION['admin_id'], 'FIPE de referência informada no estoque: R$ ' . number_format($fipeF, 2, ',', '.')]);
+        $qs['fipe_ok'] = '1';
+    } catch (Throwable $e) {
+        $qs['fipe_erro'] = $e->getMessage();
+    }
+    header('Location: /admin/estoque.php' . ($qs ? '?' . http_build_query($qs) : '') . '#veiculo-' . (int)($_POST['oportunidade_id'] ?? 0));
+    exit;
+}
+if (isset($_GET['fipe_ok'])) $sucesso = 'FIPE salva — a simulação da promissória já aparece no catálogo e no link desse carro.';
+if (!empty($_GET['fipe_erro'])) $erro = (string)$_GET['fipe_erro'];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastrar_manual_estoque') {
     $formManual = $_POST;
     try {
@@ -195,6 +222,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastr
         $novoOpId = (int)$novo['oportunidade_id'];
         $tipoV = in_array($_POST['tipo_veiculo'] ?? '', ['carro', 'moto', 'caminhao', 'outro'], true) ? $_POST['tipo_veiculo'] : null;
         if ($tipoV) $db->prepare("UPDATE oportunidades SET tipo_veiculo = ? WHERE id = ?")->execute([$tipoV, $novoOpId]);
+        $fipeNovo = valorMonetario((string)($_POST['valor_fipe_referencia'] ?? ''));
+        if ($fipeNovo && $fipeNovo > 0) $db->prepare("UPDATE oportunidades SET valor_fipe_referencia = ? WHERE id = ?")->execute([$fipeNovo, $novoOpId]);
         header('Location: /admin/veiculo_midias.php?id=' . $novoOpId . '&criado=1');
         exit;
     } catch (Throwable $e) {
@@ -322,6 +351,7 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
                 </select>
             </label>
             <label>Valor pago (R$)<input type="text" name="veiculo_valor_final" inputmode="decimal" placeholder="opcional" value="<?= e($formManual['veiculo_valor_final'] ?? '') ?>"></label>
+            <label>FIPE de referência (R$)<input type="number" step="0.01" name="valor_fipe_referencia" placeholder="pra simulação no link" value="<?= e($formManual['valor_fipe_referencia'] ?? '') ?>"></label>
             <label>Nome do vendedor/origem<input type="text" name="vendedor_nome" placeholder="opcional" value="<?= e($formManual['vendedor_nome'] ?? '') ?>"></label>
             <label>Telefone do vendedor<input type="tel" name="vendedor_telefone" placeholder="opcional" value="<?= e($formManual['vendedor_telefone'] ?? '') ?>"></label>
         </div>
@@ -457,7 +487,7 @@ function vmLerCrlv() {
 <?php else: ?>
 <div class="estoque-grid">
     <?php foreach ($veiculos as $v): $id = (int)$v['oportunidade_id']; $score = buscarScoreVistoriaRecente($id); ?>
-    <div class="estoque-card">
+    <div class="estoque-card" id="veiculo-<?= $id ?>">
         <<?= $souSuperEstoque ? 'a' : 'div' ?> class="estoque-foto"<?= $souSuperEstoque ? ' href="/admin/veiculo_historico.php?id=' . $id . '" title="Ver histórico do veículo"' : '' ?>>
             <?php if (isset($fotoCapa[$id])): ?>
                 <img src="<?= e($fotoCapa[$id]) ?>" alt="" loading="lazy">
@@ -471,6 +501,18 @@ function vmLerCrlv() {
             <small><?= e((string)($v['veiculo_ano'] ?? '')) ?><?= !empty($v['veiculo_placa']) ? ' · ' . e($v['veiculo_placa']) : '' ?></small>
             <?php if ($v['valor_fipe_referencia']): ?>
                 <span>FIPE ref.: <strong>R$ <?= number_format((float)$v['valor_fipe_referencia'], 2, ',', '.') ?></strong></span>
+            <?php else: ?>
+                <span class="badge badge-aviso" style="align-self:flex-start">⚠️ Sem FIPE — o link não mostra entrada/parcelas</span>
+            <?php endif; ?>
+            <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+            <details<?= $v['valor_fipe_referencia'] ? '' : ' open' ?>>
+                <summary style="cursor:pointer;font-size:13px"><?= $v['valor_fipe_referencia'] ? '✏️ Corrigir FIPE' : '➕ Informar FIPE' ?></summary>
+                <form method="post" style="display:flex;gap:6px;align-items:center;margin-top:6px">
+                    <?= csrfField() ?><input type="hidden" name="acao" value="salvar_fipe_estoque"><input type="hidden" name="oportunidade_id" value="<?= $id ?>">
+                    <input type="number" step="0.01" name="valor_fipe_referencia" required aria-label="Valor FIPE" value="<?= e((string)($v['valor_fipe_referencia'] ?? '')) ?>" style="margin:0">
+                    <button type="submit" style="margin:0">Salvar</button>
+                </form>
+            </details>
             <?php endif; ?>
             <?php if ($score && $score['percentual'] !== null): ?>
                 <span><span class="badge <?= veiculoAvaliacaoClasseBadgeScore($score['percentual']) ?>"><?= (int)$score['percentual'] ?>/100</span> <small><?= e(veiculoAvaliacaoSugestaoRevenda($score['percentual'])) ?></small></span>
