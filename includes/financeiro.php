@@ -261,6 +261,24 @@ function finResumoLancamentosVenda(int $vendaId): array {
  * Asaas é bloqueado explicitamente em admin/venda.php (ação
  * `gerar_asaas_pos_assinatura`), nunca gera cobrança semanal de verdade.
  */
+/**
+ * Partes da entrada (card "Entrada em partes" da venda) — só quando a soma
+ * bate com o valor da entrada do plano (senão a pessoa digitou outro valor
+ * de propósito e vale o que ela digitou). [] = usar entrada única.
+ */
+function finPartesEntradaVenda(int $vendaId, float $valorEntrada): array {
+    try {
+        $st = getDB()->prepare("SELECT valor, data_prevista, forma FROM venda_entrada_partes WHERE venda_id = ? AND valor > 0 ORDER BY parte_numero");
+        $st->execute([$vendaId]);
+        $partes = $st->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+    if (!$partes) return [];
+    $soma = array_sum(array_map(fn($p) => (float)$p['valor'], $partes));
+    return abs($soma - $valorEntrada) < 0.01 ? $partes : [];
+}
+
 function finGerarPlanoParcelamentoVenda(
     int $vendaId,
     float $valorEntrada,
@@ -295,8 +313,24 @@ function finGerarPlanoParcelamentoVenda(
 
         $criadas = 0;
         if ($valorEntrada > 0) {
-            $ins->execute([$categoriaEntradaId ?? $categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, $dataEntrada ?: date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
-            $criadas++;
+            // 07/11/2026, venda #196: contrato com entrada em 2 partes (R$ 500
+            // em 20/10 + R$ 6.500 em 12/11) e o plano saía com 1 entrada só,
+            // valor/data errados. Quando o card "Entrada em partes" bate com o
+            // valor da entrada, gera 1 lançamento por parte, cada um na data
+            // combinada — sempre 'pendente' (o financeiro confirma contra o
+            // extrato, regra de 08/10/2026).
+            $partes = finPartesEntradaVenda($vendaId, $valorEntrada);
+            if ($partes) {
+                $qtdP = count($partes);
+                foreach ($partes as $k => $pt) {
+                    $desc = "Entrada" . ($qtdP > 1 ? ' (parte ' . ($k + 1) . "/{$qtdP}" . ($pt['forma'] === 'especie' ? ', espécie' : ', PIX') . ')' : '') . " — venda #{$vendaId}";
+                    $ins->execute([$categoriaEntradaId ?? $categoriaId, $desc, (float)$pt['valor'], $pt['data_prevista'] ?: ($dataEntrada ?: date('Y-m-d')), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
+                    $criadas++;
+                }
+            } else {
+                $ins->execute([$categoriaEntradaId ?? $categoriaId, "Entrada — venda #{$vendaId}", $valorEntrada, $dataEntrada ?: date('Y-m-d'), $vendaId, 0, $numParcelas, $nomeCompradorManual, $criadoPor]);
+                $criadas++;
+            }
         }
         // 22/10/2026, "faz jeito para não ficar lista[gem] e nome de
         // parcelas mensal" / "parcela semanal" — a descrição do lançamento
@@ -706,14 +740,19 @@ function finGerarReceitaVendaAssinatura(int $vendaId, ?int $criadoPor, ?string $
             // Asaas já criou as parcelas do saldo (origem='asaas') — só falta
             // a entrada, que nunca passa pelo Asaas, sempre local.
             if ($valorEntrada > 0) {
-                $db->prepare("
+                // 07/11/2026 — entrada pendente, 1 lançamento por parte na data
+                // combinada (antes: 1 só, 'pago' na data de hoje).
+                $insE = $db->prepare("
                     INSERT INTO fin_lancamentos
-                        (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, venda_id, parcela_numero, parcela_total, cliente_nome_manual, origem, created_by)
-                    VALUES ('receita', ?, ?, ?, date('now','localtime'), date('now','localtime'), 'pago', ?, 0, ?, ?, 'parcelamento_venda', ?)
-                ")->execute([
-                    $categoriaEntradaId ?: null, "Entrada — venda #{$vendaId}", $valorEntrada,
-                    $vendaId, $numParcelas, (string)($v['comprador_nome'] ?? ''), $criadoPor,
-                ]);
+                        (tipo, categoria_id, descricao, valor, data_vencimento, status, venda_id, parcela_numero, parcela_total, cliente_nome_manual, origem, created_by)
+                    VALUES ('receita', ?, ?, ?, ?, 'pendente', ?, 0, ?, ?, 'parcelamento_venda', ?)
+                ");
+                $partesE = finPartesEntradaVenda($vendaId, $valorEntrada) ?: [['valor' => $valorEntrada, 'data_prevista' => null, 'forma' => 'pix']];
+                foreach ($partesE as $k => $pt) {
+                    $descE = "Entrada" . (count($partesE) > 1 ? ' (parte ' . ($k + 1) . '/' . count($partesE) . ')' : '') . " — venda #{$vendaId}";
+                    $insE->execute([$categoriaEntradaId ?: null, $descE, (float)$pt['valor'], $pt['data_prevista'] ?: date('Y-m-d'),
+                        $vendaId, $numParcelas, (string)($v['comprador_nome'] ?? ''), $criadoPor]);
+                }
             }
         } else {
             // Fallback 100% local — entrada + parcelas juntas, via a função já

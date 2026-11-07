@@ -1899,21 +1899,34 @@ function adicionarParteEntrada() {
         <?php if ($lancamentosVenda): ?>
             <p><small>✅ Parcelamento anterior cancelado — pode gerar um novo abaixo.</small></p>
         <?php endif; ?>
+        <?php
+            // 07/11/2026, venda #196 — o formulário vinha vazio e a entrada
+            // podia sair diferente do contrato. Já vem com a soma do card
+            // "Entrada em partes" e os termos do parcelamento salvos.
+            $partesPlano = listarEntradaPartesVenda($id);
+            $somaPartesPlano = array_sum(array_map(fn($p) => (float)$p['valor'], $partesPlano));
+            $fmtPlano = fn($n) => $n > 0 ? number_format((float)$n, 2, ',', '.') : '';
+        ?>
         <form method="post">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="gerar_parcelamento">
+            <?php if ($partesPlano): ?>
+                <p class="alerta-info" style="margin:0 0 10px">A entrada sai igual ao card "Entrada em partes": 1 lançamento por parte, na data combinada, como <b>pendente</b>
+                    (<?= implode(' + ', array_map(fn($p) => 'R$ ' . number_format((float)$p['valor'], 2, ',', '.') . ($p['data_prevista'] ? ' em ' . date('d/m/Y', strtotime($p['data_prevista'])) : ''), $partesPlano)) ?>).
+                    O financeiro marca como pago quando o dinheiro cair.</p>
+            <?php endif; ?>
             <div class="grid-2">
                 <div>
                     <label>Valor de entrada (R$) — deixe 0 se não houver</label>
-                    <input type="text" name="valor_entrada" placeholder="0,00">
+                    <input type="text" name="valor_entrada" inputmode="decimal" placeholder="0,00" value="<?= e($fmtPlano($somaPartesPlano ?: (float)($v['valor_pago_contratacao'] ?? 0))) ?>">
                     <label>Número de parcelas</label>
-                    <input type="number" name="num_parcelas" min="1" required>
+                    <input type="number" name="num_parcelas" min="1" required value="<?= e((string)($v['parcelamento_qtd_parcelas'] ?: '')) ?>">
                 </div>
                 <div>
                     <label>Valor de cada parcela (R$)</label>
-                    <input type="text" name="valor_parcela" required placeholder="0,00">
+                    <input type="text" name="valor_parcela" inputmode="decimal" required placeholder="0,00" value="<?= e($fmtPlano((float)($v['parcelamento_valor_parcela'] ?? 0))) ?>">
                     <label>Vencimento da 1ª parcela</label>
-                    <input type="date" name="primeira_parcela_data" required>
+                    <input type="date" name="primeira_parcela_data" required value="<?= e((string)($v['parcelamento_primeira_parcela_data'] ?? '')) ?>">
                 </div>
             </div>
             <label>Periodicidade das parcelas</label>
