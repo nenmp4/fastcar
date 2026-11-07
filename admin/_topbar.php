@@ -171,8 +171,15 @@ $tbNome = (string)($_SESSION['admin_nome'] ?? '');
 window.lerValorBR = function (v) {
     var t = String(v == null ? '' : v).replace(/[^\d.,-]/g, ''); // aceita colado "R$ 180.080,00", "Valor: 180.080" etc
     if (t === '') return NaN;
-    if (t.indexOf(',') >= 0) t = t.replace(/\./g, '').replace(',', '.');
-    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    // Mesma regra do valorMonetario() (PHP): último separador com 1-2 dígitos
+    // depois = decimal; com 3 dígitos ("180.080", "2,800") = milhar; os
+    // outros são sempre milhar ("180,080,00" de teclado só com vírgula).
+    var u = Math.max(t.lastIndexOf(','), t.lastIndexOf('.'));
+    if (u >= 0) {
+        var dep = t.slice(u + 1);
+        if (dep.length === 3 && /^\d{1,3}([.,]\d{3})+$/.test(t)) t = t.replace(/[.,]/g, '');
+        else t = t.slice(0, u).replace(/[.,]/g, '') + '.' + dep;
+    }
     return parseFloat(t);
 };
 window.formatarValorBR = function (n) {

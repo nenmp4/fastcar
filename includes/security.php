@@ -69,12 +69,20 @@ function valorMonetario(?string $bruto): ?float {
     if (preg_match('/\d\s*(mil|k)\b/u', $s)) $mult = 1000;
     $s = preg_replace('/[^0-9.,]/', '', $s);
     if ($s === '') return null;
-    if (preg_match('/^\d{1,3}(,\d{3})+$/', $s)) {
-        $s = str_replace(',', '', $s); // "2,800" = dois mil e oitocentos
-    } elseif (strpos($s, ',') !== false) {
-        $s = str_replace(',', '.', str_replace('.', '', $s));
-    } elseif (preg_match('/^\d{1,3}(\.\d{3})+$/', $s)) {
-        $s = str_replace('.', '', $s);
+    // 07/11/2026, "na hora que salvo" volta 180,08: teclado de celular que só
+    // tem vírgula ("180,080,00") ou só ponto ("180.080.00"). Regra única: o
+    // ÚLTIMO separador é decimal se tiver 1-2 dígitos depois; com exatamente
+    // 3 dígitos depois, todos os separadores são de milhar ("2,800",
+    // "180.080"); os outros separadores sempre são de milhar.
+    $ultimo = max((int)strrpos($s, ','), (int)strrpos($s, '.'));
+    $temSep = strpbrk($s, ',.') !== false;
+    if ($temSep) {
+        $depois = substr($s, $ultimo + 1);
+        if (strlen($depois) === 3 && preg_match('/^\d{1,3}([.,]\d{3})+$/', $s)) {
+            $s = str_replace([',', '.'], '', $s);
+        } else {
+            $s = str_replace([',', '.'], '', substr($s, 0, $ultimo)) . '.' . $depois;
+        }
     }
     return (float)$s * $mult;
 }
