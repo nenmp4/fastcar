@@ -20,7 +20,7 @@ $disponivel = $valido && veiculoDisponivelParaVenda($o);
 $db = getDB();
 $veic = null; $midias = []; $vendedor = null;
 if ($valido) {
-    $stmt = $db->prepare("SELECT veiculo_marca, veiculo_modelo, veiculo_ano, tipo_veiculo FROM oportunidades WHERE id = ?");
+    $stmt = $db->prepare("SELECT veiculo_marca, veiculo_modelo, veiculo_ano, tipo_veiculo, valor_fipe_referencia FROM oportunidades WHERE id = ?");
     $stmt->execute([$o]);
     $veic = $stmt->fetch();
     $stmt = $db->prepare("SELECT nome, whatsapp FROM usuarios WHERE id = ? AND bloqueado = 0");
@@ -77,6 +77,10 @@ header img { max-height:44px; }
 header .txt { color:#fff; font-weight:700; font-size:22px; }
 main { max-width:720px; margin:0 auto; padding:16px; }
 h1 { font-size:24px; margin:8px 0 4px; }
+.sim { background:#fff; border:1px solid #dbe5fd; border-radius:14px; padding:14px 16px; margin:16px auto; max-width:520px; font-size:18px; line-height:1.7; }
+.sim h2 { font-size:18px; margin:0 0 6px; }
+.sim-entrada { color:#2f6fed; }
+.sim small { display:block; font-size:12px; color:#666; margin-top:6px; line-height:1.4; }
 .galeria { display:flex; flex-direction:column; gap:10px; margin:16px 0; }
 .galeria img, .galeria video { width:100%; border-radius:12px; background:#000; display:block; }
 .sem-foto { background:var(--navy); color:#fff; border-radius:12px; padding:60px 20px; text-align:center; font-size:60px; }
@@ -101,6 +105,16 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
         <?php foreach ($videos as $vd): ?><video src="<?= e($urlMidia($vd)) ?>" controls preload="metadata" playsinline></video><?php endforeach; ?>
         <?php if (!$midias): ?><div class="sem-foto"><?= ($veic['tipo_veiculo'] ?? '') === 'moto' ? '🏍️' : '🚗' ?></div><?php endif; ?>
     </div>
+    <?php if ($sim = simulacaoPromissoriaEstoque($veic['valor_fipe_referencia'] ?? null)): ?>
+    <div class="sim">
+        <h2>💳 Na promissória</h2>
+        <div class="sim-entrada">Entrada <b>R$ <?= number_format($sim['entrada'], 0, ',', '.') ?></b></div>
+        <?php foreach ($sim['parcelas'] as $n => $p): ?>
+            <div><?= $n ?>x de <b>R$ <?= number_format($p, 0, ',', '.') ?></b></div>
+        <?php endforeach; ?>
+        <small>Simulação sujeita a análise e confirmação do vendedor.</small>
+    </div>
+    <?php endif; ?>
     <?php if ($zap): ?>
         <a class="btn-zap" href="<?= e($zap) ?>">💬 Quero esse! Falar com a Fastcar</a>
     <?php endif; ?>

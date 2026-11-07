@@ -1467,3 +1467,26 @@ function notificarVendasEmNegociacaoFimTurno(): array {
         return ['ok' => false, 'motivo' => 'erro interno', 'total' => 0];
     }
 }
+
+/**
+ * 07/11/2026 — simulação da promissória mostrada em cada carro do estoque
+ * público (catálogo e página do carro). Pedido direto:
+ *   FIPE + 10% = base · entrada = 35% da base · saldo = base − entrada ·
+ *   parcela = saldo × (1 + 3,99% × meses) ÷ meses (juros simples, escolhido
+ *   pelo usuário) em 24x, 36x e 48x.
+ * Só calcula com a FIPE de referência preenchida — nunca usa o valor pago
+ * pela Fastcar nem chuta (regra #3). Valores arredondados pra cima em reais.
+ * @return array{entrada:int, parcelas:array<int,int>}|null
+ */
+function simulacaoPromissoriaEstoque($fipe): ?array {
+    $fipe = (float)$fipe;
+    if ($fipe <= 0) return null;
+    $base = $fipe * 1.10;
+    $entrada = $base * 0.35;
+    $saldo = $base - $entrada;
+    $parcelas = [];
+    foreach ([24, 36, 48] as $n) {
+        $parcelas[$n] = (int)ceil($saldo * (1 + 0.0399 * $n) / $n);
+    }
+    return ['entrada' => (int)ceil($entrada), 'parcelas' => $parcelas];
+}

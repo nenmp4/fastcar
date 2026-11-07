@@ -64,6 +64,9 @@ h1 { font-size:24px; margin:8px 0 4px; }
 .info { padding:12px 14px 16px; }
 .info h2 { font-size:18px; margin:0 0 4px; }
 .info small { color:#666; }
+.sim { margin-top:10px; background:#f4f7ff; border:1px solid #dbe5fd; border-radius:10px; padding:8px 10px; font-size:15px; line-height:1.6; }
+.sim-entrada { color:var(--azul); }
+.nota-sim { font-size:12px; color:#666; text-align:center; margin-top:14px; }
 .ver { display:block; margin-top:10px; color:var(--azul); font-weight:700; }
 .btn-zap { display:block; text-align:center; background:#25d366; color:#fff; text-decoration:none; font-weight:700; font-size:18px; padding:16px; border-radius:12px; margin:24px auto; max-width:520px; }
 .aviso { background:#fff; border:1px solid var(--borda); border-radius:12px; padding:24px; text-align:center; margin-top:30px; }
@@ -106,12 +109,21 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
             <div class="info">
                 <h2><?= e($titulo ?: 'Veículo') ?></h2>
                 <small><?= e((string)($v['veiculo_ano'] ?? '')) ?></small>
+                <?php if ($sim = simulacaoPromissoriaEstoque($v['valor_fipe_referencia'] ?? null)): ?>
+                <div class="sim">
+                    <div class="sim-entrada">Entrada <b>R$ <?= number_format($sim['entrada'], 0, ',', '.') ?></b></div>
+                    <?php foreach ($sim['parcelas'] as $n => $p): ?>
+                        <div><?= $n ?>x <b>R$ <?= number_format($p, 0, ',', '.') ?></b></div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
                 <span class="ver">Ver fotos e detalhes →</span>
             </div>
         </a>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
+    <p class="nota-sim">Valores de entrada e parcelas são simulação na promissória, sujeitos a análise e confirmação do vendedor.</p>
     <?php if ($zap): ?><a class="btn-zap" href="<?= e($zap) ?>">💬 Gostei! Falar com a Fastcar</a><?php endif; ?>
 <?php endif; ?>
 </main>
