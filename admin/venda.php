@@ -23,7 +23,7 @@ $id = (int)($_GET['id'] ?? 0);
 $stmtVenda = $db->prepare("
     SELECT v.*, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, o.veiculo_renavam,
            o.veiculo_chassi, o.banco_financiamento, o.contrato_financiamento_numero, o.saldo_financiamento_atual,
-           o.valor_fipe_referencia, c.nome AS vendedor_original_nome
+           o.valor_fipe_referencia, c.nome AS vendedor_original_nome, c.telefone AS vendedor_original_telefone
     FROM vendas v
     LEFT JOIN oportunidades o ON o.id = v.oportunidade_id
     LEFT JOIN clientes c ON c.id = o.cliente_id
@@ -42,6 +42,7 @@ if (!$v) {
 
 $erro = '';
 $sucesso = '';
+$promRepetir = null; // Quadro-Resumo reexibido aguardando confirmação da comissão
 
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
@@ -154,8 +155,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($acao === 'salvar_promissoria') {
                 // 27/10/2026 — campos do Quadro-Resumo do contrato de promissória
                 // que não são derivados da negociação (includes/promissoria.php).
-                salvarDadosPromissoria($id, parseCamposPromissoriaPost((array)($_POST['prom'] ?? [])));
-                $sucesso = 'Quadro-Resumo da promissória salvo.';
+                // 07/11/2026 — VENDA-196 saiu com comissão de 15% sem ter
+                // intermediário e não dava pra saber quem marcou: agora toda
+                // alteração vai pra auditoria, e marcar comissão num veículo
+                // sem vendedor identificado pede confirmação antes de salvar.
+                $promNovo = parseCamposPromissoriaPost((array)($_POST['prom'] ?? []));
+                $promAntigo = lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
+                if (($promNovo['comissao_aplicavel'] ?? '') === 'sim' && ($promAntigo['comissao_aplicavel'] ?? '') !== 'sim'
+                    && vendaSemVendedorIdentificado($v) && empty($_POST['confirmar_comissao'])) {
+                    $promRepetir = $promNovo;
+                    $erro = 'Esse veículo não tem vendedor identificado. A comissão de ' . PROMISSORIA_COMISSAO_PCT
+                          . '% da FIPE só vale quando um TERCEIRO trouxe o negócio — ela é cobrada a mais do comprador e sai no contrato. '
+                          . 'Confira e clique em "Salvar mesmo assim" se houve mesmo intermediação.';
+                } else {
+                    salvarDadosPromissoria($id, $promNovo);
+                    $mudou = [];
+                    foreach (PROMISSORIA_CAMPOS as $k => $def) {
+                        $a = (string)($promAntigo[$k] ?? ''); $n = (string)($promNovo[$k] ?? '');
+                        if ($a === $n) continue;
+                        $fmt = fn($x) => $x === '' ? '(vazio)' : (($def['opcoes'][$x] ?? null) ?: $x);
+                        $mudou[] = $def['label'] . ': ' . $fmt($a) . ' → ' . $fmt($n);
+                    }
+                    if ($mudou) {
+                        auditoriaRegistrar('quadro_promissoria_alterado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'],
+                            'venda', $id, implode(' | ', $mudou));
+                    }
+                    $sucesso = 'Quadro-Resumo da promissória salvo.';
+                }
             } elseif ($acao === 'salvar_fipe_venda') {
                 // 27/10/2026, "campo da FIPE no contrato de venda, caso
                 // esqueceram de pôr na compra" — o valor FIPE é do VEÍCULO
@@ -1631,7 +1657,7 @@ function adicionarParteEntrada() {
     <p><small>Só o que não sai sozinho da negociação. Preço, entrada, parcelas, FIPE e banco já vêm dos cards acima;
        comissão de <?= PROMISSORIA_COMISSAO_PCT ?>% da FIPE, abatimento na entrada, composição <?= PROMISSORIA_PCT_LOCACAO ?>/<?= 100 - PROMISSORIA_PCT_LOCACAO ?> da parcela e total a pagar são calculados.</small></p>
     <?php
-    $promDados = lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
+    $promDados = $promRepetir ?? lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
     $promCampos = $v['oportunidade_id'] ? montarCamposContratoVenda($id) : null;
     $promQ = $promCampos ? promissoriaQuadro($promCampos) : null;
     ?>
@@ -1655,7 +1681,15 @@ function adicionarParteEntrada() {
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="salvar_promissoria">
         <?= renderCamposPromissoria($promDados) ?>
-        <button type="submit">Salvar Quadro-Resumo</button>
+        <?php if (vendaSemVendedorIdentificado($v)): ?>
+            <p><small>⚠️ Veículo sem vendedor identificado — normalmente <b>não</b> há comissão de intermediação.</small></p>
+        <?php endif; ?>
+        <?php if ($promRepetir !== null): ?>
+            <input type="hidden" name="confirmar_comissao" value="1">
+            <button type="submit" class="perigo">⚠️ Salvar mesmo assim (com comissão)</button>
+        <?php else: ?>
+            <button type="submit">Salvar Quadro-Resumo</button>
+        <?php endif; ?>
     </form>
 <?php endif; ?>
 

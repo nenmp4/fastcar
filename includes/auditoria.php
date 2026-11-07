@@ -76,6 +76,7 @@ function auditoriaEventosDistintos(): array {
 function auditoriaRotuloEvento(string $evento): string {
     return match ($evento) {
         'login' => '🔓 Login',
+        'quadro_promissoria_alterado' => '🧾 Quadro-Resumo da promissória alterado',
         'venda_lida_contrato_ia' => '🤖 Venda preenchida lendo o contrato',
         'contrato_movido_para_compra' => '🔁 Contrato movido de venda pra compra',
         'relatorio_mes_exportado' => '📈 Resumo do mês baixado',

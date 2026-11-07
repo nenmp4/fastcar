@@ -26,7 +26,7 @@ const PROMISSORIA_PCT_LOCACAO = 90;
 
 const PROMISSORIA_CAMPOS = [
     'fipe_data_consulta'       => ['label' => 'Data da consulta FIPE', 'tipo' => 'date'],
-    'comissao_aplicavel'       => ['label' => 'Comissão de intermediação (15% da FIPE)', 'tipo' => 'select', 'opcoes' => ['nao' => 'Não aplicável', 'sim' => 'Sim — há intermediação']],
+    'comissao_aplicavel'       => ['label' => 'Algum TERCEIRO trouxe esse negócio? (comissão de intermediação: cobra 15% da FIPE a mais do comprador)', 'tipo' => 'select', 'opcoes' => ['nao' => 'Não — sem intermediário (normal)', 'sim' => 'Sim — um terceiro trouxe (cobra 15% da FIPE)']],
     'comissao_saldo_vencimento'=> ['label' => 'Vencimento da comissão ainda a pagar (se a entrada não cobrir)', 'tipo' => 'date'],
     'vencimento_dia'           => ['label' => 'Vencimento das demais parcelas (dia do mês) — vazio = mesmo dia da 1ª', 'tipo' => 'int'],
     'saldo_final_valor'        => ['label' => 'Saldo final adicional (R$), se houver', 'tipo' => 'money'],
@@ -41,6 +41,18 @@ const PROMISSORIA_CAMPOS = [
     'prazo_devolucao_horas'    => ['label' => 'Prazo de devolução após notificação (horas, cl. 18.1)', 'tipo' => 'int', 'padrao' => '48'],
     'prazo_saneamento_dias'    => ['label' => 'Prazo para sanar descumprimento (dias úteis, cl. 24.2)', 'tipo' => 'int', 'padrao' => '10'],
 ];
+
+/**
+ * Veículo sem vendedor identificado (recuperado/cadastrado sem dono anterior:
+ * nome padrão "sem vendedor identificado" ou telefone placeholder DDD 00).
+ * Usado pra pedir confirmação antes de marcar comissão de intermediação.
+ */
+function vendaSemVendedorIdentificado(array $v): bool {
+    if (empty($v['oportunidade_id'])) return false;
+    $nome = mb_strtolower((string)($v['vendedor_original_nome'] ?? ''));
+    $tel = preg_replace('/\D/', '', (string)($v['vendedor_original_telefone'] ?? ''));
+    return $nome === '' || str_contains($nome, 'sem vendedor identificado') || str_starts_with($tel, '5500');
+}
 
 function lerDadosPromissoria(?string $json): array {
     $d = json_decode((string)$json, true);
