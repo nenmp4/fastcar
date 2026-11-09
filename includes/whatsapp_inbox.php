@@ -723,7 +723,8 @@ function inboxStatusConversa(string $telefone, string $canal): array {
         $msgs[] = ['id' => (int)$r['id'], 'status' => (string)$r['status_entrega'], 'apagada' => !empty($r['apagada_em']),
                    'pode_apagar' => inboxPodeApagarMensagem($r)];
     }
-    return ['mensagens' => $msgs, 'presenca' => inboxPresenca($tel, inboxCredenciaisEvolution($canal))];
+    return ['mensagens' => $msgs, 'presenca' => inboxPresenca($tel, inboxCredenciaisEvolution($canal)),
+            'visto_por_ultimo' => inboxVistoPorUltimoTexto($tel)];
 }
 
 /**
@@ -803,7 +804,25 @@ function inboxProcessarPresencaEvolution($data): int {
         $estado = (string)($p['lastKnownPresence'] ?? '');
         if ($estado === '') continue;
         setConfig('presenca_' . $tel, time() . '|' . $estado);
+        // "Visto por último" (09/11/2026): online/digitando = agora; saiu
+        // ('unavailable') = o lastSeen que o WhatsApp manda, se o cliente
+        // não esconde isso na privacidade.
+        if ($estado === 'unavailable') {
+            $ls = (int)($p['lastSeen'] ?? 0);
+            if ($ls > 1000000000 && $ls <= time() + 60) setConfig('presenca_ultimo_' . $tel, (string)$ls);
+        } else {
+            setConfig('presenca_ultimo_' . $tel, (string)time());
+        }
         $n++;
     }
     return $n;
+}
+
+/** "hoje às 14:32" / "ontem às 09:10" / "07/11 às 18:00" — '' se nunca visto. */
+function inboxVistoPorUltimoTexto(string $tel): string {
+    $ts = (int)getConfig('presenca_ultimo_' . $tel);
+    if ($ts <= 0) return '';
+    $dia = date('Y-m-d', $ts);
+    $quando = $dia === date('Y-m-d') ? 'hoje' : ($dia === date('Y-m-d', strtotime('-1 day')) ? 'ontem' : date('d/m', $ts));
+    return $quando . ' às ' . date('H:i', $ts);
 }

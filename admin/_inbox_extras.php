@@ -14,7 +14,10 @@
 .wpp-apagar:hover { color: var(--vermelho); }
 .msg.msg-apagada { font-style: italic; opacity: .6; }
 .msg.msg-apagada img, .msg.msg-apagada audio, .msg.msg-apagada video, .msg.msg-apagada a { display: none; }
-#wpp-presenca { font-size: 12px; color: var(--verde, #16a34a); font-weight: 600; }
+#wpp-presenca { display: none; margin-left: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+                background: var(--verde-bg); color: var(--verde); border: 1px solid #bbf7d0; white-space: nowrap; }
+#wpp-presenca.ativo { display: inline-block; }
+#wpp-presenca.visto { font-weight: 500; }
 </style>
 <?php if (!empty($telefoneAtivo)): ?>
 <form method="post" id="wpp-form-apagar" style="display:none">
@@ -83,7 +86,11 @@
                 (d.mensagens || []).forEach(aplicar);
                 if (presencaEl) {
                     var p = d.presenca || '';
-                    presencaEl.textContent = p === 'online' ? '● online' : (p === 'digitando' ? 'digitando…' : (p === 'gravando' ? 'gravando áudio…' : ''));
+                    var txt = p === 'online' ? '● online agora' : (p === 'digitando' ? '✍️ digitando…' : (p === 'gravando' ? '🎤 gravando áudio…' : ''));
+                    var visto = !txt && d.visto_por_ultimo;
+                    if (visto) txt = '🕒 visto por último ' + d.visto_por_ultimo;
+                    presencaEl.textContent = txt;
+                    presencaEl.className = (txt ? 'ativo' : '') + (visto ? ' visto' : '');
                 }
             })
             .catch(function () {});
