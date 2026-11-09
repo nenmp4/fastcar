@@ -373,6 +373,14 @@ switch ($filtroEspecial) {
     case 'negociacao':
         $etapasEscopo = ['negociacao', 'presencial'];
         break;
+    case 'encerrados_auto':
+        // 09/11/2026, "filtro para leads encerrados automaticamente — pros
+        // consultores fazerem follow-up": só os que o sistema encerrou
+        // sozinho por silêncio (cron/leads_sem_resposta.php). Mantém o
+        // escopo de Encerradas (motivo + botão ↩️ Reabrir na linha).
+        $etapasEscopo = ['perdido', 'sem_perfil'];
+        $extraWhere = " AND o.motivo_perda LIKE '%encerrado automaticamente%'";
+        break;
     case 'fechado_mes':
         $etapasEscopo = ['fechado'];
         $extraWhere = " AND o.data_compra >= date('now','localtime','start of month')";
@@ -718,6 +726,9 @@ if ($tipoVeiculoFiltro === 'sem_tipo') {
 $stmtEncerradas = $db->prepare($sqlEncerradas);
 $stmtEncerradas->execute($paramsEncerradas);
 $totalEncerradas = (int)$stmtEncerradas->fetchColumn();
+$stmtEncAuto = $db->prepare($sqlEncerradas . " AND o.motivo_perda LIKE '%encerrado automaticamente%'");
+$stmtEncAuto->execute($paramsEncerradas);
+$totalEncerradasAuto = (int)$stmtEncAuto->fetchColumn();
 
 $stats = match ($perfil) {
     'consultor' => dashboardConsultor($meuId),
@@ -768,6 +779,9 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     </a>
     <a href="/admin/index.php?etapa=encerradas<?= $qsBusca ?>" class="<?= $etapaFiltro === 'encerradas' && $filtroEspecial === '' ? 'ativo' : '' ?>">
         ❌ Encerradas (<?= $totalEncerradas ?>)
+    </a>
+    <a href="/admin/index.php?filtro=encerrados_auto<?= $qsBusca ?>" class="<?= $filtroEspecial === 'encerrados_auto' ? 'ativo' : '' ?>" title="Encerrados sozinhos pelo sistema por silêncio do cliente — bons pra follow-up">
+        🤖 Encerrados sem resposta (<?= $totalEncerradasAuto ?>)
     </a>
 </nav>
 
@@ -824,6 +838,7 @@ $filtroEspecialLabel = [
     'semana' => 'Recebidos nos últimos 7 dias',
     'atrasadas' => 'Atrasadas', 'negociacao' => 'Em negociação/presencial',
     'fechado_mes' => 'Fechadas este mês',
+    'encerrados_auto' => 'Encerrados automaticamente por falta de resposta — reabra (↩️) quem vale um follow-up',
 ][$filtroEspecial] ?? '';
 if ($filtroEspecialLabel !== ''): ?>
 <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;margin-bottom:14px">
