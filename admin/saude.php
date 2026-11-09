@@ -51,6 +51,28 @@ try {
     check('Banco de Dados', 'Conexão SQLite', 'error', 'FALHOU', $e->getMessage());
 }
 
+// 09/11/2026 — erro de SQL ao gerar contrato: compara o banco real com o
+// install/schema.sql (montado num SQLite em memória) e lista colunas/tabelas
+// que o código usa mas a migração não criou. Corrige com
+// `php install/migrar.php` na VPS (o deploy automático já roda).
+try {
+    $mem = new PDO('sqlite::memory:');
+    $mem->exec((string)file_get_contents(dirname(__DIR__) . '/install/schema.sql'));
+    $faltando = [];
+    foreach ($mem->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_COLUMN) as $tab) {
+        $reais = array_column($db->query('PRAGMA table_info("' . $tab . '")')->fetchAll(), 'name');
+        if (!$reais) { $faltando[] = "tabela {$tab}"; continue; }
+        foreach (array_column($mem->query('PRAGMA table_info("' . $tab . '")')->fetchAll(), 'name') as $col) {
+            if (!in_array($col, $reais, true)) $faltando[] = "{$tab}.{$col}";
+        }
+    }
+    check('Banco de Dados', 'Estrutura do banco (migrações)', $faltando ? 'error' : 'ok',
+        $faltando ? count($faltando) . ' coluna(s) faltando' : 'Completa',
+        $faltando ? 'Faltando: ' . implode(', ', array_slice($faltando, 0, 30)) . ' — rodar php install/migrar.php na VPS' : 'Todas as colunas do schema existem no banco');
+} catch (Throwable $e) {
+    check('Banco de Dados', 'Estrutura do banco (migrações)', 'warn', 'Não verificado', $e->getMessage());
+}
+
 // ── 2. SERVIDOR ──────────────────────────────────────────────────────────
 $basePath  = dirname(__DIR__);
 $diskTotal = disk_total_space($basePath);

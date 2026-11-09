@@ -1271,6 +1271,11 @@ try {
         $stmt = $db->prepare("SELECT id FROM fin_categorias WHERE nome = ?");
         $stmt->execute(['Venda de veículo — parcela']);
         $catId = $stmt->fetchColumn();
+        // 09/11/2026 — sem fechar o cursor, a conexão principal ficava com
+        // uma leitura aberta; depois que uma reconstrução de tabela (conexão
+        // $dbFresh) mudava o banco, TODA escrita seguinte por getDB() caía em
+        // "database is locked" e as migrações dali pra frente não rodavam.
+        $stmt->closeCursor();
         if ($catId) {
             setConfig('asaas_categoria_padrao_id', (string)$catId);
             echo "✅ asaas_categoria_padrao_id: apontada pra 'Venda de veículo — parcela' (id {$catId})\n";
@@ -2445,4 +2450,20 @@ try {
     }
 } catch (Throwable $e) {
     echo "❌ veiculo_midias_revenda.destaque: {$e->getMessage()}\n";
+}
+
+// 09/11/2026 — rede de segurança: as reconstruções antigas de tabela (CHECK de
+// usuarios.perfil etc.) copiam uma lista FIXA de colunas e, num banco bem
+// antigo (backup restaurado), apagavam colunas que o loop $migracoes do topo
+// tinha acabado de criar (achado: usuarios.faltou_em/acesso_liberado_ate/
+// pode_avaliar). Repassa o loop no final — "duplicate column name" = já existe.
+foreach ($migracoes as $nome => $sql) {
+    try {
+        $db->exec($sql);
+        echo "✅ {$nome}: recriada (tinha sumido numa reconstrução de tabela)\n";
+    } catch (Throwable $e) {
+        if (!str_contains($e->getMessage(), 'duplicate column name')) {
+            echo "❌ {$nome} (repasse): {$e->getMessage()}\n";
+        }
+    }
 }
