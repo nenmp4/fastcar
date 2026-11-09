@@ -44,6 +44,22 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
 }
 
 // 06/11/2026 — cards do 🚘 Estoque (veículos disponíveis + catálogo de fotos).
+// ── AJAX: baixar de novo mídia que não ficou salva (09/11/2026, mesmo do inbox de compra) ──
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'recuperar_midia') {
+    header('Content-Type: application/json');
+    $midId = (int)($_GET['id'] ?? 0);
+    $stMid = getDB()->prepare("SELECT telefone FROM whatsapp_mensagens WHERE id = ? AND canal = 'vendas'");
+    $stMid->execute([$midId]);
+    $telMid = (string)$stMid->fetchColumn();
+    if (!$telMid || !usuarioPodeVerConversaVendas($telMid, $responsavelFiltro)) {
+        echo json_encode(['ok' => false, 'erro' => 'sem acesso']);
+        exit;
+    }
+    $resMid = recuperarMidiaMensagemWhatsapp($midId);
+    echo json_encode(['ok' => $resMid['ok'], 'html' => $resMid['ok'] && $resMid['mensagem'] ? renderizarMidiaVendas($resMid['mensagem']) : '', 'erro' => $resMid['erro']]);
+    exit;
+}
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'estoque') {
     header('Content-Type: application/json');
     echo json_encode(['veiculos' => listarEstoqueParaInboxVendas()]);
@@ -298,10 +314,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 <?php endif; ?>
                 <?php foreach ($mensagens as $m): ?>
                     <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>" data-id="<?= (int)$m['id'] ?>">
-                        <?php if (in_array($m['tipo'], ['image', 'video'], true) && ($m['drive_file_id'] || $m['arquivo_url'])): $urlM = '/admin/ver_midia_vendas.php?id=' . (int)$m['id']; ?>
-                            <?php if ($m['tipo'] === 'video'): ?><video class="wpp-midia" controls preload="none" src="<?= e($urlM) ?>"></video>
-                            <?php else: ?><a href="<?= e($urlM) ?>" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" src="<?= e($urlM) ?>" alt=""></a><?php endif; ?>
-                        <?php endif; ?>
+                        <?= renderizarMidiaVendas($m) ?>
                         <?= nl2br(e($m['mensagem'])) ?>
                         <small>
                             <?= date('d/m H:i', strtotime($m['created_at'])) ?>
@@ -388,16 +401,59 @@ if ($telefoneAtivo && !$contatoAtivo) {
         var rodape = new Date(m.created_at.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
         if (m.enviado_por_ia == 1) rodape += ' · 🤖 IA';
         if (m.usuario_nome) rodape += ' · 👤 ' + m.usuario_nome;
-        var midia = '';
-        if ((m.tipo === 'image' || m.tipo === 'video') && (m.drive_file_id || m.arquivo_url)) {
-            var u = '/admin/ver_midia_vendas.php?id=' + encodeURIComponent(m.id);
-            midia = m.tipo === 'video'
-                ? '<video class="wpp-midia" controls preload="none" src="' + u + '"></video>'
-                : '<a href="' + u + '" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" src="' + u + '" alt=""></a>';
-        }
+        var midia = renderizarMidiaMsg(m);
         div.innerHTML = midia + escapeHtml(m.mensagem).replace(/\n/g, '<br>') + '<small>' + escapeHtml(rodape) + '</small>';
         return div;
     }
+
+    // Foto/áudio/vídeo da conversa (09/11/2026) — mesma lógica do inbox de compra.
+    function tipoMidiaMsg(m) {
+        if (!m.drive_file_id && !m.arquivo_url) return null;
+        if (['audio','image','video','document'].indexOf(m.tipo) >= 0) return m.tipo;
+        var t = m.mensagem || '';
+        if (t.indexOf('🎤') === 0) return 'audio';
+        if (t.indexOf('🎥') === 0) return 'video';
+        if (t.indexOf('📷') === 0) return 'image';
+        if (t.indexOf('📎') === 0) return 'document';
+        return null;
+    }
+    function renderizarMidiaMsg(m) {
+        var midia = tipoMidiaMsg(m);
+        if (!midia) {
+            var falta = m.direcao === 'in' && m.zapi_message_id && (['audio','image','video','document'].indexOf(m.tipo) >= 0 || /^(📷|🎤|🎥)/.test(m.mensagem || ''));
+            return falta ? '<div class="midia-faltando" data-mid="' + m.id + '" style="margin-top:6px;font-size:.8rem;color:var(--texto-fraco)">🔄 carregando mídia…</div>' : '';
+        }
+        var u = '/admin/ver_midia_vendas.php?id=' + encodeURIComponent(m.id);
+        if (midia === 'audio') return '<audio controls preload="none" src="' + u + '" style="max-width:260px;display:block;margin-top:6px"></audio>';
+        if (midia === 'video') return '<video class="wpp-midia" controls preload="none" src="' + u + '"></video>';
+        if (midia === 'document') return '<a href="' + u + '" target="_blank" rel="noopener">📎 ' + escapeHtml((m.mensagem || '').replace(/^📎\s*/, '')) + '</a>';
+        return '<a href="' + u + '" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" src="' + u + '" alt=""></a>';
+    }
+    var midiaTentadas = {}, midiaFila = [], midiaRodando = false;
+    function recuperarMidias() {
+        document.querySelectorAll('.midia-faltando[data-mid]').forEach(function (el) {
+            var id = el.dataset.mid;
+            if (midiaTentadas[id]) return;
+            midiaTentadas[id] = true;
+            midiaFila.push(el);
+        });
+        if (midiaRodando) return;
+        (function proxima() {
+            var el = midiaFila.shift();
+            if (!el) { midiaRodando = false; return; }
+            midiaRodando = true;
+            fetch('?ajax=recuperar_midia&id=' + encodeURIComponent(el.dataset.mid))
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok && d.html) { el.outerHTML = d.html; }
+                    else { el.textContent = '⚠️ Mídia não disponível — o WhatsApp não liberou o arquivo (peça pro cliente reenviar).'; }
+                })
+                .catch(function () { el.textContent = '⚠️ Não deu pra carregar agora — recarregue a página.'; })
+                .then(proxima);
+        })();
+    }
+    setTimeout(recuperarMidias, 300);
+    setInterval(recuperarMidias, 4000);
 
     function jaRenderizada(id) {
         return !!thread.querySelector('[data-id="' + id + '"]');

@@ -80,14 +80,31 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
 
         $textoMidia = '';
         if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
-            $url = extrairUrlMidia($payload, $tipoBruto);
-            if ($url) {
-                $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
-                $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
-                $bytesMidia = baixarMidiaZapi($url, $tipoBruto);
-                if ($bytesMidia !== null) {
-                    $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
+            $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
+            if (($instancia['canal'] ?? '') === 'evolution') {
+                // 09/11/2026, achado real: fotos aparecendo como "[image]" no
+                // WhatsApp Vendas — a Evolution nunca manda URL no webhook
+                // (mesmo motivo do lado de compra, 12/10/2026); baixa pelo id
+                // da mensagem, pela instância de vendas.
+                require_once dirname(__DIR__, 2) . '/includes/whatsapp_evolution.php';
+                $credEv = (($instancia['tipo'] ?? '') === 'vendas' && evolutionConfiguredVendas()) ? evolutionCredenciaisVendas() : null;
+                $resEv = evolutionBaixarMidiaRecebida((string)$messageId, $tipoBruto, $credEv);
+                if ($resEv === null && $credEv !== null) $resEv = evolutionBaixarMidiaRecebida((string)$messageId, $tipoBruto);
+                if ($resEv !== null) {
+                    $bytesMidia = $resEv['bytes'];
+                    $mime = $resEv['mime'] !== '' ? $resEv['mime'] : $mimeDefault;
+                } else {
+                    logDiagnosticoMidiaZapi($tipoBruto, 'evolution_media_falhou_vendas', ['messageId' => $messageId, 'erro' => evolutionUltimoErro()]);
                 }
+            } else {
+                $url = extrairUrlMidia($payload, $tipoBruto);
+                if ($url) {
+                    $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
+                    $bytesMidia = baixarMidiaZapi($url, $tipoBruto);
+                }
+            }
+            if ($bytesMidia !== null) {
+                $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
             }
         }
         if ($textoMidia !== '') {
@@ -100,6 +117,13 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
     }
 
     $idMensagemRecebida = registrarMensagem($phone, 'in', $texto, $messageId ?: null, false, $tipoRegistro, null);
+    // Cópia visível da mídia (09/11/2026) — sem `clientes` do lado de venda,
+    // salva local (clienteId 0), servida por admin/ver_midia_vendas.php.
+    if ($bytesMidia !== null && $idMensagemRecebida) {
+        // Descrita pela IA vira tipo 'text' — guarda o tipo real pro inbox desenhar a mídia.
+        $tipoReal = $tipoBruto ?? $tipoRegistro;
+        salvarMidiaWhatsappRecebida((int)$idMensagemRecebida, $bytesMidia, $mime, (string)$tipoReal, 0, '');
+    }
 
     $nomeContatoBruto = (string)($payload['senderName'] ?? $payload['chatName'] ?? '');
     $nomeContato = nomeWhatsappPareceValido($nomeContatoBruto) ? $nomeContatoBruto : '';

@@ -19,6 +19,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/vendas.php';
 require_once __DIR__ . '/usuarios.php';
+require_once __DIR__ . '/whatsapp_inbox.php'; // renderizarMidiaWhatsapp(), recuperarMidiaMensagemWhatsapp()
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem(), iaPausada(), pausarIA(), retomarIA()
 
 /**
@@ -249,4 +250,16 @@ function enviarLinkEstoqueVendas(string $telefone, int $oportunidadeId, string $
     $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
+}
+
+/**
+ * Foto/áudio/vídeo/arquivo de uma mensagem do WhatsApp Vendas (09/11/2026) —
+ * mesma lógica do inbox de compra (renderizarMidiaWhatsapp(), inclusive o
+ * "🔄 carregando" que baixa de novo mídia que não ficou salva), mas servido
+ * por admin/ver_midia_vendas.php, a rota com a trava da caixa de vendas.
+ */
+function renderizarMidiaVendas(array $m): string {
+    require_once __DIR__ . '/whatsapp_inbox.php';
+    $html = renderizarMidiaWhatsapp($m);
+    return str_replace('/admin/ver_midia_whatsapp.php?id=', '/admin/ver_midia_vendas.php?id=', $html);
 }

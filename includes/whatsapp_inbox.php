@@ -254,6 +254,8 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId): array {
     if (($m['canal'] ?? '') === 'vendas' && function_exists('evolutionConfiguredVendas') && evolutionConfiguredVendas()) $cred = evolutionCredenciaisVendas();
     elseif (($m['canal'] ?? '') === 'financeiro' && function_exists('evolutionConfiguredFinanceiro') && evolutionConfiguredFinanceiro()) $cred = evolutionCredenciaisFinanceiro();
     $res = evolutionBaixarMidiaRecebida((string)$m['zapi_message_id'], $tipo, $cred);
+    // Mensagem pode ter chegado pela instância principal e sido movida pra vendas.
+    if ($res === null && $cred !== null) $res = evolutionBaixarMidiaRecebida((string)$m['zapi_message_id'], $tipo);
     if ($res === null) {
         return ['ok' => false, 'mensagem' => $m, 'erro' => 'Não deu pra baixar do WhatsApp (' . (evolutionUltimoErro() ?: 'sem detalhe') . ').'];
     }
