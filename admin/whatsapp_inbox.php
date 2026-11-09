@@ -546,9 +546,9 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                     <input type="hidden" name="ajax" value="1">
                     <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
-                    <button type="button" id="wpp-btn-anexo" title="Anexar arquivo (foto ou documento)" style="padding:0 12px">📎</button>
+                    <button type="button" id="wpp-btn-anexo" title="Anexar arquivo (foto ou documento)" aria-label="Anexar arquivo" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
                     <input type="file" id="wpp-input-anexo" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none">
-                    <button type="button" id="wpp-btn-audio" title="Gravar áudio" style="padding:0 12px">🎤</button>
+                    <button type="button" id="wpp-btn-audio" title="Gravar áudio" aria-label="Gravar áudio" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button>
                     <button type="button" id="wpp-btn-audio-cancelar" title="Cancelar gravação" style="padding:0 12px;display:none;color:#c0392b">✕</button>
                     <button type="submit">Enviar</button>
                 </form>
@@ -1075,6 +1075,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
         });
     }
 
+    var ICONE_MIC = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>';
+    var ICONE_PARAR = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="#fff"/></svg>';
     var btnAudio = document.getElementById('wpp-btn-audio');
     var btnAudioCancelar = document.getElementById('wpp-btn-audio-cancelar');
     var statusAudio = document.getElementById('wpp-audio-status');
@@ -1109,7 +1111,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             gravador = null;
             pedacos = [];
             cancelando = false;
-            btnAudio.textContent = '🎤';
+            btnAudio.innerHTML = ICONE_MIC;
             btnAudio.title = 'Gravar áudio';
             btnAudio.disabled = false;
             btnAudioCancelar.style.display = 'none';
@@ -1203,7 +1205,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 });
                 gravador.start();
                 inicioGravacao = Date.now();
-                btnAudio.textContent = '⏹️';
+                btnAudio.innerHTML = ICONE_PARAR;
                 btnAudio.title = 'Parar e enviar';
                 btnAudioCancelar.style.display = '';
                 statusAudio.style.display = 'block';
