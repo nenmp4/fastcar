@@ -930,6 +930,31 @@ if ($filtroEspecialLabel !== ''): ?>
         </div>
     </div>
 
+    <?php if ($perfil === 'super_admin'): ?>
+        <?php $fechPorConsultor = dashboardFechadasPorConsultorMes(); $maxFech = max(1, ...array_map(fn($x) => (int)$x['qtd'], $fechPorConsultor ?: [['qtd' => 1]])); ?>
+        <div class="card">
+            <h3>🏆 Fechamentos por consultor — <?= e(['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'][(int)date('n')]) ?></h3>
+            <?php if (!$fechPorConsultor): ?>
+                <p style="color:var(--texto-suave);margin:0">Nenhuma compra fechada este mês ainda.</p>
+            <?php else: ?>
+                <table class="tabela-oportunidades">
+                    <thead><tr><th>Consultor</th><th>Fechadas</th><th>Valor fechado</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($fechPorConsultor as $i => $fc): ?>
+                        <tr>
+                            <td><strong><?= $i === 0 ? '🥇 ' : ($i === 1 ? '🥈 ' : ($i === 2 ? '🥉 ' : '')) ?><?= e($fc['nome']) ?></strong>
+                                <div class="fech-barra"><span style="width:<?= round((int)$fc['qtd'] / $maxFech * 100) ?>%"></span></div></td>
+                            <td data-label="Fechadas"><strong><?= (int)$fc['qtd'] ?></strong></td>
+                            <td data-label="Valor fechado"><?= moeda((float)$fc['total']) ?></td>
+                            <td><a class="btn" href="/admin/index.php?filtro=fechado_mes&amp;consultor=<?= (int)$fc['id'] ?>">Ver</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
     <div class="card">
         <h3>Funil (oportunidades ativas)</h3>
         <div class="funil-barra">

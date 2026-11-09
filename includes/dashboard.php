@@ -439,3 +439,53 @@ function filtroGestaoForm(string $acao, array $manter, string $temp, string $per
     }
     return $h . '</form>';
 }
+
+/**
+ * Fechamentos de compra do mês por consultor (09/11/2026, "card onde mostra
+ * cada consultor fechou esse mês, só pra super admin"). Mesmo critério do
+ * card "Fechadas este mês" (dashboardSuperAdmin): etapa 'fechado', data_compra
+ * no mês, sem cadastro duplicado mesclado. Dono = quem fechou (fechado_por),
+ * caindo pro responsável quando vazio.
+ */
+function dashboardFechadasPorConsultorMes(): array {
+    return getDB()->query("
+        SELECT u.id, u.nome, COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total
+        FROM oportunidades o
+        JOIN usuarios u ON u.id = COALESCE(o.fechado_por, o.responsavel_id)
+        WHERE o.etapa = 'fechado'
+          AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+          AND o.data_compra >= date('now','localtime','start of month')
+        GROUP BY u.id, u.nome
+        ORDER BY qtd DESC, total DESC, u.nome
+    ")->fetchAll();
+}
+
+/**
+ * Resultado do funil de COMPRA por consultor no período (09/11/2026,
+ * "produtividade também já arrumar") — complementa o volume de mensagens de
+ * admin/produtividade.php. Leads = oportunidades criadas no período com o
+ * consultor responsável; fechadas = data_compra no período, por quem fechou
+ * (fechado_por, caindo pro responsável); perdidas = encerradas (perdido/
+ * sem_perfil) atualizadas no período. Período "hoje" = desde 00:00.
+ */
+function produtividadeFunilPorConsultor(int $dias): array {
+    $db = getDB();
+    $desde = $dias === 1 ? date('Y-m-d') : date('Y-m-d', strtotime('-' . ($dias - 1) . ' days'));
+    $out = [];
+    $add = function (int $uid, string $campo, $v) use (&$out) {
+        if (!isset($out[$uid])) $out[$uid] = ['leads' => 0, 'fechadas' => 0, 'valor' => 0.0, 'perdidas' => 0];
+        $out[$uid][$campo] = $v;
+    };
+    $st = $db->prepare("SELECT responsavel_id AS u, COUNT(*) AS n FROM oportunidades WHERE responsavel_id IS NOT NULL AND date(created_at) >= ? GROUP BY responsavel_id");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) $add((int)$r['u'], 'leads', (int)$r['n']);
+    $st = $db->prepare("SELECT COALESCE(fechado_por, responsavel_id) AS u, COUNT(*) AS n, COALESCE(SUM(valor_final),0) AS v
+        FROM oportunidades WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+          AND data_compra >= ? AND COALESCE(fechado_por, responsavel_id) IS NOT NULL GROUP BY u");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) { $add((int)$r['u'], 'fechadas', (int)$r['n']); $add((int)$r['u'], 'valor', (float)$r['v']); }
+    $st = $db->prepare("SELECT responsavel_id AS u, COUNT(*) AS n FROM oportunidades WHERE etapa IN ('perdido','sem_perfil') AND responsavel_id IS NOT NULL AND date(updated_at) >= ? GROUP BY responsavel_id");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) $add((int)$r['u'], 'perdidas', (int)$r['n']);
+    return $out;
+}

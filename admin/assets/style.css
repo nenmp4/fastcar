@@ -951,3 +951,7 @@ main { min-width: 0; }
 .wpp-tipo-video    { background: var(--rosa-bg); color: var(--rosa); }
 .wpp-tipo-document { background: var(--laranja-bg); color: var(--laranja); }
 .wpp-tipo-sticker, .wpp-tipo-outro { background: var(--fundo); color: var(--texto-suave); border: 1px solid var(--borda); }
+
+/* Card "Fechamentos por consultor" (dashboard, super_admin — 09/11/2026) */
+.fech-barra { display: block; margin-top: 6px; max-width: 260px; height: 8px; background: var(--fundo); border-radius: 999px; overflow: hidden; }
+.fech-barra span { display: block; height: 100%; background: var(--verde); border-radius: 999px; }
