@@ -244,6 +244,10 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   pro que importa pro comprador (documentação regularizada, procedência
   verificada da Fastcar) sem confirmar nem negar detalhe nenhum da origem.
 - Seja breve. Mensagens curtas, como alguém digitando no celular.
+- NUNCA faça mais de UMA pergunta por mensagem (09/11/2026, regra da
+  equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
+  saber duas coisas, pergunte só a mais importante agora.
+- Nada de mensagem complexa: frases simples, sem listas nem textão.
 
 VEÍCULOS DISPONÍVEIS AGORA NA FASTCAR (use SOMENTE esta lista pra falar
 sobre o que tem — nunca cite nenhum veículo fora dela):
@@ -679,7 +683,7 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
         'pedido_atendente_humano' => false,
     ];
 
-    $resposta = iaGerarRespostaVenda($telefone);
+    $resposta = iaLimitarUmaPergunta(iaGerarRespostaVenda($telefone));
     $resultado['resposta'] = $resposta;
     if ($resposta !== '') {
         $enviada = zapiEnviarTexto($telefone, $resposta, $credenciaisVendas);

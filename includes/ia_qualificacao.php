@@ -177,7 +177,23 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   é pra um humano avaliar (pendência pós-venda), não pra qualificação
   automática.
 - Seja breve. Mensagens curtas, como alguém digitando no celular.
+- NUNCA faça mais de UMA pergunta por mensagem (09/11/2026, regra da
+  equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
+  saber duas coisas, pergunte só a mais importante agora.
+- Nada de mensagem complexa: frases simples, sem listas nem textão.
 PROMPT;
+
+/**
+ * Garante UMA pergunta por mensagem (09/11/2026, "nunca fazer mais de uma
+ * pergunta por resposta") — o prompt já pede, mas o modelo às vezes junta
+ * duas. Com 2+ "?", corta tudo depois da 1ª pergunta (o que vem antes, tipo
+ * "Entendi, obrigado!", fica). A pergunta que sobrou a IA faz no turno seguinte.
+ */
+function iaLimitarUmaPergunta(string $texto): string {
+    if (substr_count($texto, '?') < 2) return $texto;
+    $pos = strpos($texto, '?');
+    return rtrim(substr($texto, 0, $pos + 1));
+}
 
 const IA_EXTRACAO_PROMPT = <<<PROMPT
 Analise a conversa de WhatsApp abaixo entre a Fastcar (compra veículos
@@ -486,7 +502,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
         'reclamacao_pos_venda' => false, 'pedido_atendente_humano' => false,
     ];
 
-    $resposta = iaGerarResposta($telefone);
+    $resposta = iaLimitarUmaPergunta(iaGerarResposta($telefone));
     $resultado['resposta'] = $resposta;
     if ($resposta !== '') {
         $enviada = zapiEnviarTextoPeloCanal($telefone, $resposta, $canalOrigem);
