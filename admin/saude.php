@@ -57,6 +57,7 @@ try {
 // `php install/migrar.php` na VPS (o deploy automático já roda).
 try {
     $mem = new PDO('sqlite::memory:');
+    $mem->exec('PRAGMA busy_timeout=5000');
     $mem->exec((string)file_get_contents(dirname(__DIR__) . '/install/schema.sql'));
     $faltando = [];
     foreach ($mem->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_COLUMN) as $tab) {
