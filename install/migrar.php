@@ -1879,6 +1879,10 @@ foreach ([
     'locacao_dados_json' => "TEXT DEFAULT '{}'",
     // 27/10/2026 — Quadro-Resumo da promissória (includes/promissoria.php).
     'promissoria_dados_json' => "TEXT DEFAULT '{}'",
+    // 09/11/2026 — contrato de TRANSFERÊNCIA DE POSSE (includes/posse.php):
+    // continua tipo_contrato='venda' (mesmo financeiro/relatórios), só muda
+    // o modelo do PDF. Quadro-Resumo dele mora no mesmo promissoria_dados_json.
+    'modelo_contrato' => "TEXT NOT NULL DEFAULT 'promissoria'",
 ] as $colLoc => $defLoc) {
     if (!colunaExiste($db, 'vendas', $colLoc)) {
         try {

@@ -860,6 +860,7 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- 27/10/2026 — campos do Quadro-Resumo da promissória que não são
     -- derivados da negociação (chaves de PROMISSORIA_CAMPOS, includes/promissoria.php).
     promissoria_dados_json TEXT DEFAULT '{}',
+    modelo_contrato TEXT NOT NULL DEFAULT 'promissoria', -- 'promissoria' | 'posse' (só tipo_contrato='venda')
     km_entrega INTEGER,
     preco_venda REAL,                  -- "Preço ajustado entre FASTCAR e COMPRADOR"
     valor_pago_contratacao REAL,       -- valor pago pelo comprador na contratação

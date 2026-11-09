@@ -27,6 +27,7 @@ require_once __DIR__ . '/oportunidades.php'; // mudarEtapa()/checklistFechamento
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/email_templates.php';
 require_once __DIR__ . '/promissoria.php'; // Quadro-Resumo do contrato de promissória (27/10/2026)
+require_once __DIR__ . '/posse.php'; // contrato de transferência de posse (09/11/2026)
 require_once __DIR__ . '/notificacoes.php'; // criarNotificacao() — contrato assinado no sino (30/10/2026)
 require_once __DIR__ . '/usuarios.php'; // buscarUsuario() — testemunha 1/2 dinâmicas, ver signatariosExtrasContrato()
 
@@ -107,6 +108,7 @@ function signatarioExtraLabel(string $chave): string {
         'fastcar' => 'FASTCAR',
         'testemunha1' => 'Testemunha 1',
         'testemunha2' => 'Testemunha 2',
+        'cedente' => 'Vendedor/Cedente',
         default => $chave,
     };
 }
@@ -714,7 +716,10 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         SELECT v.*, o.id AS oportunidade_id, o.cliente_id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano,
                o.veiculo_placa, o.veiculo_renavam, o.veiculo_chassi, o.banco_financiamento,
                o.contrato_financiamento_numero, o.saldo_financiamento_atual, o.valor_fipe_referencia,
-               cl.nome AS vendedor_original_nome
+               cl.nome AS vendedor_original_nome, cl.cpf AS cedente_cpf, cl.rg AS cedente_rg,
+               cl.endereco AS cedente_endereco, cl.telefone AS cedente_telefone, cl.email AS cedente_email,
+               cl.nacionalidade AS cedente_nacionalidade, cl.estado_civil AS cedente_estado_civil,
+               cl.profissao AS cedente_profissao
         FROM vendas v JOIN oportunidades o ON o.id = v.oportunidade_id
         LEFT JOIN clientes cl ON cl.id = o.cliente_id
         WHERE v.id = ?
@@ -801,6 +806,19 @@ function montarCamposContratoVenda(int $vendaId): ?array {
         // Proprietário registral padrão = vendedor original do veículo
         // (no modelo de negócio, o carro segue no nome dele até a baixa do gravame).
         'vendedor_original_nome'        => $v['vendedor_original_nome'] ?? '',
+        // 09/11/2026 — contrato de TRANSFERÊNCIA DE POSSE (includes/posse.php):
+        // mesmo tipo_contrato='venda', só o PDF muda. O VENDEDOR/CEDENTE é o
+        // dono original (cliente da compra) e assina pela ZapSign.
+        '_modelo_contrato'              => ($v['tipo_contrato'] ?? 'venda') === 'venda' ? ($v['modelo_contrato'] ?: 'promissoria') : '',
+        'cedente_nome'                  => $v['vendedor_original_nome'] ?? '',
+        'cedente_cpf'                   => $v['cedente_cpf'] ?? '',
+        'cedente_rg'                    => $v['cedente_rg'] ?? '',
+        'cedente_endereco'              => $v['cedente_endereco'] ?? '',
+        'cedente_telefone'              => $v['cedente_telefone'] ?? '',
+        'cedente_email'                 => $v['cedente_email'] ?? '',
+        'cedente_nacionalidade'         => ($v['cedente_nacionalidade'] ?? '') ?: 'brasileiro(a)',
+        'cedente_estado_civil'          => $v['cedente_estado_civil'] ?? '',
+        'cedente_profissao'             => $v['cedente_profissao'] ?? '',
         '_oportunidade_id'              => (int)$v['oportunidade_id'],
         '_cliente_id'                   => (int)$v['cliente_id'],
         '_telefone'                     => $v['comprador_telefone'] ?: '',
@@ -830,7 +848,31 @@ function verificarCamposObrigatoriosContratoVenda(array $campos): array {
     foreach ($obrigatorios as $campo => $label) {
         if (empty($campos[$campo]) && $campos[$campo] !== 0.0) $faltando[] = $label;
     }
+    if (($campos['_modelo_contrato'] ?? '') === 'posse') {
+        $faltando = array_merge($faltando, posseCamposFaltando($campos));
+    }
     return $faltando;
+}
+
+/**
+ * Gerador de PDF + rótulo do documento conforme o modelo da negociação
+ * (promissória, transferência de posse ou locação).
+ * @return array{0:string,1:string,2:string} [caminho do PDF, rótulo, prefixo do arquivo]
+ */
+function _contratoVendaGerarPdfPorModelo(array $campos): array {
+    if (($campos['_tipo_contrato'] ?? 'venda') === 'locacao') return [gerarPdfContratoLocacao($campos), 'Contrato de Locação', 'contrato_locacao_'];
+    if (($campos['_modelo_contrato'] ?? '') === 'posse') return [gerarPdfContratoPosse($campos), 'Contrato de Transferência de Posse', 'contrato_posse_'];
+    return [gerarPdfContratoVenda($campos), 'Contrato de Venda', 'contrato_venda_'];
+}
+
+/**
+ * Signatários extras do contrato de venda: FASTCAR + testemunhas (o comprador
+ * é o signatário principal). Na transferência de posse o VENDEDOR/CEDENTE
+ * (dono original) NÃO assina — a FASTCAR assina por ele com procuração
+ * (09/11/2026, "dono original não assina só fastcar pois temos procuração").
+ */
+function _contratoVendaSignatariosExtras(array $campos): array {
+    return signatariosExtrasContrato($campos['_testemunha1_usuario_id'], $campos['_testemunha2_usuario_id']);
 }
 
 /**
@@ -853,8 +895,8 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
         : null;
 
     $ehLocacao = ($campos['_tipo_contrato'] ?? 'venda') === 'locacao';
-    $pdfPath = $ehLocacao ? gerarPdfContratoLocacao($campos) : gerarPdfContratoVenda($campos);
-    $nomeDoc = ($ehLocacao ? 'Contrato de Locação - ' : 'Contrato de Venda - ') . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+    [$pdfPath, $rotuloDoc, $prefixoArquivo] = _contratoVendaGerarPdfPorModelo($campos);
+    $nomeDoc = $rotuloDoc . ' - ' . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
 
     // Mesmo padrão do contrato de compra: cópia própria salva ANTES de
     // mandar pra assinatura, pra dar pra visualizar no sistema mesmo
@@ -864,13 +906,13 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     // — não existe cadastro em `clientes` pro COMPRADOR da revenda (ver
     // includes/vendas.php), então a pasta do veículo/processo continua
     // sendo a mesma dos documentos de compra desse mesmo carro.
-    $nomeArquivoCopia = ($ehLocacao ? 'contrato_locacao_' : 'contrato_venda_') . $vendaId . '_' . time() . '.pdf';
+    $nomeArquivoCopia = $prefixoArquivo . $vendaId . '_' . time() . '.pdf';
     $copia = salvarArquivoGeradoComoDocumento(
         $campos['_cliente_id'], $campos['comprador_nome'], $pdfPath, $nomeArquivoCopia,
         'application/pdf', 'contratos/' . $campos['_oportunidade_id']
     );
 
-    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email'], signatariosExtrasContrato($campos['_testemunha1_usuario_id'], $campos['_testemunha2_usuario_id']));
+    $docRes = zapsignCriarDocumentoEAssinatura($pdfPath, $nomeDoc, $campos['comprador_nome'], $campos['_telefone'], $campos['_email'], _contratoVendaSignatariosExtras($campos));
     @unlink($pdfPath);
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
@@ -953,11 +995,10 @@ function gerarContratoVendaPreview(int $vendaId, ?int $usuarioId): array {
         return ['ok' => false, 'erro' => 'Faltam dados obrigatórios pra gerar o contrato: ' . implode(', ', $faltando) . '.'];
     }
 
-    $ehLocacao = ($campos['_tipo_contrato'] ?? 'venda') === 'locacao';
-    $pdfPath = $ehLocacao ? gerarPdfContratoLocacao($campos) : gerarPdfContratoVenda($campos);
-    $nomeDoc = ($ehLocacao ? 'Contrato de Locação (rascunho) - ' : 'Contrato de Venda (rascunho) - ') . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
+    [$pdfPath, $rotuloDoc, $prefixoArquivo] = _contratoVendaGerarPdfPorModelo($campos);
+    $nomeDoc = $rotuloDoc . ' (rascunho) - ' . ($campos['comprador_nome'] ?: "Venda #{$vendaId}");
 
-    $nomeArquivoCopia = ($ehLocacao ? 'contrato_locacao_preview_' : 'contrato_venda_preview_') . $vendaId . '_' . time() . '.pdf';
+    $nomeArquivoCopia = $prefixoArquivo . 'preview_' . $vendaId . '_' . time() . '.pdf';
     $copia = salvarArquivoGeradoComoDocumento(
         $campos['_cliente_id'], $campos['comprador_nome'], $pdfPath, $nomeArquivoCopia,
         'application/pdf', 'contratos/' . $campos['_oportunidade_id']

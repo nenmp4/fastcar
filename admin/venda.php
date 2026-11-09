@@ -12,6 +12,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/vendas_formulario.php';
 require_once __DIR__ . '/../includes/importar_crm_antigo.php';
+require_once __DIR__ . '/../includes/posse.php'; // Transferência de posse (09/11/2026)
 requireAcessoVendas();
 
 $db = getDB();
@@ -47,7 +48,8 @@ $promRepetir = null; // Quadro-Resumo reexibido aguardando confirmação da comi
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
     'salvar_bem_troca', 'gerar_parcelamento', 'cancelar_parcelamento', 'gerar_contrato', 'gerar_contrato_preview',
     'excluir_contrato_preview', 'enviar_link_documentos_venda', 'confirmar_documento_staff_venda', 'mudar_etapa',
-    'nao_qualificado', 'atualizar_proxima_acao', 'preencher_pelos_documentos', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria', 'salvar_fipe_venda'];
+    'nao_qualificado', 'atualizar_proxima_acao', 'preencher_pelos_documentos', 'salvar_testemunha2', 'salvar_locacao', 'salvar_promissoria', 'salvar_fipe_venda',
+    'salvar_posse', 'trocar_modelo_contrato'];
 // 30/10/2026 — trava também com contrato de venda assinado, mesmo antes de
 // virar 'vendido' (concluir/devolução continuam liberados).
 $vendaTravada = ($v['etapa'] === 'vendido' || ($contratoVendaAssinado && $v['etapa'] !== 'cancelada')) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
@@ -182,6 +184,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $sucesso = 'Quadro-Resumo da promissória salvo.';
                 }
+            } elseif ($acao === 'salvar_posse') {
+                // 09/11/2026 — Quadro-Resumo da Transferência de Posse (includes/posse.php).
+                $posseAntigo = lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
+                $posseNovo = parseCamposPossePost((array)($_POST['posse'] ?? []));
+                salvarDadosPosse($id, $posseNovo);
+                $mudou = [];
+                foreach (POSSE_CAMPOS as $k => $def) {
+                    $a = (string)($posseAntigo[$k] ?? ''); $n = (string)($posseNovo[$k] ?? '');
+                    if ($a === $n) continue;
+                    $fmt = fn($x) => $x === '' ? '(vazio)' : (($def['opcoes'][$x] ?? null) ?: $x);
+                    $mudou[] = $def['label'] . ': ' . $fmt($a) . ' → ' . $fmt($n);
+                }
+                if ($mudou) {
+                    auditoriaRegistrar('quadro_promissoria_alterado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'],
+                        'venda', $id, 'Transferência de posse — ' . implode(' | ', $mudou));
+                }
+                $sucesso = 'Quadro-Resumo da transferência de posse salvo.';
+            } elseif ($acao === 'trocar_modelo_contrato') {
+                // 09/11/2026 — Promissória <-> Transferência de Posse antes de
+                // assinar (mesmo financeiro; só muda o PDF e o Quadro-Resumo).
+                $novoModelo = ($_POST['modelo_contrato'] ?? '') === 'posse' ? 'posse' : 'promissoria';
+                if (($v['tipo_contrato'] ?? 'venda') !== 'venda') {
+                    $erro = 'Locação não troca de modelo.';
+                } else {
+                    $db->prepare("UPDATE vendas SET modelo_contrato = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$novoModelo, $id]);
+                    auditoriaRegistrar('quadro_promissoria_alterado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'],
+                        'venda', $id, 'Modelo do contrato: ' . ($novoModelo === 'posse' ? 'Transferência de Posse' : 'Promissória'));
+                    $sucesso = 'Modelo do contrato: ' . ($novoModelo === 'posse' ? '🤝 Transferência de Posse' : '💳 Promissória')
+                        . '. Se já tinha um contrato gerado, gere de novo pra sair no modelo certo.';
+                }
             } elseif ($acao === 'salvar_fipe_venda') {
                 // 27/10/2026, "campo da FIPE no contrato de venda, caso
                 // esqueceram de pôr na compra" — o valor FIPE é do VEÍCULO
@@ -256,7 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     valorMonetario((string)($_POST['preco_venda'] ?? '')),
                     clean((string)($_POST['forma_pagamento'] ?? '')),
                     valorMonetario((string)($_POST['saldo_preco_devido'] ?? '')),
-                    $_POST['prazo_quitacao_meses'] !== '' ? max(1, (int)$_POST['prazo_quitacao_meses']) : 24,
+                    (isset($_POST['prazo_quitacao_meses']) && $_POST['prazo_quitacao_meses'] !== '') ? max(1, (int)$_POST['prazo_quitacao_meses']) : (int)($v['prazo_quitacao_meses'] ?? 24),
                     clean((string)($_POST['multa_atraso_parcelas_texto'] ?? '')),
                     $id,
                 ]);
@@ -947,6 +979,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
         <span class="badge"><?= e(etapaVendaLabel($v['etapa'], $v['tipo_contrato'] ?? 'venda')) ?></span>
         <?php if (($v['tipo_contrato'] ?? 'venda') === 'locacao'): ?><span class="badge badge-info">🔑 Locação</span><?php endif; ?>
+        <?php if (vendaEhPosse($v)): ?><span class="badge badge-info">🤝 Transferência de Posse</span><?php endif; ?>
         <?php if ($atrasada): ?><span class="badge badge-atraso">⚠️ ação atrasada</span><?php endif; ?>
         <?php if ($v['temperatura_lead']): ?>
             <span class="badge" title="Leitura da IA sobre a prontidão de compra do lead">
@@ -1640,8 +1673,13 @@ function adicionarParteEntrada() {
                 <input type="text" name="forma_pagamento" value="<?= e($v['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas...">
                 <label>Saldo de preço devido pelo comprador (R$) — deixe em branco se inexistente</label>
                 <input type="number" step="0.01" name="saldo_preco_devido" value="<?= e((string)($v['saldo_preco_devido'] ?? '')) ?>">
+                <?php if (vendaEhPosse($v)): ?>
+                    <?php /* Transferência de posse: o prazo de quitação (padrão 15) fica no Quadro-Resumo da posse, abaixo. */ ?>
+                    <input type="hidden" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">
+                <?php else: ?>
                 <label>Prazo máximo pra quitação do financiamento (meses)</label>
                 <input type="number" min="1" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">
+                <?php endif; ?>
             </div>
             <div>
                 <label>Multa por atraso nas parcelas do comprador</label>
@@ -1653,6 +1691,56 @@ function adicionarParteEntrada() {
     </form>
 
     <hr>
+    <?php $ehPosse = vendaEhPosse($v); ?>
+    <div class="card" style="background:var(--fundo);margin-bottom:14px">
+        <strong style="font-size:13px">📄 Modelo do contrato:</strong>
+        <?= $ehPosse ? '🤝 <strong>Transferência de Posse</strong> — o comprador quita o financiamento; a FASTCAR assina pelo dono original (procuração)'
+                     : '💳 <strong>Venda na Promissória</strong> — a Fastcar quita o financiamento depois' ?>
+        <form method="post" style="display:inline" onsubmit="return confirmarAcao(this, 'Trocar o modelo do contrato? Se já gerou o contrato, vai precisar gerar de novo.')">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="trocar_modelo_contrato">
+            <input type="hidden" name="modelo_contrato" value="<?= $ehPosse ? 'promissoria' : 'posse' ?>">
+            <button type="submit" class="btn-texto" style="margin-left:8px">🔁 Trocar pra <?= $ehPosse ? 'Promissória' : 'Transferência de Posse' ?></button>
+        </form>
+    </div>
+    <?php if ($ehPosse): ?>
+    <h3>🧾 Quadro-Resumo da Transferência de Posse</h3>
+    <p><small>Preço, entrada, parcelas, FIPE e banco já vêm dos cards acima; comissão de <?= PROMISSORIA_COMISSAO_PCT ?>% da FIPE,
+       abatimento na entrada e total a pagar são calculados. O <strong>vendedor/cedente</strong> é o dono original do veículo — não assina: a FASTCAR assina por ele (procuração). Assinam o comprador, a FASTCAR e as testemunhas.</small></p>
+    <?php
+    $posseDados = lerDadosPromissoria($v['promissoria_dados_json'] ?? '{}');
+    $posseCampos = $v['oportunidade_id'] ? montarCamposContratoVenda($id) : null;
+    $posseQ = $posseCampos ? posseQuadro($posseCampos) : null;
+    $posseFalta = $posseCampos ? posseCamposFaltando($posseCampos) : [];
+    ?>
+    <?php if ($posseCampos): ?>
+        <div class="<?= $posseFalta ? 'alerta-erro' : 'alerta-sucesso' ?>" style="margin-bottom:10px">
+            🤝 Vendedor/cedente (representado pela FASTCAR): <strong><?= e($posseCampos['cedente_nome'] ?: '— não identificado —') ?></strong>
+            <?= $posseCampos['cedente_cpf'] ? ' — CPF ' . e($posseCampos['cedente_cpf']) : '' ?>
+            <?php if ($posseFalta): ?><br><small>Falta: <?= e(implode('; ', $posseFalta)) ?>.
+                <?php if (!empty($posseCampos['_cliente_id'])): ?><a href="/admin/cliente_detalhe.php?id=<?= (int)$posseCampos['_cliente_id'] ?>">Completar cadastro do cedente →</a><?php endif; ?></small><?php endif; ?>
+        </div>
+    <?php endif; ?>
+    <?php if ($posseQ): ?>
+    <div style="background:var(--fundo);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+        <strong>Prévia do cálculo:</strong>
+        comissão <?= $posseQ['comissao'] !== null ? _fmtMoeda($posseQ['comissao']) : '—' ?> ·
+        abatida da entrada <?= $posseQ['comissao_abatida'] !== null ? _fmtMoeda($posseQ['comissao_abatida']) : '—' ?> ·
+        saldo líquido da entrada <?= _fmtMoeda($posseQ['saldo_liquido_entrada']) ?> ·
+        comissão a pagar <?= $posseQ['comissao_a_pagar'] ? _fmtMoeda($posseQ['comissao_a_pagar']) : '—' ?><br>
+        <?= $posseQ['tem_parcelas'] ? 'total das parcelas ' . _fmtMoeda($posseQ['total_parcelas']) . ' · ' : 'parcelamento ainda não gerado · ' ?>
+        quitação do financiamento pelo comprador em até <strong><?= (int)$posseQ['prazo_quitacao_meses'] ?> meses</strong>
+        <?= $posseQ['servico_quitacao'] ? ' · serviço de negociação +R$ 1.000,00' : '' ?> ·
+        <strong>total a pagar <?= _fmtMoeda($posseQ['total_a_pagar']) ?></strong>
+    </div>
+    <?php endif; ?>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_posse">
+        <?= renderCamposPosse($posseDados) ?>
+        <button type="submit">Salvar Quadro-Resumo</button>
+    </form>
+    <?php else: ?>
     <h3>🧾 Quadro-Resumo do contrato de promissória</h3>
     <p><small>Só o que não sai sozinho da negociação. Preço, entrada, parcelas, FIPE e banco já vêm dos cards acima;
        comissão de <?= PROMISSORIA_COMISSAO_PCT ?>% da FIPE, abatimento na entrada, composição <?= PROMISSORIA_PCT_LOCACAO ?>/<?= 100 - PROMISSORIA_PCT_LOCACAO ?> da parcela e total a pagar são calculados.</small></p>
@@ -1691,6 +1779,7 @@ function adicionarParteEntrada() {
             <button type="submit">Salvar Quadro-Resumo</button>
         <?php endif; ?>
     </form>
+    <?php endif; /* fim promissória x posse */ ?>
 <?php endif; ?>
 
     <?php if (in_array($v['etapa'], ['crm_preenchido', 'negociacao', 'contrato_enviado'], true) && $v['oportunidade_id']): ?>

@@ -706,6 +706,205 @@ function gerarPdfContratoVenda(array $c): string {
 }
 
 /**
+ * Contrato de TRANSFERÊNCIA DE POSSE (09/11/2026) — "cessão onerosa e
+ * transferência de posse veicular com intermediação", transcrito do modelo
+ * Contrato_FASTCAR_Transferencia_Posse.docx (ver includes/posse.php). 3
+ * partes: FASTCAR (intermediadora), COMPRADOR/CESSIONÁRIO e VENDEDOR/CEDENTE
+ * (dono original do veículo — não assina: a FASTCAR o representa por procuração). Sede e foro
+ * corrigidos pra Barueri/SP. $c vem de montarCamposContratoVenda().
+ */
+function gerarPdfContratoPosse(array $c): string {
+    require_once __DIR__ . '/posse.php';
+    $p = $c['_prom'] ?? [];
+    $q = posseQuadro($c);
+    $na = 'não aplicável';
+    $data = fn(?string $ymd) => $ymd ? date('d/m/Y', strtotime($ymd)) : '—';
+    $ou = fn($v, string $vazio = '—') => trim((string)$v) !== '' ? (string)$v : $vazio;
+    $marca = fn(?string $v, string $sim = 'Sim', string $nao = 'Não') =>
+        $v === 'sim' ? "(X) {$sim}  ( ) {$nao}" : ($v === 'nao' ? "( ) {$sim}  (X) {$nao}" : "( ) {$sim}  ( ) {$nao}");
+
+    $pdf = _pdfNovo();
+    _pdfCabecalho($pdf, 'CESSÃO ONEROSA E TRANSFERÊNCIA DE POSSE VEICULAR COM INTERMEDIAÇÃO');
+
+    $cedQualif = trim(implode(', ', array_filter([
+        $c['cedente_nome'], $c['cedente_nacionalidade'], $c['cedente_estado_civil'], $c['cedente_profissao'],
+        $c['cedente_rg'] ? 'RG nº ' . $c['cedente_rg'] : '', $c['cedente_cpf'] ? 'CPF nº ' . $c['cedente_cpf'] : '',
+        $c['cedente_endereco'] ? 'residente à ' . $c['cedente_endereco'] : '',
+    ], fn($x) => trim((string)$x) !== '')));
+
+    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->MultiCell(0, 5, _pdfTexto(
+        "Pelo presente instrumento particular, FASTCAR SOLUTIONS, pessoa jurídica de direito privado, inscrita no " .
+        "CNPJ/MF sob nº 66.934.500/0001-09, com sede na Avenida Sagitário, nº 138, Sala 1003, 10º andar, Torre City " .
+        "(Torre 2), Complexo Alpha Square Offices, Alphaville Conde II, Barueri/SP, CEP 06473-073, doravante " .
+        "denominada INTERMEDIADORA ou FASTCAR;\n" .
+        "de outro lado, {$c['comprador_nome']}, {$c['comprador_nacionalidade']}, {$c['comprador_estado_civil']}, " .
+        "{$c['comprador_profissao']}, RG nº {$c['comprador_rg']}, CPF nº {$c['comprador_cpf']}, CNH nº {$c['comprador_cnh']}, " .
+        "residente à {$c['comprador_endereco']}, telefone/WhatsApp {$c['comprador_telefone']}, e-mail {$c['comprador_email']}, " .
+        "doravante denominado COMPRADOR/CESSIONÁRIO;\n" .
+        "e, como VENDEDOR/CEDENTE, {$cedQualif}, titular dos direitos possessórios objeto da operação, neste ato " .
+        "representado pela FASTCAR SOLUTIONS LTDA por procuração, celebram este " .
+        "contrato de cessão onerosa e transferência de posse veicular com intermediação, nas condições seguintes."
+    ));
+
+    $pdf->Ln(3);
+    $pdf->SetFont('Helvetica', 'B', 11);
+    $pdf->Cell(0, 7, _pdfTexto('QUADRO-RESUMO DA CONTRATAÇÃO'), 0, 1, 'C');
+    $pdf->Ln(1);
+
+    $secao = function (string $titulo) use ($pdf) {
+        if ($pdf->GetY() > 265) $pdf->AddPage();
+        $pdf->SetFont('Helvetica', 'B', 9);
+        $pdf->SetFillColor(21, 23, 34);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->Cell(170, 6, _pdfTexto($titulo), 0, 1, 'L', true);
+        $pdf->SetTextColor(0, 0, 0);
+    };
+
+    _pdfLinhaResumo($pdf, 'Contrato nº', 'VENDA-' . $c['_venda_id']);
+
+    $secao('VEÍCULO');
+    _pdfLinhaResumo($pdf, 'Marca / modelo / versão / ano', trim("{$c['veiculo_marca']} {$c['veiculo_modelo']} {$c['veiculo_ano']}"));
+    _pdfLinhaResumo($pdf, 'Placa / RENAVAM / chassi', "{$c['veiculo_placa']} / {$c['veiculo_renavam']} / {$c['veiculo_chassi']}");
+    _pdfLinhaResumo($pdf, 'Valor FIPE e data da consulta', _fmtMoeda($c['valor_fipe_referencia']) . ' / ' . $data($p['fipe_data_consulta'] ?? null));
+    _pdfLinhaResumo($pdf, 'Proprietário registral / credor e gravame', $ou($c['cedente_nome']) . ' / ' . $ou($c['banco_financiamento']) . ($c['banco_financiamento'] ? ' (alienação fiduciária)' : ''));
+    $servicoTxt = 'O COMPRADOR/CESSIONÁRIO é responsável pelo pagamento da quitação do financiamento. A FASTCAR não assume a obrigação de pagar o débito bancário. '
+        . ($q['servico_quitacao'] ? '(X)' : '( )') . ' CONTRATO o serviço exclusivo de negociação de quitação veicular perante a instituição financeira pela FASTCAR, pelo valor adicional de R$ 1.000,00 (mil reais), separado da comissão de intermediação e do preço da cessão. Sem marcação e manifestação específica, o serviço não será contratado nem cobrado. Assinatura específica do comprador: __________________';
+    if ($q['servico_quitacao']) {
+        $servicoTxt .= ' Forma de pagamento do serviço: ' . $ou($p['servico_forma_pagamento'] ?? '') . '. Vencimento: ' . $data($p['servico_vencimento'] ?? null) . '.';
+    }
+    _pdfLinhaResumo($pdf, 'QUITAÇÃO DO FINANCIAMENTO E SERVIÇO OPCIONAL', $servicoTxt);
+    _pdfLinhaResumo($pdf, 'Vendedor/Cedente e origem dos direitos possessórios', $ou($c['cedente_nome']) . ' / posse adquirida pela FASTCAR na intermediação deste veículo');
+
+    $secao('ENTRADA E COMISSÃO');
+    _pdfLinhaResumo($pdf, 'Preço da cessão onerosa da posse', _fmtMoeda($c['preco_venda']));
+    _pdfLinhaResumo($pdf, 'Comissão de intermediação, se aplicável', $q['comissao'] !== null
+        ? PROMISSORIA_COMISSAO_PCT . '% da FIPE: ' . _fmtMoeda($q['comissao'])
+        : ($q['comissao_aplicavel'] ? 'FIPE de referência não informada' : $na));
+    _pdfLinhaResumo($pdf, 'Entrada total e forma de pagamento', _fmtMoeda((float)$c['valor_pago_contratacao']) . ' / ' . ($c['forma_pagamento'] ?: '—'));
+    $partesEntrada = $c['_entrada_partes'] ?? [];
+    if (count($partesEntrada) > 1 || array_filter($partesEntrada, fn($x) => ($x['forma'] ?? 'pix') === 'especie')) {
+        foreach ($partesEntrada as $i => $parte) {
+            $dataParte = $parte['data_prevista'] ? date('d/m/Y', strtotime($parte['data_prevista'])) : 'sem data';
+            $formaParte = ($parte['forma'] ?? 'pix') === 'especie' ? 'em espécie' : 'PIX';
+            _pdfLinhaResumo($pdf, "  · Entrada, parte " . ($i + 1) . " ({$formaParte})", _fmtMoeda($parte['valor']) . " — {$dataParte}");
+        }
+    }
+    if (!empty($c['bem_troca_recebido'])) {
+        $descBem = $c['bem_troca_nome'] ?: 'bem não identificado';
+        if ($c['bem_troca_tipo'] === 'veiculo') {
+            $descBem .= trim(" — {$c['bem_troca_modelo_ano']} {$c['bem_troca_ano_fabricacao']} {$c['bem_troca_cor']}, placa {$c['bem_troca_placa']}, chassi {$c['bem_troca_chassi']}, RENAVAM {$c['bem_troca_renavam']}");
+        }
+        _pdfLinhaResumo($pdf, 'Bem recebido como parte da entrada', $descBem . ' — valor atribuído: ' . _fmtMoeda($c['bem_troca_valor']));
+    }
+    _pdfLinhaResumo($pdf, 'Comissão abatida da entrada', $q['comissao_abatida'] !== null ? _fmtMoeda($q['comissao_abatida']) : $na);
+    _pdfLinhaResumo($pdf, 'Saldo líquido da entrada destinado ao preço', _fmtMoeda($q['saldo_liquido_entrada']));
+    _pdfLinhaResumo($pdf, 'Comissão ainda a pagar, se houver / vencimento', ($q['comissao_a_pagar'] !== null && $q['comissao_a_pagar'] > 0)
+        ? _fmtMoeda($q['comissao_a_pagar']) . ' / ' . $data($p['comissao_saldo_vencimento'] ?? null) : $na);
+
+    $secao('PARCELAMENTO');
+    $semanal = ($c['parcelamento_periodicidade'] ?? 'mensal') === 'semanal';
+    if ($q['tem_parcelas']) {
+        _pdfLinhaResumo($pdf, 'Número de parcelas / valor de cada parcela', "{$c['parcelamento_qtd_parcelas']} parcelas de " . _fmtMoeda($c['parcelamento_valor_parcela']) . ($semanal ? ' (semanais)' : ''));
+        $demais = $semanal ? 'semanalmente, a cada 7 dias' : ($q['dia_demais'] ? 'dia ' . $q['dia_demais'] . ' de cada mês' : '—');
+        _pdfLinhaResumo($pdf, 'Vencimento da primeira / demais parcelas', ($c['parcelamento_primeira_parcela_data'] ?: '—') . ' / ' . $demais);
+        _pdfLinhaResumo($pdf, 'Valor total das parcelas', _fmtMoeda($q['total_parcelas']));
+    } else {
+        _pdfLinhaResumo($pdf, 'Número de parcelas / valor de cada parcela', 'a definir — parcelamento ainda não gerado');
+    }
+    _pdfLinhaResumo($pdf, 'Saldo final adicional, se houver / vencimento', $q['saldo_final'] !== null
+        ? _fmtMoeda($q['saldo_final']) . ' / ' . $data($p['saldo_final_vencimento'] ?? null) : $na);
+    _pdfLinhaResumo($pdf, 'Total a pagar pelo cessionário, inclusive comissão e serviço opcional se contratado',
+        _fmtMoeda($q['total_a_pagar']) . ($q['servico_quitacao'] ? ' (inclui R$ 1.000,00 do serviço de negociação da quitação)' : ''));
+    if (!empty($c['multa_atraso_parcelas_texto'])) {
+        _pdfLinhaResumo($pdf, 'Encargos de mora (cláusula 14.2)', $c['multa_atraso_parcelas_texto']);
+    }
+    _pdfLinhaResumo($pdf, 'Proteção veicular: contratada / responsável / coberturas',
+        $marca($p['protecao_contratada'] ?? null) . ' / ' . $ou($p['protecao_responsavel'] ?? '') . ' / ' . $ou($p['protecao_coberturas'] ?? ''));
+    _pdfLinhaResumo($pdf, 'Entrega da posse: data, hora e local', $data($p['entrega_data'] ?? null) . ' / ' . $ou($p['entrega_hora'] ?? '') . ' / ' . $ou($p['entrega_local'] ?? ''));
+    _pdfLinhaResumo($pdf, 'Autorizo, de forma gratuita e definitiva, o uso de minha imagem e voz gravadas em vídeo para veiculação em redes sociais, internet e demais mídias pela FastCar, sem qualquer direito a indenização ou remuneração, por prazo indeterminado, podendo ser revogado mediante notificação extrajudicial via ouvidoria (11) 97816-4525.',
+        $marca($p['autoriza_imagem'] ?? null, 'SIM', 'NÃO'));
+    _pdfLinhaResumo($pdf, 'Ciência específica do titular sobre a escolha', 'Rubrica / assinatura específica: __________________');
+    _pdfLinhaResumo($pdf, 'Beneficiário do preço / conta / autorização de recebimento pela FASTCAR',
+        $ou(($p['beneficiario_preco'] ?? '') ?: $c['cedente_nome']) . ' / ' . $ou($p['beneficiario_conta'] ?? '') . ' / ' . $marca($p['autoriza_recebimento'] ?? null));
+
+    $prazo = $q['prazo_quitacao_meses'];
+    $banco = ($p['valor_banco_incluido'] ?? '') === 'sim';
+    $cond = 'Contrato bancário nº ' . $ou($c['contrato_financiamento_numero']) . '; saldo de referência '
+        . ($c['saldo_financiamento_atual'] !== null ? _fmtMoeda($c['saldo_financiamento_atual']) : '—')
+        . ', em ' . $data($p['saldo_referencia_data'] ?? null)
+        . "; prazo de quitação: até {$prazo} (" . (_extensoMeses($prazo) ?? (string)$prazo) . ") meses contados da entrega da posse"
+        . '; responsável pelas parcelas até a quitação: ' . $ou($p['responsavel_parcelas'] ?? '', 'COMPRADOR/CESSIONÁRIO')
+        . '; origem dos recursos: ' . $ou($p['origem_recursos'] ?? '')
+        . '; valor destinado ao banco incluído no preço da cessão? ' . $marca($p['valor_banco_incluido'] ?? null)
+        . ($banco ? ' — valor ' . _fmtMoeda(isset($p['valor_banco_valor']) ? (float)$p['valor_banco_valor'] : null) : '')
+        . '; responsável por obter a baixa do gravame: ' . $ou($p['baixa_gravame_responsavel'] ?? '', 'COMPRADOR/CESSIONÁRIO')
+        . ', prazo ' . $ou($p['baixa_gravame_prazo'] ?? '')
+        . '; eventual transferência registral: responsável ' . $ou($p['transferencia_responsavel'] ?? '', 'COMPRADOR/CESSIONÁRIO')
+        . ', prazo ' . $ou($p['transferencia_prazo'] ?? '') . '.';
+    if ($q['servico_quitacao']) {
+        $cond .= ' Contratado o serviço opcional: prazo para apresentação da negociação pela FASTCAR ' . $ou($p['negociacao_prazo'] ?? '')
+            . '; valor negociado e vencimento a confirmar por escrito com documento do credor.';
+    }
+    _pdfLinhaResumo($pdf, 'Condições da quitação e providências documentais', $cond);
+
+    $pdf->Ln(2);
+    $pdf->SetFont('Helvetica', 'I', 8);
+    $pdf->MultiCell(0, 4.5, _pdfTexto(
+        'O Quadro-Resumo integra este contrato e deverá ser preenchido antes da assinatura quanto às condições ' .
+        'essenciais. A entrega efetiva e a vistoria serão confirmadas por escrito no momento da entrega. Campos não ' .
+        'aplicáveis serão identificados como tal. Havendo divergência, prevalecerá o dado específico regularmente ' .
+        'preenchido, respeitadas as normas cogentes.'
+    ));
+
+    foreach (clausulasContratoPosse((int)($p['prazo_devolucao_horas'] ?? 0), (int)($p['prazo_saneamento_dias'] ?? 0)) as [$titulo, $corpo]) {
+        _pdfTituloClausula($pdf, $titulo);
+        _pdfCorpo($pdf, $corpo);
+    }
+
+    if ($pdf->GetY() > 200) $pdf->AddPage();
+    $pdf->Ln(6);
+    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
+    $pdf->Ln(14);
+
+    $pdf->SetFont('Helvetica', '', 8.5);
+    $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('COMPRADOR/CESSIONÁRIO'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['comprador_nome']} / {$c['comprador_cpf']}"), 0, 1, 'C');
+    _pdfLinhaRepresentanteLegal($pdf, $c);
+
+    $pdf->Ln(8);
+    $pdf->SetFont('Helvetica', '', 8);
+    $pdf->MultiCell(0, 4.5, _pdfTexto('VENDEDOR/CEDENTE: ' . $ou($c['cedente_nome'], '______________________') .
+        ' — CPF/CNPJ: ' . $ou($c['cedente_cpf'], '______________') .
+        ', representado neste ato pela FASTCAR SOLUTIONS LTDA, por procuração.'), 0, 'L');
+    $pdf->SetFont('Helvetica', '', 8.5);
+
+    $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
+    $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
+    $pdf->Ln(12);
+    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+
+    _pdfRodapeEndereco($pdf);
+
+    $caminho = tempnam(sys_get_temp_dir(), 'contrato_posse_') . '.pdf';
+    $pdf->Output('F', $caminho);
+    return $caminho;
+}
+
+/**
  * Cláusulas do contrato de promissória — [título, corpo]. Transcrito do
  * modelo Contrato_FASTCAR_PROMISSÓRIA.docx (27/10/2026); foro corrigido pra
  * Barueri/SP. Os 2 "[●]" do modelo (horas pra devolução, cl. 18.1; dias

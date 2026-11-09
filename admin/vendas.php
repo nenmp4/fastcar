@@ -13,6 +13,7 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/dashboard.php';
+require_once __DIR__ . '/../includes/posse.php'; // Transferência de posse (09/11/2026)
 requireAcessoVendas();
 
 $db = getDB();
@@ -191,6 +192,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
                 'parcelamento' => $parcelamentoPost,
             ], $meuId);
 
+            // 09/11/2026 — mesmo modal, modo "🤝 Transferência de posse"
+            // (includes/posse.php): só marca o modelo e grava o Quadro-Resumo.
+            if (($_POST['modelo_contrato'] ?? '') === 'posse') {
+                salvarDadosPosse((int)$resultadoPromissoria['venda_id'], parseCamposPossePost((array)($_POST['posse'] ?? [])));
+            }
+
             header('Location: /admin/venda.php?id=' . $resultadoPromissoria['venda_id'] . '&criado=1');
             exit;
         } catch (Throwable $e) {
@@ -365,6 +372,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'etapa_r
 }
 
 $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
+// 09/11/2026 — Transferência de posse: o VENDEDOR/CEDENTE é o dono original
+// de cada carro (cliente da compra); o modal mostra quem vai assinar.
+$cedentePorVeiculo = [];
+if ($frotaDisponivelPromissoria) {
+    $idsFrota = array_map(fn($f) => (int)$f['oportunidade_id'], $frotaDisponivelPromissoria);
+    $stCed = getDB()->prepare('SELECT o.id, c.nome, c.cpf, c.telefone FROM oportunidades o LEFT JOIN clientes c ON c.id = o.cliente_id WHERE o.id IN (' . implode(',', array_fill(0, count($idsFrota), '?')) . ')');
+    $stCed->execute($idsFrota);
+    foreach ($stCed->fetchAll() as $rc) {
+        $semDono = vendaSemVendedorIdentificado(['oportunidade_id' => 1, 'vendedor_original_nome' => $rc['nome'] ?? '', 'vendedor_original_telefone' => $rc['telefone'] ?? '']);
+        $cedentePorVeiculo[(int)$rc['id']] = ['nome' => $semDono ? '' : (string)$rc['nome'], 'cpf' => (string)($rc['cpf'] ?? '')];
+    }
+}
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
@@ -698,8 +717,12 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     </div>
     <div style="display:grid;gap:12px;margin-top:12px">
         <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
-                onclick="document.getElementById('modal-tipo-contrato').close();document.getElementById('modal-promissoria').showModal()">
-            💳 Venda na Promissória<br><small style="font-weight:400">Venda com entrada + parcelas, quitação futura do financiamento</small>
+                onclick="document.getElementById('modal-tipo-contrato').close();vpAbrirModo('promissoria')">
+            💳 Venda na Promissória<br><small style="font-weight:400">Venda com entrada + parcelas — a Fastcar quita o financiamento depois</small>
+        </button>
+        <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
+                onclick="document.getElementById('modal-tipo-contrato').close();vpAbrirModo('posse')">
+            🤝 Transferência de Posse<br><small style="font-weight:400">O comprador quita o financiamento em até 15 meses — a Fastcar assina pelo dono original (procuração)</small>
         </button>
         <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
                 onclick="document.getElementById('modal-tipo-contrato').close();document.getElementById('modal-locacao').showModal()">
@@ -787,19 +810,31 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     }
     if (!$vpPartes) $vpPartes = [['valor' => '', 'data_prevista' => '', 'forma' => 'pix']];
 ?>
-<dialog id="modal-promissoria" class="modal-lancamento">
+<?php $vpModo = ($postVp['modelo_contrato'] ?? '') === 'posse' ? 'posse' : 'promissoria'; ?>
+<style>
+    #modal-promissoria.modo-posse .so-promissoria, #modal-promissoria:not(.modo-posse) .so-posse { display: none; }
+    .vp-modo-faixa { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: var(--raio); margin: .4rem 0 .8rem; font-size: .92rem; }
+    .vp-modo-faixa.promissoria { background: var(--azul-claro, #eef4ff); border: 1px solid var(--borda); }
+    .vp-modo-faixa.posse { background: var(--verde-bg); border: 1px solid #bbf7d0; }
+    .vp-cedente-box { padding: 10px 14px; border-radius: var(--raio); border: 1px dashed var(--borda); background: var(--fundo, #fafbfc); margin-top: .6rem; font-size: .9rem; }
+    .vp-cedente-box.falta { border-color: var(--vermelho, #dc2626); }
+</style>
+<dialog id="modal-promissoria" class="modal-lancamento<?= $vpModo === 'posse' ? ' modo-posse' : '' ?>">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-        <h2 style="margin:0">💳 Vender na Promissória</h2>
+        <h2 style="margin:0"><span class="so-promissoria">💳 Vender na Promissória</span><span class="so-posse">🤝 Transferência de Posse</span></h2>
         <button type="button" onclick="document.getElementById('modal-promissoria').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
     </div>
-    <p><small>Registra a negociação inteira numa passada só — comprador, condições, entrada em partes (PIX ou espécie) e bem de
-       troca, tudo junto — igual o sistema antigo fazia. Depois de registrar, o link do wizard de documentos já vem
-       pronto pra copiar (enviar continua sendo um passo separado). Gerar o plano de parcelamento do saldo financiado
-       (Asaas ou local) continua no card próprio da tela da negociação, depois de registrar aqui.</small></p>
+    <div class="vp-modo-faixa promissoria so-promissoria">💳 <span><strong>Promissória:</strong> a Fastcar vende o carro com entrada + parcelas e quita o financiamento depois.</span></div>
+    <div class="vp-modo-faixa posse so-posse">🤝 <span><strong>Transferência de posse:</strong> o <strong>comprador</strong> quita o financiamento direto com o banco
+        (prazo padrão de <strong>15 meses</strong>). A Fastcar intermedeia e cobra 15% da FIPE de comissão; o <strong>dono original</strong>
+        do carro não assina — a Fastcar assina por ele (procuração). Assinam o comprador, a Fastcar e as testemunhas.</span></div>
+    <p><small>Tudo numa passada só: veículo, comprador, entrada (PIX/espécie), bem de troca e parcelas.
+       Depois de registrar, o link de documentos e o contrato ficam prontos na tela da negociação.</small></p>
 
     <form method="post" id="form-vender-promissoria">
         <?= csrfField() ?>
         <input type="hidden" name="acao" value="vender_promissoria">
+        <input type="hidden" name="modelo_contrato" id="vp-modelo" value="<?= e($vpModo) ?>">
 
         <div id="vp-step-1">
 
@@ -880,10 +915,10 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             </div>
         </div>
 
-        <h3 style="margin-top:1.4rem">📋 Condições da venda</h3>
+        <h3 style="margin-top:1.4rem">📋 <span class="so-promissoria">Condições da venda</span><span class="so-posse">Condições da cessão</span></h3>
         <div class="grid-2">
             <div>
-                <label>Preço de venda (R$)</label>
+                <label><span class="so-promissoria">Preço de venda (R$)</span><span class="so-posse">Preço da cessão da posse (R$)</span></label>
                 <input type="number" step="0.01" inputmode="decimal" name="preco_venda" value="<?= e((string)($postVp['preco_venda'] ?? '')) ?>">
                 <label>Forma de pagamento</label>
                 <input type="text" name="forma_pagamento" value="<?= e($postVp['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas, promissória...">
@@ -982,6 +1017,12 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
         <label style="font-weight:normal;display:inline-flex;align-items:center;gap:4px">
             <input type="radio" name="parcelamento_periodicidade" value="semanal" <?= ($postVp['parcelamento_periodicidade'] ?? '') === 'semanal' ? 'checked' : '' ?>> Semanal
         </label>
+
+        <div class="so-posse">
+            <h3 style="margin-top:1.4rem">🤝 Quitação do financiamento e vendedor/cedente</h3>
+            <div class="vp-cedente-box" id="vp-cedente-box">Escolha o veículo pra ver quem é o vendedor/cedente (dono original).</div>
+            <?= renderCamposPosse(parseCamposPossePost((array)($postVp['posse'] ?? []))) ?>
+        </div>
 
         <div style="display:flex;gap:10px;margin-top:1.4rem">
             <button type="button" class="btn-primary" onclick="vpRevisar()">👁️ Revisar antes de registrar</button>
@@ -1128,10 +1169,59 @@ function vpRevisar() {
             (primeiraData ? ', 1ª parcela em ' + primeiraData : '') + '</p>');
     }
 
+    if (document.getElementById('vp-modelo').value === 'posse') {
+        var prazoEl = document.querySelector('[name="posse[prazo_quitacao_meses]"]');
+        var servEl = document.querySelector('[name="posse[servico_quitacao]"]');
+        var comEl = document.querySelector('[name="posse[comissao_aplicavel]"]');
+        linhas.unshift('<p><strong>🤝 Contrato:</strong> Transferência de Posse</p>');
+        linhas.push('<p><strong>🏦 Quitação do financiamento:</strong> pelo comprador, em até ' + vpEsc((prazoEl && prazoEl.value) || '15') + ' meses' +
+            (servEl && servEl.value === 'sim' ? ' — com serviço de negociação da Fastcar (+ R$ 1.000,00)' : ' — sem o serviço de negociação') + '</p>');
+        linhas.push('<p><strong>💼 Comissão de 15% da FIPE:</strong> ' + (comEl && comEl.value === 'nao' ? 'não se aplica' : 'sim') + '</p>');
+        linhas.push('<p><strong>🤝 Vendedor/cedente (FASTCAR assina por procuração):</strong> ' + document.getElementById('vp-cedente-box').innerHTML + '</p>');
+    } else {
+        linhas.unshift('<p><strong>💳 Contrato:</strong> Venda na Promissória</p>');
+    }
+
     document.getElementById('vp-resumo-conteudo').innerHTML = linhas.join('');
     document.getElementById('vp-step-1').style.display = 'none';
     document.getElementById('vp-step-2').style.display = '';
 }
+
+// 09/11/2026 — o mesmo modal atende Promissória e Transferência de Posse.
+var vpCedentes = <?= json_encode($cedentePorVeiculo, JSON_UNESCAPED_UNICODE) ?>;
+function vpAbrirModo(modo) {
+    var dlg = document.getElementById('modal-promissoria');
+    document.getElementById('vp-modelo').value = modo;
+    dlg.classList.toggle('modo-posse', modo === 'posse');
+    vpVoltarEditar();
+    vpAtualizarCedente();
+    dlg.showModal();
+}
+function vpAtualizarCedente() {
+    var box = document.getElementById('vp-cedente-box');
+    if (!box) return;
+    if (document.getElementById('vp-check-novo').checked) {
+        var nomeNovo = (document.querySelector('[name="vendedor_nome"]') || {}).value || '';
+        box.className = 'vp-cedente-box';
+        box.innerHTML = nomeNovo ? '✍️ <strong>' + vpEsc(nomeNovo) + '</strong> (vendedor do veículo novo) — complete o CPF dele no cadastro do cliente antes de gerar o contrato.'
+                                 : 'Preencha o nome do vendedor/origem acima — ele é o cedente (a FASTCAR assina por ele, com procuração).';
+        return;
+    }
+    var sel = document.getElementById('vp-select-veiculo');
+    var c = sel && sel.value ? vpCedentes[sel.value] : null;
+    if (!c) { box.className = 'vp-cedente-box'; box.textContent = 'Escolha o veículo pra ver quem é o vendedor/cedente (dono original).'; return; }
+    if (!c.nome) {
+        box.className = 'vp-cedente-box falta';
+        box.innerHTML = '⚠️ Esse veículo está sem dono original identificado — sem cedente não dá pra gerar este contrato. Use a Promissória ou complete o cadastro do cliente da compra.';
+        return;
+    }
+    box.className = 'vp-cedente-box' + (c.cpf ? '' : ' falta');
+    box.innerHTML = '🤝 <strong>' + vpEsc(c.nome) + '</strong>' + (c.cpf ? ' — CPF ' + vpEsc(c.cpf) : ' — ⚠️ sem CPF no cadastro (complete antes de gerar o contrato)') + '<br><small>Não assina: a FASTCAR assina por ele (procuração). Assinam o comprador (fica com a posse e quita no prazo), a FASTCAR e as testemunhas.</small>';
+}
+document.addEventListener('change', function (ev) {
+    if (ev.target && (ev.target.id === 'vp-select-veiculo' || ev.target.id === 'vp-check-novo' || ev.target.name === 'vendedor_nome')) vpAtualizarCedente();
+});
+document.addEventListener('DOMContentLoaded', vpAtualizarCedente);
 
 function vpVoltarEditar() {
     document.getElementById('vp-step-2').style.display = 'none';
@@ -1578,6 +1668,7 @@ if ($podeSelecionarEmMassa):
                 <td>
                     <span class="badge"><?= e(etapaVendaLabel($v['etapa'], $v['tipo_contrato'] ?? 'venda')) ?></span>
                     <?php if (($v['tipo_contrato'] ?? 'venda') === 'locacao'): ?><br><span class="badge badge-info">🔑 Locação</span><?php endif; ?>
+                    <?php if (vendaEhPosse($v)): ?><br><span class="badge badge-info">🤝 Posse</span><?php endif; ?>
                     <?php if ($atrasada): ?><br><span class="badge badge-atraso">⚠️ atrasada</span><?php endif; ?>
                     <?php if (!empty($v['visita_compareceu_em'])): ?>
                         <br><span class="badge badge-ok">🏁 veio na loja</span>
