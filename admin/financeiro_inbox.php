@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/wpp_preview.php';
 require_once __DIR__ . '/../includes/financeiro_inbox.php';
 requireAcessoFinanceiro();
 
@@ -152,6 +153,9 @@ if ($telefoneAtivo && !$contatoAtivo && usuarioPodeVerConversaFinanceiro($telefo
     .wpp-voltar-mobile { display: inline-block; margin-right: 10px; }
 }
 </style>
+<script>
+<?= wppPreviewJs() ?>
+</script>
 </head>
 <body class="<?= ($telefoneAtivo && $contatoAtivo) ? 'wpp-tem-conversa' : '' ?>">
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
@@ -181,8 +185,7 @@ if ($telefoneAtivo && !$contatoAtivo && usuarioPodeVerConversaFinanceiro($telefo
                         </div>
                         <div class="preview">
                             <?= $c['ultima_direcao'] === 'out' ? '✓ ' : '' ?>
-                            <?= $c['ultima_tipo'] !== 'text' ? '📎 ' : '' ?>
-                            <?= e(mb_strimwidth($c['ultima_mensagem'], 0, 60, '…')) ?>
+                            <?= wppPreviewHtml((string)$c['ultima_tipo'], (string)$c['ultima_mensagem']) ?>
                         </div>
                         <div class="quando">
                             <?= date('d/m H:i', strtotime($c['ultima_em'])) ?>
@@ -357,7 +360,6 @@ if ($telefoneAtivo && !$contatoAtivo && usuarioPodeVerConversaFinanceiro($telefo
                     var a = document.createElement('a');
                     a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '');
                     a.href = '?telefone=' + encodeURIComponent(c.telefone);
-                    var preview = c.ultima_mensagem.length > 60 ? c.ultima_mensagem.slice(0, 60) + '…' : c.ultima_mensagem;
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.nome || c.telefone).slice(0, 1).toUpperCase());
                     var atrasadoHtml = parseFloat(c.total_atrasado) > 0
@@ -367,7 +369,7 @@ if ($telefoneAtivo && !$contatoAtivo && usuarioPodeVerConversaFinanceiro($telefo
                         '<div class="wpp-corpo">' +
                         '<div class="nome"><span>' + escapeHtml(c.nome || c.telefone) + '</span>' +
                         (c.nao_lidas > 0 ? '<span class="wpp-badge">' + c.nao_lidas + '</span>' : '') + '</div>' +
-                        '<div class="preview">' + (c.ultima_direcao === 'out' ? '✓ ' : '') + (c.ultima_tipo !== 'text' ? '📎 ' : '') + escapeHtml(preview) + '</div>' +
+                        '<div class="preview">' + (c.ultima_direcao === 'out' ? '✓ ' : '') + wppPreviewHtml(c.ultima_tipo, c.ultima_mensagem) + '</div>' +
                         '<div class="quando">' + quando + atrasadoHtml + '</div>' +
                         '</div>';
                     lista.appendChild(a);

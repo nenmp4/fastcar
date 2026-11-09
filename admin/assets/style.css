@@ -26,6 +26,10 @@
     --amarelo-bg: #fffbeb;
     --laranja: #c2410c;
     --laranja-bg: #fff2e8;
+    --roxo: #6d28d9;
+    --roxo-bg: #ede9fe;
+    --rosa: #be185d;
+    --rosa-bg: #fce7f3;
     --raio: 14px;
     --raio-sm: 9px;
     --sombra: 0 1px 2px rgba(10, 18, 41, .05), 0 1px 3px rgba(10, 18, 41, .07);
@@ -939,3 +943,11 @@ main { min-width: 0; }
 @media (min-width: 701px) {
     .card:has(> table), .card:has(> form > table) { overflow-x: auto; }
 }
+
+/* Selo de mídia na lista de conversas dos WhatsApp Box (09/11/2026) */
+.wpp-tipo-midia { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .78rem; font-weight: 700; line-height: 1.5; vertical-align: 1px; white-space: nowrap; }
+.wpp-tipo-audio    { background: var(--roxo-bg); color: var(--roxo); }
+.wpp-tipo-image    { background: var(--azul-claro); color: var(--azul-escuro); }
+.wpp-tipo-video    { background: var(--rosa-bg); color: var(--rosa); }
+.wpp-tipo-document { background: var(--laranja-bg); color: var(--laranja); }
+.wpp-tipo-sticker, .wpp-tipo-outro { background: var(--fundo); color: var(--texto-suave); border: 1px solid var(--borda); }
