@@ -167,7 +167,7 @@ function salvarUploadDocumentoVenda(int $vendaId, string $tipo, array $arquivo, 
         return ['ok' => false, 'erro' => 'Falha no envio do arquivo (tente novamente).'];
     }
     if ($arquivo['size'] > UPLOAD_MAX_BYTES) {
-        return ['ok' => false, 'erro' => 'Arquivo maior que 10MB.'];
+        return ['ok' => false, 'erro' => 'Arquivo maior que ' . (int)(UPLOAD_MAX_BYTES / 1024 / 1024) . 'MB.'];
     }
 
     // Nunca confiar no Content-Type que o navegador manda.

@@ -65,7 +65,7 @@ const TIPOS_DOCUMENTOS_FECHAMENTO = [
 const TIPOS_DOCUMENTOS_FECHAMENTO_OPCIONAIS = ['comprovante_pagamento', 'laudo_avaliacao', 'procuracao', 'consulta_debitos'];
 
 define('UPLOADS_DIR', dirname(__DIR__) . '/storage/uploads');
-const UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+const UPLOAD_MAX_BYTES = 40 * 1024 * 1024; // 40MB (09/11/2026: era 10MB — procuração/contrato escaneado passava disso)
 const UPLOAD_MIME_PERMITIDOS = [
     'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf',
 ];
@@ -225,7 +225,7 @@ function salvarUploadDocumento(int $oportunidadeId, string $tipo, array $arquivo
         return ['ok' => false, 'erro' => 'Falha no envio do arquivo (tente novamente).'];
     }
     if ($arquivo['size'] > UPLOAD_MAX_BYTES) {
-        return ['ok' => false, 'erro' => 'Arquivo maior que 10MB.'];
+        return ['ok' => false, 'erro' => 'Arquivo maior que ' . (int)(UPLOAD_MAX_BYTES / 1024 / 1024) . 'MB.'];
     }
 
     // Nunca confiar no Content-Type que o navegador manda — detecta de

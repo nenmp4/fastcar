@@ -140,6 +140,9 @@ function extracaoDocumentoPrompt(string $tipo): string {
 function extrairDadosDocumentoComIA(string $tipo, array $arquivo): array {
     $campos = EXTRACAO_DOCUMENTO_CAMPOS[$tipo] ?? [];
     if (!$campos) return [];
+    // 09/11/2026 — upload subiu pra 40MB; o Gemini só aceita mídia inline até
+    // ~20MB. Arquivo maior é salvo normal, só não passa pela leitura da IA.
+    if (strlen((string)($arquivo['content'] ?? '')) > 18 * 1024 * 1024) return [];
 
     $geminiKey = getConfig('gemini_api_key') ?: '';
     if (!$geminiKey) return [];
