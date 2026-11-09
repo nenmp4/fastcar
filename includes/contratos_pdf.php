@@ -257,7 +257,24 @@ function _pdfContarLinhas(FPDF $pdf, string $texto, float $largura): int {
  * "Seguro/proteção durante posse FASTCAR" — todos valores de negociação
  * que podem crescer, não é caso raro).
  */
+/**
+ * Valor do Quadro-Resumo que ficou sem preencher (09/11/2026, "campos que não
+ * é preenchido não aparecer no contrato"): vazio, só traços/barras
+ * ("— / — / —"), ou texto de pendência ("não aplicável", "a informar", "a
+ * definir...", "não informado"). Linha assim nem sai no PDF. Valor
+ * parcialmente preenchido ("ABC1D23 / — / 9BW...") continua aparecendo.
+ */
+function _pdfValorVazio(string $valor): bool {
+    $t = mb_strtolower(trim($valor));
+    if (preg_replace('/[\s\/\-\x{2014}\x{2013}\x{00B7}.,:]+/u', '', $t) === '') return true;
+    foreach (['não aplicável', 'nao aplicavel', 'a informar', 'a definir', 'não informad', 'fipe de referência não informada'] as $pend) {
+        if (str_starts_with($t, $pend)) return true;
+    }
+    return false;
+}
+
 function _pdfLinhaResumo(FPDF $pdf, string $label, string $valor): void {
+    if (_pdfValorVazio($valor)) return;
     $largura = 85;
     $larguraUtil = $largura - 2; // ~1mm de margem de cada lado, mesmo espírito do cMargin padrão do FPDF
     $alturaLinha = 4.2;
@@ -700,7 +717,7 @@ function gerarPdfContratoVenda(array $c): string {
 
     $secao('ENTRADA E COMISSÃO');
     _pdfLinhaResumo($pdf, 'Preço do veículo', _fmtMoeda($c['preco_venda']));
-    _pdfLinhaResumo($pdf, 'Comissão de intermediação, se aplicável', $q['comissao'] !== null
+    _pdfLinhaResumo($pdf, 'Comissão de intermediação', $q['comissao'] !== null
         ? PROMISSORIA_COMISSAO_PCT . '% da FIPE: ' . _fmtMoeda($q['comissao'])
         : ($q['comissao_aplicavel'] ? 'FIPE de referência não informada' : $na));
     _pdfLinhaResumo($pdf, 'Entrada total e forma de pagamento', _fmtMoeda((float)$c['valor_pago_contratacao']) . ' / ' . ($c['forma_pagamento'] ?: '—'));
@@ -726,7 +743,7 @@ function gerarPdfContratoVenda(array $c): string {
     if ($q['comissao_a_pagar'] !== null && $q['comissao_a_pagar'] > 0) {
         $comissaoPagar = _fmtMoeda($q['comissao_a_pagar']) . ' / ' . $data($p['comissao_saldo_vencimento'] ?? null);
     }
-    _pdfLinhaResumo($pdf, 'Comissão ainda a pagar, se houver / vencimento', $comissaoPagar);
+    _pdfLinhaResumo($pdf, 'Comissão ainda a pagar / vencimento', $comissaoPagar);
 
     $secao('PARCELAMENTO');
     $semanal = ($c['parcelamento_periodicidade'] ?? 'mensal') === 'semanal';
@@ -739,7 +756,7 @@ function gerarPdfContratoVenda(array $c): string {
     } else {
         _pdfLinhaResumo($pdf, 'Número de parcelas / valor de cada parcela', 'a definir — parcelamento ainda não gerado');
     }
-    _pdfLinhaResumo($pdf, 'Saldo final adicional, se houver / vencimento', $q['saldo_final'] !== null
+    _pdfLinhaResumo($pdf, 'Saldo final adicional / vencimento', $q['saldo_final'] !== null
         ? _fmtMoeda($q['saldo_final']) . ' / ' . $data($p['saldo_final_vencimento'] ?? null) : $na);
     _pdfLinhaResumo($pdf, 'Total a pagar pelo comprador, inclusive comissão', _fmtMoeda($q['total_a_pagar']));
     if (!empty($c['multa_atraso_parcelas_texto'])) {
@@ -760,7 +777,7 @@ function gerarPdfContratoVenda(array $c): string {
     $pdf->MultiCell(0, 4.5, _pdfTexto(
         'O Quadro-Resumo integra este contrato e deverá ser preenchido antes da assinatura quanto às condições ' .
         'essenciais. A entrega efetiva e a vistoria serão confirmadas por escrito no momento da entrega. Campos não ' .
-        'aplicáveis serão identificados como tal. Havendo divergência, prevalecerá o dado específico regularmente ' .
+        'aplicáveis não constam do Quadro-Resumo. Havendo divergência, prevalecerá o dado específico regularmente ' .
         'preenchido, respeitadas as normas cogentes.'
     ));
 
@@ -873,7 +890,7 @@ function gerarPdfContratoPosse(array $c): string {
 
     $secao('ENTRADA E COMISSÃO');
     _pdfLinhaResumo($pdf, 'Preço da cessão onerosa da posse', _fmtMoeda($c['preco_venda']));
-    _pdfLinhaResumo($pdf, 'Comissão de intermediação, se aplicável', $q['comissao'] !== null
+    _pdfLinhaResumo($pdf, 'Comissão de intermediação', $q['comissao'] !== null
         ? PROMISSORIA_COMISSAO_PCT . '% da FIPE: ' . _fmtMoeda($q['comissao'])
         : ($q['comissao_aplicavel'] ? 'FIPE de referência não informada' : $na));
     _pdfLinhaResumo($pdf, 'Entrada total e forma de pagamento', _fmtMoeda((float)$c['valor_pago_contratacao']) . ' / ' . ($c['forma_pagamento'] ?: '—'));
@@ -894,7 +911,7 @@ function gerarPdfContratoPosse(array $c): string {
     }
     _pdfLinhaResumo($pdf, 'Comissão abatida da entrada', $q['comissao_abatida'] !== null ? _fmtMoeda($q['comissao_abatida']) : $na);
     _pdfLinhaResumo($pdf, 'Saldo líquido da entrada destinado ao preço', _fmtMoeda($q['saldo_liquido_entrada']));
-    _pdfLinhaResumo($pdf, 'Comissão ainda a pagar, se houver / vencimento', ($q['comissao_a_pagar'] !== null && $q['comissao_a_pagar'] > 0)
+    _pdfLinhaResumo($pdf, 'Comissão ainda a pagar / vencimento', ($q['comissao_a_pagar'] !== null && $q['comissao_a_pagar'] > 0)
         ? _fmtMoeda($q['comissao_a_pagar']) . ' / ' . $data($p['comissao_saldo_vencimento'] ?? null) : $na);
 
     $secao('PARCELAMENTO');
@@ -907,7 +924,7 @@ function gerarPdfContratoPosse(array $c): string {
     } else {
         _pdfLinhaResumo($pdf, 'Número de parcelas / valor de cada parcela', 'a definir — parcelamento ainda não gerado');
     }
-    _pdfLinhaResumo($pdf, 'Saldo final adicional, se houver / vencimento', $q['saldo_final'] !== null
+    _pdfLinhaResumo($pdf, 'Saldo final adicional / vencimento', $q['saldo_final'] !== null
         ? _fmtMoeda($q['saldo_final']) . ' / ' . $data($p['saldo_final_vencimento'] ?? null) : $na);
     _pdfLinhaResumo($pdf, 'Total a pagar pelo cessionário, inclusive comissão e serviço opcional se contratado',
         _fmtMoeda($q['total_a_pagar']) . ($q['servico_quitacao'] ? ' (inclui R$ 1.000,00 do serviço de negociação da quitação)' : ''));
@@ -953,7 +970,7 @@ function gerarPdfContratoPosse(array $c): string {
     $pdf->MultiCell(0, 4.5, _pdfTexto(
         'O Quadro-Resumo integra este contrato e deverá ser preenchido antes da assinatura quanto às condições ' .
         'essenciais. A entrega efetiva e a vistoria serão confirmadas por escrito no momento da entrega. Campos não ' .
-        'aplicáveis serão identificados como tal. Havendo divergência, prevalecerá o dado específico regularmente ' .
+        'aplicáveis não constam do Quadro-Resumo. Havendo divergência, prevalecerá o dado específico regularmente ' .
         'preenchido, respeitadas as normas cogentes.'
     ));
 
@@ -1249,7 +1266,7 @@ function gerarPdfContratoLocacao(array $c): string {
     } else {
         _pdfLinhaResumo($pdf, 'Vencimento', $v('vencimento_dia') !== '—' ? 'dia ' . $v('vencimento_dia') . ' de cada mês' : '—');
     }
-    _pdfLinhaResumo($pdf, 'Caução/garantia, se houver', $caucao);
+    _pdfLinhaResumo($pdf, 'Caução/garantia', $caucao);
     _pdfLinhaResumo($pdf, 'Franquia de quilometragem', $v('franquia_km') !== '—' ? $v('franquia_km') . ' km por ' . $v('franquia_periodo', $semanal ? 'semana' : 'mês') : '—');
     _pdfLinhaResumo($pdf, 'Km excedente', isset($l['km_excedente_valor']) ? _fmtMoeda((float)$l['km_excedente_valor']) . '/km' : '—');
     _pdfLinhaResumo($pdf, 'IPVA', 'Responsável: ' . $v('ipva_resp'));
@@ -1263,7 +1280,7 @@ function gerarPdfContratoLocacao(array $c): string {
     _pdfLinhaResumo($pdf, 'Uso autorizado', $marca($uso === 'pessoal') . ' pessoal  ' . $marca($uso === 'profissional') . ' profissional  ' . $marca($uso === 'aplicativo') . ' aplicativo  ' . $marca($uso === 'outro') . ' outro' . ($uso === 'outro' && !empty($l['uso_outro']) ? ': ' . $l['uso_outro'] : ''));
     _pdfLinhaResumo($pdf, 'Aviso prévio para devolução', $v('aviso_previo_dias') !== '—' ? $v('aviso_previo_dias') . ' dias' : '—');
     _pdfLinhaResumo($pdf, 'Encargos de mora', 'multa ' . $v('mora_multa_pct') . '% | juros ' . $v('mora_juros') . ' | atualização ' . $v('mora_atualizacao'));
-    _pdfLinhaResumo($pdf, 'Multa por saída antecipada, se aplicável', $v('multa_saida_antecipada'));
+    _pdfLinhaResumo($pdf, 'Multa por saída antecipada', $v('multa_saida_antecipada'));
     _pdfLinhaResumo($pdf, 'Prazo para devolução após resolução', $v('prazo_devolucao_resolucao'));
     $emailCorp = (function_exists('getConfig') ? (string)getConfig('email_from') : '') ?: 'contato@fastcar.solutions';
     _pdfLinhaResumo($pdf, 'Canal oficial FASTCAR', 'WhatsApp ' . $v('canal_whatsapp') . ' | e-mail ' . $emailCorp);
