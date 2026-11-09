@@ -40,7 +40,7 @@ $ids = array_keys($msgs + $funil);
 foreach ($nomes as $uid => $u) if ($u['perfil'] === 'consultor' && !(int)$u['bloqueado']) $ids[] = $uid;
 $linhas = [];
 foreach (array_unique($ids) as $uid) {
-    if (!isset($nomes[$uid])) continue;
+    if (!isset($nomes[$uid]) || $nomes[$uid]['perfil'] !== 'consultor') continue; // só consultores (09/11/2026)
     $f = $funil[$uid] ?? ['leads' => 0, 'fechadas' => 0, 'valor' => 0.0, 'perdidas' => 0];
     $m = $msgs[$uid] ?? ['enviadas' => 0, 'clientes_distintos' => 0, 'ultima_mensagem' => null];
     $decididas = $f['fechadas'] + $f['perdidas'];

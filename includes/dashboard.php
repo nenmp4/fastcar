@@ -445,13 +445,14 @@ function filtroGestaoForm(string $acao, array $manter, string $temp, string $per
  * cada consultor fechou esse mês, só pra super admin"). Mesmo critério do
  * card "Fechadas este mês" (dashboardSuperAdmin): etapa 'fechado', data_compra
  * no mês, sem cadastro duplicado mesclado. Dono = quem fechou (fechado_por),
- * caindo pro responsável quando vazio.
+ * caindo pro responsável quando vazio. Só usuários com perfil consultor
+ * ("só usuários consultores", 09/11/2026).
  */
 function dashboardFechadasPorConsultorMes(): array {
     return getDB()->query("
         SELECT u.id, u.nome, COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total
         FROM oportunidades o
-        JOIN usuarios u ON u.id = COALESCE(o.fechado_por, o.responsavel_id)
+        JOIN usuarios u ON u.id = COALESCE(o.fechado_por, o.responsavel_id) AND u.perfil = 'consultor'
         WHERE o.etapa = 'fechado'
           AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
           AND o.data_compra >= date('now','localtime','start of month')
