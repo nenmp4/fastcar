@@ -1497,8 +1497,51 @@ function encerrarLeadsSemResposta(): array {
             null,
             false
         );
+        redistribuirEncerradoAutomatico((int)$op['id']);
         $encerrados[] = (int)$op['id'];
     }
 
     return ['encerrados' => count($encerrados), 'ids' => $encerrados, 'total_candidatos' => count($candidatos)];
+}
+
+/**
+ * Lead encerrado sozinho por silêncio vai pra OUTRO consultor (09/11/2026,
+ * "os leads que irão pra essa pasta redistribuir pra consultores
+ * diferentes") — olhar novo no follow-up (aba "🤖 Encerrados sem
+ * resposta"). Escolhe o consultor ativo, diferente do atual, com MENOS
+ * encerrados automáticos na carteira (espalha por igual). Sem outro
+ * consultor, fica com quem estava. Grava no histórico. Best-effort.
+ */
+function redistribuirEncerradoAutomatico(int $oportunidadeId): ?int {
+    try {
+        $db = getDB();
+        $st = $db->prepare("SELECT responsavel_id, etapa FROM oportunidades WHERE id = ?");
+        $st->execute([$oportunidadeId]);
+        $op = $st->fetch();
+        if (!$op) return null;
+        $atual = $op['responsavel_id'] ? (int)$op['responsavel_id'] : 0;
+        $st = $db->prepare("
+            SELECT u.id, u.nome,
+                   (SELECT COUNT(*) FROM oportunidades o2
+                    WHERE o2.responsavel_id = u.id AND o2.etapa = 'perdido'
+                      AND o2.motivo_perda LIKE '%encerrado automaticamente%') AS carga
+            FROM usuarios u
+            WHERE u.perfil = 'consultor' AND u.bloqueado = 0 AND u.id != ?
+            ORDER BY carga ASC, u.id ASC
+            LIMIT 1
+        ");
+        $st->execute([$atual]);
+        $novo = $st->fetch();
+        if (!$novo) return null;
+        $db->prepare("UPDATE oportunidades SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+            ->execute([(int)$novo['id'], $oportunidadeId]);
+        $db->prepare("
+            INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+            VALUES (?, ?, ?, ?, ?)
+        ")->execute([$oportunidadeId, $op['etapa'], $op['etapa'],
+            'Encerrado sem resposta — redistribuído pra ' . $novo['nome'] . ' fazer o follow-up (outro consultor).', (int)$novo['id']]);
+        return (int)$novo['id'];
+    } catch (Throwable $e) {
+        return null;
+    }
 }
