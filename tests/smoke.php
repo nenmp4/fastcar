@@ -599,9 +599,11 @@ if ($confirmNativo) {
 // chamar zapiEnviarTexto()/zapiEnviarImagem() direto pro cliente, nem
 // existir sem referenciar o gate — regressão aqui reabriria exatamente o
 // padrão que causou o banimento.
+// 09/11/2026: cron/followup.php saiu da lista — o follow-up da qualificação
+// passou a sair pelo mesmo número da conversa (decisão do usuário), com as
+// travas próprias em includes/followup_qualificacao.php (guard abaixo).
 $arquivosEnvioAtivo = [
     $root . '/includes/recuperacao_leads.php',
-    $root . '/cron/followup.php',
 ];
 $regressaoEnvioAtivo = [];
 foreach ($arquivosEnvioAtivo as $arqEnvio) {
@@ -618,8 +620,16 @@ foreach ($arquivosEnvioAtivo as $arqEnvio) {
 if ($regressaoEnvioAtivo) {
     falha('[envio-ativo-sem-gate-conformidade] ' . implode('; ', $regressaoEnvioAtivo));
 } else {
-    ok('[envio-ativo-sem-gate-conformidade] os 2 pontos de envio ativo automático passam pelo gate de conformidade');
+    ok('[envio-ativo-sem-gate-conformidade] recuperação de leads passa pelo gate de conformidade');
 }
+$fuq = (string)@file_get_contents($root . '/includes/followup_qualificacao.php');
+$faltaFuq = [];
+foreach (['optout' => 'opt-out (SAIR)', 'iaPausada(' => 'IA pausada', 'automacaoDentroHorarioComercial(' => 'horário comercial',
+          'FOLLOWUP_QUALIF_MAX_TENTATIVAS' => 'máximo de tentativas', 'FOLLOWUP_QUALIF_LIMITE_DIA' => 'limite diário'] as $marca => $rotulo) {
+    if (!str_contains($fuq, $marca)) $faltaFuq[] = $rotulo;
+}
+$faltaFuq ? falha('[followup-qualificacao-sem-trava] includes/followup_qualificacao.php perdeu trava: ' . implode(', ', $faltaFuq))
+          : ok('[followup-qualificacao-sem-trava] follow-up da qualificação mantém opt-out, IA pausada, horário, tentativas e limite diário');
 if (!str_contains((string)file_get_contents($root . '/includes/whatsapp_conformidade.php'), 'function podeEnviarAtivo(')) {
     falha('[envio-ativo-sem-gate-conformidade] podeEnviarAtivo() não existe mais em includes/whatsapp_conformidade.php');
 } else {

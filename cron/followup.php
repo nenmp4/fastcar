@@ -152,79 +152,14 @@ foreach ($quentesParados as $op) {
     setConfig($guardKey, date('Y-m-d H:i:s'));
 }
 
-// ── 3. Reengajamento — lead esfriando sem responsável ainda ─────────────────
-// 30/09/2026 — passou a usar o gate central de conformidade
-// (includes/whatsapp_conformidade.php::enviarAtivoComGate()), depois da
-// conta Meta ter sido desativada permanentemente por "disparo em massa
-// sem consentimento". Substitui o hardcode isolado de mais cedo hoje
-// ($FOLLOWUP_REENGAJAMENTO_LEAD_ATIVO) — o comportamento observável
-// continua idêntico (0 mensagens saem, já que `whatsapp_envio_ativo`
-// nasce desligado), mas agora por um único mecanismo reutilizável,
-// testável e auditável (whatsapp_envios_log), que pode ser religado
-// deliberadamente em Configurações com todos os limites valendo (opt-in,
-// 1/contato/7 dias, 2 tentativas totais, horário comercial, limite
-// diário, circuit breaker de falha). Dedup antigo por `reeng_sent_*` em
-// config e o horário comercial checado aqui foram substituídos — o gate
-// já cobre os dois.
-//
-// Oportunidade ainda na entrada do funil (bot/IA), sem mensagem nova do
-// cliente há 30-120min, sem responsável humano assumido ainda — mesma
-// janela usada desde sempre neste bloco.
-$esfriando = $db->query("
-    SELECT o.id, c.id as cliente_id, c.nome, c.telefone,
-           (SELECT MAX(created_at) FROM whatsapp_mensagens m WHERE m.telefone = c.telefone AND m.direcao='in') as ultima_msg_in,
-           (SELECT MAX(created_at) FROM whatsapp_mensagens m WHERE m.telefone = c.telefone AND m.direcao='out') as ultima_msg_out
-    FROM oportunidades o
-    JOIN clientes c ON c.id = o.cliente_id
-    WHERE o.etapa IN ('whatsapp','qualificacao_ia')
-      AND o.responsavel_id IS NULL
-")->fetchAll();
-
-$reengajados = 0;
-foreach ($esfriando as $op) {
-    if (!$op['ultima_msg_in']) continue;
-
-    $minutosParado = (time() - strtotime($op['ultima_msg_in'])) / 60;
-    $respondeuDepois = $op['ultima_msg_out'] && strtotime($op['ultima_msg_out']) > strtotime($op['ultima_msg_in']);
-
-    // Só considera candidato quem parou de responder entre 30 e 120 min
-    // atrás e ainda não recebeu resposta nossa depois da última mensagem
-    // dele — pré-filtro barato antes de gastar uma chamada do gate
-    // (rate-limit/horário/opt-in já cobertos lá, mas não faz sentido nem
-    // chegar no gate pra quem não está na janela certa de "esfriando").
-    if ($minutosParado < 30 || $minutosParado > 120 || $respondeuDepois) continue;
-
-    // Variações (21/09/2026, mesmo racional de RECUPERACAO_MSGS_REENGAJAMENTO
-    // em includes/recuperacao_leads.php) — esse reengajamento roda o tempo
-    // todo, não só numa campanha pontual, então frase idêntica repetida ao
-    // longo do tempo também soma pro mesmo risco de padrão de antispam.
-    $nome = $op['nome'] ?: '';
-    $msg = $nome
-        ? variarMensagem([
-            "Oi {$nome}! Vi que a conversa ficou pela metade — ainda tá pensando em vender o veículo? Se quiser continuar é só me responder por aqui. 🙂",
-            "Olá {$nome}, tudo bem? Percebi que nossa conversa parou no meio — ainda tem interesse em vender o veículo? Fico no aguardo!",
-            "Oi {$nome}! Ficamos sem resposta por aqui — você ainda pretende vender o carro? Se sim, é só me chamar que a gente continua 😊",
-            "Olá {$nome}! Vi que ficou pendente nossa conversa — ainda está pensando em vender o veículo? Me conta quando puder!",
-        ])
-        : variarMensagem([
-            "Oi! Vi que a conversa ficou pela metade — ainda tá pensando em vender o veículo? Se quiser continuar é só me responder por aqui. 🙂",
-            "Olá, tudo bem? Percebi que nossa conversa parou no meio — ainda tem interesse em vender o veículo? Fico no aguardo!",
-            "Oi! Ficamos sem resposta por aqui — você ainda pretende vender o carro? Se sim, é só me chamar que a gente continua 😊",
-            "Olá! Vi que ficou pendente nossa conversa — ainda está pensando em vender o veículo? Me conta quando puder!",
-        ]);
-
-    $ok = enviarAtivoComGate($op['cliente_id'], $op['telefone'], $msg, 'followup_reengajamento');
-    log_followup(($ok ? '✅' : '⏭️') . " Reengajamento → oportunidade #{$op['id']} ({$op['telefone']})");
-    if ($ok) {
-        // Fica no histórico igual qualquer outra mensagem enviada ao cliente
-        // (senão o consultor que assumir depois vê a resposta do cliente
-        // sem a pergunta que a gerou, e o admin/oportunidade.php não mostra
-        // que esse toque saiu).
-        registrarMensagem($op['telefone'], 'out', $msg, null, true);
-        $reengajados++;
-    }
-}
-log_followup("{$reengajados} reengajamento(s) enviado(s).");
+// ── 3. Follow-up da qualificação (09/11/2026) ───────────────────────────────
+// Lead que parou de responder enquanto a IA qualificava: até 3 tentativas
+// (2h, 4h, 6h), pelo mesmo número da conversa, só no horário comercial.
+// Regras e travas em includes/followup_qualificacao.php. Substitui o
+// reengajamento antigo (enviarAtivoComGate), que nunca saía na prática.
+require_once ROOT . '/includes/followup_qualificacao.php';
+$reengajados = processarFollowupQualificacao('log_followup');
+log_followup("{$reengajados} follow-up(s) da qualificação enviado(s).");
 
 log_followup('Concluído.');
 setConfig('followup_ultimo_run', date('Y-m-d H:i:s'));
