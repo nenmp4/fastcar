@@ -495,3 +495,45 @@ function produtividadeFunilPorConsultor(int $dias): array {
     foreach ($st->fetchAll() as $r) $add((int)$r['u'], 'perdidas', (int)$r['n']);
     return $out;
 }
+
+/**
+ * Produtividade dos VENDEDORES (09/11/2026, "em relatórios exibir os
+ * vendedores produtividade") — espelha produtividadeFunilPorConsultor() pro
+ * funil de revenda: leads = negociações recebidas no período; vendidas =
+ * etapa 'vendido' com data_venda no período (locação contada à parte);
+ * valor = preco_venda; perdidas = canceladas/sem perfil no período;
+ * mensagens = enviadas à mão pelo WhatsApp de vendas (canal 'vendas').
+ * @return array<int, array{leads:int, vendidas:int, locacoes:int, valor:float, perdidas:int, enviadas:int, clientes_distintos:int, ultima_mensagem:?string}>
+ */
+function produtividadeFunilPorVendedor(int $dias): array {
+    $db = getDB();
+    $desde = $dias === 1 ? date('Y-m-d') : date('Y-m-d', strtotime('-' . ($dias - 1) . ' days'));
+    $out = [];
+    $add = function (int $uid, string $campo, $v) use (&$out) {
+        if (!isset($out[$uid])) $out[$uid] = ['leads' => 0, 'vendidas' => 0, 'locacoes' => 0, 'valor' => 0.0, 'perdidas' => 0,
+            'enviadas' => 0, 'clientes_distintos' => 0, 'ultima_mensagem' => null];
+        $out[$uid][$campo] = $v;
+    };
+    $st = $db->prepare("SELECT responsavel_id AS u, COUNT(*) AS n FROM vendas WHERE responsavel_id IS NOT NULL AND date(created_at) >= ? GROUP BY responsavel_id");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) $add((int)$r['u'], 'leads', (int)$r['n']);
+    $st = $db->prepare("SELECT responsavel_id AS u,
+            SUM(CASE WHEN tipo_contrato = 'locacao' THEN 0 ELSE 1 END) AS n,
+            SUM(CASE WHEN tipo_contrato = 'locacao' THEN 1 ELSE 0 END) AS loc,
+            COALESCE(SUM(CASE WHEN tipo_contrato = 'locacao' THEN 0 ELSE preco_venda END), 0) AS v
+        FROM vendas WHERE etapa = 'vendido' AND responsavel_id IS NOT NULL AND data_venda >= ? GROUP BY responsavel_id");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) {
+        $add((int)$r['u'], 'vendidas', (int)$r['n']); $add((int)$r['u'], 'locacoes', (int)$r['loc']); $add((int)$r['u'], 'valor', (float)$r['v']);
+    }
+    $st = $db->prepare("SELECT responsavel_id AS u, COUNT(*) AS n FROM vendas WHERE etapa IN ('cancelada','sem_perfil') AND responsavel_id IS NOT NULL AND date(updated_at) >= ? GROUP BY responsavel_id");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) $add((int)$r['u'], 'perdidas', (int)$r['n']);
+    $st = $db->prepare("SELECT usuario_id AS u, COUNT(*) AS n, COUNT(DISTINCT telefone) AS c, MAX(created_at) AS ult
+        FROM whatsapp_mensagens WHERE canal = 'vendas' AND direcao = 'out' AND usuario_id IS NOT NULL AND date(created_at) >= ? GROUP BY usuario_id");
+    $st->execute([$desde]);
+    foreach ($st->fetchAll() as $r) {
+        $add((int)$r['u'], 'enviadas', (int)$r['n']); $add((int)$r['u'], 'clientes_distintos', (int)$r['c']); $add((int)$r['u'], 'ultima_mensagem', $r['ult']);
+    }
+    return $out;
+}
