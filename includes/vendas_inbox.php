@@ -108,7 +108,7 @@ function enviarMensagemManualVendas(string $telefone, string $texto, int $usuari
     if (!zapiEnviarTexto($telNorm, $textoAssinado, zapiCredenciaisVendas())) {
         return ['ok' => false, 'erro' => 'Falha ao enviar — confira a instância de vendas (ou o fallback Meta) em Configurações.' . whatsappDetalheUltimoErro()];
     }
-    $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
+    $id = inboxRegistrarEnviada($telNorm, $texto, 'text', $usuarioId);
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
 }
@@ -162,7 +162,7 @@ function enviarFotoManualVendas(string $telefone, string $conteudoBase64, string
     if (@is_dir(dirname(UPLOADS_DIR . '/' . $rel)) || @mkdir(dirname(UPLOADS_DIR . '/' . $rel), 0775, true)) {
         if (@file_put_contents(UPLOADS_DIR . '/' . $rel, $bytes) !== false) $arquivoUrl = $rel;
     }
-    $id = registrarMensagem($telNorm, 'out', '📷 Foto' . ($legenda !== '' ? ": {$legenda}" : ''), null, false, 'image', $usuarioId);
+    $id = inboxRegistrarEnviada($telNorm, '📷 Foto' . ($legenda !== '' ? ": {$legenda}" : ''), 'image', $usuarioId);
     _vendasInboxAnexarArquivo($id, '', $arquivoUrl);
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
@@ -225,7 +225,7 @@ function enviarFotosEstoqueVendas(string $telefone, int $oportunidadeId, array $
         if (!$ok) { $falhas++; continue; }
         $enviados++;
         $texto = ($ehVideo ? '🎥 ' : '📷 ') . ($legenda !== '' ? $legenda : 'Foto do estoque') . " ({$enviados}/{$total})";
-        $ultimoId = registrarMensagem($telNorm, 'out', $texto, null, false, $ehVideo ? 'video' : 'image', $usuarioId);
+        $ultimoId = inboxRegistrarEnviada($telNorm, $texto, $ehVideo ? 'video' : 'image', $usuarioId);
         _vendasInboxAnexarArquivo($ultimoId, (string)$m['drive_file_id'], (string)$m['arquivo_url']);
     }
     if ($enviados === 0) {
@@ -247,7 +247,7 @@ function enviarLinkEstoqueVendas(string $telefone, int $oportunidadeId, string $
     if (!zapiEnviarTexto($telNorm, trim($assinatura . "\n" . $texto), zapiCredenciaisVendas())) {
         return ['ok' => false, 'erro' => 'Falha ao enviar — confira a instância de vendas em Configurações.' . whatsappDetalheUltimoErro()];
     }
-    $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
+    $id = inboxRegistrarEnviada($telNorm, $texto, 'text', $usuarioId);
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
 }

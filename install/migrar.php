@@ -145,6 +145,8 @@ $migracoes = [
     // salva de verdade (Drive/local), não só descrita em texto pelo Gemini
     // e descartada — achado real: "mídia não estou visualizado".
     'whatsapp_mensagens.drive_file_id' => "ALTER TABLE whatsapp_mensagens ADD COLUMN drive_file_id TEXT DEFAULT ''",
+    'whatsapp_mensagens.status_entrega' => "ALTER TABLE whatsapp_mensagens ADD COLUMN status_entrega TEXT DEFAULT ''",
+    'whatsapp_mensagens.apagada_em' => "ALTER TABLE whatsapp_mensagens ADD COLUMN apagada_em DATETIME",
 
     // 16/09/2026 — nome/foto de perfil do WhatsApp cacheados no cliente
     // ("puxa foto do zap e nome"), via zapiBuscarContato()

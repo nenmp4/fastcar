@@ -258,6 +258,78 @@ function _evolutionSetUltimoErro(?string $msg): void {
     $GLOBALS['_evolution_ultimo_erro'] = $msg;
 }
 
+/**
+ * Id do WhatsApp da última mensagem enviada com sucesso (09/11/2026 — inbox
+ * precisa dele pra apagar pra todos e pra saber se o cliente leu). Resposta
+ * da Evolution traz `key.id`; quem enviou consome logo em seguida.
+ */
+$GLOBALS['_evolution_ultimo_id'] = null;
+function _evolutionGuardarIdEnviado(string $resp): void {
+    $j = json_decode($resp, true);
+    $id = is_array($j) ? ($j['key']['id'] ?? $j['id'] ?? $j['messageId'] ?? null) : null;
+    $GLOBALS['_evolution_ultimo_id'] = is_string($id) && $id !== '' ? $id : null;
+}
+function evolutionConsumirUltimoIdEnviado(): ?string {
+    $id = $GLOBALS['_evolution_ultimo_id'] ?? null;
+    $GLOBALS['_evolution_ultimo_id'] = null;
+    return $id;
+}
+
+/**
+ * Apaga pra todos uma mensagem que NÓS mandamos (09/11/2026) —
+ * DELETE /chat/deleteMessageForEveryone/{instance} {id, remoteJid, fromMe}.
+ * O WhatsApp só aceita dentro do prazo dele (~2 dias). Nunca confirmado
+ * contra a instância real — erro real fica em evolutionUltimoErro().
+ */
+function evolutionApagarParaTodos(string $phone, string $waId, ?array $credenciais = null): bool {
+    [$base, $instance, $apiKey] = $credenciais ?: evolutionCredenciais();
+    $phoneNorm = normalizarTelefone($phone);
+    if (!$base || !$instance || !$apiKey || !$waId || strlen($phoneNorm) < 12) {
+        _evolutionSetUltimoErro('Sem instância configurada, telefone inválido ou mensagem sem id do WhatsApp.');
+        return false;
+    }
+    $ch = curl_init("{$base}/chat/deleteMessageForEveryone/" . rawurlencode($instance));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_POSTFIELDS => json_encode(['id' => $waId, 'remoteJid' => $phoneNorm . '@s.whatsapp.net', 'fromMe' => true, 'participant' => '']),
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_TIMEOUT => 20,
+    ] + _evolutionCurlSslOpts());
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) { _evolutionSetUltimoErro("Falha de conexão: {$curlErr}"); return false; }
+    if ($httpCode >= 200 && $httpCode < 300) { _evolutionSetUltimoErro(null); return true; }
+    _evolutionSetUltimoErro(_evolutionErroDeResposta(json_decode((string)$resp, true), $httpCode) . ' — resposta: ' . substr((string)$resp, 0, 300));
+    return false;
+}
+
+/**
+ * Pede pro WhatsApp avisar quando o cliente fica online/digitando
+ * (09/11/2026). A Evolution assina a presença do contato ao mandar uma
+ * presença nossa; 'paused' é neutro (não mostra "digitando" pro cliente).
+ * Os avisos chegam no webhook como PRESENCE_UPDATE. Best-effort.
+ */
+function evolutionAssinarPresenca(string $phone, ?array $credenciais = null): bool {
+    [$base, $instance, $apiKey] = $credenciais ?: evolutionCredenciais();
+    $phoneNorm = normalizarTelefone($phone);
+    if (!$base || !$instance || !$apiKey || strlen($phoneNorm) < 12) return false;
+    $ch = curl_init("{$base}/chat/sendPresence/" . rawurlencode($instance));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode(['number' => $phoneNorm, 'presence' => 'paused', 'delay' => 1]),
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_TIMEOUT => 8,
+    ] + _evolutionCurlSslOpts());
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $resp !== false && $httpCode >= 200 && $httpCode < 300;
+}
+
 function _evolutionHeaders(string $apiKey, bool $json = true): array {
     $h = ['apikey: ' . $apiKey];
     if ($json) $h[] = 'Content-Type: application/json';
@@ -319,6 +391,7 @@ function evolutionEnviarTexto(string $phone, string $msg, ?array $override = nul
         return false;
     }
     if ($httpCode >= 200 && $httpCode < 300) {
+        _evolutionGuardarIdEnviado((string)$resp);
         _evolutionSetUltimoErro(null);
         return true;
     }
@@ -411,6 +484,7 @@ function _evolutionEnviarMidia(string $phone, string $tipo, string $urlOuDataUri
         return false;
     }
     if ($httpCode >= 200 && $httpCode < 300) {
+        _evolutionGuardarIdEnviado((string)$resp);
         _evolutionSetUltimoErro(null);
         return true;
     }
@@ -473,6 +547,7 @@ function evolutionEnviarAudio(string $phone, string $audioDataUriOuUrl, ?array $
         return false;
     }
     if ($httpCode >= 200 && $httpCode < 300) {
+        _evolutionGuardarIdEnviado((string)$resp);
         _evolutionSetUltimoErro(null);
         return true;
     }

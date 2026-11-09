@@ -442,7 +442,7 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
     if (!zapiEnviarTexto($telNorm, $textoAssinado)) {
         return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }
-    $id = registrarMensagem($telNorm, 'out', $texto, null, false, 'text', $usuarioId);
+    $id = inboxRegistrarEnviada($telNorm, $texto, 'text', $usuarioId);
     pausarIA($telNorm);
     return ['ok' => true, 'id' => $id];
 }
@@ -488,7 +488,7 @@ function enviarAudioManualWhatsapp(string $telefone, string $audioBase64, string
         return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }
 
-    $id = registrarMensagem($telNorm, 'out', '🎤 Áudio', null, false, 'audio', $usuarioId);
+    $id = inboxRegistrarEnviada($telNorm, '🎤 Áudio', 'audio', $usuarioId);
     pausarIA($telNorm);
     // 29/10/2026, "gravo e depois demora 20 segundos" — o áudio JÁ chegou no
     // cliente aqui; a cópia pro Drive (pra tocar de novo no CRM) é só
@@ -606,7 +606,7 @@ function enviarAnexoManualWhatsapp(string $telefone, string $conteudoBase64, str
 
     $tipoRegistro = $ehImagem ? 'image' : 'document';
     $emoji = $ehImagem ? '📷' : '📎';
-    $id = registrarMensagem($telNorm, 'out', "{$emoji} {$nomeArquivo}", null, false, $tipoRegistro, $usuarioId);
+    $id = inboxRegistrarEnviada($telNorm, "{$emoji} {$nomeArquivo}", $tipoRegistro, $usuarioId);
     if ($id > 0) {
         $db = getDB();
         $stmt = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
@@ -636,4 +636,174 @@ function excluirConversaWhatsapp(string $telefone): void {
     $db = getDB();
     $db->prepare("DELETE FROM whatsapp_mensagens WHERE telefone = ?")->execute([$telNorm]);
     $db->prepare("DELETE FROM whatsapp_sessoes WHERE telefone = ?")->execute([$telNorm]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 09/11/2026 — "Dentro do inbox: limpar conversa, excluir mensagem, excluir
+// áudio, verificar se o cliente visualizou, verificar se está online".
+// Confirmado com o usuário: limpar só do CRM; excluir = apagar pra todos;
+// compra e vendas; online só da conversa aberta. Tudo via Evolution.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Prazo do WhatsApp pra apagar pra todos (margem de segurança, ~2 dias). */
+const INBOX_APAGAR_PRAZO_HORAS = 48;
+
+/**
+ * Grava a mensagem que o inbox acabou de mandar, já com o id do WhatsApp
+ * (precisa dele pra apagar pra todos e pra receber o "lido"). Se o eco da
+ * própria mensagem já chegou pelo webhook antes (mesmo id), completa essa
+ * linha com quem mandou em vez de duplicar.
+ */
+function inboxRegistrarEnviada(string $telNorm, string $texto, string $tipo, ?int $usuarioId): int {
+    $waId = function_exists('evolutionConsumirUltimoIdEnviado') ? evolutionConsumirUltimoIdEnviado() : null;
+    $id = registrarMensagem($telNorm, 'out', $texto, $waId ?: null, false, $tipo, $usuarioId);
+    if ($waId) {
+        $db = getDB();
+        if (!$id) {
+            $db->prepare("UPDATE whatsapp_mensagens SET mensagem = ?, tipo = ?, usuario_id = ?, direcao = 'out' WHERE zapi_message_id = ?")
+                ->execute([$texto, $tipo, $usuarioId, $waId]);
+            $st = $db->prepare("SELECT id FROM whatsapp_mensagens WHERE zapi_message_id = ?");
+            $st->execute([$waId]);
+            $id = (int)$st->fetchColumn();
+        }
+        if ($id) $db->prepare("UPDATE whatsapp_mensagens SET status_entrega = 'enviado' WHERE id = ? AND COALESCE(status_entrega,'') = ''")->execute([$id]);
+    }
+    return (int)$id;
+}
+
+/** Credenciais Evolution do canal da caixa ('compra' = principal). */
+function inboxCredenciaisEvolution(string $canal): ?array {
+    require_once __DIR__ . '/whatsapp_evolution.php';
+    if ($canal === 'vendas' && evolutionConfiguredVendas()) return evolutionCredenciaisVendas();
+    if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) return evolutionCredenciaisFinanceiro();
+    return null; // principal
+}
+
+/** A mensagem pode ser apagada pra todos? (nossa, com id, não apagada, dentro do prazo) */
+function inboxPodeApagarMensagem(array $m): bool {
+    return ($m['direcao'] ?? '') === 'out' && !empty($m['zapi_message_id']) && empty($m['apagada_em'])
+        && strtotime((string)$m['created_at']) > time() - INBOX_APAGAR_PRAZO_HORAS * 3600;
+}
+
+/** Apaga pra todos uma mensagem enviada nessa caixa. */
+function inboxApagarMensagem(int $mensagemId, string $telefone, string $canal): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT * FROM whatsapp_mensagens WHERE id = ? AND telefone = ? AND canal = ?");
+    $st->execute([$mensagemId, normalizarTelefone($telefone), $canal]);
+    $m = $st->fetch();
+    if (!$m) return ['ok' => false, 'erro' => 'Mensagem não encontrada nessa conversa.'];
+    if (!empty($m['apagada_em'])) return ['ok' => true];
+    if (!inboxPodeApagarMensagem($m)) {
+        return ['ok' => false, 'erro' => 'Só dá pra apagar mensagem enviada pelo sistema, até ' . INBOX_APAGAR_PRAZO_HORAS . 'h depois do envio.'];
+    }
+    require_once __DIR__ . '/whatsapp_evolution.php';
+    $cred = inboxCredenciaisEvolution($canal);
+    $ok = evolutionApagarParaTodos((string)$m['telefone'], (string)$m['zapi_message_id'], $cred);
+    if (!$ok && $cred !== null) $ok = evolutionApagarParaTodos((string)$m['telefone'], (string)$m['zapi_message_id']);
+    if (!$ok) return ['ok' => false, 'erro' => 'O WhatsApp não apagou (' . (evolutionUltimoErro() ?: 'sem detalhe') . ').'];
+    $db->prepare("UPDATE whatsapp_mensagens SET apagada_em = datetime('now','localtime') WHERE id = ?")->execute([$mensagemId]);
+    return ['ok' => true];
+}
+
+/** Limpa a conversa SÓ do CRM (o cliente continua vendo tudo no WhatsApp). */
+function inboxLimparConversa(string $telefone, string $canal): int {
+    $st = getDB()->prepare("DELETE FROM whatsapp_mensagens WHERE telefone = ? AND canal = ?");
+    $st->execute([normalizarTelefone($telefone), $canal]);
+    return $st->rowCount();
+}
+
+/** Status de entrega/apagada das últimas mensagens enviadas + presença do cliente. */
+function inboxStatusConversa(string $telefone, string $canal): array {
+    $tel = normalizarTelefone($telefone);
+    $st = getDB()->prepare("SELECT id, direcao, zapi_message_id, status_entrega, apagada_em, created_at FROM whatsapp_mensagens
+                            WHERE telefone = ? AND canal = ? AND direcao = 'out' ORDER BY id DESC LIMIT 80");
+    $st->execute([$tel, $canal]);
+    $msgs = [];
+    foreach ($st->fetchAll() as $r) {
+        $msgs[] = ['id' => (int)$r['id'], 'status' => (string)$r['status_entrega'], 'apagada' => !empty($r['apagada_em']),
+                   'pode_apagar' => inboxPodeApagarMensagem($r)];
+    }
+    return ['mensagens' => $msgs, 'presenca' => inboxPresenca($tel, inboxCredenciaisEvolution($canal))];
+}
+
+/**
+ * Presença do cliente ('online', 'digitando', 'gravando' ou '' = sem
+ * informação). Só vale aviso dos últimos 2 min. Marca a conversa como
+ * "observada" (o webhook só guarda presença de quem está com a conversa
+ * aberta) e, no máximo 1x por minuto, pede pro WhatsApp mandar a presença.
+ */
+function inboxPresenca(string $tel, ?array $cred = null): string {
+    // Grava no máximo 1x por minuto (a tela consulta a cada 4s — evita escrita à toa no banco).
+    if (time() - (int)getConfig('presenca_watch_' . $tel) > 60) setConfig('presenca_watch_' . $tel, (string)time());
+    $ultimaAssinatura = (int)getConfig('presenca_assinada_' . $tel);
+    if (time() - $ultimaAssinatura > 60) {
+        setConfig('presenca_assinada_' . $tel, (string)time());
+        try { require_once __DIR__ . '/whatsapp_evolution.php'; evolutionAssinarPresenca($tel, $cred); } catch (Throwable $e) {}
+    }
+    $v = (string)getConfig('presenca_' . $tel);
+    if ($v === '' || !str_contains($v, '|')) return '';
+    [$quando, $estado] = explode('|', $v, 2);
+    if (time() - (int)$quando > 120) return '';
+    return match ($estado) { 'available' => 'online', 'composing' => 'digitando', 'recording' => 'gravando', default => '' };
+}
+
+/** Ticks de entrega (✓ ✓✓ ✓✓ azul) de uma mensagem enviada. */
+function inboxTicksHtml(array $m): string {
+    if (($m['direcao'] ?? '') !== 'out') return '';
+    $s = (string)($m['status_entrega'] ?? '');
+    $t = match ($s) { 'enviado' => ['✓', 'Enviada', ''], 'entregue' => ['✓✓', 'Entregue', ''], 'lido' => ['✓✓', 'Visualizada', ' lido'], default => null };
+    if (!$t) return '';
+    return ' <span class="wpp-tick' . $t[2] . '" data-tick="' . (int)$m['id'] . '" title="' . $t[1] . '">' . $t[0] . '</span>';
+}
+
+/**
+ * Processa um evento de status (MESSAGES_UPDATE) da Evolution — grava
+ * entregue/lido pela id do WhatsApp. Aceita os 2 formatos conhecidos:
+ * v2 {keyId, status:"READ"} e v1 [{key:{id}, update:{status:4}}]. Status
+ * nunca volta pra trás (lido não vira entregue). Devolve quantos gravou.
+ */
+function inboxProcessarStatusEvolution($data): int {
+    $itens = (is_array($data) && array_is_list($data)) ? $data : [$data];
+    $ordem = ['enviado' => 1, 'entregue' => 2, 'lido' => 3];
+    $n = 0;
+    foreach ($itens as $it) {
+        if (!is_array($it)) continue;
+        $id = (string)($it['keyId'] ?? $it['key']['id'] ?? $it['messageId'] ?? '');
+        $bruto = $it['status'] ?? $it['update']['status'] ?? null;
+        $novo = match (true) {
+            in_array($bruto, ['READ', 'PLAYED', 4, 5, '4', '5'], true) => 'lido',
+            in_array($bruto, ['DELIVERY_ACK', 3, '3'], true) => 'entregue',
+            in_array($bruto, ['SERVER_ACK', 2, '2'], true) => 'enviado',
+            default => null,
+        };
+        if ($id === '' || $novo === null) continue;
+        $db = getDB();
+        $st = $db->prepare("SELECT id, status_entrega FROM whatsapp_mensagens WHERE zapi_message_id = ?");
+        $st->execute([$id]);
+        $r = $st->fetch();
+        if (!$r || ($ordem[$r['status_entrega']] ?? 0) >= $ordem[$novo]) continue;
+        $db->prepare("UPDATE whatsapp_mensagens SET status_entrega = ? WHERE id = ?")->execute([$novo, (int)$r['id']]);
+        $n++;
+    }
+    return $n;
+}
+
+/**
+ * Processa um evento PRESENCE_UPDATE da Evolution — só guarda presença de
+ * telefone com conversa aberta no inbox nos últimos 3 min (evita gravar
+ * presença de todo contato). Formato: {id, presences:{jid:{lastKnownPresence}}}.
+ */
+function inboxProcessarPresencaEvolution($data): int {
+    if (!is_array($data)) return 0;
+    $n = 0;
+    foreach ((array)($data['presences'] ?? []) as $jid => $p) {
+        $tel = normalizarTelefone(preg_replace('/@.*/', '', (string)$jid));
+        if (strlen($tel) < 12) continue;
+        if (time() - (int)getConfig('presenca_watch_' . $tel) > 180) continue;
+        $estado = (string)($p['lastKnownPresence'] ?? '');
+        if ($estado === '') continue;
+        setConfig('presenca_' . $tel, time() . '|' . $estado);
+        $n++;
+    }
+    return $n;
 }

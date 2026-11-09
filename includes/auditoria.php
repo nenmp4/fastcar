@@ -96,6 +96,8 @@ function auditoriaRotuloEvento(string $evento): string {
         'usuario_senha_redefinida' => '🔑 Senha redefinida',
         'recuperacao_senha_solicitada' => '✉️ Link de recuperação de senha enviado',
         'conversa_excluida' => '🗑️ Conversa WhatsApp excluída',
+        'conversa_whatsapp_limpa' => '🧹 Conversa WhatsApp limpa (só CRM)',
+        'mensagem_whatsapp_apagada' => '🗑️ Mensagem WhatsApp apagada pra todos',
         'atendimento_encerrado_inbox' => '🔒 Atendimento encerrado via WhatsApp Box',
         'veiculo_excluido' => '🗑️ Veículo excluído da frota',
         'venda_desfeita' => '↩️ Vendido desfeito (sem contrato)',

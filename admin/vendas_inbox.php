@@ -81,6 +81,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'estoque') {
     exit;
 }
 
+// ── AJAX: ✓✓/lido, apagadas e online do cliente (09/11/2026) ──────────────
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'status') {
+    header('Content-Type: application/json');
+    $telSt = normalizarTelefone((string)($_GET['telefone'] ?? ''));
+    if (!$telSt || !usuarioPodeVerConversaVendas($telSt, $responsavelFiltro)) {
+        echo json_encode(['mensagens' => [], 'presenca' => '']);
+        exit;
+    }
+    echo json_encode(inboxStatusConversa($telSt, 'vendas'));
+    exit;
+}
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
     echo json_encode(['conversas' => listarConversasVendas(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro)]);
@@ -135,6 +147,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Content-Type: application/json');
             echo json_encode($resultado);
             exit;
+        } elseif ($acao === 'apagar_mensagem' && $telPost) {
+            // 09/11/2026 — apaga pra todos (some também do WhatsApp do cliente).
+            $resApagar = inboxApagarMensagem((int)($_POST['mensagem_id'] ?? 0), $telPost, 'vendas');
+            if ($resApagar['ok']) {
+                $sucesso = 'Mensagem apagada pra todos.';
+                auditoriaRegistrar('mensagem_whatsapp_apagada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'conversa_whatsapp', null,
+                    "Telefone {$telPost}, mensagem #" . (int)($_POST['mensagem_id'] ?? 0) . ' (vendas).');
+            } else {
+                $erro = $resApagar['erro'];
+            }
+            $telefoneAtivo = $telPost;
+        } elseif ($acao === 'limpar_conversa' && $telPost) {
+            // 09/11/2026 — limpa só do CRM; o cliente continua vendo tudo no WhatsApp.
+            $nLimpas = inboxLimparConversa($telPost, 'vendas');
+            auditoriaRegistrar('conversa_whatsapp_limpa', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'conversa_whatsapp', null,
+                "Telefone {$telPost}, {$nLimpas} mensagem(ns) (vendas).");
+            $sucesso = "Conversa limpa no CRM ({$nLimpas} mensagem(ns)). O cliente continua vendo tudo no WhatsApp dele.";
+            $telefoneAtivo = $telPost;
         } elseif ($acao === 'toggle_ia' && $telPost) {
             if (iaPausada($telPost)) {
                 retomarIA($telPost);
@@ -305,7 +335,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <div>
                         <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
                         <strong><?= e($contatoAtivo['comprador_nome'] ?: $telefoneAtivo) ?></strong>
-                        <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?></div>
+                        <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?> <span id="wpp-presenca"></span></div>
                     </div>
                 </div>
                 <div style="display:flex;gap:8px">
@@ -317,6 +347,12 @@ if ($telefoneAtivo && !$contatoAtivo) {
                             <button type="submit" style="margin-top:0;padding:6px 12px;font-size:12.5px">
                                 <?= $contatoAtivo['ia_pausada'] ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?>
                             </button>
+                        </form>
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Limpar essa conversa do CRM? Some só da tela do sistema — o cliente continua vendo tudo no WhatsApp dele. A IA também perde o histórico dessa conversa.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="limpar_conversa">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <button type="submit" class="perigo" style="margin-top:0;padding:6px 12px;font-size:12.5px">🧹 Limpar conversa</button>
                         </form>
                     <?php endif; ?>
                 </div>
@@ -783,6 +819,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>
+<?php $inboxPodeAgir = ($_SESSION['admin_perfil'] ?? '') !== 'supervisor'; include __DIR__ . '/_inbox_extras.php'; ?>
 <?php include __DIR__ . '/_zapi_status_vendas.php'; ?>
 </body>
 </html>

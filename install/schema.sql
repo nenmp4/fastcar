@@ -350,6 +350,11 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
     -- De qual canal veio: 'compra' (instância principal), 'vendas',
     -- 'financeiro' — cada WhatsApp Box só mostra o seu (29/10/2026).
     canal TEXT NOT NULL DEFAULT 'compra',
+    -- 09/11/2026 — mensagem enviada pelo inbox: '' (sem rastreio), 'enviado',
+    -- 'entregue', 'lido' (✓/✓✓/✓✓ azul, via evento MESSAGES_UPDATE da Evolution).
+    status_entrega TEXT DEFAULT '',
+    -- Apagada pra todos pelo inbox (mensagem continua no CRM marcada como apagada).
+    apagada_em DATETIME,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_wpp_canal_tel ON whatsapp_mensagens(canal, telefone, id);

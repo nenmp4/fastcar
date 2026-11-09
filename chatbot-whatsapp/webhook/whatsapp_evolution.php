@@ -70,6 +70,22 @@ if ($instancia['tipo'] === 'desconhecida') {
     exit;
 }
 
+// 09/11/2026 — status de entrega (✓✓ / lido) e presença (online/digitando)
+// do cliente pro inbox. Precisa dos eventos MESSAGES_UPDATE e
+// PRESENCE_UPDATE ligados no webhook da instância.
+$eventoNorm = strtoupper(str_replace('.', '_', (string)($body['event'] ?? '')));
+if ($eventoNorm === 'MESSAGES_UPDATE' || $eventoNorm === 'PRESENCE_UPDATE') {
+    try {
+        require_once ROOT . '/includes/whatsapp_inbox.php';
+        if ($eventoNorm === 'MESSAGES_UPDATE') inboxProcessarStatusEvolution($body['data'] ?? null);
+        else inboxProcessarPresencaEvolution($body['data'] ?? null);
+    } catch (Throwable $e) {
+        log_webhook_evolution("Erro ao processar {$eventoNorm}: " . $e->getMessage());
+    }
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 try {
     $payloadAdaptado = evolutionAdaptarPayloadParaZapi($body);
 } catch (Throwable $e) {
