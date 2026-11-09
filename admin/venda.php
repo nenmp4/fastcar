@@ -1714,11 +1714,8 @@ function adicionarParteEntrada() {
     $posseFalta = $posseCampos ? posseCamposFaltando($posseCampos) : [];
     ?>
     <?php if ($posseCampos): ?>
-        <div class="<?= $posseFalta ? 'alerta-erro' : 'alerta-sucesso' ?>" style="margin-bottom:10px">
-            🤝 Vendedor/cedente (representado pela FASTCAR): <strong><?= e($posseCampos['cedente_nome'] ?: '— não identificado —') ?></strong>
-            <?= $posseCampos['cedente_cpf'] ? ' — CPF ' . e($posseCampos['cedente_cpf']) : '' ?>
-            <?php if ($posseFalta): ?><br><small>Falta: <?= e(implode('; ', $posseFalta)) ?>.
-                <?php if (!empty($posseCampos['_cliente_id'])): ?><a href="/admin/cliente_detalhe.php?id=<?= (int)$posseCampos['_cliente_id'] ?>">Completar cadastro do cedente →</a><?php endif; ?></small><?php endif; ?>
+        <div class="alerta-info" style="margin-bottom:10px">
+            🤝 Vendedor/cedente (dono original): <strong>não é nomeado no contrato</strong> — a FASTCAR o representa por procuração.
         </div>
     <?php endif; ?>
     <?php if ($posseQ): ?>

@@ -372,18 +372,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'etapa_r
 }
 
 $frotaDisponivelPromissoria = listarFrotaDisponivelParaVenda();
-// 09/11/2026 — Transferência de posse: o VENDEDOR/CEDENTE é o dono original
-// de cada carro (cliente da compra); o modal mostra quem vai assinar.
-$cedentePorVeiculo = [];
-if ($frotaDisponivelPromissoria) {
-    $idsFrota = array_map(fn($f) => (int)$f['oportunidade_id'], $frotaDisponivelPromissoria);
-    $stCed = getDB()->prepare('SELECT o.id, c.nome, c.cpf, c.telefone FROM oportunidades o LEFT JOIN clientes c ON c.id = o.cliente_id WHERE o.id IN (' . implode(',', array_fill(0, count($idsFrota), '?')) . ')');
-    $stCed->execute($idsFrota);
-    foreach ($stCed->fetchAll() as $rc) {
-        $semDono = vendaSemVendedorIdentificado(['oportunidade_id' => 1, 'vendedor_original_nome' => $rc['nome'] ?? '', 'vendedor_original_telefone' => $rc['telefone'] ?? '']);
-        $cedentePorVeiculo[(int)$rc['id']] = ['nome' => $semDono ? '' : (string)$rc['nome'], 'cpf' => (string)($rc['cpf'] ?? '')];
-    }
-}
 
 $etapaFiltro = (string)($_GET['etapa'] ?? '');
 $busca = trim((string)($_GET['q'] ?? ''));
@@ -1020,7 +1008,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 
         <div class="so-posse">
             <h3 style="margin-top:1.4rem">🤝 Quitação do financiamento e vendedor/cedente</h3>
-            <div class="vp-cedente-box" id="vp-cedente-box">Escolha o veículo pra ver quem é o vendedor/cedente (dono original).</div>
+            <div class="vp-cedente-box" id="vp-cedente-box">O dono original não é nomeado no contrato — a FASTCAR o representa por procuração.</div>
             <?= renderCamposPosse(parseCamposPossePost((array)($postVp['posse'] ?? []))) ?>
         </div>
 
@@ -1177,7 +1165,7 @@ function vpRevisar() {
         linhas.push('<p><strong>🏦 Quitação do financiamento:</strong> pelo comprador, em até ' + vpEsc((prazoEl && prazoEl.value) || '15') + ' meses' +
             (servEl && servEl.value === 'sim' ? ' — com serviço de negociação da Fastcar (+ R$ 1.000,00)' : ' — sem o serviço de negociação') + '</p>');
         linhas.push('<p><strong>💼 Comissão de 15% da FIPE:</strong> ' + (comEl && comEl.value === 'nao' ? 'não se aplica' : 'sim') + '</p>');
-        linhas.push('<p><strong>🤝 Vendedor/cedente (FASTCAR assina por procuração):</strong> ' + document.getElementById('vp-cedente-box').innerHTML + '</p>');
+        linhas.push('<p><strong>🤝 Vendedor/cedente:</strong> não nomeado — FASTCAR assina por procuração.</p>');
     } else {
         linhas.unshift('<p><strong>💳 Contrato:</strong> Venda na Promissória</p>');
     }
@@ -1188,7 +1176,6 @@ function vpRevisar() {
 }
 
 // 09/11/2026 — o mesmo modal atende Promissória e Transferência de Posse.
-var vpCedentes = <?= json_encode($cedentePorVeiculo, JSON_UNESCAPED_UNICODE) ?>;
 function vpAbrirModo(modo) {
     var dlg = document.getElementById('modal-promissoria');
     document.getElementById('vp-modelo').value = modo;
@@ -1198,25 +1185,7 @@ function vpAbrirModo(modo) {
     dlg.showModal();
 }
 function vpAtualizarCedente() {
-    var box = document.getElementById('vp-cedente-box');
-    if (!box) return;
-    if (document.getElementById('vp-check-novo').checked) {
-        var nomeNovo = (document.querySelector('[name="vendedor_nome"]') || {}).value || '';
-        box.className = 'vp-cedente-box';
-        box.innerHTML = nomeNovo ? '✍️ <strong>' + vpEsc(nomeNovo) + '</strong> (vendedor do veículo novo) — complete o CPF dele no cadastro do cliente antes de gerar o contrato.'
-                                 : 'Preencha o nome do vendedor/origem acima — ele é o cedente (a FASTCAR assina por ele, com procuração).';
-        return;
-    }
-    var sel = document.getElementById('vp-select-veiculo');
-    var c = sel && sel.value ? vpCedentes[sel.value] : null;
-    if (!c) { box.className = 'vp-cedente-box'; box.textContent = 'Escolha o veículo pra ver quem é o vendedor/cedente (dono original).'; return; }
-    if (!c.nome) {
-        box.className = 'vp-cedente-box falta';
-        box.innerHTML = '⚠️ Esse veículo está sem dono original identificado — sem cedente não dá pra gerar este contrato. Use a Promissória ou complete o cadastro do cliente da compra.';
-        return;
-    }
-    box.className = 'vp-cedente-box' + (c.cpf ? '' : ' falta');
-    box.innerHTML = '🤝 <strong>' + vpEsc(c.nome) + '</strong>' + (c.cpf ? ' — CPF ' + vpEsc(c.cpf) : ' — ⚠️ sem CPF no cadastro (complete antes de gerar o contrato)') + '<br><small>Não assina: a FASTCAR assina por ele (procuração). Assinam o comprador (fica com a posse e quita no prazo), a FASTCAR e as testemunhas.</small>';
+    // 09/11/2026: dono original não aparece no contrato (FASTCAR por procuração) — texto fixo.
 }
 document.addEventListener('change', function (ev) {
     if (ev.target && (ev.target.id === 'vp-select-veiculo' || ev.target.id === 'vp-check-novo' || ev.target.name === 'vendedor_nome')) vpAtualizarCedente();

@@ -726,12 +726,8 @@ function gerarPdfContratoPosse(array $c): string {
     $pdf = _pdfNovo();
     _pdfCabecalho($pdf, 'CESSÃO ONEROSA E TRANSFERÊNCIA DE POSSE VEICULAR COM INTERMEDIAÇÃO');
 
-    $cedQualif = trim(implode(', ', array_filter([
-        $c['cedente_nome'], $c['cedente_nacionalidade'], $c['cedente_estado_civil'], $c['cedente_profissao'],
-        $c['cedente_rg'] ? 'RG nº ' . $c['cedente_rg'] : '', $c['cedente_cpf'] ? 'CPF nº ' . $c['cedente_cpf'] : '',
-        $c['cedente_endereco'] ? 'residente à ' . $c['cedente_endereco'] : '',
-    ], fn($x) => trim((string)$x) !== '')));
-
+    // 09/11/2026, "remove nome do dono original": o VENDEDOR/CEDENTE nunca é
+    // nomeado no contrato — fica identificado só pela procuração outorgada à FASTCAR.
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->MultiCell(0, 5, _pdfTexto(
         "Pelo presente instrumento particular, FASTCAR SOLUTIONS, pessoa jurídica de direito privado, inscrita no " .
@@ -742,7 +738,7 @@ function gerarPdfContratoPosse(array $c): string {
         "{$c['comprador_profissao']}, RG nº {$c['comprador_rg']}, CPF nº {$c['comprador_cpf']}, CNH nº {$c['comprador_cnh']}, " .
         "residente à {$c['comprador_endereco']}, telefone/WhatsApp {$c['comprador_telefone']}, e-mail {$c['comprador_email']}, " .
         "doravante denominado COMPRADOR/CESSIONÁRIO;\n" .
-        "e, como VENDEDOR/CEDENTE, {$cedQualif}, titular dos direitos possessórios objeto da operação, neste ato " .
+        "e, como VENDEDOR/CEDENTE, o titular dos direitos possessórios objeto da operação, identificado na procuração outorgada à FASTCAR e neste ato " .
         "representado pela FASTCAR SOLUTIONS LTDA por procuração, celebram este " .
         "contrato de cessão onerosa e transferência de posse veicular com intermediação, nas condições seguintes."
     ));
@@ -767,14 +763,14 @@ function gerarPdfContratoPosse(array $c): string {
     _pdfLinhaResumo($pdf, 'Marca / modelo / versão / ano', trim("{$c['veiculo_marca']} {$c['veiculo_modelo']} {$c['veiculo_ano']}"));
     _pdfLinhaResumo($pdf, 'Placa / RENAVAM / chassi', "{$c['veiculo_placa']} / {$c['veiculo_renavam']} / {$c['veiculo_chassi']}");
     _pdfLinhaResumo($pdf, 'Valor FIPE e data da consulta', _fmtMoeda($c['valor_fipe_referencia']) . ' / ' . $data($p['fipe_data_consulta'] ?? null));
-    _pdfLinhaResumo($pdf, 'Proprietário registral / credor e gravame', $ou($c['cedente_nome']) . ' / ' . $ou($c['banco_financiamento']) . ($c['banco_financiamento'] ? ' (alienação fiduciária)' : ''));
+    _pdfLinhaResumo($pdf, 'Proprietário registral / credor e gravame', 'conforme procuração outorgada à FASTCAR / ' . $ou($c['banco_financiamento']) . ($c['banco_financiamento'] ? ' (alienação fiduciária)' : ''));
     $servicoTxt = 'O COMPRADOR/CESSIONÁRIO é responsável pelo pagamento da quitação do financiamento. A FASTCAR não assume a obrigação de pagar o débito bancário. '
         . ($q['servico_quitacao'] ? '(X)' : '( )') . ' CONTRATO o serviço exclusivo de negociação de quitação veicular perante a instituição financeira pela FASTCAR, pelo valor adicional de R$ 1.000,00 (mil reais), separado da comissão de intermediação e do preço da cessão. Sem marcação e manifestação específica, o serviço não será contratado nem cobrado. Assinatura específica do comprador: __________________';
     if ($q['servico_quitacao']) {
         $servicoTxt .= ' Forma de pagamento do serviço: ' . $ou($p['servico_forma_pagamento'] ?? '') . '. Vencimento: ' . $data($p['servico_vencimento'] ?? null) . '.';
     }
     _pdfLinhaResumo($pdf, 'QUITAÇÃO DO FINANCIAMENTO E SERVIÇO OPCIONAL', $servicoTxt);
-    _pdfLinhaResumo($pdf, 'Vendedor/Cedente e origem dos direitos possessórios', $ou($c['cedente_nome']) . ' / posse adquirida pela FASTCAR na intermediação deste veículo');
+    _pdfLinhaResumo($pdf, 'Vendedor/Cedente e origem dos direitos possessórios', 'Representado pela FASTCAR por procuração / posse adquirida pela FASTCAR na intermediação deste veículo');
 
     $secao('ENTRADA E COMISSÃO');
     _pdfLinhaResumo($pdf, 'Preço da cessão onerosa da posse', _fmtMoeda($c['preco_venda']));
@@ -826,7 +822,7 @@ function gerarPdfContratoPosse(array $c): string {
         $marca($p['autoriza_imagem'] ?? null, 'SIM', 'NÃO'));
     _pdfLinhaResumo($pdf, 'Ciência específica do titular sobre a escolha', 'Rubrica / assinatura específica: __________________');
     _pdfLinhaResumo($pdf, 'Beneficiário do preço / conta / autorização de recebimento pela FASTCAR',
-        $ou(($p['beneficiario_preco'] ?? '') ?: $c['cedente_nome']) . ' / ' . $ou($p['beneficiario_conta'] ?? '') . ' / ' . $marca($p['autoriza_recebimento'] ?? null));
+        $ou($p['beneficiario_preco'] ?? '', 'VENDEDOR/CEDENTE, por meio da FASTCAR') . ' / ' . $ou($p['beneficiario_conta'] ?? '') . ' / ' . $marca($p['autoriza_recebimento'] ?? null));
 
     $prazo = $q['prazo_quitacao_meses'];
     $banco = ($p['valor_banco_incluido'] ?? '') === 'sim';
@@ -882,9 +878,7 @@ function gerarPdfContratoPosse(array $c): string {
 
     $pdf->Ln(8);
     $pdf->SetFont('Helvetica', '', 8);
-    $pdf->MultiCell(0, 4.5, _pdfTexto('VENDEDOR/CEDENTE: ' . $ou($c['cedente_nome'], '______________________') .
-        ' — CPF/CNPJ: ' . $ou($c['cedente_cpf'], '______________') .
-        ', representado neste ato pela FASTCAR SOLUTIONS LTDA, por procuração.'), 0, 'L');
+    $pdf->MultiCell(0, 4.5, _pdfTexto('VENDEDOR/CEDENTE: representado neste ato pela FASTCAR SOLUTIONS LTDA, por procuração.'), 0, 'L');
     $pdf->SetFont('Helvetica', '', 8.5);
 
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');

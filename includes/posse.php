@@ -140,13 +140,9 @@ function posseQuadro(array $c): array {
 
 /** O que falta especificamente pro contrato de posse (além do de sempre). */
 function posseCamposFaltando(array $c): array {
-    $f = [];
-    if (trim((string)($c['cedente_nome'] ?? '')) === '' || vendaSemVendedorIdentificado(['oportunidade_id' => 1,
-            'vendedor_original_nome' => $c['cedente_nome'] ?? '', 'vendedor_original_telefone' => $c['cedente_telefone'] ?? ''])) {
-        $f[] = 'Nome do VENDEDOR/CEDENTE (dono original do veículo — cadastro do cliente da compra)';
-    }
-    if (trim((string)($c['cedente_cpf'] ?? '')) === '') $f[] = 'CPF do VENDEDOR/CEDENTE (cadastro do cliente da compra)';
-    return $f;
+    // 09/11/2026: o dono original não é nomeado no contrato (FASTCAR o
+    // representa por procuração) — nada dele é obrigatório pra gerar.
+    return [];
 }
 
 /**
