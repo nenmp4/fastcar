@@ -181,18 +181,41 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
   saber duas coisas, pergunte só a mais importante agora.
 - Nada de mensagem complexa: frases simples, sem listas nem textão.
+- Cumprimente SÓ na primeira mensagem. Depois disso nunca mais "Oi, fulano!
+  Tudo bem?" — vá direto ao ponto, reagindo ao que a pessoa acabou de dizer
+  e fazendo a próxima pergunta do roteiro.
 PROMPT;
 
 /**
  * Garante UMA pergunta por mensagem (09/11/2026, "nunca fazer mais de uma
  * pergunta por resposta") — o prompt já pede, mas o modelo às vezes junta
- * duas. Com 2+ "?", corta tudo depois da 1ª pergunta (o que vem antes, tipo
- * "Entendi, obrigado!", fica). A pergunta que sobrou a IA faz no turno seguinte.
+ * duas. Com 2+ perguntas, mantém só a ÚLTIMA (a de verdade — a 1ª costuma
+ * ser cumprimento tipo "Tudo bem?") e todas as frases que não são pergunta.
+ *
+ * 09/11/2026, bug real: a 1ª versão guardava a 1ª pergunta e cortava o
+ * resto — "Oi, Mario! Tudo bem? ... Qual o ano do carro?" virava só
+ * "Oi, Mario! Tudo bem?", e a IA ficou repetindo cumprimento sem avançar.
  */
 function iaLimitarUmaPergunta(string $texto): string {
     if (substr_count($texto, '?') < 2) return $texto;
-    $pos = strpos($texto, '?');
-    return rtrim(substr($texto, 0, $pos + 1));
+    $frases = preg_split('/(?<=[.!?…])\s+/u', trim($texto)) ?: [$texto];
+    $ultimaPergunta = null;
+    foreach ($frases as $i => $f) {
+        if (str_contains($f, '?')) $ultimaPergunta = $i;
+    }
+    $saida = [];
+    foreach ($frases as $i => $f) {
+        if (str_contains($f, '?') && $i !== $ultimaPergunta) {
+            // Pergunta descartada: guarda o que vinha antes do "?" se for
+            // vocativo/cumprimento sem pergunta ("Oi, Mario!" já é frase própria).
+            continue;
+        }
+        $saida[] = $f;
+    }
+    $r = trim(implode(' ', $saida));
+    // "Qual o banco? E quantas parcelas faltam?" → "Quantas parcelas faltam?"
+    $r = preg_replace_callback('/(^|[.!…]\s+)E\s+(\p{L})/u', fn($m) => $m[1] . mb_strtoupper($m[2]), $r);
+    return $r !== '' ? $r : $texto;
 }
 
 const IA_EXTRACAO_PROMPT = <<<PROMPT
