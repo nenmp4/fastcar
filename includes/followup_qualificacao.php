@@ -24,8 +24,13 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
 const FOLLOWUP_QUALIF_INTERVALO_HORAS = 2;
 const FOLLOWUP_QUALIF_MAX_TENTATIVAS = 3;
 const FOLLOWUP_QUALIF_LIMITE_DIA = 120;
-/** Silêncio mais velho que isso não recebe mais follow-up (o lead encerra sozinho em 7 dias). */
-const FOLLOWUP_QUALIF_MAX_DIAS = 3;
+/**
+ * Janela de 24h (09/11/2026, "follow-up tá dentro da janela?"): nunca manda
+ * follow-up mais de 23h depois da última mensagem do cliente — fica sempre
+ * dentro da janela de atendimento do WhatsApp, com 1h de folga. Tentativa
+ * que não coube (ex: fora do expediente) simplesmente não sai.
+ */
+const FOLLOWUP_QUALIF_MAX_HORAS = 23;
 
 /** Mensagem da tentativa $n (1..3) — curta, simples, uma pergunta só. */
 function followupQualificacaoMensagem(int $n, string $nome): string {
@@ -84,7 +89,7 @@ function processarFollowupQualificacao(?callable $log = null, ?int $agora = null
         $tIn = strtotime($op['ultima_in']);
         // Só quem ficou em silêncio DEPOIS de a gente responder (a bola tá com o cliente).
         if (!$op['ultima_out'] || strtotime($op['ultima_out']) < $tIn) continue;
-        if ($agora - $tIn > FOLLOWUP_QUALIF_MAX_DIAS * 86400) continue;
+        if ($agora - $tIn > FOLLOWUP_QUALIF_MAX_HORAS * 3600) continue;
         if (iaPausada((string)$op['telefone'])) continue; // humano assumiu a conversa
 
         // Contagem por silêncio: zera quando o cliente manda mensagem nova.
