@@ -253,6 +253,25 @@ function zapsignCriarDocumentoEAssinatura(string $pdfPath, string $nomeDoc, stri
 }
 
 /**
+ * Posiciona assinaturas e rubricas DENTRO do PDF (09/11/2026, "assinatura do
+ * cliente dentro do contrato — onde está a rubrica"). POST
+ * /docs/{token}/place-signatures/ com "rubricas": [{page (0 = 1ª),
+ * relative_position_bottom/left, relative_size_x/y (0–100 da página),
+ * type 'signature' | 'visto', signer_token}] — docs.zapsign.com.br,
+ * "Opcional: Posicionar assinaturas". Best-effort: se falhar, o documento
+ * continua valendo (a ZapSign só não desenha a assinatura no corpo, fica no
+ * relatório final de assinaturas como antes).
+ */
+function zapsignPosicionarAssinaturas(string $docToken, array $rubricas): bool {
+    if ($docToken === '' || !$rubricas) return false;
+    $res = zapsignRequest('POST', '/docs/' . rawurlencode($docToken) . '/place-signatures/', ['rubricas' => array_values($rubricas)]);
+    $ok = $res['code'] >= 200 && $res['code'] < 300;
+    zapsignLogEnvio($ok ? 'posicionado' : 'posicionar_falhou', 'doc_token=' . $docToken, $res['code'],
+        $ok ? count($rubricas) . ' marcação(ões)' : zapsignTextoErro($res));
+    return $ok;
+}
+
+/**
  * Consulta o status de um documento.
  *
  * 06/10/2026 — achado real: "como saber quem já assinou" (status agregado

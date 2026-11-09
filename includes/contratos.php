@@ -650,6 +650,7 @@ function gerarEEnviarContratoCompra(int $oportunidadeId, ?int $usuarioId): array
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
     }
+    _contratoPosicionarAssinaturas($pdfPath, $docRes);
 
     $contratoId = _contratoGravarEnviado("
         INSERT INTO contratos
@@ -881,6 +882,22 @@ function _contratoVendaSignatariosExtras(array $campos): array {
  * qual negociação de revenda gerou esse contrato específico). Mesmo padrão
  * de gerarEEnviarContratoCompra(): nunca decide sozinho se segue, só avisa.
  */
+/**
+ * Assinatura + rubrica dentro do PDF (09/11/2026) — pega o layout anotado na
+ * geração (includes/contratos_pdf.php::pdfRubricasZapsign()) e manda pra
+ * ZapSign com o token de cada signatário. Best-effort, nunca trava o envio.
+ */
+function _contratoPosicionarAssinaturas(string $pdfPath, array $docRes): void {
+    try {
+        $tokens = ['_principal' => (string)($docRes['signer_token'] ?? '')];
+        foreach (($docRes['signers_extra'] ?? []) as $chave => $x) $tokens[$chave] = (string)($x['token'] ?? '');
+        $rubricas = pdfRubricasZapsign($pdfPath, $tokens);
+        if ($rubricas) zapsignPosicionarAssinaturas((string)$docRes['doc_token'], $rubricas);
+    } catch (Throwable $e) {
+        error_log('posicionar assinaturas: ' . $e->getMessage());
+    }
+}
+
 function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     $campos = montarCamposContratoVenda($vendaId);
     if (!$campos) return ['ok' => false, 'erro' => 'Venda não encontrada.'];
@@ -917,6 +934,7 @@ function gerarEEnviarContratoVenda(int $vendaId, ?int $usuarioId): array {
     if (isset($docRes['error'])) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pra assinatura: ' . $docRes['error']];
     }
+    _contratoPosicionarAssinaturas($pdfPath, $docRes);
 
     $contratoId = _contratoGravarEnviado("
         INSERT INTO contratos

@@ -27,6 +27,7 @@ function _pdfNovo(): FPDF {
     $pdf->SetMargins(20, 18, 20);
     $pdf->SetAutoPageBreak(true, 20);
     $pdf->AddPage();
+    _pdfAssinaturasInicio();
     return $pdf;
 }
 
@@ -70,6 +71,102 @@ function _pdfCabecalho(FPDF $pdf, string $subtitulo = 'CONTRATO-MESTRE DE COMPRA
  * padronização. Antes era só texto cinza solto, sem nenhuma faixa;
  * compartilhado entre compra e venda (eram 2 cópias idênticas).
  */
+/*
+ * Assinatura e rubrica DENTRO do contrato (09/11/2026, "assinatura do
+ * cliente dentro do contrato — onde está a rubrica"). Antes a ZapSign só
+ * juntava a página "Relatório de Assinaturas" no fim; agora o gerador anota
+ * onde desenhou cada linha de assinatura e quantas páginas o PDF tem, e
+ * includes/contratos.php manda isso pra ZapSign (place-signatures):
+ * assinatura em cima da linha de cada um + rubrica ("visto") das partes no
+ * rodapé de cada página. Chaves = as mesmas dos signatários da ZapSign
+ * ('_principal' = vendedor/comprador/locatário, 'fastcar', 'testemunha1/2').
+ */
+const PDF_A4_LARGURA = 210.0;
+const PDF_A4_ALTURA = 297.0;
+const PDF_ASSINATURA_TAM = [28.7, 19.5]; // mm — 70% do tamanho recomendado pela ZapSign pra A4
+
+function _pdfAssinaturasInicio(): void {
+    $GLOBALS['_pdf_assin_atual'] = [];
+}
+
+/** Marca o lugar de uma assinatura: centro da coluna (x) e y da linha "____". */
+function _pdfMarcarAssinatura(FPDF $pdf, string $chave, float $xCentro, float $yLinha): void {
+    $GLOBALS['_pdf_assin_atual'][$chave] = ['page' => $pdf->PageNo() - 1, 'x' => $xCentro, 'y' => $yLinha];
+}
+
+/** Fecha o registro deste PDF (chamar logo antes do Output). */
+function _pdfAssinaturasFim(FPDF $pdf, string $caminho): void {
+    $GLOBALS['_pdf_assin_layout'][$caminho] = [
+        'paginas' => $pdf->PageNo(),
+        'assinaturas' => $GLOBALS['_pdf_assin_atual'] ?? [],
+    ];
+    $GLOBALS['_pdf_assin_atual'] = [];
+}
+
+/**
+ * Converte o layout anotado no formato "rubricas" da ZapSign (percentuais da
+ * página, página começando em 0). $tokens = chave => signer_token. Rubrica
+ * só das PARTES (principal e FASTCAR), no canto inferior direito de toda
+ * página menos a última (que já tem as assinaturas completas).
+ */
+function pdfRubricasZapsign(string $caminho, array $tokens): array {
+    $layout = $GLOBALS['_pdf_assin_layout'][$caminho] ?? null;
+    if (!$layout) return [];
+    [$w, $h] = PDF_ASSINATURA_TAM;
+    $out = [];
+    foreach ($layout['assinaturas'] as $chave => $p) {
+        if (empty($tokens[$chave])) continue;
+        $out[] = [
+            'page' => (int)$p['page'],
+            'relative_position_bottom' => round((PDF_A4_ALTURA - ($p['y'] + 3.0)) / PDF_A4_ALTURA * 100, 2),
+            'relative_position_left' => round(($p['x'] - $w / 2) / PDF_A4_LARGURA * 100, 2),
+            'relative_size_x' => round($w / PDF_A4_LARGURA * 100, 2),
+            'relative_size_y' => round($h / PDF_A4_ALTURA * 100, 2),
+            'type' => 'signature',
+            'signer_token' => (string)$tokens[$chave],
+        ];
+    }
+    // Rubrica (visto): 14,4 × 14 mm, a 4,5 mm da borda de baixo — dentro da
+    // margem inferior de 20 mm, nunca em cima do texto.
+    $rw = 14.4; $rh = 14.0; $direita = 190.0;
+    foreach (['_principal', 'fastcar'] as $i => $chave) {
+        if (empty($tokens[$chave])) continue;
+        $left = $direita - $rw - $i * ($rw + 2);
+        for ($pg = 0; $pg < max(0, (int)$layout['paginas'] - 1); $pg++) {
+            $out[] = [
+                'page' => $pg,
+                'relative_position_bottom' => round(4.5 / PDF_A4_ALTURA * 100, 2),
+                'relative_position_left' => round($left / PDF_A4_LARGURA * 100, 2),
+                'relative_size_x' => round($rw / PDF_A4_LARGURA * 100, 2),
+                'relative_size_y' => round($rh / PDF_A4_ALTURA * 100, 2),
+                'type' => 'visto',
+                'signer_token' => (string)$tokens[$chave],
+            ];
+        }
+    }
+    return $out;
+}
+
+/**
+ * Bloco de assinatura das testemunhas — agora com linha "____" (antes só o
+ * nome), pra caber a assinatura eletrônica posicionada em cima.
+ */
+function _pdfBlocoTestemunhas(FPDF $pdf, string $test1, string $test2): void {
+    $pdf->Ln(20);
+    $y = $pdf->GetY();
+    $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    _pdfMarcarAssinatura($pdf, 'testemunha1', 62.5, $y);
+    _pdfMarcarAssinatura($pdf, 'testemunha2', 157.5, $y);
+    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
+    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0, 0);
+    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+}
+
 function _pdfRodapeEndereco(FPDF $pdf): void {
     $pdf->Ln(8);
     if ($pdf->GetY() > 261) { // sem espaço pra faixa (22mm) antes da margem inferior — nunca corta no meio
@@ -371,16 +468,22 @@ function gerarPdfContratoCompra(array $c): string {
         _pdfCorpo($pdf, $corpo);
     }
 
+    // Bloco de assinaturas inteiro na mesma página (assinatura eletrônica é
+    // posicionada por coordenada — nunca pode partir no meio).
+    if ($pdf->GetY() > 175) $pdf->AddPage();
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
-    $pdf->Ln(14);
+    $pdf->Ln(20);
 
     $y = $pdf->GetY();
     $pdf->SetFont('Helvetica', '', 8.5);
+    $yAssin = $pdf->GetY();
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    _pdfMarcarAssinatura($pdf, 'fastcar', 62.5, $yAssin);
+    _pdfMarcarAssinatura($pdf, '_principal', 157.5, $yAssin);
     $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('VENDEDOR/PROPRIETÁRIO'), 0, 1, 'C');
@@ -397,13 +500,7 @@ function gerarPdfContratoCompra(array $c): string {
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
 
-    $pdf->Ln(12);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+    _pdfBlocoTestemunhas($pdf, $test1, $test2);
 
     // Rodapé com o endereço real da sede — pedido do José/Jean em
     // 13/09/2026, endereço correto confirmado por ele (o modelo original
@@ -412,6 +509,7 @@ function gerarPdfContratoCompra(array $c): string {
     _pdfRodapeEndereco($pdf);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_compra_') . '.pdf';
+    _pdfAssinaturasFim($pdf, $caminho);
     $pdf->Output('F', $caminho);
     return $caminho;
 }
@@ -671,15 +769,21 @@ function gerarPdfContratoVenda(array $c): string {
         _pdfCorpo($pdf, $corpo);
     }
 
+    // Bloco de assinaturas inteiro na mesma página (assinatura eletrônica é
+    // posicionada por coordenada — nunca pode partir no meio).
+    if ($pdf->GetY() > 175) $pdf->AddPage();
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
-    $pdf->Ln(14);
+    $pdf->Ln(20);
 
     $pdf->SetFont('Helvetica', '', 8.5);
+    $yAssin = $pdf->GetY();
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    _pdfMarcarAssinatura($pdf, 'fastcar', 62.5, $yAssin);
+    _pdfMarcarAssinatura($pdf, '_principal', 157.5, $yAssin);
     $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('LOCATÁRIO/PROMITENTE COMPRADOR'), 0, 1, 'C');
@@ -690,17 +794,12 @@ function gerarPdfContratoVenda(array $c): string {
 
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
-    $pdf->Ln(12);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+    _pdfBlocoTestemunhas($pdf, $test1, $test2);
 
     _pdfRodapeEndereco($pdf);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_venda_') . '.pdf';
+    _pdfAssinaturasFim($pdf, $caminho);
     $pdf->Output('F', $caminho);
     return $caminho;
 }
@@ -863,16 +962,21 @@ function gerarPdfContratoPosse(array $c): string {
         _pdfCorpo($pdf, $corpo);
     }
 
-    if ($pdf->GetY() > 200) $pdf->AddPage();
+    // Bloco de assinaturas inteiro na mesma página (assinatura eletrônica é
+    // posicionada por coordenada — nunca pode partir no meio).
+    if ($pdf->GetY() > 175) $pdf->AddPage();
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
-    $pdf->Ln(14);
+    $pdf->Ln(20);
 
     $pdf->SetFont('Helvetica', '', 8.5);
+    $yAssin = $pdf->GetY();
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    _pdfMarcarAssinatura($pdf, 'fastcar', 62.5, $yAssin);
+    _pdfMarcarAssinatura($pdf, '_principal', 157.5, $yAssin);
     $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('COMPRADOR/CESSIONÁRIO'), 0, 1, 'C');
@@ -888,17 +992,12 @@ function gerarPdfContratoPosse(array $c): string {
 
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
-    $pdf->Ln(12);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+    _pdfBlocoTestemunhas($pdf, $test1, $test2);
 
     _pdfRodapeEndereco($pdf);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_posse_') . '.pdf';
+    _pdfAssinaturasFim($pdf, $caminho);
     $pdf->Output('F', $caminho);
     return $caminho;
 }
@@ -1197,15 +1296,21 @@ function gerarPdfContratoLocacao(array $c): string {
         _pdfCorpo($pdf, $corpo);
     }
 
+    // Bloco de assinaturas inteiro na mesma página (assinatura eletrônica é
+    // posicionada por coordenada — nunca pode partir no meio).
+    if ($pdf->GetY() > 175) $pdf->AddPage();
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
     $pdf->Cell(0, 6, _pdfTexto("Barueri/SP, {$c['data_extenso']}."), 0, 1, 'L');
-    $pdf->Ln(14);
+    $pdf->Ln(20);
 
     $pdf->SetFont('Helvetica', '', 8.5);
+    $yAssin = $pdf->GetY();
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('_______________________________'), 0, 1, 'C');
+    _pdfMarcarAssinatura($pdf, 'fastcar', 62.5, $yAssin);
+    _pdfMarcarAssinatura($pdf, '_principal', 157.5, $yAssin);
     $pdf->Cell(85, 5, _pdfTexto('FASTCAR SOLUTIONS LTDA'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto('LOCATÁRIO(A)'), 0, 1, 'C');
@@ -1215,17 +1320,12 @@ function gerarPdfContratoLocacao(array $c): string {
 
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
-    $pdf->Ln(12);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 1'), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto('TESTEMUNHA 2'), 0, 1, 'C');
-    $pdf->Cell(85, 5, _pdfTexto($test1), 0, 0, 'C');
-    $pdf->Cell(10, 5, '', 0, 0);
-    $pdf->Cell(85, 5, _pdfTexto($test2), 0, 1, 'C');
+    _pdfBlocoTestemunhas($pdf, $test1, $test2);
 
     _pdfRodapeEndereco($pdf);
 
     $caminho = tempnam(sys_get_temp_dir(), 'contrato_locacao_') . '.pdf';
+    _pdfAssinaturasFim($pdf, $caminho);
     $pdf->Output('F', $caminho);
     return $caminho;
 }
