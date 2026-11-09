@@ -579,8 +579,9 @@ function evolutionListarInstancias(?array $override = null): array {
  * `includes/whatsapp_config.php`, carregado depois deste arquivo mas já
  * definido na hora em que esta função roda de verdade).
  */
-function evolutionBuscarContato(string $phone): ?array {
-    [$base, $instance, $apiKey] = evolutionCredenciais();
+function evolutionBuscarContato(string $phone, ?array $credenciais = null): ?array {
+    // $credenciais (09/11/2026): instância de vendas/financeiro — padrão é a principal.
+    [$base, $instance, $apiKey] = $credenciais ?: evolutionCredenciais();
     if (!$base || !$instance || !$apiKey || !$phone) return null;
 
     $phoneNorm = normalizarTelefone($phone);

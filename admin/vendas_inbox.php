@@ -60,6 +60,21 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'recuperar_midia') {
     exit;
 }
 
+// ── AJAX: foto de perfil do WhatsApp, ao vivo (09/11/2026 — igual inbox de compra) ──
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'foto') {
+    header('Content-Type: application/json');
+    $telFoto = normalizarTelefone((string)($_GET['telefone'] ?? ''));
+    if (!$telFoto || !usuarioPodeVerConversaVendas($telFoto, $responsavelFiltro)) {
+        echo json_encode(['foto_url' => '']);
+        exit;
+    }
+    require_once __DIR__ . '/../includes/whatsapp_evolution.php';
+    $contato = evolutionConfiguredVendas() ? evolutionBuscarContato($telFoto, evolutionCredenciaisVendas()) : null;
+    if (empty($contato['foto_url'])) $contato = zapiBuscarContato($telFoto); // cai pra instância principal
+    echo json_encode(['foto_url' => $contato['foto_url'] ?? '']);
+    exit;
+}
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'estoque') {
     header('Content-Type: application/json');
     echo json_encode(['veiculos' => listarEstoqueParaInboxVendas()]);
@@ -185,6 +200,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-item .wpp-corpo { min-width: 0; flex: 1; }
 .wpp-avatar-placeholder { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; background: var(--azul); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
 .wpp-chat-header .wpp-avatar-placeholder { width: 40px; height: 40px; margin-right: 10px; }
+.wpp-avatar { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; object-fit: cover; cursor: zoom-in; }
+.wpp-chat-header .wpp-avatar { width: 40px; height: 40px; margin-right: 10px; }
 .wpp-chat-header > div:first-child { display: flex; align-items: center; }
 .wpp-item .nome { font-weight: 600; font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; }
 .wpp-item .preview { font-size: 12.5px; color: var(--texto-fraco); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -260,7 +277,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
                 <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
-                    <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($c['comprador_nome'] ?: $c['telefone'], 0, 1))) ?></div>
+                    <div class="wpp-avatar-placeholder" data-av-phone="<?= e($c['telefone']) ?>"><?= e(mb_strtoupper(mb_substr($c['comprador_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <div class="wpp-corpo">
                         <div class="nome">
                             <span><?= e($c['comprador_nome'] ?: $c['telefone']) ?></span>
@@ -284,7 +301,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         <?php else: ?>
             <div class="wpp-chat-header">
                 <div>
-                    <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($contatoAtivo['comprador_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
+                    <div class="wpp-avatar-placeholder" data-av-phone="<?= e($telefoneAtivo) ?>"><?= e(mb_strtoupper(mb_substr($contatoAtivo['comprador_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
                     <div>
                         <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
                         <strong><?= e($contatoAtivo['comprador_nome'] ?: $telefoneAtivo) ?></strong>
@@ -455,6 +472,49 @@ if ($telefoneAtivo && !$contatoAtivo) {
     setTimeout(recuperarMidias, 300);
     setInterval(recuperarMidias, 4000);
 
+    // Foto de perfil do WhatsApp (09/11/2026) — busca ao vivo, troca o círculo
+    // de iniciais só depois que a imagem carregou; cache por telefone pra o
+    // polling da lista não fazer a foto piscar (mesmo padrão do inbox de compra).
+    var fotoCache = {}, fotoBuscando = {};
+    function _aplicarFoto(el, fotoUrl) {
+        if (!fotoUrl) return;
+        var phone = el.getAttribute('data-av-phone');
+        if (phone) fotoCache[phone] = fotoUrl;
+        var img = document.createElement('img');
+        img.className = 'wpp-avatar';
+        img.alt = '';
+        img.setAttribute('data-av-phone', phone || '');
+        img.onload = function () { if (el.isConnected) el.replaceWith(img); };
+        img.src = fotoUrl;
+    }
+    function carregarFotos() {
+        var avs = Array.from(document.querySelectorAll('div.wpp-avatar-placeholder[data-av-phone]')).slice(0, 31);
+        avs.forEach(function (el, i) {
+            var phone = el.getAttribute('data-av-phone');
+            if (!phone) return;
+            if (fotoCache[phone]) { _aplicarFoto(el, fotoCache[phone]); return; }
+            if (fotoBuscando[phone]) return;
+            fotoBuscando[phone] = true;
+            setTimeout(function () {
+                fetch('?ajax=foto&telefone=' + encodeURIComponent(phone))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (!d.foto_url) return;
+                        fotoCache[phone] = d.foto_url;
+                        document.querySelectorAll('div.wpp-avatar-placeholder[data-av-phone="' + phone + '"]').forEach(function (p) { _aplicarFoto(p, d.foto_url); });
+                    })
+                    .catch(function () {});
+            }, 150 + Math.floor(i / 5) * 600 + (i % 5) * 80);
+        });
+    }
+    document.addEventListener('click', function (ev) {
+        var img = ev.target.closest('img.wpp-avatar');
+        if (!img) return;
+        ev.preventDefault(); ev.stopPropagation();
+        window.open(img.src, '_blank', 'noopener');
+    }, true);
+    setTimeout(carregarFotos, 100);
+
     function jaRenderizada(id) {
         return !!thread.querySelector('[data-id="' + id + '"]');
     }
@@ -534,7 +594,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     var preview = c.ultima_mensagem.length > 60 ? c.ultima_mensagem.slice(0, 60) + '…' : c.ultima_mensagem;
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.comprador_nome || c.telefone).slice(0, 1).toUpperCase());
-                    a.innerHTML = '<div class="wpp-avatar-placeholder">' + inicial + '</div>' +
+                    var fotoC = fotoCache[c.telefone];
+                    var avatar = fotoC
+                        ? '<img class="wpp-avatar" src="' + escapeHtml(fotoC) + '" alt="" data-av-phone="' + escapeHtml(c.telefone) + '">'
+                        : '<div class="wpp-avatar-placeholder" data-av-phone="' + escapeHtml(c.telefone) + '">' + inicial + '</div>';
+                    a.innerHTML = avatar +
                         '<div class="wpp-corpo">' +
                         '<div class="nome"><span>' + escapeHtml(c.comprador_nome || c.telefone) + '</span>' +
                         (c.nao_lidas > 0 ? '<span class="wpp-badge">' + c.nao_lidas + '</span>' : '') + '</div>' +
@@ -543,6 +607,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         '</div>';
                     lista.appendChild(a);
                 });
+                carregarFotos();
             })
             .catch(function () {});
     }
