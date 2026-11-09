@@ -1591,6 +1591,7 @@ function adicionarParteEntrada() {
         <input type="hidden" name="fipe_placa" id="vfipe-h-placa">
         <label>Valor FIPE de referência (R$)</label>
         <input type="number" step="0.01" inputmode="decimal" name="valor_fipe_referencia" id="vfipe-valor" value="<?= e((string)($v['valor_fipe_referencia'] ?? '')) ?>">
+        <small class="campo-exemplo">💡 valor da tabela FIPE do mês — ex.: 52.000,00</small>
         <button type="submit">Salvar valor FIPE</button>
     </form>
     <?php $histFipeVenda = listarHistoricoFipe((int)$v['oportunidade_id'], (string)($v['veiculo_placa'] ?? '')); ?>
@@ -1667,12 +1668,15 @@ function adicionarParteEntrada() {
                 <input type="number" name="km_entrega" value="<?= e((string)($v['km_entrega'] ?? '')) ?>">
                 <label>Preço ajustado (R$)</label>
                 <input type="number" step="0.01" name="preco_venda" value="<?= e((string)($v['preco_venda'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 valor TOTAL combinado com o comprador — ex.: 48.000,00</small>
                 <label>Valor pago pelo comprador na contratação (R$) — soma das partes da entrada acima (PIX ou espécie), somente leitura</label>
                 <input type="number" step="0.01" value="<?= e((string)($v['valor_pago_contratacao'] ?? '')) ?>" disabled>
                 <label>Forma de pagamento</label>
                 <input type="text" name="forma_pagamento" value="<?= e($v['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas...">
+                <small class="campo-exemplo">💡 ex.: entrada de 8.000,00 + 36x de 1.250,00 na promissória</small>
                 <label>Saldo de preço devido pelo comprador (R$) — deixe em branco se inexistente</label>
                 <input type="number" step="0.01" name="saldo_preco_devido" value="<?= e((string)($v['saldo_preco_devido'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 preço menos a entrada — ex.: 48.000 − 8.000 = 40.000,00</small>
                 <?php if (vendaEhPosse($v)): ?>
                     <?php /* Transferência de posse: o prazo de quitação (padrão 15) fica no Quadro-Resumo da posse, abaixo. */ ?>
                     <input type="hidden" name="prazo_quitacao_meses" value="<?= e((string)($v['prazo_quitacao_meses'] ?? 24)) ?>">

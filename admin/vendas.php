@@ -865,8 +865,10 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
                     <input type="text" name="vendedor_telefone" value="<?= e($postVp['vendedor_telefone'] ?? '') ?>" <?= $vpCadastrarNovo ? 'required' : '' ?> placeholder="Ex: 31999998888">
                     <label>Valor pago pelo veículo (R$)</label>
                     <input type="text" name="veiculo_valor_final" value="<?= e($postVp['veiculo_valor_final'] ?? '') ?>" placeholder="0,00">
+                    <small class="campo-exemplo">💡 quanto a FASTCAR pagou no veículo — ex.: 30.000,00</small>
                     <label>Valor Tabela FIPE (R$) *</label>
                     <input type="text" name="veiculo_valor_fipe" inputmode="decimal" value="<?= e($postVp['veiculo_valor_fipe'] ?? '') ?>" placeholder="0,00" <?= $vpCadastrarNovo ? 'required' : '' ?>>
+                    <small class="campo-exemplo">💡 valor da tabela FIPE do mês — ex.: 52.000,00</small>
                 </div>
                 <div>
                     <label>Marca</label>
@@ -892,10 +894,12 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
                 <input type="text" name="comprador_nome" value="<?= e($postVp['comprador_nome'] ?? '') ?>" required>
                 <label>Telefone do comprador *</label>
                 <input type="text" name="comprador_telefone" value="<?= e($postVp['comprador_telefone'] ?? '') ?>" required placeholder="Ex: 31999998888">
+                <small class="campo-exemplo">💡 com DDD — ex.: 11 98765-4321</small>
             </div>
             <div>
                 <label>CPF</label>
                 <input type="text" name="comprador_cpf" value="<?= e($postVp['comprador_cpf'] ?? '') ?>" placeholder="000.000.000-00">
+                <small class="campo-exemplo">💡 ex.: 123.456.789-00</small>
                 <label>RG</label>
                 <input type="text" name="comprador_rg" value="<?= e($postVp['comprador_rg'] ?? '') ?>">
                 <label>E-mail</label>
@@ -908,12 +912,15 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             <div>
                 <label><span class="so-promissoria">Preço de venda (R$)</span><span class="so-posse">Preço da cessão da posse (R$)</span></label>
                 <input type="number" step="0.01" inputmode="decimal" name="preco_venda" value="<?= e((string)($postVp['preco_venda'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 valor TOTAL combinado com o comprador — ex.: 48.000,00</small>
                 <label>Forma de pagamento</label>
                 <input type="text" name="forma_pagamento" value="<?= e($postVp['forma_pagamento'] ?? '') ?>" placeholder="À vista, financiado, entrada + parcelas, promissória...">
+                <small class="campo-exemplo">💡 ex.: entrada de 8.000,00 + 36x de 1.250,00 na promissória</small>
             </div>
             <div>
                 <label>Saldo de preço devido depois da entrada (R$)</label>
                 <input type="number" step="0.01" inputmode="decimal" name="saldo_preco_devido" value="<?= e((string)($postVp['saldo_preco_devido'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 preço menos a entrada — ex.: 48.000 − 8.000 = 40.000,00</small>
             </div>
         </div>
 
@@ -963,6 +970,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             <input type="text" name="bem_troca_nome" value="<?= e($postVp['bem_troca_nome'] ?? '') ?>" placeholder="Ex: Moto Honda CG 160, ou nome do bem">
             <label>Valor atribuído ao bem (R$)</label>
             <input type="number" step="0.01" inputmode="decimal" name="bem_troca_valor" value="<?= e((string)($postVp['bem_troca_valor'] ?? '')) ?>">
+            <small class="campo-exemplo">💡 quanto esse bem abate da entrada — ex.: 7.000,00</small>
             <div id="vp-bem-troca-veiculo" class="grid-2" style="<?= ($postVp['bem_troca_tipo'] ?? '') === 'veiculo' ? '' : 'display:none' ?>">
                 <div>
                     <label>Modelo/ano</label>
@@ -990,12 +998,15 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             <div>
                 <label>Valor de cada parcela (R$)</label>
                 <input type="number" step="0.01" inputmode="decimal" name="parcelamento_valor_parcela" value="<?= e((string)($postVp['parcelamento_valor_parcela'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 ex.: 1.250,00</small>
             </div>
             <div>
                 <label>Quantidade de parcelas</label>
                 <input type="number" name="parcelamento_qtd_parcelas" value="<?= e((string)($postVp['parcelamento_qtd_parcelas'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 ex.: 36 (confira: 36 × 1.250 = 45.000)</small>
                 <label>Vencimento da 1ª parcela</label>
                 <input type="date" name="parcelamento_primeira_parcela_data" value="<?= e($postVp['parcelamento_primeira_parcela_data'] ?? '') ?>">
+                <small class="campo-exemplo">💡 ex.: 10/12/2026 — normalmente 30 dias depois da entrada</small>
             </div>
         </div>
         <label>Periodicidade das parcelas</label>

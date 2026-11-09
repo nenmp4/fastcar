@@ -864,11 +864,14 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <div>
                 <label>Banco do financiamento</label>
                 <input type="text" name="banco_financiamento" value="<?= e($op['banco_financiamento'] ?? '') ?>">
+                <small class="campo-exemplo">💡 ex.: Banco PAN, Santander, BV</small>
                 <label>Valor da parcela (R$)</label>
                 <input type="number" step="0.01" name="valor_parcela" id="valor_parcela" value="<?= e((string)($op['valor_parcela'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 ex.: 872,67</small>
                 <small id="parcela-auto-hint" style="display:none;color:var(--texto-fraco)">🧮 calculado automaticamente (saldo ÷ parcelas restantes) — edite se for diferente</small>
                 <label>Parcelas restantes</label>
                 <input type="number" name="parcelas_restantes" id="parcelas_restantes" value="<?= e((string)($op['parcelas_restantes'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 quantas faltam pagar — ex.: 42</small>
                 <small id="parcelas-restantes-auto-hint" style="display:none;color:var(--texto-fraco)">🧮 calculado automaticamente (saldo ÷ parcela) — edite se for diferente</small>
                 <label>Parcelas em atraso</label>
                 <input type="number" name="parcelas_atraso" value="<?= e((string)($op['parcelas_atraso'] ?? 0)) ?>">
@@ -992,10 +995,13 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
             <div>
                 <label>Valor FIPE de referência (R$) *</label>
                 <input type="number" step="0.01" name="valor_fipe_referencia" id="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 valor da tabela FIPE do mês — ex.: 52.000,00</small>
                 <label><?= $op['etapa'] === 'fechado' ? 'Valor pago ao vendedor (R$)' : 'Valor ofertado ao vendedor (R$)' ?></label>
                 <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)(($op['valor_ofertado'] ?? '') !== '' && $op['valor_ofertado'] !== null ? $op['valor_ofertado'] : ($op['etapa'] === 'fechado' ? ($op['valor_final'] ?? '') : ''))) ?>">
+                <small class="campo-exemplo">💡 quanto a FASTCAR paga pro vendedor — ex.: 8.000,00</small>
                 <label>Chave PIX do vendedor/cedente (pra onde a Fastcar transfere o pagamento)</label>
                 <input type="text" name="pix_pagamento_cedente" value="<?= e($op['pix_pagamento_cedente'] ?? '') ?>" placeholder="CPF, e-mail, telefone ou chave aleatória">
+                <small class="campo-exemplo">💡 ex.: 123.456.789-00 (CPF do vendedor) ou e-mail</small>
                 <label>Condição de pagamento ao vendedor (opcional)</label>
                 <?php $condAtual = (string)($op['condicao_pagamento_cedente'] ?? '');
                       $condOpc = $condAtual === '' ? '' : ($condAtual === CONDICAO_PAGAMENTO_5050 ? '5050' : 'outra'); ?>
@@ -1018,21 +1024,26 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
                 <small style="color:var(--texto-fraco)">Só quando foi combinado com o vendedor que a FASTCAR continua pagando as parcelas. Em branco, não aparece no Quadro-Resumo.</small>
                 <label>Nº do contrato de financiamento</label>
                 <input type="text" name="contrato_financiamento_numero" value="<?= e($op['contrato_financiamento_numero'] ?? '') ?>">
+                <small class="campo-exemplo">💡 está no contrato/boleto do banco — ex.: 0123456789</small>
                 <label>Saldo do financiamento atual (R$)</label>
                 <input type="number" step="0.01" name="saldo_financiamento_atual" id="saldo_financiamento_atual" value="<?= e((string)($op['saldo_financiamento_atual'] ?? '')) ?>">
+                <small class="campo-exemplo">💡 quanto falta pro banco hoje — ex.: 36.652,14</small>
                 <small id="saldo-auto-hint" style="display:none;color:var(--texto-fraco)">🧮 calculado automaticamente (parcela × parcelas restantes) — edite se for diferente</small>
             </div>
             <div>
                 <label>Terceiro indicado pra quitação</label>
                 <input type="text" name="terceiro_quitacao" value="<?= e($op['terceiro_quitacao'] ?? '') ?>" placeholder="a indicar, se ainda não tiver">
+                <small class="campo-exemplo">💡 quem vai quitar o banco, se já souber — ex.: João da Silva. Senão deixe "a indicar"</small>
                 <label>Data de entrega da posse</label>
                 <input type="date" name="data_entrega_posse" value="<?= e($op['data_entrega_posse'] ?? '') ?>">
+                <small class="campo-exemplo">💡 dia em que o vendedor entrega o carro — ex.: 12/11/2026</small>
                 <label>Prazo pra quitar o financiamento (meses)</label>
                 <input type="number" min="1" max="240" name="prazo_quitacao_meses" value="<?= e((string)($op['prazo_quitacao_meses'] ?? '')) ?>" placeholder="normal: 12 a 18">
                 <small style="color:var(--texto-fraco)">Normal fica entre 12 e 18 meses, mas pode ser outro prazo conforme a financeira (até 240). Abaixo de 24 o contrato cita prorrogação excepcional até 24 meses; a partir de 24 cita só o prazo digitado.</small>
                 <?php // Seguro/proteção saiu em 27/10/2026 — nova cláusula 12.1: seguro é responsabilidade do VENDEDOR. ?>
                 <label>IPVA/licenciamento/multas após a entrega</label>
                 <input type="text" name="encargos_texto" value="<?= e($op['encargos_texto'] ?? '') ?>">
+                <small class="campo-exemplo">💡 ex.: por conta da FASTCAR a partir da entrega</small>
             </div>
         </div>
 

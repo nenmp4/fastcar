@@ -909,6 +909,8 @@ details.card-desativado[open] > summary { margin-bottom: 12px; }
 /* 29/10/2026 — Quadro-Resumo da locação: condições extras recolhidas. */
 details.quadro-mais { margin-top: 10px; border: 1px dashed var(--borda); border-radius: var(--raio); padding: 8px 12px; }
 details.quadro-mais > summary { cursor: pointer; font-weight: 600; min-height: 40px; display: flex; align-items: center; }
+/* 09/11/2026 — exemplo de preenchimento embaixo de cada campo do contrato. */
+small.campo-exemplo { display: block; margin: 3px 0 10px; font-size: 12.5px; line-height: 1.35; color: var(--texto-fraco); }
 
 /* Placa desenhada — mesmo desenho da vitrine de Vendas (29/10/2026). */
 .placa-mercosul { display: inline-block; vertical-align: middle; background: #fff; border: 2px solid var(--navy); border-top-width: 6px; border-top-color: var(--azul); border-radius: 4px; padding: 2px 10px; }

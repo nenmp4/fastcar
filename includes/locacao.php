@@ -155,6 +155,93 @@ function renderCamposLocacao(array $dados): string {
  * Renderização genérica de um Quadro-Resumo (name="{prefixo}[chave]") —
  * compartilhada com a promissória (includes/promissoria.php).
  */
+/**
+ * Exemplo de preenchimento mostrado embaixo de cada campo do Quadro-Resumo
+ * (09/11/2026, "nos contratos pessoal ainda se perde campos — colocar um
+ * exemplo de como preencher"). Chave = campo; o que muda por contrato vai em
+ * "{prefixo}.{campo}" (prefixos: prom, posse, loc). Só texto de ajuda —
+ * nunca preenche nada sozinho.
+ */
+const CAMPOS_QUADRO_EXEMPLOS = [
+    // Comuns (promissória / posse / locação)
+    'fipe_data_consulta'        => 'dia em que você consultou a FIPE do veículo — ex.: 09/11/2026',
+    'comissao_aplicavel'        => 'só "Sim" se um terceiro (corretor/indicador) trouxe o comprador',
+    'comissao_saldo_vencimento' => 'só se a entrada não cobriu a comissão toda — ex.: 10/12/2026',
+    'vencimento_dia'            => 'dia fixo das parcelas — ex.: 10 (todo dia 10). Vazio = mesmo dia da 1ª parcela',
+    'saldo_final_valor'         => 'parcela "balão" no final, se combinada — ex.: 5.000,00. Sem balão = deixe vazio',
+    'saldo_final_vencimento'    => 'data dessa parcela final — ex.: 10/11/2027',
+    'protecao_contratada'       => 'o comprador já tem seguro/proteção do carro? Sim ou Não',
+    'protecao_responsavel'      => 'quem contratou/paga — ex.: COMPRADOR (Associação XYZ)',
+    'protecao_coberturas'       => 'ex.: roubo, furto, colisão e terceiros até R$ 50.000',
+    'entrega_data'              => 'dia em que o cliente leva o carro — ex.: 12/11/2026',
+    'entrega_hora'              => 'ex.: 14h',
+    'entrega_local'             => 'ex.: Sede FASTCAR — Barueri/SP (ou o endereço combinado)',
+    'autoriza_imagem'           => 'cliente deixa usar foto/vídeo dele? Na dúvida, deixe vazio — ele marca na assinatura',
+    'prazo_devolucao_horas'     => 'ex.: 48 (horas pra devolver o carro depois de notificado)',
+    'prazo_saneamento_dias'     => 'ex.: 10 (dias úteis pra resolver um problema antes de rescindir)',
+    // Posse
+    'prazo_quitacao_meses'      => 'em quantos meses o comprador quita o banco — ex.: 15',
+    'servico_quitacao'          => '"Sim" só se o comprador pagar R$ 1.000 pra FASTCAR negociar a quitação com o banco',
+    'servico_forma_pagamento'   => 'ex.: PIX à vista',
+    'servico_vencimento'        => 'ex.: 15/11/2026',
+    'saldo_referencia_data'     => 'data do extrato/boleto do banco usado pro saldo — ex.: 05/11/2026',
+    'responsavel_parcelas'      => 'quem paga as parcelas do banco até quitar — normalmente COMPRADOR/CESSIONÁRIO',
+    'origem_recursos'           => 'ex.: recursos próprios do COMPRADOR/CESSIONÁRIO',
+    'valor_banco_incluido'      => '"Sim" se parte do preço já vai direto pro banco',
+    'valor_banco_valor'         => 'ex.: 18.500,00 (só se marcou "Sim" acima)',
+    'baixa_gravame_responsavel' => 'ex.: COMPRADOR/CESSIONÁRIO',
+    'baixa_gravame_prazo'       => 'ex.: 30 dias após a quitação',
+    'transferencia_responsavel' => 'ex.: COMPRADOR/CESSIONÁRIO',
+    'transferencia_prazo'       => 'ex.: 30 dias após a baixa do gravame',
+    'negociacao_prazo'          => 'ex.: 15 dias antes do fim do prazo (só se contratou o serviço de quitação)',
+    'beneficiario_preco'        => 'quem recebe o dinheiro da cessão — vazio = o vendedor original, por meio da FASTCAR',
+    'beneficiario_conta'        => 'ex.: PIX CNPJ 66.934.500/0001-09 ou Banco C6, ag. 0001, cc 12345-6',
+    'autoriza_recebimento'      => '"Sim" se o dinheiro passa pela conta da FASTCAR',
+    // Locação
+    'modalidade'                => 'Determinado = tem data pra acabar (ex.: 12 meses). Indeterminado = sem data',
+    'prazo_meses'               => 'ex.: 12 (só se prazo determinado)',
+    'data_inicio'               => 'dia em que o aluguel começa — ex.: 10/11/2026',
+    'periodicidade'             => 'motorista de aplicativo normalmente paga Semanal',
+    'aluguel_mensal'            => 'valor de CADA pagamento — ex.: 650,00 por semana ou 2.400,00 por mês',
+    'loc.vencimento_dia'        => 'ex.: 5 (todo dia 5) — só se Mensal',
+    'vencimento_semana'         => 'ex.: Segunda-feira — só se Semanal',
+    'caucao_valor'              => 'ex.: 1.000,00. Sem caução = deixe vazio',
+    'caucao_modalidade'         => 'ex.: PIX',
+    'km_inicial'                => 'km do painel na entrega — ex.: 45230',
+    'franquia_km'               => 'ex.: 1500 (km liberados por período). Sem limite = vazio',
+    'franquia_periodo'          => 'ex.: por semana. Vazio = mesmo período do aluguel',
+    'km_excedente_valor'        => 'ex.: 0,50 (por km acima da franquia)',
+    'ipva_resp'                 => 'ex.: FASTCAR',
+    'licenciamento_resp'        => 'ex.: FASTCAR',
+    'seguro_texto'              => 'ex.: proteção veicular FASTCAR, franquia R$ 2.000 por conta do locatário',
+    'franquia_sinistro_resp'    => 'ex.: LOCATÁRIO',
+    'manutencao_resp'           => 'ex.: FASTCAR (troca de óleo a cada 10.000 km)',
+    'pneus_regra'               => 'ex.: desgaste normal por conta da FASTCAR; furo/dano por conta do locatário',
+    'combustivel_devolucao'     => 'ex.: mesmo nível da entrega',
+    'rastreador'                => 'o carro tem rastreador? Normalmente "Instalado"',
+    'uso'                       => 'ex.: Aplicativo (Uber/99)',
+    'uso_outro'                 => 'só se escolheu "Outro" — ex.: entregas',
+    'aviso_previo_dias'         => 'ex.: 7 (dias de aviso antes de devolver)',
+    'mora_multa_pct'            => 'ex.: 2',
+    'mora_juros'                => 'ex.: 1% ao mês',
+    'mora_atualizacao'          => 'ex.: IPCA',
+    'multa_saida_antecipada'    => 'ex.: 1 aluguel. Sem multa = vazio',
+    'prazo_devolucao_resolucao' => 'ex.: 48 horas',
+    'veiculo_cor'               => 'ex.: Prata',
+    'canal_whatsapp'            => 'ex.: (11) 95834-7764',
+    'proprietario_registral'    => 'nome no documento do carro. Vazio = vendedor original',
+    'restricoes_conhecidas'     => 'ex.: nenhuma (ou "alienado ao Banco PAN")',
+    'loc.entrega_data'          => 'dia em que o locatário retira o carro — ex.: 10/11/2026',
+    'franquia_acumulavel'       => '"Sim" se o km que sobra numa semana passa pra próxima',
+    'cobertura_texto'           => 'ex.: proteção FASTCAR — roubo/furto/colisão, franquia R$ 2.000. Sem cobertura = vazio',
+    'local_devolucao'           => 'ex.: Sede FASTCAR — Barueri/SP',
+    'canal_privacidade'         => 'ex.: Ouvidoria (11) 97816-4525',
+];
+
+function exemploCampoQuadro(string $prefixo, string $campo): string {
+    return CAMPOS_QUADRO_EXEMPLOS[$prefixo . '.' . $campo] ?? CAMPOS_QUADRO_EXEMPLOS[$campo] ?? '';
+}
+
 function renderCamposQuadro(array $defs, array $obrigatorios, string $prefixo, array $dados, ?array $principais = null): string {
     // 29/10/2026 — "ficou muito campo pra preencher": com $principais, só esses
     // aparecem; o resto fica recolhido em "Mais condições" (padrões já preenchidos).
@@ -199,6 +286,8 @@ function renderCamposQuadro(array $defs, array $obrigatorios, string $prefixo, a
                 }
                 $html .= '<input ' . $attrs . ' name="' . $name . '" value="' . e($valor) . '"' . ($obrig ? ' required' : '') . '>';
             }
+            $exemplo = exemploCampoQuadro($prefixo, $k);
+            if ($exemplo !== '') $html .= '<small class="campo-exemplo">💡 ' . e($exemplo) . '</small>';
         }
         $html .= '</div>';
     }
