@@ -169,6 +169,32 @@ function enviarFotoManualVendas(string $telefone, string $conteudoBase64, string
 }
 
 /** Veículos disponíveis com o catálogo de fotos — cards do 🚘 Estoque. */
+/** 🎤 Áudio gravado no navegador (09/11/2026, "adicionar áudio no inbox da venda"). */
+function enviarAudioManualVendas(string $telefone, string $audioBase64, string $mime, int $usuarioId): array {
+    whatsappCanalRegistro('vendas');
+    $telNorm = normalizarTelefone($telefone);
+    if (!str_starts_with($mime, 'audio/')) return ['ok' => false, 'erro' => 'Arquivo não reconhecido como áudio.'];
+    $bytes = base64_decode($audioBase64, true);
+    if ($bytes === false || $bytes === '') return ['ok' => false, 'erro' => 'Nenhum áudio gravado.'];
+    if (strlen($bytes) > WHATSAPP_MIDIA_MAX_BYTES) {
+        return ['ok' => false, 'erro' => 'Áudio maior que ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
+    }
+    if (!zapiEnviarAudio($telNorm, 'data:' . $mime . ';base64,' . base64_encode($bytes), zapiCredenciaisVendas())) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar o áudio — confira a instância de vendas em Configurações.' . whatsappDetalheUltimoErro()];
+    }
+    // Cópia local pro áudio tocar na conversa (best-effort, servido por ver_midia_vendas.php).
+    $ext = str_contains($mime, 'ogg') ? 'ogg' : (str_contains($mime, 'mp4') ? 'm4a' : 'webm');
+    $rel = 'whatsapp_vendas/' . date('Y-m') . '/' . bin2hex(random_bytes(8)) . '.' . $ext;
+    $arquivoUrl = '';
+    if (@is_dir(dirname(UPLOADS_DIR . '/' . $rel)) || @mkdir(dirname(UPLOADS_DIR . '/' . $rel), 0775, true)) {
+        if (@file_put_contents(UPLOADS_DIR . '/' . $rel, $bytes) !== false) $arquivoUrl = $rel;
+    }
+    $id = inboxRegistrarEnviada($telNorm, '🎤 Áudio', 'audio', $usuarioId);
+    _vendasInboxAnexarArquivo($id, '', $arquivoUrl);
+    pausarIA($telNorm);
+    return ['ok' => true, 'id' => $id];
+}
+
 function listarEstoqueParaInboxVendas(): array {
     $db = getDB();
     $saida = [];

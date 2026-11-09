@@ -149,6 +149,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Content-Type: application/json');
             echo json_encode($resultado);
             exit;
+        } elseif ($acao === 'enviar_audio' && $telPost) {
+            // 09/11/2026 — áudio gravado no navegador, pela instância de vendas.
+            $resultado = enviarAudioManualVendas($telPost, (string)($_POST['audio_base64'] ?? ''), (string)($_POST['mime'] ?? ''), (int)$_SESSION['admin_id']);
+            header('Content-Type: application/json');
+            echo json_encode($resultado);
+            exit;
         } elseif ($acao === 'apagar_mensagem' && $telPost) {
             // 09/11/2026 — apaga pra todos (some também do WhatsApp do cliente).
             $resApagar = inboxApagarMensagem((int)($_POST['mensagem_id'] ?? 0), $telPost, 'vendas');
@@ -396,8 +402,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <button type="button" id="vi-btn-foto" class="vi-btn-claro" title="Mandar foto do celular/computador" aria-label="Mandar foto">📷</button>
                     <input type="file" id="vi-input-foto" accept="image/*" hidden>
                     <button type="button" id="vi-btn-estoque" class="vi-btn-estoque" title="Mandar fotos ou link de um carro do estoque">🚘<span class="vi-txt"> Estoque</span></button>
+                    <button type="button" id="vi-btn-audio" title="Gravar áudio" aria-label="Gravar áudio" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button>
+                    <button type="button" id="vi-btn-audio-cancelar" title="Cancelar gravação" style="padding:0 12px;display:none;color:#c0392b">✕</button>
                     <button type="submit">Enviar</button>
                 </form>
+                <p id="vi-audio-status" style="display:none;font-size:12.5px;color:var(--texto-fraco);margin:4px 0 0"></p>
             <?php endif; ?>
         <?php endif; ?>
     </section>
@@ -734,6 +743,171 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 return true;
             })
             .catch(function () { if (btn) { btn.disabled = false; btn.textContent = rot; } alert('Falha ao enviar — confira sua conexão.'); return false; });
+    }
+
+    // 09/11/2026, "adicionar áudio para enviar no inbox da venda" — mesmo
+    // gravador do WhatsApp Box de compra; envia pela instância de vendas.
+    var ICONE_MIC = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>';
+    var ICONE_PARAR = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="#fff"/></svg>';
+    var btnAudio = document.getElementById('vi-btn-audio');
+    var btnAudioCancelar = document.getElementById('vi-btn-audio-cancelar');
+    var statusAudio = document.getElementById('vi-audio-status');
+    if (btnAudio && statusAudio) {
+        var gravador = null;
+        var streamAtual = null;
+        var pedacos = [];
+        var timerIntervalo = null;
+        var inicioGravacao = 0;
+        var cancelando = false;
+        var AUDIO_MAX_SEGUNDOS = 600; // 10min — rede de segurança, nunca grava pra sempre se esquecerem aberto
+
+        function formatarTempo(segundos) {
+            var m = Math.floor(segundos / 60);
+            var s = segundos % 60;
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        function pararStream() {
+            if (streamAtual) {
+                streamAtual.getTracks().forEach(function (t) { t.stop(); });
+                streamAtual = null;
+            }
+            if (timerIntervalo) {
+                clearInterval(timerIntervalo);
+                timerIntervalo = null;
+            }
+        }
+
+        function voltarAoEstadoInicial() {
+            pararStream();
+            gravador = null;
+            pedacos = [];
+            cancelando = false;
+            btnAudio.innerHTML = ICONE_MIC;
+            btnAudio.title = 'Gravar áudio';
+            btnAudio.disabled = false;
+            btnAudioCancelar.style.display = 'none';
+            statusAudio.style.display = 'none';
+        }
+
+        function enviarAudioGravado(blob, mime) {
+            // 29/10/2026, "gravo e depois demora 20 segundos" — a bolha com o
+            // áudio aparece NA HORA (tocando do próprio navegador) com
+            // "⏳ enviando…"; vira "✓ enviado" quando o servidor confirma.
+            // O consultor já pode gravar/escrever a próxima sem esperar.
+            var bolha = document.createElement('div');
+            bolha.className = 'msg msg-out';
+            bolha.innerHTML = '🎤 Áudio<audio controls preload="metadata" style="max-width:260px;display:block;margin-top:6px"></audio><small>⏳ enviando…</small>';
+            bolha.querySelector('audio').src = URL.createObjectURL(blob);
+            if (thread) { thread.appendChild(bolha); thread.scrollTop = thread.scrollHeight; }
+            var rodapeBolha = bolha.querySelector('small');
+            voltarAoEstadoInicial();
+            var leitor = new FileReader();
+            leitor.onload = function () {
+                var base64 = String(leitor.result).split(',')[1] || '';
+                var body = new URLSearchParams();
+                body.set('csrf_token', csrf.value);
+                body.set('acao', 'enviar_audio');
+                body.set('telefone', telefone);
+                body.set('ajax', '1');
+                body.set('mime', mime);
+                body.set('audio_base64', base64);
+                fetch('', { method: 'POST', body: body })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!data.ok) {
+                            rodapeBolha.textContent = '❌ não enviado';
+                            alert(data.erro || 'Falha ao enviar áudio.');
+                            return;
+                        }
+                        // O polling pode ter desenhado a mesma mensagem (ainda
+                        // sem o arquivo) no meio do caminho — fica só a nossa.
+                        if (data.id && thread) {
+                            thread.querySelectorAll('[data-id="' + data.id + '"]').forEach(function (el) { if (el !== bolha) el.remove(); });
+                            bolha.dataset.id = data.id;
+                        }
+                        rodapeBolha.textContent = '✓ enviado';
+                    })
+                    .catch(function () {
+                        rodapeBolha.textContent = '❌ não enviado';
+                        alert('Falha ao enviar áudio — confira sua conexão.');
+                    });
+            };
+            leitor.onerror = function () {
+                rodapeBolha.textContent = '❌ não enviado';
+                alert('Não consegui processar o áudio gravado.');
+            };
+            leitor.readAsDataURL(blob);
+        }
+
+        function iniciarGravacao() {
+            if (!navigator.mediaDevices || !window.MediaRecorder) {
+                alert('Seu navegador não suporta gravação de áudio. Tente pelo Chrome, Firefox ou Edge atualizados.');
+                return;
+            }
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+                streamAtual = stream;
+                var candidatos = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+                var mimeEscolhido = '';
+                for (var i = 0; i < candidatos.length; i++) {
+                    if (MediaRecorder.isTypeSupported(candidatos[i])) { mimeEscolhido = candidatos[i]; break; }
+                }
+                try {
+                    gravador = mimeEscolhido ? new MediaRecorder(stream, { mimeType: mimeEscolhido }) : new MediaRecorder(stream);
+                } catch (e) {
+                    alert('Não consegui iniciar a gravação neste navegador.');
+                    pararStream();
+                    return;
+                }
+                pedacos = [];
+                cancelando = false;
+                gravador.addEventListener('dataavailable', function (e) {
+                    if (e.data && e.data.size > 0) pedacos.push(e.data);
+                });
+                gravador.addEventListener('stop', function () {
+                    // stop() dispara um 'dataavailable' final com o pedaço
+                    // pendente ANTES do evento 'stop' — checar cancelando
+                    // aqui (não só pedacos.length) é o que garante que
+                    // cancelar de verdade não manda nada, mesmo que esse
+                    // pedaço final já tenha entrado no array nesse meio-tempo.
+                    if (cancelando || pedacos.length === 0) { voltarAoEstadoInicial(); return; }
+                    var mimeFinal = gravador.mimeType || mimeEscolhido || 'audio/webm';
+                    var blob = new Blob(pedacos, { type: mimeFinal });
+                    enviarAudioGravado(blob, mimeFinal);
+                });
+                gravador.start();
+                inicioGravacao = Date.now();
+                btnAudio.innerHTML = ICONE_PARAR;
+                btnAudio.title = 'Parar e enviar';
+                btnAudioCancelar.style.display = '';
+                statusAudio.style.display = 'block';
+                statusAudio.textContent = '🔴 Gravando... 0:00';
+                timerIntervalo = setInterval(function () {
+                    var decorridos = Math.floor((Date.now() - inicioGravacao) / 1000);
+                    statusAudio.textContent = '🔴 Gravando... ' + formatarTempo(decorridos);
+                    if (decorridos >= AUDIO_MAX_SEGUNDOS && gravador && gravador.state === 'recording') {
+                        gravador.stop();
+                    }
+                }, 1000);
+            }).catch(function () {
+                alert('Não consegui acessar o microfone — verifique a permissão do navegador pra este site.');
+            });
+        }
+
+        btnAudio.addEventListener('click', function () {
+            if (gravador && gravador.state === 'recording') {
+                gravador.stop(); // dispara o listener 'stop' acima, que envia
+            } else {
+                iniciarGravacao();
+            }
+        });
+
+        btnAudioCancelar.addEventListener('click', function () {
+            if (gravador && gravador.state === 'recording') {
+                cancelando = true;
+                gravador.stop();
+            }
+        });
     }
 
     var btnFoto = document.getElementById('vi-btn-foto');
