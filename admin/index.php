@@ -931,11 +931,34 @@ if ($filtroEspecialLabel !== ''): ?>
     </div>
 
     <?php if ($perfil === 'super_admin'): ?>
-        <?php $fechPorConsultor = dashboardFechadasPorConsultorMes(); $maxFech = max(1, ...array_map(fn($x) => (int)$x['qtd'], $fechPorConsultor ?: [['qtd' => 1]])); ?>
-        <div class="card">
-            <h3>🏆 Fechamentos por consultor — <?= e(['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'][(int)date('n')]) ?></h3>
+        <?php
+        // Filtro de mês do ranking (09/11/2026) — ?ranking_mes=AAAA-MM, padrão o mês atual.
+        $rankingMes = preg_match('/^\d{4}-\d{2}$/', (string)($_GET['ranking_mes'] ?? '')) ? $_GET['ranking_mes'] : date('Y-m');
+        if ($rankingMes > date('Y-m')) $rankingMes = date('Y-m');
+        $rankingIni = $rankingMes . '-01'; $rankingFim = date('Y-m-t', strtotime($rankingIni));
+        $mesesPt = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+        $fechPorConsultor = dashboardFechadasPorConsultorMes($rankingMes);
+        $maxFech = max(1, ...array_map(fn($x) => (int)$x['qtd'], $fechPorConsultor ?: [['qtd' => 1]]));
+        $qsRanking = $_GET; unset($qsRanking['ranking_mes']);
+        ?>
+        <div class="card" id="ranking-consultores">
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+                <h3 style="margin:0">🏆 Fechamentos por consultor — <?= e($mesesPt[(int)substr($rankingMes, 5, 2)] . ' de ' . substr($rankingMes, 0, 4)) ?></h3>
+                <form method="get" action="#ranking-consultores" style="display:flex;gap:6px;align-items:center;margin:0">
+                    <?php foreach ($qsRanking as $k => $val): if (is_array($val)) continue; ?>
+                        <input type="hidden" name="<?= e($k) ?>" value="<?= e((string)$val) ?>">
+                    <?php endforeach; ?>
+                    <label for="ranking-mes" style="margin:0">Mês:</label>
+                    <select id="ranking-mes" name="ranking_mes" onchange="this.form.submit()" style="width:auto;margin:0">
+                        <?php for ($i = 0; $i < 12; $i++): $mOpt = date('Y-m', strtotime(date('Y-m-01') . " -{$i} months")); ?>
+                            <option value="<?= $mOpt ?>" <?= $mOpt === $rankingMes ? 'selected' : '' ?>><?= e(ucfirst($mesesPt[(int)substr($mOpt, 5, 2)]) . '/' . substr($mOpt, 0, 4)) ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <noscript><button type="submit" class="btn">Filtrar</button></noscript>
+                </form>
+            </div>
             <?php if (!$fechPorConsultor): ?>
-                <p style="color:var(--texto-suave);margin:0">Nenhuma compra fechada este mês ainda.</p>
+                <p style="color:var(--texto-suave);margin:10px 0 0">Nenhuma compra fechada por consultor nesse mês.</p>
             <?php else: ?>
                 <table class="tabela-oportunidades">
                     <thead><tr><th>Consultor</th><th>Fechadas</th><th>Valor fechado</th><th></th></tr></thead>
@@ -946,7 +969,7 @@ if ($filtroEspecialLabel !== ''): ?>
                                 <div class="fech-barra"><span style="width:<?= round((int)$fc['qtd'] / $maxFech * 100) ?>%"></span></div></td>
                             <td data-label="Fechadas"><strong><?= (int)$fc['qtd'] ?></strong></td>
                             <td data-label="Valor fechado"><?= moeda((float)$fc['total']) ?></td>
-                            <td><a class="btn" href="/admin/index.php?filtro=fechado_mes&amp;consultor=<?= (int)$fc['id'] ?>">Ver</a></td>
+                            <td><a class="btn" href="/admin/index.php?etapa=fechado&amp;periodo=personalizado&amp;de=<?= $rankingIni ?>&amp;ate=<?= $rankingFim ?>&amp;consultor=<?= (int)$fc['id'] ?>">Ver</a></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

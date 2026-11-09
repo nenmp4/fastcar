@@ -448,17 +448,22 @@ function filtroGestaoForm(string $acao, array $manter, string $temp, string $per
  * caindo pro responsável quando vazio. Só usuários com perfil consultor
  * ("só usuários consultores", 09/11/2026).
  */
-function dashboardFechadasPorConsultorMes(): array {
-    return getDB()->query("
+function dashboardFechadasPorConsultorMes(?string $mes = null): array {
+    // $mes = 'AAAA-MM' (filtro do card, 09/11/2026); null = mês atual.
+    $ini = ($mes && preg_match('/^\d{4}-\d{2}$/', $mes)) ? $mes . '-01' : date('Y-m-01');
+    $fim = date('Y-m-t', strtotime($ini));
+    $st = getDB()->prepare("
         SELECT u.id, u.nome, COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total
         FROM oportunidades o
         JOIN usuarios u ON u.id = COALESCE(o.fechado_por, o.responsavel_id) AND u.perfil = 'consultor'
         WHERE o.etapa = 'fechado'
           AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
-          AND o.data_compra >= date('now','localtime','start of month')
+          AND o.data_compra BETWEEN ? AND ?
         GROUP BY u.id, u.nome
         ORDER BY qtd DESC, total DESC, u.nome
-    ")->fetchAll();
+    ");
+    $st->execute([$ini, $fim]);
+    return $st->fetchAll();
 }
 
 /**
