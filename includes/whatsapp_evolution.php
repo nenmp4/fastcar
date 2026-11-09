@@ -765,6 +765,31 @@ function evolutionBuscarContato(string $phone, ?array $credenciais = null): ?arr
  * Retorna ['bytes'=>string, 'mime'=>string] ou null — nunca lança, mesmo
  * contrato de oficialBaixarMidiaRecebida()/baixarMidiaZapi().
  */
+/**
+ * Guarda a mensagem crua (key + message) do webhook — 09/11/2026, achado
+ * real: documento/foto do cliente com "Mídia não carregou" mesmo clicando
+ * "Tentar de novo". Pedir a mídia só pelo id depende da Evolution ainda ter a
+ * mensagem no banco dela; mandando a mensagem inteira (com mediaKey/url), ela
+ * decripta direto. Fica junto da reserva de mídia (7 dias de limpeza).
+ */
+function _evolutionMensagemBrutaPath(string $messageId): string {
+    return dirname(__DIR__) . '/storage/cache/whatsapp_midia_pendente/' . sha1($messageId) . '.raw.json';
+}
+function evolutionGuardarMensagemBruta(string $messageId, array $key, array $message): void {
+    if ($messageId === '' || !$message) return;
+    try {
+        $f = _evolutionMensagemBrutaPath($messageId);
+        if (!is_dir(dirname($f))) @mkdir(dirname($f), 0755, true);
+        @file_put_contents($f, json_encode(['key' => $key, 'message' => $message], JSON_UNESCAPED_UNICODE));
+    } catch (Throwable $e) { /* best-effort */ }
+}
+function evolutionLerMensagemBruta(string $messageId): ?array {
+    if ($messageId === '') return null;
+    $raw = @file_get_contents(_evolutionMensagemBrutaPath($messageId));
+    $j = $raw ? json_decode($raw, true) : null;
+    return is_array($j) && !empty($j['message']) ? $j : null;
+}
+
 function evolutionBaixarMidiaRecebida(string $messageId, string $tipo, ?array $credenciais = null): ?array {
     // $credenciais (03/11/2026): instância de vendas/financeiro — padrão é a principal.
     [$base, $instance, $apiKey] = $credenciais ?: evolutionCredenciais();
@@ -772,6 +797,22 @@ function evolutionBaixarMidiaRecebida(string $messageId, string $tipo, ?array $c
         _evolutionSetUltimoErro('Sem URL/instância/API key configurados, ou messageId vazio.');
         return null;
     }
+    // 1º com a mensagem inteira (se guardada), depois só pelo id.
+    $tentativas = [];
+    $bruta = evolutionLerMensagemBruta($messageId);
+    if ($bruta) $tentativas[] = ['key' => (array)($bruta['key'] ?? []) + ['id' => $messageId], 'message' => $bruta['message']];
+    $tentativas[] = ['key' => ['id' => $messageId]];
+    $erros = [];
+    foreach ($tentativas as $msg) {
+        $r = _evolutionBaixarMidiaTentativa($base, $instance, $apiKey, $msg, $tipo);
+        if ($r !== null) return $r;
+        $erros[] = evolutionUltimoErro();
+    }
+    _evolutionSetUltimoErro(implode(' | ', array_filter($erros)));
+    return null;
+}
+
+function _evolutionBaixarMidiaTentativa(string $base, string $instance, string $apiKey, array $msg, string $tipo): ?array {
 
     try {
         $ch = curl_init("{$base}/chat/getBase64FromMediaMessage/" . rawurlencode($instance));
@@ -779,11 +820,11 @@ function evolutionBaixarMidiaRecebida(string $messageId, string $tipo, ?array $c
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode([
-                'message' => ['key' => ['id' => $messageId]],
+                'message' => $msg,
                 'convertToMp4' => false,
             ]),
             CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
-            CURLOPT_TIMEOUT => $tipo === 'video' ? 40 : 20,
+            CURLOPT_TIMEOUT => in_array($tipo, ['video', 'document'], true) ? 45 : 25,
         ] + _evolutionCurlSslOpts());
         $resp = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1001,7 +1042,23 @@ function evolutionAdaptarPayloadParaZapi(array $body): ?array {
     $phone = (string)preg_replace('/@.*/', '', $remoteJid); // tira @s.whatsapp.net / @g.us
 
     $mensagem = $data['message'] ?? [];
+    // 09/11/2026: documento com legenda, mensagem temporária e "ver uma vez"
+    // chegam embrulhados (documentWithCaptionMessage.message.documentMessage
+    // etc) — desembrulha pra cair no tipo certo.
+    for ($i = 0; $i < 3 && is_array($mensagem); $i++) {
+        $embrulho = null;
+        foreach (['documentWithCaptionMessage', 'ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'] as $w) {
+            if (isset($mensagem[$w]['message']) && is_array($mensagem[$w]['message'])) { $embrulho = $mensagem[$w]['message']; break; }
+        }
+        if ($embrulho === null) break;
+        $mensagem = $embrulho;
+    }
+    if (!is_array($mensagem)) $mensagem = [];
     $texto = $mensagem['conversation'] ?? $mensagem['extendedTextMessage']['text'] ?? null;
+    if ($texto === null && array_intersect_key($mensagem, array_flip(['imageMessage', 'audioMessage', 'videoMessage', 'documentMessage']))) {
+        // Guarda a mensagem crua pra baixar a mídia (agora ou no "Tentar de novo").
+        evolutionGuardarMensagemBruta((string)($key['id'] ?? ''), is_array($key) ? $key : [], (array)($data['message'] ?? []));
+    }
 
     $adaptado = [
         'messageId' => (string)($key['id'] ?? ''),
@@ -1035,7 +1092,8 @@ function evolutionAdaptarPayloadParaZapi(array $body): ?array {
         // validada) — fica vazio sem quebrar nada se o nome vier diferente.
         $adaptado['document'] = [
             'mimeType' => (string)($mensagem['documentMessage']['mimetype'] ?? ''),
-            'fileName' => (string)($mensagem['documentMessage']['fileName'] ?? ''),
+            'fileName' => (string)($mensagem['documentMessage']['fileName'] ?? $mensagem['documentMessage']['title'] ?? ''),
+            'caption' => (string)($mensagem['documentMessage']['caption'] ?? ''),
         ];
     }
     // Tipo desconhecido/evento de ack/reação: fica só com os campos base,

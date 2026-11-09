@@ -79,8 +79,9 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
         }
 
         $textoMidia = '';
-        if (in_array($tipoBruto, ['audio', 'image', 'video'], true)) {
-            $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4'][$tipoBruto];
+        // 09/11/2026: documento do cliente também baixa/salva (antes só audio/imagem/vídeo).
+        if (in_array($tipoBruto, ['audio', 'image', 'video', 'document'], true)) {
+            $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4', 'document' => 'application/octet-stream'][$tipoBruto];
             if (($instancia['canal'] ?? '') === 'evolution') {
                 // 09/11/2026, achado real: fotos aparecendo como "[image]" no
                 // WhatsApp Vendas — a Evolution nunca manda URL no webhook
@@ -105,7 +106,7 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
             }
             if ($bytesMidia !== null) {
                 guardarMidiaPendente((string)$messageId, $bytesMidia, $mime);
-                $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
+                if ($tipoBruto !== 'document') $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
             }
         }
         if ($textoMidia !== '') {
