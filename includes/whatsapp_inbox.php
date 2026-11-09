@@ -244,6 +244,21 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId): array {
     $tipo = midiaFaltandoMensagemWhatsapp($m);
     if ($tipo === null) return ['ok' => (bool)($m['drive_file_id'] || $m['arquivo_url']), 'mensagem' => $m, 'erro' => ''];
 
+    $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4', 'document' => 'application/octet-stream'][$tipo];
+    $stC = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
+    // 09/11/2026 — reserva guardada no disco na hora do download (antes da
+    // IA): se o webhook morreu antes de salvar a cópia, recupera daqui sem
+    // depender do WhatsApp liberar a mídia de novo.
+    $pendente = lerMidiaPendente((string)$m['zapi_message_id']);
+    if ($pendente !== null) {
+        $stC->execute([$m['telefone']]);
+        $cli = $stC->fetch() ?: ['id' => 0, 'nome' => ''];
+        salvarMidiaWhatsappRecebida($mensagemId, $pendente['bytes'], $pendente['mime'] ?: $mimeDefault, $tipo, (int)$cli['id'], (string)$cli['nome']);
+        $st->execute([$mensagemId]);
+        $m = $st->fetch();
+        if ($m['drive_file_id'] || $m['arquivo_url']) return ['ok' => true, 'mensagem' => $m, 'erro' => ''];
+    }
+
     $chave = 'midia_retry_' . $mensagemId;
     $ultima = (int)getConfig($chave);
     if ($ultima && time() - $ultima < 1800) return ['ok' => false, 'mensagem' => $m, 'erro' => 'Já tentei há pouco — a mídia pode ter expirado no WhatsApp.'];
@@ -259,10 +274,9 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId): array {
     if ($res === null) {
         return ['ok' => false, 'mensagem' => $m, 'erro' => 'Não deu pra baixar do WhatsApp (' . (evolutionUltimoErro() ?: 'sem detalhe') . ').'];
     }
-    $stC = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
     $stC->execute([$m['telefone']]);
     $cli = $stC->fetch() ?: ['id' => 0, 'nome' => ''];
-    $mime = $res['mime'] ?: ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4', 'document' => 'application/octet-stream'][$tipo];
+    $mime = $res['mime'] ?: $mimeDefault;
     salvarMidiaWhatsappRecebida($mensagemId, $res['bytes'], $mime, $tipo, (int)$cli['id'], (string)$cli['nome']);
     $st->execute([$mensagemId]);
     $m = $st->fetch();

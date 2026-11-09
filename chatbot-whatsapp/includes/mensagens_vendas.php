@@ -104,6 +104,7 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
                 }
             }
             if ($bytesMidia !== null) {
+                guardarMidiaPendente((string)$messageId, $bytesMidia, $mime);
                 $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
             }
         }

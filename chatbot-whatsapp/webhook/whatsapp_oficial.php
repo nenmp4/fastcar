@@ -31,6 +31,13 @@
  *   POST — mensagem/evento de verdade.
  */
 
+// 09/11/2026 — download da mídia + transcrição/descrição pela IA + upload
+// pro Drive podem passar dos 30s padrão do PHP: o processo morria no meio
+// e a foto/áudio ficava "não disponível" mesmo com a IA já tendo lido.
+// Também nunca para no meio se o servidor do WhatsApp desistir de esperar.
+@set_time_limit(180);
+ignore_user_abort(true);
+
 define('ROOT', dirname(__DIR__, 2));
 require_once ROOT . '/includes/db.php';
 require_once ROOT . '/includes/security.php';

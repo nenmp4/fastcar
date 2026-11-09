@@ -399,6 +399,51 @@ function extensaoPorMime(string $mime): string {
 }
 
 /**
+ * Guarda os bytes da mídia recebida no disco assim que ela é baixada,
+ * ANTES da IA transcrever/descrever (09/11/2026, achado real: "a IA
+ * descreveu a foto/áudio mas a mídia não ficou disponível" — o download
+ * funcionava, mas o processo do webhook podia morrer depois (tempo de
+ * execução estourado entre Gemini + upload pro Drive) e os bytes se
+ * perdiam; o WhatsApp não libera a mídia de novo depois de um tempo).
+ * Chave = id da mensagem no WhatsApp. Lido por lerMidiaPendente() e
+ * apagado quando a cópia definitiva é salva. Nunca lança.
+ */
+function _midiaPendenteDir(): string {
+    return dirname(__DIR__, 2) . '/storage/cache/whatsapp_midia_pendente';
+}
+function guardarMidiaPendente(string $messageId, string $bytes, string $mime): void {
+    if ($messageId === '' || $bytes === '') return;
+    try {
+        $dir = _midiaPendenteDir();
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+        $base = $dir . '/' . sha1($messageId);
+        @file_put_contents($base . '.bin', $bytes);
+        @file_put_contents($base . '.mime', $mime);
+        // Limpeza ocasional: reserva com mais de 7 dias já não serve pra nada.
+        if (random_int(1, 50) === 1) {
+            foreach ((array)glob($dir . '/*') as $f) {
+                if (is_file($f) && filemtime($f) < time() - 7 * 86400) @unlink($f);
+            }
+        }
+    } catch (Throwable $e) {}
+}
+/** @return array{bytes:string,mime:string}|null */
+function lerMidiaPendente(string $messageId): ?array {
+    if ($messageId === '') return null;
+    $base = _midiaPendenteDir() . '/' . sha1($messageId);
+    if (!is_file($base . '.bin')) return null;
+    $bytes = @file_get_contents($base . '.bin');
+    if ($bytes === false || $bytes === '') return null;
+    return ['bytes' => $bytes, 'mime' => (string)@file_get_contents($base . '.mime')];
+}
+function apagarMidiaPendente(string $messageId): void {
+    if ($messageId === '') return;
+    $base = _midiaPendenteDir() . '/' . sha1($messageId);
+    @unlink($base . '.bin');
+    @unlink($base . '.mime');
+}
+
+/**
  * Salva de verdade (Drive preferido, storage/uploads/ fallback — mesmo
  * padrão de includes/documentos.php::salvarArquivoGeradoComoDocumento())
  * a mídia recebida no WhatsApp, e atualiza a linha já gravada em
@@ -451,6 +496,10 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
                 $db->prepare("UPDATE whatsapp_mensagens SET drive_file_id = ?, arquivo_url = ? WHERE id = ?")
                     ->execute([$copia['drive_file_id'], $copia['arquivo_url'], $mensagemId])
             );
+            // Cópia definitiva salva — a reserva temporária não precisa mais.
+            $stWa = $db->prepare("SELECT zapi_message_id FROM whatsapp_mensagens WHERE id = ?");
+            $stWa->execute([$mensagemId]);
+            apagarMidiaPendente((string)$stWa->fetchColumn());
         } else {
             // 21/10/2026, achado real: "áudio não carrega" — a cópia
             // visível (não só a descrição do Gemini) ficava sem rastro
@@ -766,6 +815,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 if ($resultadoMeta !== null) {
                     $bytesMidia = $resultadoMeta['bytes'];
                     $mime = $resultadoMeta['mime'] !== '' ? $resultadoMeta['mime'] : (string)($bloco['mimeType'] ?: $mimeDefault);
+                    guardarMidiaPendente((string)$messageId, $bytesMidia, $mime);
                     $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
                 } else {
                     logDiagnosticoMidiaZapi($tipoBruto, 'meta_media_falhou', ['mediaId' => $bloco['mediaId']]);
@@ -781,6 +831,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 if ($resultadoEvolution !== null) {
                     $bytesMidia = $resultadoEvolution['bytes'];
                     $mime = $resultadoEvolution['mime'] !== '' ? $resultadoEvolution['mime'] : (string)($bloco['mimeType'] ?: $mimeDefault);
+                    guardarMidiaPendente((string)$messageId, $bytesMidia, $mime);
                     $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
                 } else {
                     logDiagnosticoMidiaZapi($tipoBruto, 'evolution_media_falhou', [
@@ -793,6 +844,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                     $mime = mimeMidia($payload, $tipoBruto, $mimeDefault);
                     $bytesMidia = baixarMidiaZapi($url, $tipoBruto);
                     if ($bytesMidia !== null) {
+                        guardarMidiaPendente((string)$messageId, $bytesMidia, $mime);
                         $textoMidia = descreverMidiaComGemini($bytesMidia, $mime, $tipoBruto);
                     }
                 }
