@@ -173,12 +173,13 @@ if ($busca !== '') {
     // 27/10/2026, "tem carro duplicado, não consigo localizar" — placa/chassi
     // também batem ignorando hífen/espaço/maiúscula ("abc1234" acha "ABC-1234").
     $where .= " AND (o.veiculo_placa LIKE ? OR o.veiculo_chassi LIKE ? OR o.veiculo_marca LIKE ? OR o.veiculo_modelo LIKE ? OR c.nome LIKE ? OR c.cidade LIKE ?
+                     OR EXISTS (SELECT 1 FROM vendas vb WHERE vb.oportunidade_id = o.id AND vb.etapa != 'cancelada' AND (vb.comprador_nome LIKE ? OR vb.comprador_telefone LIKE ?))
                      OR UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_placa,''), '-', ''), ' ', '')) LIKE ?
                      OR UPPER(REPLACE(REPLACE(COALESCE(o.veiculo_chassi,''), '-', ''), ' ', '')) LIKE ?)";
     $like = '%' . $busca . '%';
     $buscaNorm = strtoupper(preg_replace('/[\s\-]/', '', $busca));
     $likeNorm = '%' . ($buscaNorm !== '' ? $buscaNorm : $busca) . '%';
-    $params = [$like, $like, $like, $like, $like, $like, $likeNorm, $likeNorm];
+    $params = [$like, $like, $like, $like, $like, $like, $like, $like, $likeNorm, $likeNorm];
 }
 // Placas/chassis repetidos na frota (cadastros já mesclados não contam) —
 // cada um vira link que filtra a lista só pros cadastros daquele carro.
@@ -240,6 +241,11 @@ $totalVeiculos = (int)$stmtTotal->fetchColumn();
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.cidade AS cliente_cidade, c.estado AS cliente_estado,
            vd.id AS venda_id, vd.etapa AS venda_etapa, vd.tipo_contrato AS venda_tipo_contrato,
+           vd.comprador_nome AS venda_comprador_nome, vd.comprador_telefone AS venda_comprador_telefone, vd.data_venda AS venda_data,
+           -- 09/11/2026 — última venda desfeita por devolução (voltou pra Fastcar).
+           (SELECT vx.comprador_nome || '|' || COALESCE(vx.updated_at, '') FROM vendas vx
+             WHERE vx.oportunidade_id = o.id AND vx.etapa = 'cancelada' AND vx.data_venda IS NOT NULL
+             ORDER BY vx.id DESC LIMIT 1) AS ultima_devolucao,
            {$refPosseExpr} AS ref_posse,
            (SELECT COUNT(*) FROM veiculo_midias_revenda WHERE oportunidade_id = o.id) AS total_midias,
            {$condIncompletoImportAntigo} AS incompleto_import_antigo
@@ -417,12 +423,12 @@ function mesesComAFastcar(?string $refPosse): int {
         <thead>
             <tr>
                 <th>Veículo</th><th>Comprado de</th><th>Compra</th>
-                <th>Contrato / Financiamento</th><th>Condição</th><th>Venda</th><th>Ações</th>
+                <th>Contrato / Financiamento</th><th>Condição</th><th>Venda</th><th>Vendido para</th><th>Ações</th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$veiculos): ?>
-            <tr><td colspan="7"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
+            <tr><td colspan="8"><?= $busca ? 'Nenhum veículo encontrado pra essa busca.' : 'Nenhum veículo comprado ainda.' ?></td></tr>
         <?php endif; ?>
         <?php foreach ($veiculos as $v): ?>
             <?php
@@ -516,6 +522,21 @@ function mesesComAFastcar(?string $refPosse): int {
                         </form>
                     <?php else: ?>
                         <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'], $v['venda_tipo_contrato'] ?? 'venda')) ?></span></a>
+                    <?php endif; ?>
+                </td>
+                <td data-label="Vendido para">
+                    <?php // 09/11/2026 — comprador atual, sempre lido da venda ativa: se o carro voltar (devolução), some daqui sozinho. ?>
+                    <?php if ($v['venda_id'] !== null && $v['venda_comprador_nome']): ?>
+                        <strong><?= e($v['venda_comprador_nome']) ?></strong>
+                        <?php if ($v['venda_comprador_telefone']): ?><br><small class="frota-nowrap"><?= e($v['venda_comprador_telefone']) ?></small><?php endif; ?>
+                        <?php if ($v['venda_etapa'] === 'vendido' && $v['venda_data']): ?><br><small>em <?= e(date('d/m/Y', strtotime($v['venda_data']))) ?></small>
+                        <?php elseif ($v['venda_etapa'] !== 'vendido'): ?><br><small>(em negociação)</small><?php endif; ?>
+                    <?php else: ?>
+                        <small>—</small>
+                    <?php endif; ?>
+                    <?php if ($v['ultima_devolucao'] && ($v['venda_id'] === null || $v['venda_etapa'] !== 'vendido')):
+                        [$devNome, $devQuando] = array_pad(explode('|', (string)$v['ultima_devolucao'], 2), 2, ''); ?>
+                        <br><small title="Venda desfeita — o carro voltou pra Fastcar">↩️ voltou de <?= e($devNome ?: 'comprador') ?><?= $devQuando ? ' em ' . e(date('d/m/Y', strtotime($devQuando))) : '' ?></small>
                     <?php endif; ?>
                 </td>
                 <td class="frota-nowrap">
