@@ -843,6 +843,11 @@ function gerarPdfContratoPosse(array $c): string {
             . '; valor negociado e vencimento a confirmar por escrito com documento do credor.';
     }
     _pdfLinhaResumo($pdf, 'Condições da quitação e providências documentais', $cond);
+    // Modelo versão 1.0 atualizado (09/11/2026): indenização por retenção indevida (cl. 20).
+    _pdfLinhaResumo($pdf, 'FRUIÇÃO E RETENÇÃO INDEVIDA — CLÁUSULA 20',
+        'R$ 4.000,00 por 30 dias corridos. Cálculo proporcional: R$ 4.000,00 ÷ 30 × dias de retenção indevida, com ' .
+        'arredondamento apenas do resultado final. Início: dia seguinte ao término do prazo de devolução notificado, ' .
+        'após resolução válida por inadimplemento. Término e exceções conforme cláusula 20. Ciência específica do comprador: __________________.');
 
     $pdf->Ln(2);
     $pdf->SetFont('Helvetica', 'I', 8);
