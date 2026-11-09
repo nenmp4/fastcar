@@ -62,7 +62,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'recuperar_midia') {
         echo json_encode(['ok' => false, 'erro' => 'sem acesso']);
         exit;
     }
-    $resMid = recuperarMidiaMensagemWhatsapp($midId);
+    @set_time_limit(120); // baixar + salvar no Drive pode passar dos 30s
+    $resMid = recuperarMidiaMensagemWhatsapp($midId, !empty($_GET['forcar']));
     echo json_encode(['ok' => $resMid['ok'], 'html' => $resMid['ok'] && $resMid['mensagem'] ? renderizarMidiaWhatsapp($resMid['mensagem']) : '', 'erro' => $resMid['erro']]);
     exit;
 }
@@ -702,15 +703,35 @@ if ($telefoneAtivo && !$contatoAtivo) {
             var el = midiaFila.shift();
             if (!el) { midiaRodando = false; return; }
             midiaRodando = true;
-            fetch('?ajax=recuperar_midia&id=' + encodeURIComponent(el.dataset.mid))
+            var forcar = el.dataset.forcar === '1';
+            el.textContent = '🔄 carregando mídia…';
+            fetch('?ajax=recuperar_midia&id=' + encodeURIComponent(el.dataset.mid) + (forcar ? '&forcar=1' : ''))
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
-                    if (d.ok && d.html) { el.outerHTML = d.html; }
-                    else { el.textContent = '⚠️ Mídia não disponível — o WhatsApp não liberou o arquivo (peça pro cliente reenviar).'; }
+                    if (d.ok && d.html) { el.outerHTML = d.html; return; }
+                    midiaFalhou(el, d.erro || 'o WhatsApp não liberou o arquivo');
                 })
-                .catch(function () { el.textContent = '⚠️ Não deu pra carregar agora — recarregue a página.'; })
+                .catch(function () { midiaFalhou(el, 'demorou demais pra responder'); })
                 .then(proxima);
         })();
+    }
+    // 09/11/2026 ("dá pra carregar novamente?") — mostra o motivo real e um
+    // botão pra tentar de novo na hora, em vez de só "peça pra reenviar".
+    function midiaFalhou(el, motivo) {
+        el.innerHTML = '';
+        el.appendChild(document.createTextNode('⚠️ Mídia não carregou (' + motivo + '). '));
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn-texto';
+        b.textContent = '🔄 Tentar de novo';
+        b.style.marginLeft = '4px';
+        b.addEventListener('click', function () {
+            el.dataset.forcar = '1';
+            delete midiaTentadas[el.dataset.mid];
+            recuperarMidias();
+        });
+        el.appendChild(b);
+        el.appendChild(document.createTextNode(' Se não voltar, peça pro cliente reenviar.'));
     }
     setTimeout(recuperarMidias, 300);
     setInterval(recuperarMidias, 4000);

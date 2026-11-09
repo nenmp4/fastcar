@@ -235,7 +235,7 @@ function midiaFaltandoMensagemWhatsapp(array $m): ?string {
  * expirada no WhatsApp nunca vai voltar — não fica batendo à toa).
  * Retorna ['ok'=>bool, 'mensagem'=>linha atualizada|null, 'erro'=>string].
  */
-function recuperarMidiaMensagemWhatsapp(int $mensagemId): array {
+function recuperarMidiaMensagemWhatsapp(int $mensagemId, bool $forcar = false): array {
     $db = getDB();
     $st = $db->prepare("SELECT * FROM whatsapp_mensagens WHERE id = ?");
     $st->execute([$mensagemId]);
@@ -261,7 +261,9 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId): array {
 
     $chave = 'midia_retry_' . $mensagemId;
     $ultima = (int)getConfig($chave);
-    if ($ultima && time() - $ultima < 1800) return ['ok' => false, 'mensagem' => $m, 'erro' => 'Já tentei há pouco — a mídia pode ter expirado no WhatsApp.'];
+    // $forcar (botão "Tentar de novo", 09/11/2026): ignora a espera de 30 min,
+    // mas nunca mais de 1x a cada 15s por mensagem.
+    if ($ultima && time() - $ultima < ($forcar ? 15 : 1800)) return ['ok' => false, 'mensagem' => $m, 'erro' => 'Já tentei há pouco — a mídia pode ter expirado no WhatsApp.'];
     setConfig($chave, (string)time());
 
     require_once __DIR__ . '/whatsapp_evolution.php';
