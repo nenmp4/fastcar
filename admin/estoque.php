@@ -211,19 +211,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastr
         $vendTel = preg_replace('/\D/', '', (string)($_POST['vendedor_telefone'] ?? ''));
         if ($vendTel === '') $vendTel = gerarTelefonePlaceholderVeiculoRecuperado();
         if ($vendNome === '') $vendNome = 'Veículo cadastrado manualmente (sem vendedor identificado)';
+        $fipeNovo = valorMonetario((string)($_POST['valor_fipe_referencia'] ?? ''));
+        if (!$fipeNovo || $fipeNovo <= 0) throw new RuntimeException('Informe o valor da Tabela FIPE (obrigatório).');
         $novo = criarVeiculoManualFrota(
             $vendNome, $vendTel,
             (string)($_POST['veiculo_marca'] ?? ''), (string)($_POST['veiculo_modelo'] ?? ''),
             (string)($_POST['veiculo_ano'] ?? ''), (string)($_POST['veiculo_placa'] ?? ''),
             (string)($_POST['veiculo_chassi'] ?? ''), (string)($_POST['veiculo_renavam'] ?? ''),
             valorMonetario((string)($_POST['veiculo_valor_final'] ?? '')),
-            (int)$_SESSION['admin_id']
+            (int)$_SESSION['admin_id'],
+            null,
+            $fipeNovo
         );
         $novoOpId = (int)$novo['oportunidade_id'];
         $tipoV = in_array($_POST['tipo_veiculo'] ?? '', ['carro', 'moto', 'caminhao', 'outro'], true) ? $_POST['tipo_veiculo'] : null;
         if ($tipoV) $db->prepare("UPDATE oportunidades SET tipo_veiculo = ? WHERE id = ?")->execute([$tipoV, $novoOpId]);
-        $fipeNovo = valorMonetario((string)($_POST['valor_fipe_referencia'] ?? ''));
-        if ($fipeNovo && $fipeNovo > 0) $db->prepare("UPDATE oportunidades SET valor_fipe_referencia = ? WHERE id = ?")->execute([$fipeNovo, $novoOpId]);
         header('Location: /admin/veiculo_midias.php?id=' . $novoOpId . '&criado=1');
         exit;
     } catch (Throwable $e) {
@@ -351,7 +353,7 @@ $iconeTipo = ['carro' => '🚗', 'moto' => '🏍️', 'caminhao' => '🚚', 'out
                 </select>
             </label>
             <label>Valor pago (R$)<input type="text" name="veiculo_valor_final" inputmode="decimal" placeholder="opcional" value="<?= e($formManual['veiculo_valor_final'] ?? '') ?>"></label>
-            <label>FIPE de referência (R$)<input type="number" step="0.01" name="valor_fipe_referencia" placeholder="pra simulação no link" value="<?= e($formManual['valor_fipe_referencia'] ?? '') ?>"></label>
+            <label>FIPE de referência (R$) *<input type="number" step="0.01" min="0.01" name="valor_fipe_referencia" required placeholder="obrigatório" value="<?= e($formManual['valor_fipe_referencia'] ?? '') ?>"></label>
             <label>Nome do vendedor/origem<input type="text" name="vendedor_nome" placeholder="opcional" value="<?= e($formManual['vendedor_nome'] ?? '') ?>"></label>
             <label>Telefone do vendedor<input type="tel" name="vendedor_telefone" placeholder="opcional" value="<?= e($formManual['vendedor_telefone'] ?? '') ?>"></label>
         </div>

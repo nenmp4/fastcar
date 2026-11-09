@@ -525,7 +525,8 @@ function criarVeiculoManualFrota(
     string $renavam,
     ?float $valorPago,
     int $criadoPor,
-    ?int $responsavelId = null
+    ?int $responsavelId = null,
+    ?float $valorFipe = null
 ): array {
     $db = getDB();
     $telNorm = normalizarTelefone($vendedorTelefone);
@@ -563,9 +564,9 @@ function criarVeiculoManualFrota(
 
     $db->prepare('
         INSERT INTO oportunidades
-            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, data_compra, fechado_por, responsavel_id, origem)
-        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?, \'manual\')
-    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, $responsavelId, $responsavelId]);
+            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, valor_fipe_referencia, data_compra, fechado_por, responsavel_id, origem)
+        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?, \'manual\')
+    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, ($valorFipe !== null && $valorFipe > 0) ? $valorFipe : null, $responsavelId, $responsavelId]);
     $opId = (int)$db->lastInsertId();
 
     $db->prepare("
@@ -943,7 +944,7 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
     }
 
     $db = getDB();
-    $stmt = $db->prepare("SELECT etapa, valor_ofertado FROM oportunidades WHERE id = ?");
+    $stmt = $db->prepare("SELECT etapa, valor_ofertado, valor_fipe_referencia FROM oportunidades WHERE id = ?");
     $stmt->execute([$oportunidadeId]);
     $op = $stmt->fetch();
     if (!$op) {
@@ -956,6 +957,13 @@ function mudarEtapa(int $oportunidadeId, string $etapaNova, ?int $responsavelId 
     if ($etapaNova === 'fechado' && !checklistFechamentoCompleto($oportunidadeId)) {
         throw new RuntimeException(
             "Oportunidade #{$oportunidadeId} não pode ser fechada: documentos obrigatórios pendentes."
+        );
+    }
+    // 09/11/2026 — "Tabela Fipe tem ser campo obrigatório": nenhuma compra
+    // fecha sem o valor FIPE (a comissão do consultor é 1% dele).
+    if ($etapaNova === 'fechado' && $atual !== 'fechado' && !((float)($op['valor_fipe_referencia'] ?? 0) > 0)) {
+        throw new RuntimeException(
+            "Oportunidade #{$oportunidadeId} não pode ser fechada: informe o valor da Tabela FIPE (card \"Financiamento e contrato de compra\")."
         );
     }
 

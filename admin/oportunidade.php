@@ -990,7 +990,7 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
         <input type="hidden" name="fipe_placa" id="fipe-h-placa">
         <div class="grid-2">
             <div>
-                <label>Valor FIPE de referência (R$)</label>
+                <label>Valor FIPE de referência (R$) *</label>
                 <input type="number" step="0.01" name="valor_fipe_referencia" id="valor_fipe_referencia" value="<?= e((string)($op['valor_fipe_referencia'] ?? '')) ?>">
                 <label><?= $op['etapa'] === 'fechado' ? 'Valor pago ao vendedor (R$)' : 'Valor ofertado ao vendedor (R$)' ?></label>
                 <input type="number" step="0.01" name="valor_ofertado" value="<?= e((string)(($op['valor_ofertado'] ?? '') !== '' && $op['valor_ofertado'] !== null ? $op['valor_ofertado'] : ($op['etapa'] === 'fechado' ? ($op['valor_final'] ?? '') : ''))) ?>">

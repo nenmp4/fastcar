@@ -109,6 +109,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
                         'Desmarque "cadastrar veículo novo" e selecione esse veículo direto no dropdown da frota.'
                     );
                 }
+                // 09/11/2026 — "Tabela Fipe tem ser campo obrigatório".
+                $fipeNovoVp = valorMonetario((string)($_POST['veiculo_valor_fipe'] ?? ''));
+                if (!$fipeNovoVp || $fipeNovoVp <= 0) throw new RuntimeException('Informe o valor da Tabela FIPE do veículo novo (obrigatório).');
                 $novoVeiculo = criarVeiculoManualFrota(
                     (string)($_POST['vendedor_nome'] ?? ''),
                     (string)($_POST['vendedor_telefone'] ?? ''),
@@ -119,7 +122,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
                     (string)($_POST['veiculo_chassi'] ?? ''),
                     (string)($_POST['veiculo_renavam'] ?? ''),
                     valorMonetario((string)($_POST['veiculo_valor_final'] ?? '')),
-                    $meuId
+                    $meuId,
+                    null,
+                    $fipeNovoVp
                 );
                 $oportunidadeIdEscolhida = (int)$novoVeiculo['oportunidade_id'];
             }
@@ -837,6 +842,8 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
                     <input type="text" name="vendedor_telefone" value="<?= e($postVp['vendedor_telefone'] ?? '') ?>" <?= $vpCadastrarNovo ? 'required' : '' ?> placeholder="Ex: 31999998888">
                     <label>Valor pago pelo veículo (R$)</label>
                     <input type="text" name="veiculo_valor_final" value="<?= e($postVp['veiculo_valor_final'] ?? '') ?>" placeholder="0,00">
+                    <label>Valor Tabela FIPE (R$) *</label>
+                    <input type="text" name="veiculo_valor_fipe" inputmode="decimal" value="<?= e($postVp['veiculo_valor_fipe'] ?? '') ?>" placeholder="0,00" <?= $vpCadastrarNovo ? 'required' : '' ?>>
                 </div>
                 <div>
                     <label>Marca</label>

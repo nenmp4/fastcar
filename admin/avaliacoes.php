@@ -74,9 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($nomeNovo === '') $nomeNovo = 'Veículo recuperado pela Fastcar (sem vendedor identificado)';
                 }
                 if ($nomeNovo === '') throw new RuntimeException('Informe o nome do vendedor (ou deixe nome e telefone em branco se for veículo recuperado).');
+                // 09/11/2026 — "Tabela Fipe tem ser campo obrigatório".
+                $fipeNovaVist = valorMonetario((string)($_POST['veiculo_valor_fipe'] ?? ''));
+                if (!$fipeNovaVist || $fipeNovaVist <= 0) throw new RuntimeException('Informe o valor da Tabela FIPE do veículo (obrigatório).');
                 $novo = criarVeiculoManualFrota($nomeNovo, $telNovo, (string)($_POST['veiculo_marca'] ?? ''),
                     (string)($_POST['veiculo_modelo'] ?? ''), (string)($_POST['veiculo_ano'] ?? ''), $placaNova,
-                    '', '', null, $meuId);
+                    '', '', null, $meuId, null, $fipeNovaVist);
                 $opNova = (int)$novo['oportunidade_id'];
             }
             if ($opNova <= 0 || ($tipoNova === 'venda' && !$vendaNova)) {
@@ -190,6 +193,7 @@ function avStatusBadge(string $status): string {
                 <div><label>Modelo</label><input type="text" name="veiculo_modelo" id="nv-modelo"></div>
             </div>
             <label>Ano</label><input type="text" name="veiculo_ano" inputmode="numeric">
+            <label>Valor Tabela FIPE (R$) *</label><input type="text" name="veiculo_valor_fipe" inputmode="decimal" placeholder="0,00">
             <label>Nome do vendedor</label><input type="text" name="vendedor_nome">
             <label>Telefone do vendedor (com DDD)</label><input type="tel" name="vendedor_telefone">
             <small>Veículo recuperado sem vendedor? Deixe nome e telefone em branco.</small>

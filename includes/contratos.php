@@ -347,6 +347,8 @@ function verificarCamposObrigatoriosContrato(array $campos): array {
         // agora precisa vir preenchido explicitamente antes de gerar
         // (nunca cair num "24" chutado só porque o campo ficou vazio).
         'prazo_quitacao_meses' => 'Prazo pra quitar o financiamento (card "Financiamento e contrato de compra")',
+        // 09/11/2026 — "Tabela Fipe tem ser campo obrigatório".
+        'valor_fipe_referencia' => 'Valor da Tabela FIPE de referência (card "Financiamento e contrato de compra")',
     ];
     $faltando = [];
     foreach ($obrigatorios as $campo => $label) {
@@ -821,6 +823,8 @@ function verificarCamposObrigatoriosContratoVenda(array $campos): array {
     $obrigatorios = [
         'comprador_nome' => 'Nome do comprador', 'comprador_cpf' => 'CPF do comprador',
         'comprador_rg' => 'RG do comprador', 'preco_venda' => 'Preço ajustado (bloco de negociação)',
+        // 09/11/2026 — "Tabela Fipe tem ser campo obrigatório" (comissão de 15% da FIPE usa esse valor).
+        'valor_fipe_referencia' => 'Valor da Tabela FIPE do veículo (card "📊 Valor FIPE do veículo", aba Contrato)',
     ];
     $faltando = [];
     foreach ($obrigatorios as $campo => $label) {
