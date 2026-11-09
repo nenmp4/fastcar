@@ -29,7 +29,7 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
  * conversa de comprador onde ESSE vendedor é responsavel_id em pelo menos
  * 1 negociação — mesmo padrão "Minhas/Todas" do inbox de compra.
  */
-function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100): array {
+function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false): array {
     $db = getDB();
     $whereBusca = '';
     $params = [];
@@ -66,7 +66,9 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
         LEFT JOIN whatsapp_mensagens m ON m.id = ult.max_id
         LEFT JOIN whatsapp_sessoes ws ON ws.telefone = ultv.comprador_telefone
         WHERE (m.id IS NOT NULL OR v.etapa IN ('" . implode("','", ETAPAS_VENDA_ATIVAS) . "'))
-        {$whereBusca}{$whereResponsavel}
+        {$whereBusca}{$whereResponsavel}" . ($soNaoLidas ? "
+          AND EXISTS (SELECT 1 FROM whatsapp_mensagens m3 WHERE m3.telefone = ultv.comprador_telefone AND m3.canal = 'vendas' AND m3.direcao = 'in' AND m3.lida = 0)" : '') . "
+
         ORDER BY COALESCE(m.created_at, v.created_at) DESC
         LIMIT ?
     ";
@@ -74,6 +76,45 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll();
+}
+
+/** Quantas conversas de vendas têm mensagem não lida (chip "Não lidas"). */
+function contarConversasNaoLidasVendas(?int $responsavelFiltro): int {
+    return count(listarConversasVendas('', $responsavelFiltro, 1000, true));
+}
+
+/**
+ * "+ Iniciar conversa" (09/11/2026, igual ao inbox de compra): telefone sem
+ * nenhuma negociação vira um lead manual do vendedor que abriu — sem isso a
+ * conversa nunca aparece (a lista de vendas nasce da negociação).
+ */
+function iniciarConversaVendas(string $telefone, int $usuarioId, string $perfil): ?string {
+    $tel = normalizarTelefone($telefone);
+    if (!$tel || strlen($tel) < 12) return null;
+    $st = getDB()->prepare("SELECT 1 FROM vendas WHERE comprador_telefone = ? LIMIT 1");
+    $st->execute([$tel]);
+    if (!$st->fetchColumn()) {
+        $r = criarOuAbrirVendaLead($tel, '');
+        getDB()->prepare("UPDATE vendas SET origem = 'manual', responsavel_id = COALESCE(responsavel_id, ?) WHERE id = ?")
+            ->execute([$perfil === 'vendedor' ? $usuarioId : null, (int)$r['venda_id']]);
+    }
+    return $tel;
+}
+
+/** "🔒 Encerrar atendimento": cancela a negociação ativa desse comprador (vai pra ❌ Encerradas). */
+function encerrarAtendimentoVendas(string $telefone, string $motivo, int $usuarioId): array {
+    $ph = implode(',', array_fill(0, count(ETAPAS_VENDA_ATIVAS), '?'));
+    $st = getDB()->prepare("SELECT id FROM vendas WHERE comprador_telefone = ? AND etapa IN ({$ph}) ORDER BY id DESC LIMIT 1");
+    $st->execute([normalizarTelefone($telefone), ...ETAPAS_VENDA_ATIVAS]);
+    $id = (int)$st->fetchColumn();
+    if (!$id) return ['ok' => false, 'erro' => 'Esse comprador não tem negociação ativa pra encerrar.'];
+    mudarEtapaVenda($id, 'cancelada', $usuarioId, $motivo); // grava motivo_cancelamento + histórico
+    return ['ok' => true, 'venda_id' => $id];
+}
+
+/** "🗑️ Excluir conversa" (só super_admin): apaga as mensagens do canal de vendas desse telefone. */
+function excluirConversaVendas(string $telefone): void {
+    getDB()->prepare("DELETE FROM whatsapp_mensagens WHERE telefone = ? AND canal = 'vendas'")->execute([normalizarTelefone($telefone)]);
 }
 
 /**
@@ -169,6 +210,40 @@ function enviarFotoManualVendas(string $telefone, string $conteudoBase64, string
 }
 
 /** Veículos disponíveis com o catálogo de fotos — cards do 🚘 Estoque. */
+/** 📎 Anexo (09/11/2026, igual ao inbox de compra): foto ou documento. */
+const VENDAS_INBOX_DOC_MIMES = [
+    'application/pdf' => 'pdf', 'application/msword' => 'doc', 'text/plain' => 'txt', 'text/csv' => 'csv',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    'application/vnd.ms-excel' => 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+];
+function enviarAnexoManualVendas(string $telefone, string $conteudoBase64, string $nomeArquivo, string $legenda, int $usuarioId): array {
+    $bytes = base64_decode($conteudoBase64, true);
+    if ($bytes === false || $bytes === '') return ['ok' => false, 'erro' => 'Nenhum arquivo selecionado.'];
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
+    if (isset(VENDAS_INBOX_FOTO_MIMES[$mime])) return enviarFotoManualVendas($telefone, $conteudoBase64, $legenda, $usuarioId);
+    $ext = VENDAS_INBOX_DOC_MIMES[$mime] ?? strtolower(pathinfo($nomeArquivo, PATHINFO_EXTENSION));
+    if ($mime === 'application/zip' && in_array($ext, ['docx', 'xlsx'], true)) $mime = array_search($ext, VENDAS_INBOX_DOC_MIMES, true);
+    if (!in_array($ext, VENDAS_INBOX_DOC_MIMES, true)) return ['ok' => false, 'erro' => 'Tipo de arquivo não aceito (foto, PDF, Word, Excel ou texto).'];
+    if (strlen($bytes) > WHATSAPP_MIDIA_MAX_BYTES) {
+        return ['ok' => false, 'erro' => 'Arquivo maior que ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
+    }
+    whatsappCanalRegistro('vendas');
+    $telNorm = normalizarTelefone($telefone);
+    $nome = trim(preg_replace('/[^\w.\- ]+/u', '_', $nomeArquivo)) ?: ('documento.' . $ext);
+    if (!zapiEnviarDocumento($telNorm, 'data:' . $mime . ';base64,' . base64_encode($bytes), $nome, $ext, zapiCredenciaisVendas())) {
+        return ['ok' => false, 'erro' => 'Falha ao enviar o arquivo — confira a instância de vendas em Configurações.' . whatsappDetalheUltimoErro()];
+    }
+    $rel = 'whatsapp_vendas/' . date('Y-m') . '/' . bin2hex(random_bytes(8)) . '.' . $ext;
+    $arquivoUrl = '';
+    if (@is_dir(dirname(UPLOADS_DIR . '/' . $rel)) || @mkdir(dirname(UPLOADS_DIR . '/' . $rel), 0775, true)) {
+        if (@file_put_contents(UPLOADS_DIR . '/' . $rel, $bytes) !== false) $arquivoUrl = $rel;
+    }
+    $id = inboxRegistrarEnviada($telNorm, '📎 ' . $nome, 'document', $usuarioId);
+    _vendasInboxAnexarArquivo($id, '', $arquivoUrl);
+    pausarIA($telNorm);
+    return ['ok' => true, 'id' => $id];
+}
+
 /** 🎤 Áudio gravado no navegador (09/11/2026, "adicionar áudio no inbox da venda"). */
 function enviarAudioManualVendas(string $telefone, string $audioBase64, string $mime, int $usuarioId): array {
     whatsappCanalRegistro('vendas');

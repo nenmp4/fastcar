@@ -14,6 +14,12 @@ requireAcessoVendas();
 
 $telefoneGet = trim((string)($_GET['telefone'] ?? ''));
 $telefoneAtivo = $telefoneGet !== '' ? normalizarTelefone($telefoneGet) : '';
+// "+ Iniciar conversa" (09/11/2026, igual ao inbox de compra).
+if (isset($_GET['nova']) && $telefoneGet !== '' && ($_SESSION['admin_perfil'] ?? '') !== 'supervisor') {
+    $telNova = iniciarConversaVendas($telefoneGet, (int)$_SESSION['admin_id'], (string)$_SESSION['admin_perfil']);
+    header('Location: /admin/vendas_inbox.php' . ($telNova ? '?telefone=' . urlencode($telNova) : '?erro_tel=1'));
+    exit;
+}
 // perfilVeTudo() (super_admin/supervisor) vê a caixa inteira; vendedor só
 // vê conversa de comprador onde ele é responsavel_id em alguma negociação.
 $responsavelFiltro = (perfilVeTudo() || !vendasCarteiraRestrita((string)$_SESSION['admin_perfil'])) ? null : (int)$_SESSION['admin_id']; // 06/11/2026: sem fila, todo vendedor vê a caixa inteira
@@ -97,7 +103,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'status') {
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
-    echo json_encode(['conversas' => listarConversasVendas(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro)]);
+    echo json_encode([
+        'conversas' => listarConversasVendas(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, 100, ($_GET['filtro'] ?? '') === 'nao_lidas'),
+        'total_nao_lidas' => contarConversasNaoLidasVendas($responsavelFiltro),
+    ]);
     exit;
 }
 
@@ -136,6 +145,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!$resultado['ok']) $erro = $resultado['erro'];
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'enviar_anexo' && $telPost) {
+            // 09/11/2026 — 📎 foto ou documento, igual ao inbox de compra.
+            $resultado = enviarAnexoManualVendas($telPost, (string)($_POST['anexo_base64'] ?? ''), (string)($_POST['nome_arquivo'] ?? ''),
+                (string)($_POST['legenda'] ?? ''), (int)$_SESSION['admin_id']);
+            header('Content-Type: application/json');
+            echo json_encode($resultado);
+            exit;
+        } elseif ($acao === 'encerrar_atendimento' && $telPost) {
+            $motivoEnc = clean((string)($_POST['motivo'] ?? ''));
+            if ($motivoEnc === '') {
+                $erro = 'Motivo é obrigatório pra encerrar o atendimento.';
+            } else {
+                $resEnc = encerrarAtendimentoVendas($telPost, $motivoEnc, (int)$_SESSION['admin_id']);
+                if ($resEnc['ok']) {
+                    auditoriaRegistrar('atendimento_encerrado_inbox', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda',
+                        $resEnc['venda_id'], "Telefone {$telPost} (vendas). Motivo: {$motivoEnc}");
+                    $sucesso = 'Atendimento encerrado — a negociação foi pra "❌ Encerradas" em Vendas.';
+                } else {
+                    $erro = $resEnc['erro'];
+                }
+            }
+            $telefoneAtivo = $telPost;
+        } elseif ($acao === 'excluir_conversa' && $telPost) {
+            if ($_SESSION['admin_perfil'] !== 'super_admin') {
+                $erro = 'Só o super_admin pode excluir uma conversa.';
+                $telefoneAtivo = $telPost;
+            } else {
+                excluirConversaVendas($telPost);
+                auditoriaRegistrar('conversa_excluida', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'conversa_whatsapp', null, "Telefone {$telPost} (vendas).");
+                $sucesso = 'Conversa excluída.';
+                $telefoneAtivo = '';
+            }
         } elseif (in_array($acao, ['enviar_foto', 'enviar_estoque', 'enviar_link_estoque'], true) && $telPost) {
             // 06/11/2026 — 📷 foto do aparelho / 🚘 fotos ou link de um carro do estoque.
             $uid = (int)$_SESSION['admin_id'];
@@ -196,7 +237,14 @@ if ($telefoneAtivo) {
 }
 
 $busca = trim((string)($_GET['busca'] ?? ''));
-$conversas = listarConversasVendas($busca, $responsavelFiltro);
+$soNaoLidas = ($_GET['filtro'] ?? '') === 'nao_lidas';
+$conversas = listarConversasVendas($busca, $responsavelFiltro, 100, $soNaoLidas);
+$totalConversasNaoLidas = contarConversasNaoLidasVendas($responsavelFiltro);
+// Conversa aberta que não está na lista filtrada (ex: "Não lidas" ou recém-iniciada):
+// busca ela sozinha, senão o painel ficaria vazio.
+if ($telefoneAtivo && !array_filter($conversas, fn($c) => $c['telefone'] === $telefoneAtivo)) {
+    foreach (listarConversasVendas($telefoneAtivo, $responsavelFiltro, 5) as $cx) if ($cx['telefone'] === $telefoneAtivo) $conversas[] = $cx;
+}
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo, 50, 'vendas') : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
@@ -231,6 +279,24 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-sidebar { width: 320px; flex-shrink: 0; border-right: 1px solid var(--borda); background: var(--superficie); display: flex; flex-direction: column; }
 .wpp-sidebar form { padding: 12px; border-bottom: 1px solid var(--borda); }
 .wpp-sidebar form input { margin: 0; }
+/* 09/11/2026 — mesma configuração do inbox de compra (filtros, nova conversa, encerrar). */
+.wpp-nova-form { display: flex; gap: 8px; }
+.wpp-nova-form input { flex: 1; min-width: 0; }
+.wpp-nova-form button { margin: 0; white-space: nowrap; padding: 6px 12px; font-size: 12.5px; }
+.wpp-filtros { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--borda); }
+.wpp-chip { padding: 6px 14px; border-radius: 999px; background: var(--fundo); color: var(--texto); font-size: 13px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; border: 1px solid var(--borda); }
+.wpp-chip.ativo { background: #d9fdd3; border-color: #25d366; color: #0b5c2e; font-weight: 700; }
+.wpp-item.nao-lida .nome span:first-child { font-weight: 800; }
+.wpp-item.nao-lida .preview { color: var(--texto); font-weight: 600; }
+.wpp-item.nao-lida .quando { color: #1fa855; font-weight: 700; }
+.wpp-item.nao-lida .wpp-badge { background: #25d366; }
+.wpp-encerrar-details { width: 100%; order: 99; }
+.wpp-encerrar-details summary { cursor: pointer; list-style: none; font-size: 12.5px; color: var(--texto-fraco); padding: 6px 12px; min-height: 44px; display: inline-flex; align-items: center; border: 1px solid var(--borda); border-radius: 6px; background: var(--fundo); }
+.wpp-encerrar-details summary::-webkit-details-marker { display: none; }
+.wpp-encerrar-details[open] summary { color: #c0392b; border-color: #c0392b; }
+.wpp-encerrar-details form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.wpp-encerrar-details form input[type="text"] { flex: 1; min-width: 220px; margin: 0; }
+.wpp-encerrar-details form button { margin: 0; white-space: nowrap; }
 .wpp-lista { flex: 1; overflow-y: auto; }
 .wpp-item { display: flex; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borda); text-decoration: none; color: inherit; position: relative; }
 .wpp-item:hover { background: var(--fundo); text-decoration: none; }
@@ -246,7 +312,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-item .quando { font-size: 11px; color: var(--texto-fraco); white-space: nowrap; }
 .wpp-badge { background: var(--azul); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 1px 7px; min-width: 18px; text-align: center; display: inline-block; }
 .wpp-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; justify-content: space-between; align-items: center; background: var(--superficie); }
+.wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; background: var(--superficie); }
 .wpp-thread { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background: var(--fundo); }
 .wpp-thread .msg small { display: block; margin-top: 3px; opacity: .65; font-size: 10.5px; }
 .wpp-form { padding: 14px 20px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
@@ -302,22 +368,35 @@ if ($telefoneAtivo && !$contatoAtivo) {
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <?php include __DIR__ . '/_topbar.php'; ?>
 
+<?php if (isset($_GET['erro_tel'])) $erro = 'Telefone inválido — use DDD + número.'; ?>
 <?php if ($erro): ?><div class="alerta-erro" style="margin:12px 20px"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso" style="margin:12px 20px"><?= e($sucesso) ?></div><?php endif; ?>
 
 <div class="wpp-wrap">
     <aside class="wpp-sidebar">
         <form method="get">
-            <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
+            <input type="search" name="busca" value="<?= e($busca) ?>" placeholder="🔎 Buscar por nome ou telefone..." autocomplete="off">
+            <?php if ($soNaoLidas): ?><input type="hidden" name="filtro" value="nao_lidas"><?php endif; ?>
         </form>
+        <div class="wpp-filtros">
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= $soNaoLidas ? '' : 'ativo' ?>">Todas</a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas']))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
+        </div>
+        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <form method="get" class="wpp-nova-form">
+            <input type="hidden" name="nova" value="1">
+            <input type="tel" name="telefone" placeholder="Nova conversa — telefone com DDD" inputmode="numeric" required>
+            <button type="submit">+ Iniciar conversa</button>
+        </form>
+        <?php endif; ?>
         <div class="wpp-lista" id="wpp-lista">
             <?php if (!$conversas): ?>
                 <p style="padding:16px;color:var(--texto-fraco);font-size:13px">
-                    <?= $busca ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — mensagens aparecem aqui assim que um comprador escrever pra instância de vendas.' ?>
+                    <?= $soNaoLidas ? 'Nenhuma conversa não lida. 🎉' : ($busca ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — mensagens aparecem aqui assim que um comprador escrever pra instância de vendas.') ?>
                 </p>
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
-                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
+                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?><?= (int)$c['nao_lidas'] > 0 ? ' nao-lida' : '' ?>" href="?<?= e(http_build_query(array_filter(['telefone' => $c['telefone'], 'filtro' => $soNaoLidas ? 'nao_lidas' : null]))) ?>">
                     <div class="wpp-avatar-placeholder" data-av-phone="<?= e($c['telefone']) ?>"><?= e(mb_strtoupper(mb_substr($c['comprador_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <div class="wpp-corpo">
                         <div class="nome">
@@ -348,7 +427,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?> <span id="wpp-presenca"></span></div>
                     </div>
                 </div>
-                <div style="display:flex;gap:8px">
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
                     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
                         <form method="post" class="inline">
                             <?= csrfField() ?>
@@ -365,7 +444,27 @@ if ($telefoneAtivo && !$contatoAtivo) {
                             <button type="submit" class="perigo" style="margin-top:0;padding:6px 12px;font-size:12.5px">🧹 Limpar conversa</button>
                         </form>
                     <?php endif; ?>
+                    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Apagar essa conversa inteira? Não tem como desfazer.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="excluir_conversa">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <button type="submit" class="perigo" style="margin-top:0;padding:6px 12px;font-size:12.5px">🗑️ Excluir conversa</button>
+                        </form>
+                    <?php endif; ?>
                 </div>
+                <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                    <details class="wpp-encerrar-details">
+                        <summary>🔒 Encerrar atendimento</summary>
+                        <form method="post" onsubmit="return confirmarAcao(this, 'Encerrar o atendimento? A negociação vai pra ❌ Encerradas em Vendas — pode reabrir depois se precisar.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="encerrar_atendimento">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <input type="text" name="motivo" required placeholder="Motivo (obrigatório): desistiu, comprou em outro lugar, sem perfil...">
+                            <button type="submit" class="perigo">Confirmar encerramento</button>
+                        </form>
+                    </details>
+                <?php endif; ?>
             </div>
 
             <div class="wpp-thread wpp-thread-scroll" id="wpp-thread">
@@ -399,8 +498,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                     <input type="hidden" name="ajax" value="1">
                     <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
-                    <button type="button" id="vi-btn-foto" class="vi-btn-claro" title="Mandar foto do celular/computador" aria-label="Mandar foto">📷</button>
-                    <input type="file" id="vi-input-foto" accept="image/*" hidden>
+                    <button type="button" id="vi-btn-foto" title="Anexar arquivo (foto ou documento)" aria-label="Anexar arquivo" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+                    <input type="file" id="vi-input-foto" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" hidden>
                     <button type="button" id="vi-btn-estoque" class="vi-btn-estoque" title="Mandar fotos ou link de um carro do estoque">🚘<span class="vi-txt"> Estoque</span></button>
                     <button type="button" id="vi-btn-audio" title="Gravar áudio" aria-label="Gravar áudio" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button>
                     <button type="button" id="vi-btn-audio-cancelar" title="Cancelar gravação" style="padding:0 12px;display:none;color:#c0392b">✕</button>
@@ -643,23 +742,25 @@ if ($telefoneAtivo && !$contatoAtivo) {
 
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);
-        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || ''))
+        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&filtro=' + encodeURIComponent(params.get('filtro') || ''))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 var lista = document.getElementById('wpp-lista');
                 if (!lista || !data.conversas) return;
+                var spanTotal = document.getElementById('wpp-total-nao-lidas');
+                if (spanTotal) spanTotal.textContent = data.total_nao_lidas ? '(' + data.total_nao_lidas + ')' : '';
                 lista.innerHTML = '';
                 if (!data.conversas.length) {
                     var vazio = document.createElement('p');
                     vazio.style.cssText = 'padding:16px;color:var(--texto-fraco);font-size:13px';
-                    vazio.textContent = 'Nenhuma conversa ainda.';
+                    vazio.textContent = params.get('filtro') === 'nao_lidas' ? 'Nenhuma conversa não lida. 🎉' : 'Nenhuma conversa ainda.';
                     lista.appendChild(vazio);
                     return;
                 }
                 data.conversas.forEach(function (c) {
                     var a = document.createElement('a');
-                    a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '');
-                    a.href = '?telefone=' + encodeURIComponent(c.telefone);
+                    a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '') + (c.nao_lidas > 0 ? ' nao-lida' : '');
+                    a.href = '?telefone=' + encodeURIComponent(c.telefone) + (params.get('filtro') === 'nao_lidas' ? '&filtro=nao_lidas' : '');
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.comprador_nome || c.telefone).slice(0, 1).toUpperCase());
                     var fotoC = fotoCache[c.telefone];
@@ -686,7 +787,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
             var textarea = form.querySelector('textarea[name="texto"]');
             var texto = textarea.value.trim();
             if (!texto) return;
-            var btn = form.querySelector('button');
+            var btn = form.querySelector('button[type="submit"]');
             btn.disabled = true;
             var body = new URLSearchParams();
             body.set('csrf_token', csrf.value);
@@ -732,17 +833,17 @@ if ($telefoneAtivo && !$contatoAtivo) {
         body.set('telefone', telefone);
         body.set('ajax', '1');
         Object.keys(campos).forEach(function (k) { body.set(k, campos[k]); });
-        var rot = btn ? btn.textContent : '';
+        var rot = btn ? btn.innerHTML : ''; // innerHTML: o 📎 é um ícone SVG
         if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
         return fetch('', { method: 'POST', body: body })
             .then(function (r) { return r.json(); })
             .then(function (d) {
-                if (btn) { btn.disabled = false; btn.textContent = rot; }
+                if (btn) { btn.disabled = false; btn.innerHTML = rot; }
                 if (!d.ok) { alert(d.erro || 'Falha ao enviar.'); return false; }
                 if (d.falhas) alert(d.enviados + ' enviada(s); ' + d.falhas + ' não saiu(íram).');
                 return true;
             })
-            .catch(function () { if (btn) { btn.disabled = false; btn.textContent = rot; } alert('Falha ao enviar — confira sua conexão.'); return false; });
+            .catch(function () { if (btn) { btn.disabled = false; btn.innerHTML = rot; } alert('Falha ao enviar — confira sua conexão.'); return false; });
     }
 
     // 09/11/2026, "adicionar áudio para enviar no inbox da venda" — mesmo
@@ -918,12 +1019,12 @@ if ($telefoneAtivo && !$contatoAtivo) {
             var f = inputFoto.files && inputFoto.files[0];
             inputFoto.value = '';
             if (!f) return;
-            if (f.size > 20 * 1024 * 1024) { alert('Foto maior que 20MB.'); return; }
+            if (f.size > 20 * 1024 * 1024) { alert('Arquivo maior que 20MB.'); return; }
             var leitor = new FileReader();
             leitor.onload = function () {
                 var b64 = String(leitor.result).split(',')[1] || '';
                 var leg = form.querySelector('textarea').value.trim();
-                postar({ acao: 'enviar_foto', foto_base64: b64, legenda: leg }, btnFoto).then(function (ok) {
+                postar({ acao: 'enviar_anexo', anexo_base64: b64, nome_arquivo: f.name, legenda: leg }, btnFoto).then(function (ok) {
                     if (ok) form.querySelector('textarea').value = '';
                 });
             };

@@ -23,7 +23,7 @@ function wppPreviewHtml(string $tipo, string $msg): string {
     $rotulo = ['audio' => '🎤 Áudio', 'image' => '📷 Foto', 'video' => '🎥 Vídeo', 'document' => '📄 Documento',
                'sticker' => '🙂 Figurinha', 'outro' => '📎 Mídia'][$t];
     $resto = trim(preg_replace('/^(🎤|📷|🎥|📎)\s*/u', '', trim($msg)));
-    if (preg_match('/^\[[a-z_]+\]$/i', $resto)) $resto = '';
+    if (preg_match('/^\[[a-z_]+\]$/i', $resto) || in_array(mb_strtolower($resto), ['áudio', 'foto', 'vídeo', 'documento', 'audio', 'video'], true)) $resto = '';
     return '<span class="wpp-tipo-midia wpp-tipo-' . $t . '">' . $rotulo . '</span>'
          . ($resto !== '' ? ' ' . e(mb_strimwidth($resto, 0, 48, '…')) : '');
 }
@@ -44,7 +44,7 @@ function wppPreviewHtml(tipo, msg) {
     if (!t) return esc(msg.length > 60 ? msg.slice(0, 60) + '…' : msg);
     var rot = {audio: '🎤 Áudio', image: '📷 Foto', video: '🎥 Vídeo', document: '📄 Documento', sticker: '🙂 Figurinha', outro: '📎 Mídia'}[t];
     var resto = msg.replace(/^(🎤|📷|🎥|📎)\s*/u, '').trim();
-    if (/^\[[a-z_]+\]$/i.test(resto)) resto = '';
+    if (/^\[[a-z_]+\]$/i.test(resto) || ['áudio', 'foto', 'vídeo', 'documento', 'audio', 'video'].indexOf(resto.toLowerCase()) >= 0) resto = '';
     return '<span class="wpp-tipo-midia wpp-tipo-' + t + '">' + rot + '</span>' + (resto ? ' ' + esc(resto.length > 48 ? resto.slice(0, 48) + '…' : resto) : '');
 }
 JS;
