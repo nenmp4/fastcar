@@ -136,7 +136,7 @@ function alqTelefone(string $t): string {
 <div class="card">
     <h2>🔥 Avisos de lead quente</h2>
     <p class="alq-meta">Quem recebeu o aviso no WhatsApp e a que horas foi entregue/lido. <?= e($rotulos[$periodo]) ?>: <?= e(date('d/m/Y', strtotime($de))) ?><?= $de !== $ate ? ' a ' . e(date('d/m/Y', strtotime($ate))) : '' ?>.</p>
-    <form method="get" class="alq-filtros">
+    <form method="get" class="alq-filtros" onchange="this.submit()">
         <label>Período
             <select name="periodo">
                 <?php foreach ($rotulos as $k => $r): ?>
