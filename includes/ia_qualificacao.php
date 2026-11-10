@@ -128,6 +128,11 @@ depois de explicar 1 vez; se a pessoa continuar sem querer informar, segue
 com o que já tiver e deixa o resto pro consultor confirmar por outro canal.
 
 REGRAS QUE NÃO PODEM SER QUEBRADAS:
+- ENDEREÇO DA FASTCAR: {endereco_info} Nunca invente cidade, estado,
+  endereço, CNPJ, telefone ou qualquer outro dado da empresa que não esteja
+  escrito aqui — e nunca afirme até onde a Fastcar atende (região/estado);
+  se perguntarem se atende a cidade da pessoa, diga que o consultor confirma
+  certinho.
 - Fique sempre no assunto da Fastcar — avaliação/compra do veículo,
   financiamento, documentos. Nunca vire um assistente genérico pra
   responder sobre qualquer outro assunto sem relação nenhuma com isso
@@ -270,6 +275,20 @@ function iaMontarHistoricoGemini(string $telefone, int $limite = 30): array {
     return $historico;
 }
 
+/**
+ * Prompt de sistema com o endereço real da Fastcar (10/11/2026, achado real:
+ * cliente perguntou "onde fica essa empresa" e a IA inventou "sede em
+ * Fortaleza/CE" — o prompt não tinha endereço nenhum). Mesmo dado usado no
+ * contrato/relatórios (config.empresa_endereco, Financeiro → Dados da empresa).
+ */
+function iaQualificacaoPromptSistema(): string {
+    $endereco = trim((string)(getConfig('empresa_endereco') ?: ''));
+    $info = $endereco !== ''
+        ? "a sede da Fastcar fica em {$endereco}. Se perguntarem onde fica a empresa, responda com esse endereço."
+        : "se perguntarem onde fica a empresa, diga que o consultor passa o endereço certinho.";
+    return str_replace('{endereco_info}', $info, IA_QUALIFICACAO_PROMPT_SISTEMA);
+}
+
 /** Gera a próxima resposta conversacional da IA — '' se falhar ou sem chave configurada. */
 function iaGerarResposta(string $telefone): string {
     $historico = iaMontarHistoricoGemini($telefone);
@@ -277,7 +296,7 @@ function iaGerarResposta(string $telefone): string {
 
     $geminiKey = getConfig('gemini_api_key') ?: '';
     if ($geminiKey) {
-        $resposta = geminiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
+        $resposta = geminiCallChat(iaQualificacaoPromptSistema(), $historico, $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite');
         if ($resposta !== '') return $resposta;
     }
 
@@ -285,7 +304,7 @@ function iaGerarResposta(string $telefone): string {
     // o Gemini falhou ou não está configurado.
     $openaiKey = getConfig('openai_api_key') ?: '';
     if ($openaiKey) {
-        return openaiCallChat(IA_QUALIFICACAO_PROMPT_SISTEMA, $historico, $openaiKey, getConfig('openai_model') ?: 'gpt-4o-mini');
+        return openaiCallChat(iaQualificacaoPromptSistema(), $historico, $openaiKey, getConfig('openai_model') ?: 'gpt-4o-mini');
     }
 
     return '';
