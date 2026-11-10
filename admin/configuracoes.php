@@ -601,7 +601,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 setConfig('fila_horario_abertura', $abertura);
                 setConfig('fila_horario_fechamento', $fechamento);
-                $sucesso = "Horário da fila salvo: liga às {$abertura}, desliga às {$fechamento}, todo dia.";
+                $dias = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['fila_dias'] ?? [])), fn($d) => $d >= 1 && $d <= 7)));
+                sort($dias);
+                // Vazio = "0" (nenhum dia), nunca cai sozinho no padrão seg–sex.
+                setConfig('fila_dias_abertos', $dias ? implode(',', $dias) : '0');
+                $sucesso = "Fila salva: " . filaDiasAbertosTexto() . ", liga às {$abertura}, desliga às {$fechamento}. Nos outros dias os leads ficam sem dono e são divididos na abertura do próximo dia aberto.";
             }
         } elseif ($acao === 'salvar_horario_ia_qualificacao') {
             // 03/10/2026 — "deixar ia qualificando só no horário comercial",
@@ -1910,8 +1914,14 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <input type="time" name="fila_horario_abertura" value="<?= e(filaHorarioAbertura()) ?>" style="width:110px;display:inline-block">
         <label>Desliga às</label>
         <input type="time" name="fila_horario_fechamento" value="<?= e(filaHorarioFechamento()) ?>" style="width:110px;display:inline-block">
+        <span style="display:inline-flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin:0 6px">
+            <?php foreach (FILA_DIAS_NOMES as $num => $nomeDia): ?>
+                <label style="display:inline-flex;align-items:center;gap:4px;min-height:44px"><input type="checkbox" name="fila_dias[]" value="<?= $num ?>" <?= filaDiaAberto($num) ? 'checked' : '' ?>> <?= e($nomeDia) ?></label>
+            <?php endforeach; ?>
+        </span>
         <button type="submit" style="margin-top:0">Salvar horário</button>
-        <small style="display:block;color:#666">Todo dia, automático: liga "Disponível" de todo consultor na abertura
+        <small style="display:block;color:#666">Só nos dias marcados (padrão seg–sex). Nos dias desmarcados ninguém é ligado e nem o plantão recebe: o lead fica <strong>sem dono</strong>, a IA qualifica normalmente, os números de notificação continuam sendo avisados, e na abertura do próximo dia marcado os leads sem dono são divididos em rodízio.<br>
+           Nos dias marcados, automático: liga "Disponível" de todo consultor na abertura
            (exceto quem foi marcado ausente hoje) e desliga todo mundo no fechamento. Roda via cron a cada poucos
            minutos (<code>cron/fila_horario_expediente.php</code>) — não precisa de ninguém clicando nada.</small>
     </form>

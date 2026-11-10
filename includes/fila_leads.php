@@ -85,7 +85,8 @@ function atribuirResponsavelAutomatico(): ?int {
     $db->exec('BEGIN IMMEDIATE');
     try {
         $usuarioId = proximoDaFila(disponivelOnly: true);
-        if ($usuarioId === null) {
+        // Dia fechado (fim de semana, por padrão): nem plantão — fica sem dono.
+        if ($usuarioId === null && filaDiaAberto()) {
             $usuarioId = proximoDaFila(disponivelOnly: false, apenasPlantao: true);
         }
         if ($usuarioId === null) {
@@ -494,7 +495,7 @@ function alternarDisponibilidade(int $usuarioId): array {
 
     if ($novo === 1) {
         $agora = date('H:i');
-        if ($agora < filaHorarioAbertura() || $agora >= filaHorarioFechamento()) {
+        if (!filaDentroExpediente()) {
             return ['ok' => false, 'disponivel' => (bool)$atual];
         }
     }
@@ -534,10 +535,35 @@ function filaHorarioFechamento(): string {
     $v = getConfig('fila_horario_fechamento');
     return ($v && preg_match('/^\d{2}:\d{2}$/', $v)) ? $v : '19:20';
 }
-/** Agora está entre a abertura (inclusive) e o fechamento (exclusive) da fila? */
+/**
+ * Dias da semana em que a fila abre (10/11/2026, "sem dono aos finais de
+ * semana, as notificações continuam"). Padrão seg–sex. ISO: 1=seg ... 7=dom.
+ * Dia fechado: ninguém é ligado, rodízio e plantão não entregam — o lead
+ * fica sem dono (a IA qualifica normalmente e os números de notificação
+ * continuam sendo avisados) e é dividido na abertura do próximo dia útil
+ * (distribuirOrfasRodizio()).
+ */
+const FILA_DIAS_NOMES = [1 => 'Seg', 2 => 'Ter', 3 => 'Qua', 4 => 'Qui', 5 => 'Sex', 6 => 'Sáb', 7 => 'Dom'];
+function filaDiasAbertos(): array {
+    $v = getConfig('fila_dias_abertos');
+    if ($v === null || $v === '') return [1, 2, 3, 4, 5];
+    return array_values(array_filter(array_map('intval', explode(',', $v)), fn($d) => $d >= 1 && $d <= 7));
+}
+function filaDiaAberto(?int $diaIso = null): bool {
+    return in_array($diaIso ?? (int)date('N'), filaDiasAbertos(), true);
+}
+/** Texto curto dos dias abertos, ex.: "Seg a Sex" / "Seg, Qua, Sáb". */
+function filaDiasAbertosTexto(): string {
+    $d = filaDiasAbertos();
+    if (!$d) return 'nenhum dia';
+    sort($d);
+    if (count($d) > 2 && $d === range($d[0], end($d))) return FILA_DIAS_NOMES[$d[0]] . ' a ' . FILA_DIAS_NOMES[end($d)];
+    return implode(', ', array_map(fn($x) => FILA_DIAS_NOMES[$x], $d));
+}
+/** Agora está num dia aberto, entre a abertura (inclusive) e o fechamento (exclusive) da fila? */
 function filaDentroExpediente(): bool {
     $agora = date('H:i');
-    return $agora >= filaHorarioAbertura() && $agora < filaHorarioFechamento();
+    return filaDiaAberto() && $agora >= filaHorarioAbertura() && $agora < filaHorarioFechamento();
 }
 
 /**
@@ -603,6 +629,15 @@ function aplicarHorarioExpedienteFila(): array {
     $hoje = date('Y-m-d');
     $agora = date('H:i');
     $resultado = ['abriu' => false, 'fechou' => false, 'afetados' => 0];
+
+    // Dia fechado: garante todo mundo desligado (ninguém recebe lead) e não abre.
+    if (!filaDiaAberto()) {
+        $st = $db->prepare("UPDATE usuarios SET disponivel = 0 WHERE perfil = 'consultor' AND bloqueado = 0 AND disponivel = 1");
+        $st->execute();
+        $resultado['dia_fechado'] = true;
+        $resultado['afetados'] = $st->rowCount();
+        return $resultado;
+    }
 
     if ($agora >= filaHorarioAbertura() && !getConfig("fila_expediente_abriu_{$hoje}")) {
         $stmt = $db->prepare("

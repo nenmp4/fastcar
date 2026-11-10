@@ -829,7 +829,7 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
 <?php elseif (isset($_GET['bulk_erro'])): ?>
     <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
 <?php elseif (isset($_GET['disponivel_bloqueado'])): ?>
-    <div class="alerta-erro">⚠️ Fora do horário de expediente (<?= e(filaHorarioAbertura()) ?>–<?= e(filaHorarioFechamento()) ?>) — não dá pra ficar disponível agora. A IA continua respondendo o cliente normalmente, só não entra na fila de novo lead fora desse horário.</div>
+    <div class="alerta-erro">⚠️ Fora do horário de expediente (<?= e(filaDiasAbertosTexto()) ?>, <?= e(filaHorarioAbertura()) ?>–<?= e(filaHorarioFechamento()) ?>) — não dá pra ficar disponível agora. A IA continua respondendo o cliente normalmente, só não entra na fila de novo lead fora desse horário.</div>
 <?php endif; ?>
 
 <?php
