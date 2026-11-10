@@ -25,6 +25,7 @@ require_once __DIR__ . '/gemini.php';
 require_once __DIR__ . '/openai.php';
 require_once __DIR__ . '/oportunidades.php';
 require_once __DIR__ . '/whatsapp_conformidade.php'; // registrarOptIn()/registrarOptInRecusado()
+require_once __DIR__ . '/fila_leads.php'; // filaDiasAbertosTexto()/filaHorario*() — horário real no prompt
 
 const IA_QUALIFICACAO_PROMPT_SISTEMA = <<<PROMPT
 Você é da equipe Fastcar, empresa que COMPRA veículos que o dono ainda está
@@ -128,6 +129,10 @@ depois de explicar 1 vez; se a pessoa continuar sem querer informar, segue
 com o que já tiver e deixa o resto pro consultor confirmar por outro canal.
 
 REGRAS QUE NÃO PODEM SER QUEBRADAS:
+- HORÁRIO DE ATENDIMENTO: {horario_info} Nunca diga que a Fastcar, o
+  consultor ou o atendimento funcionam 24 horas, nem prometa que alguém vai
+  ligar/responder "agora" ou "em minutos" — você (o assistente) responde a
+  qualquer hora, mas o consultor só atende no horário acima.
 - ENDEREÇO DA FASTCAR: {endereco_info} Nunca invente cidade, estado,
   endereço, CNPJ, telefone ou qualquer outro dado da empresa que não esteja
   escrito aqui — e nunca afirme até onde a Fastcar atende (região/estado);
@@ -286,7 +291,14 @@ function iaQualificacaoPromptSistema(): string {
     $info = $endereco !== ''
         ? "a sede da Fastcar fica em {$endereco}. Se perguntarem onde fica a empresa, responda com esse endereço."
         : "se perguntarem onde fica a empresa, diga que o consultor passa o endereço certinho.";
-    return str_replace('{endereco_info}', $info, IA_QUALIFICACAO_PROMPT_SISTEMA);
+    // 10/11/2026, "IA tá falando que 24 horas" — horário real dos consultores
+    // (mesmos dias/horário da fila, Configurações → Fila).
+    $horario = function_exists('filaDiasAbertosTexto')
+        ? 'os consultores atendem ' . filaDiasAbertosTexto() . ', das ' . filaHorarioAbertura() . ' às ' . filaHorarioFechamento()
+          . ' (agora são ' . date('H:i') . ' de ' . ['', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'][(int)date('N')]
+          . '). Se for fora desse horário, avise que o consultor retorna no próximo horário de atendimento.'
+        : 'se perguntarem o horário, diga que o consultor confirma.';
+    return str_replace(['{endereco_info}', '{horario_info}'], [$info, $horario], IA_QUALIFICACAO_PROMPT_SISTEMA);
 }
 
 /** Gera a próxima resposta conversacional da IA — '' se falhar ou sem chave configurada. */
