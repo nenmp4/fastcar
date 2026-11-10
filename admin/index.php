@@ -591,13 +591,15 @@ $sql = "
     JOIN clientes c ON c.id = o.cliente_id
     LEFT JOIN usuarios u ON u.id = o.responsavel_id
     {$where}
-    ORDER BY " . (filtroGestaoOrdemSql($ordemLista, 'o') ?? "CASE o.temperatura_lead WHEN 'quente' THEN 0 WHEN 'morno' THEN 1 WHEN 'frio' THEN 2 ELSE 3 END,
+    ORDER BY " . (filtroGestaoOrdemSql($ordemLista, 'o') ?? "CASE o.temperatura_lead WHEN 'quente' THEN (CASE WHEN " . sqlLeadSumido('c.telefone') . " THEN 1 ELSE 0 END) WHEN 'morno' THEN 2 WHEN 'frio' THEN 3 ELSE 4 END,
              (o.proxima_acao_em IS NULL), o.proxima_acao_em ASC, o.created_at DESC") . "
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $oportunidades = $stmt->fetchAll();
+// 10/11/2026 — selo "💤 sem resposta há X dias" (consultor respondeu, cliente sumiu).
+$sumidos = leadsSumidosPorTelefone(array_column(array_filter($oportunidades, fn($o) => in_array($o['etapa'], ETAPAS_ATIVAS, true)), 'cliente_telefone'));
 
 // 27/10/2026, "mostrar igual de vendas se as comissões dos carros comprados
 // foram lançadas" — comissão automática do consultor (1% da FIPE de
@@ -1366,6 +1368,9 @@ if ($podeSelecionarEmMassa):
                     <span class="badge">🌤️ Morno</span>
                 <?php elseif ($op['temperatura_lead'] === 'frio'): ?>
                     <span class="badge">❄️ Frio</span>
+                <?php endif; ?>
+                <?php if ($ativaParaSelecao && isset($sumidos[$op['cliente_telefone']])): ?>
+                    <span class="badge badge-aviso" title="O consultor já respondeu e o cliente não fala há <?= (int)$sumidos[$op['cliente_telefone']] ?> dia(s). A temperatura continua — é sobre o quanto ele precisa vender.">💤 sem resposta há <?= (int)$sumidos[$op['cliente_telefone']] ?> dia<?= (int)$sumidos[$op['cliente_telefone']] === 1 ? '' : 's' ?></span>
                 <?php endif; ?>
                 <br><small><?= e($op['cliente_telefone']) ?></small><?php if ($ufTel = ufPorTelefone($op['cliente_telefone'])): ?> <span class="badge badge-info" title="Estado pelo DDD">📍 <?= $ufTel ?></span><?php endif; ?>
                 <?php $plNormRow = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($op['veiculo_placa'] ?? ''))); ?>

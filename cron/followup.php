@@ -24,6 +24,7 @@ require_once ROOT . '/includes/security.php';
 require_once ROOT . '/includes/whatsapp_config.php';
 require_once ROOT . '/includes/whatsapp_conformidade.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem() — log do reengajamento no histórico do cliente
+require_once ROOT . '/includes/oportunidades.php'; // sqlConsultorRespondeuDepoisDoCliente() — lembrete de quente parado
 
 function log_followup(string $msg): void {
     $dir = ROOT . '/storage/logs';
@@ -123,6 +124,10 @@ $quentesParados = $db->query("
       AND o.etapa = 'crm_preenchido'
       AND o.responsavel_id IS NOT NULL
       AND o.updated_at < datetime('now','localtime','-{$IA_QUENTE_MINUTOS_LIMITE} minutes')
+      -- 10/11/2026: só cobra quando a falha é NOSSA. Se o consultor já
+      -- respondeu depois da última mensagem do cliente, a bola está com o
+      -- cliente — lembrete não ajuda (vira selo 💤 no funil).
+      AND NOT " . sqlConsultorRespondeuDepoisDoCliente('c.telefone') . "
 ")->fetchAll();
 
 log_followup(count($quentesParados) . ' lead(s) quente(s) sem ação rápida do consultor.');

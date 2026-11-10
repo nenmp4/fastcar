@@ -299,6 +299,49 @@ function criarOuAbrirOportunidade(string $telefone, string $nome = '', array $or
  * cliente) — só avisa, decisão de prosseguir é sempre humana.
  */
 
+/**
+ * Lead "sumido" (10/11/2026, "porque virou lead quente" → selo 💤 em vez de
+ * rebaixar a temperatura): o consultor já mandou mensagem DEPOIS da última
+ * resposta do cliente e o cliente está calado há LEAD_SUMIDO_DIAS ou mais.
+ * Temperatura continua a mesma (é sobre o quanto ele PRECISA vender); isto
+ * só diz que a bola está com o cliente.
+ */
+const LEAD_SUMIDO_DIAS = 2;
+
+/** SQL (bool): consultor (humano, não a IA) já respondeu depois da última mensagem do cliente. */
+function sqlConsultorRespondeuDepoisDoCliente(string $telCol): string {
+    return "EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.canal = 'compra' AND h.telefone = {$telCol}
+                AND h.direcao = 'out' AND h.usuario_id IS NOT NULL
+                AND h.id > COALESCE((SELECT MAX(i.id) FROM whatsapp_mensagens i WHERE i.canal = 'compra' AND i.telefone = {$telCol} AND i.direcao = 'in'), 0))";
+}
+
+/** SQL (bool): lead sumido — consultor respondeu e o cliente não fala há LEAD_SUMIDO_DIAS+ dias. */
+function sqlLeadSumido(string $telCol): string {
+    return '(' . sqlConsultorRespondeuDepoisDoCliente($telCol) . "
+        AND COALESCE((SELECT MAX(i2.created_at) FROM whatsapp_mensagens i2 WHERE i2.canal = 'compra' AND i2.telefone = {$telCol} AND i2.direcao = 'in'), '')
+            < datetime('now','localtime','-" . LEAD_SUMIDO_DIAS . " days'))";
+}
+
+/**
+ * Pros telefones dados, devolve [telefone => dias sem responder] só dos que
+ * estão "sumidos" (ver sqlLeadSumido). 1 query só, pra página inteira.
+ */
+function leadsSumidosPorTelefone(array $telefones): array {
+    $telefones = array_values(array_unique(array_filter(array_map('strval', $telefones))));
+    if (!$telefones) return [];
+    $ph = implode(',', array_fill(0, count($telefones), '?'));
+    $st = getDB()->prepare("SELECT t.telefone,
+            (SELECT MAX(i.created_at) FROM whatsapp_mensagens i WHERE i.canal = 'compra' AND i.telefone = t.telefone AND i.direcao = 'in') AS ultima_in
+        FROM (SELECT DISTINCT telefone FROM clientes WHERE telefone IN ($ph)) t
+        WHERE " . sqlLeadSumido('t.telefone'));
+    $st->execute($telefones);
+    $out = [];
+    foreach ($st->fetchAll() as $r) {
+        $out[$r['telefone']] = $r['ultima_in'] ? max(LEAD_SUMIDO_DIAS, (int)floor((time() - strtotime($r['ultima_in'])) / 86400)) : null;
+    }
+    return $out;
+}
+
 function buscarOportunidadeAtivaPorTelefone(string $telefone): ?array {
     $telNorm = normalizarTelefone($telefone);
     if (!$telNorm) return null;
