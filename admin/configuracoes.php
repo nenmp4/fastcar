@@ -1920,7 +1920,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
             <?php endforeach; ?>
         </span>
         <button type="submit" style="margin-top:0">Salvar horário</button>
-        <small style="display:block;color:#666">Só nos dias marcados (padrão seg–sex). Nos dias desmarcados ninguém é ligado e nem o plantão recebe: o lead fica <strong>sem dono</strong>, a IA qualifica normalmente, os números de notificação continuam sendo avisados, e na abertura do próximo dia marcado os leads sem dono são divididos em rodízio.<br>
+        <small style="display:block;color:#666">Só nos dias marcados (padrão seg–sex). Nos dias desmarcados ninguém é ligado e nem o plantão recebe: o lead fica <strong>sem dono</strong>, a IA qualifica normalmente, os números de notificação continuam sendo avisados, e na abertura do próximo dia marcado os leads sem dono são divididos em rodízio. Nesses dias consultor, vendedor e avaliador também não entram no sistema (só com liberação do supervisor).<br>
            Nos dias marcados, automático: liga "Disponível" de todo consultor na abertura
            (exceto quem foi marcado ausente hoje) e desliga todo mundo no fechamento. Roda via cron a cada poucos
            minutos (<code>cron/fila_horario_expediente.php</code>) — não precisa de ninguém clicando nada.</small>

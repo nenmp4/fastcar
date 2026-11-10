@@ -76,7 +76,7 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
 <div class="card">
     <h2>🌙 Acesso fora do expediente</h2>
     <p>Consultor, vendedor e avaliador só entram no sistema das <strong><?= e(filaHorarioAbertura()) ?></strong>
-       às <strong><?= e(expedienteHorarioCorte()) ?></strong> (fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância), todos os dias.
+       às <strong><?= e(expedienteHorarioCorte()) ?></strong> (fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância), só nos dias <strong><?= e(filaDiasAbertosTexto()) ?></strong>.
        Fora disso, quem estiver logado é desconectado.
        Supervisor e super admin podem liberar alguém até o fim do dia.</p>
     <p>
@@ -84,7 +84,7 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
         <?php elseif ($dentro): ?><span class="badge badge-ok">🟢 Agora: dentro do expediente</span>
         <?php else: ?><span class="badge badge-atraso">🌙 Agora: fora do expediente — acesso bloqueado</span><?php endif; ?>
     </p>
-    <p><small>O horário de abertura/fechamento é o mesmo da fila de leads (Configurações → Fila).</small></p>
+    <p><small>O horário e os dias são os mesmos da fila de leads (Configurações → Fila).</small></p>
 </div>
 
 <div class="card">

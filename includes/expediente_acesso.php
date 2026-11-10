@@ -8,8 +8,8 @@
  * Decisões confirmadas com o usuário:
  *  - Vale pra consultor, vendedor e avaliador (super_admin/supervisor/
  *    financeiro nunca são bloqueados).
- *  - Mesmo horário da fila de leads (Configurações → Fila, padrão
- *    10:00–19:20), todo dia, inclusive sábado e domingo.
+ *  - Mesmo horário e mesmos DIAS da fila de leads (Configurações → Fila,
+ *    padrão 10:00–19:20, seg–sex — 10/11/2026: fim de semana bloqueado).
  *  - 30 min de tolerância depois do fechamento (aviso 10 min antes de cair).
  *  - Quem já está logado é derrubado no corte (checado a cada request em
  *    admin/_bootstrap.php), não só na tela de login.
@@ -42,10 +42,15 @@ function expedienteHorarioCorte(): string {
     return sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
 }
 
-/** Agora está dentro da janela de acesso (abertura até fechamento + tolerância)? */
+/**
+ * Agora está dentro da janela de acesso (dia aberto da fila, da abertura até
+ * fechamento + tolerância)? 10/11/2026, "final de semana também": nos dias
+ * desmarcados em Configurações → Fila (padrão sáb/dom) consultor, vendedor
+ * e avaliador não entram — só com liberação do supervisor.
+ */
 function expedienteDentroJanela(): bool {
     $agora = date('H:i');
-    return $agora >= filaHorarioAbertura() && $agora < expedienteHorarioCorte();
+    return filaDiaAberto() && $agora >= filaHorarioAbertura() && $agora < expedienteHorarioCorte();
 }
 
 /** Minutos que faltam até o corte (null se fora da janela). */
@@ -82,7 +87,7 @@ function expedienteAvisoPessoalPermitido(?int $usuarioId): bool {
 }
 
 function expedienteMensagemBloqueio(): string {
-    return 'Fora do horário de expediente (' . filaHorarioAbertura() . ' às ' . expedienteHorarioCorte()
+    return 'Fora do horário de expediente (' . filaDiasAbertosTexto() . ', ' . filaHorarioAbertura() . ' às ' . expedienteHorarioCorte()
         . '). Pra entrar agora, peça liberação ao supervisor.';
 }
 
