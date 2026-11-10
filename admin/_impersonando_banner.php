@@ -31,7 +31,7 @@ if (estaImpersonando()):
 if (!estaImpersonando() && function_exists('expedienteMinutosParaCorte')
     && in_array($_SESSION['admin_perfil'] ?? '', EXPEDIENTE_PERFIS_BLOQUEADOS, true)
     && expedienteBloqueioLigado() && !expedienteLiberado((int)($_SESSION['admin_id'] ?? 0))):
-    $minCorte = expedienteMinutosParaCorte();
+    $minCorte = expedienteMinutosParaCorte((string)($_SESSION['admin_perfil'] ?? ''));
     if ($minCorte !== null && $minCorte <= 10):
 ?>
 <div style="background:var(--laranja,#c2410c);color:#fff;padding:8px 16px;text-align:center;font-size:14px">

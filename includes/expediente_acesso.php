@@ -9,7 +9,8 @@
  *  - Vale pra consultor, vendedor e avaliador (super_admin/supervisor/
  *    financeiro nunca são bloqueados).
  *  - Mesmo horário e mesmos DIAS da fila de leads (Configurações → Fila,
- *    padrão 10:00–19:20, seg–sex — 10/11/2026: fim de semana bloqueado).
+ *    padrão 10:00–19:20, seg–sex — 10/11/2026: fim de semana bloqueado pra
+ *    consultor/avaliador; vendedor só tem a trava de horário).
  *  - 30 min de tolerância depois do fechamento (aviso 10 min antes de cair).
  *  - Quem já está logado é derrubado no corte (checado a cada request em
  *    admin/_bootstrap.php), não só na tela de login.
@@ -45,17 +46,20 @@ function expedienteHorarioCorte(): string {
 /**
  * Agora está dentro da janela de acesso (dia aberto da fila, da abertura até
  * fechamento + tolerância)? 10/11/2026, "final de semana também": nos dias
- * desmarcados em Configurações → Fila (padrão sáb/dom) consultor, vendedor
- * e avaliador não entram — só com liberação do supervisor.
+ * desmarcados em Configurações → Fila (padrão sáb/dom) consultor e
+ * avaliador não entram — só com liberação do supervisor. Vendedor: só horário.
  */
-function expedienteDentroJanela(): bool {
+function expedienteDentroJanela(?string $perfil = null): bool {
     $agora = date('H:i');
-    return filaDiaAberto() && $agora >= filaHorarioAbertura() && $agora < expedienteHorarioCorte();
+    // Vendedor não tem fila e pode atender comprador no fim de semana
+    // ("não vendedor não"): pra ele só vale o horário, nunca o dia.
+    $diaOk = $perfil === 'vendedor' || filaDiaAberto();
+    return $diaOk && $agora >= filaHorarioAbertura() && $agora < expedienteHorarioCorte();
 }
 
 /** Minutos que faltam até o corte (null se fora da janela). */
-function expedienteMinutosParaCorte(): ?int {
-    if (!expedienteDentroJanela()) return null;
+function expedienteMinutosParaCorte(?string $perfil = null): ?int {
+    if (!expedienteDentroJanela($perfil)) return null;
     [$h, $m] = array_map('intval', explode(':', expedienteHorarioCorte()));
     $corte = mktime($h, $m, 0);
     return max(0, (int)ceil(($corte - time()) / 60));
@@ -73,7 +77,7 @@ function expedienteLiberado(int $usuarioId): bool {
 function expedienteAcessoPermitido(int $usuarioId, string $perfil): bool {
     if (!expedienteBloqueioLigado()) return true;
     if (!in_array($perfil, EXPEDIENTE_PERFIS_BLOQUEADOS, true)) return true;
-    if (expedienteDentroJanela()) return true;
+    if (expedienteDentroJanela($perfil)) return true;
     return expedienteLiberado($usuarioId);
 }
 

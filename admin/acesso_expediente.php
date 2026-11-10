@@ -76,7 +76,7 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
 <div class="card">
     <h2>🌙 Acesso fora do expediente</h2>
     <p>Consultor, vendedor e avaliador só entram no sistema das <strong><?= e(filaHorarioAbertura()) ?></strong>
-       às <strong><?= e(expedienteHorarioCorte()) ?></strong> (fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância), só nos dias <strong><?= e(filaDiasAbertosTexto()) ?></strong>.
+       às <strong><?= e(expedienteHorarioCorte()) ?></strong> (fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância). Consultor e avaliador só nos dias <strong><?= e(filaDiasAbertosTexto()) ?></strong>; vendedor todos os dias.
        Fora disso, quem estiver logado é desconectado.
        Supervisor e super admin podem liberar alguém até o fim do dia.</p>
     <p>
