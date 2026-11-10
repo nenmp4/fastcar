@@ -761,8 +761,8 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
     try {
         $db = getDB();
         $stmt = $db->prepare("
-            SELECT o.resumo_ia, o.responsavel_id, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
-                   u.whatsapp AS consultor_whatsapp
+            SELECT o.resumo_ia, o.responsavel_id, o.temperatura_lead, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+                   u.whatsapp AS consultor_whatsapp, u.nome AS consultor_nome
             FROM oportunidades o
             JOIN clientes c ON c.id = o.cliente_id
             LEFT JOIN usuarios u ON u.id = o.responsavel_id
@@ -778,6 +778,20 @@ function notificarConsultorLeadQualificado(int $oportunidadeId, string $motivo =
              . "Cliente: {$op['cliente_nome']}\nTelefone: {$op['cliente_telefone']}\n\n"
              . ($op['resumo_ia'] ? "{$op['resumo_ia']}\n\n" : '')
              . $link;
+
+        // 10/11/2026 — lead QUENTE: mesmo destino de sempre (consultor, ou a
+        // lista de notificação de fallback), mas registrado com
+        // entregue/lido em admin/avisos_lead_quente.php.
+        if (($op['temperatura_lead'] ?? '') === 'quente') {
+            require_once __DIR__ . '/aviso_lead_quente.php';
+            $msgQuente = "🔥 LEAD QUENTE — " . $msg;
+            if (!empty($op['consultor_whatsapp'])) {
+                avisoLeadQuenteEnviar('compra', $oportunidadeId, 'quente', $op['consultor_nome'], $op['consultor_whatsapp'], $msgQuente, false);
+            } else {
+                avisoLeadQuenteEnviar('compra', $oportunidadeId, 'quente', $op['consultor_nome'] ?? null, null, $msgQuente, true);
+            }
+            return;
+        }
 
         if (!empty($op['consultor_whatsapp'])) {
             zapiEnviarTextoInterno($op['consultor_whatsapp'], $msg);

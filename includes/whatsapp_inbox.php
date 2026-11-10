@@ -794,6 +794,12 @@ function inboxProcessarStatusEvolution($data): int {
             default => null,
         };
         if ($id === '' || $novo === null) continue;
+        // 10/11/2026 — avisos de lead quente (admin/avisos_lead_quente.php)
+        // não ficam em whatsapp_mensagens: grava entregue/lido na tabela deles.
+        if ($novo !== 'enviado') {
+            if (!function_exists('avisoLeadQuenteAtualizarStatus')) require_once __DIR__ . '/aviso_lead_quente.php';
+            avisoLeadQuenteAtualizarStatus($id, $novo);
+        }
         $db = getDB();
         $st = $db->prepare("SELECT id, status_entrega FROM whatsapp_mensagens WHERE zapi_message_id = ?");
         $st->execute([$id]);

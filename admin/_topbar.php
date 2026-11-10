@@ -83,6 +83,7 @@ $tbGrupos = [
         ['💸 Custo por lead', '/admin/relatorio_cpl.php', $tbVeTudo],
         ['🤖 Qualidade da IA', '/admin/qualidade_ia.php', $tbVeTudo],
         ['🌙 Acesso fora do horário', '/admin/acesso_expediente.php', $tbVeTudo],
+        ['🔥 Avisos de lead quente', '/admin/avisos_lead_quente.php', $tbSuper],
     ],
     'Admin' => [
         ['👤 Usuários', '/admin/usuarios.php', $tbSuper],
@@ -130,6 +131,7 @@ $tbMapa = [
     'relatorio_cpl.php' => ['Custo por lead', 'origem_leads.php'],
     'qualidade_ia.php' => ['Qualidade da IA', null],
     'acesso_expediente.php' => ['Acesso fora do horário', null],
+    'avisos_lead_quente.php' => ['Avisos de lead quente', null],
     'usuarios.php' => ['Usuários', null],
     'auditoria.php' => ['Auditoria', null],
     'backup.php' => ['Backup', null],

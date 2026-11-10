@@ -1527,3 +1527,25 @@ CREATE TABLE IF NOT EXISTS fipe_consultas (
 );
 CREATE INDEX IF NOT EXISTS idx_fipe_consultas_oportunidade ON fipe_consultas(oportunidade_id);
 CREATE INDEX IF NOT EXISTS idx_fipe_consultas_placa ON fipe_consultas(placa);
+
+-- 10/11/2026 — "tela que saiba que notificações de lead quente foi entregue":
+-- 1 linha por aviso de lead quente mandado pelo WhatsApp, por destinatário
+-- (consultor/vendedor + números de notificação, ex.: Jean). wa_message_id
+-- liga com o status do WhatsApp (MESSAGES_UPDATE) → entregue_em / lido_em.
+CREATE TABLE IF NOT EXISTS aviso_lead_quente_envios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ref_tipo TEXT NOT NULL,              -- 'compra' (oportunidades) | 'venda' (vendas)
+    ref_id INTEGER NOT NULL,
+    motivo TEXT NOT NULL DEFAULT 'quente', -- 'quente' | 'lembrete'
+    destinatario TEXT NOT NULL DEFAULT '',
+    telefone TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'enviado', -- 'enviado' | 'falhou' | 'sem_whatsapp'
+    erro TEXT NOT NULL DEFAULT '',
+    wa_message_id TEXT NOT NULL DEFAULT '',
+    enviado_em DATETIME DEFAULT (datetime('now','localtime')),
+    entregue_em DATETIME,
+    lido_em DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_aviso_quente_ref ON aviso_lead_quente_envios(ref_tipo, ref_id);
+CREATE INDEX IF NOT EXISTS idx_aviso_quente_enviado ON aviso_lead_quente_envios(enviado_em);
+CREATE INDEX IF NOT EXISTS idx_aviso_quente_wa ON aviso_lead_quente_envios(wa_message_id);

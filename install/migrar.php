@@ -2452,6 +2452,30 @@ try {
     echo "❌ veiculo_midias_revenda.destaque: {$e->getMessage()}\n";
 }
 
+// 10/11/2026 — registro de entrega dos avisos de lead quente (admin/avisos_lead_quente.php).
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS aviso_lead_quente_envios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ref_tipo TEXT NOT NULL,
+        ref_id INTEGER NOT NULL,
+        motivo TEXT NOT NULL DEFAULT 'quente',
+        destinatario TEXT NOT NULL DEFAULT '',
+        telefone TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'enviado',
+        erro TEXT NOT NULL DEFAULT '',
+        wa_message_id TEXT NOT NULL DEFAULT '',
+        enviado_em DATETIME DEFAULT (datetime('now','localtime')),
+        entregue_em DATETIME,
+        lido_em DATETIME
+    )");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_aviso_quente_ref ON aviso_lead_quente_envios(ref_tipo, ref_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_aviso_quente_enviado ON aviso_lead_quente_envios(enviado_em)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_aviso_quente_wa ON aviso_lead_quente_envios(wa_message_id)");
+    echo "✅ aviso_lead_quente_envios: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ aviso_lead_quente_envios: {$e->getMessage()}\n";
+}
+
 // 09/11/2026 — rede de segurança: as reconstruções antigas de tabela (CHECK de
 // usuarios.perfil etc.) copiam uma lista FIXA de colunas e, num banco bem
 // antigo (backup restaurado), apagavam colunas que o loop $migracoes do topo

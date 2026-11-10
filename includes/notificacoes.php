@@ -238,7 +238,10 @@ function notificarLeadQuenteVenda(int $vendaId): void {
              . ($v['valor_parcela_orcamento'] ? "\nParcela até: " . $fmt($v['valor_parcela_orcamento']) : '')
              . "\nVendedor: " . ($v['responsavel_nome'] ?: 'sem responsável')
              . ($baseUrl ? "\n" . rtrim($baseUrl, '/') . $url : '');
-        enviarAvisoVisitaLojaWhatsapp($v['responsavel_whatsapp'] ?? null, $msg);
+        // 10/11/2026 — mesmos destinos de antes (vendedor + números de
+        // notificação), agora com registro de entregue/lido por destinatário.
+        require_once __DIR__ . '/aviso_lead_quente.php';
+        avisoLeadQuenteEnviar('venda', $vendaId, 'quente', $v['responsavel_nome'] ?? null, $v['responsavel_whatsapp'] ?? null, $msg, true);
     } catch (Throwable $e) {
         // best-effort — nunca pode travar o turno da IA
     }

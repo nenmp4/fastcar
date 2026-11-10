@@ -143,7 +143,11 @@ foreach ($quentesParados as $op) {
              . "👤 {$nomeCliente} ({$op['telefone']})\n\n"
              . "Esse lead tem urgência real (financiamento atrasado, sem outra opção) e já está "
              . "com você há mais de {$IA_QUENTE_MINUTOS_LIMITE} min sem avançar. Ligue o quanto antes!";
-        $ok = zapiEnviarTextoInterno($op['responsavel_wpp'], $msg);
+        // 10/11/2026 — registrado em admin/avisos_lead_quente.php (entregue/lido).
+        require_once __DIR__ . '/../includes/aviso_lead_quente.php';
+        $antes = (int)getDB()->query("SELECT COUNT(*) FROM aviso_lead_quente_envios WHERE status = 'enviado'")->fetchColumn();
+        avisoLeadQuenteEnviar('compra', (int)$op['id'], 'lembrete', $op['responsavel_nome'], $op['responsavel_wpp'], $msg, false);
+        $ok = (int)getDB()->query("SELECT COUNT(*) FROM aviso_lead_quente_envios WHERE status = 'enviado'")->fetchColumn() > $antes;
         log_followup(($ok ? '✅' : '❌') . " Alerta quente parado → oportunidade #{$op['id']} → {$op['responsavel_nome']}");
     } else {
         log_followup("⏭️ Oportunidade #{$op['id']} quente parada mas responsável sem WhatsApp cadastrado.");
