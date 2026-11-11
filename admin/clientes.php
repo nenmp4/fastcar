@@ -19,7 +19,7 @@ $db = getDB();
 $perfilCli = (string)($_SESSION['admin_perfil'] ?? '');
 $aba = (string)($_GET['aba'] ?? 'todos');
 if (!in_array($aba, ['todos', 'vendedores', 'compradores'], true)) $aba = 'todos';
-if ($perfilCli === 'vendedor') $aba = 'compradores'; // vendedor só vê o lado dele
+if (in_array($perfilCli, ['vendedor', 'avaliador'], true)) $aba = 'compradores'; // vendedor só vê o lado dele
 
 // 21/10/2026, "clientes todos aparece para todos... temos cada consultor
 // tenha seus clientes" — até aqui essa tela não tinha NENHUM filtro de
@@ -98,7 +98,7 @@ if ($busca) {
     $likeV = '%' . $busca . '%';
     array_push($paramsV, $likeV, $likeV, $likeV, $likeV);
 }
-if ($perfilCli === 'vendedor' || ($responsavelFiltro !== null && $perfilCli !== 'vendedor')) {
+if (in_array($perfilCli, ['vendedor', 'avaliador'], true) || ($responsavelFiltro !== null && !in_array($perfilCli, ['vendedor', 'avaliador'], true))) {
     $condV[] = "v.responsavel_id = ?";
     $paramsV[] = (int)$_SESSION['admin_id'];
 }
@@ -131,7 +131,7 @@ if ($aba === 'compradores') {
 
 // Contagens das abas.
 $totalVendedores = 0;
-if ($perfilCli !== 'vendedor') {
+if (!in_array($perfilCli, ['vendedor', 'avaliador'], true)) {
     $condVd = ["EXISTS (SELECT 1 FROM oportunidades o3 WHERE o3.cliente_id = c.id AND o3.etapa = 'fechado')"];
     $paramsVd = [];
     if ($responsavelFiltro !== null) { $condVd[] = "EXISTS (SELECT 1 FROM oportunidades o2 WHERE o2.cliente_id = c.id AND o2.responsavel_id = ?)"; $paramsVd[] = $responsavelFiltro; }
@@ -160,7 +160,7 @@ $fmtR = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
 <div class="card">
     <h2>👥 Clientes</h2>
     <nav class="etapas-nav" style="margin-bottom:10px">
-        <?php if ($perfilCli !== 'vendedor'): ?>
+        <?php if (!in_array($perfilCli, ['vendedor', 'avaliador'], true)): ?>
         <a class="<?= $aba === 'todos' ? 'ativo' : '' ?>" href="?aba=todos">Todos</a>
         <a class="<?= $aba === 'vendedores' ? 'ativo' : '' ?>" href="?aba=vendedores">🚗 Vendedores — compramos o carro deles (<?= $totalVendedores ?>)</a>
         <?php endif; ?>

@@ -117,7 +117,12 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // 06/11/2026 — botão 🟢 Disponível (fila de vendas) na topbar.
         'toggle_disponivel.php',
         // 06/11/2026 — foto enviada pelo 📷/🚘 Estoque no WhatsApp Vendas.
-        'ver_midia_vendas.php'];
+        'ver_midia_vendas.php',
+        // 11/11/2026 — conferir a documentação/contrato da venda pra fechar
+        // ("não consegue conferir a documentação fechar venda"): os links
+        // "ver" dos documentos do comprador e "📄 Ver PDF" do contrato
+        // redirecionavam pra vendas.php.
+        'ver_documento_venda.php', 'ver_contrato.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
@@ -185,7 +190,11 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // 06/11/2026 — botão 🟢 Disponível (fila de vendas) na topbar.
         'toggle_disponivel.php',
         // 06/11/2026 — foto enviada pelo 📷/🚘 Estoque no WhatsApp Vendas.
-        'ver_midia_vendas.php'];
+        'ver_midia_vendas.php',
+        // 11/11/2026 — avaliador que também vende confere a documentação e o
+        // contrato pra fechar a venda (mesma lista do vendedor).
+        'ver_documento_venda.php', 'ver_contrato.php',
+        'clientes.php', 'fipe_ajax.php', 'termo_retirada.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

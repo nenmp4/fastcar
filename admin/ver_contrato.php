@@ -23,4 +23,10 @@ if (!$contrato) {
     exit('Contrato não encontrado.');
 }
 
+// Vendedor/avaliador só abrem contrato de uma venda (não o de compra solto).
+if (in_array($_SESSION['admin_perfil'] ?? '', ['vendedor', 'avaliador'], true) && empty($contrato['venda_id'])) {
+    http_response_code(403);
+    exit('Sem acesso a esse contrato.');
+}
+
 servirArquivoDriveOuLocal($contrato['drive_file_id'] ?: null, $contrato['arquivo_url'] ?: null);
