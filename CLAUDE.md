@@ -1779,9 +1779,9 @@ segue no schema sem uso novo, não removida sem ganho real),
   a conversa volta pra lista de todos + do consultor responsável e conta
   como não lida (compra e vendas). Quem vê tudo tem seletor "👤 consultor"
   no WhatsApp Box (combina com Todas/Não lidas/IA qualificando). Popup
-  de mensagem nova (admin/notificacoes.php) pro consultor/vendedor só sai
+  de mensagem nova (admin/notificacoes.php) pro consultor (compra) só sai
   de conversa em que ELE já mandou mensagem pela caixa, nunca com a IA
-  qualificando.
+  qualificando. Vendas não mexe ("na vendas acertamos modelo").
   Não mexer de novo na IA sem pedido.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +

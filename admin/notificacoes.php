@@ -260,12 +260,14 @@ if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admi
     // que ELE já mandou mensagem pela caixa; conversa com a IA ainda
     // qualificando nunca avisa. Quem vê tudo segue com o critério antigo
     // (alguém da equipe já conversou ou a IA está pausada).
-    if (perfilVeTudo()) {
+    // Vendas: modelo já acertado ("na vendas acertamos modelo") — mantém o
+    // critério antigo pra todos.
+    if (perfilVeTudo() || $modulo === 'vendas') {
         $filtroJaConversando = "(EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.telefone = m.telefone AND h.canal = m.canal AND h.direcao = 'out' AND h.usuario_id IS NOT NULL)
                OR EXISTS (SELECT 1 FROM whatsapp_sessoes ws WHERE ws.telefone = m.telefone AND ws.ia_pausada = 1))";
     } else {
         $filtroJaConversando = "EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.telefone = m.telefone AND h.canal = m.canal AND h.direcao = 'out' AND h.usuario_id = " . (int)$meuId . ")"
-            . ($modulo === 'vendas' ? '' : " AND NOT EXISTS (SELECT 1 FROM clientes cq JOIN oportunidades oq ON oq.cliente_id = cq.id
+            . (" AND NOT EXISTS (SELECT 1 FROM clientes cq JOIN oportunidades oq ON oq.cliente_id = cq.id
                  WHERE cq.telefone = m.telefone AND oq.etapa IN ('whatsapp', 'qualificacao_ia')
                    AND NOT EXISTS (SELECT 1 FROM whatsapp_sessoes wq WHERE wq.telefone = m.telefone AND wq.ia_pausada = 1))");
     }
