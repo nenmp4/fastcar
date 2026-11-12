@@ -186,7 +186,11 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   em contato, e pare por aqui. Não tente resolver nem prometer prazo — isso
   é pra um humano avaliar (pendência pós-venda), não pra qualificação
   automática.
-- Seja breve. Mensagens curtas, como alguém digitando no celular.
+- Seja breve. Mensagens curtas, como alguém digitando no celular: NO MÁXIMO
+  2 frases curtas por mensagem (uma reação + uma pergunta), até umas 25
+  palavras no total. Nunca explique demais nem junte aviso, explicação e
+  pergunta na mesma mensagem — se precisar avisar algo (dados só pra
+  proposta, documentos depois), é meia frase, nunca um parágrafo.
 - NUNCA faça mais de UMA pergunta por mensagem (09/11/2026, regra da
   equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
   saber duas coisas, pergunte só a mais importante agora.
@@ -226,6 +230,40 @@ function iaLimitarUmaPergunta(string $texto): string {
     // "Qual o banco? E quantas parcelas faltam?" → "Quantas parcelas faltam?"
     $r = preg_replace_callback('/(^|[.!…]\s+)E\s+(\p{L})/u', fn($m) => $m[1] . mb_strtoupper($m[2]), $r);
     return $r !== '' ? $r : $texto;
+}
+
+/**
+ * Corta resposta longa demais (12/11/2026, "perguntas longas" — print de
+ * conversa real com 4-5 frases por mensagem). O prompt já pede no máximo 2
+ * frases, mas o modelo às vezes ignora. Acima de ~220 caracteres, mantém a
+ * 1ª frase (a reação ao que o cliente disse) e a última pergunta; sem
+ * pergunta, mantém as 2 primeiras frases.
+ */
+function iaEncurtarResposta(string $texto, int $limite = 220): string {
+    $texto = trim($texto);
+    if (mb_strlen($texto) <= $limite) return $texto;
+    $frases = array_values(array_filter(array_map('trim', preg_split('/(?<=[.!?…)])\s+/u', $texto) ?: [$texto]), 'strlen'));
+    if (count($frases) <= 2) return $texto;
+    // Frase entre parênteses é aviso (ex: LGPD "(Uso seus dados só pra...)"),
+    // nunca a pergunta de verdade — mantém no fim se ainda couber.
+    $aviso = null;
+    $normais = [];
+    foreach ($frases as $f) {
+        if (str_starts_with($f, '(')) { $aviso = $aviso ?? $f; continue; }
+        $normais[] = $f;
+    }
+    if (!$normais) return $texto;
+    $ultimaPergunta = null;
+    foreach ($normais as $i => $f) {
+        if (str_contains($f, '?')) $ultimaPergunta = $i;
+    }
+    if ($ultimaPergunta === null || $ultimaPergunta === 0) {
+        $r = trim($normais[0] . (isset($normais[1]) && $ultimaPergunta === null ? ' ' . $normais[1] : ''));
+    } else {
+        $r = trim($normais[0] . ' ' . $normais[$ultimaPergunta]);
+    }
+    if ($aviso !== null && mb_strlen($r . ' ' . $aviso) <= $limite + 60) $r .= ' ' . $aviso;
+    return $r;
 }
 
 const IA_EXTRACAO_PROMPT = <<<PROMPT
@@ -556,7 +594,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
         'reclamacao_pos_venda' => false, 'pedido_atendente_humano' => false,
     ];
 
-    $resposta = iaLimitarUmaPergunta(iaGerarResposta($telefone));
+    $resposta = iaEncurtarResposta(iaLimitarUmaPergunta(iaGerarResposta($telefone)));
     $resultado['resposta'] = $resposta;
     if ($resposta !== '') {
         $enviada = zapiEnviarTextoPeloCanal($telefone, $resposta, $canalOrigem);
