@@ -109,8 +109,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'foto') {
         echo json_encode(['foto_url' => '']);
         exit;
     }
-    $contatoFoto = zapiBuscarContato($telefoneFoto);
-    echo json_encode(['foto_url' => $contatoFoto['foto_url'] ?? '']);
+    $fotoUrl = fotoContatoCacheada('principal', $telefoneFoto, function () use ($telefoneFoto) {
+        return zapiBuscarContato($telefoneFoto)['foto_url'] ?? '';
+    });
+    echo json_encode(['foto_url' => $fotoUrl]);
     exit;
 }
 
@@ -594,6 +596,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
     // pra sempre. Com o telefone já em cache, o refresh usa a foto direto
     // (o navegador já tem essa URL no cache HTTP também, carrega instantâneo).
     var fotoCache = {};
+    var fotoTentada = {}; // telefone já buscado nesta página (com ou sem foto) — nunca busca de novo a cada refresh
 
     function escapeHtml(s) {
         var d = document.createElement('div');
@@ -650,10 +653,15 @@ if ($telefoneAtivo && !$contatoAtivo) {
             var phone = el.getAttribute('data-av-phone');
             if (!phone) return;
             if (fotoCache[phone]) { _aplicarFoto(el, fotoCache[phone]); return; }
+            if (fotoTentada[phone]) return;
+            fotoTentada[phone] = true;
             setTimeout(function () {
                 fetch('?ajax=foto&telefone=' + encodeURIComponent(phone))
                     .then(function (r) { return r.json(); })
-                    .then(function (d) { _aplicarFoto(el, d.foto_url); })
+                    .then(function (d) {
+                        if (!d.foto_url) return;
+                        document.querySelectorAll('div.wpp-avatar-placeholder[data-av-phone="' + phone + '"]').forEach(function (p) { _aplicarFoto(p, d.foto_url); });
+                    })
                     .catch(function () {});
             }, delay);
         }

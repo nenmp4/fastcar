@@ -903,6 +903,36 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
  * PLATAFORMA"). Chamada de `admin/whatsapp_inbox.php`/`vendas_inbox.php`
  * sem precisar saber qual provedor está ativo.
  */
+/**
+ * 12/11/2026, "as imagens não carregam / sistema lento" — o WhatsApp Box
+ * buscava a foto de perfil AO VIVO a cada carregamento (e o inbox de compra
+ * repetia a busca a cada refresh de 5s pra quem não tem foto), cada busca
+ * segurando um worker do PHP-FPM por até 10s esperando a Evolution — com
+ * vários consultores de caixa aberta, isso ocupava o pool inteiro e o resto
+ * do sistema ficava esperando. Cache em DISCO (nunca no banco — nada de
+ * disputa de trava do SQLite), por canal+telefone: foto achada vale 3h
+ * (a URL da CDN do WhatsApp expira, nunca guardar pra sempre), "sem foto"
+ * vale 12h. Best-effort: falha ao ler/gravar o cache só busca de novo.
+ */
+function fotoContatoCacheada(string $canal, string $telefone, callable $buscar): string {
+    $dir = dirname(__DIR__) . '/storage/cache/whatsapp_foto';
+    $arq = $dir . '/' . preg_replace('/[^a-z0-9_]/', '', strtolower($canal)) . '_' . preg_replace('/\D/', '', $telefone) . '.json';
+    $c = is_file($arq) ? json_decode((string)@file_get_contents($arq), true) : null;
+    if (is_array($c) && isset($c['t'], $c['u'])) {
+        $ttl = $c['u'] !== '' ? 3 * 3600 : 12 * 3600;
+        if (time() - (int)$c['t'] < $ttl) return (string)$c['u'];
+    }
+    $url = '';
+    try {
+        $url = (string)($buscar() ?? '');
+    } catch (Throwable $e) {
+        return '';
+    }
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    @file_put_contents($arq, json_encode(['t' => time(), 'u' => $url]), LOCK_EX);
+    return $url;
+}
+
 function zapiBuscarContato(string $phone): ?array {
     if (evolutionEhProviderPrincipal()) {
         return evolutionBuscarContato($phone);

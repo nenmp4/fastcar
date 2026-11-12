@@ -77,9 +77,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'foto') {
         exit;
     }
     require_once __DIR__ . '/../includes/whatsapp_evolution.php';
-    $contato = evolutionConfiguredVendas() ? evolutionBuscarContato($telFoto, evolutionCredenciaisVendas()) : null;
-    if (empty($contato['foto_url'])) $contato = zapiBuscarContato($telFoto); // cai pra instância principal
-    echo json_encode(['foto_url' => $contato['foto_url'] ?? '']);
+    $fotoUrl = fotoContatoCacheada('vendas', $telFoto, function () use ($telFoto) {
+        $contato = evolutionConfiguredVendas() ? evolutionBuscarContato($telFoto, evolutionCredenciaisVendas()) : null;
+        if (empty($contato['foto_url'])) $contato = zapiBuscarContato($telFoto); // cai pra instância principal
+        return $contato['foto_url'] ?? '';
+    });
+    echo json_encode(['foto_url' => $fotoUrl]);
     exit;
 }
 
