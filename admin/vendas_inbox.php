@@ -324,7 +324,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-vazio { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--texto-fraco); text-align: center; padding: 40px; }
 .wpp-voltar-mobile { display: none; }
 /* 06/11/2026 — 📷 foto / 🚘 Estoque */
-.wpp-midia { display: block; max-width: 240px; max-height: 240px; border-radius: 8px; margin-bottom: 4px; object-fit: cover; }
+.wpp-midia { display: block; max-width: 240px; max-height: 240px; border-radius: 8px; margin-bottom: 4px; object-fit: cover; height: auto; }
 .wpp-form .vi-btn-claro, .vi-mf .vi-btn-claro { background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); box-shadow: none; }
 .wpp-form .vi-btn-estoque { background: var(--laranja-bg); color: var(--laranja); border: 1px solid var(--laranja); box-shadow: none; }
 .vi-modal { width: min(680px, 96vw); }
@@ -595,7 +595,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         if (midia === 'audio') return '<audio controls preload="none" src="' + u + '" style="max-width:260px;display:block;margin-top:6px"></audio>';
         if (midia === 'video') return '<video class="wpp-midia" controls preload="none" src="' + u + '"></video>';
         if (midia === 'document') return '<a href="' + u + '" target="_blank" rel="noopener">📎 ' + escapeHtml((m.mensagem || '').replace(/^📎\s*/, '')) + '</a>';
-        return '<a href="' + u + '" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" src="' + u + '" alt=""></a>';
+        return '<a href="' + u + '" target="_blank" rel="noopener"><img class="wpp-midia" loading="lazy" width="220" height="165" src="' + u + '" alt=""></a>';
     }
     var midiaTentadas = {}, midiaFila = [], midiaRodando = false;
     function recuperarMidias() {

@@ -302,7 +302,7 @@ function renderizarMidiaWhatsapp(array $m): string {
     return match ($midia) {
         'audio' => '<audio controls preload="none" src="' . e($url) . '" style="max-width:260px;display:block;margin-top:6px"></audio>',
         'video' => '<video controls preload="none" src="' . e($url) . '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>',
-        'image' => '<a href="' . e($url) . '" target="_blank" rel="noopener"><img src="' . e($url) . '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>',
+        'image' => '<a href="' . e($url) . '" target="_blank" rel="noopener"><img src="' . e($url) . '" loading="lazy" width="220" height="165" style="height:auto;max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>',
         'document' => '<a href="' . e($url) . '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:inherit;font-size:.85rem">📎 ' . e(preg_replace('/^📎\s*/u', '', (string)$m['mensagem'])) . '</a>',
         default => '',
     };
@@ -825,6 +825,13 @@ function inboxProcessarPresencaEvolution($data): int {
         if (time() - (int)getConfig('presenca_watch_' . $tel) > 180) continue;
         $estado = (string)($p['lastKnownPresence'] ?? '');
         if ($estado === '') continue;
+        // Mesmo estado gravado há menos de 15s: não grava de novo (o WhatsApp
+        // repete "digitando" várias vezes por segundo — cada uma era uma escrita).
+        $atual = (string)getConfig('presenca_' . $tel);
+        if ($atual !== '' && str_contains($atual, '|')) {
+            [$qAtual, $eAtual] = explode('|', $atual, 2);
+            if ($eAtual === $estado && time() - (int)$qAtual < 15) continue;
+        }
         setConfig('presenca_' . $tel, time() . '|' . $estado);
         // "Visto por último" (09/11/2026): online/digitando = agora; saiu
         // ('unavailable') = o lastSeen que o WhatsApp manda, se o cliente

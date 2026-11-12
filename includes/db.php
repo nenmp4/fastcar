@@ -183,24 +183,43 @@ function executarComRetryDeLock(callable $fn, int $tentativas = 3) {
 // vendo o valor velho até a próxima request (PHP-FPM reseta `static`
 // entre requests, então o bug só aparecia DENTRO da mesma request que
 // salvava e logo em seguida lia de novo).
+// 12/11/2026, "sistema lento / foca no inbox" — antes, a 1ª chamada de
+// getConfig() em cada request carregava a tabela `config` INTEIRA na memória.
+// Essa tabela acumula milhares de chaves de controle (presenca_*, avisos,
+// dedups, caches JSON de FIPE/ZapCar/CNPJ...) e o WhatsApp Box faz várias
+// requests por segundo por consultor — cada uma lendo tudo à toa. Agora cada
+// chave é buscada sozinha (consulta pela chave primária, instantânea) e
+// memorizada na própria request; getConfig() sem argumento ainda carrega tudo.
 function &configCache(): array {
-    static $cache = null;
-    if ($cache === null) {
-        $db = getDB();
-        $cache = [];
-        foreach ($db->query("SELECT chave, valor FROM config") as $row) {
-            $cache[$row['chave']] = $row['valor'];
-        }
-    }
+    static $cache = [];
     return $cache;
+}
+
+function &configCacheCompleto(): bool {
+    static $completo = false;
+    return $completo;
 }
 
 function getConfig(?string $chave = null) {
     $cache = &configCache();
     if ($chave !== null) {
-        return $cache[$chave] ?? null;
+        if (array_key_exists($chave, $cache)) return $cache[$chave];
+        $completo = &configCacheCompleto();
+        if ($completo) return null;
+        $st = getDB()->prepare("SELECT valor FROM config WHERE chave = ?");
+        $st->execute([$chave]);
+        $v = $st->fetchColumn();
+        $cache[$chave] = ($v === false) ? null : $v;
+        return $cache[$chave];
     }
-    return $cache;
+    $completo = &configCacheCompleto();
+    if (!$completo) {
+        foreach (getDB()->query("SELECT chave, valor FROM config") as $row) {
+            $cache[$row['chave']] = $row['valor'];
+        }
+        $completo = true;
+    }
+    return array_filter($cache, fn($v) => $v !== null);
 }
 
 /**

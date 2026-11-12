@@ -696,7 +696,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
         if (midia === 'audio') return '<audio controls preload="none" src="' + url + '" style="max-width:260px;display:block;margin-top:6px"></audio>';
         if (midia === 'video') return '<video controls preload="none" src="' + url + '" style="max-width:260px;border-radius:8px;display:block;margin-top:6px"></video>';
         if (midia === 'document') return '<a href="' + url + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:inherit;font-size:.85rem">📎 ' + escapeHtml(m.mensagem.replace(/^📎\s*/, '')) + '</a>';
-        return '<a href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>';
+        return '<a href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" loading="lazy" width="220" height="165" style="height:auto;max-width:220px;border-radius:8px;display:block;margin-top:6px"></a>';
     }
 
     // Mídia que não ficou salva: pede pro servidor baixar de novo do
