@@ -461,8 +461,9 @@ function apagarMidiaPendente(string $messageId): void {
  * pode derrubar o webhook, a mensagem/texto já foram salvos de qualquer
  * jeito; só fica sem a cópia visível dessa vez.
  */
-function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mime, string $tipo, int $clienteId, string $nomeCliente): void {
-    if ($mensagemId <= 0 || !$bytes) return;
+function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mime, string $tipo, int $clienteId, string $nomeCliente): string {
+    // 12/11/2026 — devolve o motivo da falha ('' = salvou) pro botão "Tentar de novo" mostrar.
+    if ($mensagemId <= 0 || !$bytes) return 'mensagem/arquivo vazio';
     try {
         $nomeArquivo = $tipo . '_' . $mensagemId . '.' . extensaoPorMime($mime);
         if ($clienteId <= 0) {
@@ -478,7 +479,7 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
             }
         } else {
             $tmp = tempnam(sys_get_temp_dir(), 'wpp_midia_');
-            if (!$tmp) return;
+            if (!$tmp) return 'não conseguiu criar arquivo temporário';
             file_put_contents($tmp, $bytes);
             $copia = salvarArquivoGeradoComoDocumento($clienteId, $nomeCliente, $tmp, $nomeArquivo, $mime, 'whatsapp');
             @unlink($tmp);
@@ -504,6 +505,7 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
             $stWa = $db->prepare("SELECT zapi_message_id FROM whatsapp_mensagens WHERE id = ?");
             $stWa->execute([$mensagemId]);
             apagarMidiaPendente((string)$stWa->fetchColumn());
+            return '';
         } else {
             // 21/10/2026, achado real: "áudio não carrega" — a cópia
             // visível (não só a descrição do Gemini) ficava sem rastro
@@ -518,6 +520,7 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
                 'mensagemId' => $mensagemId, 'clienteId' => $clienteId, 'mime' => $mime,
                 'erro' => $copia['erro'] ?? '',
             ]);
+            return (string)($copia['erro'] ?? '') ?: 'Drive e pasta local falharam';
         }
     } catch (Throwable $e) {
         // best-effort — mensagem/texto já estão salvos independente disso,
@@ -526,6 +529,7 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
             'mensagemId' => $mensagemId, 'clienteId' => $clienteId, 'mime' => $mime,
             'erro' => $e->getMessage(),
         ]);
+        return $e->getMessage();
     }
 }
 

@@ -253,7 +253,7 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId, bool $forcar = false): 
     if ($pendente !== null) {
         $stC->execute([$m['telefone']]);
         $cli = $stC->fetch() ?: ['id' => 0, 'nome' => ''];
-        salvarMidiaWhatsappRecebida($mensagemId, $pendente['bytes'], $pendente['mime'] ?: $mimeDefault, $tipo, (int)$cli['id'], (string)$cli['nome']);
+        $erroSalvar = salvarMidiaWhatsappRecebida($mensagemId, $pendente['bytes'], $pendente['mime'] ?: $mimeDefault, $tipo, (int)$cli['id'], (string)$cli['nome']);
         $st->execute([$mensagemId]);
         $m = $st->fetch();
         if ($m['drive_file_id'] || $m['arquivo_url']) return ['ok' => true, 'mensagem' => $m, 'erro' => ''];
@@ -279,11 +279,11 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId, bool $forcar = false): 
     $stC->execute([$m['telefone']]);
     $cli = $stC->fetch() ?: ['id' => 0, 'nome' => ''];
     $mime = $res['mime'] ?: $mimeDefault;
-    salvarMidiaWhatsappRecebida($mensagemId, $res['bytes'], $mime, $tipo, (int)$cli['id'], (string)$cli['nome']);
+    $erroSalvar = salvarMidiaWhatsappRecebida($mensagemId, $res['bytes'], $mime, $tipo, (int)$cli['id'], (string)$cli['nome']);
     $st->execute([$mensagemId]);
     $m = $st->fetch();
     $ok = (bool)($m['drive_file_id'] || $m['arquivo_url']);
-    return ['ok' => $ok, 'mensagem' => $m, 'erro' => $ok ? '' : 'Baixou, mas não conseguiu salvar a cópia.'];
+    return ['ok' => $ok, 'mensagem' => $m, 'erro' => $ok ? '' : 'Baixou, mas não conseguiu salvar a cópia' . ($erroSalvar !== '' ? ': ' . mb_substr($erroSalvar, 0, 200) : '') . '.'];
 }
 
 /**

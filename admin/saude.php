@@ -523,6 +523,28 @@ if ($errorLogPath && file_exists($errorLogPath) && is_readable($errorLogPath)) {
     check('Erros', 'Erros recentes', 'info', 'error_log do PHP não configurado/legível', 'ini_get("error_log")');
 }
 
+// 12/11/2026 — mídia que não salva / mensagem que a IA não respondeu: mostra
+// as últimas linhas dos logs do WhatsApp aqui (sem SSH não tinha como ver).
+$logsWpp = [
+    'Mídia (WhatsApp)' => dirname(__DIR__) . '/storage/logs/whatsapp_midia_debug.log',
+    'Webhook Evolution' => dirname(__DIR__) . '/storage/logs/whatsapp_evolution_webhook_' . date('Y-m-d') . '.log',
+];
+foreach ($logsWpp as $rotulo => $arq) {
+    if (!is_readable($arq) || filesize($arq) === 0) {
+        check('Logs WhatsApp', $rotulo, 'ok', 'Nenhum registro', basename($arq));
+        continue;
+    }
+    $fp = fopen($arq, 'r');
+    fseek($fp, -min(filesize($arq), 6000), SEEK_END);
+    $linhas = array_values(array_filter(array_map('trim', explode("\n", (string)fread($fp, 6000)))));
+    fclose($fp);
+    $ultimas = array_slice($linhas, -4);
+    check('Logs WhatsApp', $rotulo, 'info', count($ultimas) . ' registro(s) mais recente(s) abaixo', basename($arq) . ' · ' . date('d/m H:i', filemtime($arq)));
+    foreach ($ultimas as $l) {
+        check('Logs WhatsApp', '↳', 'warn', mb_strimwidth($l, 0, 300, '…'), '');
+    }
+}
+
 // ── RENDER ─────────────────────────────────────────────────────────────────
 $totalOk    = count(array_filter($checks, fn($c) => $c['status'] === 'ok'));
 $totalWarn  = count(array_filter($checks, fn($c) => $c['status'] === 'warn'));
