@@ -20,6 +20,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/whatsapp_config.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem(), iaPausada()
+require_once __DIR__ . '/ia_qualificacao.php'; // iaMontarHistoricoGemini(), iaChamarComFallback(), iaLimitarUmaPergunta()
 
 const FOLLOWUP_QUALIF_INTERVALO_HORAS = 2;
 const FOLLOWUP_QUALIF_MAX_TENTATIVAS = 3;
@@ -52,6 +53,56 @@ function followupQualificacaoMensagem(int $n, string $nome): string {
         ],
     };
     return variarMensagem($opcoes);
+}
+
+/**
+ * Follow-up que mantém o contexto da conversa (12/11/2026, "follow-up manter
+ * contexto da conversa"): a IA lê o histórico e escreve 1 mensagem curta
+ * retomando exatamente de onde parou (ex: a pergunta que ficou sem resposta,
+ * o veículo que o cliente já citou), no mesmo tom da qualificação. Mudança
+ * sutil de propósito — regras de sempre: curta, uma pergunta só, nunca
+ * inventa dado/valor, nunca pede documento pessoal. Sem IA configurada,
+ * falha, ou resposta estranha → cai nas mensagens fixas de sempre.
+ */
+const FOLLOWUP_QUALIF_PROMPT = <<<PROMPT
+Você é a mesma pessoa da Fastcar que estava conversando com este cliente no WhatsApp (a Fastcar compra veículo financiado — carro, moto, caminhão etc). O cliente parou de responder. Escreva UMA mensagem curta de follow-up retomando a conversa exatamente de onde parou.
+
+Regras:
+- Mesmo tom acolhedor e natural da conversa abaixo, jeito de WhatsApp, sem parecer robô nem cobrança.
+- No máximo 2 frases curtas (até umas 25 palavras), com UMA pergunta só.
+- Retome o que ficou pendente: se a última pergunta nossa não foi respondida, faça ela de novo de um jeito leve e diferente; cite o veículo/detalhe que o cliente já contou, se fizer sentido.
+- Nunca invente informação, valor ou proposta, nunca prometa nada, nunca peça documento pessoal (CNH, RG, CPF, comprovante).
+- Não se apresente de novo, não repita aviso de LGPD, não use "Olá" formal.
+{tentativa}
+- Responda só com o texto da mensagem, sem aspas.
+
+Conversa até agora:
+PROMPT;
+
+function followupQualificacaoMensagemContextual(int $n, string $nome, string $telefone): string {
+    try {
+        $historico = iaMontarHistoricoGemini($telefone, 20);
+        if (!$historico) return '';
+        $transcript = '';
+        foreach ($historico as $h) {
+            $transcript .= ($h['role'] === 'user' ? 'Cliente' : 'Fastcar') . ': ' . $h['parts'][0]['text'] . "\n";
+        }
+        $tentativa = match ($n) {
+            1 => '- É o 1º lembrete: só retome a conversa com leveza.',
+            2 => '- É o 2º lembrete: retome e pergunte de forma leve se ainda tem interesse em seguir.',
+            default => '- É o último lembrete: diga com gentileza que vai deixar a conversa aqui e que é só responder quando quiser continuar (aqui pode não ter pergunta).',
+        };
+        $nomeInfo = $nome !== '' ? "\nNome do cliente: {$nome}" : '';
+        $prompt = str_replace('{tentativa}', $tentativa, FOLLOWUP_QUALIF_PROMPT) . $nomeInfo . "\n" . $transcript;
+        $msg = trim(preg_replace('/^["\'“”]+|["\'“”]+$/u', '', trim(iaChamarComFallback($prompt, 120, 0.7))));
+        if ($msg === '') return '';
+        $msg = iaEncurtarResposta(iaLimitarUmaPergunta($msg), 220);
+        // Sanidade: textão, valor em R$ ou pedido de documento → usa a fixa.
+        if (mb_strlen($msg) > 220 || preg_match('/R\$|\bCNH\b|\bRG\b|\bCPF\b/u', $msg)) return '';
+        return $msg;
+    } catch (Throwable $e) {
+        return '';
+    }
 }
 
 /**
@@ -102,7 +153,9 @@ function processarFollowupQualificacao(?callable $log = null, ?int $agora = null
         if ($agora - $tIn < $intervalo * ($n + 1)) continue;
         if ($estado['ultimo'] && $agora - (int)$estado['ultimo'] < $intervalo) continue;
 
-        $msg = followupQualificacaoMensagem($n + 1, trim((string)($op['nome'] ?? '')));
+        $nomeLead = trim((string)($op['nome'] ?? ''));
+        $msg = followupQualificacaoMensagemContextual($n + 1, $nomeLead, (string)$op['telefone'])
+            ?: followupQualificacaoMensagem($n + 1, $nomeLead);
         $ok = zapiEnviarTexto((string)$op['telefone'], $msg);
         $log(($ok ? '✅' : '❌') . " Follow-up " . ($n + 1) . "/" . FOLLOWUP_QUALIF_MAX_TENTATIVAS . " → oportunidade #{$op['id']} ({$op['telefone']})");
         if (!$ok) continue;

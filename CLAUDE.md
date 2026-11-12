@@ -1766,7 +1766,11 @@ segue no schema sem uso novo, não removida sem ganho real),
   contrato) NUNCA — é do consultor; (3) foto do veículo SEMPRE pedida, e se
   não vier a IA lembra 1x no fechamento; (4) espera 10–15s de silêncio antes
   de responder (`WHATSAPP_DEBOUNCE_SEGUNDOS`=10 + `WHATSAPP_DEBOUNCE_JITTER`=5,
-  `chatbot-whatsapp/includes/mensagens.php`).
+  `chatbot-whatsapp/includes/mensagens.php`); (5) follow-up da qualificação
+  (`includes/followup_qualificacao.php`, 2h/4h/6h) mantém o contexto — a IA
+  lê o histórico e escreve 1 mensagem curta retomando de onde parou (pergunta
+  pendente, veículo citado); sem IA/falha/texto com R$ ou documento pessoal,
+  cai nas mensagens fixas de sempre.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
