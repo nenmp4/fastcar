@@ -23,7 +23,11 @@ require_once dirname(__DIR__, 2) . '/includes/whatsapp_conformidade.php'; // wha
 // primeira sozinha, com jeito de robô mal escutando). `0` desliga (usado
 // pelo simulador de CLI — não faz sentido esperar segundos numa conversa
 // digitada linha a linha ao vivo).
-if (!defined('WHATSAPP_DEBOUNCE_SEGUNDOS')) define('WHATSAPP_DEBOUNCE_SEGUNDOS', 4);
+// 12/11/2026, "aumentar mais delay": 4s → 10s + até 5s aleatórios, pra dar
+// tempo do cliente terminar de digitar e a resposta não chegar rápido
+// demais (mais natural, menos cara de robô).
+if (!defined('WHATSAPP_DEBOUNCE_SEGUNDOS')) define('WHATSAPP_DEBOUNCE_SEGUNDOS', 10);
+if (!defined('WHATSAPP_DEBOUNCE_JITTER')) define('WHATSAPP_DEBOUNCE_JITTER', 5);
 
 // Tamanho máximo de mídia (áudio/imagem/vídeo) baixada pra mandar pro
 // Gemini — a API só aceita `inlineData` base64 até por volta de 20MB;
@@ -647,7 +651,7 @@ function iaDecisaoTexto(string $codigo): string {
 function aguardarSilencioOuAbortar(string $telefone, int $idMensagem): bool {
     if (WHATSAPP_DEBOUNCE_SEGUNDOS <= 0 || $idMensagem <= 0) return true;
 
-    sleep(WHATSAPP_DEBOUNCE_SEGUNDOS);
+    sleep(WHATSAPP_DEBOUNCE_SEGUNDOS + random_int(0, max(0, (int)WHATSAPP_DEBOUNCE_JITTER)));
 
     $db = getDB();
     $stmt = $db->prepare("SELECT MAX(id) FROM whatsapp_mensagens WHERE telefone = ? AND direcao = 'in'");
