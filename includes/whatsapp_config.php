@@ -1164,6 +1164,8 @@ function iaQualificacaoDentroHorarioComercial(): bool {
     $abertura = ($abertura && preg_match('/^\d{2}:\d{2}$/', $abertura)) ? $abertura : '00:00';
     $fechamento = getConfig('ia_qualificacao_horario_fechamento');
     $fechamento = ($fechamento && preg_match('/^\d{2}:\d{2}$/', $fechamento)) ? $fechamento : '23:59';
+    // 23:59 = até o fim do dia (o minuto 23:59 ficava de fora com "<").
+    if ($fechamento === '23:59') return $agora >= $abertura;
     return $agora >= $abertura && $agora < $fechamento;
 }
 
