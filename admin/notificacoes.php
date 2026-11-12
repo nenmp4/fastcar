@@ -255,6 +255,20 @@ if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admi
         $paramsConversa = ETAPAS_ATIVAS;
         $urlInbox = '/admin/whatsapp_inbox.php?telefone=';
     }
+    // 12/11/2026, consultor: "notificação de mensagens somente dos clientes
+    // que já estou conversando" — pra consultor/vendedor só conta conversa em
+    // que ELE já mandou mensagem pela caixa; conversa com a IA ainda
+    // qualificando nunca avisa. Quem vê tudo segue com o critério antigo
+    // (alguém da equipe já conversou ou a IA está pausada).
+    if (perfilVeTudo()) {
+        $filtroJaConversando = "(EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.telefone = m.telefone AND h.canal = m.canal AND h.direcao = 'out' AND h.usuario_id IS NOT NULL)
+               OR EXISTS (SELECT 1 FROM whatsapp_sessoes ws WHERE ws.telefone = m.telefone AND ws.ia_pausada = 1))";
+    } else {
+        $filtroJaConversando = "EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.telefone = m.telefone AND h.canal = m.canal AND h.direcao = 'out' AND h.usuario_id = " . (int)$meuId . ")"
+            . ($modulo === 'vendas' ? '' : " AND NOT EXISTS (SELECT 1 FROM clientes cq JOIN oportunidades oq ON oq.cliente_id = cq.id
+                 WHERE cq.telefone = m.telefone AND oq.etapa IN ('whatsapp', 'qualificacao_ia')
+                   AND NOT EXISTS (SELECT 1 FROM whatsapp_sessoes wq WHERE wq.telefone = m.telefone AND wq.ia_pausada = 1))");
+    }
     $stmtMsg = $db->prepare("
         SELECT m.telefone, COUNT(*) AS qtd, MAX(m.id) AS ultimo_id, MAX(m.created_at) AS created_at,
                (SELECT m3.mensagem FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone AND m3.canal = m.canal AND m3.direcao = 'in' AND m3.id > ? ORDER BY m3.id DESC LIMIT 1) AS texto,
@@ -266,8 +280,7 @@ if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admi
           -- que eles iniciaram\": só avisa conversa em que alguém da equipe já
           -- mandou mensagem pela caixa (ou pausou a IA). Lead ainda com a IA
           -- qualificando não gera popup — evita o consultor entrar no meio.
-          AND (EXISTS (SELECT 1 FROM whatsapp_mensagens h WHERE h.telefone = m.telefone AND h.canal = m.canal AND h.direcao = 'out' AND h.usuario_id IS NOT NULL)
-               OR EXISTS (SELECT 1 FROM whatsapp_sessoes ws WHERE ws.telefone = m.telefone AND ws.ia_pausada = 1))
+          AND {$filtroJaConversando}
         GROUP BY m.telefone ORDER BY ultimo_id ASC LIMIT 10
     ");
     $stmtMsg->execute(array_merge([$desdeMsgId, $desdeMsgId], $paramsConversa));
