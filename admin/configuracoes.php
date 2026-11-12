@@ -186,7 +186,7 @@ $camposEmail = [
 // ganho real em limpar.
 $camposFastcarSignatario = [
     'fastcar_signatario_nome'     => 'Nome completo (quem assina pela FASTCAR)',
-    'fastcar_signatario_cpf'      => 'CPF (impresso como "Representante Legal" no PDF)',
+    'fastcar_signatario_cpf'      => 'CPF (não sai mais impresso no contrato)',
     'fastcar_signatario_telefone' => 'Telefone/WhatsApp',
     'fastcar_signatario_email'    => 'E-mail (opcional, além do telefone)',
 ];
@@ -1836,9 +1836,9 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
        "FASTCAR SOLUTIONS / CNPJ" aparecia impresso no PDF, sem ninguém assinar eletronicamente por ela.
        Preenchendo nome + telefone (ou e-mail), essa pessoa vira signatária real — recebe o link da ZapSign
        igual o cliente/comprador. O NOME enviado pra ZapSign é sempre "FASTCAR SOLUTIONS LTDA" (a razão
-       social, nunca o nome de uma pessoa — igual ao contrato antigo real); o nome/CPF daqui aparecem
-       impressos no PDF como "Representante Legal". Sem isso configurado, o contrato segue sendo gerado
-       normal, só sem a FASTCAR assinando eletronicamente e sem essa linha preenchida no PDF.</small></p>
+       social, nunca o nome de uma pessoa — igual ao contrato antigo real); o nome/CPF daqui não saem
+       impressos no PDF (linha "Representante Legal" removida em 12/11/2026). Sem isso configurado, o contrato
+       segue sendo gerado normal, só sem a FASTCAR assinando eletronicamente.</small></p>
     <p><small>✍️ As 2 testemunhas do contrato <strong>não são mais fixas aqui</strong> (02/10/2026) — testemunha 1
        é sempre o responsável pela negociação (consultor/vendedor), testemunha 2 é escolhida por negociação em
        <a href="/admin/oportunidade.php">admin/oportunidade.php</a>/<a href="/admin/vendas.php">admin/venda.php</a>.
@@ -1848,7 +1848,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
         <input type="hidden" name="acao" value="salvar_fastcar_signatario">
         <label>Nome completo</label>
         <input type="text" name="fastcar_signatario_nome" value="<?= e(getConfig('fastcar_signatario_nome') ?? '') ?>">
-        <label>CPF (impresso como "Representante Legal" no PDF)</label>
+        <label>CPF (não sai mais impresso no contrato)</label>
         <input type="text" name="fastcar_signatario_cpf" value="<?= e(getConfig('fastcar_signatario_cpf') ?? '') ?>" placeholder="000.000.000-00">
         <label>Telefone/WhatsApp</label>
         <input type="tel" name="fastcar_signatario_telefone" value="<?= e(getConfig('fastcar_signatario_telefone') ?? '') ?>" placeholder="11999999999">

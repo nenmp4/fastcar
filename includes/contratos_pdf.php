@@ -191,26 +191,6 @@ function _pdfRodapeEndereco(FPDF $pdf): void {
     $pdf->SetTextColor(0, 0, 0);
 }
 
-/**
- * Linha "Representante Legal" sob "FASTCAR SOLUTIONS LTDA" no bloco de
- * assinatura — 02/10/2026, "na assinatura fast car vim Fastcar Solutions
- * Ltda, assinatura seria do Representante Legal". Antes, o lado FASTCAR da
- * assinatura só mostrava "FASTCAR SOLUTIONS"/CNPJ, sem nenhuma linha de
- * nome/CPF — a pessoa configurada em fastcar_signatario_nome/_cpf (admin/
- * configuracoes.php) só entrava como signatário na ZapSign, nunca era
- * impressa aqui, diferente do vendedor/comprador/testemunhas, que sempre
- * mostraram "Nome/CPF: ...". Compartilhada entre compra e venda (mesmo
- * texto/posição nos dois). Sem representante configurado ainda, sai linha
- * em branco pro nome/CPF serem escritos à mão — nunca bloqueia nada,
- * mesma disciplina de toda testemunha/representante deste contrato.
- */
-function _pdfLinhaRepresentanteLegal(FPDF $pdf, array $c): void {
-    $nome = trim((string)($c['fastcar_signatario_nome'] ?? ''));
-    $texto = 'Representante Legal: ' . ($nome !== '' ? $nome : '______________________')
-        . ' — CPF: ' . (($c['fastcar_signatario_cpf'] ?? '') ?: '______________');
-    $pdf->Cell(85, 5, _pdfTexto($texto), 0, 1, 'C');
-}
-
 function _pdfTituloClausula(FPDF $pdf, string $titulo): void {
     $pdf->Ln(2);
     $pdf->SetFont('Helvetica', 'B', 10);
@@ -807,7 +787,6 @@ function gerarPdfContratoVenda(array $c): string {
     $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['comprador_nome']} / {$c['comprador_cpf']}"), 0, 1, 'C');
-    _pdfLinhaRepresentanteLegal($pdf, $c);
 
     $test1 = 'Nome: ' . ($c['testemunha1_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha1_cpf'] ?: '______________');
     $test2 = 'Nome: ' . ($c['testemunha2_nome'] ?: '______________________') . ' CPF: ' . ($c['testemunha2_cpf'] ?: '______________');
@@ -1000,7 +979,6 @@ function gerarPdfContratoPosse(array $c): string {
     $pdf->Cell(85, 5, _pdfTexto('CNPJ 66.934.500/0001-09'), 0, 0, 'C');
     $pdf->Cell(10, 5, '', 0, 0);
     $pdf->Cell(85, 5, _pdfTexto("Nome/CPF: {$c['comprador_nome']} / {$c['comprador_cpf']}"), 0, 1, 'C');
-    _pdfLinhaRepresentanteLegal($pdf, $c);
 
     $pdf->Ln(8);
     $pdf->SetFont('Helvetica', '', 8);
