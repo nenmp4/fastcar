@@ -45,6 +45,7 @@ CRON_LINES=$(cat <<EOF
 0 3 * * * $PHP_BIN $BASE_DIR/cron/backup.php >> $BASE_DIR/storage/logs/backup.log 2>&1 $MARK
 0 4 * * * $PHP_BIN $BASE_DIR/cron/backup_drive.php >> $BASE_DIR/storage/logs/backup_drive.log 2>&1 $MARK
 */5 * * * * $PHP_BIN $BASE_DIR/cron/vendas_followup.php >> $BASE_DIR/storage/logs/vendas_followup.log 2>&1 $MARK
+*/2 * * * * $PHP_BIN $BASE_DIR/cron/ia_resgate.php >> $BASE_DIR/storage/logs/ia_resgate.log 2>&1 $MARK
 * * * * * [ -f $BASE_DIR/storage/.deploy ] && bash $BASE_DIR/install/aplicar_deploy.sh $MARK
 EOF
 )

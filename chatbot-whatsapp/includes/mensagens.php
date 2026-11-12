@@ -648,6 +648,70 @@ function iaDecisaoTexto(string $codigo): string {
     ][$codigo] ?? $codigo;
 }
 
+/**
+ * 12/11/2026, achado real: cliente mandou áudio às 18:47, a IA transcreveu
+ * mas nunca respondeu (status da conversa parado na decisão das 17:21). O
+ * processamento morreu no meio (erro/trava depois de salvar a mensagem) e a
+ * reentrega do webhook cai no dedup de messageId — a mensagem ficava sem
+ * resposta pra sempre. Rede de segurança: acha conversa em qualificação cuja
+ * última mensagem é do cliente (texto/áudio transcrito), entre 3 min e 6 h
+ * atrás, sem decisão da IA registrada depois dela, e roda a IA de novo.
+ * Cada mensagem é tentada 1x só. Respeita IA pausada e horário da IA.
+ */
+function iaResgatarMensagensSemResposta(int $limite = 10, ?callable $log = null): int {
+    $log ??= fn(string $m) => null;
+    if (!iaQualificacaoDentroHorarioComercial()) return 0;
+    $db = getDB();
+    $rows = $db->query("
+        SELECT o.id AS oportunidade_id, c.telefone, m.id AS msg_id, m.created_at
+        FROM oportunidades o
+        JOIN clientes c ON c.id = o.cliente_id
+        JOIN whatsapp_mensagens m ON m.id = (
+            SELECT MAX(m2.id) FROM whatsapp_mensagens m2 WHERE m2.telefone = c.telefone AND m2.canal = 'compra'
+        )
+        WHERE o.etapa IN ('whatsapp', 'qualificacao_ia')
+          AND m.direcao = 'in' AND m.tipo = 'text'
+          AND m.created_at <= datetime('now', 'localtime', '-3 minutes')
+          AND m.created_at >= datetime('now', 'localtime', '-6 hours')
+        ORDER BY m.id ASC
+        LIMIT 50
+    ")->fetchAll();
+
+    $feitos = 0;
+    foreach ($rows as $r) {
+        if ($feitos >= $limite) break;
+        $tel = (string)$r['telefone'];
+        $chave = 'ia_resgate_msg_' . (int)$r['msg_id'];
+        if (getConfig($chave)) continue;
+        if (iaPausada($tel)) continue;
+        $dec = iaUltimaDecisao($tel);
+        if ($dec && strtotime($dec['quando']) >= strtotime((string)$r['created_at'])) continue;
+
+        setConfig($chave, date('Y-m-d H:i:s'));
+        try {
+            $op = buscarOportunidadeAtivaPorTelefone($tel);
+            if (!$op || (int)$op['id'] !== (int)$r['oportunidade_id']) continue;
+            if ($op['etapa'] === 'whatsapp') {
+                mudarEtapa((int)$op['id'], 'qualificacao_ia', null, 'IA iniciou qualificação (resgate de mensagem sem resposta)');
+            }
+            $res = iaProcessarTurno((int)$op['id'], $tel, null);
+            if (($res['resposta'] ?? '') === '') {
+                iaRegistrarDecisao($tel, 'ia_sem_resposta');
+            } elseif (empty($res['enviada'])) {
+                iaRegistrarDecisao($tel, 'envio_falhou', function_exists('whatsappDetalheUltimoErro') ? whatsappDetalheUltimoErro() : '');
+            } else {
+                iaRegistrarDecisao($tel, 'respondeu', 'resposta atrasada (mensagem tinha ficado sem resposta)');
+                $feitos++;
+            }
+            $log("Resgate: {$tel} (mensagem #{$r['msg_id']}) → " . (($res['resposta'] ?? '') !== '' && !empty($res['enviada']) ? 'respondida' : 'sem resposta'));
+        } catch (Throwable $e) {
+            iaRegistrarDecisao($tel, 'erro', $e->getMessage());
+            $log("Resgate: {$tel} erro — " . $e->getMessage());
+        }
+    }
+    return $feitos;
+}
+
 function aguardarSilencioOuAbortar(string $telefone, int $idMensagem): bool {
     if (WHATSAPP_DEBOUNCE_SEGUNDOS <= 0 || $idMensagem <= 0) return true;
 
