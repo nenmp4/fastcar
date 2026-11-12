@@ -293,6 +293,15 @@ function recuperarMidiaMensagemWhatsapp(int $mensagemId, bool $forcar = false): 
     $tipo = midiaFaltandoMensagemWhatsapp($m);
     if ($tipo === null) return ['ok' => (bool)($m['drive_file_id'] || $m['arquivo_url']), 'mensagem' => $m, 'erro' => ''];
 
+    // 12/11/2026, "se aperta várias vezes carregar ela aparece": a mensagem
+    // entra na thread ANTES do webhook terminar de salvar a cópia (Drive leva
+    // alguns segundos). Recuperar nesse meio-tempo duplicava o download/upload
+    // e disputava o banco com o webhook — a 1ª tentativa falhava e só depois
+    // aparecia. Mensagem recém-chegada: só pede pra tela esperar e conferir de novo.
+    if (strtotime((string)$m['created_at']) > time() - 60) {
+        return ['ok' => false, 'mensagem' => $m, 'erro' => '', 'aguardar' => true];
+    }
+
     $mimeDefault = ['audio' => 'audio/ogg', 'image' => 'image/jpeg', 'video' => 'video/mp4', 'document' => 'application/octet-stream'][$tipo];
     $stC = $db->prepare("SELECT id, nome FROM clientes WHERE telefone = ?");
     // 09/11/2026 — reserva guardada no disco na hora do download (antes da

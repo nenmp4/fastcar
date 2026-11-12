@@ -1783,6 +1783,15 @@ segue no schema sem uso novo, não removida sem ganho real),
   de conversa em que ELE já mandou mensagem pela caixa, nunca com a IA
   qualificando. Vendas não mexe ("na vendas acertamos modelo").
   Não mexer de novo na IA sem pedido.
+- **Mídia "só aparecia apertando carregar várias vezes"** (12/11/2026) — a
+  mensagem entra na thread antes do webhook terminar de salvar a cópia no
+  Drive; o WhatsApp Box já pedia `recuperar_midia` nesse meio-tempo, baixando/
+  subindo de novo em paralelo e disputando o banco com o webhook (1ª tentativa
+  falhava). `recuperarMidiaMensagemWhatsapp()` agora devolve `aguardar` pra
+  mensagem com menos de 60s, sem tocar em nada; o JS (compra e vendas) confere
+  de novo em 5s sem mostrar erro, e depois de uma falha reconfere 1x sozinho
+  em 20s. Medido junto: as queries do inbox/notificações de hoje rodam em
+  5-26ms com 90 mil mensagens (não eram a causa).
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)

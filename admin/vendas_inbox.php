@@ -64,7 +64,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'recuperar_midia') {
     }
     @set_time_limit(120); // baixar + salvar no Drive pode passar dos 30s
     $resMid = recuperarMidiaMensagemWhatsapp($midId, !empty($_GET['forcar']));
-    echo json_encode(['ok' => $resMid['ok'], 'html' => $resMid['ok'] && $resMid['mensagem'] ? renderizarMidiaVendas($resMid['mensagem']) : '', 'erro' => $resMid['erro']]);
+    echo json_encode(['ok' => $resMid['ok'], 'html' => $resMid['ok'] && $resMid['mensagem'] ? renderizarMidiaVendas($resMid['mensagem']) : '', 'erro' => $resMid['erro'], 'aguardar' => !empty($resMid['aguardar'])]);
     exit;
 }
 
@@ -616,11 +616,23 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
                     if (d.ok && d.html) { el.outerHTML = d.html; return; }
+                    // Mídia acabou de chegar: o servidor ainda está salvando a
+                    // cópia — confere de novo em instantes, sem mostrar erro.
+                    if (d.aguardar) { el.textContent = '🔄 carregando mídia…'; reconferirMidia(el, 5000); return; }
                     midiaFalhou(el, d.erro || 'o WhatsApp não liberou o arquivo');
+                    // O servidor pode terminar de salvar logo depois: confere 1x sozinho.
+                    if (!el.dataset.reconferida) { el.dataset.reconferida = '1'; reconferirMidia(el, 20000); }
                 })
                 .catch(function () { midiaFalhou(el, 'demorou demais pra responder'); })
                 .then(proxima);
         })();
+    }
+    function reconferirMidia(el, ms) {
+        setTimeout(function () {
+            if (!el.isConnected) return;
+            delete midiaTentadas[el.dataset.mid];
+            recuperarMidias();
+        }, ms);
     }
     // 09/11/2026 ("dá pra carregar novamente?") — mostra o motivo real e um
     // botão pra tentar de novo na hora, em vez de só "peça pra reenviar".
