@@ -38,7 +38,11 @@ umask 002
 # demora um pouco mais, mas nunca tira fôlego do site. Best-effort: sem
 # renice/ionice no sistema, segue normal.
 command -v renice >/dev/null 2>&1 && renice -n 19 -p $$ >/dev/null 2>&1
-command -v ionice >/dev/null 2>&1 && ionice -c3 -p $$ >/dev/null 2>&1
+# 12/11/2026 — ionice -c3 (idle) trocado por -c2 -n7 (best-effort, a mais
+# baixa): no idle o processo só ganha disco quando ninguém mais usa; a
+# migração segurando uma escrita do SQLite ficava parada e travava o banco
+# do site inteiro ("database is locked" em tudo logo depois de um deploy).
+command -v ionice >/dev/null 2>&1 && ionice -c2 -n7 -p $$ >/dev/null 2>&1
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$BASE_DIR" || exit 1
