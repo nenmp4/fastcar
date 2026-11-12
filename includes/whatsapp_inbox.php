@@ -44,6 +44,18 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
  * na prática — regra #2 cria a oportunidade já no 1º contato — mas por
  * segurança) só aparece pro super_admin, nunca pra um consultor aleatório.
  */
+/**
+ * Etapas em que a conversa aparece no WhatsApp Box do CONSULTOR (12/11/2026,
+ * "notificações pro consultor quando lead entra qualificando acaba
+ * atrapalhando a IA"): enquanto a IA ainda qualifica (whatsapp/qualificacao_ia),
+ * a conversa fica escondida da lista dele — senão ele respondia no meio, a IA
+ * pausava e a qualificação parava. Aparece quando a IA termina (CRM
+ * preenchido). Super admin/supervisor continuam vendo tudo.
+ */
+function inboxEtapasVisiveisConsultor(): array {
+    return array_values(array_diff(ETAPAS_ATIVAS, ['whatsapp', 'qualificacao_ia']));
+}
+
 function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0): array {
     $db = getDB();
     $whereBusca = '';
@@ -61,10 +73,11 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
         // sempre. Agora só aparece enquanto ele tem oportunidade ATIVA com o
         // cliente; encerrou, sai da lista (a conversa continua acessível pelo
         // cadastro/oportunidade, e volta sozinha se o cliente abrir negócio novo).
-        $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $etapasConsultor = inboxEtapasVisiveisConsultor();
+        $phEtapas = implode(',', array_fill(0, count($etapasConsultor), '?'));
         $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
-        foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
+        foreach ($etapasConsultor as $et) $params[] = $et;
     }
     // 29/10/2026, "mostrar mensagens não lidas igual zap" — aba "Não lidas".
     if ($soNaoLidas) {
@@ -105,12 +118,13 @@ function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
     $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m WHERE m.canal = 'compra' AND m.direcao = 'in' AND m.lida = 0";
     $params = [];
     if ($responsavelFiltro !== null) {
-        $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $etapasConsultor = inboxEtapasVisiveisConsultor();
+        $phEtapas = implode(',', array_fill(0, count($etapasConsultor), '?'));
         // Mesmo critério da lista (m.cliente_id), senão o "(N)" contava conversa
         // que nem aparece na lista do consultor (29/10/2026, "marca 4 não lidas mas já leu").
         $sql .= " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
-        foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
+        foreach ($etapasConsultor as $et) $params[] = $et;
     }
     $stmt = $db->prepare($sql);
     $stmt->execute($params);

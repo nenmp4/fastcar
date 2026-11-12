@@ -1767,7 +1767,10 @@ segue no schema sem uso novo, não removida sem ganho real),
   fallback nas mensagens fixas). Depois: nunca pede documento (CNH, RG,
   CPF, comprovante, CRLV, contrato) — só a placa se o cliente não souber
   dos débitos. Foto do veículo obrigatória: sempre pede perto do fim e
-  lembra 1x no fechamento se não vier. Não mexer de novo na IA sem pedido.
+  lembra 1x no fechamento se não vier. WhatsApp Box do CONSULTOR esconde
+  conversa ainda em whatsapp/qualificacao_ia (`inboxEtapasVisiveisConsultor()`)
+  — ele respondia no meio e a IA pausava; aparece no CRM preenchido.
+  Não mexer de novo na IA sem pedido.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
