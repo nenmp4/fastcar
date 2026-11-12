@@ -44,6 +44,16 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
  * na prática — regra #2 cria a oportunidade já no 1º contato — mas por
  * segurança) só aparece pro super_admin, nunca pra um consultor aleatório.
  */
+/** Quantas conversas a IA está qualificando agora (chip "🤖 IA qualificando"). */
+function contarConversasEmQualificacaoWhatsapp(): int {
+    return (int)getDB()->query("
+        SELECT COUNT(*) FROM whatsapp_mensagens m
+        JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'compra' GROUP BY telefone) ult
+          ON ult.telefone = m.telefone AND ult.max_id = m.id
+        LEFT JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone
+        WHERE " . inboxSqlConversaEmQualificacao())->fetchColumn();
+}
+
 /**
  * Etapas em que a conversa aparece no WhatsApp Box do CONSULTOR (12/11/2026,
  * "notificações pro consultor quando lead entra qualificando acaba
@@ -56,7 +66,17 @@ function inboxEtapasVisiveisConsultor(): array {
     return array_values(array_diff(ETAPAS_ATIVAS, ['whatsapp', 'qualificacao_ia']));
 }
 
-function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0): array {
+/**
+ * 12/11/2026, "até pro super admin — ela vai clicando": conversa que a IA
+ * ainda está qualificando (etapa whatsapp/qualificacao_ia, IA não pausada)
+ * sai da lista padrão de TODO mundo — quem clicava e respondia pausava a IA.
+ * Fica no chip "🤖 IA qualificando" ($modoIa='so_ia') e aparece na busca.
+ */
+function inboxSqlConversaEmQualificacao(): string {
+    return "(COALESCE(ws.ia_pausada, 0) = 0 AND EXISTS (SELECT 1 FROM oportunidades oq WHERE oq.cliente_id = m.cliente_id AND oq.etapa IN ('whatsapp', 'qualificacao_ia')))";
+}
+
+function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0, string $modoIa = 'esconder'): array {
     $db = getDB();
     $whereBusca = '';
     $params = [];
@@ -78,6 +98,11 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
         $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
         foreach ($etapasConsultor as $et) $params[] = $et;
+    }
+    if ($modoIa === 'so_ia') {
+        $whereResponsavel .= ' AND ' . inboxSqlConversaEmQualificacao();
+    } elseif ($modoIa === 'esconder' && $busca === '') {
+        $whereResponsavel .= ' AND NOT ' . inboxSqlConversaEmQualificacao();
     }
     // 29/10/2026, "mostrar mensagens não lidas igual zap" — aba "Não lidas".
     if ($soNaoLidas) {

@@ -87,7 +87,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     $soNaoLidasAjax = ($_GET['filtro'] ?? '') === 'nao_lidas';
     // Até 1000 de uma vez (botão "Carregar mais" sobe de 100 em 100).
     $limiteAjax = max(20, min(1000, (int)($_GET['limite'] ?? 100)));
-    $listaAjax = listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, $limiteAjax + 1, $soNaoLidasAjax);
+    $listaAjax = listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, $limiteAjax + 1, $soNaoLidasAjax, 0,
+        ($_GET['filtro'] ?? '') === 'ia' ? 'so_ia' : 'esconder');
     echo json_encode([
         'conversas'       => array_slice($listaAjax, 0, $limiteAjax),
         'tem_mais'        => count($listaAjax) > $limiteAjax,
@@ -303,7 +304,9 @@ if ($telefoneAtivo) {
 
 $busca = trim((string)($_GET['busca'] ?? ''));
 $soNaoLidas = ($_GET['filtro'] ?? '') === 'nao_lidas';
-$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas);
+$soIa = ($_GET['filtro'] ?? '') === 'ia' && perfilVeTudo();
+$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas, 0, $soIa ? 'so_ia' : 'esconder');
+$totalEmQualificacao = perfilVeTudo() ? contarConversasEmQualificacaoWhatsapp() : 0;
 $temMaisConversas = count($conversas) > 100;
 $conversas = array_slice($conversas, 0, 100);
 $totalConversasNaoLidas = contarConversasNaoLidasWhatsapp($responsavelFiltro);
@@ -425,8 +428,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <?php if ($soNaoLidas): ?><input type="hidden" name="filtro" value="nao_lidas"><?php endif; ?>
         </form>
         <div class="wpp-filtros">
-            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= $soNaoLidas ? '' : 'ativo' ?>" data-filtro="">Todas</a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= ($soNaoLidas || $soIa) ? '' : 'ativo' ?>" data-filtro="">Todas</a>
             <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas']))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>" data-filtro="nao_lidas">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
+            <?php if (perfilVeTudo()): ?>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'ia']))) ?>" class="wpp-chip <?= $soIa ? 'ativo' : '' ?>" data-filtro="ia" title="Conversas que a IA ainda está qualificando — só acompanhe; responder pausa a IA">🤖 IA qualificando<?= $totalEmQualificacao ? ' (' . $totalEmQualificacao . ')' : '' ?></a>
+            <?php endif; ?>
         </div>
         <form method="get" class="wpp-nova-form" id="wpp-nova-form">
             <input type="text" name="telefone" placeholder="Nova conversa — telefone com DDD" inputmode="numeric">
@@ -439,7 +445,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 </p>
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
-                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?><?= (int)$c['nao_lidas'] > 0 ? ' nao-lida' : '' ?>" href="?<?= e(http_build_query(array_filter(['telefone' => $c['telefone'], 'filtro' => $soNaoLidas ? 'nao_lidas' : null]))) ?>">
+                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?><?= (int)$c['nao_lidas'] > 0 ? ' nao-lida' : '' ?>" href="?<?= e(http_build_query(array_filter(['telefone' => $c['telefone'], 'filtro' => $soNaoLidas ? 'nao_lidas' : ($soIa ? 'ia' : null)]))) ?>">
                     <div class="wpp-avatar-placeholder" data-av-phone="<?= e($c['telefone']) ?>" data-nome="<?= e($c['cliente_nome'] ?: $c['telefone']) ?>"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <div class="wpp-corpo">
                         <div class="nome">
@@ -875,7 +881,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 data.conversas.forEach(function (c) {
                     var a = document.createElement('a');
                     a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '') + (c.nao_lidas > 0 ? ' nao-lida' : '');
-                    a.href = '?telefone=' + encodeURIComponent(c.telefone) + (params.get('filtro') === 'nao_lidas' ? '&filtro=nao_lidas' : '');
+                    a.href = '?telefone=' + encodeURIComponent(c.telefone) + (params.get('filtro') ? '&filtro=' + encodeURIComponent(params.get('filtro')) : '');
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
                     var nomeAttr = escapeHtml(c.cliente_nome || c.telefone);
