@@ -224,14 +224,20 @@ PROMPT;
  */
 function iaLimitarUmaPergunta(string $texto): string {
     if (substr_count($texto, '?') < 2) return $texto;
-    $frases = preg_split('/(?<=[.!?…])\s+/u', trim($texto)) ?: [$texto];
+    $frases = preg_split('/(?<=[.!?…)])\s+/u', trim($texto)) ?: [$texto];
+    // 12/11/2026, achado real: o aviso de LGPD entre parênteses termina em
+    // "tá?"/"tá bom?" e era contado como a "última pergunta" — a pergunta de
+    // verdade (nome/veículo) era cortada e o cliente recebia só o aviso.
+    // Frase entre parênteses nunca é pergunta, sempre fica.
+    $ehAviso = fn(string $f) => str_starts_with(ltrim($f), '(') || str_starts_with(ltrim($f), '*(');
     $ultimaPergunta = null;
     foreach ($frases as $i => $f) {
-        if (str_contains($f, '?')) $ultimaPergunta = $i;
+        if (!$ehAviso($f) && str_contains($f, '?')) $ultimaPergunta = $i;
     }
+    if ($ultimaPergunta === null) return $texto;
     $saida = [];
     foreach ($frases as $i => $f) {
-        if (str_contains($f, '?') && $i !== $ultimaPergunta) {
+        if (!$ehAviso($f) && str_contains($f, '?') && $i !== $ultimaPergunta) {
             // Pergunta descartada: guarda o que vinha antes do "?" se for
             // vocativo/cumprimento sem pergunta ("Oi, Mario!" já é frase própria).
             continue;
