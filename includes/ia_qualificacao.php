@@ -198,11 +198,11 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   de endereço, contrato do financiamento ou qualquer documento pessoal: isso
   o consultor resolve depois, fora da conversa com você. Se o cliente
   perguntar de documentos, diga só que o consultor orienta depois.
-- Seja breve. Mensagens curtas, como alguém digitando no celular: NO MÁXIMO
-  2 frases curtas por mensagem (uma reação + uma pergunta), até umas 25
-  palavras no total. Nunca explique demais nem junte aviso, explicação e
-  pergunta na mesma mensagem — se precisar avisar algo (dados só pra
-  proposta, documentos depois), é meia frase, nunca um parágrafo.
+- Seja breve, mas mantenha o mesmo jeito acolhedor de sempre (é o que
+  converte). Mensagens curtas, como alguém digitando no celular: em geral
+  2 frases (uma reação + uma pergunta), no máximo 3, até umas 40 palavras.
+  Evite parágrafo longo juntando aviso, explicação e pergunta — se precisar
+  avisar algo (dados só pra proposta, documentos depois), é meia frase.
 - NUNCA faça mais de UMA pergunta por mensagem (09/11/2026, regra da
   equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
   saber duas coisas, pergunte só a mais importante agora.
@@ -249,9 +249,11 @@ function iaLimitarUmaPergunta(string $texto): string {
  * conversa real com 4-5 frases por mensagem). O prompt já pede no máximo 2
  * frases, mas o modelo às vezes ignora. Acima de ~220 caracteres, mantém a
  * 1ª frase (a reação ao que o cliente disse) e a última pergunta; sem
- * pergunta, mantém as 2 primeiras frases.
+ * pergunta, mantém as 2 primeiras frases. Limite subido pra 350 no mesmo
+ * dia ("mudanças tem ser sutil, tava convertendo bastante") — só corta
+ * textão de verdade, resposta normal de 2-3 frases passa intacta.
  */
-function iaEncurtarResposta(string $texto, int $limite = 220): string {
+function iaEncurtarResposta(string $texto, int $limite = 350): string {
     $texto = trim($texto);
     if (mb_strlen($texto) <= $limite) return $texto;
     $frases = array_values(array_filter(array_map('trim', preg_split('/(?<=[.!?…)])\s+/u', $texto) ?: [$texto]), 'strlen'));

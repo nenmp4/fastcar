@@ -1757,9 +1757,11 @@ segue no schema sem uso novo, não removida sem ganho real),
   menu híbrido) não é testável contra servidor fake — validação real só
   na próxima conversa de verdade rodando com o modelo híbrido ativo.
 - **Regras fixas da IA de qualificação (12/11/2026, pedidos da equipe — não
-  desfazer sem pedido):** (1) respostas curtas, no máximo 2 frases (reação +
-  1 pergunta), com corte automático acima de ~220 caracteres
-  (`iaEncurtarResposta()`, compra e vendas); (2) placa/CRLV pedidos no
+  desfazer sem pedido):** (1) respostas curtas mas no mesmo tom acolhedor
+  de antes — em geral 2 frases, no máximo 3 (~40 palavras), corte automático
+  só pra textão acima de ~350 caracteres (`iaEncurtarResposta()`, compra e
+  vendas) — suavizado no mesmo dia ("mudanças tem ser sutil, tava
+  convertendo bastante"): ajustes na IA sempre pequenos, nunca mudar o tom; (2) placa/CRLV pedidos no
   máximo 1x na conversa, documento pessoal (CNH, RG, CPF, comprovante,
   contrato) NUNCA — é do consultor; (3) foto do veículo SEMPRE pedida, e se
   não vier a IA lembra 1x no fechamento; (4) espera 10–15s de silêncio antes
