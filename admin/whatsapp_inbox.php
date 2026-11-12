@@ -88,7 +88,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     // Até 1000 de uma vez (botão "Carregar mais" sobe de 100 em 100).
     $limiteAjax = max(20, min(1000, (int)($_GET['limite'] ?? 100)));
     $listaAjax = listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, $limiteAjax + 1, $soNaoLidasAjax, 0,
-        ($_GET['filtro'] ?? '') === 'ia' ? 'so_ia' : 'esconder');
+        ($_GET['filtro'] ?? '') === 'ia' ? 'so_ia' : 'esconder', perfilVeTudo() && (int)($_GET['consultor'] ?? 0) > 0 ? (int)$_GET['consultor'] : null);
     echo json_encode([
         'conversas'       => array_slice($listaAjax, 0, $limiteAjax),
         'tem_mais'        => count($listaAjax) > $limiteAjax,
@@ -305,8 +305,12 @@ if ($telefoneAtivo) {
 $busca = trim((string)($_GET['busca'] ?? ''));
 $soNaoLidas = ($_GET['filtro'] ?? '') === 'nao_lidas';
 $soIa = ($_GET['filtro'] ?? '') === 'ia' && perfilVeTudo();
-$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas, 0, $soIa ? 'so_ia' : 'esconder');
-$totalEmQualificacao = perfilVeTudo() ? contarConversasEmQualificacaoWhatsapp() : 0;
+$consultorVisao = perfilVeTudo() && (int)($_GET['consultor'] ?? 0) > 0 ? (int)$_GET['consultor'] : null;
+$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas, 0, $soIa ? 'so_ia' : 'esconder', $consultorVisao);
+$totalEmQualificacao = perfilVeTudo() ? contarConversasEmQualificacaoWhatsapp($consultorVisao) : 0;
+$consultoresFiltroInbox = perfilVeTudo() ? getDB()->query("SELECT DISTINCT u.id, u.nome FROM usuarios u
+    JOIN oportunidades o ON o.responsavel_id = u.id AND o.etapa IN ('" . implode("','", ETAPAS_ATIVAS) . "')
+    WHERE COALESCE(u.bloqueado, 0) = 0 ORDER BY u.nome")->fetchAll() : [];
 $temMaisConversas = count($conversas) > 100;
 $conversas = array_slice($conversas, 0, 100);
 $totalConversasNaoLidas = contarConversasNaoLidasWhatsapp($responsavelFiltro);
@@ -425,13 +429,21 @@ if ($telefoneAtivo && !$contatoAtivo) {
     <aside class="wpp-sidebar">
         <form method="get" id="wpp-busca-form">
             <input type="search" name="busca" id="wpp-busca" value="<?= e($busca) ?>" placeholder="🔎 Buscar por nome ou telefone..." autocomplete="off">
-            <?php if ($soNaoLidas): ?><input type="hidden" name="filtro" value="nao_lidas"><?php endif; ?>
+            <?php if ($soNaoLidas || $soIa): ?><input type="hidden" name="filtro" value="<?= $soIa ? 'ia' : 'nao_lidas' ?>"><?php endif; ?>
+            <?php if ($consultoresFiltroInbox): ?>
+            <select name="consultor" id="wpp-consultor" aria-label="Filtrar por consultor" style="margin-top:6px;width:100%">
+                <option value="">👤 Todos os consultores</option>
+                <?php foreach ($consultoresFiltroInbox as $cf): ?>
+                <option value="<?= (int)$cf['id'] ?>" <?= $consultorVisao === (int)$cf['id'] ? 'selected' : '' ?>><?= e($cf['nome']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php endif; ?>
         </form>
         <div class="wpp-filtros">
-            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca]))) ?>" class="wpp-chip <?= ($soNaoLidas || $soIa) ? '' : 'ativo' ?>" data-filtro="">Todas</a>
-            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas']))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>" data-filtro="nao_lidas">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'consultor' => $consultorVisao]))) ?>" class="wpp-chip <?= ($soNaoLidas || $soIa) ? '' : 'ativo' ?>" data-filtro="">Todas</a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'nao_lidas', 'consultor' => $consultorVisao]))) ?>" class="wpp-chip <?= $soNaoLidas ? 'ativo' : '' ?>" data-filtro="nao_lidas">Não lidas&nbsp;<span id="wpp-total-nao-lidas"><?= $totalConversasNaoLidas ? '(' . $totalConversasNaoLidas . ')' : '' ?></span></a>
             <?php if (perfilVeTudo()): ?>
-            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'ia']))) ?>" class="wpp-chip <?= $soIa ? 'ativo' : '' ?>" data-filtro="ia" title="Conversas que a IA ainda está qualificando — só acompanhe; responder pausa a IA">🤖 IA qualificando<?= $totalEmQualificacao ? ' (' . $totalEmQualificacao . ')' : '' ?></a>
+            <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'ia', 'consultor' => $consultorVisao]))) ?>" class="wpp-chip <?= $soIa ? 'ativo' : '' ?>" data-filtro="ia" title="Conversas que a IA ainda está qualificando — só acompanhe; responder pausa a IA">🤖 IA qualificando<?= $totalEmQualificacao ? ' (' . $totalEmQualificacao . ')' : '' ?></a>
             <?php endif; ?>
         </div>
         <form method="get" class="wpp-nova-form" id="wpp-nova-form">
@@ -445,7 +457,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 </p>
             <?php endif; ?>
             <?php foreach ($conversas as $c): ?>
-                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?><?= (int)$c['nao_lidas'] > 0 ? ' nao-lida' : '' ?>" href="?<?= e(http_build_query(array_filter(['telefone' => $c['telefone'], 'filtro' => $soNaoLidas ? 'nao_lidas' : ($soIa ? 'ia' : null)]))) ?>">
+                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?><?= (int)$c['nao_lidas'] > 0 ? ' nao-lida' : '' ?>" href="?<?= e(http_build_query(array_filter(['telefone' => $c['telefone'], 'filtro' => $soNaoLidas ? 'nao_lidas' : ($soIa ? 'ia' : null), 'consultor' => $consultorVisao]))) ?>">
                     <div class="wpp-avatar-placeholder" data-av-phone="<?= e($c['telefone']) ?>" data-nome="<?= e($c['cliente_nome'] ?: $c['telefone']) ?>"><?= e(mb_strtoupper(mb_substr($c['cliente_nome'] ?: $c['telefone'], 0, 1))) ?></div>
                     <div class="wpp-corpo">
                         <div class="nome">
@@ -855,7 +867,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);
         var seq = ++reqListaSeq;
-        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&filtro=' + encodeURIComponent(params.get('filtro') || '') + '&limite=' + limiteLista)
+        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&filtro=' + encodeURIComponent(params.get('filtro') || '') + '&consultor=' + encodeURIComponent(params.get('consultor') || '') + '&limite=' + limiteLista)
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (seq !== reqListaSeq) return; // resposta velha (digitou de novo no meio) — ignora
@@ -881,7 +893,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                 data.conversas.forEach(function (c) {
                     var a = document.createElement('a');
                     a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '') + (c.nao_lidas > 0 ? ' nao-lida' : '');
-                    a.href = '?telefone=' + encodeURIComponent(c.telefone) + (params.get('filtro') ? '&filtro=' + encodeURIComponent(params.get('filtro')) : '');
+                    a.href = '?telefone=' + encodeURIComponent(c.telefone) + (params.get('filtro') ? '&filtro=' + encodeURIComponent(params.get('filtro')) : '') + (params.get('consultor') ? '&consultor=' + encodeURIComponent(params.get('consultor')) : '');
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
                     var inicial = escapeHtml((c.cliente_nome || c.telefone).slice(0, 1).toUpperCase());
                     var nomeAttr = escapeHtml(c.cliente_nome || c.telefone);
@@ -951,6 +963,14 @@ if ($telefoneAtivo && !$contatoAtivo) {
             limiteLista = 100;
             atualizarListaConversas();
         });
+    });
+
+    // Filtro por consultor (12/11/2026) — também sem recarregar.
+    var selConsultor = document.getElementById('wpp-consultor');
+    if (selConsultor) selConsultor.addEventListener('change', function () {
+        trocarParamUrl('consultor', selConsultor.value);
+        limiteLista = 100;
+        atualizarListaConversas();
     });
 
     if (form) {

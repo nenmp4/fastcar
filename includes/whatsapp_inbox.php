@@ -45,7 +45,8 @@ require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // r
  * segurança) só aparece pro super_admin, nunca pra um consultor aleatório.
  */
 /** Quantas conversas a IA está qualificando agora (chip "🤖 IA qualificando"). */
-function contarConversasEmQualificacaoWhatsapp(): int {
+function contarConversasEmQualificacaoWhatsapp(?int $consultorVisao = null): int {
+    if ($consultorVisao) return count(listarConversasWhatsapp('', null, 1000, false, 0, 'so_ia', $consultorVisao));
     return (int)getDB()->query("
         SELECT COUNT(*) FROM whatsapp_mensagens m
         JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'compra' GROUP BY telefone) ult
@@ -86,7 +87,7 @@ function inboxSqlConversaTravada(): string {
     return "(m.direcao = 'in' AND m.created_at <= datetime('now', 'localtime', '-5 minutes'))";
 }
 
-function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0, string $modoIa = 'esconder'): array {
+function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0, string $modoIa = 'esconder', ?int $consultorVisao = null): array {
     $db = getDB();
     $whereBusca = '';
     $params = [];
@@ -109,6 +110,14 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
             . " OR (o.etapa IN ('whatsapp', 'qualificacao_ia') AND " . inboxSqlConversaTravada() . ")))";
         $params[] = $responsavelFiltro;
         foreach ($etapasConsultor as $et) $params[] = $et;
+    }
+    // 12/11/2026, "filtro por consultor": quem vê tudo escolhe um consultor e
+    // vê só as conversas da carteira dele (inclusive as em qualificação).
+    if ($consultorVisao) {
+        $phAt = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $whereResponsavel .= " AND EXISTS (SELECT 1 FROM oportunidades ov WHERE ov.cliente_id = m.cliente_id AND ov.responsavel_id = ? AND ov.etapa IN ($phAt))";
+        $params[] = $consultorVisao;
+        foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
     }
     if ($modoIa === 'so_ia') {
         $whereResponsavel .= ' AND ' . inboxSqlConversaEmQualificacao();

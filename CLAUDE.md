@@ -1777,7 +1777,8 @@ segue no schema sem uso novo, não removida sem ganho real),
   chip "🤖 IA qualificando" (só quem vê tudo) e a busca mostram. Se a IA
   falhar (cliente esperando resposta > 5 min, `inboxSqlConversaTravada()`),
   a conversa volta pra lista de todos + do consultor responsável e conta
-  como não lida (compra e vendas).
+  como não lida (compra e vendas). Quem vê tudo tem seletor "👤 consultor"
+  no WhatsApp Box (combina com Todas/Não lidas/IA qualificando).
   Não mexer de novo na IA sem pedido.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
