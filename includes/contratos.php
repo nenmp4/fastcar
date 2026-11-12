@@ -1401,6 +1401,15 @@ function _marcarAvisoAssinaturaEnviado(int $contratoId, bool $whatsappOk, bool $
  * silenciosamente — só o e-mail (canal independente) chegava.
  */
 function notificarAssinaturaContrato(int $contratoId, bool $ehVenda): void {
+    // 12/11/2026 — aviso de assinatura saía 2x pro mesmo contrato (webhook e
+    // cron processando juntos, ou nova sincronização antes do status gravar).
+    // Trava atômica: só a 1ª chamada por contrato avisa, pra sempre.
+    try {
+        $claim = getDB()->prepare("INSERT OR IGNORE INTO config (chave, valor) VALUES (?, ?)");
+        $claim->execute(['aviso_assinatura_contrato_' . $contratoId, date('Y-m-d H:i:s')]);
+        if ($claim->rowCount() === 0) return;
+    } catch (Throwable $e) {
+    }
     try {
         $d = _dadosAvisoAssinaturaContrato($contratoId);
         if (!$d) return;

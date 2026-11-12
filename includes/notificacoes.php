@@ -14,9 +14,33 @@
 require_once __DIR__ . '/whatsapp_config.php'; // zapiEnviarTextoInterno() — precisa pra notificarDocumentosConfirmadosZap()
 
 function criarNotificacao(int $usuarioId, string $tipo, string $titulo, string $mensagem, string $url): void {
+    // 12/11/2026 — notificação repetida no sino (mesmo contrato assinado 2x,
+    // mesmos documentos confirmados 2x): a mesma notificação pro mesmo
+    // usuário nos últimos 30 minutos não entra de novo.
+    $dup = getDB()->prepare("
+        SELECT 1 FROM notificacoes
+        WHERE usuario_id = ? AND tipo = ? AND url = ? AND titulo = ? AND mensagem = ?
+          AND created_at >= datetime('now', 'localtime', '-30 minutes')
+        LIMIT 1
+    ");
+    $dup->execute([$usuarioId, $tipo, $url, $titulo, $mensagem]);
+    if ($dup->fetchColumn()) return;
     getDB()->prepare("
         INSERT INTO notificacoes (usuario_id, tipo, titulo, mensagem, url) VALUES (?, ?, ?, ?, ?)
     ")->execute([$usuarioId, $tipo, $titulo, $mensagem, $url]);
+}
+
+/**
+ * 12/11/2026 — trava de aviso repetido (sino + WhatsApp + e-mail). Devolve
+ * true se a mesma chave já disparou nos últimos $janelaSeg segundos
+ * (cliente/comprador confirmou os documentos de novo, duplo clique).
+ * Senão grava o horário e devolve false (pode avisar).
+ */
+function avisoRepetidoRecente(string $chave, int $janelaSeg): bool {
+    $ultimo = (int)(getConfig($chave) ?: 0);
+    if ($ultimo > 0 && time() - $ultimo < $janelaSeg) return true;
+    setConfig($chave, (string)time());
+    return false;
 }
 
 /**
@@ -258,6 +282,7 @@ function notificarDocumentosConfirmadosZap(?string $whatsappResponsavel, string 
 
 /** Cliente confirmou tudo no wizard de documentos do funil de COMPRA. */
 function notificarDocumentosConfirmados(int $oportunidadeId): void {
+    if (avisoRepetidoRecente('aviso_docs_compra_' . $oportunidadeId, 1800)) return;
     $db = getDB();
     $stmt = $db->prepare("
         SELECT o.responsavel_id, o.veiculo_marca, o.veiculo_modelo, c.nome AS cliente_nome, u.whatsapp AS responsavel_whatsapp
@@ -285,6 +310,7 @@ function notificarDocumentosConfirmados(int $oportunidadeId): void {
 
 /** Comprador confirmou tudo no wizard de documentos do funil de VENDA (revenda). */
 function notificarDocumentosConfirmadosVenda(int $vendaId): void {
+    if (avisoRepetidoRecente('aviso_docs_venda_' . $vendaId, 1800)) return;
     $db = getDB();
     $stmt = $db->prepare("
         SELECT v.responsavel_id, v.comprador_nome, v.oportunidade_id, u.whatsapp AS responsavel_whatsapp
