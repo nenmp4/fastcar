@@ -1770,6 +1770,9 @@ segue no schema sem uso novo, não removida sem ganho real),
   lembra 1x no fechamento se não vier. WhatsApp Box do CONSULTOR esconde
   conversa ainda em whatsapp/qualificacao_ia (`inboxEtapasVisiveisConsultor()`)
   — ele respondia no meio e a IA pausava; aparece no CRM preenchido.
+  "Não lidas" (badge, chip, contador) dos inboxes de compra e vendas só
+  contam conversa com a IA pausada (humano atendendo); com a IA ativa não
+  notifica nova mensagem.
   Não mexer de novo na IA sem pedido.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +

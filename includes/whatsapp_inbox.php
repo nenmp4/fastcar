@@ -81,14 +81,16 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
     }
     // 29/10/2026, "mostrar mensagens não lidas igual zap" — aba "Não lidas".
     if ($soNaoLidas) {
-        $whereResponsavel .= " AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.canal = 'compra' AND m4.direcao = 'in' AND m4.lida = 0)";
+        $whereResponsavel .= " AND COALESCE(ws.ia_pausada, 0) = 1 AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.canal = 'compra' AND m4.direcao = 'in' AND m4.lida = 0)";
     }
 
     $sql = "
         SELECT m.telefone, m.mensagem AS ultima_mensagem, m.direcao AS ultima_direcao,
                m.tipo AS ultima_tipo, m.created_at AS ultima_em, m.cliente_id, c.nome AS cliente_nome,
                c.foto_perfil_url,
-               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'compra' AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
+               -- 12/11/2026: não lida só conta com a IA pausada (humano atendendo);
+               -- com a IA ativa, é ela quem responde — não notifica a equipe.
+               CASE WHEN COALESCE(ws.ia_pausada, 0) = 1 THEN (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'compra' AND m2.direcao = 'in' AND m2.lida = 0) ELSE 0 END AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM whatsapp_mensagens m
         JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'compra' GROUP BY telefone) ult
@@ -115,7 +117,10 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
  */
 function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
     $db = getDB();
-    $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m WHERE m.canal = 'compra' AND m.direcao = 'in' AND m.lida = 0";
+    // 12/11/2026: só conversa com a IA pausada (humano atendendo) conta como não lida.
+    $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m
+            JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone AND ws.ia_pausada = 1
+            WHERE m.canal = 'compra' AND m.direcao = 'in' AND m.lida = 0";
     $params = [];
     if ($responsavelFiltro !== null) {
         $etapasConsultor = inboxEtapasVisiveisConsultor();

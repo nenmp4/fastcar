@@ -55,7 +55,8 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
                COALESCE(m.tipo, 'text') AS ultima_tipo,
                COALESCE(m.created_at, v.created_at) AS ultima_em,
                v.comprador_nome,
-               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = ultv.comprador_telefone AND m2.canal = 'vendas' AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas,
+               -- 12/11/2026: não lida só conta com a IA pausada (humano atendendo).
+               CASE WHEN COALESCE(ws.ia_pausada, 0) = 1 THEN (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = ultv.comprador_telefone AND m2.canal = 'vendas' AND m2.direcao = 'in' AND m2.lida = 0) ELSE 0 END AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM (SELECT comprador_telefone, MAX(id) AS max_id FROM vendas
               WHERE comprador_telefone IS NOT NULL AND comprador_telefone != ''
@@ -67,6 +68,7 @@ function listarConversasVendas(string $busca = '', ?int $responsavelFiltro = nul
         LEFT JOIN whatsapp_sessoes ws ON ws.telefone = ultv.comprador_telefone
         WHERE (m.id IS NOT NULL OR v.etapa IN ('" . implode("','", ETAPAS_VENDA_ATIVAS) . "'))
         {$whereBusca}{$whereResponsavel}" . ($soNaoLidas ? "
+          AND COALESCE(ws.ia_pausada, 0) = 1
           AND EXISTS (SELECT 1 FROM whatsapp_mensagens m3 WHERE m3.telefone = ultv.comprador_telefone AND m3.canal = 'vendas' AND m3.direcao = 'in' AND m3.lida = 0)" : '') . "
 
         ORDER BY COALESCE(m.created_at, v.created_at) DESC
