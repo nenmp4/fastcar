@@ -1756,21 +1756,15 @@ segue no schema sem uso novo, não removida sem ganho real),
   Mudança de PROMPT (o parágrafo novo avisando a IA sobre o contexto do
   menu híbrido) não é testável contra servidor fake — validação real só
   na próxima conversa de verdade rodando com o modelo híbrido ativo.
-- **Regras fixas da IA de qualificação (12/11/2026, pedidos da equipe — não
-  desfazer sem pedido):** (1) respostas curtas mas no mesmo tom acolhedor
-  de antes — em geral 2 frases, no máximo 3 (~40 palavras), corte automático
-  só pra textão acima de ~350 caracteres (`iaEncurtarResposta()`, compra e
-  vendas) — suavizado no mesmo dia ("mudanças tem ser sutil, tava
-  convertendo bastante"): ajustes na IA sempre pequenos, nunca mudar o tom; (2) placa/CRLV pedidos no
-  máximo 1x na conversa, documento pessoal (CNH, RG, CPF, comprovante,
-  contrato) NUNCA — é do consultor; (3) foto do veículo SEMPRE pedida, e se
-  não vier a IA lembra 1x no fechamento; (4) espera 10–15s de silêncio antes
-  de responder (`WHATSAPP_DEBOUNCE_SEGUNDOS`=10 + `WHATSAPP_DEBOUNCE_JITTER`=5,
-  `chatbot-whatsapp/includes/mensagens.php`); (5) follow-up da qualificação
-  (`includes/followup_qualificacao.php`, 2h/4h/6h) mantém o contexto — a IA
-  lê o histórico e escreve 1 mensagem curta retomando de onde parou (pergunta
-  pendente, veículo citado); sem IA/falha/texto com R$ ou documento pessoal,
-  cai nas mensagens fixas de sempre.
+- **IA de qualificação — ajustes de 12/11/2026 revertidos no mesmo dia**
+  ("antes qualificava certinho"): voltaram ao estado anterior o prompt
+  (`IA_QUALIFICACAO_PROMPT_SISTEMA`, vendas também), a espera de 4s antes de
+  responder e o fim do corte de tamanho na resposta. Ficaram só: o aviso de
+  LGPD entre parênteses ("tá?") não conta mais como pergunta em
+  `iaLimitarUmaPergunta()` (cortava a pergunta real), o resgate de mensagem
+  sem resposta (`cron/ia_resgate.php`) e o follow-up com contexto
+  (`includes/followup_qualificacao.php`, 2h/4h/6h, IA retoma de onde parou,
+  fallback nas mensagens fixas). Não mexer de novo na IA sem pedido.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)

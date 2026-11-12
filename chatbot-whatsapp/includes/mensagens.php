@@ -23,11 +23,10 @@ require_once dirname(__DIR__, 2) . '/includes/whatsapp_conformidade.php'; // wha
 // primeira sozinha, com jeito de robô mal escutando). `0` desliga (usado
 // pelo simulador de CLI — não faz sentido esperar segundos numa conversa
 // digitada linha a linha ao vivo).
-// 12/11/2026, "aumentar mais delay": 4s → 10s + até 5s aleatórios, pra dar
-// tempo do cliente terminar de digitar e a resposta não chegar rápido
-// demais (mais natural, menos cara de robô).
-if (!defined('WHATSAPP_DEBOUNCE_SEGUNDOS')) define('WHATSAPP_DEBOUNCE_SEGUNDOS', 10);
-if (!defined('WHATSAPP_DEBOUNCE_JITTER')) define('WHATSAPP_DEBOUNCE_JITTER', 5);
+// 12/11/2026 — subiu pra 10-15s e voltou pra 4s no mesmo dia ("antes
+// qualificava certinho"); jitter 0 mantém o comportamento original.
+if (!defined('WHATSAPP_DEBOUNCE_SEGUNDOS')) define('WHATSAPP_DEBOUNCE_SEGUNDOS', 4);
+if (!defined('WHATSAPP_DEBOUNCE_JITTER')) define('WHATSAPP_DEBOUNCE_JITTER', 0);
 
 // Tamanho máximo de mídia (áudio/imagem/vídeo) baixada pra mandar pro
 // Gemini — a API só aceita `inlineData` base64 até por volta de 20MB;

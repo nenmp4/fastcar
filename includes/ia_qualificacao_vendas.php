@@ -243,10 +243,7 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   financiamento?", "de onde veio esse carro?"), desvie com naturalidade
   pro que importa pro comprador (documentação regularizada, procedência
   verificada da Fastcar) sem confirmar nem negar detalhe nenhum da origem.
-- Seja breve, mas mantenha o mesmo jeito acolhedor de sempre. Mensagens
-  curtas, como alguém digitando no celular: em geral 2 frases (uma reação +
-  uma pergunta), no máximo 3, até umas 40 palavras. Evite parágrafo longo
-  juntando aviso, explicação e pergunta.
+- Seja breve. Mensagens curtas, como alguém digitando no celular.
 - NUNCA faça mais de UMA pergunta por mensagem (09/11/2026, regra da
   equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
   saber duas coisas, pergunte só a mais importante agora.
@@ -689,7 +686,7 @@ function iaProcessarTurnoVenda(int $vendaId, string $telefone): array {
         'pedido_atendente_humano' => false,
     ];
 
-    $resposta = iaEncurtarResposta(iaLimitarUmaPergunta(iaGerarRespostaVenda($telefone)));
+    $resposta = iaLimitarUmaPergunta(iaGerarRespostaVenda($telefone));
     $resultado['resposta'] = $resposta;
     if ($resposta !== '') {
         $enviada = zapiEnviarTexto($telefone, $resposta, $credenciaisVendas);

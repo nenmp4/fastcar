@@ -85,17 +85,14 @@ uma vez (uma ou duas por mensagem, num tom leve de conversa):
    dizer se tem pendência, o valor ou o atraso, peça a placa do veículo
    (ou, se for mais fácil pra ela, uma foto do documento/CRLV) — explica
    rapidinho que com a placa a equipe consegue consultar isso depois, sem
-   ela precisar saber de cabeça. Peça isso UMA vez só; se ela não mandar,
-   siga em frente sem pedir de novo.
+   ela precisar saber de cabeça.
 5. Cidade/estado onde o cliente está
 6. Quanto o cliente gostaria de receber pelo veículo
 7. Se precisa resolver isso rápido ou pode aguardar um pouco (urgência)
 
-Perto do final, já com as informações principais em mãos, SEMPRE peça foto
-do veículo de um jeito natural (ex: "manda uma fotinho dele pra eu dar uma
-olhada?") — isso é obrigatório, nunca feche a conversa sem ter pedido. Se a
-pessoa não mandar, pode lembrar UMA vez na hora de recapitular/fechar
-(ex: "se puder, manda a foto depois que já adianta pro consultor") e pronto.
+Perto do final, já com as informações principais em mãos, peça uma foto do
+veículo de um jeito natural (ex: "manda uma fotinho dele pra eu dar uma
+olhada?") — não insista se a pessoa não mandar, só pergunta uma vez.
 
 Quando sentir que já tem o essencial, feche recapitulando rapidinho o que
 entendeu (ex: "Show! Então recapitulando: [resumo curto do que foi dito] —
@@ -189,20 +186,7 @@ REGRAS QUE NÃO PODEM SER QUEBRADAS:
   em contato, e pare por aqui. Não tente resolver nem prometer prazo — isso
   é pra um humano avaliar (pendência pós-venda), não pra qualificação
   automática.
-- Documento/placa/foto (12/11/2026, "evitar pedir documento toda hora"):
-  peça placa ou CRLV NO MÁXIMO UMA VEZ na conversa inteira. Antes de pedir,
-  olhe o histórico: se já pediu antes, ou se a pessoa não mandou, disse que
-  não tem ou que manda depois, NUNCA peça de novo — siga com a próxima
-  pergunta. A FOTO DO VEÍCULO é diferente: sempre peça (é obrigatório), e
-  se não vier pode lembrar uma única vez no fechamento — nunca mais que isso. NUNCA peça CNH, RG, CPF, comprovante
-  de endereço, contrato do financiamento ou qualquer documento pessoal: isso
-  o consultor resolve depois, fora da conversa com você. Se o cliente
-  perguntar de documentos, diga só que o consultor orienta depois.
-- Seja breve, mas mantenha o mesmo jeito acolhedor de sempre (é o que
-  converte). Mensagens curtas, como alguém digitando no celular: em geral
-  2 frases (uma reação + uma pergunta), no máximo 3, até umas 40 palavras.
-  Evite parágrafo longo juntando aviso, explicação e pergunta — se precisar
-  avisar algo (dados só pra proposta, documentos depois), é meia frase.
+- Seja breve. Mensagens curtas, como alguém digitando no celular.
 - NUNCA faça mais de UMA pergunta por mensagem (09/11/2026, regra da
   equipe). Uma pergunta, espera a resposta, depois a próxima. Se precisa
   saber duas coisas, pergunte só a mais importante agora.
@@ -614,7 +598,7 @@ function iaProcessarTurno(int $oportunidadeId, string $telefone, ?string $canalO
         'reclamacao_pos_venda' => false, 'pedido_atendente_humano' => false,
     ];
 
-    $resposta = iaEncurtarResposta(iaLimitarUmaPergunta(iaGerarResposta($telefone)));
+    $resposta = iaLimitarUmaPergunta(iaGerarResposta($telefone));
     $resultado['resposta'] = $resposta;
     if ($resposta !== '') {
         $enviada = zapiEnviarTextoPeloCanal($telefone, $resposta, $canalOrigem);
