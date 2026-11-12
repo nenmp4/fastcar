@@ -1756,6 +1756,15 @@ segue no schema sem uso novo, não removida sem ganho real),
   Mudança de PROMPT (o parágrafo novo avisando a IA sobre o contexto do
   menu híbrido) não é testável contra servidor fake — validação real só
   na próxima conversa de verdade rodando com o modelo híbrido ativo.
+- **Regras fixas da IA de qualificação (12/11/2026, pedidos da equipe — não
+  desfazer sem pedido):** (1) respostas curtas, no máximo 2 frases (reação +
+  1 pergunta), com corte automático acima de ~220 caracteres
+  (`iaEncurtarResposta()`, compra e vendas); (2) placa/CRLV pedidos no
+  máximo 1x na conversa, documento pessoal (CNH, RG, CPF, comprovante,
+  contrato) NUNCA — é do consultor; (3) foto do veículo SEMPRE pedida, e se
+  não vier a IA lembra 1x no fechamento; (4) espera 10–15s de silêncio antes
+  de responder (`WHATSAPP_DEBOUNCE_SEGUNDOS`=10 + `WHATSAPP_DEBOUNCE_JITTER`=5,
+  `chatbot-whatsapp/includes/mensagens.php`).
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
