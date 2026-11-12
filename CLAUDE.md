@@ -1766,7 +1766,8 @@ segue no schema sem uso novo, não removida sem ganho real),
   (`includes/followup_qualificacao.php`, 2h/4h/6h, IA retoma de onde parou,
   fallback nas mensagens fixas). Depois: nunca pede documento (CNH, RG,
   CPF, comprovante, CRLV, contrato) — só a placa se o cliente não souber
-  dos débitos. Não mexer de novo na IA sem pedido.
+  dos débitos. Foto do veículo obrigatória: sempre pede perto do fim e
+  lembra 1x no fechamento se não vier. Não mexer de novo na IA sem pedido.
 - **Atribuição de origem de anúncio** — `extrairOrigemAnuncio()` (Meta Ads
   "Clique para WhatsApp", campo `referral` do 1º contato) +
   `admin/origem_leads.php` (analytics de canal/campanha/anúncio)
