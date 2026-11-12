@@ -73,7 +73,17 @@ function inboxEtapasVisiveisConsultor(): array {
  * Fica no chip "🤖 IA qualificando" ($modoIa='so_ia') e aparece na busca.
  */
 function inboxSqlConversaEmQualificacao(): string {
-    return "(COALESCE(ws.ia_pausada, 0) = 0 AND EXISTS (SELECT 1 FROM oportunidades oq WHERE oq.cliente_id = m.cliente_id AND oq.etapa IN ('whatsapp', 'qualificacao_ia')))";
+    return "(COALESCE(ws.ia_pausada, 0) = 0 AND NOT " . inboxSqlConversaTravada() . " AND EXISTS (SELECT 1 FROM oportunidades oq WHERE oq.cliente_id = m.cliente_id AND oq.etapa IN ('whatsapp', 'qualificacao_ia')))";
+}
+
+/**
+ * 12/11/2026, "se a IA falhar esse lead tem que continuar": cliente esperando
+ * resposta há mais de 5 min (última mensagem é dele) = a IA não deu conta —
+ * a conversa volta pra lista da equipe (e do consultor responsável) e conta
+ * como não lida, mesmo ainda em qualificação. `m` = última mensagem da conversa.
+ */
+function inboxSqlConversaTravada(): string {
+    return "(m.direcao = 'in' AND m.created_at <= datetime('now', 'localtime', '-5 minutes'))";
 }
 
 function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = null, int $limite = 100, bool $soNaoLidas = false, int $offset = 0, string $modoIa = 'esconder'): array {
@@ -95,7 +105,8 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
         // cadastro/oportunidade, e volta sozinha se o cliente abrir negócio novo).
         $etapasConsultor = inboxEtapasVisiveisConsultor();
         $phEtapas = implode(',', array_fill(0, count($etapasConsultor), '?'));
-        $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
+        $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND (o.etapa IN ($phEtapas)"
+            . " OR (o.etapa IN ('whatsapp', 'qualificacao_ia') AND " . inboxSqlConversaTravada() . ")))";
         $params[] = $responsavelFiltro;
         foreach ($etapasConsultor as $et) $params[] = $et;
     }
@@ -106,7 +117,7 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
     }
     // 29/10/2026, "mostrar mensagens não lidas igual zap" — aba "Não lidas".
     if ($soNaoLidas) {
-        $whereResponsavel .= " AND COALESCE(ws.ia_pausada, 0) = 1 AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.canal = 'compra' AND m4.direcao = 'in' AND m4.lida = 0)";
+        $whereResponsavel .= " AND (COALESCE(ws.ia_pausada, 0) = 1 OR " . inboxSqlConversaTravada() . ") AND EXISTS (SELECT 1 FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.canal = 'compra' AND m4.direcao = 'in' AND m4.lida = 0)";
     }
 
     $sql = "
@@ -115,7 +126,7 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
                c.foto_perfil_url,
                -- 12/11/2026: não lida só conta com a IA pausada (humano atendendo);
                -- com a IA ativa, é ela quem responde — não notifica a equipe.
-               CASE WHEN COALESCE(ws.ia_pausada, 0) = 1 THEN (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'compra' AND m2.direcao = 'in' AND m2.lida = 0) ELSE 0 END AS nao_lidas,
+               CASE WHEN COALESCE(ws.ia_pausada, 0) = 1 OR " . inboxSqlConversaTravada() . " THEN (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'compra' AND m2.direcao = 'in' AND m2.lida = 0) ELSE 0 END AS nao_lidas,
                COALESCE(ws.ia_pausada, 0) AS ia_pausada
         FROM whatsapp_mensagens m
         JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'compra' GROUP BY telefone) ult
@@ -141,24 +152,9 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
  * Mesmo filtro de carteira do consultor de listarConversasWhatsapp().
  */
 function contarConversasNaoLidasWhatsapp(?int $responsavelFiltro = null): int {
-    $db = getDB();
-    // 12/11/2026: só conversa com a IA pausada (humano atendendo) conta como não lida.
-    $sql = "SELECT COUNT(DISTINCT m.telefone) FROM whatsapp_mensagens m
-            JOIN whatsapp_sessoes ws ON ws.telefone = m.telefone AND ws.ia_pausada = 1
-            WHERE m.canal = 'compra' AND m.direcao = 'in' AND m.lida = 0";
-    $params = [];
-    if ($responsavelFiltro !== null) {
-        $etapasConsultor = inboxEtapasVisiveisConsultor();
-        $phEtapas = implode(',', array_fill(0, count($etapasConsultor), '?'));
-        // Mesmo critério da lista (m.cliente_id), senão o "(N)" contava conversa
-        // que nem aparece na lista do consultor (29/10/2026, "marca 4 não lidas mas já leu").
-        $sql .= " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
-        $params[] = $responsavelFiltro;
-        foreach ($etapasConsultor as $et) $params[] = $et;
-    }
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    return (int)$stmt->fetchColumn();
+    // 12/11/2026 — mesmo critério da lista (IA pausada OU cliente esperando
+    // há mais de 5 min), senão o contador e a lista divergiam.
+    return count(listarConversasWhatsapp('', $responsavelFiltro, 1000, true, 0, 'todas'));
 }
 
 /** Últimas $limite mensagens de uma conversa, em ordem cronológica (mais antiga primeiro). */
