@@ -321,6 +321,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'reabrir_lead_inbox' && $telPost) {
+            // 13/11/2026, "ela achou pasta perdida abriu mandou mensagem e
+            // depois some do inbox" — lead encerrado não fica na caixa do
+            // consultor (só oportunidade ativa). Reabre a mais recente
+            // encerrada e já coloca em atendimento com quem reabriu.
+            $stEnc = getDB()->prepare("SELECT o.id, o.responsavel_id FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                WHERE c.telefone = ? AND o.etapa IN ('perdido','sem_perfil') ORDER BY o.id DESC LIMIT 1");
+            $stEnc->execute([normalizarTelefone($telPost) ?: $telPost]);
+            $opEnc = $stEnc->fetch();
+            if (buscarOportunidadeAtivaPorTelefone($telPost)) {
+                $sucesso = 'Esse cliente já tem oportunidade ativa no funil.';
+            } elseif (!$opEnc) {
+                $erro = 'Não achei oportunidade encerrada pra esse telefone.';
+            } else {
+                try {
+                    reabrirOportunidade((int)$opEnc['id'], (int)$_SESSION['admin_id']);
+                    if (!$opEnc['responsavel_id'] && $_SESSION['admin_perfil'] === 'consultor') {
+                        getDB()->prepare('UPDATE oportunidades SET responsavel_id = ? WHERE id = ?')->execute([(int)$_SESSION['admin_id'], (int)$opEnc['id']]);
+                    }
+                    mudarEtapa((int)$opEnc['id'], 'atendimento', (int)$_SESSION['admin_id'], 'Reaberta pelo WhatsApp Box — consultor assumiu o atendimento');
+                    pausarIA($telPost);
+                    auditoriaRegistrar('lead_reaberto_inbox', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', (int)$opEnc['id'], "Telefone {$telPost}.");
+                    $sucesso = 'Lead reaberto em 💬 Atendimento — agora fica na sua caixa.';
+                } catch (Throwable $e) {
+                    $erro = 'Não deu pra reabrir: ' . $e->getMessage();
+                }
+            }
+            $telefoneAtivo = $telPost;
         } elseif ($acao === 'transferir_lead_inbox' && $telPost) {
             // 13/11/2026, "quando transferir lead no inbox tem ir também" —
             // troca o responsável pela mesma reatribuirEmMassa() do funil
@@ -621,6 +649,27 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     $opEtapaInbox += ($stResp->fetch() ?: []);
                 }
                 ?>
+                <?php if ($opEtapaInbox): ?>
+                <?php else:
+                    $stEncV = getDB()->prepare("SELECT o.id, o.etapa, o.motivo_perda FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                        WHERE c.telefone = ? AND o.etapa IN ('perdido','sem_perfil') ORDER BY o.id DESC LIMIT 1");
+                    $stEncV->execute([normalizarTelefone($telefoneAtivo) ?: $telefoneAtivo]);
+                    $opEncV = $stEncV->fetch();
+                    if ($opEncV): ?>
+                    <div class="wpp-etapa-form" style="padding:8px 10px;border-radius:8px;background:var(--laranja-bg);color:var(--laranja)">
+                        <span>❌ Lead encerrado (<?= e(etapaLabel($opEncV['etapa'])) ?><?= $opEncV['motivo_perda'] ? ': ' . e($opEncV['motivo_perda']) : '' ?>) — não fica na caixa do consultor, mesmo mandando mensagem.</span>
+                        <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Reabrir esse lead em Atendimento? Ele volta pra sua caixa e a IA fica pausada.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="reabrir_lead_inbox">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <button type="submit" style="margin:0;min-height:44px">↩️ Reabrir e assumir</button>
+                        </form>
+                        <?php endif; ?>
+                        <a href="/admin/oportunidade.php?id=<?= (int)$opEncV['id'] ?>">Abrir oportunidade #<?= (int)$opEncV['id'] ?> →</a>
+                    </div>
+                    <?php endif; ?>
+                <?php endif; ?>
                 <?php if ($opEtapaInbox): ?>
                     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
                         <form method="post" class="wpp-etapa-form" onsubmit="return confirmarAcao(this, 'Mudar a etapa desse cliente no funil?');">
