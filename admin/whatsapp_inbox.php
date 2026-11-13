@@ -321,6 +321,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'transferir_lead_inbox' && $telPost) {
+            // 13/11/2026, "quando transferir lead no inbox tem ir também" —
+            // troca o responsável pela mesma reatribuirEmMassa() do funil
+            // (grava histórico); a conversa vai junto pro inbox de quem
+            // recebe, porque o inbox do consultor é a carteira dele.
+            $opInbox = buscarOportunidadeAtivaPorTelefone($telPost);
+            $destinoId = (int)($_POST['responsavel_novo'] ?? 0);
+            if (!$opInbox) {
+                $erro = 'Esse telefone não tem oportunidade ativa no funil.';
+                $telefoneAtivo = $telPost;
+            } else {
+                try {
+                    $rTr = reatribuirEmMassa([(int)$opInbox['id']], $destinoId, (int)$_SESSION['admin_id']);
+                    if ($rTr['sucesso'] > 0) {
+                        $nomeDest = (string)getDB()->query('SELECT nome FROM usuarios WHERE id = ' . $destinoId)->fetchColumn();
+                        auditoriaRegistrar('lead_transferido_inbox', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', (int)$opInbox['id'],
+                            "Telefone {$telPost} transferido para {$nomeDest}.");
+                        $sucesso = "Lead transferido para {$nomeDest} — a conversa foi junto pro inbox dele(a).";
+                        // Consultor que passou o lead adiante não vê mais essa conversa.
+                        $telefoneAtivo = usuarioPodeVerConversaWhatsapp($telPost, $responsavelFiltro) ? $telPost : '';
+                    } else {
+                        $sucesso = 'Esse lead já está com esse consultor.';
+                        $telefoneAtivo = $telPost;
+                    }
+                } catch (Throwable $e) {
+                    $erro = 'Não deu pra transferir: ' . $e->getMessage();
+                    $telefoneAtivo = $telPost;
+                }
+            }
         } elseif ($acao === 'excluir_conversa' && $telPost) {
             // Restrito ao super_admin — ação destrutiva (apaga o histórico de
             // mensagens pra sempre), sem tela de confirmação própria porque o
@@ -584,7 +613,14 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         </form>
                     <?php endif; ?>
                 </div>
-                <?php $opEtapaInbox = buscarOportunidadeAtivaPorTelefone($telefoneAtivo); ?>
+                <?php
+                $opEtapaInbox = buscarOportunidadeAtivaPorTelefone($telefoneAtivo);
+                if ($opEtapaInbox) {
+                    $stResp = getDB()->prepare("SELECT o.responsavel_id, u.nome AS responsavel_nome FROM oportunidades o LEFT JOIN usuarios u ON u.id = o.responsavel_id WHERE o.id = ?");
+                    $stResp->execute([(int)$opEtapaInbox['id']]);
+                    $opEtapaInbox += ($stResp->fetch() ?: []);
+                }
+                ?>
                 <?php if ($opEtapaInbox): ?>
                     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
                         <form method="post" class="wpp-etapa-form" onsubmit="return confirmarAcao(this, 'Mudar a etapa desse cliente no funil?');">
@@ -600,6 +636,26 @@ if ($telefoneAtivo && !$contatoAtivo) {
                             <button type="submit">Mudar</button>
                             <a href="/admin/oportunidade.php?id=<?= (int)$opEtapaInbox['id'] ?>">Abrir oportunidade #<?= (int)$opEtapaInbox['id'] ?> →</a>
                         </form>
+                        <?php
+                        $stDest = getDB()->prepare("SELECT id, nome FROM usuarios WHERE perfil IN ('consultor','super_admin') AND bloqueado = 0 AND id != ? ORDER BY nome");
+                        $stDest->execute([(int)($opEtapaInbox['responsavel_id'] ?? 0)]);
+                        $destinosInbox = $stDest->fetchAll();
+                        ?>
+                        <?php if ($destinosInbox): ?>
+                        <form method="post" class="wpp-etapa-form" onsubmit="return confirmarAcao(this, 'Transferir esse lead? A conversa sai da sua caixa e vai pro inbox do consultor escolhido.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="transferir_lead_inbox">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <label for="wpp-transf-select">Responsável: <?= e($opEtapaInbox['responsavel_nome'] ?: '— sem responsável') ?> →</label>
+                            <select name="responsavel_novo" id="wpp-transf-select" required>
+                                <option value="">transferir para...</option>
+                                <?php foreach ($destinosInbox as $d): ?>
+                                    <option value="<?= (int)$d['id'] ?>"><?= e($d['nome']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="submit">🔀 Transferir</button>
+                        </form>
+                        <?php endif; ?>
                     <?php else: ?>
                         <div class="wpp-etapa-form">Etapa: <strong><?= e(etapaLabel($opEtapaInbox['etapa'])) ?></strong>
                             <a href="/admin/oportunidade.php?id=<?= (int)$opEtapaInbox['id'] ?>">Abrir oportunidade #<?= (int)$opEtapaInbox['id'] ?> →</a></div>
