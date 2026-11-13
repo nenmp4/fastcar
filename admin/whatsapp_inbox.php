@@ -88,7 +88,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     // Até 1000 de uma vez (botão "Carregar mais" sobe de 100 em 100).
     $limiteAjax = max(20, min(1000, (int)($_GET['limite'] ?? 100)));
     $listaAjax = listarConversasWhatsapp(trim((string)($_GET['busca'] ?? '')), $responsavelFiltro, $limiteAjax + 1, $soNaoLidasAjax, 0,
-        ($_GET['filtro'] ?? '') === 'ia' ? 'so_ia' : 'esconder', perfilVeTudo() && (int)($_GET['consultor'] ?? 0) > 0 ? (int)$_GET['consultor'] : null);
+        ($_GET['filtro'] ?? '') === 'ia' ? 'so_ia' : ($responsavelFiltro !== null ? 'todas' : 'esconder'), perfilVeTudo() && (int)($_GET['consultor'] ?? 0) > 0 ? (int)$_GET['consultor'] : null);
     echo json_encode([
         'conversas'       => array_slice($listaAjax, 0, $limiteAjax),
         'tem_mais'        => count($listaAjax) > $limiteAjax,
@@ -306,7 +306,7 @@ $busca = trim((string)($_GET['busca'] ?? ''));
 $soNaoLidas = ($_GET['filtro'] ?? '') === 'nao_lidas';
 $soIa = ($_GET['filtro'] ?? '') === 'ia' && perfilVeTudo();
 $consultorVisao = perfilVeTudo() && (int)($_GET['consultor'] ?? 0) > 0 ? (int)$_GET['consultor'] : null;
-$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas, 0, $soIa ? 'so_ia' : 'esconder', $consultorVisao);
+$conversas = listarConversasWhatsapp($busca, $responsavelFiltro, 101, $soNaoLidas, 0, $soIa ? 'so_ia' : ($responsavelFiltro !== null ? 'todas' : 'esconder'), $consultorVisao);
 $totalEmQualificacao = perfilVeTudo() ? contarConversasEmQualificacaoWhatsapp($consultorVisao) : 0;
 $consultoresFiltroInbox = perfilVeTudo() ? getDB()->query("SELECT DISTINCT u.id, u.nome FROM usuarios u
     JOIN oportunidades o ON o.responsavel_id = u.id AND o.etapa IN ('" . implode("','", ETAPAS_ATIVAS) . "')
@@ -468,7 +468,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                             <?= $c['ultima_direcao'] === 'out' ? '✓ ' : '' ?>
                             <?= wppPreviewHtml((string)$c['ultima_tipo'], (string)$c['ultima_mensagem']) ?>
                         </div>
-                        <div class="quando"><?= date('d/m H:i', strtotime($c['ultima_em'])) ?><?= $c['ia_pausada'] ? ' · ⏸️ IA pausada' : '' ?></div>
+                        <div class="quando"><?= date('d/m H:i', strtotime($c['ultima_em'])) ?><?= $c['ia_pausada'] ? ' · ⏸️ IA pausada' : '' ?><?= !empty($c['em_qualificacao']) ? ' · 🤖 IA qualificando' : '' ?></div>
                     </div>
                 </a>
             <?php endforeach; ?>
@@ -528,6 +528,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
                             <button type="submit" class="perigo">Confirmar encerramento</button>
                         </form>
                     </details>
+                <?php endif; ?>
+                <?php if ($_SESSION['admin_perfil'] !== 'supervisor' && conversaEmQualificacaoWhatsapp($telefoneAtivo)): ?>
+                    <div style="flex-basis:100%;font-size:12.5px;margin-top:6px;padding:6px 10px;border-radius:8px;background:var(--laranja-bg);color:var(--laranja)">
+                        🤖 A IA ainda está qualificando esse lead. Se você responder, a IA pausa e para de qualificar — só responda se for assumir o atendimento.
+                    </div>
                 <?php endif; ?>
                 <?php $decIa = iaUltimaDecisao($telefoneAtivo); ?>
                 <?php if ($decIa): ?>
@@ -927,7 +932,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         '<div class="nome"><span>' + escapeHtml(c.cliente_nome || c.telefone) + '</span>' +
                         (c.nao_lidas > 0 ? '<span class="wpp-badge">' + c.nao_lidas + '</span>' : '') + '</div>' +
                         '<div class="preview">' + (c.ultima_direcao === 'out' ? '✓ ' : '') + wppPreviewHtml(c.ultima_tipo, c.ultima_mensagem) + '</div>' +
-                        '<div class="quando">' + quando + (c.ia_pausada == 1 ? ' · ⏸️ IA pausada' : '') + '</div>' +
+                        '<div class="quando">' + quando + (c.ia_pausada == 1 ? ' · ⏸️ IA pausada' : '') + (c.em_qualificacao == 1 ? ' · 🤖 IA qualificando' : '') + '</div>' +
                         '</div>';
                     lista.appendChild(a);
                 });

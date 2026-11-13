@@ -56,18 +56,6 @@ function contarConversasEmQualificacaoWhatsapp(?int $consultorVisao = null): int
 }
 
 /**
- * Etapas em que a conversa aparece no WhatsApp Box do CONSULTOR (12/11/2026,
- * "notificações pro consultor quando lead entra qualificando acaba
- * atrapalhando a IA"): enquanto a IA ainda qualifica (whatsapp/qualificacao_ia),
- * a conversa fica escondida da lista dele — senão ele respondia no meio, a IA
- * pausava e a qualificação parava. Aparece quando a IA termina (CRM
- * preenchido). Super admin/supervisor continuam vendo tudo.
- */
-function inboxEtapasVisiveisConsultor(): array {
-    return array_values(array_diff(ETAPAS_ATIVAS, ['whatsapp', 'qualificacao_ia']));
-}
-
-/**
  * 12/11/2026, "até pro super admin — ela vai clicando": conversa que a IA
  * ainda está qualificando (etapa whatsapp/qualificacao_ia, IA não pausada)
  * sai da lista padrão de TODO mundo — quem clicava e respondia pausava a IA.
@@ -104,12 +92,13 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
         // sempre. Agora só aparece enquanto ele tem oportunidade ATIVA com o
         // cliente; encerrou, sai da lista (a conversa continua acessível pelo
         // cadastro/oportunidade, e volta sozinha se o cliente abrir negócio novo).
-        $etapasConsultor = inboxEtapasVisiveisConsultor();
-        $phEtapas = implode(',', array_fill(0, count($etapasConsultor), '?'));
-        $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND (o.etapa IN ($phEtapas)"
-            . " OR (o.etapa IN ('whatsapp', 'qualificacao_ia') AND " . inboxSqlConversaTravada() . ")))";
+        // 13/11/2026, "teria aparecer todas no inbox" — volta a mostrar a
+        // carteira inteira do consultor, inclusive o que a IA ainda qualifica
+        // (marcado "🤖 IA qualificando", com aviso de que responder pausa a IA).
+        $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+        $whereResponsavel = " AND EXISTS (SELECT 1 FROM oportunidades o WHERE o.cliente_id = m.cliente_id AND o.responsavel_id = ? AND o.etapa IN ($phEtapas))";
         $params[] = $responsavelFiltro;
-        foreach ($etapasConsultor as $et) $params[] = $et;
+        foreach (ETAPAS_ATIVAS as $et) $params[] = $et;
     }
     // 12/11/2026, "filtro por consultor": quem vê tudo escolhe um consultor e
     // vê só as conversas da carteira dele (inclusive as em qualificação).
@@ -136,7 +125,8 @@ function listarConversasWhatsapp(string $busca = '', ?int $responsavelFiltro = n
                -- 12/11/2026: não lida só conta com a IA pausada (humano atendendo);
                -- com a IA ativa, é ela quem responde — não notifica a equipe.
                CASE WHEN COALESCE(ws.ia_pausada, 0) = 1 OR " . inboxSqlConversaTravada() . " THEN (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'compra' AND m2.direcao = 'in' AND m2.lida = 0) ELSE 0 END AS nao_lidas,
-               COALESCE(ws.ia_pausada, 0) AS ia_pausada
+               COALESCE(ws.ia_pausada, 0) AS ia_pausada,
+               CASE WHEN " . inboxSqlConversaEmQualificacao() . " THEN 1 ELSE 0 END AS em_qualificacao
         FROM whatsapp_mensagens m
         JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'compra' GROUP BY telefone) ult
           ON ult.telefone = m.telefone AND ult.max_id = m.id
@@ -213,6 +203,15 @@ function buscarMensagensNovasConversa(string $telefone, int $depoisDeId, ?string
     ");
     $stmt->execute([normalizarTelefone($telefone), $depoisDeId]);
     return $stmt->fetchAll();
+}
+
+/** A IA ainda está qualificando essa conversa (etapa whatsapp/qualificacao_ia, IA não pausada)? */
+function conversaEmQualificacaoWhatsapp(string $telefone): bool {
+    if (iaPausada($telefone)) return false;
+    $stmt = getDB()->prepare("SELECT EXISTS (SELECT 1 FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+        WHERE c.telefone = ? AND o.etapa IN ('whatsapp', 'qualificacao_ia'))");
+    $stmt->execute([normalizarTelefone($telefone)]);
+    return (bool)$stmt->fetchColumn();
 }
 
 /**
