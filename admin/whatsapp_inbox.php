@@ -145,7 +145,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $erro = 'Essa conversa não é de um cliente sob sua responsabilidade.';
             $telPost = '';
         }
-        if ($acao === 'enviar_mensagem' && $telPost) {
+        if ($acao === 'ia_carteira' && $responsavelFiltro !== null) {
+            // 13/11/2026, "botão no inbox pausa para todos IA" — o consultor
+            // pausa (ou reativa) a IA de uma vez em todas as conversas da
+            // carteira dele (oportunidade ativa em que ele é o responsável).
+            $pausarTodas = ($_POST['modo'] ?? '') === 'pausar';
+            $stTels = getDB()->prepare("SELECT DISTINCT c.telefone FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                WHERE o.responsavel_id = ? AND o.etapa IN ('" . implode("','", ETAPAS_ATIVAS) . "')");
+            $stTels->execute([$responsavelFiltro]);
+            $nTels = 0;
+            foreach ($stTels->fetchAll(PDO::FETCH_COLUMN) as $telCart) {
+                if ($telCart === '') continue;
+                $pausarTodas ? pausarIA($telCart) : retomarIA($telCart);
+                $nTels++;
+            }
+            auditoriaRegistrar($pausarTodas ? 'ia_pausada_carteira' : 'ia_reativada_carteira', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'usuario', $responsavelFiltro,
+                ($pausarTodas ? 'IA pausada' : 'IA reativada') . " em {$nTels} conversa(s) da carteira.");
+            $sucesso = ($pausarTodas ? '⏸️ IA pausada' : '▶️ IA reativada') . " em {$nTels} conversa(s) da sua carteira.";
+        } elseif ($acao === 'enviar_mensagem' && $telPost) {
             $resultado = enviarMensagemManualWhatsapp($telPost, (string)($_POST['texto'] ?? ''), (int)$_SESSION['admin_id']);
             if ($viaAjax) {
                 header('Content-Type: application/json');
@@ -446,6 +463,22 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <a href="?<?= e(http_build_query(array_filter(['busca' => $busca, 'filtro' => 'ia', 'consultor' => $consultorVisao]))) ?>" class="wpp-chip <?= $soIa ? 'ativo' : '' ?>" data-filtro="ia" title="Conversas que a IA ainda está qualificando — só acompanhe; responder pausa a IA">🤖 IA qualificando<?= $totalEmQualificacao ? ' (' . $totalEmQualificacao . ')' : '' ?></a>
             <?php endif; ?>
         </div>
+        <?php if ($responsavelFiltro !== null && $_SESSION['admin_perfil'] !== 'supervisor'): ?>
+        <div class="wpp-filtros">
+            <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Pausar a IA em TODAS as conversas da sua carteira? Ela para de responder seus clientes até você reativar.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="ia_carteira">
+                <input type="hidden" name="modo" value="pausar">
+                <button type="submit" class="wpp-chip" style="margin-top:0;box-shadow:none;cursor:pointer">⏸️ Pausar IA em todas</button>
+            </form>
+            <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Reativar a IA em todas as conversas da sua carteira?');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="ia_carteira">
+                <input type="hidden" name="modo" value="reativar">
+                <button type="submit" class="wpp-chip" style="margin-top:0;box-shadow:none;cursor:pointer">▶️ Reativar IA em todas</button>
+            </form>
+        </div>
+        <?php endif; ?>
         <form method="get" class="wpp-nova-form" id="wpp-nova-form">
             <input type="text" name="telefone" placeholder="Nova conversa — telefone com DDD" inputmode="numeric">
             <button type="submit">+ Iniciar conversa</button>

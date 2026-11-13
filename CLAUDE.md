@@ -1771,6 +1771,9 @@ segue no schema sem uso novo, não removida sem ganho real),
   a carteira inteira (13/11/2026, "teria aparecer todas no inbox" — antes
   escondia o que estava em whatsapp/qualificacao_ia): conversa que a IA ainda
   qualifica vem marcada "🤖 IA qualificando" + aviso de que responder pausa a IA.
+  Botões "⏸️ Pausar IA em todas" / "▶️ Reativar IA em todas" no inbox do
+  consultor (13/11/2026): pausa/reativa a IA em todas as conversas da carteira
+  dele (oportunidade ativa, ele responsável), com registro na auditoria.
   "Não lidas" (badge, chip, contador) dos inboxes de compra e vendas só
   contam conversa com a IA pausada (humano atendendo); com a IA ativa não
   notifica nova mensagem. Lista padrão de TODOS os perfis (super admin
