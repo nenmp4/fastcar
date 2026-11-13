@@ -209,6 +209,10 @@ $notifModulo = $notifModulo ?? null;
         try {
             var lista = obterLeadsHistoricoLocal();
             itens.forEach(function (n) {
+                // 13/11/2026: mesmo lead repetido (2 abas abertas, mesmo evento
+                // devolvido 2x) aparecia duplicado no painel — nunca guarda 2x.
+                var chave = (n.url || '') + '|' + (n.created_at || '');
+                if (lista.some(function (x) { return (x.url || '') + '|' + (x.created_at || '') === chave; })) return;
                 lista.unshift({ titulo: n.titulo, mensagem: n.mensagem, url: n.url, created_at: n.created_at || '' });
             });
             localStorage.setItem(CHAVE_LEADS_HIST, JSON.stringify(lista.slice(0, LEADS_HIST_MAX)));
@@ -282,7 +286,13 @@ $notifModulo = $notifModulo ?? null;
                 // de "lead novo" (nunca persistido, ver comentário do topo
                 // do arquivo) — sem isso o painel ficava vazio depois de um
                 // toast de lead novo, mesmo o contador tendo marcado 1.
-                var mesclado = (data.itens || []).concat(obterLeadsHistoricoLocal());
+                var vistos = {};
+                var mesclado = (data.itens || []).concat(obterLeadsHistoricoLocal()).filter(function (n) {
+                    var chave = (n.titulo || '') + '|' + (n.url || '') + '|' + (n.created_at || '');
+                    if (vistos[chave]) return false;
+                    vistos[chave] = true;
+                    return true;
+                });
                 mesclado.sort(function (a, b) {
                     return (b.created_at || '').localeCompare(a.created_at || '');
                 });
