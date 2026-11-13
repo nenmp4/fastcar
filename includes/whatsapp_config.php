@@ -911,16 +911,25 @@ function zapiEnviarDocumento(string $phone, string $documentoDataUriOuUrl, strin
  * vários consultores de caixa aberta, isso ocupava o pool inteiro e o resto
  * do sistema ficava esperando. Cache em DISCO (nunca no banco — nada de
  * disputa de trava do SQLite), por canal+telefone: foto achada vale 3h
- * (a URL da CDN do WhatsApp expira, nunca guardar pra sempre), "sem foto"
- * vale 12h. Best-effort: falha ao ler/gravar o cache só busca de novo.
+ * (a URL da CDN do WhatsApp expira, nunca guardar pra sempre — e nunca além
+ * do `oe` da própria URL), "sem foto" vale 20min (13/11/2026). Best-effort: falha ao ler/gravar o cache só busca de novo.
  */
 function fotoContatoCacheada(string $canal, string $telefone, callable $buscar): string {
     $dir = dirname(__DIR__) . '/storage/cache/whatsapp_foto';
     $arq = $dir . '/' . preg_replace('/[^a-z0-9_]/', '', strtolower($canal)) . '_' . preg_replace('/\D/', '', $telefone) . '.json';
     $c = is_file($arq) ? json_decode((string)@file_get_contents($arq), true) : null;
     if (is_array($c) && isset($c['t'], $c['u'])) {
-        $ttl = $c['u'] !== '' ? 3 * 3600 : 12 * 3600;
-        if (time() - (int)$c['t'] < $ttl) return (string)$c['u'];
+        // 13/11/2026, "avatar não está aparecendo" — "sem foto" ficava 12h
+        // guardado mesmo quando era só a Evolution lenta/fora no momento
+        // (evolutionBuscarContato() devolve null nos dois casos); agora 20min.
+        // E a URL da CDN traz a validade no parâmetro `oe` (hex unix): vencida
+        // = busca de novo, senão o <img> quebra e fica só a inicial.
+        $ttl = $c['u'] !== '' ? 3 * 3600 : 20 * 60;
+        $valida = time() - (int)$c['t'] < $ttl;
+        if ($valida && $c['u'] !== '' && preg_match('/[?&]oe=([0-9a-fA-F]{6,10})/', (string)$c['u'], $m)) {
+            $valida = hexdec($m[1]) > time() + 300;
+        }
+        if ($valida) return (string)$c['u'];
     }
     $url = '';
     try {
