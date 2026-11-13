@@ -451,14 +451,21 @@ if ($telefoneAtivo && !$contatoAtivo) {
 <script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 <style>
-.wpp-wrap { display: flex; height: calc(100vh - 61px); }
-.wpp-sidebar { width: 320px; flex-shrink: 0; border-right: 1px solid var(--borda); background: var(--superficie); display: flex; flex-direction: column; }
-.wpp-sidebar form { padding: 12px; border-bottom: 1px solid var(--borda); }
+/* 13/11/2026 — layout em altura de tela (notebook 1366×768/125%): o body
+   vira coluna flex de 100dvh e o .wpp-wrap pega só o que sobra depois da
+   topbar/breadcrumb/avisos — nunca mais rola a página inteira; quem rola é
+   só a lista e o thread. */
+html:has(body.wpp-page) { height: 100%; overflow: hidden; }
+body.wpp-page { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body.wpp-page > * { flex-shrink: 0; }
+body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
+.wpp-sidebar { width: clamp(260px, 24vw, 340px); flex-shrink: 0; min-height: 0; border-right: 1px solid var(--borda); background: var(--superficie); display: flex; flex-direction: column; }
+.wpp-sidebar form { padding: 8px 10px; border-bottom: 1px solid var(--borda); }
 .wpp-sidebar form input { margin: 0; }
 .wpp-nova-form { display: flex; gap: 8px; }
 .wpp-nova-form input { flex: 1; min-width: 0; }
 .wpp-nova-form button { margin: 0; white-space: nowrap; padding: 6px 12px; font-size: 12.5px; }
-.wpp-lista { flex: 1; overflow-y: auto; }
+.wpp-lista { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .wpp-item { display: flex; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borda); text-decoration: none; color: inherit; position: relative; }
 .wpp-item:hover { background: var(--fundo); text-decoration: none; }
 .wpp-item.ativo { background: var(--azul-claro); }
@@ -466,7 +473,20 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--azul-claro); }
 .wpp-avatar-placeholder { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; background: var(--azul); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
 .wpp-chat-header .wpp-avatar, .wpp-chat-header .wpp-avatar-placeholder { width: 40px; height: 40px; margin-right: 10px; }
-.wpp-chat-header > div:first-child { display: flex; align-items: center; }
+.wpp-chat-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-basis: 100%; min-width: 0; }
+.wpp-chat-quem { display: flex; align-items: center; min-width: 0; }
+.wpp-chat-quem > div:last-child { min-width: 0; overflow: hidden; }
+.wpp-chat-quem strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wpp-chat-acoes { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.wpp-chat-acoes form, .wpp-chat-acoes button { margin: 0; }
+.wpp-btn-detalhes { display: none; background: var(--fundo); color: var(--texto); border: 1px solid var(--borda); box-shadow: none; }
+.wpp-mais-acoes { position: relative; }
+.wpp-mais-acoes summary { list-style: none; cursor: pointer; min-width: 36px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--borda); border-radius: 6px; background: var(--fundo); font-weight: 700; font-size: 16px; }
+.wpp-mais-acoes summary::-webkit-details-marker { display: none; }
+.wpp-mais-acoes-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px; box-shadow: var(--sombra); padding: 6px; display: flex; flex-direction: column; gap: 6px; min-width: 190px; }
+.wpp-mais-acoes-menu button { width: 100%; margin: 0; text-align: left; }
+.wpp-chat-detalhes { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.wpp-aviso { flex-basis: 100%; min-width: 0; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wpp-avatar-clicavel { cursor: zoom-in; }
 #foto-lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 9999; align-items: center; justify-content: center; cursor: zoom-out; flex-direction: column; gap: .75rem; }
 #foto-lightbox.aberto { display: flex; }
@@ -486,47 +506,68 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-item.nao-lida .quando { color: #1fa855; font-weight: 700; }
 .wpp-item.nao-lida .wpp-badge { background: #25d366; }
 .wpp-badge { background: var(--azul); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 1px 7px; min-width: 18px; text-align: center; display: inline-block; }
-.wpp-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; background: var(--superficie); }
+.wpp-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.wpp-chat-header { flex: 0 0 auto; padding: 8px 16px; border-bottom: 1px solid var(--borda); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--superficie); }
 /* Botão "Encerrar atendimento" (09/10/2026, "pessoal quer botao encerrar
    atendimento no inbox do whtasapp sem precisar ir no lead") — <details>
    pra não precisar de JS novo; abre um form compacto com motivo
    obrigatório, sempre ocupando a linha inteira do cabeçalho (nunca
    flutuante/position:absolute — mais simples e seguro em mobile). */
-.wpp-encerrar-details { width: 100%; order: 99; }
+.wpp-encerrar-details { order: 99; }
+.wpp-encerrar-details[open] { flex-basis: 100%; }
 .wpp-encerrar-details summary { cursor: pointer; list-style: none; font-size: 12.5px; color: var(--texto-fraco); padding: 6px 12px; min-height: 44px; display: inline-flex; align-items: center; border: 1px solid var(--borda); border-radius: 6px; background: var(--fundo); }
 .wpp-encerrar-details summary::-webkit-details-marker { display: none; }
 .wpp-encerrar-details[open] summary { color: #c0392b; border-color: #c0392b; }
-.wpp-encerrar-details form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.wpp-encerrar-details form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .wpp-encerrar-details form input[type="text"] { flex: 1; min-width: 220px; margin: 0; }
 .wpp-encerrar-details form button { margin: 0; white-space: nowrap; }
-.wpp-etapa-form { flex-basis: 100%; order: 98; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.wpp-etapa-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
 .wpp-etapa-form label { margin: 0; font-weight: 600; }
 .wpp-etapa-form select { width: auto; max-width: 100%; margin: 0; }
 .wpp-etapa-form button { margin: 0; padding: 6px 14px; min-height: 44px; }
 .wpp-etapa-form a { font-size: 12.5px; }
-.wpp-thread { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background: var(--fundo); }
+.wpp-thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; background: var(--fundo); }
 .wpp-thread .msg small { display: block; margin-top: 3px; opacity: .65; font-size: 10.5px; }
-.wpp-form { padding: 14px 20px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
-.wpp-form textarea { flex: 1; margin: 0; resize: none; min-height: 42px; max-height: 120px; }
+.wpp-form { flex: 0 0 auto; padding: 8px 12px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
+.wpp-form textarea { flex: 1; margin: 0; resize: none; min-height: 40px; max-height: 120px; }
 .wpp-form button { margin: 0; white-space: nowrap; }
 .wpp-vazio { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--texto-fraco); text-align: center; padding: 40px; }
 .wpp-voltar-mobile { display: none; }
 /* Celular: só 1 painel por vez — sidebar OU conversa, igual WhatsApp de
    verdade. Sem isso os 320px fixos da sidebar sozinhos já tomavam a tela
    toda numa tela de ~390px, escondendo a conversa por completo. */
+/* Desktop/notebook: controles do cabeçalho mais baixos (no celular o
+   mobile.css mantém o toque de 44px). */
+@media (min-width: 701px) {
+    .wpp-chat-acoes button, .wpp-etapa-form button, .wpp-encerrar-details summary { padding: 4px 10px; font-size: 13px; min-height: 32px; }
+    .wpp-etapa-form select { min-height: 32px; height: 32px; padding: 2px 8px; font-size: 13px; max-width: 165px; }
+    .wpp-sidebar input, .wpp-sidebar select { min-height: 36px; padding-top: 6px; padding-bottom: 6px; }
+    .wpp-nova-form button { min-height: 36px; }
+    .wpp-form button { min-height: 40px; height: 40px; padding-top: 0; padding-bottom: 0; }
+    .wpp-filtros { padding: 6px 10px; gap: 6px; flex-wrap: wrap; }
+    .wpp-chip { padding: 4px 10px; min-height: 28px; font-size: 12.5px; }
+    .wpp-item { padding: 9px 12px; }
+}
+/* Telas baixas: Etapa/Responsável/Encerrar recolhem atrás do "⚙ Detalhes". */
+@media (max-height: 760px), (max-width: 700px) {
+    .wpp-btn-detalhes { display: inline-flex; align-items: center; gap: 4px; }
+    .wpp-chat-detalhes { display: none; }
+    .wpp-chat-detalhes.aberto { display: flex; }
+}
 @media (max-width: 700px) {
     .wpp-sidebar { width: 100%; }
     body.wpp-tem-conversa .wpp-sidebar { display: none; }
     body:not(.wpp-tem-conversa) .wpp-chat { display: none; }
     .wpp-voltar-mobile { display: inline-block; margin-right: 10px; }
+    .wpp-btn-txt { display: none; }
+    .wpp-chat-acoes button, .wpp-mais-acoes summary { min-width: 44px; min-height: 44px; padding: 0 10px; }
 }
 </style>
 <script>
 <?= wppPreviewJs() ?>
 </script>
 </head>
-<body class="<?= ($telefoneAtivo && $contatoAtivo) ? 'wpp-tem-conversa' : '' ?>">
+<body class="wpp-page<?= ($telefoneAtivo && $contatoAtivo) ? ' wpp-tem-conversa' : '' ?>">
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <?php include __DIR__ . '/_topbar.php'; ?>
 
@@ -605,7 +646,8 @@ if ($telefoneAtivo && !$contatoAtivo) {
             <div class="wpp-vazio">👈 Selecione uma conversa pra ver o histórico e responder.</div>
         <?php else: ?>
             <div class="wpp-chat-header">
-                <div>
+              <div class="wpp-chat-topo">
+                <div class="wpp-chat-quem">
                     <div class="wpp-avatar-placeholder" data-av-phone="<?= e($telefoneAtivo) ?>" data-nome="<?= e($contatoAtivo['cliente_nome'] ?: $telefoneAtivo) ?>"><?= e(mb_strtoupper(mb_substr($contatoAtivo['cliente_nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
                     <div>
                         <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
@@ -613,34 +655,39 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         <div style="font-size:12px;color:var(--texto-fraco)"><?= e($telefoneAtivo) ?> <span id="wpp-presenca"></span></div>
                     </div>
                 </div>
-                <div style="display:flex;gap:8px">
+                <div class="wpp-chat-acoes">
+                    <button type="button" class="wpp-btn-detalhes" id="wpp-btn-detalhes" aria-expanded="false" aria-controls="wpp-chat-detalhes" title="Etapa, responsável e encerrar">⚙<span class="wpp-btn-txt"> Detalhes</span></button>
                     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
                         <form method="post" class="inline">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="toggle_ia">
                             <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                            <button type="submit" style="margin-top:0;padding:6px 12px;font-size:12.5px">
-                                <?= $contatoAtivo['ia_pausada'] ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?>
+                            <button type="submit" title="<?= $contatoAtivo['ia_pausada'] ? 'Reativar IA' : 'Pausar IA' ?>">
+                                <?= $contatoAtivo['ia_pausada'] ? '▶️<span class="wpp-btn-txt"> Reativar IA</span>' : '⏸️<span class="wpp-btn-txt"> Pausar IA</span>' ?>
                             </button>
                         </form>
-                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Limpar essa conversa do CRM? Some só da tela do sistema — o cliente continua vendo tudo no WhatsApp dele. A IA também perde o histórico dessa conversa.');">
-                            <?= csrfField() ?>
-                            <input type="hidden" name="acao" value="limpar_conversa">
-                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                            <button type="submit" class="perigo" style="margin-top:0;padding:6px 12px;font-size:12.5px">🧹 Limpar conversa</button>
-                        </form>
-                    <?php endif; ?>
-                    <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
-                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Apagar essa conversa inteira? Não tem como desfazer.');">
-                            <?= csrfField() ?>
-                            <input type="hidden" name="acao" value="excluir_conversa">
-                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                            <button type="submit" class="perigo" style="margin-top:0;padding:6px 12px;font-size:12.5px">
-                                🗑️ Excluir conversa
-                            </button>
-                        </form>
+                        <details class="wpp-mais-acoes">
+                            <summary title="Mais ações" aria-label="Mais ações">⋯</summary>
+                            <div class="wpp-mais-acoes-menu">
+                                <form method="post" onsubmit="return confirmarAcao(this, 'Limpar essa conversa do CRM? Some só da tela do sistema — o cliente continua vendo tudo no WhatsApp dele. A IA também perde o histórico dessa conversa.');">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="acao" value="limpar_conversa">
+                                    <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                                    <button type="submit" class="perigo">🧹 Limpar conversa</button>
+                                </form>
+                                <?php if ($_SESSION['admin_perfil'] === 'super_admin'): ?>
+                                <form method="post" onsubmit="return confirmarAcao(this, 'Apagar essa conversa inteira? Não tem como desfazer.');">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="acao" value="excluir_conversa">
+                                    <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                                    <button type="submit" class="perigo">🗑️ Excluir conversa</button>
+                                </form>
+                                <?php endif; ?>
+                            </div>
+                        </details>
                     <?php endif; ?>
                 </div>
+              </div>
                 <?php
                 $opEtapaInbox = buscarOportunidadeAtivaPorTelefone($telefoneAtivo);
                 if ($opEtapaInbox) {
@@ -649,6 +696,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     $opEtapaInbox += ($stResp->fetch() ?: []);
                 }
                 ?>
+              <div class="wpp-chat-detalhes" id="wpp-chat-detalhes">
                 <?php if ($opEtapaInbox): ?>
                 <?php else:
                     $stEncV = getDB()->prepare("SELECT o.id, o.etapa, o.motivo_perda FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
@@ -683,7 +731,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                                 <?php endforeach; ?>
                             </select>
                             <button type="submit">Mudar</button>
-                            <a href="/admin/oportunidade.php?id=<?= (int)$opEtapaInbox['id'] ?>">Abrir oportunidade #<?= (int)$opEtapaInbox['id'] ?> →</a>
+                            <a href="/admin/oportunidade.php?id=<?= (int)$opEtapaInbox['id'] ?>" title="Abrir oportunidade #<?= (int)$opEtapaInbox['id'] ?>">Oport. #<?= (int)$opEtapaInbox['id'] ?> →</a>
                         </form>
                         <?php
                         $stDest = getDB()->prepare("SELECT id, nome FROM usuarios WHERE perfil IN ('consultor','super_admin') AND bloqueado = 0 AND id != ? ORDER BY nome");
@@ -695,7 +743,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="transferir_lead_inbox">
                             <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
-                            <label for="wpp-transf-select">Responsável: <?= e($opEtapaInbox['responsavel_nome'] ?: '— sem responsável') ?> →</label>
+                            <label for="wpp-transf-select">👤 <?= e($opEtapaInbox['responsavel_nome'] ?: 'sem responsável') ?> →</label>
                             <select name="responsavel_novo" id="wpp-transf-select" required>
                                 <option value="">transferir para...</option>
                                 <?php foreach ($destinosInbox as $d): ?>
@@ -722,17 +770,16 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         </form>
                     </details>
                 <?php endif; ?>
+              </div>
                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor' && conversaEmQualificacaoWhatsapp($telefoneAtivo)): ?>
-                    <div style="flex-basis:100%;font-size:12.5px;margin-top:6px;padding:6px 10px;border-radius:8px;background:var(--laranja-bg);color:var(--laranja)">
-                        🤖 A IA ainda está qualificando esse lead. Se você responder, a IA pausa e para de qualificar — só responda se for assumir o atendimento.
-                    </div>
+                    <?php $avisoQualif = '🤖 A IA ainda está qualificando esse lead. Se você responder, a IA pausa e para de qualificar — só responda se for assumir o atendimento.'; ?>
+                    <div class="wpp-aviso" style="background:var(--laranja-bg);color:var(--laranja)" title="<?= e($avisoQualif) ?>"><?= e($avisoQualif) ?></div>
                 <?php endif; ?>
                 <?php $decIa = iaUltimaDecisao($telefoneAtivo); ?>
                 <?php if ($decIa): ?>
                     <?php // 30/10/2026, "minha IA não está respondendo" — o que a IA decidiu na última mensagem. ?>
-                    <div style="flex-basis:100%;font-size:12.5px;margin-top:6px;padding:6px 10px;border-radius:8px;background:<?= $decIa['codigo'] === 'respondeu' ? 'var(--fundo)' : 'var(--vermelho-bg)' ?>;color:<?= $decIa['codigo'] === 'respondeu' ? 'var(--texto-fraco)' : 'var(--vermelho)' ?>">
-                        🤖 Última mensagem (<?= e(date('d/m H:i', strtotime($decIa['quando']))) ?>): <?= e(iaDecisaoTexto($decIa['codigo'])) ?><?= $decIa['detalhe'] !== '' ? ' — ' . e($decIa['detalhe']) : '' ?>
-                    </div>
+                    <?php $avisoDec = '🤖 Última mensagem (' . date('d/m H:i', strtotime($decIa['quando'])) . '): ' . iaDecisaoTexto($decIa['codigo']) . ($decIa['detalhe'] !== '' ? ' — ' . $decIa['detalhe'] : ''); ?>
+                    <div class="wpp-aviso" style="background:<?= $decIa['codigo'] === 'respondeu' ? 'var(--fundo)' : 'var(--vermelho-bg)' ?>;color:<?= $decIa['codigo'] === 'respondeu' ? 'var(--texto-fraco)' : 'var(--vermelho)' ?>" title="<?= e($avisoDec) ?>"><?= e($avisoDec) ?></div>
                 <?php endif; ?>
             </div>
 
@@ -766,7 +813,7 @@ if ($telefoneAtivo && !$contatoAtivo) {
                     <input type="hidden" name="acao" value="enviar_mensagem">
                     <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                     <input type="hidden" name="ajax" value="1">
-                    <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                    <textarea name="texto" rows="1" placeholder="Digite uma mensagem..." required></textarea>
                     <button type="button" id="wpp-btn-anexo" title="Anexar arquivo (foto ou documento)" aria-label="Anexar arquivo" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
                     <input type="file" id="wpp-input-anexo" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none">
                     <button type="button" id="wpp-btn-audio" title="Gravar áudio" aria-label="Gravar áudio" style="padding:0 12px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button>
@@ -1500,6 +1547,29 @@ if ($telefoneAtivo && !$contatoAtivo) {
     });
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') document.getElementById('foto-lightbox').classList.remove('aberto');
+    });
+})();
+</script>
+
+<script>
+// ⚙ Detalhes (telas baixas) + fechar o menu ⋯ ao clicar fora. Só layout.
+(function () {
+    var btn = document.getElementById('wpp-btn-detalhes');
+    var det = document.getElementById('wpp-chat-detalhes');
+    if (btn && det) {
+        var aberto = false;
+        try { aberto = localStorage.getItem('wpp_detalhes_aberto') === '1'; } catch (e) {}
+        var aplicar = function () { det.classList.toggle('aberto', aberto); btn.setAttribute('aria-expanded', aberto ? 'true' : 'false'); };
+        aplicar();
+        btn.addEventListener('click', function () {
+            aberto = !aberto; aplicar();
+            try { localStorage.setItem('wpp_detalhes_aberto', aberto ? '1' : '0'); } catch (e) {}
+        });
+    }
+    document.addEventListener('click', function (e) {
+        document.querySelectorAll('.wpp-mais-acoes[open]').forEach(function (d) {
+            if (!d.contains(e.target)) d.removeAttribute('open');
+        });
     });
 })();
 </script>
