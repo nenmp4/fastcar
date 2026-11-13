@@ -292,6 +292,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $telefoneAtivo = $telPost;
             }
+        } elseif ($acao === 'mudar_etapa_inbox' && $telPost) {
+            // 13/11/2026, "colocar no inbox a opção de mudar etapa do cliente"
+            // — mesma função central de sempre (mudarEtapa(), regra #6, grava
+            // histórico). Só etapas ativas: fechar a pasta continua na tela
+            // da oportunidade (checklist de documentos, regra #7); encerrar
+            // tem o botão próprio abaixo.
+            $etapaNova = (string)($_POST['etapa_nova'] ?? '');
+            $opInbox = buscarOportunidadeAtivaPorTelefone($telPost);
+            if (!$opInbox) {
+                $erro = 'Esse telefone não tem oportunidade ativa no funil.';
+            } elseif (!in_array($etapaNova, ETAPAS_ATIVAS, true)) {
+                $erro = 'Etapa inválida.';
+            } elseif ($etapaNova === $opInbox['etapa']) {
+                $sucesso = 'O cliente já está nessa etapa.';
+            } else {
+                $stAss = getDB()->prepare("SELECT 1 FROM contratos WHERE oportunidade_id = ? AND tipo = 'compra' AND status = 'assinado'");
+                $stAss->execute([(int)$opInbox['id']]);
+                if ($stAss->fetchColumn() && $_SESSION['admin_perfil'] !== 'super_admin') {
+                    $erro = 'Essa compra já tem contrato assinado — só o super admin muda a etapa.';
+                } else {
+                    try {
+                        mudarEtapa((int)$opInbox['id'], $etapaNova, (int)$_SESSION['admin_id'], 'Etapa alterada pelo WhatsApp Box');
+                        $sucesso = 'Etapa alterada para ' . etapaLabel($etapaNova) . '.';
+                    } catch (Throwable $e) {
+                        $erro = 'Não deu pra mudar a etapa: ' . $e->getMessage();
+                    }
+                }
+            }
+            $telefoneAtivo = $telPost;
         } elseif ($acao === 'excluir_conversa' && $telPost) {
             // Restrito ao super_admin — ação destrutiva (apaga o histórico de
             // mensagens pra sempre), sem tela de confirmação própria porque o
@@ -414,6 +443,11 @@ if ($telefoneAtivo && !$contatoAtivo) {
 .wpp-encerrar-details form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .wpp-encerrar-details form input[type="text"] { flex: 1; min-width: 220px; margin: 0; }
 .wpp-encerrar-details form button { margin: 0; white-space: nowrap; }
+.wpp-etapa-form { flex-basis: 100%; order: 98; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.wpp-etapa-form label { margin: 0; font-weight: 600; }
+.wpp-etapa-form select { width: auto; max-width: 100%; margin: 0; }
+.wpp-etapa-form button { margin: 0; padding: 6px 14px; min-height: 44px; }
+.wpp-etapa-form a { font-size: 12.5px; }
 .wpp-thread { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background: var(--fundo); }
 .wpp-thread .msg small { display: block; margin-top: 3px; opacity: .65; font-size: 10.5px; }
 .wpp-form { padding: 14px 20px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
@@ -550,6 +584,27 @@ if ($telefoneAtivo && !$contatoAtivo) {
                         </form>
                     <?php endif; ?>
                 </div>
+                <?php $opEtapaInbox = buscarOportunidadeAtivaPorTelefone($telefoneAtivo); ?>
+                <?php if ($opEtapaInbox): ?>
+                    <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
+                        <form method="post" class="wpp-etapa-form" onsubmit="return confirmarAcao(this, 'Mudar a etapa desse cliente no funil?');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="mudar_etapa_inbox">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <label for="wpp-etapa-select">Etapa:</label>
+                            <select name="etapa_nova" id="wpp-etapa-select">
+                                <?php foreach (ETAPAS_ATIVAS as $et): ?>
+                                    <option value="<?= e($et) ?>" <?= $opEtapaInbox['etapa'] === $et ? 'selected' : '' ?>><?= e(etapaLabel($et)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="submit">Mudar</button>
+                            <a href="/admin/oportunidade.php?id=<?= (int)$opEtapaInbox['id'] ?>">Abrir oportunidade #<?= (int)$opEtapaInbox['id'] ?> →</a>
+                        </form>
+                    <?php else: ?>
+                        <div class="wpp-etapa-form">Etapa: <strong><?= e(etapaLabel($opEtapaInbox['etapa'])) ?></strong>
+                            <a href="/admin/oportunidade.php?id=<?= (int)$opEtapaInbox['id'] ?>">Abrir oportunidade #<?= (int)$opEtapaInbox['id'] ?> →</a></div>
+                    <?php endif; ?>
+                <?php endif; ?>
                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
                     <details class="wpp-encerrar-details">
                         <summary>🔒 Encerrar atendimento</summary>

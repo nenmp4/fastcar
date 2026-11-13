@@ -3487,6 +3487,7 @@ segue no schema sem uso novo, não removida sem ganho real),
   em banco isolado (consultor habilitado aparece na lista e preenche o
   checklist; consultor sem a opção é ignorado) + migração contra schema
   anterior + smoke.
+- **Mudar etapa direto no WhatsApp Box (compra)** (13/11/2026, "colocar no inbox a opção de mudar etapa do cliente") — seletor "Etapa:" no cabeçalho da conversa (`admin/whatsapp_inbox.php`, ação `mudar_etapa_inbox`), só etapas ativas, via `mudarEtapa()` (grava histórico "Etapa alterada pelo WhatsApp Box") + link pra oportunidade. Fechar a pasta continua na tela da oportunidade (checklist); encerrar tem botão próprio. Contrato de compra assinado → só super admin muda. Supervisor só vê a etapa. Testado via HTTP em banco isolado.
 - **Vistoria de saída pendente no Estoque** (13/11/2026, "contrato assinado, carro sai do estoque sem vistoria de saída") — card "📝 Contrato assinado — aguardando vistoria de saída" no topo de `admin/estoque.php`: negociação com contrato assinado nos últimos 30 dias e sem vistoria `tipo='venda'` concluída (`listarVendasAguardandoVistoriaSaida()`, `includes/veiculo_avaliacoes.php`). Botão cria a vistoria de entrega (ação `fazer_vistoria_saida`, mesma `criarAvaliacao()`), ou "Continuar vistoria" se já existe; só sai da lista ao concluir. Testado via HTTP em banco isolado.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
