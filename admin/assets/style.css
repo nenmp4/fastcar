@@ -729,6 +729,9 @@ a.zapi-status-badge:hover { background: rgba(255,255,255,.22); text-decoration: 
     animation: toast-entrando .25s ease-out;
 }
 .toast:hover { box-shadow: 0 10px 28px rgba(16,24,40,.18); }
+.toast { position: relative; padding-right: 38px; }
+.toast-fechar { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--texto-suave); font-size: 15px; line-height: 32px; cursor: pointer; }
+.toast-fechar:hover { background: rgba(16,24,40,.08); }
 .toast strong { color: var(--azul-escuro); }
 /* Contrato assinado (30/10/2026, "esse importante") — verde forte, maior, fica 60s. */
 .toast-importante { border-left: 6px solid #16a34a; background: #ecfdf3; font-size: 14px; padding: 14px 16px; }

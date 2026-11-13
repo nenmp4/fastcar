@@ -111,15 +111,20 @@ $notifModulo = $notifModulo ?? null;
     function mostrarToast(titulo, msg, href, duracaoMs, importante) {
         var el = document.createElement('div');
         el.className = 'toast' + (importante ? ' toast-importante' : '');
-        el.innerHTML = '<strong>' + escNotif(titulo) + '</strong><br>' + escNotif(msg)
+        el.innerHTML = '<button type="button" class="toast-fechar" aria-label="Fechar">✕</button>'
+            + '<strong>' + escNotif(titulo) + '</strong><br>' + escNotif(msg)
             + (href ? '<br><small style="opacity:.75">toque pra abrir →</small>' : '');
         el.style.cursor = 'pointer';
-        el.addEventListener('click', function () { if (href) window.location.href = href; });
-        toastsEl.appendChild(el);
-        setTimeout(function () {
+        var fechar = function () {
+            if (el.classList.contains('toast-saindo')) return;
             el.classList.add('toast-saindo');
             setTimeout(function () { el.remove(); }, 300);
-        }, duracaoMs || 7000);
+        };
+        // 13/11/2026: "demorando sumir" — ✕ fecha na hora, sem abrir o link
+        el.querySelector('.toast-fechar').addEventListener('click', function (ev) { ev.stopPropagation(); fechar(); });
+        el.addEventListener('click', function () { if (href) window.location.href = href; });
+        toastsEl.appendChild(el);
+        setTimeout(fechar, duracaoMs || 7000);
     }
 
     function atualizarContador() {
@@ -163,7 +168,7 @@ $notifModulo = $notifModulo ?? null;
         // Contrato assinado nunca entra no agrupado "N novidades" — sempre
         // popup próprio, destacado (30/10/2026, "esse importante").
         itens.filter(function (n) { return n.tipo && n.tipo.indexOf('contrato_assinado') === 0; }).forEach(function (n) {
-            mostrarToast(n.titulo, n.mensagem, n.url, 60000, true);
+            mostrarToast(n.titulo, n.mensagem, n.url, 20000, true);
         });
         itens = itens.filter(function (n) { return !(n.tipo && n.tipo.indexOf('contrato_assinado') === 0); });
         if (itens.length === 0) return;
@@ -186,7 +191,7 @@ $notifModulo = $notifModulo ?? null;
         } else {
             itens.forEach(function (n) {
                 var importante = n.tipo && n.tipo.indexOf('contrato_assinado') === 0;
-                mostrarToast(n.titulo, n.mensagem, n.url, importante ? 60000 : (n.tipo === 'mensagem_whatsapp' ? 15000 : 7000), importante);
+                mostrarToast(n.titulo, n.mensagem, n.url, importante ? 20000 : (n.tipo === 'mensagem_whatsapp' ? 15000 : 7000), importante);
             });
         }
     }
