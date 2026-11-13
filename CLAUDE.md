@@ -1767,9 +1767,10 @@ segue no schema sem uso novo, não removida sem ganho real),
   fallback nas mensagens fixas). Depois: nunca pede documento (CNH, RG,
   CPF, comprovante, CRLV, contrato) — só a placa se o cliente não souber
   dos débitos. Foto do veículo obrigatória: sempre pede perto do fim e
-  lembra 1x no fechamento se não vier. WhatsApp Box do CONSULTOR esconde
-  conversa ainda em whatsapp/qualificacao_ia (`inboxEtapasVisiveisConsultor()`)
-  — ele respondia no meio e a IA pausava; aparece no CRM preenchido.
+  lembra 1x no fechamento se não vier. WhatsApp Box do CONSULTOR mostra
+  a carteira inteira (13/11/2026, "teria aparecer todas no inbox" — antes
+  escondia o que estava em whatsapp/qualificacao_ia): conversa que a IA ainda
+  qualifica vem marcada "🤖 IA qualificando" + aviso de que responder pausa a IA.
   "Não lidas" (badge, chip, contador) dos inboxes de compra e vendas só
   contam conversa com a IA pausada (humano atendendo); com a IA ativa não
   notifica nova mensagem. Lista padrão de TODOS os perfis (super admin
