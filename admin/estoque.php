@@ -43,6 +43,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'fazer_v
         $erro = $e->getMessage();
     }
 }
+// 13/11/2026: vistoria de SAÍDA (entrega ao comprador) de carro com contrato
+// de venda assinado — só sai da lista "aguardando vistoria" quando concluir.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'fazer_vistoria_saida') {
+    try {
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
+        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
+        $vendaIdS = (int)($_POST['venda_id'] ?? 0);
+        $avalId = souAvaliadorHabilitado() ? (int)$_SESSION['admin_id'] : (int)($_POST['avaliador_id'] ?? 0);
+        if (!usuarioIdEhAvaliador($avalId)) throw new RuntimeException('Escolha um avaliador pra fazer a vistoria.');
+        $pend = null;
+        foreach (listarVendasAguardandoVistoriaSaida() as $p) if ((int)$p['venda_id'] === $vendaIdS) $pend = $p;
+        if (!$pend) throw new RuntimeException('Essa venda não está aguardando vistoria de saída.');
+        $avId = criarAvaliacao((int)$pend['oportunidade_id'], 'venda', $vendaIdS, $avalId, (int)$_SESSION['admin_id'], $pend['tipo_veiculo'] === 'moto' ? 'moto' : 'carro');
+        header('Location: /admin/avaliacao.php?id=' . $avId);
+        exit;
+    } catch (Throwable $e) {
+        $erro = $e->getMessage();
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_link_cliente') {
     try {
@@ -484,6 +503,44 @@ function vmLerCrlv() {
 </div>
 <?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
+<?php $aguardandoSaida = $verOcultos ? [] : listarVendasAguardandoVistoriaSaida(); ?>
+<?php if ($aguardandoSaida): ?>
+<div class="card" style="border-left:4px solid var(--laranja)">
+    <h3 style="margin-top:0">📝 Contrato assinado — aguardando vistoria de saída (<?= count($aguardandoSaida) ?>)</h3>
+    <p><small>O carro só sai de vez do estoque quando a vistoria de entrega ao comprador estiver concluída.</small></p>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Veículo</th><th>Comprador</th><th>Assinado em</th><th>Ações</th></tr></thead>
+        <tbody>
+        <?php foreach ($aguardandoSaida as $p): ?>
+            <tr>
+                <td><?= ($iconeTipo[$p['tipo_veiculo'] ?? ''] ?? '🚗') . ' ' . (e(trim($p['veiculo_marca'] . ' ' . $p['veiculo_modelo'] . ' ' . $p['veiculo_ano'])) ?: '—') ?><?= $p['veiculo_placa'] ? '<br><small>' . e(strtoupper($p['veiculo_placa'])) . '</small>' : '' ?></td>
+                <td><a href="/admin/venda.php?id=<?= (int)$p['venda_id'] ?>"><?= e($p['comprador_nome'] ?: 'Venda #' . (int)$p['venda_id']) ?></a></td>
+                <td><?= $p['assinado_em'] ? date('d/m/Y H:i', strtotime($p['assinado_em'])) : '—' ?><br><span class="badge badge-aviso">⏳ Vistoria pendente</span></td>
+                <td>
+                    <?php if ($p['vistoria_id']): ?>
+                        <a class="btn" href="/admin/avaliacao.php?id=<?= (int)$p['vistoria_id'] ?>">🔍 Continuar vistoria</a>
+                    <?php elseif ($_SESSION['admin_perfil'] === 'supervisor'): ?>
+                        <small>—</small>
+                    <?php elseif (souAvaliadorHabilitado()): ?>
+                        <form method="post" style="margin:0"><?= csrfField() ?><input type="hidden" name="acao" value="fazer_vistoria_saida"><input type="hidden" name="venda_id" value="<?= (int)$p['venda_id'] ?>">
+                            <button type="submit" class="btn-vistoria" style="margin:0">🔍 Fazer vistoria de saída</button></form>
+                    <?php elseif ($avaliadoresEstoque): ?>
+                        <form method="post" style="margin:0;display:flex;gap:6px;flex-wrap:wrap"><?= csrfField() ?><input type="hidden" name="acao" value="fazer_vistoria_saida"><input type="hidden" name="venda_id" value="<?= (int)$p['venda_id'] ?>">
+                            <select name="avaliador_id" required style="margin:0;max-width:220px">
+                                <option value="">— escolha o avaliador —</option>
+                                <?php foreach ($avaliadoresEstoque as $av): ?><option value="<?= (int)$av['id'] ?>"><?= e($av['nome']) ?></option><?php endforeach; ?>
+                            </select>
+                            <button type="submit" class="btn-vistoria" style="margin:0;width:auto">🔍 Fazer vistoria de saída</button></form>
+                    <?php else: ?>
+                        <small>Nenhum avaliador cadastrado.</small>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 <?php if (!$veiculos): ?>
     <div class="card"><p>Nenhum veículo disponível<?= ($busca !== '' || $tipoFiltro !== '') ? ' com esse filtro' : ' no estoque agora' ?>.</p></div>
 <?php else: ?>

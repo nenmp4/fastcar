@@ -3487,6 +3487,7 @@ segue no schema sem uso novo, não removida sem ganho real),
   em banco isolado (consultor habilitado aparece na lista e preenche o
   checklist; consultor sem a opção é ignorado) + migração contra schema
   anterior + smoke.
+- **Vistoria de saída pendente no Estoque** (13/11/2026, "contrato assinado, carro sai do estoque sem vistoria de saída") — card "📝 Contrato assinado — aguardando vistoria de saída" no topo de `admin/estoque.php`: negociação com contrato assinado nos últimos 30 dias e sem vistoria `tipo='venda'` concluída (`listarVendasAguardandoVistoriaSaida()`, `includes/veiculo_avaliacoes.php`). Botão cria a vistoria de entrega (ação `fazer_vistoria_saida`, mesma `criarAvaliacao()`), ou "Continuar vistoria" se já existe; só sai da lista ao concluir. Testado via HTTP em banco isolado.
 - **Pendências pós-venda** (`includes/pendencias_pos_venda.php` +
   `admin/pendencias_pos_venda.php`, 16/09/2026) — `oportunidade_pendencias_pos_venda`
   existia no schema desde o início (regra #8: "'Compra concluída' ≠ fim de

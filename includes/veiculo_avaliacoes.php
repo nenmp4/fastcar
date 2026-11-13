@@ -542,6 +542,33 @@ function veiculoAvaliacaoSugestaoRevenda(?int $percentual): string {
     return '🔧 Fazer manutenção';
 }
 
+/**
+ * 13/11/2026 — "contrato assinado, carro sai do estoque sem vistoria de
+ * saída": negociação com contrato assinado (últimos 30 dias) cujo veículo
+ * ainda não teve a vistoria de entrega (tipo='venda') concluída. Fica
+ * visível no Estoque como "aguardando vistoria de saída" até concluir.
+ * Traz a vistoria em andamento, se já existir.
+ */
+function listarVendasAguardandoVistoriaSaida(): array {
+    $stmt = getDB()->query("
+        SELECT v.id AS venda_id, v.oportunidade_id, v.comprador_nome, v.etapa,
+               o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, o.tipo_veiculo,
+               MAX(c.assinado_em) AS assinado_em,
+               (SELECT va.id FROM veiculo_avaliacoes va WHERE va.venda_id = v.id AND va.tipo = 'venda'
+                  AND va.status IN ('pendente', 'em_andamento') ORDER BY va.id DESC LIMIT 1) AS vistoria_id
+        FROM vendas v
+        JOIN oportunidades o ON o.id = v.oportunidade_id
+        JOIN contratos c ON c.venda_id = v.id AND c.status = 'assinado'
+        WHERE v.etapa != 'cancelada'
+          AND c.assinado_em >= datetime('now', 'localtime', '-30 days')
+          AND NOT EXISTS (SELECT 1 FROM veiculo_avaliacoes vc WHERE vc.venda_id = v.id
+                            AND vc.tipo = 'venda' AND vc.status = 'concluida')
+        GROUP BY v.id
+        ORDER BY assinado_em DESC
+    ");
+    return $stmt->fetchAll();
+}
+
 function buscarScoreVistoriaRecente(int $oportunidadeId): ?array {
     $db = getDB();
     $stmt = $db->prepare("
