@@ -80,10 +80,14 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ate)) $ate = date('Y-m-t');
   <a href="/admin/financeiro-relatorio-extrato.php?de=<?= e($de) ?>&ate=<?= e($ate) ?>" target="_blank" class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:.6rem;background:#0f766e;color:#fff;border:none">
     📄 Ver / Baixar Extrato Completo (PDF)
   </a>
+  <a href="/admin/financeiro-relatorio-excel.php?de=<?= e($de) ?>&ate=<?= e($ate) ?>" class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:.6rem;background:#15803d;color:#fff;border:none">
+    📗 Baixar relatório em Excel (.xlsx)
+  </a>
 
   <div style="margin-top:1.5rem;padding:1rem;background:#f8fafc;border-radius:.5rem;font-size:.82rem;color:var(--muted)">
     <strong>DRE Gerencial:</strong> agrupa as categorias em blocos (Receita, Despesas Operacionais, Pessoal, Administrativas, Marketing, Impostos, Outras) até chegar no Resultado Líquido — uso interno/gerencial, não substitui o DRE contábil oficial que o contador prepara.<br><br>
-    <strong>Extrato Completo:</strong> lista todo lançamento do período (data, categoria, descrição, vínculo, forma de pagamento, status, valor) — o detalhe linha a linha que o DRE resume em blocos.
+    <strong>Extrato Completo:</strong> lista todo lançamento do período (data, categoria, descrição, vínculo, forma de pagamento, status, valor) — o detalhe linha a linha que o DRE resume em blocos.<br><br>
+    <strong>Excel:</strong> planilha com 3 abas — Resumo (realizado, previsto e atrasado), DRE (por grupo e categoria) e Lançamentos (1 por linha, com datas e valores prontos pra filtrar e somar).
   </div>
 </div>
 
