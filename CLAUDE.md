@@ -9,9 +9,30 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
 `includes/db.php`, `includes/security.php`, bot WhatsApp e CRM.
 
 - **Repositório:** https://github.com/nenmp4/fastcar
-- **Estado:** projeto novo, sem deploy ainda — repo estava vazio até 12/09/2026
+- **Estado:** em produção desde 15/09/2026 (`sistema.fastcar.solutions`, VPS HostGator) — repo estava vazio até 12/09/2026
 - **Responsável de negócio:** Jean Susej (define fluxo, negociação e fechamento — bloco 6/7 do funil)
 - **Dev:** José (mesmo dev do JurídicoSaaS)
+
+### Números do projeto (atualizado em 14/11/2026)
+
+| Métrica | Valor |
+|---|---|
+| Commits na `main` desde o início (12/09/2026) | 761 (~12/dia) |
+| Linhas de código (PHP+SQL+CSS+JS+Shell) | 76.161 em 264 arquivos |
+| — PHP | 72.857 |
+| — SQL (`install/schema.sql` etc) | 1.551 |
+| — CSS | 1.321 |
+| — JavaScript (arquivos `.js`; o resto é inline no PHP) | 291 |
+| — Shell | 141 |
+| Este `CLAUDE.md` | ~14.300 linhas |
+
+Pra recalcular (rodar na raiz do repo):
+
+```bash
+git rev-list --count origin/main
+for e in php sql css js sh; do printf "%s " $e; git ls-files "*.$e" | xargs cat | wc -l; done
+git ls-files | grep -E '\.(php|js|css|sql|sh)$' | wc -l
+```
 
 ---
 
