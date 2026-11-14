@@ -49,6 +49,36 @@ Credenciais nunca vão aqui — ficam em Configurações (tabela `config`) ou em
 | 7 | **Conta BM Meta** | Business Manager "Fastcar Solutions". A conta WhatsApp Business oficial (app "Fastcar Bot") foi **desabilitada permanentemente** em 30/09/2026 — pedido de reconsideração enviado. O BM continua sendo usado pros anúncios e pra Meta Marketing API (CPL, token `ads_read`). |
 | 8 | **Anúncios** | Meta Ads "Clique para WhatsApp", apontando pro WhatsApp principal. Origem (campanha/anúncio) capturada sozinha na 1ª mensagem; gasto puxado pelo `cron/meta_insights.php` e lançado no Financeiro. Relatórios: `admin/origem_leads.php` e `admin/relatorio_cpl.php`. |
 
+### Operação (atualizado em 14/11/2026)
+
+**Equipe** (perfil no sistema — só os nomes já citados neste arquivo; conferir em Usuários se mudar):
+
+| Pessoa | Papel |
+|---|---|
+| Jean Susej | Dono do negócio, negociação/fechamento (bloco 6/7), também fecha vendas |
+| José | Dev do sistema (e do JurídicoSaaS) |
+| Dayane Carmo | Era consultora, virou super admin (filtro do funil ainda mostra a carteira antiga dela) |
+| Anderson Souza, Rafael Rocha Bueno, Gabriela | Consultores de compra (fila de leads/rodízio) |
+| Ingrid Gonçalves | Gerencia o Business Manager da Meta |
+| Gildasio Batista | Avaliador (vistoria de veículo) |
+
+**Perfis:** super_admin (tudo) · supervisor (vê tudo, não altera) · consultor (compra, carteira própria) · vendedor (só vendas) · financeiro (só financeiro + consulta de clientes) · avaliador (só vistorias; consultor pode ganhar "também faz vistoria").
+
+**Rotina do dia (automática):**
+
+| Horário | O que acontece |
+|---|---|
+| 24h | IA qualifica lead novo no WhatsApp (janela configurável, hoje 00:00–23:59) |
+| 10:00 | Fila de leads abre — consultores ficam disponíveis (menos quem está com falta marcada) |
+| 19:20 | Fila fecha — todo mundo offline, lead novo fica sem dono até o dia seguinte |
+| 19:30 | Lista de leads de hoje parados em "CRM preenchido" (compra) e "negociação" (vendas) vai pro WhatsApp de notificação; resumo de produtividade vai pros supervisores |
+| a cada 2–30 min | Resgate de mensagem sem resposta da IA, alerta de atraso/lead quente, sync ZapSign (5 min) e Asaas (30 min) |
+| madrugada | Backups (banco 4x/dia, ZIP completo + Drive 1x/dia), despesas fixas do mês, encerra lead mudo há 7 dias |
+
+**Fluxo de um negócio de compra:** anúncio → WhatsApp → IA qualifica → CRM preenchido (cai pro consultor da fila) → atendimento → negociação → vistoria/presencial → contrato (ZapSign: cliente + FASTCAR + 2 testemunhas) → documentos completos → pasta fechada → pendências pós-venda (quitação no banco, 12–18 meses, até 24).
+
+**Fluxo de venda (revenda):** veículo da frota → negociação (promissória, locação ou manual) → contrato → vendido → parcelas no Asaas / entrada conferida no extrato do C6 → vistoria de saída.
+
 Outros serviços em uso: **GitHub** (repositório + webhook de deploy), **ZapSign** (assinatura de contrato), **Asaas** (cobrança das parcelas), **PlacaFIPE** (FIPE pela placa), **BrasilAPI** (CNPJ/FIPE, sem chave), **ZapCar** (consulta veicular — desativada desde 08/10/2026).
 
 ---
