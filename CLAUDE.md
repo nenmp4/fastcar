@@ -34,6 +34,23 @@ for e in php sql css js sh; do printf "%s " $e; git ls-files "*.$e" | xargs cat 
 git ls-files | grep -E '\.(php|js|css|sql|sh)$' | wc -l
 ```
 
+### Infraestrutura e serviços (atualizado em 14/11/2026)
+
+Credenciais nunca vão aqui — ficam em Configurações (tabela `config`) ou em `config/google_drive_credentials.json` na VPS.
+
+| # | Item | O que é / pra que serve |
+|---|------|--------------------------|
+| 1 | **VPS do sistema** | HostGator VPS NVMe 4 (2 vCPU, 4GB RAM, 100GB NVMe), São Paulo, Ubuntu sem painel. nginx + PHP-FPM (ea-php84) + SQLite, atrás da Cloudflare. Roda o CRM, webhooks, crons e deploy automático (ver `install/SETUP_VPS.md`). |
+| 2 | **Canais de WhatsApp (2)** | Os 2 via Evolution API: **principal** (compra/leads — instância "Fastacar Solutions", número 11 9 5834-7764, recebe os leads dos anúncios) e **vendas** (instância dedicada, comprador de revenda). Z-API e Meta oficial ficam desativadas pelo kill switch (`whatsapp_zapi_meta_desativado`), credenciais guardadas. |
+| 3 | **IA (2)** | **Google Gemini** (principal — `gemini-3.5-flash-lite`, cai pro `gemini-3.6-flash` se falhar) e **OpenAI GPT** (`gpt-4o-mini`, fallback). Qualificação de lead (compra e venda), leitura de documento/CRLV, descrição de foto/áudio/vídeo. |
+| 4 | **Servidor Evolution** | VPS separada na HostGator (addon "Evolution API Whats"), Evolution API v2.3.7 self-hosted, IP `143.95.172.53`, sem domínio próprio ainda (SSL autoassinado → opção "ignorar SSL" em Configurações). Webhook: `chatbot-whatsapp/webhook/whatsapp_evolution.php`. |
+| 5 | **Google Workspace / Drive** | Domínio `fastcar.solutions`, caixa `contato@fastcar.solutions`. Service account `fastcar-crm` (mesmo projeto Google Cloud da chave Gemini) com delegação em todo o domínio (`drive` + `gmail.send`): Drive guarda documentos, contratos e backups; Gmail API manda os e-mails do sistema. |
+| 6 | **Domínio** | `fastcar.solutions` (DNS na Cloudflare). `sistema.` = CRM (nunca indexado); raiz/`www` = site público + blog (indexados, Google Business Profile). Certificado via certbot. |
+| 7 | **Conta BM Meta** | Business Manager "Fastcar Solutions". A conta WhatsApp Business oficial (app "Fastcar Bot") foi **desabilitada permanentemente** em 30/09/2026 — pedido de reconsideração enviado. O BM continua sendo usado pros anúncios e pra Meta Marketing API (CPL, token `ads_read`). |
+| 8 | **Anúncios** | Meta Ads "Clique para WhatsApp", apontando pro WhatsApp principal. Origem (campanha/anúncio) capturada sozinha na 1ª mensagem; gasto puxado pelo `cron/meta_insights.php` e lançado no Financeiro. Relatórios: `admin/origem_leads.php` e `admin/relatorio_cpl.php`. |
+
+Outros serviços em uso: **GitHub** (repositório + webhook de deploy), **ZapSign** (assinatura de contrato), **Asaas** (cobrança das parcelas), **PlacaFIPE** (FIPE pela placa), **BrasilAPI** (CNPJ/FIPE, sem chave), **ZapCar** (consulta veicular — desativada desde 08/10/2026).
+
 ---
 
 ## Funil (8 blocos — definido pelo Jean em 12/09/2026)
