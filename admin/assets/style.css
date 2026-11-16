@@ -625,6 +625,8 @@ a.stat-card:hover { border-left-color: var(--azul-escuro); }
    tom --azul-escuro já usado no resto do projeto). */
 .stat-card.azul-forte { border-left-color: var(--azul-escuro); }
 .stat-card.azul-forte .valor { color: var(--azul-escuro); }
+.stat-card.roxo { border-left-color: var(--roxo); background: var(--roxo-bg); }
+.stat-card.roxo .valor { color: var(--roxo); }
 
 .funil-barra { margin: 12px 0 4px; }
 .funil-linha { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }

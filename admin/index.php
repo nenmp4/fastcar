@@ -401,6 +401,15 @@ switch ($filtroEspecial) {
         $etapasEscopo = ['perdido', 'sem_perfil'];
         $extraWhere = " AND o.motivo_perda LIKE '%encerrado automaticamente%'";
         break;
+    case 'reabertos':
+        // 16/11/2026, "card roxo nos consultores de leads reabertos do modo
+        // encerrados — follow-up": leads que voltaram da fila de encerrados
+        // sem resposta (reabrirEDistribuirEncerradosSemResposta) e seguem
+        // ativos — o consultor faz o follow-up MANUAL pelo WhatsApp Box
+        // (nunca automático, decisão de 16/11/2026).
+        $etapasEscopo = ETAPAS_ATIVAS;
+        $extraWhere = " AND EXISTS (SELECT 1 FROM oportunidade_historico h WHERE h.oportunidade_id = o.id AND h.observacao LIKE 'Reaberto da fila de encerrados%')";
+        break;
     case 'fechado_mes':
         $etapasEscopo = ['fechado'];
         $extraWhere = " AND o.data_compra >= date('now','localtime','start of month')";
@@ -860,6 +869,7 @@ $filtroEspecialLabel = [
     'semana' => 'Recebidos nos últimos 7 dias',
     'atrasadas' => 'Atrasadas', 'negociacao' => 'Em negociação/presencial',
     'fechado_mes' => 'Fechadas este mês',
+    'reabertos' => 'Leads reabertos da fila de encerrados — chame pelo WhatsApp Box (follow-up manual)',
     'encerrados_auto' => 'Encerrados automaticamente por falta de resposta — reabra (↩️) quem vale um follow-up',
 ][$filtroEspecial] ?? '';
 if ($filtroEspecialLabel !== ''): ?>
@@ -882,7 +892,22 @@ if ($filtroEspecialLabel !== ''): ?>
 <div class="alerta-sucesso"><?= e($_SESSION['flash_redistrib_encerrados']) ?></div>
 <?php unset($_SESSION['flash_redistrib_encerrados']); endif; ?>
 
-<?php if ($perfil === 'consultor'): ?>
+<?php if ($perfil === 'consultor'):
+    $stmtReab = $db->prepare("
+        SELECT COUNT(*) FROM oportunidades o
+        WHERE o.responsavel_id = ?
+          AND o.etapa IN (" . implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?')) . ")
+          AND EXISTS (SELECT 1 FROM oportunidade_historico h WHERE h.oportunidade_id = o.id AND h.observacao LIKE 'Reaberto da fila de encerrados%')
+    ");
+    $stmtReab->execute(array_merge([$meuId], ETAPAS_ATIVAS));
+    $totalReabertosMeus = (int)$stmtReab->fetchColumn();
+?>
+    <?php if ($totalReabertosMeus > 0): ?>
+    <a class="stat-card roxo" href="/admin/index.php?filtro=reabertos" style="margin-bottom:14px">
+        <div class="valor">🔁 <?= $totalReabertosMeus ?></div>
+        <div class="rotulo">Leads reabertos pra você — fazer follow-up pelo WhatsApp Box</div>
+    </a>
+    <?php endif; ?>
     <div class="stat-grid">
         <a class="stat-card" href="/admin/index.php">
             <div class="valor"><?= (int)$stats['ativas'] ?></div>
