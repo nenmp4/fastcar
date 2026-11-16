@@ -108,9 +108,9 @@ $notifModulo = $notifModulo ?? null;
     }
 
     // Texto vem do cliente (nome do WhatsApp, mensagem) — sempre escapado.
-    function mostrarToast(titulo, msg, href, duracaoMs, importante) {
+    function mostrarToast(titulo, msg, href, duracaoMs, importante, classeExtra) {
         var el = document.createElement('div');
-        el.className = 'toast' + (importante ? ' toast-importante' : '');
+        el.className = 'toast' + (importante ? ' toast-importante' : '') + (classeExtra ? ' ' + classeExtra : '');
         el.innerHTML = '<button type="button" class="toast-fechar" aria-label="Fechar">✕</button>'
             + '<strong>' + escNotif(titulo) + '</strong><br>' + escNotif(msg)
             + (href ? '<br><small style="opacity:.75">toque pra abrir →</small>' : '');
@@ -171,6 +171,12 @@ $notifModulo = $notifModulo ?? null;
             mostrarToast(n.titulo, n.mensagem, n.url, 20000, true);
         });
         itens = itens.filter(function (n) { return !(n.tipo && n.tipo.indexOf('contrato_assinado') === 0); });
+        // Leads reabertos da fila de encerrados (16/11/2026, "notificação
+        // diferente") — popup roxo próprio, nunca no agrupado.
+        itens.filter(function (n) { return n.tipo === 'leads_reabertos'; }).forEach(function (n) {
+            mostrarToast(n.titulo, n.mensagem, n.url, 20000, false, 'toast-reabertos');
+        });
+        itens = itens.filter(function (n) { return n.tipo !== 'leads_reabertos'; });
         if (itens.length === 0) return;
         var msgs = itens.filter(function (n) { return n.tipo === 'mensagem_whatsapp'; });
         if (msgs.length > 1) {

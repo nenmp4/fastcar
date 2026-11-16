@@ -1579,6 +1579,94 @@ function encerrarLeadsSemResposta(): array {
 }
 
 /**
+ * 16/11/2026 — "todos leads encerrados por falta de resposta criar uma fila
+ * redistribuir" / "entre os consultores" / "não por mesmo consultores".
+ * Reabre TODO lead encerrado automaticamente por silêncio (motivo_perda
+ * "encerrado automaticamente") — volta pra etapa 'whatsapp' via
+ * reabrirOportunidade() (histórico, regra #6) — e divide por igual entre os
+ * consultores ativos (perfil consultor, não bloqueado), ignorando teto e
+ * disponibilidade. Nunca devolve pro MESMO consultor: exclui o dono atual e
+ * quem já aparece no histórico do lead; se isso não deixar ninguém, exclui
+ * só o dono atual; sem nenhum outro consultor, fica com quem estava.
+ * Nunca manda mensagem pro cliente (o follow-up automático só pega quem
+ * falou nas últimas 23h).
+ *
+ * @return array{reabertos:int, por_consultor:array<string,int>}
+ */
+function reabrirEDistribuirEncerradosSemResposta(int $executadoPor): array {
+    $db = getDB();
+    $consultores = $db->query("SELECT id, nome FROM usuarios WHERE perfil = 'consultor' AND bloqueado = 0 ORDER BY id")->fetchAll();
+    $carga = [];
+    $nomes = [];
+    foreach ($consultores as $c) { $carga[(int)$c['id']] = 0; $nomes[(int)$c['id']] = $c['nome']; }
+
+    $ops = $db->query("
+        SELECT id, responsavel_id FROM oportunidades
+        WHERE etapa IN ('perdido', 'sem_perfil') AND motivo_perda LIKE '%encerrado automaticamente%'
+        ORDER BY id
+    ")->fetchAll();
+    $stHist = $db->prepare("SELECT DISTINCT responsavel_id FROM oportunidade_historico WHERE oportunidade_id = ? AND responsavel_id IS NOT NULL");
+
+    $reabertos = 0;
+    $porConsultor = [];
+    foreach ($ops as $op) {
+        $opId = (int)$op['id'];
+        $atual = (int)($op['responsavel_id'] ?? 0);
+        $stHist->execute([$opId]);
+        $jaTeve = array_map('intval', $stHist->fetchAll(PDO::FETCH_COLUMN));
+        $jaTeve[] = $atual;
+
+        $escolher = function (array $excluir) use ($carga): ?int {
+            $melhor = null;
+            foreach ($carga as $uid => $qtd) {
+                if (in_array($uid, $excluir, true)) continue;
+                if ($melhor === null || $qtd < $carga[$melhor]) $melhor = $uid;
+            }
+            return $melhor;
+        };
+        $novo = $escolher($jaTeve) ?? $escolher([$atual]) ?? ($atual ?: null);
+
+        try {
+            if (!reabrirOportunidade($opId, $executadoPor)) continue;
+            $reabertos++;
+            if ($novo && $novo !== $atual) {
+                $db->prepare("UPDATE oportunidades SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+                    ->execute([$novo, $opId]);
+                $db->prepare("
+                    INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+                    VALUES (?, 'whatsapp', 'whatsapp', ?, ?)
+                ")->execute([$opId, 'Reaberto da fila de encerrados sem resposta — redistribuído pra ' . ($nomes[$novo] ?? '?') . ' (outro consultor).', $executadoPor]);
+            }
+            if ($novo && isset($carga[$novo])) {
+                $carga[$novo]++;
+                $porConsultor[$nomes[$novo]] = ($porConsultor[$nomes[$novo]] ?? 0) + 1;
+            }
+        } catch (Throwable $e) {
+            // best-effort por lead — nunca derruba o lote
+        }
+    }
+    // Notificação PRÓPRIA (16/11/2026, "Coloca notificação diferente") — 1
+    // por consultor, tipo 'leads_reabertos' (popup roxo no sino, nunca
+    // misturado com "lead novo").
+    if ($porConsultor) {
+        try {
+            require_once __DIR__ . '/notificacoes.php';
+            $idPorNome = array_flip($nomes);
+            foreach ($porConsultor as $nomeC => $qtdC) {
+                if (!isset($idPorNome[$nomeC])) continue;
+                criarNotificacao((int)$idPorNome[$nomeC], 'leads_reabertos',
+                    "🔁 {$qtdC} lead(s) reaberto(s) pra você",
+                    'Leads que tinham sido encerrados por falta de resposta voltaram pra sua carteira (etapa WhatsApp) — vale um follow-up.',
+                    '/admin/index.php?etapa=whatsapp');
+            }
+        } catch (Throwable $e) {
+            // best-effort — nunca desfaz a redistribuição
+        }
+    }
+    return ['reabertos' => $reabertos, 'por_consultor' => $porConsultor];
+}
+
+/**
  * Lead encerrado sozinho por silêncio vai pra OUTRO consultor (09/11/2026,
  * "os leads que irão pra essa pasta redistribuir pra consultores
  * diferentes") — olhar novo no follow-up (aba "🤖 Encerrados sem

@@ -200,6 +200,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'atualiz
     exit;
 }
 
+// 16/11/2026 — "todos leads encerrados por falta de resposta criar uma fila
+// redistribuir": reabre TODOS da aba "🤖 Encerrados sem resposta" e divide
+// por igual entre os consultores, nunca pro mesmo de antes. Só super_admin.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'reabrir_distribuir_encerrados_auto') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit('Sessão expirada, recarregue a página.');
+    }
+    if ($perfil !== 'super_admin') {
+        http_response_code(403);
+        exit('Só o super admin pode redistribuir a fila de encerrados.');
+    }
+    $rDist = reabrirEDistribuirEncerradosSemResposta($meuId);
+    $partesDist = [];
+    foreach ($rDist['por_consultor'] as $nomeDist => $qtdDist) $partesDist[] = "{$nomeDist}: {$qtdDist}";
+    $_SESSION['flash_redistrib_encerrados'] = "{$rDist['reabertos']} lead(s) reaberto(s) e redistribuído(s)" . ($partesDist ? ' — ' . implode(', ', $partesDist) : '') . '.';
+    header('Location: /admin/index.php');
+    exit;
+}
+
 // 22/10/2026, "temos adcionar uma opção de clientes encerrado para voltar
 // pois ancerram cliente por engano" — botão "↩️ Reabrir" na aba "❌
 // Encerradas", chamando reabrirOportunidade() (includes/oportunidades.php).
@@ -847,7 +867,20 @@ if ($filtroEspecialLabel !== ''): ?>
     <span>🔎 Mostrando: <strong><?= e($filtroEspecialLabel) ?></strong></span>
     <a href="/admin/index.php<?= $qsBuscaSemEtapa !== '' ? '?' . $qsBuscaSemEtapa : '' ?>">Limpar filtro</a>
 </div>
+<?php if ($filtroEspecial === 'encerrados_auto' && $perfil === 'super_admin' && $totalEncerradasAuto > 0): ?>
+<div class="card" style="padding:12px 20px;margin-bottom:14px">
+    <form method="post" onsubmit="return confirmarAcao(this, 'Reabrir TODOS os <?= (int)$totalEncerradasAuto ?> lead(s) encerrados sem resposta e dividir por igual entre os consultores (nunca pro mesmo de antes)? Nenhuma mensagem é enviada ao cliente.')">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="reabrir_distribuir_encerrados_auto">
+        <button type="submit" style="margin-top:0">🔁 Reabrir todos e redistribuir entre os consultores</button>
+        <small style="display:block;color:var(--texto-suave)">Voltam pro funil ativo (etapa WhatsApp), divididos por igual entre os consultores ativos, cada lead pra um consultor diferente de quem já cuidou dele. Nenhuma mensagem sai pro cliente.</small>
+    </form>
+</div>
 <?php endif; ?>
+<?php endif; ?>
+<?php if (!empty($_SESSION['flash_redistrib_encerrados'])): ?>
+<div class="alerta-sucesso"><?= e($_SESSION['flash_redistrib_encerrados']) ?></div>
+<?php unset($_SESSION['flash_redistrib_encerrados']); endif; ?>
 
 <?php if ($perfil === 'consultor'): ?>
     <div class="stat-grid">
