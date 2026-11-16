@@ -620,6 +620,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setConfig('ia_qualificacao_horario_fechamento', $fechamento);
                 $sucesso = "Horário da IA de qualificação salvo: responde das {$abertura} às {$fechamento}, todo dia.";
             }
+        } elseif ($acao === 'salvar_encerramento_automatico_leads') {
+            $ligar = !empty($_POST['leads_encerramento_automatico']);
+            setConfig('leads_encerramento_automatico', $ligar ? '1' : '0');
+            $sucesso = $ligar
+                ? 'Encerramento automático ligado: lead mudo há mais de ' . LEADS_DIAS_SILENCIO_ENCERRAR . ' dias vira "perdido" no cron das 6h.'
+                : 'Encerramento automático desligado: nenhum lead é encerrado sozinho por silêncio.';
         } elseif ($acao === 'salvar_horario_notificar_crm_preenchido') {
             // 29/09/2026, "ao terminar turno 7:30 enviar todos leads crm
             // preenchido que chegarem para numero de notificação".
@@ -1950,6 +1956,20 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
            (card "🔔 Notificações", acima) a lista de leads que chegaram HOJE e ainda estão parados em "CRM
            preenchido" (já qualificados pela IA, esperando o consultor assumir). Roda via cron
            (<code>cron/leads_crm_preenchido_fim_turno.php</code>), 1x por dia, dedup automático.</small>
+    </form>
+
+    <form method="post" class="inline" style="margin-bottom:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_encerramento_automatico_leads">
+        <label style="display:inline-flex;align-items:center;gap:6px;min-height:44px">
+            <input type="checkbox" name="leads_encerramento_automatico" value="1" <?= encerramentoAutomaticoLeadsAtivo() ? 'checked' : '' ?>>
+            Encerrar sozinho lead que não responde há mais de <?= LEADS_DIAS_SILENCIO_ENCERRAR ?> dias
+        </label>
+        <button type="submit" style="margin-top:0">Salvar</button>
+        <small style="display:block;color:#666">Status: <strong><?= encerramentoAutomaticoLeadsAtivo() ? '✅ ligado' : '⏸️ desligado' ?></strong>.
+           Ligado, o cron das 6h (<code>cron/leads_sem_resposta.php</code>) marca como "perdido" o lead ainda em
+           WhatsApp/Qualificação IA sem nenhuma resposta do cliente há mais de <?= LEADS_DIAS_SILENCIO_ENCERRAR ?> dias.
+           Desligado, nada é encerrado sozinho — só manualmente.</small>
     </form>
 
     <?php if (!$fila): ?>

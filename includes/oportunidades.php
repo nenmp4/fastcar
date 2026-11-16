@@ -1537,6 +1537,15 @@ function atualizarObservacaoManual(int $oportunidadeId, string $observacao): boo
  */
 const LEADS_DIAS_SILENCIO_ENCERRAR = 7;
 
+/**
+ * 16/11/2026 — "Desativar Lead Encerramento Automático": o cron
+ * (cron/leads_sem_resposta.php) só encerra quando isto estiver ligado em
+ * Configurações → Fila. Nasce DESLIGADO (config nunca salva = desligado).
+ */
+function encerramentoAutomaticoLeadsAtivo(): bool {
+    return getConfig('leads_encerramento_automatico') === '1';
+}
+
 function encerrarLeadsSemResposta(): array {
     $db = getDB();
     $limite = date('Y-m-d H:i:s', strtotime('-' . LEADS_DIAS_SILENCIO_ENCERRAR . ' days'));

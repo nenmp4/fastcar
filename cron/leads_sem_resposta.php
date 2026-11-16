@@ -37,6 +37,14 @@ if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
 
 log_leads_sem_resposta('Iniciando em ' . date('d/m/Y H:i'));
 
+// 16/11/2026 — desligado por padrão (Configurações → Fila).
+if (!encerramentoAutomaticoLeadsAtivo()) {
+    log_leads_sem_resposta('Encerramento automático DESATIVADO em Configurações — nada a fazer.');
+    flock($lockHandle, LOCK_UN);
+    fclose($lockHandle);
+    exit;
+}
+
 $r = encerrarLeadsSemResposta();
 log_leads_sem_resposta("{$r['encerrados']} lead(s) encerrado(s) por silêncio (de {$r['total_candidatos']} candidato(s) analisado(s)).");
 if ($r['ids']) {
