@@ -14,6 +14,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/veiculo_avaliacoes.php'; // veiculoAvaliacaoScore()/listarItensAvaliacao() — resumo da vistoria
 
 function _veiculoPlacaNorm(?string $placa): string {
     return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$placa));
@@ -108,10 +109,28 @@ function veiculoHistorico(int $oportunidadeId): array {
     $st = $db->prepare("SELECT * FROM veiculo_avaliacoes WHERE oportunidade_id IN ($ph) ORDER BY id");
     $st->execute($ids);
     foreach ($st->fetchAll() as $a) {
-        $eventos[] = ['data' => $a['concluida_em'] ?: $a['created_at'], 'icone' => '🔍',
-            'titulo' => 'Vistoria de ' . ($a['tipo'] === 'venda' ? 'entrega (venda)' : 'recebimento (compra)') . ($a['status'] === 'concluida' ? ' concluída' : ' — ' . $a['status']),
-            'detalhe' => trim(($a['km_atual'] ? 'KM ' . number_format((int)$a['km_atual'], 0, ',', '.') : '') . ($nomeUsuario($a['avaliador_id']) ? ' · avaliador: ' . $nomeUsuario($a['avaliador_id']) : ''), ' ·'),
+        $nomeTipoVist = $a['tipo'] === 'venda' ? 'entrega (venda)' : 'recebimento (compra)';
+        if ($a['status'] === 'concluida') {
+            // Abertura como evento próprio + score/ressalvas na conclusão (16/11/2026).
+            $eventos[] = ['data' => $a['created_at'], 'icone' => '🔍', 'titulo' => 'Vistoria de ' . $nomeTipoVist . ' aberta (#' . $a['id'] . ')',
+                'detalhe' => $nomeUsuario($a['avaliador_id']) ? 'avaliador: ' . $nomeUsuario($a['avaliador_id']) : '', 'url' => '/admin/avaliacao.php?id=' . (int)$a['id']];
+            try {
+                $sc = veiculoAvaliacaoScore(listarItensAvaliacao((int)$a['id']));
+                $a['_score'] = ($sc['percentual'] !== null ? 'score ' . (int)$sc['percentual'] . '% · ' : '') . ($sc['problemas'] ? 'ressalvas: ' . implode('; ', $sc['problemas']) : 'sem ressalvas');
+            } catch (Throwable $e) {
+            }
+        }
+        $eventos[] = ['data' => $a['concluida_em'] ?: $a['created_at'], 'icone' => $a['status'] === 'concluida' ? '🔒' : '🔍',
+            'titulo' => 'Vistoria de ' . $nomeTipoVist . ($a['status'] === 'concluida' ? ' concluída' : ' — ' . $a['status']),
+            'detalhe' => trim(($a['km_atual'] ? 'KM ' . number_format((int)$a['km_atual'], 0, ',', '.') : '') . ($nomeUsuario($a['avaliador_id']) ? ' · avaliador: ' . $nomeUsuario($a['avaliador_id']) : '') . (!empty($a['_score']) ? ' · ' . $a['_score'] : ''), ' ·'),
             'url' => '/admin/avaliacao.php?id=' . (int)$a['id']];
+    }
+    // Reaberturas de vistoria concluída (só o super admin faz) — gravadas no histórico da oportunidade.
+    $st = $db->prepare("SELECT * FROM oportunidade_historico WHERE oportunidade_id IN ($ph) AND observacao LIKE '↩️ Vistoria%' ORDER BY id");
+    $st->execute($ids);
+    foreach ($st->fetchAll() as $h) {
+        $eventos[] = ['data' => $h['created_at'], 'icone' => '↩️', 'titulo' => 'Vistoria reaberta pra edição',
+            'detalhe' => trim($h['observacao'] . ($nomeUsuario($h['responsavel_id']) ? ' · por ' . $nomeUsuario($h['responsavel_id']) : '')), 'url' => '/admin/oportunidade.php?id=' . (int)$h['oportunidade_id']];
     }
 
     $st = $db->prepare("SELECT * FROM vendas WHERE oportunidade_id IN ($ph) ORDER BY id");

@@ -306,6 +306,7 @@ function criarAvaliacao(int $oportunidadeId, string $tipo, ?int $vendaId, ?int $
         $db->commit();
 
         garantirItensAvaliacao($avaliacaoId, $tipoVeiculo);
+        registrarHistoricoVistoria($avaliacaoId, $criadoPor, '🔍 Vistoria #' . $avaliacaoId . ' (' . ($tipo === 'venda' ? 'saída/venda' : 'entrada/compra') . ') aberta.');
         return $avaliacaoId;
     } catch (Throwable $e) {
         $db->rollBack();
@@ -700,13 +701,14 @@ function atribuirAvaliador(int $avaliacaoId, ?int $avaliadorId): void {
 
 function atualizarKmAvaliacao(int $avaliacaoId, ?int $km): void {
     $db = getDB();
-    $db->prepare("UPDATE veiculo_avaliacoes SET km_atual = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+    // Vistoria concluída fica travada (16/11/2026) — só volta a editar reabrindo.
+    $db->prepare("UPDATE veiculo_avaliacoes SET km_atual = ?, updated_at = datetime('now','localtime') WHERE id = ? AND status != 'concluida'")
         ->execute([$km, $avaliacaoId]);
 }
 
 function atualizarObservacoesGeraisAvaliacao(int $avaliacaoId, string $observacoes): void {
     $db = getDB();
-    $db->prepare("UPDATE veiculo_avaliacoes SET observacoes_gerais = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+    $db->prepare("UPDATE veiculo_avaliacoes SET observacoes_gerais = ?, updated_at = datetime('now','localtime') WHERE id = ? AND status != 'concluida'")
         ->execute([clean($observacoes), $avaliacaoId]);
 }
 
@@ -721,7 +723,29 @@ function atualizarItemAvaliacao(int $avaliacaoId, string $item, string $status, 
     $db = getDB();
     $db->prepare("
         UPDATE veiculo_avaliacao_itens SET status = ?, observacao = ? WHERE avaliacao_id = ? AND item = ?
+          AND avaliacao_id IN (SELECT id FROM veiculo_avaliacoes WHERE status != 'concluida')
     ")->execute([$status, clean($observacao), $avaliacaoId, $item]);
+}
+
+/**
+ * Registra um evento da vistoria no histórico do VEÍCULO (oportunidade_historico,
+ * mesma etapa antes/depois — não é mudança de funil), pra aparecer na linha do
+ * tempo da oportunidade (16/11/2026, "registrar histórico do veículo"). Best-effort.
+ */
+function registrarHistoricoVistoria(int $avaliacaoId, ?int $usuarioId, string $texto): void {
+    try {
+        $db = getDB();
+        $st = $db->prepare("SELECT o.id, o.etapa FROM veiculo_avaliacoes va JOIN oportunidades o ON o.id = va.oportunidade_id WHERE va.id = ?");
+        $st->execute([$avaliacaoId]);
+        $op = $st->fetch();
+        if (!$op) return;
+        $db->prepare("
+            INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao)
+            VALUES (?, ?, ?, ?, ?)
+        ")->execute([(int)$op['id'], $op['etapa'], $op['etapa'], $usuarioId, $texto]);
+    } catch (Throwable $e) {
+        // nunca derruba a ação da vistoria por causa do histórico
+    }
 }
 
 function concluirAvaliacao(int $avaliacaoId): void {
@@ -756,6 +780,11 @@ function listarFotosAvaliacao(int $avaliacaoId): array {
  * catálogo de vendas direto — precisa de aprovarFotoParaCatalogo()).
  */
 function salvarFotoAvaliacao(int $avaliacaoId, array $arquivo, string $legenda): array {
+    $st = getDB()->prepare("SELECT status FROM veiculo_avaliacoes WHERE id = ?");
+    $st->execute([$avaliacaoId]);
+    if ($st->fetchColumn() === 'concluida') {
+        return ['ok' => false, 'erro' => 'Vistoria concluída está travada — não dá pra adicionar mídia.'];
+    }
     if (($arquivo['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return ['ok' => false, 'erro' => 'Escolha um arquivo.'];
     }
@@ -806,7 +835,8 @@ function salvarFotoAvaliacao(int $avaliacaoId, array $arquivo, string $legenda):
 
 function excluirFotoAvaliacao(int $fotoId): void {
     $db = getDB();
-    $db->prepare("DELETE FROM veiculo_avaliacao_fotos WHERE id = ?")->execute([$fotoId]);
+    $db->prepare("DELETE FROM veiculo_avaliacao_fotos WHERE id = ?
+        AND avaliacao_id IN (SELECT id FROM veiculo_avaliacoes WHERE status != 'concluida')")->execute([$fotoId]);
 }
 
 /**

@@ -35,6 +35,11 @@ if (!$av) {
 
 $souAvaliadorAtribuido = souAvaliadorHabilitado() && (int)$av['avaliador_id'] === $meuId;
 $podeEditarChecklist = $perfil === 'super_admin' || $souAvaliadorAtribuido;
+// 16/11/2026, "toda vistoria bloquear campos depois de feita": concluída =
+// checklist/KM/observações/mídia travados pra todo mundo. Só o super_admin
+// reabre (fica na auditoria). Termo/assinatura continuam liberados.
+$vistoriaTravada = $av['status'] === 'concluida';
+$podeAlterarVistoria = $podeEditarChecklist && !$vistoriaTravada;
 
 // Compra: QUALQUER consultor atribui (não só o responsável daquela
 // oportunidade). Venda: continua só o vendedor responsável daquela
@@ -61,23 +66,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
             $novoAvaliadorId = (int)($_POST['avaliador_id'] ?? 0) ?: null;
             atribuirAvaliador($id, $novoAvaliadorId);
             $sucesso = $novoAvaliadorId ? 'Avaliador atribuído.' : 'Avaliador removido — vistoria voltou pra fila.';
-        } elseif ($acao === 'atualizar_item' && $podeEditarChecklist) {
+        } elseif ($acao === 'atualizar_item' && $podeAlterarVistoria) {
             atualizarItemAvaliacao($id, (string)($_POST['item'] ?? ''), (string)($_POST['status'] ?? ''), (string)($_POST['observacao'] ?? ''));
             $sucesso = 'Item atualizado.';
-        } elseif ($acao === 'salvar_km' && $podeEditarChecklist) {
+        } elseif ($acao === 'salvar_km' && $podeAlterarVistoria) {
             $km = trim((string)($_POST['km_atual'] ?? ''));
             atualizarKmAvaliacao($id, $km === '' ? null : (int)preg_replace('/\D/', '', $km));
             $sucesso = 'Quilometragem salva.';
-        } elseif ($acao === 'salvar_observacoes' && $podeEditarChecklist) {
+        } elseif ($acao === 'salvar_observacoes' && $podeAlterarVistoria) {
             atualizarObservacoesGeraisAvaliacao($id, (string)($_POST['observacoes_gerais'] ?? ''));
             $sucesso = 'Observações salvas.';
-        } elseif ($acao === 'concluir' && $podeEditarChecklist) {
+        } elseif ($acao === 'concluir' && $podeAlterarVistoria) {
             concluirAvaliacao($id);
-            $sucesso = 'Vistoria marcada como concluída.';
-        } elseif ($acao === 'reabrir' && $podeEditarChecklist) {
+            $scoreConcl = veiculoAvaliacaoScore(listarItensAvaliacao($id));
+            $partesHist = ['✅ Vistoria #' . $id . ' (' . ($av['tipo'] === 'venda' ? 'saída/venda' : 'entrada/compra') . ') concluída e travada'];
+            if ($scoreConcl['percentual'] !== null) $partesHist[] = 'score ' . (int)$scoreConcl['percentual'] . '%';
+            $kmHist = (string)($av['km_atual'] ?? '');
+            if ($kmHist !== '') $partesHist[] = 'KM ' . number_format((int)$kmHist, 0, ',', '.');
+            $histTexto = implode(' — ', $partesHist) . '. ' . $scoreConcl['resumo'];
+            if (!empty($scoreConcl['problemas'])) {
+                $histTexto .= ' Ressalvas: ' . implode('; ', $scoreConcl['problemas']) . '.';
+            }
+            registrarHistoricoVistoria($id, $meuId, $histTexto);
+            $sucesso = 'Vistoria marcada como concluída — campos travados.';
+        } elseif ($acao === 'reabrir' && $perfil === 'super_admin' && $vistoriaTravada) {
             reabrirAvaliacao($id);
+            registrarHistoricoVistoria($id, $meuId, '↩️ Vistoria #' . $id . ' reaberta pra edição pelo super admin.');
+            auditoriaRegistrar('vistoria_reaberta', $meuId, (string)($_SESSION['admin_nome'] ?? ''), 'avaliacao', $id, 'Vistoria #' . $id . ' reaberta pra edição.');
             $sucesso = 'Vistoria reaberta pra edição.';
-        } elseif ($acao === 'upload_foto' && $podeEditarChecklist) {
+        } elseif ($acao === 'upload_foto' && $podeAlterarVistoria) {
             // 24/10/2026, "no iPhone só consigo selecionar uma foto por vez" —
             // aceita várias de uma vez (midias[]), salvando 1 a 1 com a mesma
             // função; 1 arquivo com erro nunca impede os outros.
@@ -110,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
                 echo json_encode(['ok' => $erro === '', 'erro' => $erro]);
                 exit;
             }
-        } elseif ($acao === 'excluir_foto' && $podeEditarChecklist) {
+        } elseif ($acao === 'excluir_foto' && $podeAlterarVistoria) {
             excluirFotoAvaliacao((int)($_POST['foto_id'] ?? 0));
             $sucesso = 'Mídia removida da vistoria.';
         } elseif ($acao === 'aprovar_foto' && $podeAprovarFoto) {
@@ -143,6 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
         }
 
         $av = buscarAvaliacao($id); // recarrega após qualquer mudança
+        $vistoriaTravada = $av['status'] === 'concluida';
+        $podeAlterarVistoria = $podeEditarChecklist && !$vistoriaTravada;
     }
 }
 
@@ -270,7 +289,7 @@ function avTermoStatusLabel(string $status): string {
     ?>
         <div class="av-item">
             <div class="av-item-nome"><?= e(veiculoAvaliacaoRotuloItem($item['item'])) ?></div>
-            <?php if ($podeEditarChecklist): ?>
+            <?php if ($podeAlterarVistoria): ?>
                 <div class="av-status-btns">
                     <?php foreach (['ok' => '✅ OK', 'problema' => '⚠️ Problema', 'nao_verificado' => '❔ Não verificado'] as $statusOpcao => $rotulo): ?>
                         <form method="post" style="display:contents">
@@ -299,7 +318,15 @@ function avTermoStatusLabel(string $status): string {
         </div>
     <?php endforeach; ?>
 
-    <?php if ($podeEditarChecklist): ?>
+    <?php if ($vistoriaTravada): ?>
+        <div class="alerta-info" style="margin-top:14px">🔒 Vistoria concluída — checklist, KM, observações e fotos estão travados.
+            <?php if ($av['km_atual'] !== null && $av['km_atual'] !== ''): ?><br><strong>KM:</strong> <?= e(number_format((int)$av['km_atual'], 0, ',', '.')) ?><?php endif; ?>
+            <?php if (trim((string)($av['observacoes_gerais'] ?? '')) !== ''): ?><br><strong>Observações:</strong> <?= nl2br(e($av['observacoes_gerais'])) ?><?php endif; ?>
+        </div>
+        <?php if ($perfil === 'super_admin'): ?>
+            <form method="post" style="margin-top:10px" onsubmit="return confirmarAcao(this, 'Reabrir esta vistoria pra edição? Fica registrado na auditoria.');"><?= csrfField() ?><input type="hidden" name="acao" value="reabrir"><button type="submit" style="min-height:48px;font-size:15px">↩️ Reabrir vistoria (super admin)</button></form>
+        <?php endif; ?>
+    <?php elseif ($podeAlterarVistoria): ?>
         <div class="grid-2" style="margin-top:14px">
             <form method="post">
                 <?= csrfField() ?>
@@ -318,11 +345,7 @@ function avTermoStatusLabel(string $status): string {
         </div>
 
         <div style="margin-top:14px">
-            <?php if ($av['status'] === 'concluida'): ?>
-                <form method="post" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="reabrir"><button type="submit" style="min-height:48px;font-size:15px">↩️ Reabrir vistoria</button></form>
-            <?php else: ?>
-                <form method="post" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="concluir"><button type="submit" style="min-height:48px;font-size:15px">✅ Marcar vistoria como concluída</button></form>
-            <?php endif; ?>
+            <form method="post" style="display:inline" onsubmit="return confirmarAcao(this, 'Concluir a vistoria? Depois disso o checklist, KM, observações e fotos ficam travados.');"><?= csrfField() ?><input type="hidden" name="acao" value="concluir"><button type="submit" style="min-height:48px;font-size:15px">✅ Marcar vistoria como concluída</button></form>
         </div>
     <?php endif; ?>
 </div>
@@ -356,7 +379,7 @@ function avTermoStatusLabel(string $status): string {
                         <?php else: ?>
                             <span class="badge badge-aviso">aguardando aprovação do vendedor</span>
                         <?php endif; ?>
-                        <?php if ($podeEditarChecklist): ?>
+                        <?php if ($podeAlterarVistoria): ?>
                             <form method="post" onsubmit="return confirmarAcao(this, 'Remover essa mídia da vistoria?');">
                                 <?= csrfField() ?>
                                 <input type="hidden" name="acao" value="excluir_foto">
@@ -371,7 +394,7 @@ function avTermoStatusLabel(string $status): string {
     <?php else: ?>
         <p><small>Nenhuma foto/vídeo adicionado ainda.</small></p>
     <?php endif; ?>
-    <?php if ($podeEditarChecklist): ?>
+    <?php if ($podeAlterarVistoria): ?>
         <form method="post" enctype="multipart/form-data">
             <?= csrfField() ?>
             <input type="hidden" name="acao" value="upload_foto">
