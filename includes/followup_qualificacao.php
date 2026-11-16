@@ -7,8 +7,9 @@
  *  - só lead que parou de responder enquanto a IA qualificava (etapa
  *    'whatsapp'/'qualificacao_ia'), com ou sem consultor atribuído — nunca
  *    quem já está com consultor atendendo;
- *  - até 3 tentativas: 2h, 4h e 6h depois da última mensagem do cliente
- *    (sempre com pelo menos 2h entre uma e outra);
+ *  - até 3 tentativas, 1 POR DIA (16/11/2026, "mandar mensagem só uma vez
+ *    por dia até 3 tentativas, 3 dias" — antes era 2h/4h/6h): 1, 2 e 3 dias
+ *    depois da última mensagem do cliente, sempre 24h+ entre uma e outra;
  *  - só no horário comercial (o mesmo da fila, Configurações → Fila).
  *
  * Substitui o bloco 3 antigo do cron/followup.php, que passava pelo gate de
@@ -22,16 +23,17 @@ require_once __DIR__ . '/whatsapp_config.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem(), iaPausada()
 require_once __DIR__ . '/ia_qualificacao.php'; // iaMontarHistoricoGemini(), iaChamarComFallback(), iaLimitarUmaPergunta()
 
-const FOLLOWUP_QUALIF_INTERVALO_HORAS = 2;
+const FOLLOWUP_QUALIF_INTERVALO_HORAS = 24;
 const FOLLOWUP_QUALIF_MAX_TENTATIVAS = 3;
 const FOLLOWUP_QUALIF_LIMITE_DIA = 120;
 /**
- * Janela de 24h (09/11/2026, "follow-up tá dentro da janela?"): nunca manda
- * follow-up mais de 23h depois da última mensagem do cliente — fica sempre
- * dentro da janela de atendimento do WhatsApp, com 1h de folga. Tentativa
- * que não coube (ex: fora do expediente) simplesmente não sai.
+ * Prazo máximo (16/11/2026, 1 por dia por 3 dias): nunca manda follow-up
+ * mais de 4 dias depois da última mensagem do cliente — dá folga pra 3ª
+ * tentativa (dia 3) sair mesmo se cair fora do expediente e só puder ir no
+ * dia seguinte. Antes era 23h (janela de 24h da Meta oficial; o canal hoje é
+ * Evolution, sem essa janela). Lead mais antigo que isso nunca recebe nada.
  */
-const FOLLOWUP_QUALIF_MAX_HORAS = 23;
+const FOLLOWUP_QUALIF_MAX_HORAS = 96;
 
 /** Mensagem da tentativa $n (1..3) — curta, simples, uma pergunta só. */
 function followupQualificacaoMensagem(int $n, string $nome): string {

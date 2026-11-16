@@ -1832,7 +1832,7 @@ segue no schema sem uso novo, não removida sem ganho real),
   `iaLimitarUmaPergunta()` (cortava a pergunta real), o resgate de mensagem
   sem resposta (`cron/ia_resgate.php`) e o follow-up com contexto
   (`includes/followup_qualificacao.php`, 2h/4h/6h, IA retoma de onde parou,
-  fallback nas mensagens fixas). Depois: nunca pede documento (CNH, RG,
+  fallback nas mensagens fixas). **16/11/2026: virou 1 por dia** ("mandar mensagem só uma vez por dia até 3 tentativas, 3 dias") — 1, 2 e 3 dias depois da última mensagem do cliente (`FOLLOWUP_QUALIF_INTERVALO_HORAS=24`), prazo máximo 96h (`FOLLOWUP_QUALIF_MAX_HORAS`, folga pra 3ª tentativa cair fora do expediente); antes 2h/4h/6h dentro de 23h. Testado com relógio simulado contra Evolution fake: sai em +25h/+49h/+73h, nada depois. Depois: nunca pede documento (CNH, RG,
   CPF, comprovante, CRLV, contrato) — só a placa se o cliente não souber
   dos débitos. Foto do veículo obrigatória: sempre pede perto do fim e
   lembra 1x no fechamento se não vier. WhatsApp Box do CONSULTOR mostra
