@@ -122,6 +122,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ((bool)$alvo['bloqueado'] !== $bloqueado) {
                             auditoriaRegistrar($bloqueado ? 'usuario_bloqueado' : 'usuario_desbloqueado', $quemFez, $nomeQuemFez, 'usuario', $id, "{$nome} ({$email}).");
                         }
+                        // 16/11/2026, "usuario desistiu" — consultor bloqueado:
+                        // leads ativos dele vão por igual pros outros consultores.
+                        $msgRedistrib = '';
+                        if ($bloqueado && !(bool)$alvo['bloqueado'] && $alvo['perfil'] === 'consultor') {
+                            $rRed = redistribuirLeadsConsultorSaiu($id, $quemFez);
+                            $msgRedistrib = textoRedistribuicaoConsultorSaiu($rRed);
+                        }
 
                         $novaSenha = (string)($_POST['nova_senha'] ?? '');
                         if ($novaSenha !== '') {
@@ -132,11 +139,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 auditoriaRegistrar('usuario_senha_redefinida', $quemFez, $nomeQuemFez, 'usuario', $id, "Senha de {$nome} redefinida pelo super_admin.");
                             }
                         }
-                        if (!$erro) $sucesso = "Usuário {$nome} atualizado.";
+                        if (!$erro) $sucesso = "Usuário {$nome} atualizado." . $msgRedistrib;
                     } catch (Throwable $e) {
                         $erro = 'Falha ao salvar: ' . $e->getMessage();
                     }
                 }
+            }
+        } elseif ($acao === 'redistribuir_leads_consultor') {
+            $idRed = (int)($_POST['id'] ?? 0);
+            $stRed = $db->prepare("SELECT nome, perfil, bloqueado FROM usuarios WHERE id = ?");
+            $stRed->execute([$idRed]);
+            $alvoRed = $stRed->fetch();
+            if (!$alvoRed || $alvoRed['perfil'] !== 'consultor' || !(int)$alvoRed['bloqueado']) {
+                $erro = 'Só dá pra redistribuir os leads de um consultor bloqueado.';
+            } else {
+                $rRed = redistribuirLeadsConsultorSaiu($idRed, (int)$_SESSION['admin_id']);
+                if (!empty($rRed['erro'])) $erro = $rRed['erro'];
+                else $sucesso = "Leads de {$alvoRed['nome']}:" . textoRedistribuicaoConsultorSaiu($rRed);
             }
         } elseif ($acao === 'liberar_tentativas') {
             // 08/10/2026, pedido direto: "usuario digitou errada senha
@@ -162,6 +181,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $usuarios = $db->query("SELECT id, nome, email, whatsapp, perfil, bloqueado, disponivel, tentativas_falhas, bloqueado_ate, pode_avaliar FROM usuarios ORDER BY (perfil = 'super_admin') DESC, perfil, nome")->fetchAll();
+$phAtivosU = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+$stAtivosU = $db->prepare("SELECT responsavel_id, COUNT(*) FROM oportunidades WHERE responsavel_id IS NOT NULL AND etapa IN ({$phAtivosU}) GROUP BY responsavel_id");
+$stAtivosU->execute(ETAPAS_ATIVAS);
+$leadsAtivosPorUsuario = $stAtivosU->fetchAll(PDO::FETCH_KEY_PAIR);
 $editandoId = (int)($_GET['editar'] ?? 0);
 $editando = $editandoId ? buscarUsuario($editandoId) : null;
 
@@ -286,6 +309,16 @@ $labelPerfil = ['super_admin' => 'Super admin', 'consultor' => 'Consultor', 'sup
                 <td><?= $u['disponivel'] ? '🟢 disponível' : '⚪ offline' ?></td>
                 <td>
                     <a href="/admin/usuarios.php?editar=<?= (int)$u['id'] ?>">Editar →</a>
+                    <?php $ativosSaiu = (int)($leadsAtivosPorUsuario[(int)$u['id']] ?? 0); ?>
+                    <?php if ($u['perfil'] === 'consultor' && $u['bloqueado'] && $ativosSaiu > 0): ?>
+                        <form method="post" style="display:inline-block;margin-left:8px"
+                              onsubmit="return confirmarAcao(this, 'Redistribuir os <?= $ativosSaiu ?> lead(s) ativo(s) de <?= e(addslashes($u['nome'])) ?> por igual entre os outros consultores?');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="redistribuir_leads_consultor">
+                            <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+                            <button type="submit" class="btn-texto">🔁 Redistribuir <?= $ativosSaiu ?> lead(s)</button>
+                        </form>
+                    <?php endif; ?>
                     <?php if ($u['perfil'] !== 'super_admin' && !$u['bloqueado']): ?>
                         <form method="post" action="/admin/impersonar.php" style="display:inline-block;margin-left:8px"
                               onsubmit="return confirmarAcao(this, 'Entrar como <?= e(addslashes($u['nome'])) ?>? Você vai navegar com as permissões dela até clicar em \'Voltar a ser super admin\'.');">

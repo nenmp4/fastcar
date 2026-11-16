@@ -1667,6 +1667,88 @@ function reabrirEDistribuirEncerradosSemResposta(int $executadoPor): array {
 }
 
 /**
+ * 16/11/2026 — "quando agente suspende usuario de um consultor o que
+ * acontece com leads" / "usuario desistiu". Consultor bloqueado (saiu da
+ * empresa) não entra mais e o rodízio/redistribuir/equalizar o ignoram, então
+ * as oportunidades ATIVAS dele ficavam paradas com ele. Divide por igual
+ * entre os outros consultores ativos (perfil consultor, não bloqueado;
+ * ignora teto/disponibilidade), grava histórico em cada uma e avisa cada
+ * consultor que recebeu (sino, tipo 'leads_transferidos', popup roxo).
+ * Fechadas/encerradas ficam com ele (histórico, não é trabalho pendente).
+ * Chamada ao bloquear um consultor (admin/usuarios.php) e pelo botão
+ * "Redistribuir leads" na linha de quem já estava bloqueado.
+ *
+ * @return array{movidos:int, por_consultor:array<string,int>, erro?:string}
+ */
+/** Frase curta pro banner de sucesso (" N lead(s) redistribuído(s): A: 3, B: 2."). */
+function textoRedistribuicaoConsultorSaiu(array $r): string {
+    if (!empty($r['erro'])) return ' ⚠️ ' . $r['erro'];
+    if (empty($r['movidos'])) return ' Nenhum lead ativo pra redistribuir.';
+    $partes = [];
+    foreach ($r['por_consultor'] as $n => $q) $partes[] = "{$n}: {$q}";
+    return " {$r['movidos']} lead(s) ativo(s) redistribuído(s) — " . implode(', ', $partes) . '.';
+}
+
+function redistribuirLeadsConsultorSaiu(int $usuarioId, int $executadoPor): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT nome FROM usuarios WHERE id = ?");
+    $st->execute([$usuarioId]);
+    $nomeSaiu = (string)$st->fetchColumn();
+
+    $st = $db->prepare("SELECT id, nome FROM usuarios WHERE perfil = 'consultor' AND bloqueado = 0 AND id != ? ORDER BY id");
+    $st->execute([$usuarioId]);
+    $carga = [];
+    $nomes = [];
+    foreach ($st->fetchAll() as $c) { $carga[(int)$c['id']] = 0; $nomes[(int)$c['id']] = $c['nome']; }
+    if (!$carga) {
+        return ['movidos' => 0, 'por_consultor' => [], 'erro' => 'Nenhum outro consultor ativo pra receber os leads.'];
+    }
+
+    $ph = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+    $st = $db->prepare("SELECT id, etapa FROM oportunidades WHERE responsavel_id = ? AND etapa IN ({$ph}) ORDER BY id");
+    $st->execute([$usuarioId, ...ETAPAS_ATIVAS]);
+    $ops = $st->fetchAll();
+
+    $movidos = 0;
+    $porConsultor = [];
+    $upd = $db->prepare("UPDATE oportunidades SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ? AND responsavel_id = ?");
+    $hist = $db->prepare("
+        INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, observacao, responsavel_id)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    foreach ($ops as $op) {
+        $novo = (int)array_keys($carga, min($carga))[0];
+        try {
+            $upd->execute([$novo, (int)$op['id'], $usuarioId]);
+            if ($upd->rowCount() === 0) continue;
+            $hist->execute([(int)$op['id'], $op['etapa'], $op['etapa'],
+                "Consultor {$nomeSaiu} saiu (usuário bloqueado) — lead redistribuído pra {$nomes[$novo]}.", $executadoPor]);
+            $carga[$novo]++;
+            $movidos++;
+            $porConsultor[$nomes[$novo]] = ($porConsultor[$nomes[$novo]] ?? 0) + 1;
+        } catch (Throwable $e) {
+            // best-effort por lead
+        }
+    }
+
+    if ($porConsultor) {
+        try {
+            require_once __DIR__ . '/notificacoes.php';
+            $idPorNome = array_flip($nomes);
+            foreach ($porConsultor as $nomeC => $qtdC) {
+                criarNotificacao((int)$idPorNome[$nomeC], 'leads_transferidos',
+                    "🔁 {$qtdC} lead(s) de {$nomeSaiu} pra você",
+                    "{$nomeSaiu} saiu da equipe — esses leads em andamento agora são da sua carteira.",
+                    '/admin/index.php');
+            }
+        } catch (Throwable $e) {
+            // best-effort
+        }
+    }
+    return ['movidos' => $movidos, 'por_consultor' => $porConsultor];
+}
+
+/**
  * Lead encerrado sozinho por silêncio vai pra OUTRO consultor (09/11/2026,
  * "os leads que irão pra essa pasta redistribuir pra consultores
  * diferentes") — olhar novo no follow-up (aba "🤖 Encerrados sem

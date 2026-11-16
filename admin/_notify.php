@@ -173,10 +173,11 @@ $notifModulo = $notifModulo ?? null;
         itens = itens.filter(function (n) { return !(n.tipo && n.tipo.indexOf('contrato_assinado') === 0); });
         // Leads reabertos da fila de encerrados (16/11/2026, "notificação
         // diferente") — popup roxo próprio, nunca no agrupado.
-        itens.filter(function (n) { return n.tipo === 'leads_reabertos'; }).forEach(function (n) {
+        var ehRedistrib = function (n) { return n.tipo === 'leads_reabertos' || n.tipo === 'leads_transferidos'; };
+        itens.filter(ehRedistrib).forEach(function (n) {
             mostrarToast(n.titulo, n.mensagem, n.url, 20000, false, 'toast-reabertos');
         });
-        itens = itens.filter(function (n) { return n.tipo !== 'leads_reabertos'; });
+        itens = itens.filter(function (n) { return !ehRedistrib(n); });
         if (itens.length === 0) return;
         var msgs = itens.filter(function (n) { return n.tipo === 'mensagem_whatsapp'; });
         if (msgs.length > 1) {
