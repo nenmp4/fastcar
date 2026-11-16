@@ -1073,6 +1073,9 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 
 <div class="card" data-aba="👤 Comprador">
     <h3>📍 Visita presencial</h3>
+    <?php if ((int)$v['aceita_visitar_fastcar'] === 1 && $v['visita_dia_horario_texto']): ?>
+        <p><span class="badge badge-info">📅 Agendada: <?= e($v['visita_dia_horario_texto']) ?><?= $v['visita_data_resolvida'] ? ' (' . date('d/m/Y', strtotime($v['visita_data_resolvida'])) . ')' : '' ?></span></p>
+    <?php endif; ?>
     <?php if ($v['visita_compareceu_em']): ?>
         <p><span class="badge badge-ok">✅ Cliente compareceu em <?= date('d/m/Y H:i', strtotime($v['visita_compareceu_em'])) ?></span></p>
         <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>

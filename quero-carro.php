@@ -26,7 +26,32 @@ $numeroZap = normalizarTelefone((string)getConfig('vendas_whatsapp_numero'));
 $erro = '';
 $res = null;
 $f = $_POST;
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+$agendado = '';
+$erroAgenda = '';
+// 16/11/2026 — 2º passo opcional: quem foi aprovado escolhe dia e horário
+// pra vir ver os veículos. A negociação vem da sessão (nunca do POST).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'agendar_visita') {
+    $vendaSessao = (int)($_SESSION['formvenda_venda_id'] ?? 0);
+    $f = ['nome' => (string)($_SESSION['formvenda_nome'] ?? '')];
+    if (!$vendaSessao) {
+        $erro = 'Sua sessão expirou. Preencha o formulário de novo.';
+    } else {
+        $res = ['ok' => true, 'qualificado' => true, 'venda_id' => $vendaSessao];
+        [$dataV, $horaV] = array_pad(explode('|', (string)($_POST['slot'] ?? ''), 2), 2, '');
+        if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+            $erroAgenda = 'Sua sessão expirou. Recarregue a página e tente de novo.';
+        } else {
+            try {
+                $ag = agendarVisitaFormularioVenda($vendaSessao, $dataV, $horaV);
+                if ($ag['ok']) { $agendado = $ag['texto']; $_SESSION['formvenda_visita'] = $agendado; }
+                else $erroAgenda = $ag['erro'];
+            } catch (Throwable $e) {
+                error_log('quero-carro agendar: ' . $e->getMessage());
+                $erroAgenda = 'Tivemos uma instabilidade. Tente de novo em instantes.';
+            }
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Honeypot (campo escondido que robô preenche) + limite por IP por hora.
     $ipChave = 'formvenda_ip_' . substr(hash('sha256', auditoriaClienteIp()), 0, 16) . '_' . date('YmdH');
     $tentativas = (int)getConfig($ipChave);
@@ -49,6 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'entrada_faixa' => (string)($_POST['entrada_faixa'] ?? ''),
             ] + $utm);
             if (!$res['ok']) { $erro = $res['erro']; $res = null; }
+            elseif ($res['qualificado']) {
+                $_SESSION['formvenda_venda_id'] = (int)$res['venda_id'];
+                $_SESSION['formvenda_nome'] = (string)($_POST['nome'] ?? '');
+                unset($_SESSION['formvenda_visita']);
+            }
         } catch (Throwable $e) {
             error_log('quero-carro: ' . $e->getMessage());
             $erro = 'Tivemos uma instabilidade. Tente de novo em instantes.';
@@ -111,6 +141,17 @@ small { color:#666; }
 .wizard .passo { display:none; }
 .wizard .passo.atual { display:block; animation:entra .2s ease; }
 @keyframes entra { from { opacity:0; transform:translateX(12px); } to { opacity:1; transform:none; } }
+.agendado { background:#ecfdf3; border:1px solid #abefc6; color:#067647; border-radius:12px; padding:12px 14px; margin:8px 0 12px; font-size:17px; }
+.agendado small { color:#344054; }
+details.agenda { margin-top:12px; }
+details.agenda summary { cursor:pointer; font-weight:700; font-size:17px; color:var(--azul); min-height:44px; display:flex; align-items:center; }
+.opcoes.dias label { flex:1 1 130px; }
+.opcoes.horas { margin-bottom:10px; }
+.opcoes.horas label { flex:0 1 92px; justify-content:center; }
+.opcoes.horas .dia-nome { width:100%; font-size:14px; color:#666; }
+.js-agenda .opcoes.horas { display:none; }
+.js-agenda .opcoes.horas.atual { display:flex; }
+.js-agenda .opcoes.horas .dia-nome { display:none; }
 footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top:3px solid var(--azul); background:#fff; margin-top:30px; }
 </style>
 </head>
@@ -121,13 +162,51 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     $codigo = vendaFormularioCodigo((int)$res['venda_id']);
     $primeiro = trim(explode(' ', trim((string)($f['nome'] ?? '')))[0]);
     $texto = 'Olá! Acabei de preencher o formulário da Fastcar (cód. ' . $codigo . ').';
+    if ($agendado !== '') $texto .= ' Agendei minha visita pra ' . $agendado . '.';
+    $diasVisita = vendaVisitaDias();
+    $endereco = trim((string)getConfig('empresa_endereco')) ?: 'Av. Sagitário, 138 — Sala 1003, Torre City, Alpha Square Offices — Alphaville Conde II, Barueri/SP';
 ?>
     <div class="card">
         <h1>✅ Pronto<?= $primeiro !== '' ? ', ' . e($primeiro) : '' ?>!</h1>
-        <p>Você tem as condições pra comprar na Fastcar. Toque no botão e fale com a gente no WhatsApp — um vendedor já vai te atender com as opções.</p>
+        <?php if ($agendado !== ''): ?>
+            <div class="agendado">📅 <strong>Visita agendada:</strong> <?= e($agendado) ?><br>
+                <small>📍 <?= e($endereco) ?></small></div>
+            <p>Te esperamos! Um vendedor vai confirmar com você pelo WhatsApp.</p>
+        <?php else: ?>
+            <p>Você tem as condições pra comprar na Fastcar. Agende sua visita pra ver os veículos disponíveis — ou fale direto com a gente no WhatsApp.</p>
+        <?php endif; ?>
+
+        <?php if ($diasVisita): ?>
+        <details class="agenda"<?= $agendado === '' ? ' open' : '' ?>>
+            <summary><?= $agendado === '' ? '📅 Agendar visita pra ver os veículos' : '🔄 Trocar dia/horário' ?></summary>
+            <?php if ($erroAgenda): ?><div class="erro"><?= e($erroAgenda) ?></div><?php endif; ?>
+            <form method="post" id="qc-agenda">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="agendar_visita">
+                <label class="t">Qual dia?</label>
+                <div class="opcoes dias">
+                    <?php foreach ($diasVisita as $i => $d): ?>
+                        <label><input type="radio" name="dia" value="<?= e($d['data']) ?>" <?= $i === 0 ? 'checked' : '' ?>> <?= e(ucfirst($d['rotulo'])) ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <label class="t">Qual horário?</label>
+                <?php foreach ($diasVisita as $i => $d): ?>
+                    <div class="opcoes horas" data-dia="<?= e($d['data']) ?>">
+                        <span class="dia-nome"><?= e(ucfirst($d['rotulo'])) ?></span>
+                        <?php foreach ($d['horas'] as $h): ?>
+                            <label><input type="radio" name="slot" value="<?= e($d['data'] . '|' . $h) ?>" required> <?= e($h) ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+                <button type="submit">📅 Confirmar visita</button>
+                <p><small>📍 <?= e($endereco) ?></small></p>
+            </form>
+        </details>
+        <?php endif; ?>
+
         <?php if ($numeroZap): ?>
             <a class="btn-zap" href="https://wa.me/<?= e($numeroZap) ?>?text=<?= e(rawurlencode($texto)) ?>">💬 Falar com a Fastcar no WhatsApp</a>
-        <?php else: ?>
+        <?php elseif ($agendado === ''): ?>
             <p><strong>Seu cadastro foi recebido.</strong></p>
         <?php endif; ?>
     </div>
@@ -199,6 +278,23 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
 </main>
 <footer><strong>FASTCAR SOLUTIONS</strong> · CNPJ 66.934.500/0001-09<br>Av. Sagitário, 138 — Alphaville Conde II, Barueri/SP</footer>
 <script>
+(function(){
+    // Agenda: mostra só os horários do dia escolhido.
+    var ag = document.getElementById('qc-agenda');
+    if (ag) {
+        ag.classList.add('js-agenda');
+        var mostrarDia = function () {
+            var d = ag.querySelector('input[name=dia]:checked');
+            ag.querySelectorAll('.opcoes.horas').forEach(function (g) {
+                var on = d && g.getAttribute('data-dia') === d.value;
+                g.classList.toggle('atual', on);
+                if (!on) g.querySelectorAll('input').forEach(function (r) { r.checked = false; });
+            });
+        };
+        ag.querySelectorAll('input[name=dia]').forEach(function (r) { r.addEventListener('change', mostrarDia); });
+        mostrarDia();
+    }
+})();
 (function(){
     var form = document.getElementById('qc-form');
     if (!form) return;

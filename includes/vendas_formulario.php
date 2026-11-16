@@ -170,6 +170,81 @@ function registrarFormularioVenda(array $d): array {
     return ['ok' => true, 'venda_id' => $vendaId, 'qualificado' => $qualificado, 'minimo' => $minimo, 'temperatura' => $temperatura];
 }
 
+/**
+ * Agendamento da visita pelo formulário (16/11/2026, "agendamento para ver
+ * veículo disponível — formulário de venda, horário e dia para cliente").
+ * Depois de aprovado no formulário, o cliente escolhe dia e horário pra vir
+ * ver os veículos. Sem controle de vaga (pátio físico, vários ao mesmo
+ * tempo — mesma decisão da IA de vendas). Dias: próximos 7 dias, seg–sáb
+ * (domingo fechado). Horários: de hora em hora, da abertura da fila até 1h
+ * antes do fechamento (Configurações → Fila); hoje só a partir de 1h depois
+ * de agora.
+ */
+const VENDA_VISITA_DIAS_SEMANA = [1 => 'segunda', 2 => 'terça', 3 => 'quarta', 4 => 'quinta', 5 => 'sexta', 6 => 'sábado', 7 => 'domingo'];
+
+/** Horários (HH:MM) de visita de um dia (Y-m-d). Vazio = dia sem horário. */
+function vendaVisitaHorarios(string $data, ?int $agora = null): array {
+    $agora = $agora ?? time();
+    $ts = strtotime($data . ' 00:00');
+    if ($ts === false || (int)date('N', $ts) === 7) return [];
+    $abre = (string)(getConfig('fila_horario_abertura') ?: '10:00');
+    $fecha = (string)(getConfig('fila_horario_fechamento') ?: '19:20');
+    if (!preg_match('/^\d{2}:\d{2}$/', $abre)) $abre = '10:00';
+    if (!preg_match('/^\d{2}:\d{2}$/', $fecha)) $fecha = '19:20';
+    $ini = strtotime($data . ' ' . $abre);
+    $fim = strtotime($data . ' ' . $fecha) - 3600; // última visita 1h antes de fechar
+    $ini = (int)(ceil($ini / 3600) * 3600);         // começa em hora cheia
+    $horas = [];
+    for ($t = $ini; $t <= $fim; $t += 3600) {
+        if ($t < $agora + 3600) continue;
+        $horas[] = date('H:i', $t);
+    }
+    return $horas;
+}
+
+/** Próximos dias com horário livre: [['data'=>'Y-m-d','rotulo'=>'sábado 22/11','horas'=>[...]], ...] */
+function vendaVisitaDias(?int $agora = null, int $quantos = 7): array {
+    $agora = $agora ?? time();
+    $dias = [];
+    for ($i = 0; $i < 14 && count($dias) < $quantos; $i++) {
+        $data = date('Y-m-d', strtotime("+{$i} day", $agora));
+        $horas = vendaVisitaHorarios($data, $agora);
+        if (!$horas) continue;
+        $ts = strtotime($data);
+        $rotulo = ($i === 0 ? 'hoje' : ($i === 1 ? 'amanhã' : VENDA_VISITA_DIAS_SEMANA[(int)date('N', $ts)])) . ' ' . date('d/m', $ts);
+        $dias[] = ['data' => $data, 'rotulo' => $rotulo, 'horas' => $horas];
+    }
+    return $dias;
+}
+
+/**
+ * Grava a visita escolhida no formulário: aceita_visitar_fastcar=1, texto
+ * "sábado 22/11 às 10:00", data resolvida, histórico e aviso pro vendedor
+ * (sino + WhatsApp, mesmo aviso da visita confirmada pela IA). Reagendar
+ * sobrescreve o dia/horário e avisa de novo. Só aceita dia/horário da lista.
+ */
+function agendarVisitaFormularioVenda(int $vendaId, string $data, string $hora): array {
+    $dia = null;
+    foreach (vendaVisitaDias() as $d) if ($d['data'] === $data) $dia = $d;
+    if (!$dia || !in_array($hora, $dia['horas'], true)) return ['ok' => false, 'erro' => 'Escolha um dia e um horário da lista.'];
+    $db = getDB();
+    $st = $db->prepare("SELECT etapa, visita_dia_horario_texto FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v || in_array($v['etapa'], ['vendido', 'cancelada', 'sem_perfil'], true)) return ['ok' => false, 'erro' => 'Não foi possível agendar. Fale com a gente pelo WhatsApp.'];
+    $ts = strtotime($data);
+    $texto = VENDA_VISITA_DIAS_SEMANA[(int)date('N', $ts)] . ' ' . date('d/m', $ts) . ' às ' . $hora;
+    $reagendou = (string)$v['visita_dia_horario_texto'] !== '' && $v['visita_dia_horario_texto'] !== $texto;
+    $db->prepare("UPDATE vendas SET aceita_visitar_fastcar = 1, visita_dia_horario_texto = ?, visita_data_resolvida = ?,
+                    visita_confirmada_em = COALESCE(visita_confirmada_em, datetime('now','localtime')),
+                    resumo_ia = COALESCE(resumo_ia,'') || ?, updated_at = datetime('now','localtime') WHERE id = ?")
+       ->execute([$texto, $data, "\n📅 Visita agendada pelo formulário: {$texto}", $vendaId]);
+    $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, ?, ?, ?)")
+       ->execute([$vendaId, $v['etapa'], $v['etapa'], ($reagendou ? 'Visita reagendada' : 'Visita agendada') . " pelo cliente no formulário: {$texto}"]);
+    notificarVisitaConfirmadaVenda($vendaId);
+    return ['ok' => true, 'texto' => $texto];
+}
+
 /** Variações da mensagem com o link — lead que chamou direto sem passar pelo formulário. */
 function vendaFormularioMsgLink(string $nome = ''): string {
     $primeiro = trim(explode(' ', $nome)[0] ?? '');
