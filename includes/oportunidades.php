@@ -1667,6 +1667,100 @@ function reabrirEDistribuirEncerradosSemResposta(int $executadoPor): array {
 }
 
 /**
+ * 16/11/2026 — "vamos fazer do lead cada 10 por lead com mais 30 dias leads
+ * quentes classificado como quente": reciclagem diária de lead PERDIDO e
+ * QUENTE. Pega oportunidade com etapa='perdido' (nunca sem_perfil),
+ * temperatura_lead='quente', parada há mais de 30 dias (updated_at), que
+ * NUNCA foi reciclada antes (cada lead volta 1 vez só na vida) e cujo
+ * cliente não tem outra oportunidade ativa; reabre na etapa WhatsApp e dá
+ * pra um consultor DIFERENTE de todos que já cuidaram dele, no máximo
+ * $limitePorConsultor por consultor por rodada (o de menor carga do lote
+ * primeiro). Nenhuma mensagem sai pro cliente — follow-up é manual (card
+ * roxo "Leads reabertos" + popup roxo no sino). Desligável em
+ * Configurações → Fila (`leads_reciclar_perdidos_quentes`).
+ *
+ * @return array{reabertos:int, por_consultor:array<string,int>, candidatos:int}
+ */
+const RECICLAR_PERDIDOS_QUENTES_DIAS = 30;
+const RECICLAR_PERDIDOS_QUENTES_POR_CONSULTOR = 10;
+const RECICLAR_PERDIDOS_QUENTES_MARCA = 'Reaberto da fila de encerrados (perdido quente +30 dias)';
+
+function reciclagemPerdidosQuentesAtiva(): bool {
+    return getConfig('leads_reciclar_perdidos_quentes') !== '0';
+}
+
+function reciclarLeadsPerdidosQuentes(int $limitePorConsultor = RECICLAR_PERDIDOS_QUENTES_POR_CONSULTOR): array {
+    $db = getDB();
+    $consultores = $db->query("SELECT id, nome FROM usuarios WHERE perfil = 'consultor' AND bloqueado = 0 ORDER BY id")->fetchAll();
+    $carga = [];
+    $nomes = [];
+    foreach ($consultores as $c) { $carga[(int)$c['id']] = 0; $nomes[(int)$c['id']] = $c['nome']; }
+    if (!$carga) return ['reabertos' => 0, 'por_consultor' => [], 'candidatos' => 0];
+
+    $ph = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
+    $st = $db->prepare("
+        SELECT o.id, o.responsavel_id FROM oportunidades o
+        WHERE o.etapa = 'perdido'
+          AND o.temperatura_lead = 'quente'
+          AND o.updated_at <= datetime('now','localtime','-" . RECICLAR_PERDIDOS_QUENTES_DIAS . " days')
+          AND NOT EXISTS (SELECT 1 FROM oportunidade_historico h
+                          WHERE h.oportunidade_id = o.id AND h.observacao LIKE ?)
+          AND NOT EXISTS (SELECT 1 FROM oportunidades o2
+                          WHERE o2.cliente_id = o.cliente_id AND o2.id != o.id AND o2.etapa IN ({$ph}))
+        ORDER BY o.updated_at DESC, o.id DESC
+    ");
+    $st->execute(array_merge([RECICLAR_PERDIDOS_QUENTES_MARCA . '%'], ETAPAS_ATIVAS));
+    $ops = $st->fetchAll();
+    $stHist = $db->prepare("SELECT DISTINCT responsavel_id FROM oportunidade_historico WHERE oportunidade_id = ? AND responsavel_id IS NOT NULL");
+
+    $reabertos = 0;
+    $porConsultor = [];
+    foreach ($ops as $op) {
+        $opId = (int)$op['id'];
+        $atual = (int)($op['responsavel_id'] ?? 0);
+        $stHist->execute([$opId]);
+        $jaTeve = array_map('intval', $stHist->fetchAll(PDO::FETCH_COLUMN));
+        $jaTeve[] = $atual;
+
+        $novo = null;
+        foreach ($carga as $uid => $qtd) {
+            if (in_array($uid, $jaTeve, true) || $qtd >= $limitePorConsultor) continue;
+            if ($novo === null || $qtd < $carga[$novo]) $novo = $uid;
+        }
+        if ($novo === null) continue; // ninguém novo com vaga — fica pra outro dia
+
+        try {
+            $db->prepare('UPDATE oportunidades SET motivo_perda = NULL WHERE id = ?')->execute([$opId]);
+            if (!mudarEtapa($opId, 'whatsapp', null, RECICLAR_PERDIDOS_QUENTES_MARCA . ' — reciclagem automática diária, redistribuído pra ' . $nomes[$novo] . '.')) continue;
+            $db->prepare("UPDATE oportunidades SET responsavel_id = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+                ->execute([$novo, $opId]);
+            $reabertos++;
+            $carga[$novo]++;
+            $porConsultor[$nomes[$novo]] = ($porConsultor[$nomes[$novo]] ?? 0) + 1;
+        } catch (Throwable $e) {
+            // best-effort por lead — nunca derruba o lote
+        }
+    }
+
+    if ($porConsultor) {
+        try {
+            require_once __DIR__ . '/notificacoes.php';
+            $idPorNome = array_flip($nomes);
+            foreach ($porConsultor as $nomeC => $qtdC) {
+                if (!isset($idPorNome[$nomeC])) continue;
+                criarNotificacao((int)$idPorNome[$nomeC], 'leads_reabertos',
+                    "🔥 {$qtdC} lead(s) quente(s) reaberto(s) pra você",
+                    'Leads quentes que estavam perdidos há mais de 30 dias voltaram pra sua carteira (etapa WhatsApp) — faça o follow-up pelo WhatsApp Box.',
+                    '/admin/index.php?filtro=reabertos');
+            }
+        } catch (Throwable $e) {
+            // best-effort
+        }
+    }
+    return ['reabertos' => $reabertos, 'por_consultor' => $porConsultor, 'candidatos' => count($ops)];
+}
+
+/**
  * 16/11/2026 — "quando agente suspende usuario de um consultor o que
  * acontece com leads" / "usuario desistiu". Consultor bloqueado (saiu da
  * empresa) não entra mais e o rodízio/redistribuir/equalizar o ignoram, então

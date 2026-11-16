@@ -615,7 +615,9 @@ $contagemPorTipo = array_column($stmtTipoContagem->fetchAll(), 'total', 'tipo');
 // de verdade, consistente com o que a coluna "Recebido em" mostra.
 $sql = "
     SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
-           u.nome AS responsavel_nome
+           u.nome AS responsavel_nome,
+           EXISTS (SELECT 1 FROM oportunidade_historico hr WHERE hr.oportunidade_id = o.id
+                   AND hr.observacao LIKE 'Reaberto da fila de encerrados%') AS foi_reaberto
     FROM oportunidades o
     JOIN clientes c ON c.id = o.cliente_id
     LEFT JOIN usuarios u ON u.id = o.responsavel_id
@@ -1410,7 +1412,11 @@ if ($podeSelecionarEmMassa):
         <?php $atrasada = in_array($op['etapa'], ETAPAS_ATIVAS, true) && $op['proxima_acao_em'] && $op['proxima_acao_em'] < $agora; ?>
         <?php $quente = $op['temperatura_lead'] === 'quente'; ?>
         <?php $ativaParaSelecao = in_array($op['etapa'], ETAPAS_ATIVAS, true); ?>
-        <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente' : '')) ?>">
+        <?php // 16/11/2026, "cor lead diferente do normal": lead que voltou da
+              // fila de encerrados (reabertura manual em massa ou reciclagem
+              // diária de perdido quente) e segue ativo ganha linha roxa. ?>
+        <?php $reaberto = $ativaParaSelecao && !empty($op['foi_reaberto']); ?>
+        <tr class="<?= trim(($atrasada ? 'linha-atrasada ' : '') . ($quente ? 'linha-quente ' : '') . ($reaberto ? 'linha-reaberta' : '')) ?>">
             <?php if ($podeSelecionarEmMassa): ?>
             <td data-label="" class="col-chk">
                 <?php if ($ativaParaSelecao): ?>
@@ -1420,6 +1426,9 @@ if ($podeSelecionarEmMassa):
             <?php endif; ?>
             <td>
                 <a href="/admin/oportunidade.php?id=<?= (int)$op['id'] ?>"><?= e($op['cliente_nome'] ?: '(sem nome)') ?></a>
+                <?php if ($reaberto): ?>
+                    <span class="badge badge-reaberto">🔁 Reaberto</span>
+                <?php endif; ?>
                 <?php if ($quente): ?>
                     <span class="badge badge-quente">🔥 Quente</span>
                 <?php elseif ($op['temperatura_lead'] === 'morno'): ?>

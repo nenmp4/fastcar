@@ -626,6 +626,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sucesso = $ligar
                 ? 'Encerramento automático ligado: lead mudo há mais de ' . LEADS_DIAS_SILENCIO_ENCERRAR . ' dias vira "perdido" no cron das 6h.'
                 : 'Encerramento automático desligado: nenhum lead é encerrado sozinho por silêncio.';
+        } elseif ($acao === 'salvar_reciclar_perdidos_quentes') {
+            $ligar = !empty($_POST['leads_reciclar_perdidos_quentes']);
+            setConfig('leads_reciclar_perdidos_quentes', $ligar ? '1' : '0');
+            $sucesso = $ligar
+                ? 'Reciclagem ligada: todo dia às 9h15 até ' . RECICLAR_PERDIDOS_QUENTES_POR_CONSULTOR . ' leads perdidos quentes (+' . RECICLAR_PERDIDOS_QUENTES_DIAS . ' dias) voltam pra cada consultor.'
+                : 'Reciclagem de leads perdidos quentes desligada.';
         } elseif ($acao === 'salvar_horario_notificar_crm_preenchido') {
             // 29/09/2026, "ao terminar turno 7:30 enviar todos leads crm
             // preenchido que chegarem para numero de notificação".
@@ -1970,6 +1976,19 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
            Ligado, o cron das 6h (<code>cron/leads_sem_resposta.php</code>) marca como "perdido" o lead ainda em
            WhatsApp/Qualificação IA sem nenhuma resposta do cliente há mais de <?= LEADS_DIAS_SILENCIO_ENCERRAR ?> dias.
            Desligado, nada é encerrado sozinho — só manualmente.</small>
+    </form>
+
+    <form method="post" class="inline" style="margin-bottom:12px">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_reciclar_perdidos_quentes">
+        <label style="display:inline-flex;align-items:center;gap:6px;min-height:44px">
+            <input type="checkbox" name="leads_reciclar_perdidos_quentes" value="1" <?= reciclagemPerdidosQuentesAtiva() ? 'checked' : '' ?>>
+            Reabrir todo dia lead perdido 🔥 quente há mais de <?= RECICLAR_PERDIDOS_QUENTES_DIAS ?> dias (até <?= RECICLAR_PERDIDOS_QUENTES_POR_CONSULTOR ?> por consultor)
+        </label>
+        <button type="submit" style="margin-top:0">Salvar</button>
+        <small style="display:block;color:var(--texto-suave)">Status: <strong><?= reciclagemPerdidosQuentesAtiva() ? '✅ ligado' : '⏸️ desligado' ?></strong>.
+           Cron das 9h15 (<code>cron/leads_perdidos_quentes.php</code>): cada lead volta 1 vez só, sempre pra um consultor diferente de quem já cuidou,
+           na etapa WhatsApp. Nenhuma mensagem sai pro cliente — o consultor faz o follow-up pelo WhatsApp Box (card roxo).</small>
     </form>
 
     <?php if (!$fila): ?>

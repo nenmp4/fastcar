@@ -223,6 +223,11 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .linha-quente { border-left: 4px solid var(--laranja); background: var(--laranja-bg); }
 .linha-quente:hover { background: #ffe4cc; }
 .badge-quente { background: var(--laranja-bg); color: var(--laranja); font-weight: 700; }
+/* 16/11/2026 — lead reaberto da fila de encerrados: roxo, vence o laranja do quente
+   (vem depois na cascata) e casa com o card/popup roxo de "Leads reabertos". */
+.linha-reaberta { border-left: 4px solid var(--roxo); background: var(--roxo-bg); }
+.linha-reaberta:hover { background: var(--roxo-bg); filter: brightness(0.97); }
+.badge-reaberto { background: var(--roxo-bg); color: var(--roxo); font-weight: 700; }
 /* 19/09/2026, "aqui muda as cores - provalmente as receitas que entraram
    sem cliente deve se pagamento de entrada da compra do veiculo -
    classificar dessa forma pode diferencia na cor" — lançamento financeiro
