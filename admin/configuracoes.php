@@ -10,6 +10,7 @@ require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/marca.php';
 require_once __DIR__ . '/../includes/vendas_formulario.php';
 require_once __DIR__ . '/../includes/vendas_followup.php';
+require_once __DIR__ . '/../includes/lembrete_visitas.php';
 requireSuperAdmin();
 
 $campos = [
@@ -641,6 +642,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 setConfig('leads_crm_preenchido_notificar_hora', $horaNotificar);
                 $sucesso = "Horário do relatório de fim de turno salvo: {$horaNotificar}, todo dia.";
+            }
+        } elseif ($acao === 'salvar_lembrete_visitas') {
+            // 17/11/2026 — lembrete diário de visitas agendadas (cron/lembrete_visitas.php).
+            $hora = trim((string)($_POST['lembrete_visitas_hora'] ?? ''));
+            if (!preg_match('/^\d{2}:\d{2}$/', $hora)) {
+                $erro = 'Horário inválido — use o formato HH:MM.';
+            } else {
+                setConfig('lembrete_visitas_hora', $hora);
+                setConfig('lembrete_visitas_ativo', !empty($_POST['lembrete_visitas_ativo']) ? '1' : '0');
+                $nums = array_filter(array_map('trim', explode(',', (string)($_POST['lembrete_visitas_whatsapp'] ?? ''))));
+                setConfig('lembrete_visitas_whatsapp', implode(',', $nums));
+                $mails = array_filter(array_map('trim', explode(',', (string)($_POST['lembrete_visitas_emails'] ?? ''))), fn($m) => filter_var($m, FILTER_VALIDATE_EMAIL));
+                setConfig('lembrete_visitas_emails', implode(',', $mails));
+                $sucesso = "Lembrete de visitas salvo: todo dia às {$hora}.";
+            }
+        } elseif ($acao === 'enviar_lembrete_visitas_agora') {
+            $r = enviarLembreteVisitas();
+            if ($r['ok']) {
+                $sucesso = "Lembrete enviado agora — {$r['hoje']} visita(s) hoje, {$r['amanha']} amanhã (WhatsApp: {$r['whatsapp']}, e-mail: {$r['emails']}).";
+            } else {
+                $erro = 'Não deu pra enviar o lembrete: ' . ($r['motivo'] ?? 'falha desconhecida') . '.';
             }
         } elseif ($acao === 'marcar_falta') {
             $resultado = marcarConsultorFaltou((int)($_POST['usuario_id'] ?? 0), (int)($_SESSION['admin_id'] ?? 0));
@@ -1962,6 +1984,33 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
            (card "🔔 Notificações", acima) a lista de leads que chegaram HOJE e ainda estão parados em "CRM
            preenchido" (já qualificados pela IA, esperando o consultor assumir). Roda via cron
            (<code>cron/leads_crm_preenchido_fim_turno.php</code>), 1x por dia, dedup automático.</small>
+    </form>
+
+    <?php $lvDest = lembreteVisitasDestinatarios(); ?>
+    <form method="post" style="margin-bottom:12px;padding:12px;border:1px solid var(--borda);border-radius:var(--raio)">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_lembrete_visitas">
+        <strong>📅 Lembrete diário de visitas agendadas</strong>
+        <small style="display:block;color:#666;margin-bottom:8px">Todo dia, no horário abaixo, manda por WhatsApp e e-mail
+           os clientes agendados pra vir à Fastcar hoje (com horário, telefone, veículo e vendedor) + prévia de amanhã.
+           Roda via cron (<code>cron/lembrete_visitas.php</code>), 1x por dia.</small>
+        <label style="display:inline-flex;align-items:center;gap:6px;min-height:44px">
+            <input type="checkbox" name="lembrete_visitas_ativo" value="1" <?= lembreteVisitasAtivo() ? 'checked' : '' ?>> Ligado
+        </label>
+        <label>Horário</label>
+        <input type="time" name="lembrete_visitas_hora" value="<?= e(lembreteVisitasHorario()) ?>" style="width:110px">
+        <label>WhatsApp (separados por vírgula — vazio = números de notificação de lead)</label>
+        <input type="tel" name="lembrete_visitas_whatsapp" value="<?= e(getConfig('lembrete_visitas_whatsapp') ?: '') ?>" placeholder="Ex: 11999998888">
+        <label>E-mails (separados por vírgula — vazio = e-mail do usuário Jean)</label>
+        <input type="text" name="lembrete_visitas_emails" value="<?= e(getConfig('lembrete_visitas_emails') ?: '') ?>" placeholder="Ex: jean@fastcar.solutions">
+        <small style="display:block;color:#666">Vai pra agora: WhatsApp <?= e($lvDest['whatsapp'] ? implode(', ', $lvDest['whatsapp']) : 'nenhum') ?> ·
+           e-mail <?= e($lvDest['emails'] ? implode(', ', $lvDest['emails']) : 'nenhum') ?></small>
+        <button type="submit">Salvar lembrete</button>
+    </form>
+    <form method="post" class="inline" style="margin-bottom:12px" onsubmit="return confirmarAcao(this, 'Enviar agora o lembrete de visitas de hoje?')">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="enviar_lembrete_visitas_agora">
+        <button type="submit" style="margin-top:0">📨 Enviar lembrete agora (teste)</button>
     </form>
 
     <form method="post" class="inline" style="margin-bottom:12px">
