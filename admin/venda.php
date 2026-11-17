@@ -1076,6 +1076,13 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <?php if ((int)$v['aceita_visitar_fastcar'] === 1 && $v['visita_dia_horario_texto']): ?>
         <p><span class="badge badge-info">📅 Agendada: <?= e($v['visita_dia_horario_texto']) ?><?= $v['visita_data_resolvida'] ? ' (' . date('d/m/Y', strtotime($v['visita_data_resolvida'])) . ')' : '' ?></span></p>
     <?php endif; ?>
+    <?php if (!empty($v['lembrete_visita_pedido_em'])):
+        $lvResp = (string)($v['lembrete_visita_resposta'] ?? ''); ?>
+        <p><small>📲 Cliente pediu lembrete no WhatsApp (<?= e(date('d/m H:i', strtotime($v['lembrete_visita_pedido_em']))) ?>)
+        <?php if (!empty($v['lembrete_visita_enviado_para'])): ?> · lembrete enviado pra visita de <?= e(date('d/m', strtotime($v['lembrete_visita_enviado_para']))) ?><?php endif; ?></small>
+        <?php if ($lvResp === 'confirmou'): ?> <span class="badge badge-ok">✅ Confirmou pelo lembrete</span>
+        <?php elseif ($lvResp === 'reagendar'): ?> <span class="badge badge-atraso">🔄 Pediu pra reagendar</span><?php endif; ?></p>
+    <?php endif; ?>
     <?php if ($v['visita_compareceu_em']): ?>
         <p><span class="badge badge-ok">✅ Cliente compareceu em <?= date('d/m/Y H:i', strtotime($v['visita_compareceu_em'])) ?></span></p>
         <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>

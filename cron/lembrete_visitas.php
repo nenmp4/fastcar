@@ -27,6 +27,15 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
 $hoje = date('Y-m-d');
 $dedup = "lembrete_visitas_enviado_{$hoje}";
 
+// Lembrete pro CLIENTE que pediu (botão do formulário) — dedup por venda
+// (lembrete_visita_enviado_para), independente do envio pro Jean.
+if (lembreteVisitasAtivo() && date('H:i') >= lembreteVisitasHorario()) {
+    $rc = enviarLembretesVisitaClientes($hoje);
+    if ($rc['enviados'] || $rc['falhas']) {
+        log_lembrete_visitas("Clientes: {$rc['enviados']} lembrete(s) enviado(s), {$rc['falhas']} falha(s).");
+    }
+}
+
 if (!lembreteVisitasAtivo()) {
     // desligado em Configurações
 } elseif (date('H:i') < lembreteVisitasHorario()) {

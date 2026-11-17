@@ -2240,6 +2240,11 @@ foreach ([
     ['tipo_veiculo_interesse', 'ALTER TABLE vendas ADD COLUMN tipo_veiculo_interesse TEXT'],
     ['categoria_veiculo_interesse', 'ALTER TABLE vendas ADD COLUMN categoria_veiculo_interesse TEXT'],
     ['ano_veiculo_interesse', 'ALTER TABLE vendas ADD COLUMN ano_veiculo_interesse INTEGER'],
+    // 17/11/2026 — lembrete da visita pedido pelo cliente (includes/lembrete_visitas.php)
+    ['lembrete_visita_pedido_em', 'ALTER TABLE vendas ADD COLUMN lembrete_visita_pedido_em DATETIME'],
+    ['lembrete_visita_telefone', "ALTER TABLE vendas ADD COLUMN lembrete_visita_telefone TEXT DEFAULT ''"],
+    ['lembrete_visita_enviado_para', "ALTER TABLE vendas ADD COLUMN lembrete_visita_enviado_para TEXT DEFAULT ''"],
+    ['lembrete_visita_resposta', "ALTER TABLE vendas ADD COLUMN lembrete_visita_resposta TEXT DEFAULT ''"],
 ] as [$coluna, $sql]) {
     if (!colunaExiste($db, 'vendas', $coluna)) {
         try {

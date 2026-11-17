@@ -162,7 +162,7 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
     $codigo = vendaFormularioCodigo((int)$res['venda_id']);
     $primeiro = trim(explode(' ', trim((string)($f['nome'] ?? '')))[0]);
     $texto = 'Olá! Acabei de preencher o formulário da Fastcar (cód. ' . $codigo . ').';
-    if ($agendado !== '') $texto .= ' Agendei minha visita pra ' . $agendado . '.';
+    if ($agendado !== '') $texto = 'Oi! Agendei minha visita na Fastcar pra ' . $agendado . ' (cód. ' . $codigo . '). Quero receber o lembrete aqui no WhatsApp.';
     $diasVisita = vendaVisitaDias();
     $endereco = trim((string)getConfig('empresa_endereco')) ?: 'Av. Sagitário, 138 — Sala 1003, Torre City, Alpha Square Offices — Alphaville Conde II, Barueri/SP';
 ?>
@@ -205,7 +205,8 @@ footer { text-align:center; font-size:12px; color:#666; padding:20px; border-top
         <?php endif; ?>
 
         <?php if ($numeroZap): ?>
-            <a class="btn-zap" href="https://wa.me/<?= e($numeroZap) ?>?text=<?= e(rawurlencode($texto)) ?>">💬 Falar com a Fastcar no WhatsApp</a>
+            <a class="btn-zap" href="https://wa.me/<?= e($numeroZap) ?>?text=<?= e(rawurlencode($texto)) ?>"><?= $agendado !== '' ? '📲 Quero o lembrete no WhatsApp' : '💬 Falar com a Fastcar no WhatsApp' ?></a>
+            <?php if ($agendado !== ''): ?><p><small>Toque e envie a mensagem: no dia da visita a gente te lembra por lá, e você confirma ou troca o horário.</small></p><?php endif; ?>
         <?php elseif ($agendado === ''): ?>
             <p><strong>Seu cadastro foi recebido.</strong></p>
         <?php endif; ?>

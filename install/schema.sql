@@ -823,6 +823,15 @@ CREATE TABLE IF NOT EXISTS vendas (
     -- comparecimento (combinou e não veio). NULL = ainda não compareceu.
     visita_compareceu_em DATETIME,
 
+    -- Lembrete da visita PEDIDO pelo cliente (17/11/2026, "opção 3"): o
+    -- cliente toca "📲 Quero o lembrete no WhatsApp" no formulário e manda a
+    -- mensagem — só aí o sistema pode mandar o lembrete no dia (nunca envio
+    -- não pedido). Telefone = o número que pediu (pode diferir do cadastro).
+    lembrete_visita_pedido_em DATETIME,
+    lembrete_visita_telefone TEXT DEFAULT '',
+    lembrete_visita_enviado_para TEXT DEFAULT '',  -- data (Y-m-d) da visita cujo lembrete já saiu
+    lembrete_visita_resposta TEXT DEFAULT '',      -- '' | 'confirmou' | 'reagendar'
+
     -- Qualificação civil do COMPRADOR — colunas próprias aqui, não
     -- `clientes`: comprador de revenda é um contato diferente do vendedor
     -- original que trouxe o veículo pra Fastcar, e o mesmo telefone

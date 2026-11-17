@@ -26,6 +26,7 @@ require_once dirname(__DIR__, 2) . '/includes/whatsapp_config.php';
 require_once dirname(__DIR__, 2) . '/includes/ia_qualificacao_vendas.php';
 require_once __DIR__ . '/mensagens.php'; // helpers genéricos de mídia/dedup/debounce
 require_once dirname(__DIR__, 2) . '/includes/vendas_formulario.php';
+require_once dirname(__DIR__, 2) . '/includes/lembrete_visitas.php';
 
 /**
  * Núcleo do processamento de uma mensagem recebida via Z-API na instância
@@ -179,6 +180,15 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
                 'instancia' => $instancia, 'ia_resultado' => null];
     }
 
+    // 17/11/2026 — resposta ao lembrete da visita (includes/lembrete_visitas.php):
+    // "1" confirma, "2" reagenda. Só vale no dia em que o lembrete saiu pra
+    // esse número e ainda sem resposta — fora disso o texto segue o fluxo normal.
+    if ($tipoRegistro === 'text' && lembreteVisitaProcessarResposta($phone, $texto, $credenciaisVendas)) {
+        return ['ignored' => 'resposta_lembrete_visita', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                'ia_pausada' => $ia_pausada, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                'instancia' => $instancia, 'ia_resultado' => null];
+    }
+
     // 24/10/2026, "se o cliente mandar mensagem quando chega na loja" — com
     // visita confirmada e ainda sem comparecimento marcado, uma frase de
     // chegada ("cheguei", "estou aqui") recebe resposta automática pela
@@ -223,6 +233,17 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
             if (!empty($vendaLead['nova'])) {
                 mudarEtapaVenda((int)$vendaLead['venda_id'], 'sem_perfil', null, 'Mesmo cliente do formulário ' . vendaFormularioCodigo((int)$vf['id']) . ' — chamou de outro número');
             }
+        }
+    }
+    // 17/11/2026 — o cliente tocou "📲 Quero o lembrete no WhatsApp" no
+    // formulário: grava o pedido (só assim o lembrete do dia pode sair).
+    if (!empty($idForm) && lembreteVisitaTextoEhPedido($texto)) {
+        pausarIA($phone);
+        if (lembreteVisitaRegistrarPedido((int)$idForm, $phone, $credenciaisVendas)) {
+            setConfig('formvenda_ack_' . (int)$idForm, '1'); // já respondeu — nunca manda o "já recebemos" por cima
+            return ['ignored' => 'pedido_lembrete_visita', 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
+                    'ia_pausada' => true, 'venda_lead' => $vendaLead, 'erro_venda' => $erroVenda,
+                    'instancia' => $instancia, 'ia_resultado' => null];
         }
     }
     if (!empty($idForm)) {

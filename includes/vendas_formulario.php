@@ -237,6 +237,7 @@ function agendarVisitaFormularioVenda(int $vendaId, string $data, string $hora):
     $reagendou = (string)$v['visita_dia_horario_texto'] !== '' && $v['visita_dia_horario_texto'] !== $texto;
     $db->prepare("UPDATE vendas SET aceita_visitar_fastcar = 1, visita_dia_horario_texto = ?, visita_data_resolvida = ?,
                     visita_confirmada_em = COALESCE(visita_confirmada_em, datetime('now','localtime')),
+                    lembrete_visita_enviado_para = '', lembrete_visita_resposta = '',
                     resumo_ia = COALESCE(resumo_ia,'') || ?, updated_at = datetime('now','localtime') WHERE id = ?")
        ->execute([$texto, $data, "\n📅 Visita agendada pelo formulário: {$texto}", $vendaId]);
     $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, observacao) VALUES (?, ?, ?, ?)")
