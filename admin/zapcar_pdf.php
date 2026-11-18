@@ -31,6 +31,9 @@ if (!$resultado['ok']) {
     exit;
 }
 
+auditoriaRegistrarDocumentoAberto('zapcar_consulta', $idLocal,
+    'Consulta ZapCar placa ' . ($row['placa'] ?? '') . ' — ' . auditoriaContextoNegocio(!empty($row['oportunidade_id']) ? (int)$row['oportunidade_id'] : null));
+
 header('Content-Type: ' . ($resultado['content_type'] ?: 'application/pdf'));
 header('Content-Disposition: inline; filename="consulta-zapcar-' . $idLocal . '.pdf"');
 echo $resultado['bytes'];

@@ -42,6 +42,76 @@ function auditoriaRegistrar(string $evento, ?int $usuarioId, string $usuarioNome
     }
 }
 
+/** Janela em que a MESMA pessoa abrindo o MESMO documento conta 1 vez só (recarregar a página não polui o histórico). */
+const AUDITORIA_DOC_ABERTO_DEDUP_MIN = 30;
+
+/**
+ * Registra que o usuário logado abriu um documento sensível (18/11/2026,
+ * "registro hora e dia que aquele documento foi aberto" → "só os documentos
+ * sensíveis"). Chamado pelos endpoints que servem documento de cliente,
+ * contrato, comprovante financeiro, consulta ZapCar, termo/assinatura de
+ * vistoria e backup — NUNCA pelas mídias que carregam sozinhas na tela
+ * (fotos/áudios do WhatsApp Box, fotos de vistoria/catálogo): essas gerariam
+ * milhares de linhas sem ninguém ter escolhido abrir nada, e escrita a cada
+ * carga de tela é exatamente o padrão que causou "database is locked" antes.
+ *
+ * $alvoTipo/$alvoId identificam o DOCUMENTO (não o cliente), pra deduplicar
+ * por documento; o cliente/negociação vai legível no $detalhe. Mesma pessoa +
+ * mesmo documento dentro de AUDITORIA_DOC_ABERTO_DEDUP_MIN = 1 linha só.
+ * Best-effort: nunca lança, nunca impede o documento de abrir.
+ */
+function auditoriaRegistrarDocumentoAberto(string $alvoTipo, int $alvoId, string $detalhe): void {
+    try {
+        $usuarioId = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : null;
+        $usuarioNome = (string)($_SESSION['admin_nome'] ?? '');
+        if (!$usuarioId) return;
+        $stmt = getDB()->prepare("
+            SELECT 1 FROM auditoria
+            WHERE usuario_id = ? AND evento = 'documento_aberto' AND alvo_tipo = ? AND alvo_id = ?
+              AND created_at >= datetime('now', 'localtime', ?)
+            LIMIT 1
+        ");
+        $stmt->execute([$usuarioId, $alvoTipo, $alvoId, '-' . AUDITORIA_DOC_ABERTO_DEDUP_MIN . ' minutes']);
+        if ($stmt->fetchColumn()) return;
+        auditoriaRegistrar('documento_aberto', $usuarioId, $usuarioNome, $alvoTipo, $alvoId, $detalhe);
+    } catch (Throwable $e) {
+        // nunca impede o documento de abrir
+    }
+}
+
+/** "Fulano (oportunidade #12)" / "Comprador (venda #7)" pro detalhe — vazio se não achar. */
+function auditoriaContextoNegocio(?int $oportunidadeId, ?int $vendaId = null): string {
+    try {
+        $db = getDB();
+        if ($vendaId) {
+            $st = $db->prepare("SELECT comprador_nome FROM vendas WHERE id = ?");
+            $st->execute([$vendaId]);
+            $nome = trim((string)$st->fetchColumn());
+            return ($nome !== '' ? $nome . ' ' : '') . "(venda #{$vendaId})";
+        }
+        if ($oportunidadeId) {
+            $st = $db->prepare("SELECT c.nome FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = ?");
+            $st->execute([$oportunidadeId]);
+            $nome = trim((string)$st->fetchColumn());
+            return ($nome !== '' ? $nome . ' ' : '') . "(oportunidade #{$oportunidadeId})";
+        }
+    } catch (Throwable $e) {}
+    return '';
+}
+
+/** Nome legível de um tipo de documento (compra ou venda) — cai no próprio slug se não achar. */
+function auditoriaRotuloTipoDocumento(string $tipo): string {
+    foreach (['TIPOS_DOCUMENTOS_CLIENTE', 'TIPOS_DOCUMENTOS_FECHAMENTO', 'TIPOS_DOCUMENTOS_COMPRADOR',
+              'TIPOS_DOCUMENTOS_VENDA_CONTRATO', 'TIPOS_DOCUMENTOS_VENDA_EXTRA'] as $c) {
+        if (defined($c) && isset(constant($c)[$tipo])) {
+            $v = constant($c)[$tipo];
+            $v = is_array($v) ? (string)($v['label'] ?? $v['nome'] ?? $tipo) : (string)$v;
+            return trim(explode(' (', $v)[0]);
+        }
+    }
+    return $tipo;
+}
+
 /** Lista paginada simples pra tela de auditoria — mais recente primeiro. */
 function auditoriaListar(int $limite = 200, string $evento = '', string $q = ''): array {
     $db = getDB();
@@ -76,6 +146,7 @@ function auditoriaEventosDistintos(): array {
 function auditoriaRotuloEvento(string $evento): string {
     return match ($evento) {
         'login' => '🔓 Login',
+        'documento_aberto' => '📄 Documento aberto',
         'quadro_promissoria_alterado' => '🧾 Quadro-Resumo da promissória alterado',
         'venda_lida_contrato_ia' => '🤖 Venda preenchida lendo o contrato',
         'contrato_movido_para_compra' => '🔁 Contrato movido de venda pra compra',

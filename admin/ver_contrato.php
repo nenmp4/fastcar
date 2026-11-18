@@ -29,4 +29,8 @@ if (in_array($_SESSION['admin_perfil'] ?? '', ['vendedor', 'avaliador'], true) &
     exit('Sem acesso a esse contrato.');
 }
 
+auditoriaRegistrarDocumentoAberto('contrato', (int)$contrato['id'],
+    'Contrato #' . (int)$contrato['id'] . ' (' . ($contrato['tipo'] ?? '') . ', ' . ($contrato['status'] ?? '') . ') — '
+    . auditoriaContextoNegocio((int)($contrato['oportunidade_id'] ?? 0) ?: null, !empty($contrato['venda_id']) ? (int)$contrato['venda_id'] : null));
+
 servirArquivoDriveOuLocal($contrato['drive_file_id'] ?: null, $contrato['arquivo_url'] ?: null);

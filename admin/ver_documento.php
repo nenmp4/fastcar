@@ -22,4 +22,7 @@ if (!$doc) {
     exit('Documento não encontrado.');
 }
 
+auditoriaRegistrarDocumentoAberto('oportunidade_documento', (int)$doc['id'],
+    auditoriaRotuloTipoDocumento((string)$doc['tipo']) . ' — ' . auditoriaContextoNegocio((int)$doc['oportunidade_id']));
+
 servirArquivoDriveOuLocal($doc['drive_file_id'] ?: null, $doc['arquivo_url'] ?: null);

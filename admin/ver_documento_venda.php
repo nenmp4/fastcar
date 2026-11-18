@@ -21,4 +21,7 @@ if (!$doc) {
     exit('Documento não encontrado.');
 }
 
+auditoriaRegistrarDocumentoAberto('venda_documento', (int)$doc['id'],
+    auditoriaRotuloTipoDocumento((string)$doc['tipo']) . ' — ' . auditoriaContextoNegocio(null, (int)$doc['venda_id']));
+
 servirArquivoDriveOuLocal($doc['drive_file_id'] ?: null, $doc['arquivo_url'] ?: null);

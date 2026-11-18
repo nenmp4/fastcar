@@ -17,6 +17,8 @@ if (!$campos) {
     exit('Negociação não encontrada ou sem veículo vinculado.');
 }
 
+auditoriaRegistrarDocumentoAberto('termo_retirada', $id, 'Termo de retirada amigável (impressão) — ' . auditoriaContextoNegocio(null, $id));
+
 $caminho = gerarPdfTermoRetiradaAmigavel($campos);
 $pdf = (string)file_get_contents($caminho);
 @unlink($caminho);

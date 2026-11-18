@@ -19,4 +19,8 @@ if (!$lancamento) {
     exit('Lançamento não encontrado.');
 }
 
+auditoriaRegistrarDocumentoAberto('fin_lancamento', (int)$lancamento['id'],
+    'Comprovante do lançamento #' . (int)$lancamento['id'] . ' — ' . ($lancamento['descricao'] ?? '')
+    . ' (R$ ' . number_format((float)($lancamento['valor'] ?? 0), 2, ',', '.') . ')');
+
 servirArquivoDriveOuLocal($lancamento['drive_file_id'] ?: null, $lancamento['arquivo_url'] ?: null);

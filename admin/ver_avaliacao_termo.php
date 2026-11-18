@@ -20,4 +20,7 @@ if (!$av) {
     exit('Avaliação não encontrada.');
 }
 
+auditoriaRegistrarDocumentoAberto('vistoria_termo', (int)$av['id'],
+    'Termo de vistoria #' . (int)$av['id'] . ' — ' . auditoriaContextoNegocio((int)$av['oportunidade_id'] ?: null, !empty($av['venda_id']) ? (int)$av['venda_id'] : null));
+
 servirArquivoDriveOuLocal($av['drive_file_id'] ?: null, $av['arquivo_url'] ?: null);

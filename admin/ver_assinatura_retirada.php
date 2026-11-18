@@ -18,4 +18,7 @@ if (!$av) {
     exit('Vistoria não encontrada.');
 }
 
+auditoriaRegistrarDocumentoAberto('vistoria_assinatura', (int)$av['id'],
+    'Assinatura da retirada (vistoria #' . (int)$av['id'] . ') — ' . auditoriaContextoNegocio((int)$av['oportunidade_id'] ?: null, !empty($av['venda_id']) ? (int)$av['venda_id'] : null));
+
 servirArquivoDriveOuLocal($av['termo_ciente_assinatura_drive_file_id'] ?: null, $av['termo_ciente_assinatura_arquivo_url'] ?: null);

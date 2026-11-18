@@ -23,6 +23,8 @@ if (!preg_match('/^backup_(db|completo)_\d{4}-\d{2}-\d{2}\.(db|zip)$/', basename
     exit('Arquivo não encontrado.');
 }
 
+auditoriaRegistrarDocumentoAberto('backup', crc32(basename($caminho)) & 0x7fffffff, 'Backup baixado: ' . basename($caminho));
+
 $mime = str_ends_with($caminho, '.zip') ? 'application/zip' : 'application/octet-stream';
 header('Content-Type: ' . $mime);
 header('Content-Disposition: attachment; filename="' . basename($caminho) . '"');
