@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS auditoria (
 CREATE INDEX IF NOT EXISTS idx_auditoria_created ON auditoria(created_at);
 CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria(usuario_id);
 CREATE INDEX IF NOT EXISTS idx_auditoria_evento ON auditoria(evento);
+-- 18/11/2026: dedup de documento aberto + alerta de volume (usuário + evento + janela de tempo)
+CREATE INDEX IF NOT EXISTS idx_auditoria_usuario_evento ON auditoria(usuario_id, evento, created_at);
 
 -- Um cadastro por telefone (regra do Jean) — a oportunidade é o cliente;
 -- o veículo mora em `veiculos`, um cliente pode ter mais de um veículo em

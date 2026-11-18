@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/acesso_documentos.php';
 requireAcessoVendas();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -21,7 +22,11 @@ if (!$doc) {
     exit('Documento não encontrado.');
 }
 
-auditoriaRegistrarDocumentoAberto('venda_documento', (int)$doc['id'],
-    auditoriaRotuloTipoDocumento((string)$doc['tipo']) . ' — ' . auditoriaContextoNegocio(null, (int)$doc['venda_id']));
+$detalheDoc = auditoriaRotuloTipoDocumento((string)$doc['tipo']) . ' — ' . auditoriaContextoNegocio(null, (int)$doc['venda_id']);
+if (!usuarioPodeAbrirDocumentoNegocio(null, (int)$doc['venda_id'])) {
+    negarAcessoDocumento('venda_documento', (int)$doc['id'], $detalheDoc);
+}
+
+auditoriaRegistrarDocumentoAberto('venda_documento', (int)$doc['id'], $detalheDoc);
 
 servirArquivoDriveOuLocal($doc['drive_file_id'] ?: null, $doc['arquivo_url'] ?: null);

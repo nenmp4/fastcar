@@ -73,7 +73,7 @@ function finGerarExtratoPdf(PDO $db, string $de, string $ate): FPDF {
     $cnpjEmpresa = getConfig('empresa_cnpj') ?: '66.934.500/0001-09';
 
     // ── PDF (paisagem — mesma decisão do JurídicoSaaS) ─────────────────
-    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf = new FastcarPDF('L', 'mm', 'A4');
     $pdf->SetMargins(15, 15, 15);
     $pdf->SetAutoPageBreak(true, 18);
     $pdf->AddPage();

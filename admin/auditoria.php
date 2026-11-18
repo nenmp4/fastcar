@@ -9,6 +9,23 @@
 require_once __DIR__ . '/_bootstrap.php';
 requireSuperAdmin();
 
+$sucesso = '';
+$erro = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar_alerta_documentos') {
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        $lim = trim((string)($_POST['limite'] ?? ''));
+        if (!ctype_digit($lim) || (int)$lim > 500) {
+            $erro = 'Limite inválido — use um número de 0 a 500 (0 desliga o alerta).';
+        } else {
+            setConfig('alerta_documentos_limite_hora', (string)(int)$lim);
+            setConfig('alerta_documentos_whatsapp', trim(clean((string)($_POST['whatsapp'] ?? ''))));
+            $sucesso = 'Alerta de documentos salvo.';
+        }
+    }
+}
+
 $evento = (string)($_GET['evento'] ?? '');
 $q = trim((string)($_GET['q'] ?? ''));
 
@@ -31,6 +48,8 @@ $linhas = auditoriaListar(200, $evento, $q);
 <?php include __DIR__ . '/_topbar.php'; ?>
 
 <main>
+<?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
+<?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <div class="card">
     <h2>🕵️ Auditoria</h2>
     <p><small>Registro dos eventos mais sensíveis do sistema: login/logout, bloqueio de conta por tentativa
@@ -54,6 +73,27 @@ $linhas = auditoriaListar(200, $evento, $q);
             <button type="submit">Filtrar</button>
             <?php if ($evento !== '' || $q !== ''): ?><a href="/admin/auditoria.php">Limpar filtro</a><?php endif; ?>
         </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>🚨 Alerta de muitos documentos abertos</h3>
+    <p><small>Se a mesma pessoa abrir (ou tentar abrir, fora da carteira) mais documentos de clientes que o limite
+       dentro de 1 hora, sai um aviso no WhatsApp e no sino dos super admins — 1 aviso por pessoa por hora.
+       Documentos contam: CNH/comprovantes, contratos, comprovante financeiro, consulta ZapCar, termos de vistoria
+       e backup. Consultor só abre documento da própria carteira; vendedor, da própria venda.</small></p>
+    <form method="post" class="grid-2">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_alerta_documentos">
+        <div>
+            <label>Limite por hora (0 desliga)</label>
+            <input type="number" inputmode="numeric" name="limite" min="0" max="500" value="<?= (int)auditoriaLimiteAlertaDocumentos() ?>">
+        </div>
+        <div>
+            <label>WhatsApp que recebe (vazio = números de notificação)</label>
+            <input type="text" name="whatsapp" value="<?= e((string)(getConfig('alerta_documentos_whatsapp') ?: '')) ?>" placeholder="Ex: 11999999999, 11988888888">
+        </div>
+        <div style="grid-column:1/-1"><button type="submit">Salvar alerta</button></div>
     </form>
 </div>
 

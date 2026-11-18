@@ -20,6 +20,7 @@ require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/contratos_pdf.php';
 require_once __DIR__ . '/../includes/contratos.php';
 requireSuperAdmin();
+pdfAtivarMarcaDagua(); // rodapé "gerado por Fulano em..." (rastreio de vazamento, includes/pdf_marca.php)
 
 // 04/11/2026, "mostra fipe, quitação calculado em 20% da FIPE" — sem
 // quitação digitada, o custo usa uma estimativa de 20% da FIPE (marcada
@@ -456,7 +457,7 @@ if (($_GET['pdf'] ?? '') === 'sem_contrato') {
     $st->execute($pp);
     $itens = array_merge($itens, $st->fetchAll());
 
-    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf = new FastcarPDF('L', 'mm', 'A4');
     $pdf->SetMargins(10, 12, 10);
     $pdf->SetAutoPageBreak(true, 14);
     $pdf->AddPage();
@@ -527,7 +528,7 @@ if (($_GET['pdf'] ?? '') === 'sem_contrato') {
     exit;
 }
 if (!empty($_GET['pdf'])) {
-    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf = new FastcarPDF('L', 'mm', 'A4');
     $pdf->SetMargins(10, 12, 10);
     $pdf->SetAutoPageBreak(true, 14);
     $pdf->AddPage();

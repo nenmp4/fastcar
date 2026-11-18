@@ -1371,6 +1371,7 @@ try {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_created ON auditoria(created_at)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria(usuario_id)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_evento ON auditoria(evento)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_auditoria_usuario_evento ON auditoria(usuario_id, evento, created_at)");
     echo "✅ auditoria: tabela pronta\n";
 } catch (Throwable $e) {
     echo "❌ auditoria: {$e->getMessage()}\n";

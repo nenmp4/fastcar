@@ -15,7 +15,7 @@
  */
 
 define('FPDF_FONTPATH', __DIR__ . '/font/');
-require_once __DIR__ . '/fpdf.php';
+require_once __DIR__ . '/pdf_marca.php'; // fpdf.php + FastcarPDF (rodapé de rastreio, só quando ligado)
 
 /** FPDF usa ISO-8859-1 — converte texto UTF-8 do banco/formulário. */
 function _pdfTexto(string $texto): string {
@@ -23,7 +23,7 @@ function _pdfTexto(string $texto): string {
 }
 
 function _pdfNovo(): FPDF {
-    $pdf = new FPDF('P', 'mm', 'A4');
+    $pdf = new FastcarPDF('P', 'mm', 'A4');
     $pdf->SetMargins(20, 18, 20);
     $pdf->SetAutoPageBreak(true, 20);
     $pdf->AddPage();

@@ -13,6 +13,7 @@ require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/financeiro_dre.php';
 
 requireAcessoFinanceiro();
+pdfAtivarMarcaDagua(); // rodapé "gerado por Fulano em..." (rastreio de vazamento, includes/pdf_marca.php)
 
 $db = getDB();
 

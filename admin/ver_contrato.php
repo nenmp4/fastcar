@@ -10,6 +10,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/acesso_documentos.php';
 liberarSessao();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -27,6 +28,13 @@ if (!$contrato) {
 if (in_array($_SESSION['admin_perfil'] ?? '', ['vendedor', 'avaliador'], true) && empty($contrato['venda_id'])) {
     http_response_code(403);
     exit('Sem acesso a esse contrato.');
+}
+
+$opContrato = (int)($contrato['oportunidade_id'] ?? 0) ?: null;
+$vendaContrato = !empty($contrato['venda_id']) ? (int)$contrato['venda_id'] : null;
+// Contrato de venda: vale a carteira da VENDA; o de compra, a da oportunidade.
+if (!usuarioPodeAbrirDocumentoNegocio($vendaContrato ? null : $opContrato, $vendaContrato)) {
+    negarAcessoDocumento('contrato', (int)$contrato['id'], 'Contrato #' . (int)$contrato['id'] . ' — ' . auditoriaContextoNegocio($opContrato, $vendaContrato));
 }
 
 auditoriaRegistrarDocumentoAberto('contrato', (int)$contrato['id'],

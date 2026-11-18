@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/acesso_documentos.php';
 requireAcessoAvaliacoes();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -16,6 +17,10 @@ $av = buscarAvaliacao($id);
 if (!$av) {
     http_response_code(404);
     exit('Vistoria não encontrada.');
+}
+
+if (!usuarioPodeAbrirDocumentoNegocio((int)$av['oportunidade_id'] ?: null, !empty($av['venda_id']) ? (int)$av['venda_id'] : null)) {
+    negarAcessoDocumento('vistoria_assinatura', (int)$av['id'], 'Assinatura da retirada (vistoria #' . (int)$av['id'] . ')');
 }
 
 auditoriaRegistrarDocumentoAberto('vistoria_assinatura', (int)$av['id'],

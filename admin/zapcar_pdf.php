@@ -10,6 +10,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/acesso_documentos.php';
 
 $idLocal = (int)($_GET['id_local'] ?? 0);
 $row = $idLocal ? zapcarBuscarConsultaLocal($idLocal) : null;
@@ -21,6 +22,10 @@ if (!$row || !$row['zapcar_id']) {
 if ($row['status'] !== 'concluido') {
     http_response_code(409);
     exit('Essa consulta ainda não concluiu — o documento só fica disponível depois.');
+}
+
+if (!usuarioPodeAbrirDocumentoNegocio(!empty($row['oportunidade_id']) ? (int)$row['oportunidade_id'] : null)) {
+    negarAcessoDocumento('zapcar_consulta', $idLocal, 'Consulta ZapCar placa ' . ($row['placa'] ?? ''));
 }
 
 $resultado = zapcarBaixarPdf($row['zapcar_id']);

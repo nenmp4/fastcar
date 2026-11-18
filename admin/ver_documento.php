@@ -9,6 +9,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/acesso_documentos.php';
 liberarSessao();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -22,7 +23,11 @@ if (!$doc) {
     exit('Documento não encontrado.');
 }
 
-auditoriaRegistrarDocumentoAberto('oportunidade_documento', (int)$doc['id'],
-    auditoriaRotuloTipoDocumento((string)$doc['tipo']) . ' — ' . auditoriaContextoNegocio((int)$doc['oportunidade_id']));
+$detalheDoc = auditoriaRotuloTipoDocumento((string)$doc['tipo']) . ' — ' . auditoriaContextoNegocio((int)$doc['oportunidade_id']);
+if (!usuarioPodeAbrirDocumentoNegocio((int)$doc['oportunidade_id'])) {
+    negarAcessoDocumento('oportunidade_documento', (int)$doc['id'], $detalheDoc);
+}
+
+auditoriaRegistrarDocumentoAberto('oportunidade_documento', (int)$doc['id'], $detalheDoc);
 
 servirArquivoDriveOuLocal($doc['drive_file_id'] ?: null, $doc['arquivo_url'] ?: null);

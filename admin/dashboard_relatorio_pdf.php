@@ -14,6 +14,7 @@ ob_start();
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../includes/dashboard_pdf.php';
+pdfAtivarMarcaDagua(); // rodapé "gerado por Fulano em..." (rastreio de vazamento, includes/pdf_marca.php)
 
 $db = getDB();
 $perfil = $_SESSION['admin_perfil'];

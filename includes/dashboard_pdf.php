@@ -48,7 +48,7 @@ function gerarRelatorioDashboardPdf(PDO $db, string $where, array $params, strin
 
     // ── PDF (paisagem — mesma decisão do extrato financeiro: colunas
     // demais pra caber direito em retrato) ─────────────────────────────
-    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf = new FastcarPDF('L', 'mm', 'A4');
     $pdf->SetMargins(15, 15, 15);
     $pdf->SetAutoPageBreak(true, 18);
     $pdf->AddPage();

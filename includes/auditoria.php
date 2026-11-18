@@ -61,21 +61,112 @@ const AUDITORIA_DOC_ABERTO_DEDUP_MIN = 30;
  * Best-effort: nunca lança, nunca impede o documento de abrir.
  */
 function auditoriaRegistrarDocumentoAberto(string $alvoTipo, int $alvoId, string $detalhe): void {
+    _auditoriaRegistrarDocumentoDedup('documento_aberto', $alvoTipo, $alvoId, $detalhe);
+}
+
+/**
+ * Tentativa de abrir documento de cliente FORA da carteira (18/11/2026,
+ * "ajuda evitar vazamento?" → trava por carteira, ver
+ * includes/acesso_documentos.php). Mesma dedup do documento aberto — trocar
+ * o id na URL várias vezes conta 1 linha por documento — e também entra na
+ * contagem do alerta de volume (quem fica testando id é exatamente o caso).
+ */
+function auditoriaRegistrarDocumentoNegado(string $alvoTipo, int $alvoId, string $detalhe): void {
+    _auditoriaRegistrarDocumentoDedup('documento_acesso_negado', $alvoTipo, $alvoId, $detalhe);
+}
+
+/** Corpo comum dos 2 acima. Best-effort, nunca lança. */
+function _auditoriaRegistrarDocumentoDedup(string $evento, string $alvoTipo, int $alvoId, string $detalhe): void {
     try {
         $usuarioId = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : null;
         $usuarioNome = (string)($_SESSION['admin_nome'] ?? '');
         if (!$usuarioId) return;
         $stmt = getDB()->prepare("
             SELECT 1 FROM auditoria
-            WHERE usuario_id = ? AND evento = 'documento_aberto' AND alvo_tipo = ? AND alvo_id = ?
+            WHERE usuario_id = ? AND evento = ? AND alvo_tipo = ? AND alvo_id = ?
               AND created_at >= datetime('now', 'localtime', ?)
             LIMIT 1
         ");
-        $stmt->execute([$usuarioId, $alvoTipo, $alvoId, '-' . AUDITORIA_DOC_ABERTO_DEDUP_MIN . ' minutes']);
+        $stmt->execute([$usuarioId, $evento, $alvoTipo, $alvoId, '-' . AUDITORIA_DOC_ABERTO_DEDUP_MIN . ' minutes']);
         if ($stmt->fetchColumn()) return;
-        auditoriaRegistrar('documento_aberto', $usuarioId, $usuarioNome, $alvoTipo, $alvoId, $detalhe);
+        auditoriaRegistrar($evento, $usuarioId, $usuarioNome, $alvoTipo, $alvoId, $detalhe);
+        auditoriaVerificarVolumeDocumentos($usuarioId, $usuarioNome);
     } catch (Throwable $e) {
         // nunca impede o documento de abrir
+    }
+}
+
+/** Padrão do alerta: documentos diferentes abertos (ou barrados) por 1 pessoa em 1 hora. */
+const AUDITORIA_ALERTA_DOCS_PADRAO = 15;
+
+/** Limite configurado em Auditoria (0 = alerta desligado). */
+function auditoriaLimiteAlertaDocumentos(): int {
+    $v = getConfig('alerta_documentos_limite_hora');
+    if ($v === null || $v === '' || !ctype_digit((string)$v)) return AUDITORIA_ALERTA_DOCS_PADRAO;
+    return (int)$v;
+}
+
+/** Números que recebem o alerta — vazio cai nos números de notificação (onde está o do Jean). */
+function auditoriaNumerosAlertaDocumentos(): array {
+    $lista = (string)(getConfig('alerta_documentos_whatsapp') ?: getConfig('notificacao_leads_whatsapp') ?: '');
+    return array_values(array_filter(array_map('trim', preg_split('/[,;\n]+/', $lista))));
+}
+
+/**
+ * Alerta de volume (18/11/2026): passou do limite de documentos diferentes
+ * numa hora → WhatsApp pros números de alerta + sino dos super admins. Padrão
+ * típico de quem está copiando a base. 1 alerta por pessoa por hora. Só roda
+ * quando uma linha NOVA entra (a dedup de 30min já filtrou recarga de página),
+ * então não pesa na abertura normal de documento.
+ */
+function auditoriaVerificarVolumeDocumentos(int $usuarioId, string $usuarioNome): void {
+    try {
+        $limite = auditoriaLimiteAlertaDocumentos();
+        if ($limite <= 0) return;
+        $db = getDB();
+        $st = $db->prepare("
+            SELECT SUM(evento = 'documento_aberto') AS abertos, SUM(evento = 'documento_acesso_negado') AS negados
+            FROM auditoria
+            WHERE usuario_id = ? AND evento IN ('documento_aberto', 'documento_acesso_negado')
+              AND created_at >= datetime('now', 'localtime', '-60 minutes')
+        ");
+        $st->execute([$usuarioId]);
+        $r = $st->fetch() ?: [];
+        $abertos = (int)($r['abertos'] ?? 0);
+        $negados = (int)($r['negados'] ?? 0);
+        if ($abertos + $negados < $limite) return;
+
+        $chave = 'alerta_docs_enviado_' . $usuarioId;
+        $ultimo = (string)(getConfig($chave) ?: '');
+        if ($ultimo !== '' && strtotime($ultimo) > time() - 3600) return;
+        setConfig($chave, date('Y-m-d H:i:s')); // antes de mandar: 2 requests juntas nunca alertam 2x
+
+        $nome = $usuarioNome !== '' ? $usuarioNome : 'usuário #' . $usuarioId;
+        $base = function_exists('appBaseUrl') ? appBaseUrl() : 'https://sistema.fastcar.solutions';
+        $url = '/admin/auditoria.php?q=' . rawurlencode($nome);
+        $msg = "🚨 *Fastcar — muitos documentos abertos*\n\n"
+             . "{$nome} abriu {$abertos} documento(s) de clientes na última hora"
+             . ($negados ? " e teve {$negados} tentativa(s) barrada(s) por estar fora da carteira" : '')
+             . " (limite: {$limite}).\n\nConfira na Auditoria: {$base}{$url}";
+
+        auditoriaRegistrar('alerta_volume_documentos', $usuarioId, $usuarioNome, 'usuario', $usuarioId,
+            "{$abertos} aberto(s) + {$negados} barrado(s) em 1h (limite {$limite})");
+
+        require_once __DIR__ . '/whatsapp_config.php';
+        foreach (auditoriaNumerosAlertaDocumentos() as $numero) {
+            try { zapiEnviarTextoInterno($numero, $msg); } catch (Throwable $e) {}
+        }
+        require_once __DIR__ . '/notificacoes.php';
+        $admins = $db->query("SELECT id FROM usuarios WHERE perfil = 'super_admin' AND bloqueado = 0")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($admins as $adminId) {
+            if ((int)$adminId === $usuarioId) continue;
+            try {
+                criarNotificacao((int)$adminId, 'alerta_documentos', '🚨 Muitos documentos abertos',
+                    "{$nome}: {$abertos} aberto(s)" . ($negados ? ", {$negados} barrado(s)" : '') . ' na última hora', $url);
+            } catch (Throwable $e) {}
+        }
+    } catch (Throwable $e) {
+        // alerta é best-effort
     }
 }
 
@@ -147,6 +238,8 @@ function auditoriaRotuloEvento(string $evento): string {
     return match ($evento) {
         'login' => '🔓 Login',
         'documento_aberto' => '📄 Documento aberto',
+        'documento_acesso_negado' => '⛔ Documento barrado (fora da carteira)',
+        'alerta_volume_documentos' => '🚨 Alerta: muitos documentos abertos',
         'quadro_promissoria_alterado' => '🧾 Quadro-Resumo da promissória alterado',
         'venda_lida_contrato_ia' => '🤖 Venda preenchida lendo o contrato',
         'contrato_movido_para_compra' => '🔁 Contrato movido de venda pra compra',

@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../includes/acesso_documentos.php';
 requireAcessoVendas();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -17,8 +18,13 @@ if (!$campos) {
     exit('Negociação não encontrada ou sem veículo vinculado.');
 }
 
+if (!usuarioPodeAbrirDocumentoNegocio(null, $id)) {
+    negarAcessoDocumento('termo_retirada', $id, 'Termo de retirada amigável — ' . auditoriaContextoNegocio(null, $id));
+}
+
 auditoriaRegistrarDocumentoAberto('termo_retirada', $id, 'Termo de retirada amigável (impressão) — ' . auditoriaContextoNegocio(null, $id));
 
+pdfAtivarMarcaDagua(); // rodapé "gerado por Fulano em..." (rastreio de vazamento, includes/pdf_marca.php)
 $caminho = gerarPdfTermoRetiradaAmigavel($campos);
 $pdf = (string)file_get_contents($caminho);
 @unlink($caminho);
