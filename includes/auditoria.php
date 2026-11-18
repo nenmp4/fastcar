@@ -265,6 +265,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'ia_reativada_carteira' => '▶️ IA reativada na carteira inteira',
         'mensagem_whatsapp_apagada' => '🗑️ Mensagem WhatsApp apagada pra todos',
         'atendimento_encerrado_inbox' => '🔒 Atendimento encerrado via WhatsApp Box',
+        'lead_movido_vendas_inbox' => '🛒 Lead movido pra vendas via WhatsApp Box',
         'veiculo_excluido' => '🗑️ Veículo excluído da frota',
         'venda_desfeita' => '↩️ Vendido desfeito (sem contrato)',
         'contrato_assinado_cancelado' => '🚫 Contrato assinado cancelado (com senha)',

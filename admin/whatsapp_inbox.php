@@ -292,6 +292,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $telefoneAtivo = $telPost;
             }
+        } elseif ($acao === 'mover_vendas_inbox' && $telPost) {
+            // 18/11/2026, "será que lead de venda" / "não pode mover" — cliente
+            // que quer COMPRAR um veículo, movido direto da caixa (mesma
+            // moverOportunidadeParaVendas() do funil/oportunidade).
+            $opMov = buscarOportunidadeAtivaPorTelefone($telPost);
+            if (!$opMov) {
+                $erro = 'Esse telefone não tem oportunidade ativa no funil de compra.';
+            } else {
+                $rMov = moverOportunidadeParaVendas((int)$opMov['id'], (int)$_SESSION['admin_id'], 'Movido pelo WhatsApp Box');
+                if (!empty($rMov['ok'])) {
+                    auditoriaRegistrar('lead_movido_vendas_inbox', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', (int)$opMov['id'], "Telefone {$telPost}. Negociação #{$rMov['venda_id']}.");
+                    $sucesso = 'Movido pra vendas — negociação #' . $rMov['venda_id'] . ' (foi pro rodízio dos vendedores e a conversa saiu desta caixa).';
+                } else {
+                    $erro = 'Não deu pra mover pra vendas: ' . ($rMov['erro'] ?? 'erro desconhecido');
+                }
+            }
+            $telefoneAtivo = $telPost;
         } elseif ($acao === 'mudar_etapa_inbox' && $telPost) {
             // 13/11/2026, "colocar no inbox a opção de mudar etapa do cliente"
             // — mesma função central de sempre (mudarEtapa(), regra #6, grava
@@ -769,6 +786,14 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
                             <button type="submit" class="perigo">Confirmar encerramento</button>
                         </form>
                     </details>
+                    <?php if (!empty($opEtapaInbox)): ?>
+                    <form method="post" class="wpp-etapa-form" onsubmit="return confirmarAcao(this, 'Esse cliente quer COMPRAR um veículo? Ele sai do funil de compra e vira negociação de vendas (vai pro rodízio dos vendedores).');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="acao" value="mover_vendas_inbox">
+                        <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                        <button type="submit">🛒 Quer comprar — mover pra vendas</button>
+                    </form>
+                    <?php endif; ?>
                 <?php endif; ?>
               </div>
                 <?php if ($_SESSION['admin_perfil'] !== 'supervisor' && conversaEmQualificacaoWhatsapp($telefoneAtivo)): ?>
