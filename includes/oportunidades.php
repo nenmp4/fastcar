@@ -1603,6 +1603,10 @@ function reabrirEDistribuirEncerradosSemResposta(int $executadoPor): array {
     $ops = $db->query("
         SELECT id, responsavel_id FROM oportunidades
         WHERE etapa IN ('perdido', 'sem_perfil') AND motivo_perda LIKE '%encerrado automaticamente%'
+          -- 18/11/2026: quem já é comprador em Vendas nunca reabre na compra
+          AND NOT EXISTS (SELECT 1 FROM vendas v JOIN clientes cv ON cv.id = oportunidades.cliente_id
+                          WHERE v.comprador_telefone = cv.telefone AND v.etapa != 'cancelada')
+          AND COALESCE(motivo_perda, '') NOT LIKE '%encaminhado pra vendas%'
         ORDER BY id
     ")->fetchAll();
     $stHist = $db->prepare("SELECT DISTINCT responsavel_id FROM oportunidade_historico WHERE oportunidade_id = ? AND responsavel_id IS NOT NULL");
@@ -1707,6 +1711,10 @@ function reciclarLeadsPerdidosQuentes(int $limitePorConsultor = RECICLAR_PERDIDO
                           WHERE h.oportunidade_id = o.id AND h.observacao LIKE ?)
           AND NOT EXISTS (SELECT 1 FROM oportunidades o2
                           WHERE o2.cliente_id = o.cliente_id AND o2.id != o.id AND o2.etapa IN ({$ph}))
+          -- 18/11/2026: quem já é comprador em Vendas nunca reabre na compra
+          AND NOT EXISTS (SELECT 1 FROM vendas v JOIN clientes cv ON cv.id = o.cliente_id
+                          WHERE v.comprador_telefone = cv.telefone AND v.etapa != 'cancelada')
+          AND COALESCE(o.motivo_perda, '') NOT LIKE '%encaminhado pra vendas%'
         ORDER BY o.updated_at DESC, o.id DESC
     ");
     $st->execute(array_merge([RECICLAR_PERDIDOS_QUENTES_MARCA . '%'], ETAPAS_ATIVAS));
