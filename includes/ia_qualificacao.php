@@ -232,6 +232,8 @@ PROMPT;
  * "Oi, Mario! Tudo bem?", e a IA ficou repetindo cumprimento sem avançar.
  */
 function iaLimitarUmaPergunta(string $texto): string {
+    // 18/11/2026: negrito do WhatsApp é *um asterisco*; "**x**" de markdown chegava cru.
+    $texto = preg_replace('/\*\*(.+?)\*\*/su', '*$1*', $texto);
     if (substr_count($texto, '?') < 2) return $texto;
     $frases = preg_split('/(?<=[.!?…)])\s+/u', trim($texto)) ?: [$texto];
     // 12/11/2026, achado real: o aviso de LGPD entre parênteses termina em

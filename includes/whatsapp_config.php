@@ -1072,6 +1072,8 @@ function _zapiBuscarContatoViaZapi(string $phone): ?array {
 function nomeWhatsappPareceValido(string $nome): bool {
     $normalizado = mb_strtolower(trim($nome));
     if ($normalizado === '') return false;
+    // 18/11/2026: nome de perfil que é e-mail ("fulano@gmail.c") nunca vira nome do cliente.
+    if (str_contains($normalizado, '@')) return false;
     static $invalidos = [
         'online', 'offline', 'disponivel', 'disponível', 'indisponivel', 'indisponível',
         'ocupado', 'ocupada', 'ausente', 'away', 'busy', 'at work', 'no trabalho',
