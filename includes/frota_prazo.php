@@ -52,6 +52,20 @@ function frotaPrazoEhRisco(int $dias, ?string $ano): bool {
     return $dias >= 183 && frotaPrazoAnoVeiculo($ano) >= frotaPrazoAnoMinimoRisco();
 }
 
+/**
+ * ⚠️ Risco médio (21/11/2026, "para baixo risco médio"): carro mais antigo
+ * que o ano mínimo do risco alto (hoje antes de 2022), com 6+ meses e ano
+ * legível. Só classificação na tela — o aviso continua pelas faixas de tempo.
+ */
+function frotaPrazoEhRiscoMedio(int $dias, ?string $ano): bool {
+    $a = frotaPrazoAnoVeiculo($ano);
+    return $dias >= 183 && $a > 0 && $a < frotaPrazoAnoMinimoRisco();
+}
+
+function frotaPrazoSqlRiscoMedio(): string {
+    return "(" . FROTA_PRAZO_DIAS_EXPR . " >= 183 AND " . FROTA_ANO_EXPR . " BETWEEN 1 AND " . (frotaPrazoAnoMinimoRisco() - 1) . ")";
+}
+
 /** Condição SQL do risco (precisa do join de contrato; financiamento em aberto fica com quem chama). */
 function frotaPrazoSqlRisco(): string {
     return "(" . FROTA_PRAZO_DIAS_EXPR . " >= 183 AND " . FROTA_ANO_EXPR . " >= " . frotaPrazoAnoMinimoRisco() . ")";

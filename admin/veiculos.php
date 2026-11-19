@@ -127,7 +127,7 @@ $joinContratoAssinado = "
 // marcado quitado (botão "✅ Marcar quitado"), some do alerta sozinho.
 require_once __DIR__ . '/../includes/frota_prazo.php';
 $fPrazo = (string)($_GET['prazo'] ?? '');
-if ($fPrazo !== 'risco' && !isset(FROTA_PRAZO_FAIXAS[$fPrazo])) $fPrazo = '';
+if (!in_array($fPrazo, ['risco', 'medio'], true) && !isset(FROTA_PRAZO_FAIXAS[$fPrazo])) $fPrazo = '';
 // 19/11/2026 — faixas 6/12/18+ meses + risco alto (carro recente, 21/11/2026), ver
 // includes/frota_prazo.php (mesma fonte do aviso diário).
 $faixasPrazo = array_map(fn($f) => [$f[0], $f[1]], FROTA_PRAZO_FAIXAS);
@@ -202,6 +202,8 @@ $repetidosFrota = $db->query("
 ")->fetchAll();
 if ($fPrazo === 'risco') {
     $where .= " AND o.financiamento_quitado = 0 AND " . frotaPrazoSqlRisco();
+} elseif ($fPrazo === 'medio') {
+    $where .= " AND o.financiamento_quitado = 0 AND " . frotaPrazoSqlRiscoMedio();
 } elseif (isset($faixasPrazo[$fPrazo])) {
     [$diasMin, $diasMax] = $faixasPrazo[$fPrazo];
     $where .= " AND o.financiamento_quitado = 0 AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
@@ -285,11 +287,13 @@ $totalPago = (float)($stmtTotalPago->fetchColumn() ?: 0);
 // independente do que está sendo visto na tabela no momento.
 $bucketsPrazo = array_fill_keys(array_keys(FROTA_PRAZO_FAIXAS), 0);
 $totalRiscoBanco = 0;
+$totalRiscoMedio = 0;
 $somasFaixa = [];
 foreach (FROTA_PRAZO_FAIXAS as $k => [$mn, $mx]) {
     $somasFaixa[] = "SUM(CASE WHEN {$diasPosseExpr} BETWEEN {$mn} AND {$mx} THEN 1 ELSE 0 END) AS b{$k}";
 }
 $somasFaixa[] = "SUM(CASE WHEN " . frotaPrazoSqlRisco() . " THEN 1 ELSE 0 END) AS brisco";
+$somasFaixa[] = "SUM(CASE WHEN " . frotaPrazoSqlRiscoMedio() . " THEN 1 ELSE 0 END) AS bmedio";
 $rBuckets = $db->query("
     SELECT " . implode(', ', $somasFaixa) . "
     FROM oportunidades o
@@ -299,6 +303,7 @@ $rBuckets = $db->query("
 if ($rBuckets) {
     foreach ($bucketsPrazo as $k => $_) $bucketsPrazo[$k] = (int)($rBuckets['b' . $k] ?? 0);
     $totalRiscoBanco = (int)($rBuckets['brisco'] ?? 0);
+    $totalRiscoMedio = (int)($rBuckets['bmedio'] ?? 0);
 }
 
 /**
@@ -341,6 +346,8 @@ function mesesComAFastcar(?string $refPosse): int {
 .frota-tag.fx6 { background: var(--azul-claro); color: var(--azul); }
 .frota-tag.fx12 { background: var(--amarelo-bg); color: var(--amarelo); }
 .frota-tag.fx18 { background: var(--laranja-bg); color: var(--laranja); }
+.frota-fx.fxmedio { border: 2px solid var(--amarelo); background: var(--amarelo-bg); } .frota-fx.fxmedio .fx-n { color: var(--amarelo); }
+.frota-tag.fxmedio { background: var(--amarelo-bg); color: var(--amarelo); }
 .frota-tag.fxrisco { background: var(--vermelho-bg); color: var(--vermelho); }
 .tabela-frota tr.linha-risco-banco td { background: var(--vermelho-bg); }
 .tabela-frota .frota-veiculo { font-weight: 600; color: var(--texto, inherit); text-decoration: none; }
@@ -424,6 +431,11 @@ function mesesComAFastcar(?string $refPosse): int {
             <span class="fx-t">🚨 Risco alto de busca e apreensão</span>
             <span class="fx-d">Carro <?= frotaPrazoAnoMinimoRisco() ?> pra cá com 6+ meses — prioridade de quitação</span>
         </a>
+        <a href="?<?= $baseQsPrazo ?><?= $baseQsPrazo ? '&' : '' ?>prazo=medio" class="frota-fx fxmedio<?= $fPrazo === 'medio' ? ' ativo' : '' ?>">
+            <span class="fx-n"><?= $totalRiscoMedio ?></span>
+            <span class="fx-t">⚠️ Risco médio</span>
+            <span class="fx-d">Carro até <?= frotaPrazoAnoMinimoRisco() - 1 ?> com 6+ meses</span>
+        </a>
     </div>
     <?php if ($fPrazo): ?><a href="?<?= $baseQsPrazo ?>" style="display:inline-block;margin-top:.5rem">Ver todos os veículos</a><?php endif; ?>
 </div>
@@ -486,7 +498,7 @@ function mesesComAFastcar(?string $refPosse): int {
                     <strong><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></strong>
                     <br><small class="frota-sub"><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?> · <?= $mesesFastcar ?> mês(es)</small>
                     <?php if ($faixaAlerta): ?><br><span class="frota-tag fx<?= $faixaAlerta ?>">⏰ <?= $faixaAlerta ?>+ meses</span><?php endif; ?>
-                    <?php if ($riscoBanco): ?><br><span class="frota-tag fxrisco">🚨 Risco de busca e apreensão</span><?php endif; ?>
+                    <?php if ($riscoBanco): ?><br><span class="frota-tag fxrisco">🚨 Risco de busca e apreensão</span><?php elseif (!$v['financiamento_quitado'] && frotaPrazoEhRiscoMedio($diasFastcar, $v['veiculo_ano'])): ?><br><span class="frota-tag fxmedio">⚠️ Risco médio</span><?php endif; ?>
                 </td>
                 <td>
                     <?php if ($v['contrato_assinado'] ?? false): ?>

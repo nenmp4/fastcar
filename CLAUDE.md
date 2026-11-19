@@ -3707,6 +3707,9 @@ segue no schema sem uso novo, não removida sem ganho real),
   só financiamento em aberto) + card vermelho 🚨 **Risco alto de busca e
   apreensão** = carro do ano (modelo, últimos 4 dígitos de `veiculo_ano`)
   de 4 anos atrás pra cá (2022 em 2026, sobe sozinho) com 6+ meses.
+  Card amarelo ⚠️ **Risco médio** (21/11/2026, "para baixo risco médio") =
+  carro mais antigo que isso (até 2021 hoje) com 6+ meses; só classificação
+  (card, filtro `?prazo=medio`, selo na linha), sem aviso próprio.
   Linha em risco fica vermelha e no topo. Regra em `includes/frota_prazo.php`
   (`FROTA_PRAZO_FAIXAS`, `frotaPrazoEhRisco()`, `frotaPrazoSqlRisco()`).
   `cron/frota_prazo_aviso.php` (08:47, dedup por dia + flock) avisa quando
