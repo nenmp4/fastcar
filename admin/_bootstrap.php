@@ -47,6 +47,7 @@ require_once __DIR__ . '/../includes/notificacoes.php';
 require_once __DIR__ . '/../includes/whatsapp_conformidade.php';
 require_once __DIR__ . '/../includes/ia_qualificacao.php';
 require_once __DIR__ . '/../includes/expediente_acesso.php';
+require_once __DIR__ . '/../includes/ponto.php';
 
 requireAdmin();
 
@@ -55,6 +56,7 @@ requireAdmin();
 // super admin nunca é derrubada. Ver includes/expediente_acesso.php.
 if (!estaImpersonando() && !expedienteAcessoPermitido((int)$_SESSION['admin_id'], (string)($_SESSION['admin_perfil'] ?? ''))) {
     auditoriaRegistrar('logout_fora_expediente', (int)$_SESSION['admin_id'], (string)($_SESSION['admin_nome'] ?? ''), 'usuario', (int)$_SESSION['admin_id'], 'Sessão encerrada: fora do horário de expediente.');
+    pontoRegistrarSaida((int)$_SESSION['admin_id']);
     $_SESSION = [];
     session_destroy();
     if (isset($_GET['ajax']) || str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json')) {
@@ -67,6 +69,9 @@ if (!estaImpersonando() && !expedienteAcessoPermitido((int)$_SESSION['admin_id']
     exit;
 }
 
+// 20/11/2026 — cartão de ponto: 1º acesso do dia = entrada; depois "última atividade" a cada 10 min.
+if (!estaImpersonando()) pontoBaterAcesso((int)$_SESSION['admin_id']);
+
 // 17/09/2026 — perfil `vendedor` (módulo de vendas) nunca acessa o funil
 // de COMPRA (dados de outro negócio/cliente) — checagem central aqui, que
 // toda página admin passa por _bootstrap.php, evita repetir essa trava
@@ -78,7 +83,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
     // venda e aprovar foto pro catálogo, mesmo em vistoria de COMPRA de um
     // veículo que ele ainda vai revender (a aprovação de foto não é presa a
     // uma negociação específica).
-    $permitidasVendedor = ['vendas.php', 'venda.php', 'clientes.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
+    $permitidasVendedor = ['ponto.php', 'vendas.php', 'venda.php', 'clientes.php', 'vendas_inbox.php', 'ver_midia_revenda.php',
         'avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
         // 08/10/2026 — assinatura presencial na retirada do veículo,
         // serve a imagem desenhada na tela (mesma trava de
@@ -139,7 +144,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
 // em admin/cliente_detalhe.php).
 if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
     $paginaAtualFin = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasFin = [
+    $permitidasFin = ['ponto.php', 
         'financeiro.php', 'financeiro-lancamentos.php', 'financeiro-categorias.php',
         'financeiro-fornecedores.php', 'financeiro-colaboradores.php', 'financeiro-asaas.php',
         'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'clientes.php',
@@ -163,7 +168,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
 // técnica de allowlist central dos guards de `vendedor`/`financeiro` acima.
 if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
     $paginaAtualAval = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    $permitidasAval = ['avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
+    $permitidasAval = ['ponto.php', 'avaliacoes.php', 'avaliacao.php', 'ver_avaliacao_foto.php', 'ver_avaliacao_termo.php',
         // 08/10/2026 — assinatura presencial na retirada do veículo,
         // serve a imagem desenhada na tela (mesma trava de
         // ver_avaliacao_foto.php, acima).

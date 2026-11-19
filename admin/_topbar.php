@@ -89,6 +89,7 @@ $tbGrupos = [
         ['📣 Ouvidoria', '/admin/ouvidoria_inbox.php', $tbSuper],
         ['🎫 Tickets da ouvidoria', '/admin/ouvidoria_tickets.php', $tbSuper],
         ['👤 Usuários', '/admin/usuarios.php', $tbSuper],
+        ['🕒 Cartão de ponto', '/admin/ponto.php', $tbVeTudo],
         ['🕵️ Auditoria', '/admin/auditoria.php', $tbSuper],
         ['🛡️ Conformidade WhatsApp', '/admin/whatsapp_conformidade.php', $tbVeTudo],
         ['💾 Backup', '/admin/backup.php', $tbSuper],
@@ -137,6 +138,7 @@ $tbMapa = [
     'acesso_expediente.php' => ['Acesso fora do horário', null],
     'avisos_lead_quente.php' => ['Avisos de lead quente', null],
     'usuarios.php' => ['Usuários', null],
+    'ponto.php' => ['Cartão de ponto', null],
     'auditoria.php' => ['Auditoria', null],
     'backup.php' => ['Backup', null],
     'saude.php' => ['Saúde do sistema', null],
@@ -227,6 +229,7 @@ window.formatarValorBR = function (n) {
         <summary title="<?= e($tbNome) ?>">👤 <span class="tb-conta-nome"><?= e($tbNome) ?></span></summary>
         <div class="tb-drop tb-drop-dir">
             <a href="/admin/meu_perfil.php"<?= $tbAqui === 'meu_perfil.php' ? ' class="atual" aria-current="page"' : '' ?>>🙋 Meu perfil</a>
+            <a href="/admin/ponto.php<?= $tbVeTudo ? '?usuario=' . (int)($_SESSION['admin_id'] ?? 0) . '#mes' : '' ?>"<?= $tbAqui === 'ponto.php' ? ' class="atual" aria-current="page"' : '' ?>>🕒 Meu ponto</a>
             <a href="/admin/logout.php" class="tb-sair">Sair</a>
         </div>
     </details>

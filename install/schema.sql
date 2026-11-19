@@ -1600,3 +1600,22 @@ CREATE TABLE IF NOT EXISTS ouvidoria_tickets (
 );
 CREATE INDEX IF NOT EXISTS idx_ouv_tickets_tel ON ouvidoria_tickets(telefone, status);
 CREATE INDEX IF NOT EXISTS idx_ouv_tickets_status ON ouvidoria_tickets(status, aberto_em);
+
+-- 20/11/2026 — cartão de ponto (includes/ponto.php): 1 linha por pessoa/dia.
+CREATE TABLE IF NOT EXISTS ponto_registros (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL,
+    data DATE NOT NULL,
+    entrada DATETIME,
+    ultima_atividade DATETIME,
+    saida DATETIME,
+    ip_entrada TEXT DEFAULT '',
+    falta INTEGER DEFAULT 0,
+    falta_motivo TEXT DEFAULT '',
+    falta_por INTEGER,
+    falta_em DATETIME,
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime')),
+    UNIQUE (usuario_id, data)
+);
+CREATE INDEX IF NOT EXISTS idx_ponto_data ON ponto_registros(data);

@@ -2538,6 +2538,20 @@ try {
     echo "❌ ouvidoria_tickets: {$e->getMessage()}\n";
 }
 
+// 20/11/2026 — cartão de ponto.
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS ponto_registros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, usuario_id INTEGER NOT NULL, data DATE NOT NULL,
+        entrada DATETIME, ultima_atividade DATETIME, saida DATETIME, ip_entrada TEXT DEFAULT '',
+        falta INTEGER DEFAULT 0, falta_motivo TEXT DEFAULT '', falta_por INTEGER, falta_em DATETIME,
+        created_at DATETIME DEFAULT (datetime('now','localtime')), updated_at DATETIME DEFAULT (datetime('now','localtime')),
+        UNIQUE (usuario_id, data))");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_ponto_data ON ponto_registros(data)");
+    echo "✅ ponto_registros: tabela ok\n";
+} catch (Throwable $e) {
+    echo "❌ ponto_registros: {$e->getMessage()}\n";
+}
+
 // 20/11/2026, "ele da categoria venda pasta venda não pasta compra" — veículo
 // cadastrado à mão (Estoque/Vendas/Vistoria) vai pra Frota mas não é compra de
 // consultor. Marca os já cadastrados: histórico "cadastrado manualmente direto

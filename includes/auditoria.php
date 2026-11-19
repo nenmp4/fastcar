@@ -292,6 +292,8 @@ function auditoriaRotuloEvento(string $evento): string {
         'cliente_dado_editado' => '✏️ Dado sensível de cliente editado',
         'perfil_proprio_editado' => '🙋 Usuário editou o próprio perfil',
         'avatar_atualizado' => '🖼️ Avatar atualizado',
+        'ponto_falta_marcada' => '🕒 Ponto: falta marcada',
+        'ponto_falta_desfeita' => '🕒 Ponto: falta desfeita',
         'comissao_aprovada' => '🤝 Comissão aprovada (baixa)',
         'lancamento_cancelado' => '🚫 Lançamento financeiro cancelado',
         'veiculo_devolvido' => '🔙 Veículo devolvido (voltou pra Fastcar)',

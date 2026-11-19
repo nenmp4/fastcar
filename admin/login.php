@@ -30,6 +30,7 @@ require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/usuarios.php';
 require_once __DIR__ . '/../includes/login_2fa.php';
 require_once __DIR__ . '/../includes/auditoria.php';
+require_once __DIR__ . '/../includes/ponto.php';
 require_once __DIR__ . '/../includes/expediente_acesso.php';
 
 startSecureSession();
@@ -54,6 +55,9 @@ function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?arra
     $_SESSION['admin_nome']   = $nome;
     $_SESSION['admin_perfil'] = $perfil;
     auditoriaRegistrar('login', $usuarioId, $nome, 'usuario', $usuarioId, "Via: {$via}");
+    pontoRegistrarEntrada($usuarioId); // cartão de ponto: 1º login do dia = entrada
+    $_SESSION['ponto_dia'] = date('Y-m-d');
+    $_SESSION['ponto_ativ'] = time();
     if ($cookieDispositivo) {
         setcookie($cookieDispositivo['nome'], $cookieDispositivo['valor'], [
             'expires' => $cookieDispositivo['expira'],
