@@ -470,3 +470,91 @@ function ouvidoriaTicketSalvarPlaca(int $id, string $placa, string $data): array
     getDB()->prepare("UPDATE ouvidoria_tickets SET placa = ?, data_ref = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$placa, $dt, $id]);
     return ['ok' => true, 'ticket' => ouvidoriaBuscarTicket($id)];
 }
+
+/**
+ * 20/11/2026, "coloca ia inbox pegar contexto sugerir a resposta" — a IA lê a
+ * conversa, o ticket aberto e o contrato ligado e sugere a resposta. Nunca
+ * envia: o texto vai pro campo de mensagem, a pessoa revisa e manda.
+ * $rascunho: o que o atendente já digitou (a IA melhora em cima disso).
+ */
+function ouvidoriaSugerirResposta(string $telefone, string $rascunho = ''): array {
+    $tel = normalizarTelefone($telefone) ?: $telefone;
+    $db = getDB();
+    $st = $db->prepare("SELECT direcao, mensagem, usuario_id, enviado_por_ia FROM whatsapp_mensagens
+        WHERE telefone = ? AND canal = 'ouvidoria' ORDER BY id DESC LIMIT 20");
+    $st->execute([$tel]);
+    $msgs = array_reverse($st->fetchAll());
+    if (!$msgs) return ['ok' => false, 'erro' => 'Ainda não tem mensagem nessa conversa.'];
+    $temCliente = false;
+    $linhas = [];
+    foreach ($msgs as $m) {
+        $txt = trim(preg_replace('/\s+/', ' ', (string)$m['mensagem']));
+        if ($txt === '') continue;
+        if ($m['direcao'] === 'in') $temCliente = true;
+        $quem = $m['direcao'] === 'in' ? 'Cliente' : (!empty($m['usuario_id']) ? 'Fastcar (atendente)' : 'Fastcar (resposta automática)');
+        $linhas[] = "{$quem}: " . mb_substr($txt, 0, 500);
+    }
+    if (!$temCliente) return ['ok' => false, 'erro' => 'O cliente ainda não escreveu nessa conversa.'];
+
+    $conv = ouvidoriaConversa($tel);
+    $ctx = [];
+    if (($conv['nome'] ?? '') !== '') $ctx[] = 'Nome do cliente: ' . $conv['nome'];
+    $ativos = ouvidoriaTicketsAtivos($tel);
+    $assunto = '';
+    if ($ativos) {
+        $t = $ativos[0];
+        $assunto = (string)$t['assunto'];
+        $ctx[] = "Ticket aberto: protocolo {$t['protocolo']}, assunto " . (OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto'])
+            . ', status ' . $t['status'] . (!empty($t['placa']) ? ", placa {$t['placa']}" : '')
+            . (!empty($t['resumo']) ? '. Relato: ' . mb_substr((string)$t['resumo'], 0, 600) : '');
+    }
+    $neg = null;
+    if (!empty($conv['venda_id'])) $neg = ouvidoriaResumoNegocio('venda', (int)$conv['venda_id']);
+    elseif (!empty($conv['oportunidade_id'])) $neg = ouvidoriaResumoNegocio('compra', (int)$conv['oportunidade_id']);
+    else {
+        $n = ouvidoriaNegociosDoTelefone($tel);
+        if ($n['vendas']) $neg = ouvidoriaResumoNegocio('venda', (int)$n['vendas'][0]['id']);
+        elseif ($n['oportunidades']) $neg = ouvidoriaResumoNegocio('compra', (int)$n['oportunidades'][0]['id']);
+    }
+    if ($neg) {
+        $veic = trim(($neg['marca'] ?? '') . ' ' . ($neg['modelo'] ?? '') . ' ' . ($neg['ano'] ?? '')) . (!empty($neg['placa']) ? " (placa {$neg['placa']})" : '');
+        if ($neg['tipo'] === 'venda') {
+            $f = $neg['fin'] ?? [];
+            $ctx[] = "Cliente COMPROU um veículo da Fastcar (contrato de venda #{$neg['id']}, " . strip_tags((string)$neg['etapa_label']) . "): {$veic}."
+                . ' Parcelas: pago R$ ' . number_format((float)($f['pago'] ?? 0), 2, ',', '.')
+                . ', em atraso R$ ' . number_format((float)($f['atrasado'] ?? 0), 2, ',', '.')
+                . ', a vencer R$ ' . number_format((float)($f['pendente'] ?? 0), 2, ',', '.')
+                . (!empty($f['proximo_venc']) ? ', próximo vencimento ' . date('d/m/Y', strtotime((string)$f['proximo_venc'])) : '') . '.';
+        } else {
+            $ctx[] = "Cliente VENDEU o veículo pra Fastcar (negócio de compra #{$neg['id']}, " . strip_tags((string)$neg['etapa_label']) . "): {$veic}.";
+            if ($assunto === 'quitacao' && ($pq = ouvidoriaPrazoQuitacaoTexto($tel, (int)$neg['id'])) !== '') $ctx[] = 'Prazo de quitação: ' . $pq;
+        }
+    } else {
+        $ctx[] = 'Nenhum contrato ligado a este telefone no sistema.';
+    }
+    $ctx[] = 'Agora: ' . date('d/m/Y H:i') . (ouvidoriaDentroHorario() ? ' (dentro' : ' (fora') . ' do horário da ouvidoria, seg–sex 10h–19h).';
+
+    $prompt = "Você ajuda a equipe da OUVIDORIA da Fastcar (empresa que compra veículos financiados e revende) a responder clientes no WhatsApp.\n"
+        . "Escreva a PRÓXIMA mensagem que o atendente vai mandar, respondendo o que o cliente pediu por último, levando em conta TODA a conversa e o contexto abaixo.\n"
+        . "Regras: português do Brasil, tom humano, educado e direto; no máximo 4 frases curtas; sem saudação longa se a conversa já está em andamento; "
+        . "nunca invente valor, data, prazo, número de protocolo ou promessa que não esteja no contexto — se faltar a informação, diga que vai verificar e retorna; "
+        . "nunca diga que é IA; não assine (a assinatura entra sozinha); sem markdown além de *negrito* do WhatsApp; nunca peça senha nem dado de cartão.\n"
+        . "Responda SÓ com o texto da mensagem, sem aspas nem explicação.\n\n"
+        . "CONTEXTO:\n- " . implode("\n- ", $ctx) . "\n\nCONVERSA (mais antiga primeiro):\n" . implode("\n", $linhas)
+        . (trim($rascunho) !== '' ? "\n\nRASCUNHO DO ATENDENTE (use como base, mantenha a intenção e melhore o texto): " . mb_substr(trim($rascunho), 0, 800) : '');
+
+    $texto = '';
+    $geminiKey = getConfig('gemini_api_key') ?: '';
+    if ($geminiKey) {
+        $r = geminiCall($prompt, $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 400, 0.4);
+        if (is_string($r)) $texto = $r;
+    }
+    $openaiKey = getConfig('openai_api_key') ?: '';
+    if ($texto === '' && $openaiKey) {
+        $r = openaiCall($prompt, $openaiKey, getConfig('openai_model') ?: 'gpt-4o-mini', 400, 0.4);
+        if (is_string($r)) $texto = $r;
+    }
+    $texto = trim(preg_replace('/^["“”\']+|["“”\']+$/u', '', trim($texto)));
+    if ($texto === '') return ['ok' => false, 'erro' => 'A IA não respondeu agora (confira a chave em Configurações → IA) — tente de novo.'];
+    return ['ok' => true, 'texto' => $texto];
+}

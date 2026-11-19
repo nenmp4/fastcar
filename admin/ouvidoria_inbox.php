@@ -191,6 +191,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: /admin/ouvidoria_tickets.php?' . ($res['ok'] ? 'ok=' . rawurlencode($sucesso) : 'erro=' . rawurlencode($erro)));
                 exit;
             }
+        } elseif ($acao === 'sugerir_resposta' && $telPost) {
+            // Só sugere: nunca envia nem grava nada.
+            header('Content-Type: application/json');
+            echo json_encode(ouvidoriaSugerirResposta($telPost, (string)($_POST['rascunho'] ?? '')));
+            exit;
         } elseif ($acao === 'enviar_mensagem' && $telPost) {
             $resultado = enviarMensagemManualOuvidoria($telPost, (string)($_POST['texto'] ?? ''), (int)$_SESSION['admin_id']);
             if ($viaAjax) {
@@ -286,6 +291,8 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .wpp-form { padding: 14px 20px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
 .wpp-form textarea { flex: 1; margin: 0; resize: none; min-height: 42px; max-height: 120px; }
 .wpp-form button { margin: 0; white-space: nowrap; }
+.wpp-form button.ouv-sugerir { background: var(--superficie); color: var(--azul-escuro); border: 1px solid var(--borda); box-shadow: none; }
+.ouv-sugestao-aviso { font-size: 12px; color: var(--texto-fraco); padding: 0 20px 6px; background: var(--superficie); }
 .wpp-vazio { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--texto-fraco); text-align: center; padding: 40px; }
 .wpp-voltar-mobile { display: none; }
 .ouv-assunto { display:inline-block; font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--azul-claro); color:var(--azul-escuro); }
@@ -373,6 +380,10 @@ body.ouv-page .breadcrumb { display: none; }
 .ouv-acoes form { margin:0; display:flex; gap:6px; align-items:center; }
 .ouv-acoes select, .ouv-acoes button { margin:0; width:auto; padding:6px 10px; font-size:12.5px; }
 @media (max-width: 700px) {
+    .wpp-form { align-items: flex-end; }
+    .wpp-form button { min-height: 44px; }
+    .wpp-form button.ouv-sugerir { padding-left: 12px; padding-right: 12px; min-width: 44px; }
+    .ouv-sug-txt { display: none; }
     .wpp-sidebar { width: 100%; }
     .ouv-filtros select, .ouv-filtros input { font-size: 16px; min-height: 44px; }
     .ouv-atalho { min-height: 44px; font-size: 15px; }
@@ -667,6 +678,7 @@ body.ouv-page .breadcrumb { display: none; }
                 <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                 <input type="hidden" name="ajax" value="1">
                 <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                <button type="button" class="btn-secundario ouv-sugerir" id="ouv-sugerir" title="A IA lê a conversa, o ticket e o contrato e sugere a resposta (você revisa antes de enviar). Se já tiver texto digitado, ela melhora o seu rascunho.">🤖<span class="ouv-sug-txt"> Sugerir</span></button>
                 <button type="submit">Enviar</button>
             </form>
         <?php endif; ?>
@@ -713,6 +725,37 @@ body.ouv-page .breadcrumb { display: none; }
                         });
                     }).catch(function () {});
             }, 300);
+        });
+    }
+
+    var btnSug = document.getElementById('ouv-sugerir');
+    if (btnSug) {
+        btnSug.addEventListener('click', function () {
+            var form = document.getElementById('wpp-form');
+            var ta = form.querySelector('textarea[name="texto"]');
+            var fd = new FormData();
+            fd.append('csrf_token', form.querySelector('input[name="csrf_token"]').value);
+            fd.append('acao', 'sugerir_resposta');
+            fd.append('telefone', telefone);
+            fd.append('rascunho', ta.value);
+            var rotulo = btnSug.innerHTML;
+            btnSug.disabled = true; btnSug.textContent = '⏳';
+            fetch(location.pathname + location.search, { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok) {
+                        ta.value = d.texto;
+                        ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+                        ta.focus();
+                        var av = document.getElementById('ouv-sugestao-aviso');
+                        if (!av) { av = document.createElement('div'); av.id = 'ouv-sugestao-aviso'; av.className = 'ouv-sugestao-aviso'; form.parentNode.insertBefore(av, form); }
+                        av.textContent = '🤖 Sugestão da IA — confira antes de enviar.';
+                    } else {
+                        alert(d.erro || 'Não deu pra sugerir agora.');
+                    }
+                })
+                .catch(function (err) { console.error(err); alert('Não deu pra sugerir agora — tente de novo.'); })
+                .finally(function () { btnSug.disabled = false; btnSug.innerHTML = rotulo; });
         });
     }
 
@@ -903,7 +946,7 @@ body.ouv-page .breadcrumb { display: none; }
             var textarea = form.querySelector('textarea[name="texto"]');
             var texto = textarea.value.trim();
             if (!texto) return;
-            var btn = form.querySelector('button');
+            var btn = form.querySelector('button[type="submit"]');
             btn.disabled = true;
             var body = new URLSearchParams();
             body.set('csrf_token', csrf.value);
@@ -917,6 +960,7 @@ body.ouv-page .breadcrumb { display: none; }
                     btn.disabled = false;
                     if (data.ok) {
                         textarea.value = '';
+                        var avSug = document.getElementById('ouv-sugestao-aviso'); if (avSug) avSug.remove();
                         if (data.id) ultimoId = Math.max(ultimoId, data.id);
                         if (!data.id || !jaRenderizada(data.id)) {
                             var div = document.createElement('div');
