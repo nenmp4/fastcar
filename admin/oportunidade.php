@@ -49,7 +49,9 @@ const COMPRA_ACOES_TRAVADAS = ['atualizar_veiculo', 'atualizar_contrato', 'gerar
 // assinado, mesmo antes da pasta fechar. Nesse caso ainda dá pra mudar a
 // etapa só pra 'fechado' (completar documentos e fechar a pasta).
 $compraContratoAssinado = (bool)getDB()->query("SELECT 1 FROM contratos WHERE oportunidade_id = " . (int)$id . " AND tipo = 'compra' AND status = 'assinado'")->fetchColumn();
-$compraTravada = ($op['etapa'] === 'fechado' || $compraContratoAssinado) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+$destravarAlvo = ['tipo' => 'oportunidade', 'id' => (int)$id];
+$destravarAtivo = edicaoDestravada('oportunidade', (int)$id); // 20/11/2026 — liberado com senha do supervisor
+$compraTravada = ($op['etapa'] === 'fechado' || $compraContratoAssinado) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin' && !$destravarAtivo;
 $compraAcoesTravadas = COMPRA_ACOES_TRAVADAS;
 if ($compraTravada && $op['etapa'] !== 'fechado' && ($_POST['acao'] ?? '') === 'mudar_etapa' && ($_POST['etapa_nova'] ?? '') === 'fechado') {
     $compraAcoesTravadas = array_values(array_diff($compraAcoesTravadas, ['mudar_etapa']));
@@ -85,6 +87,10 @@ function documentoCompraJaEnviado(int $opId, string $tipo): bool {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif (($_POST['acao'] ?? '') === 'destravar_edicao' && $_SESSION['admin_perfil'] !== 'supervisor') {
+        $rD = destravarEdicaoComSenhaSupervisor('oportunidade', (int)$id, (int)($_POST['supervisor_id'] ?? 0), (string)($_POST['senha_supervisor'] ?? ''));
+        if ($rD['ok']) { header('Location: /admin/oportunidade.php?id=' . (int)$id); exit; }
+        $erro = $rD['erro'];
     } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
         // Perfil de acompanhamento (15/09/2026, pedido José/Jean: "preciso
         // ter perfil de supervisão que vai acompanhar tudo que consultores
@@ -98,15 +104,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // travada; só o super admin corrige. Pendência pós-venda, vistoria,
         // anexar documento que ainda falta e reenviar/sincronizar continuam.
         http_response_code(403);
-        $erro = '🔒 Contrato assinado — os dados não podem mais ser alterados. Só o super admin pode corrigir.';
+        $erro = '🔒 Contrato assinado — os dados não podem mais ser alterados. Pra corrigir, destrave com a senha do supervisor.';
         auditoriaRegistrar('edicao_bloqueada_contrato', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
             'Ação bloqueada: ' . (string)($_POST['acao'] ?? ''));
     } else {
         $acao = (string)($_POST['acao'] ?? '');
-        if (($_SESSION['admin_perfil'] ?? '') === 'super_admin' && ($op['etapa'] === 'fechado' || $compraContratoAssinado)
+        if ((($_SESSION['admin_perfil'] ?? '') === 'super_admin' || $destravarAtivo) && ($op['etapa'] === 'fechado' || $compraContratoAssinado)
             && in_array($acao, COMPRA_ACOES_TRAVADAS, true) && $acao !== 'marcar_perdida') {
             auditoriaRegistrar('edicao_contrato_assinado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $id,
-                'Ação: ' . $acao);
+                'Ação: ' . $acao . ($destravarAtivo ? " (liberado com senha de {$destravarAtivo['por']})" : ''));
         }
         try {
             if ($acao === 'atualizar_veiculo') {
@@ -709,7 +715,8 @@ $linkDocumentos = rtrim(getConfig('app_base_url') ?: (($_SERVER['HTTPS'] ?? '') 
 <?php $tbTitulo = 'Oportunidade #' . (int)$op['id'] . (!empty($op['cliente_nome']) ? ' — ' . $op['cliente_nome'] : ''); include __DIR__ . '/_topbar.php'; ?>
 
 <main data-abas-ordem="👤 Cliente|🚗 Veículo|📝 Contrato|📎 Documentos|📅 Andamento|💬 Conversa">
-<?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $op['etapa'] === 'fechado' ? 'Compra fechada' : 'Contrato assinado' ?></strong><?= $op['etapa'] !== 'fechado' ? ' — dá pra completar os documentos e fechar a pasta, mas' : ' —' ?> os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
+<?php if ($compraTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $op['etapa'] === 'fechado' ? 'Compra fechada' : 'Contrato assinado' ?></strong><?= $op['etapa'] !== 'fechado' ? ' — dá pra completar os documentos e fechar a pasta, mas' : ' —' ?> os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar pendência pós-venda, fazer vistoria e anexar documento que falta. Pra corrigir, peça a senha do supervisor.</div><?php endif; ?>
+<?php if ($compraTravada || $destravarAtivo): include __DIR__ . '/_destravar_edicao.php'; endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 <?php if ($marcaFeedback): ?>

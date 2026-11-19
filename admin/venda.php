@@ -52,7 +52,9 @@ const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atuali
     'salvar_posse', 'trocar_modelo_contrato'];
 // 30/10/2026 — trava também com contrato de venda assinado, mesmo antes de
 // virar 'vendido' (concluir/devolução continuam liberados).
-$vendaTravada = ($v['etapa'] === 'vendido' || ($contratoVendaAssinado && $v['etapa'] !== 'cancelada')) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin';
+$destravarAlvo = ['tipo' => 'venda', 'id' => (int)$id];
+$destravarAtivo = edicaoDestravada('venda', (int)$id); // 20/11/2026 — liberado com senha do supervisor
+$vendaTravada = ($v['etapa'] === 'vendido' || ($contratoVendaAssinado && $v['etapa'] !== 'cancelada')) && ($_SESSION['admin_perfil'] ?? '') !== 'super_admin' && !$destravarAtivo;
 function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
     $st = getDB()->prepare("SELECT 1 FROM venda_documentos WHERE venda_id = ? AND tipo = ?
                             AND (COALESCE(arquivo_url,'') != '' OR COALESCE(drive_file_id,'') != '')");
@@ -63,6 +65,10 @@ function documentoVendaJaEnviado(int $vendaId, string $tipo): bool {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRF($_POST['csrf_token'] ?? '')) {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } elseif (($_POST['acao'] ?? '') === 'destravar_edicao' && $_SESSION['admin_perfil'] !== 'supervisor') {
+        $rD = destravarEdicaoComSenhaSupervisor('venda', (int)$id, (int)($_POST['supervisor_id'] ?? 0), (string)($_POST['senha_supervisor'] ?? ''));
+        if ($rD['ok']) { header('Location: /admin/venda.php?id=' . (int)$id); exit; }
+        $erro = $rD['erro'];
     } elseif ($_SESSION['admin_perfil'] === 'supervisor') {
         // Perfil de acompanhamento (mesmo padrão de admin/oportunidade.php)
         // — vê tudo, nunca age.
@@ -75,15 +81,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // super admin corrige. Devolução do veículo, cobrança Asaas pós-
         // assinatura, fotos, vistoria e anexar documento que falta seguem.
         http_response_code(403);
-        $erro = '🔒 Contrato assinado — os dados não podem mais ser alterados. Só o super admin pode corrigir.';
+        $erro = '🔒 Contrato assinado — os dados não podem mais ser alterados. Pra corrigir, destrave com a senha do supervisor.';
         auditoriaRegistrar('edicao_bloqueada_contrato', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
             'Ação bloqueada: ' . (string)($_POST['acao'] ?? ''));
     } else {
         $acao = (string)($_POST['acao'] ?? '');
-        if (($_SESSION['admin_perfil'] ?? '') === 'super_admin' && ($v['etapa'] === 'vendido' || $contratoVendaAssinado)
+        if ((($_SESSION['admin_perfil'] ?? '') === 'super_admin' || $destravarAtivo) && ($v['etapa'] === 'vendido' || $contratoVendaAssinado)
             && in_array($acao, VENDA_ACOES_TRAVADAS, true)) {
             auditoriaRegistrar('edicao_contrato_assinado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id,
-                'Ação: ' . $acao);
+                'Ação: ' . $acao . ($destravarAtivo ? " (liberado com senha de {$destravarAtivo['por']})" : ''));
         }
         try {
             if ($acao === 'upload_midia_revenda') {
@@ -904,7 +910,8 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
 <?php $tbTitulo = 'Venda #' . (int)$v['id'] . (!empty($v['comprador_nome']) ? ' — ' . $v['comprador_nome'] : ''); include __DIR__ . '/_topbar.php'; ?>
 
 <main data-abas-ordem="👤 Comprador|🚗 Veículo|📝 Contrato|💳 Financeiro|📎 Documentos|📅 Andamento">
-<?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $v['etapa'] === 'vendido' ? 'Venda concluída' : 'Contrato assinado' ?></strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Só o super admin pode corrigir dados.</div><?php endif; ?>
+<?php if ($vendaTravada): ?><div class="aviso-travado" style="margin-bottom:12px;padding:12px 14px;border-radius:10px;background:var(--laranja-bg);border-left:4px solid var(--laranja)">🔒 <strong><?= $v['etapa'] === 'vendido' ? 'Venda concluída' : 'Contrato assinado' ?></strong> — os dados do contrato estão travados e não podem mais ser alterados. Ainda dá pra registrar devolução, gerar a cobrança no Asaas, subir fotos e anexar documento que falta. Pra corrigir, peça a senha do supervisor.</div><?php endif; ?>
+<?php if ($vendaTravada || $destravarAtivo): include __DIR__ . '/_destravar_edicao.php'; endif; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 

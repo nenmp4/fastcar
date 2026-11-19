@@ -244,3 +244,48 @@ function confirmarSenhaUsuarioLogado(string $senha): bool {
     return $hash !== '' && password_verify($senha, $hash);
 }
 
+
+/**
+ * Destravar edição de compra/venda fechada com a senha de um supervisor
+ * (20/11/2026, "travar campos para não alterar informações depois de fechado
+ * com senha do supervisor"). Quem está editando escolhe o supervisor (ou super
+ * admin) e ELE digita a senha dele; libera só aquele registro, só nesta
+ * sessão, por 15 min. 5 senhas erradas seguidas bloqueiam novas tentativas
+ * por 15 min. Tudo vai pra auditoria (quem pediu, quem autorizou).
+ */
+const DESTRAVAR_EDICAO_MIN = 15;
+
+function supervisoresParaDestravar(): array {
+    return getDB()->query("SELECT id, nome, perfil FROM usuarios WHERE bloqueado = 0 AND perfil IN ('supervisor', 'super_admin') ORDER BY perfil = 'supervisor' DESC, nome")->fetchAll();
+}
+
+function edicaoDestravada(string $alvoTipo, int $alvoId): ?array {
+    $d = $_SESSION['edicao_destravada'][$alvoTipo . ':' . $alvoId] ?? null;
+    if (!$d || (int)$d['ate'] < time()) return null;
+    return $d;
+}
+
+function destravarEdicaoComSenhaSupervisor(string $alvoTipo, int $alvoId, int $supervisorId, string $senha): array {
+    $tent = $_SESSION['destravar_falhas'] ?? ['n' => 0, 'ate' => 0];
+    if ((int)$tent['ate'] > time()) return ['ok' => false, 'erro' => 'Muitas senhas erradas — tente de novo em alguns minutos.'];
+    $st = getDB()->prepare("SELECT id, nome, perfil, senha_hash FROM usuarios WHERE id = ? AND bloqueado = 0 AND perfil IN ('supervisor', 'super_admin')");
+    $st->execute([$supervisorId]);
+    $sup = $st->fetch();
+    if (!$sup || $senha === '' || !password_verify($senha, (string)$sup['senha_hash'])) {
+        $n = (int)$tent['n'] + 1;
+        $_SESSION['destravar_falhas'] = ['n' => $n >= 5 ? 0 : $n, 'ate' => $n >= 5 ? time() + 900 : 0];
+        if (function_exists('auditoriaRegistrar')) {
+            auditoriaRegistrar('destravar_edicao_falhou', (int)($_SESSION['admin_id'] ?? 0), (string)($_SESSION['admin_nome'] ?? ''), $alvoTipo, $alvoId,
+                'Senha do supervisor errada' . ($sup ? " ({$sup['nome']})" : '') . '.');
+        }
+        return ['ok' => false, 'erro' => 'Senha do supervisor incorreta.'];
+    }
+    unset($_SESSION['destravar_falhas']);
+    $ate = time() + DESTRAVAR_EDICAO_MIN * 60;
+    $_SESSION['edicao_destravada'][$alvoTipo . ':' . $alvoId] = ['ate' => $ate, 'por' => (string)$sup['nome'], 'por_id' => (int)$sup['id']];
+    if (function_exists('auditoriaRegistrar')) {
+        auditoriaRegistrar('edicao_destravada', (int)($_SESSION['admin_id'] ?? 0), (string)($_SESSION['admin_nome'] ?? ''), $alvoTipo, $alvoId,
+            "Edição liberada por {$sup['nome']} até " . date('H:i', $ate) . '.');
+    }
+    return ['ok' => true, 'por' => (string)$sup['nome'], 'ate' => $ate];
+}
