@@ -8,8 +8,15 @@
  * data_compra/updated_at sem contrato assinado — mesma referência de sempre
  * da Frota). Só veículo com financiamento AINDA em aberto entra.
  *
- * Faixas: 6–11 meses (planejar), 12–17 (prazo normal), 18–35 (passou do
- * prazo) e 36+ (🚨 risco de banco, prioridade de quitação).
+ * Faixas de tempo: 6–11 meses (planejar), 12–17 (prazo normal), 18+ (passou
+ * do prazo).
+ *
+ * 🚨 Risco alto de busca e apreensão (21/11/2026, "veículos anos 2022 para
+ * atualidade... são veículos risco alto busca apreensão depois 6 meses"):
+ * carro do ano (modelo) de 4 anos atrás pra cá — hoje 2022 em diante, sobe
+ * sozinho a cada ano — com 6+ meses com a Fastcar e financiamento em aberto.
+ * É uma marca à parte das faixas de tempo (o carro está numa faixa E pode
+ * estar em risco). Ano sem 4 dígitos legíveis nunca conta como risco.
  *
  * Aviso (cron/frota_prazo_aviso.php): só quando o veículo ENTRA numa faixa —
  * 1 vez por veículo por faixa (config.frota_prazo_aviso_{id}_{faixa}). Só
@@ -24,9 +31,31 @@ require_once __DIR__ . '/notificacoes.php';
 const FROTA_PRAZO_FAIXAS = [
     '6'  => [183, 364, '6 a 11 meses', 'Planejar a quitação'],
     '12' => [365, 547, '12 a 17 meses', 'Prazo normal do contrato — negociar'],
-    '18' => [548, 1094, '18 a 35 meses', 'Passou do prazo normal — urgente'],
-    '36' => [1095, 999999, '3 anos ou mais', 'Risco de banco — prioridade de quitação'],
+    '18' => [548, 999999, '18 meses ou mais', 'Passou do prazo normal — urgente'],
 ];
+
+/** Ano do modelo: últimos 4 caracteres de veiculo_ano ("2022/2023" → 2023, "2022" → 2022). */
+const FROTA_ANO_EXPR = "CAST(SUBSTR(TRIM(COALESCE(o.veiculo_ano, '')), -4) AS INTEGER)";
+
+/** Ano mínimo do carro pra contar como risco alto (4 anos atrás — 2022 em 2026). */
+function frotaPrazoAnoMinimoRisco(): int {
+    return (int)date('Y') - 4;
+}
+
+function frotaPrazoAnoVeiculo(?string $ano): int {
+    $t = trim((string)$ano);
+    return preg_match('/(\d{4})$/', $t, $m) ? (int)$m[1] : 0;
+}
+
+/** Risco alto de busca e apreensão: carro recente + 6 meses ou mais com a Fastcar. */
+function frotaPrazoEhRisco(int $dias, ?string $ano): bool {
+    return $dias >= 183 && frotaPrazoAnoVeiculo($ano) >= frotaPrazoAnoMinimoRisco();
+}
+
+/** Condição SQL do risco (precisa do join de contrato; financiamento em aberto fica com quem chama). */
+function frotaPrazoSqlRisco(): string {
+    return "(" . FROTA_PRAZO_DIAS_EXPR . " >= 183 AND " . FROTA_ANO_EXPR . " >= " . frotaPrazoAnoMinimoRisco() . ")";
+}
 
 const FROTA_PRAZO_REF_EXPR = "COALESCE(ctr.assinado_em, o.data_compra, o.updated_at)";
 const FROTA_PRAZO_DIAS_EXPR = "CAST((julianday('now','localtime') - julianday(COALESCE(ctr.assinado_em, o.data_compra, o.updated_at))) AS INTEGER)";
@@ -38,7 +67,7 @@ const FROTA_PRAZO_JOIN_CONTRATO = "
     ) ctr ON ctr.oportunidade_id = o.id
 ";
 
-/** Faixa ('6'/'12'/'18'/'36') pros dias com a Fastcar, ou null abaixo de 6 meses. */
+/** Faixa ('6'/'12'/'18') pros dias com a Fastcar, ou null abaixo de 6 meses. */
 function frotaPrazoFaixa(int $dias): ?string {
     $achada = null;
     foreach (FROTA_PRAZO_FAIXAS as $k => [$min]) {
@@ -65,6 +94,7 @@ function frotaPrazoListarVeiculosEmAberto(): array {
     foreach ($rows as &$r) {
         $r['dias'] = (int)$r['dias'];
         $r['faixa'] = frotaPrazoFaixa($r['dias']);
+        $r['risco'] = frotaPrazoEhRisco($r['dias'], $r['veiculo_ano']);
     }
     unset($r);
     return $rows;
@@ -82,9 +112,9 @@ function frotaPrazoDescricaoVeiculo(array $v): string {
  * (ex: veículo cadastrado já com 20 meses) contam como já avisadas — o aviso
  * é só da faixa atual.
  *
- * 1ª execução (config.frota_prazo_inicializado vazio): marca tudo sem avisar,
- * exceto quem já está em risco de banco (36+) — evita despejar dezenas de
- * avisos antigos de uma vez no sino.
+ * 1ª execução (config.frota_prazo_inicializado vazio): marca as faixas de
+ * tempo sem avisar — evita despejar dezenas de avisos antigos de uma vez no
+ * sino. Risco alto sempre avisa (1x por veículo).
  *
  * @return array{novos:int, risco_total:int, enviado_whatsapp:bool, inicial:bool}
  */
@@ -95,14 +125,22 @@ function frotaPrazoProcessarAvisos(): array {
     $riscoTotal = 0;
 
     foreach ($veiculos as $v) {
-        if ($v['faixa'] === '36') $riscoTotal++;
-        $chave = "frota_prazo_aviso_{$v['id']}_{$v['faixa']}";
-        if (getConfig($chave)) continue;
-        foreach (array_keys(FROTA_PRAZO_FAIXAS) as $k) {
-            setConfig("frota_prazo_aviso_{$v['id']}_{$k}", date('Y-m-d'));
-            if ((string)$k === $v['faixa']) break;
+        if ($v['risco']) $riscoTotal++;
+        $avisar = null;
+        // Risco alto: aviso próprio, 1x por veículo (vale mais que a faixa de tempo).
+        if ($v['risco'] && !getConfig("frota_prazo_aviso_{$v['id']}_risco")) {
+            setConfig("frota_prazo_aviso_{$v['id']}_risco", date('Y-m-d'));
+            $avisar = 'risco';
         }
-        if (!$inicial || $v['faixa'] === '36') $novos[] = $v;
+        $chave = "frota_prazo_aviso_{$v['id']}_{$v['faixa']}";
+        if (!getConfig($chave)) {
+            foreach (array_keys(FROTA_PRAZO_FAIXAS) as $k) {
+                setConfig("frota_prazo_aviso_{$v['id']}_{$k}", date('Y-m-d'));
+                if ((string)$k === $v['faixa']) break;
+            }
+            if ($avisar === null && !$inicial) $avisar = $v['faixa'];
+        }
+        if ($avisar !== null) { $v['aviso'] = $avisar; $novos[] = $v; }
     }
     if ($inicial) setConfig('frota_prazo_inicializado', date('Y-m-d H:i:s'));
 
@@ -112,18 +150,18 @@ function frotaPrazoProcessarAvisos(): array {
     // supervisor abre a oportunidade, financeiro abre o painel dele.
     $usuarios = getDB()->query("SELECT id, perfil FROM usuarios WHERE bloqueado = 0 AND perfil IN ('super_admin','supervisor','financeiro')")->fetchAll();
     foreach ($novos as $v) {
-        $risco = $v['faixa'] === '36';
-        $titulo = ($risco ? '🚨 Risco de banco — ' : '⏰ ' . FROTA_PRAZO_FAIXAS[$v['faixa']][2] . ' — ') . frotaPrazoDescricaoVeiculo($v);
+        $risco = $v['aviso'] === 'risco';
+        $titulo = ($risco ? '🚨 Risco alto de busca e apreensão — ' : '⏰ ' . FROTA_PRAZO_FAIXAS[$v['aviso']][2] . ' — ') . frotaPrazoDescricaoVeiculo($v);
         $banco = trim((string)$v['banco_financiamento']);
         $meses = (int)floor($v['dias'] / 30.44);
         $msg = ($risco
-            ? "Está há {$meses} meses com a Fastcar sem quitar o financiamento. Prioridade de quitação."
-            : "Está há {$meses} meses com a Fastcar. " . FROTA_PRAZO_FAIXAS[$v['faixa']][3] . '.')
+            ? "Carro " . frotaPrazoAnoVeiculo($v['veiculo_ano']) . " há {$meses} meses com a Fastcar sem quitar o financiamento. Prioridade de quitação."
+            : "Está há {$meses} meses com a Fastcar. " . FROTA_PRAZO_FAIXAS[$v['aviso']][3] . '.')
             . ($banco !== '' ? " Banco: {$banco}." : '')
             . ($v['parcelas_restantes'] ? " {$v['parcelas_restantes']} parcela(s) restante(s)." : '');
         foreach ($usuarios as $u) {
             $url = match ($u['perfil']) {
-                'super_admin' => '/admin/veiculos.php?prazo=' . $v['faixa'],
+                'super_admin' => '/admin/veiculos.php?prazo=' . $v['aviso'],
                 'supervisor'  => '/admin/oportunidade.php?id=' . (int)$v['id'],
                 default       => '/admin/financeiro.php',
             };
@@ -133,18 +171,18 @@ function frotaPrazoProcessarAvisos(): array {
 
     // WhatsApp de notificação — 1 resumo só.
     $porFaixa = [];
-    foreach ($novos as $v) $porFaixa[$v['faixa']][] = $v;
+    foreach ($novos as $v) $porFaixa[$v['aviso']][] = $v;
     $txt = "🚗 *Frota — prazo de quitação (" . date('d/m') . ")*\n";
-    foreach (['36', '18', '12', '6'] as $k) {
+    foreach (['risco', '18', '12', '6'] as $k) {
         if (empty($porFaixa[$k])) continue;
-        $txt .= "\n" . ($k === '36' ? '🚨 *Entrou em RISCO DE BANCO (3 anos):*' : '⏰ *Fez ' . $k . ' meses:*') . "\n";
+        $txt .= "\n" . ($k === 'risco' ? '🚨 *RISCO ALTO de busca e apreensão (carro ' . frotaPrazoAnoMinimoRisco() . '+ com 6+ meses):*' : '⏰ *Fez ' . $k . ' meses:*') . "\n";
         foreach ($porFaixa[$k] as $v) {
             $banco = trim((string)$v['banco_financiamento']);
             $txt .= '• ' . frotaPrazoDescricaoVeiculo($v) . ($banco !== '' ? " — {$banco}" : '') . "\n";
         }
     }
     $base = rtrim((string)(getConfig('app_base_url') ?: 'https://sistema.fastcar.solutions'), '/');
-    $txt .= "\nTotal em risco de banco: {$riscoTotal}\n{$base}/admin/veiculos.php?prazo=36";
+    $txt .= "\nTotal em risco alto: {$riscoTotal}\n{$base}/admin/veiculos.php?prazo=risco";
     $enviado = false;
     $lista = array_filter(array_map('trim', explode(',', getConfig('notificacao_leads_whatsapp') ?: '')));
     foreach ($lista as $numero) {

@@ -3698,24 +3698,24 @@ segue no schema sem uso novo, não removida sem ganho real),
   veículo certo, clicar "Marcar quitado" atualiza a linha na hora (badge
   vira "✅ quitado" com a data, botão vira "↩️ Desfazer"), screenshot
   conferido visualmente.
-  **Prazo de quitação 6/12/18 meses + 3 anos = risco de banco, com aviso**
+  **Prazo de quitação 6/12/18+ meses + risco alto de busca e apreensão**
   (19/11/2026, "vai em frota adicione card carros 6 meses 12 meses 18 meses
-  - carros 3 anos de uso classificar como risco de banco buscar prioridade
-  para quitação" / "notificar nesse prazo") — os 3 cards de 12/18/24 meses
-  viraram 4: 6–11, 12–17, 18–35 meses e 🚨 3 anos ou mais (vermelho, linha
-  do veículo vermelha e no topo da lista). Mesma referência de sempre
-  (assinatura do contrato de compra), só financiamento em aberto. Faixas e
-  regra em `includes/frota_prazo.php` (`FROTA_PRAZO_FAIXAS`,
-  `frotaPrazoFaixa()`), usadas pela tela e pelo aviso.
-  `cron/frota_prazo_aviso.php` (08:47, dedup por dia + flock) avisa só
-  quando o veículo ENTRA numa faixa — 1x por veículo por faixa
-  (`config.frota_prazo_aviso_{id}_{faixa}`): sino de super admin
-  (link pra Frota), supervisor (link pra oportunidade) e financeiro (link
-  pro painel dele — os dois não abrem a Frota) + 1 resumo no WhatsApp de
-  notificação. 1ª execução marca tudo sem avisar, menos o que já está em
-  risco de banco. Nunca manda nada pro cliente. Testado em banco isolado
-  (faixas certas, 1ª execução, veículo mudando de faixa, sem repetir) +
-  HTTP real (contagens, filtro, topo, 1366px e 375px sem estouro) + smoke.
+  ... risco de banco buscar prioridade para quitação" / "notificar nesse
+  prazo"; corrigido 21/11/2026: "veículos anos 2022 para atualidade... são
+  veículos risco alto busca apreensão depois 6 meses") — cards 6–11, 12–17,
+  18+ meses (tempo com a Fastcar desde a assinatura do contrato de compra,
+  só financiamento em aberto) + card vermelho 🚨 **Risco alto de busca e
+  apreensão** = carro do ano (modelo, últimos 4 dígitos de `veiculo_ano`)
+  de 4 anos atrás pra cá (2022 em 2026, sobe sozinho) com 6+ meses.
+  Linha em risco fica vermelha e no topo. Regra em `includes/frota_prazo.php`
+  (`FROTA_PRAZO_FAIXAS`, `frotaPrazoEhRisco()`, `frotaPrazoSqlRisco()`).
+  `cron/frota_prazo_aviso.php` (08:47, dedup por dia + flock) avisa quando
+  o veículo entra numa faixa ou vira risco — 1x por veículo por faixa
+  (`config.frota_prazo_aviso_{id}_{faixa|risco}`): sino de super admin
+  (link Frota), supervisor (oportunidade) e financeiro (painel dele) + 1
+  resumo no WhatsApp de notificação. 1ª execução marca as faixas de tempo
+  sem avisar; risco sempre avisa. Nunca manda nada pro cliente. Testado em
+  banco isolado + HTTP real (contagens, filtro, topo, 1366px/375px) + smoke.
   **Excluir veículo duplicado** (23/09/2026, "permita super admin excuir
   veiculo veio duas bianca que veio do outro sistema") — achado real via
   screenshot: 2 cadastros duplicados pra "Bianca Pereira Da Silva" (mesma
@@ -11647,7 +11647,7 @@ Itens explicitamente adiados durante a conversa, pra não se perderem:
 | `cron/vendas_followup.php` | a cada 5 min | Follow-up dos leads de VENDAS sem resposta (28/10/2026, "350 leads parados na instância de vendas... tinha caído a conexão" + "SSH bloqueado"). Só roda quando ligado em Configurações → 📣 Follow-up (simular/iniciar/pausar). Manda 1 link do formulário (`quero-carro.php`) por rodada, pela instância Evolution de VENDAS, seg–sáb 10h–18h (Brasília), até 80/dia. Fila = conversas da instância (pega quem escreveu com a conexão caída e nunca entrou no CRM) + leads de vendas em whatsapp/qualificacao_ia/crm_preenchido cuja última mensagem é do cliente. Nunca manda pra quem pediu SAIR, negociação já andando, funcionário, última mensagem nossa ou quem já recebeu (`config.vendas_fu_form_{tel}`). Desliga sozinho quando a lista acaba ou após 3 falhas seguidas. Lógica em `includes/vendas_followup.php`. **Desde este commit `install/aplicar_deploy.sh` roda `install/setup_crontab.sh` a cada deploy** — crons novos entram sem SSH. Testado contra Evolution fake + banco isolado (filtros, envio, dedup, limite diário, cron desligando com fila vazia, card via HTTP). |
 | `cron/fila_horario_expediente.php` | a cada 5 min | Liga/desliga a fila de leads sozinha nos horários configurados (padrão 10:00/19:20) — 22/09/2026, "Colocar usuarios para ficar off line as 19:20 ... online 10 horas da manha", confirmado como regra permanente todo dia. Ver `aplicarHorarioExpedienteFila()` (`includes/fila_leads.php`, bullet completo na seção da fila de leads) — dedup por dia, nunca liga de volta quem está marcado `faltou_em`=hoje. |
 | `cron/leads_crm_preenchido_fim_turno.php` | a cada 10 min | Ao terminar o turno (padrão 19:30, configurável) manda pro(s) número(s) de notificação genérica a lista de leads que chegaram HOJE e ainda estão parados em `etapa='crm_preenchido'` (já qualificados pela IA, esperando o consultor assumir) — 29/09/2026, "ao terminar turno 7:30 enviar todos leads crm preenchido que chegarem para numero de notificação". Ver `notificarLeadsCrmPreenchidoFimTurno()` (`includes/oportunidades.php`, bullet completo na seção de módulos) — dedup por dia, sempre manda algo mesmo "0 leads" (confirma que o cron está vivo). |
-| `cron/frota_prazo_aviso.php` | 1x/dia (8h47) | Avisa a equipe (sino + WhatsApp de notificação) dos veículos da frota que entraram numa faixa de prazo de quitação (6/12/18 meses, 3 anos = risco de banco) — 1x por veículo por faixa. Ver `includes/frota_prazo.php`. |
+| `cron/frota_prazo_aviso.php` | 1x/dia (8h47) | Avisa a equipe (sino + WhatsApp de notificação) dos veículos da frota que entraram numa faixa de prazo de quitação (6/12/18 meses) e dos que viraram risco alto de busca e apreensão (carro de 4 anos pra cá com 6+ meses) — 1x por veículo por faixa. Ver `includes/frota_prazo.php`. |
 | `cron/lancamentos_fixos.php` | 1x/dia (5h) | Gera automaticamente a próxima ocorrência mensal de toda despesa marcada como "Fixa" (`natureza='fixa'`) no financeiro — 19/09/2026, "todas despesas fixas pode lançar todo mês automático". Ver `finGerarDespesasFixasDoMes()` (`includes/financeiro.php`, bullet completo na seção "Módulo financeiro") — idempotente, agrupa em cadeias via `recorrencia_origem_id`, copia o valor mais recente da série, e marcar o último lançamento como 'Cancelado' interrompe a série. |
 | `cron/meta_insights.php` | a cada 3h | Puxa gasto/impressões/cliques/conversas de cada anúncio Meta (Marketing API, `level=ad`) das contas configuradas e faz UPSERT em `anuncio_gasto_diario` — 29/09/2026, CPL das campanhas Meta. Reprocessa HOJE + últimos 3 dias sempre (a Meta ajusta retroativamente). `--dry-run`/`--since=`/`--until=` pra conferir antes de rodar valendo. Backoff em rate limit (código 17/80004), token inválido (código 190) grava `config.meta_ads_ultimo_erro` (aviso em Configurações, some sozinho no próximo sucesso). Ver bullet completo na seção de módulos (CPL das campanhas Meta). |
 | `cron/financeiro_relatorio_mensal.php` | 1x/dia (8h) | Envio Automático Mensal do DRE Gerencial — 19/09/2026, "essa parte é legal" (mostrando o Envio Automático Mensal do JurídicoSaaS). Decide sozinho se hoje é o dia configurado (`config.financeiro_relatorio_dia`); manda o DRE do mês anterior por WhatsApp (instância DEDICADA do financeiro) e/ou e-mail (anexo de verdade) pros usuários marcados + e-mails/WhatsApp extras + o e-mail do contador (`config.contador_email`, sempre incluído). Ver bullet completo na seção "Módulo financeiro" acima. |

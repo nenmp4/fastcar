@@ -2,7 +2,7 @@
 /**
  * cron/frota_prazo_aviso.php — 1x por dia: avisa a equipe (sino + WhatsApp de
  * notificação) dos veículos da frota que ENTRARAM numa faixa de prazo de
- * quitação (6/12/18 meses, 3 anos = risco de banco). Ver includes/frota_prazo.php.
+ * quitação (6/12/18 meses) e do risco alto de busca e apreensão (carro recente). Ver includes/frota_prazo.php.
  * Dedup por dia + flock().
  */
 
@@ -30,8 +30,8 @@ if (getConfig($dedup)) {
 } else {
     $r = frotaPrazoProcessarAvisos();
     setConfig($dedup, '1');
-    log_frota_prazo(($r['inicial'] ? '1ª execução (marcou sem avisar, só risco de banco). ' : '')
-        . "{$r['novos']} veículo(s) entraram numa faixa nova; {$r['risco_total']} em risco de banco; WhatsApp " . ($r['enviado_whatsapp'] ? 'enviado' : 'não enviado') . '.');
+    log_frota_prazo(($r['inicial'] ? '1ª execução (faixas marcadas sem avisar; risco alto avisa). ' : '')
+        . "{$r['novos']} veículo(s) entraram numa faixa nova; {$r['risco_total']} em risco alto; WhatsApp " . ($r['enviado_whatsapp'] ? 'enviado' : 'não enviado') . '.');
 }
 
 flock($lock, LOCK_UN);
