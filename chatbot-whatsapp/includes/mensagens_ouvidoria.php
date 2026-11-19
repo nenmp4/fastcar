@@ -641,9 +641,11 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     }
     $urgente = in_array($assunto, OUVIDORIA_ASSUNTOS_URGENTES, true) || ($assunto === 'quitacao' && !empty($GLOBALS['_ouvidoriaQuitacaoVencida']));
     // Sino: cliente mandando mensagem atrás de mensagem vira 1 aviso a cada 10 min
-    // (ticket novo e urgente sempre avisam na hora).
-    if ($ticketNovo || $urgente || !avisoRepetidoRecente('ouv_sino_' . $telNorm, 600)) {
-        if ($ticketNovo || $urgente) setConfig('ouv_sino_' . $telNorm, (string)time());
+    // (ticket novo e o 1º aviso de urgência avisam na hora; depois disso o ticket
+    // urgente segue a mesma regra de 10 min — senão cada mensagem vira um popup).
+    $viraUrgenteAgora = $urgente && $ticket && empty($ticket['urgente']);
+    if ($ticketNovo || $viraUrgenteAgora || !avisoRepetidoRecente('ouv_sino_' . $telNorm, 600)) {
+        if ($ticketNovo || $viraUrgenteAgora) setConfig('ouv_sino_' . $telNorm, (string)time());
         ouvidoriaNotificarSuperAdmins($telNorm, $assunto, ($urgente ? '🚨 URGENTE — ' : ($ticketNovo ? '🆕 ' : '')) . $resumoNotif, (string)($ticket['protocolo'] ?? ''));
     }
     if ($urgente && $ticket && empty($ticket['urgente'])) {
