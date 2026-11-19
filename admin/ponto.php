@@ -68,6 +68,19 @@ $rotuloPerfil = ['super_admin' => 'Super admin', 'supervisor' => 'Supervisor', '
     'financeiro' => 'Financeiro', 'avaliador' => 'Avaliador'];
 $usuarios = $db->query("SELECT id, nome, perfil, plantao_fim_expediente FROM usuarios WHERE bloqueado = 0 ORDER BY CASE perfil WHEN 'consultor' THEN 1 WHEN 'vendedor' THEN 2 WHEN 'avaliador' THEN 3 WHEN 'financeiro' THEN 4 WHEN 'supervisor' THEN 5 ELSE 6 END, nome")->fetchAll();
 $registrosDia = $gestor ? pontoRegistrosDoDia($dia) : [];
+// Faltas no mês do dia escolhido, por pessoa (coluna "Faltas no mês").
+$faltasMes = [];
+if ($gestor) {
+    $stF = $db->prepare("SELECT usuario_id, COUNT(*) FROM ponto_registros WHERE falta = 1 AND data BETWEEN ? AND ? GROUP BY usuario_id");
+    $stF->execute([substr($dia, 0, 7) . '-01', date('Y-m-t', strtotime($dia))]);
+    $faltasMes = array_map('intval', $stF->fetchAll(PDO::FETCH_KEY_PAIR));
+}
+// Relatório do período (faltas e horários de todo mundo).
+$relDe = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['de'] ?? '')) ? $_GET['de'] : date('Y-m-01');
+$relAte = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['ate'] ?? '')) ? $_GET['ate'] : date('Y-m-d');
+if ($relAte > date('Y-m-d')) $relAte = date('Y-m-d');
+if ($relDe > $relAte) $relDe = $relAte;
+$relatorio = $gestor ? pontoRelatorioPeriodo($relDe, $relAte) : null;
 $diaSemanaPt = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 $hora = fn(?string $dt) => $dt ? date('H:i', strtotime($dt)) : '—';
 
@@ -111,7 +124,7 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
         </form>
     </div>
     <table class="tabela-oportunidades">
-        <thead><tr><th>Pessoa</th><th>Perfil</th><th>Entrada</th><th>Saída / último acesso</th><th>Horas</th><th>Situação</th><th>Plantão</th><th>Falta</th></tr></thead>
+        <thead><tr><th>Pessoa</th><th>Perfil</th><th>Entrada</th><th>Saída / último acesso</th><th>Horas</th><th>Situação</th><th>Faltas no mês</th><th>Plantão</th><th>Falta</th></tr></thead>
         <tbody>
         <?php foreach ($usuarios as $u): $r = $registrosDia[(int)$u['id']] ?? null; $falta = $r && (int)$r['falta'] === 1; ?>
             <tr<?= $falta ? ' style="background:var(--vermelho-bg, #fef2f2)"' : '' ?>>
@@ -128,6 +141,9 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
                     <?php if ($falta): ?><span class="badge badge-atraso">❌ falta</span><?php if ($r['falta_motivo'] !== ''): ?><br><small><?= e($r['falta_motivo']) ?></small><?php endif; ?>
                     <?php elseif ($r && $r['entrada']): ?><span class="badge badge-ok">✅ presente</span>
                     <?php else: ?><span class="badge">sem registro</span><?php endif; ?>
+                </td>
+                <td data-label="Faltas no mês"><?php $fm = $faltasMes[(int)$u['id']] ?? 0; ?>
+                    <a href="/admin/ponto.php?usuario=<?= (int)$u['id'] ?>&amp;mes=<?= e(substr($dia, 0, 7)) ?>#mes"><?= $fm ? '<span class="badge badge-atraso">' . $fm . '</span>' : '<span class="badge">0</span>' ?></a>
                 </td>
                 <td data-label="Plantão">
                     <?php if (in_array($u['perfil'], ['consultor', 'vendedor', 'avaliador'], true)): ?>
@@ -156,6 +172,41 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
                         </details>
                     <?php endif; ?>
                 </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
+
+<?php if ($relatorio): ?>
+<div class="card" id="relatorio">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+        <h3 style="margin:0">📊 Relatório de faltas e horários</h3>
+        <form method="get" action="#relatorio" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0">
+            <input type="hidden" name="dia" value="<?= e($dia) ?>">
+            <label style="margin:0">De <input type="date" name="de" value="<?= e($relDe) ?>" max="<?= date('Y-m-d') ?>" style="width:auto;margin:0"></label>
+            <label style="margin:0">até <input type="date" name="ate" value="<?= e($relAte) ?>" max="<?= date('Y-m-d') ?>" style="width:auto;margin:0"></label>
+            <button type="submit" class="btn" style="margin:0">Ver</button>
+            <a class="btn" href="/admin/ponto_relatorio_excel.php?de=<?= e($relDe) ?>&amp;ate=<?= e($relAte) ?>">📗 Baixar Excel</a>
+        </form>
+    </div>
+    <p><small><?= e(date('d/m/Y', strtotime($relatorio['de']))) ?> a <?= e(date('d/m/Y', strtotime($relatorio['ate']))) ?> ·
+        <?= (int)$relatorio['dias_uteis'] ?> dia(s) útil(eis) (dias abertos da fila) · <strong>atraso</strong> = entrada depois das <?= e($relatorio['limite_atraso']) ?>.</small></p>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Pessoa</th><th>Perfil</th><th>Presente</th><th>Faltas</th><th>Atrasos</th><th>Sem registro</th><th>Horas</th><th>Entrada média</th><th>Datas das faltas</th></tr></thead>
+        <tbody>
+        <?php foreach ($relatorio['linhas'] as $l): ?>
+            <tr>
+                <td><a href="/admin/ponto.php?usuario=<?= (int)$l['id'] ?>&amp;mes=<?= e(substr($relatorio['ate'], 0, 7)) ?>#mes"><strong><?= e($l['nome']) ?></strong></a></td>
+                <td data-label="Perfil"><?= e($rotuloPerfil[$l['perfil']] ?? $l['perfil']) ?></td>
+                <td data-label="Presente"><?= (int)$l['presentes'] ?></td>
+                <td data-label="Faltas"><?= count($l['faltas']) ? '<span class="badge badge-atraso">' . count($l['faltas']) . '</span>' : '0' ?></td>
+                <td data-label="Atrasos" title="<?= e(implode(', ', array_map(fn($a) => date('d/m', strtotime($a['data'])) . ' ' . $a['entrada'], $l['atrasos']))) ?>"><?= count($l['atrasos']) ? '<span class="badge badge-aviso">' . count($l['atrasos']) . '</span>' : '0' ?></td>
+                <td data-label="Sem registro"><?= count($l['sem_registro']) ?></td>
+                <td data-label="Horas"><?= e(pontoFormatarMinutos($l['minutos'])) ?></td>
+                <td data-label="Entrada média"><?= e($l['entrada_media'] ?? '—') ?></td>
+                <td data-label="Datas das faltas"><?= $l['faltas'] ? e(implode(' · ', array_map(fn($f) => date('d/m', strtotime($f['data'])) . ($f['motivo'] !== '' ? " ({$f['motivo']})" : ''), $l['faltas']))) : '—' ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

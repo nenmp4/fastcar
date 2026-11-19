@@ -181,3 +181,100 @@ function pontoResumoDia(?string $data = null): array {
     }
     return $out;
 }
+
+const PONTO_ATRASO_TOLERANCIA_MIN = 10; // entrada até abertura da fila + 10 min não conta como atraso
+
+/**
+ * Relatório de faltas e horários do período (20/11/2026, "tem saber relatórios
+ * de faltas e horários"). Só quem bate ponto (ativos, menos super admin).
+ * Dia útil = dia aberto da fila (Configurações → Fila) até hoje.
+ * Atraso = entrada depois da abertura da fila + PONTO_ATRASO_TOLERANCIA_MIN.
+ */
+function pontoRelatorioPeriodo(string $de, string $ate): array {
+    $hoje = date('Y-m-d');
+    if ($ate > $hoje) $ate = $hoje;
+    $db = getDB();
+    $us = $db->query("SELECT id, nome, perfil FROM usuarios WHERE bloqueado = 0 AND perfil != 'super_admin'
+        ORDER BY CASE perfil WHEN 'consultor' THEN 1 WHEN 'vendedor' THEN 2 WHEN 'avaliador' THEN 3 WHEN 'financeiro' THEN 4 WHEN 'supervisor' THEN 5 ELSE 6 END, nome")->fetchAll();
+    $st = $db->prepare("SELECT * FROM ponto_registros WHERE data BETWEEN ? AND ? ORDER BY data");
+    $st->execute([$de, $ate]);
+    $regs = [];
+    foreach ($st->fetchAll() as $r) $regs[(int)$r['usuario_id']][$r['data']] = $r;
+
+    $diasUteis = [];
+    if ($de <= $ate) {
+        for ($t = strtotime($de); $t <= strtotime($ate); $t += 86400) {
+            $d = date('Y-m-d', $t);
+            if (!function_exists('filaDiaAberto') || filaDiaAberto((int)date('N', $t))) $diasUteis[] = $d;
+        }
+    }
+    $abertura = function_exists('filaHorarioAbertura') ? filaHorarioAbertura() : '10:00';
+    [$h, $m] = array_map('intval', explode(':', $abertura));
+    $limiteAtraso = sprintf('%02d:%02d', intdiv($h * 60 + $m + PONTO_ATRASO_TOLERANCIA_MIN, 60), ($h * 60 + $m + PONTO_ATRASO_TOLERANCIA_MIN) % 60);
+
+    $linhas = [];
+    foreach ($us as $u) {
+        $rs = $regs[(int)$u['id']] ?? [];
+        $l = ['id' => (int)$u['id'], 'nome' => $u['nome'], 'perfil' => $u['perfil'], 'presentes' => 0, 'faltas' => [], 'atrasos' => [],
+              'sem_registro' => [], 'minutos' => 0, 'entradas' => [], 'dias' => []];
+        foreach ($rs as $data => $r) {
+            if ((int)$r['falta'] === 1) {
+                $l['faltas'][] = ['data' => $data, 'motivo' => (string)$r['falta_motivo']];
+            } elseif ($r['entrada']) {
+                $l['presentes']++;
+                $l['minutos'] += (int)pontoMinutosTrabalhados($r);
+                $hEnt = date('H:i', strtotime($r['entrada']));
+                $l['entradas'][] = $hEnt;
+                if ($hEnt > $limiteAtraso) $l['atrasos'][] = ['data' => $data, 'entrada' => $hEnt];
+            }
+            $l['dias'][$data] = $r;
+        }
+        foreach ($diasUteis as $d) {
+            $r = $rs[$d] ?? null;
+            if (!$r || (!$r['entrada'] && (int)$r['falta'] !== 1)) $l['sem_registro'][] = $d;
+        }
+        if ($l['entradas']) {
+            $mins = array_map(fn($x) => (int)substr($x, 0, 2) * 60 + (int)substr($x, 3, 2), $l['entradas']);
+            $med = (int)round(array_sum($mins) / count($mins));
+            $l['entrada_media'] = sprintf('%02d:%02d', intdiv($med, 60), $med % 60);
+        } else {
+            $l['entrada_media'] = null;
+        }
+        $linhas[] = $l;
+    }
+    return ['de' => $de, 'ate' => $ate, 'dias_uteis' => count($diasUteis), 'limite_atraso' => $limiteAtraso, 'linhas' => $linhas];
+}
+
+/** Excel do relatório: aba Resumo (1 linha por pessoa) e aba Dias (1 linha por pessoa/dia). */
+function pontoRelatorioExcel(array $rel): string {
+    require_once __DIR__ . '/xlsx.php';
+    $rot = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliador' => 'Avaliador', 'financeiro' => 'Financeiro', 'supervisor' => 'Supervisor'];
+    $per = date('d/m/Y', strtotime($rel['de'])) . ' a ' . date('d/m/Y', strtotime($rel['ate']));
+    $res = [
+        [['v' => 'Cartão de ponto — ' . $per, 's' => 'titulo']],
+        ['Dias úteis no período: ' . $rel['dias_uteis'] . ' · atraso = entrada depois das ' . $rel['limite_atraso']],
+        [],
+        array_map(fn($c) => ['v' => $c, 's' => 'cab'], ['Nome', 'Perfil', 'Dias presente', 'Faltas', 'Atrasos', 'Sem registro (dia útil)', 'Horas no total', 'Entrada média', 'Datas das faltas (motivo)']),
+    ];
+    foreach ($rel['linhas'] as $l) {
+        $res[] = [$l['nome'], $rot[$l['perfil']] ?? $l['perfil'], $l['presentes'], count($l['faltas']), count($l['atrasos']), count($l['sem_registro']),
+            pontoFormatarMinutos($l['minutos']), $l['entrada_media'] ?? '—',
+            implode('; ', array_map(fn($f) => date('d/m', strtotime($f['data'])) . ($f['motivo'] !== '' ? " ({$f['motivo']})" : ''), $l['faltas']))];
+    }
+    $dias = [array_map(fn($c) => ['v' => $c, 's' => 'cab'], ['Data', 'Nome', 'Perfil', 'Entrada', 'Saída / último acesso', 'Horas', 'Situação', 'Motivo da falta'])];
+    foreach ($rel['linhas'] as $l) {
+        foreach ($l['dias'] as $data => $r) {
+            $falta = (int)$r['falta'] === 1;
+            $ent = $r['entrada'] ? date('H:i', strtotime($r['entrada'])) : '';
+            $fim = pontoFim($r);
+            $sit = $falta ? 'Falta' : ($ent ? ($ent > $rel['limite_atraso'] ? 'Atraso' : 'Presente') : 'Sem entrada');
+            $dias[] = [['v' => $data, 's' => 'data'], $l['nome'], $rot[$l['perfil']] ?? $l['perfil'], $ent,
+                $fim ? date('H:i', strtotime($fim)) . ($r['saida'] ? '' : ' (último acesso)') : '',
+                $falta ? '' : pontoFormatarMinutos(pontoMinutosTrabalhados($r)), $sit, $falta ? (string)$r['falta_motivo'] : ''];
+        }
+    }
+    $x = new XlsxSimples();
+    $x->aba('Resumo', [28, 12, 13, 9, 9, 20, 14, 13, 50], $res);
+    $x->aba('Dias', [12, 28, 12, 9, 22, 9, 12, 40], $dias);
+    return $x->gerar();
+}
