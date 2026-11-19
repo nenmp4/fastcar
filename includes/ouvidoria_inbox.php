@@ -410,7 +410,7 @@ function ouvidoriaComQuemHtml(?array $r): string {
     if ($r['com'] === 'antes_cadastro') {
         return $cab . '<strong>sem registro</strong> — essa data é anterior ao cadastro manual do veículo (' . e(date('d/m/Y', strtotime($r['ate'])))
             . ')' . ($r['nome'] !== '' ? ', provavelmente com <strong>' . e($r['nome']) . '</strong> (vendedor cadastrado)' : '')
-            . ' · confira a data de entrega na <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">compra #' . (int)$r['oportunidade_id'] . '</a>';
+            . ' · sem histórico de compra no sistema — <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">ver cadastro do veículo #' . (int)$r['oportunidade_id'] . '</a>';
     }
     if ($r['com'] === 'vendedor_original') {
         return $cab . '<strong>' . e($r['nome'] ?: 'vendedor original') . '</strong> (antes de entregar pra Fastcar em ' . e(date('d/m/Y', strtotime($r['ate']))) . ') · <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">compra #' . (int)$r['oportunidade_id'] . '</a>';
