@@ -1569,5 +1569,7 @@ CREATE TABLE IF NOT EXISTS ouvidoria_conversas (
     ia_pausada INTEGER NOT NULL DEFAULT 0,
     ultima_auto_assunto TEXT NOT NULL DEFAULT '',
     ultima_auto_em DATETIME,
+    oportunidade_id INTEGER,
+    venda_id INTEGER,
     updated_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
 );

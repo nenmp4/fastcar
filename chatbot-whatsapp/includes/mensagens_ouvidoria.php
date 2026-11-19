@@ -45,7 +45,7 @@ function ouvidoriaDentroHorario(?int $ts = null): bool {
 function ouvidoriaConversa(string $telefone): array {
     $st = getDB()->prepare('SELECT * FROM ouvidoria_conversas WHERE telefone = ?');
     $st->execute([normalizarTelefone($telefone) ?: $telefone]);
-    return $st->fetch(PDO::FETCH_ASSOC) ?: ['telefone' => $telefone, 'nome' => '', 'assunto' => '', 'ia_pausada' => 0, 'ultima_auto_assunto' => '', 'ultima_auto_em' => null];
+    return $st->fetch(PDO::FETCH_ASSOC) ?: ['telefone' => $telefone, 'nome' => '', 'assunto' => '', 'ia_pausada' => 0, 'ultima_auto_assunto' => '', 'ultima_auto_em' => null, 'oportunidade_id' => null, 'venda_id' => null];
 }
 
 function ouvidoriaSalvarConversa(string $telefone, array $campos): void {
@@ -55,7 +55,7 @@ function ouvidoriaSalvarConversa(string $telefone, array $campos): void {
     $sets = [];
     $vals = [];
     foreach ($campos as $k => $v) {
-        if (!in_array($k, ['nome', 'assunto', 'ia_pausada', 'ultima_auto_assunto', 'ultima_auto_em'], true)) continue;
+        if (!in_array($k, ['nome', 'assunto', 'ia_pausada', 'ultima_auto_assunto', 'ultima_auto_em', 'oportunidade_id', 'venda_id'], true)) continue;
         $sets[] = "{$k} = ?";
         $vals[] = $v;
     }

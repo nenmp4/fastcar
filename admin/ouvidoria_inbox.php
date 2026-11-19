@@ -46,6 +46,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'anteriores') {
     exit;
 }
 
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'buscar_negocio') {
+    header('Content-Type: application/json');
+    echo json_encode(['itens' => ouvidoriaBuscarNegocios((string)($_GET['q'] ?? ''))]);
+    exit;
+}
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
     echo json_encode(['conversas' => listarConversasOuvidoria(trim((string)($_GET['busca'] ?? '')), (string)($_GET['assunto'] ?? ''))]);
@@ -62,7 +68,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $acao = (string)($_POST['acao'] ?? '');
         $telPost = preg_replace('/\D/', '', (string)($_POST['telefone'] ?? ''));
-        if ($acao === 'ia_ouvidoria' && $telPost) {
+        if ($acao === 'vincular_negocio' && $telPost) {
+            $tipoV = (string)($_POST['tipo'] ?? '');
+            $idV = (int)($_POST['negocio_id'] ?? 0);
+            if (in_array($tipoV, ['venda', 'compra'], true) && $idV > 0 && ouvidoriaResumoNegocio($tipoV, $idV)) {
+                ouvidoriaSalvarConversa($telPost, $tipoV === 'venda' ? ['venda_id' => $idV, 'oportunidade_id' => null] : ['oportunidade_id' => $idV, 'venda_id' => null]);
+                auditoriaRegistrar('ouvidoria_vinculada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], $tipoV === 'venda' ? 'venda' : 'oportunidade', $idV, "Telefone {$telPost} da ouvidoria vinculado.");
+                $sucesso = 'Conversa vinculada ao ' . ($tipoV === 'venda' ? 'contrato de venda' : 'negócio de compra') . " #{$idV}.";
+            } else {
+                $erro = 'Negócio não encontrado.';
+            }
+            $telefoneAtivo = $telPost;
+        } elseif ($acao === 'desvincular_negocio' && $telPost) {
+            ouvidoriaSalvarConversa($telPost, ['venda_id' => null, 'oportunidade_id' => null]);
+            $sucesso = 'Vínculo removido.';
+            $telefoneAtivo = $telPost;
+        } elseif ($acao === 'ia_ouvidoria' && $telPost) {
             $pausar = ($_POST['pausar'] ?? '') === '1';
             ouvidoriaSalvarConversa($telPost, ['ia_pausada' => $pausar ? 1 : 0]);
             $sucesso = $pausar ? 'IA pausada nesta conversa — só a equipe responde.' : 'IA reativada nesta conversa.';
@@ -107,6 +128,16 @@ if ($telefoneAtivo && !$contatoAtivo && $mensagens) {
     $contatoAtivo = ['telefone' => $telefoneAtivo, 'nome' => $conv['nome'], 'assunto' => $conv['assunto'], 'ia_pausada' => $conv['ia_pausada']];
 }
 $negocios = $contatoAtivo ? ouvidoriaNegociosDoTelefone($telefoneAtivo) : ['vendas' => [], 'oportunidades' => []];
+// Negócio vinculado (escolhido pela equipe) ou, sem vínculo, sugestão pelo telefone.
+$vinculo = null;
+$vinculoSugerido = false;
+if ($contatoAtivo) {
+    $convAtiva = ouvidoriaConversa($telefoneAtivo);
+    if (!empty($convAtiva['venda_id'])) $vinculo = ouvidoriaResumoNegocio('venda', (int)$convAtiva['venda_id']);
+    elseif (!empty($convAtiva['oportunidade_id'])) $vinculo = ouvidoriaResumoNegocio('compra', (int)$convAtiva['oportunidade_id']);
+    if (!$vinculo && $negocios['vendas']) { $vinculo = ouvidoriaResumoNegocio('venda', (int)$negocios['vendas'][0]['id']); $vinculoSugerido = (bool)$vinculo; }
+    elseif (!$vinculo && $negocios['oportunidades']) { $vinculo = ouvidoriaResumoNegocio('compra', (int)$negocios['oportunidades'][0]['id']); $vinculoSugerido = (bool)$vinculo; }
+}
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -148,6 +179,12 @@ $negocios = $contatoAtivo ? ouvidoriaNegociosDoTelefone($telefoneAtivo) : ['vend
 .ouv-chips { display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--borda); }
 .ouv-chips a { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--borda); color:inherit; text-decoration:none; }
 .ouv-chips a.ativo { background:var(--azul); color:#fff; border-color:var(--azul); }
+.ouv-vinculo { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; padding:8px 20px; border-bottom:1px solid var(--borda); background:var(--fundo); font-size:12.5px; }
+.ouv-vinculo-info { flex:1; min-width:220px; overflow-wrap:anywhere; }
+#ouv-busca-box input { margin:6px 0; }
+.ouv-res-item { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:6px 8px; border:1px solid var(--borda); border-radius:8px; margin-bottom:4px; background:var(--superficie); }
+.ouv-res-item form { margin:0; }
+.ouv-res-item button { margin:0; width:auto; padding:6px 12px; font-size:12.5px; }
 .ouv-acoes { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-size:12.5px; }
 .ouv-acoes form { margin:0; display:flex; gap:6px; align-items:center; }
 .ouv-acoes select, .ouv-acoes button { margin:0; width:auto; padding:6px 10px; font-size:12.5px; }
@@ -224,8 +261,6 @@ $negocios = $contatoAtivo ? ouvidoriaNegociosDoTelefone($telefoneAtivo) : ['vend
                         <strong><?= e($contatoAtivo['nome'] ?: $telefoneAtivo) ?></strong>
                         <div style="font-size:12px;color:var(--texto-fraco)">
                             <?= e($telefoneAtivo) ?>
-                            <?php foreach ($negocios['vendas'] as $nv): ?> · <a href="/admin/venda.php?id=<?= (int)$nv['id'] ?>">Venda #<?= (int)$nv['id'] ?></a><?php endforeach; ?>
-                            <?php foreach ($negocios['oportunidades'] as $no): ?> · <a href="/admin/oportunidade.php?id=<?= (int)$no['id'] ?>">Compra #<?= (int)$no['id'] ?></a><?php endforeach; ?>
                         </div>
                     </div>
                 </div>
@@ -248,6 +283,51 @@ $negocios = $contatoAtivo ? ouvidoriaNegociosDoTelefone($telefoneAtivo) : ['vend
                         <input type="hidden" name="pausar" value="<?= !empty($contatoAtivo['ia_pausada']) ? '0' : '1' ?>">
                         <button type="submit"><?= !empty($contatoAtivo['ia_pausada']) ? '▶️ Reativar IA' : '⏸️ Pausar IA' ?></button>
                     </form>
+                </div>
+            </div>
+
+            <div class="ouv-vinculo">
+                <?php if ($vinculo): ?>
+                    <div class="ouv-vinculo-info">
+                        <strong><?= $vinculo['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?> #<?= (int)$vinculo['id'] ?></strong>
+                        — <?= e($vinculo['nome'] ?: '—') ?>
+                        <?= $vinculo['cpf'] ? ' · CPF ' . e($vinculo['cpf']) : '' ?>
+                        · <?= e(trim(($vinculo['marca'] ?? '') . ' ' . ($vinculo['modelo'] ?? '') . ' ' . ($vinculo['ano'] ?? '')) ?: 'veículo não informado') ?><?= $vinculo['placa'] ? ' (' . e($vinculo['placa']) . ')' : '' ?>
+                        · <?= e($vinculo['etapa_label']) ?>
+                        <?php if ($vinculo['tipo'] === 'venda' && !empty($vinculo['fin'])): $f = $vinculo['fin']; ?>
+                            · <?= (float)$f['atrasado'] > 0 ? '<span style="color:var(--vermelho);font-weight:700">R$ ' . number_format((float)$f['atrasado'], 2, ',', '.') . ' em atraso</span>' : '✅ sem atraso' ?>
+                            <?= $f['proximo_venc'] ? ' · próximo vencimento ' . e(date('d/m/Y', strtotime($f['proximo_venc']))) : '' ?>
+                        <?php endif; ?>
+                        <a href="<?= e($vinculo['url']) ?>" target="_blank">Abrir →</a>
+                        <?php if ($vinculoSugerido): ?><span class="ouv-assunto" style="background:var(--laranja-bg);color:var(--laranja)">achado pelo telefone</span><?php endif; ?>
+                    </div>
+                    <div class="ouv-acoes">
+                        <?php if ($vinculoSugerido): ?>
+                        <form method="post">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="vincular_negocio">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <input type="hidden" name="tipo" value="<?= e($vinculo['tipo']) ?>">
+                            <input type="hidden" name="negocio_id" value="<?= (int)$vinculo['id'] ?>">
+                            <button type="submit">🔗 Confirmar vínculo</button>
+                        </form>
+                        <?php else: ?>
+                        <form method="post" onsubmit="return confirmarAcao(this, 'Remover o vínculo desta conversa com o negócio?');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="desvincular_negocio">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <button type="submit" class="btn-texto">desvincular</button>
+                        </form>
+                        <?php endif; ?>
+                        <button type="button" class="btn-texto" onclick="document.getElementById('ouv-busca-box').hidden = !document.getElementById('ouv-busca-box').hidden">🔎 trocar</button>
+                    </div>
+                <?php else: ?>
+                    <div class="ouv-vinculo-info">Esse número não está ligado a nenhuma compra ou venda.</div>
+                    <div class="ouv-acoes"><button type="button" onclick="document.getElementById('ouv-busca-box').hidden = false">🔗 Vincular ao cliente</button></div>
+                <?php endif; ?>
+                <div id="ouv-busca-box" hidden style="width:100%">
+                    <input type="search" id="ouv-busca-negocio" placeholder="Buscar por nome, CPF, telefone ou placa..." autocomplete="off">
+                    <div id="ouv-busca-res"></div>
                 </div>
             </div>
 
@@ -294,6 +374,36 @@ $negocios = $contatoAtivo ? ouvidoriaNegociosDoTelefone($telefoneAtivo) : ['vend
     var btnAnteriores = document.getElementById('wpp-carregar-anteriores');
     var csrf = document.querySelector('input[name="csrf_token"]');
     var ASSUNTOS = <?= json_encode(OUVIDORIA_ASSUNTOS) ?>;
+    var buscaNeg = document.getElementById('ouv-busca-negocio');
+    if (buscaNeg) {
+        var tBusca = null;
+        buscaNeg.addEventListener('input', function () {
+            clearTimeout(tBusca);
+            var q = buscaNeg.value.trim();
+            var res = document.getElementById('ouv-busca-res');
+            if (q.length < 3) { res.innerHTML = ''; return; }
+            tBusca = setTimeout(function () {
+                fetch('?ajax=buscar_negocio&q=' + encodeURIComponent(q))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        res.innerHTML = '';
+                        if (!d.itens || !d.itens.length) { res.innerHTML = '<small>Nada encontrado.</small>'; return; }
+                        d.itens.forEach(function (it) {
+                            var div = document.createElement('div');
+                            div.className = 'ouv-res-item';
+                            var veic = [it.marca, it.modelo].filter(Boolean).join(' ') + (it.placa ? ' (' + it.placa + ')' : '');
+                            div.innerHTML = '<span>' + (it.tipo === 'venda' ? '🛒 Venda' : '🚗 Compra') + ' #' + it.id + ' — ' + escapeHtml(it.nome || '—') +
+                                (veic ? ' · ' + escapeHtml(veic) : '') + ' · ' + escapeHtml(it.etapa_label || '') + '</span>' +
+                                '<form method="post"><input type="hidden" name="csrf_token" value="' + escapeHtml(csrf.value) + '">' +
+                                '<input type="hidden" name="acao" value="vincular_negocio"><input type="hidden" name="telefone" value="' + escapeHtml(telefone) + '">' +
+                                '<input type="hidden" name="tipo" value="' + it.tipo + '"><input type="hidden" name="negocio_id" value="' + it.id + '">' +
+                                '<button type="submit">Vincular</button></form>';
+                            res.appendChild(div);
+                        });
+                    }).catch(function () {});
+            }, 300);
+        });
+    }
 
     function escapeHtml(s) {
         var d = document.createElement('div');

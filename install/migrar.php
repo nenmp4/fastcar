@@ -2495,6 +2495,11 @@ try {
             updated_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
         )
     ");
+    foreach (['oportunidade_id', 'venda_id'] as $colOuv) {
+        try { $db->exec("ALTER TABLE ouvidoria_conversas ADD COLUMN {$colOuv} INTEGER"); } catch (Throwable $e) {
+            if (!str_contains($e->getMessage(), 'duplicate column name')) throw $e;
+        }
+    }
     echo "✅ ouvidoria_conversas: tabela pronta\n";
 } catch (Throwable $e) {
     echo "❌ ouvidoria_conversas: {$e->getMessage()}\n";
