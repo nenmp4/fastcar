@@ -122,6 +122,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: /admin/ouvidoria_tickets.php?' . ($r['ok'] ? 'ok=' . rawurlencode($sucesso) : 'erro=' . rawurlencode($erro)));
                 exit;
             }
+        } elseif ($acao === 'ticket_placa') {
+            $r = ouvidoriaTicketSalvarPlaca((int)($_POST['ticket_id'] ?? 0), (string)($_POST['placa'] ?? ''), (string)($_POST['data_ref'] ?? ''));
+            if ($r['ok']) $sucesso = 'Placa/data do ticket ' . $r['ticket']['protocolo'] . ' salvas.'; else $erro = $r['erro'];
+            $telefoneAtivo = $telPost ?: $telefoneAtivo;
+            if (($_POST['voltar'] ?? '') === 'tickets') {
+                header('Location: /admin/ouvidoria_tickets.php?' . ($r['ok'] ? 'ok=' . rawurlencode($sucesso) : 'erro=' . rawurlencode($erro)));
+                exit;
+            }
         } elseif ($acao === 'ticket_status') {
             $res = ouvidoriaTicketMudarStatus((int)($_POST['ticket_id'] ?? 0), (string)($_POST['status'] ?? ''), (int)$_SESSION['admin_id'], (string)($_POST['resolucao'] ?? ''));
             if ($res['ok']) {
@@ -247,6 +255,7 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .ouv-ticket-resolver { display:flex; gap:6px; align-items:center; margin-top:4px; }
 .ouv-ticket-resolver input { margin:0; min-width:220px; }
 .ouv-ticket-resolver button { margin:0; width:auto; padding:6px 12px; font-size:12.5px; }
+.ouv-comquem { width:100%; font-size:12.5px; overflow-wrap:anywhere; }
 .ouv-ticket-hist { color:var(--texto-fraco); }
 .ouv-acoes { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-size:12.5px; }
 .ouv-acoes form { margin:0; display:flex; gap:6px; align-items:center; }
@@ -414,7 +423,7 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
             <div class="ouv-tickets">
                 <?php foreach ($ticketsAtivosConv as $t): ?>
                     <div class="ouv-ticket">
-                        <span>🎫 <strong><?= e($t['protocolo']) ?></strong> · <?= e(OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto']) ?> · <?= e(OUVIDORIA_TICKET_STATUS[$t['status']]) ?></span>
+                        <span><?= !empty($t['urgente']) ? '<span style="color:var(--vermelho);font-weight:700">🚨 URGENTE</span> ' : '' ?>🎫 <strong><?= e($t['protocolo']) ?></strong> · <?= e(OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto']) ?> · <?= e(OUVIDORIA_TICKET_STATUS[$t['status']]) ?></span>
                         <?php if ($t['status'] === 'aberto'): ?>
                         <form method="post">
                             <?= csrfField() ?>
@@ -448,6 +457,20 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
                                 <button type="submit">Enviar</button>
                             </form>
                         </details>
+                        <div class="ouv-comquem"><?= ouvidoriaComQuemHtml(ouvidoriaComQuemDoTicket($t)) ?>
+                            <details style="display:inline-block">
+                                <summary class="btn-texto">✏️ placa/data</summary>
+                                <form method="post" class="ouv-ticket-resolver">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="acao" value="ticket_placa">
+                                    <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
+                                    <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                                    <input type="text" name="placa" value="<?= e($t['placa']) ?>" placeholder="Placa" maxlength="8" style="min-width:90px;max-width:110px">
+                                    <input type="date" name="data_ref" value="<?= e((string)$t['data_ref']) ?>" title="Data da infração (vazio = hoje)" style="min-width:140px;max-width:160px">
+                                    <button type="submit">Salvar</button>
+                                </form>
+                            </details>
+                        </div>
                     </div>
                 <?php endforeach; ?>
                 <?php if ($nResolvidos > 0): ?>

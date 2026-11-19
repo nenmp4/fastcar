@@ -1590,6 +1590,9 @@ CREATE TABLE IF NOT EXISTS ouvidoria_tickets (
     resolvido_em DATETIME,
     resolvido_por INTEGER REFERENCES usuarios(id),
     resolucao TEXT NOT NULL DEFAULT '',
+    urgente INTEGER NOT NULL DEFAULT 0, -- veículo apreendido / quitação com prazo vencido
+    placa TEXT NOT NULL DEFAULT '',     -- lida da mensagem/foto ou digitada (pra achar com quem está o carro)
+    data_ref DATE,                      -- data da infração (multa) — quem tinha a posse nesse dia
     notificado_em DATETIME,
     notificado_por INTEGER REFERENCES usuarios(id),
     updated_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))

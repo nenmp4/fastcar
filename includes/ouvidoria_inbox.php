@@ -175,7 +175,9 @@ function listarTicketsOuvidoria(string $status = '', string $assunto = '', strin
             LEFT JOIN ouvidoria_conversas oc ON oc.telefone = t.telefone
             LEFT JOIN usuarios u ON u.id = t.resolvido_por
             WHERE 1=1 {$where}
-            ORDER BY CASE t.status WHEN 'aberto' THEN 0 WHEN 'em_atendimento' THEN 1 ELSE 2 END, t.aberto_em DESC
+            ORDER BY CASE t.status WHEN 'aberto' THEN 0 WHEN 'em_atendimento' THEN 1 ELSE 2 END,
+                     CASE WHEN t.status != 'resolvido' AND t.urgente = 1 THEN 0 ELSE 1 END,
+                     t.aberto_em DESC
             LIMIT ? OFFSET ?";
     $params[] = $limite; $params[] = $offset;
     $st = getDB()->prepare($sql);
@@ -192,7 +194,8 @@ function contarTicketsOuvidoria(string $status = '', string $assunto = '', strin
 
 function _ouvidoriaTicketsWhere(string $status, string $assunto, string $busca): array {
     $where = ''; $params = [];
-    if (isset(OUVIDORIA_TICKET_STATUS[$status])) { $where .= ' AND t.status = ?'; $params[] = $status; }
+    if ($status === 'urgente') { $where .= " AND t.status != 'resolvido' AND t.urgente = 1"; }
+    elseif (isset(OUVIDORIA_TICKET_STATUS[$status])) { $where .= ' AND t.status = ?'; $params[] = $status; }
     if (isset(OUVIDORIA_ASSUNTOS[$assunto])) { $where .= ' AND t.assunto = ?'; $params[] = $assunto; }
     if ($busca !== '') {
         $where .= " AND (t.protocolo LIKE ? OR t.telefone LIKE ? OR t.nome LIKE ? OR oc.nome LIKE ?)";
@@ -211,7 +214,8 @@ function resumoTicketsOuvidoria(): array {
             SUM(status = 'resolvido' AND resolvido_em >= date('now','localtime','start of month')) AS resolvidos_mes,
             AVG(CASE WHEN status = 'resolvido' AND resolvido_em >= date('now','localtime','start of month')
                      THEN (julianday(resolvido_em) - julianday(aberto_em)) * 24 END) AS horas_media_resolucao,
-            SUM(status = 'aberto' AND primeira_resposta_em IS NULL AND aberto_em <= datetime('now','localtime','-1 day')) AS sem_resposta_24h
+            SUM(status = 'aberto' AND primeira_resposta_em IS NULL AND aberto_em <= datetime('now','localtime','-1 day')) AS sem_resposta_24h,
+            SUM(status != 'resolvido' AND urgente = 1) AS urgentes
         FROM ouvidoria_tickets")->fetch();
     return array_map(fn($v) => $v === null ? 0 : $v, $r ?: []);
 }
@@ -307,6 +311,13 @@ function ouvidoriaResumoTicketTexto(array $t, string $nota, string $quem): strin
         if ($vincTipo === 'venda' && !empty($n['fin']) && (float)$n['fin']['atrasado'] > 0) $v .= ' · R$ ' . number_format((float)$n['fin']['atrasado'], 2, ',', '.') . ' em atraso';
         $linhas[] = $v;
     }
+    $cq = ouvidoriaComQuemDoTicket($t);
+    if ($cq && $cq['com'] !== 'nao_achado') {
+        $quando = !empty($cq['data_ref']) ? 'em ' . date('d/m/Y', strtotime($cq['data_ref'])) : 'hoje';
+        $linhas[] = "🚗 {$cq['placa']} {$cq['veiculo']} — {$quando} estava com: " . ($cq['com'] === 'comprador'
+            ? $cq['nome'] . ($cq['cpf'] ? " · CPF {$cq['cpf']}" : '') . ($cq['cnh'] ? " · CNH {$cq['cnh']}" : '') . " (venda #{$cq['venda_id']})"
+            : ($cq['com'] === 'fastcar' ? 'Fastcar (estoque)' : ($cq['nome'] ?: 'vendedor original') . ' (antes da compra)'));
+    }
     if ($nota !== '') $linhas[] = "\n📝 {$quem}: {$nota}";
     $st = $db->prepare("SELECT direcao, mensagem, created_at FROM whatsapp_mensagens
         WHERE telefone = ? AND canal = 'ouvidoria' AND created_at >= ? ORDER BY id DESC LIMIT 8");
@@ -326,8 +337,8 @@ function ouvidoriaNotificarJean(int $ticketId, string $nota, int $usuarioId): ar
     $t = ouvidoriaBuscarTicket($ticketId);
     if (!$t) return ['ok' => false, 'erro' => 'Ticket não encontrado.'];
     $nota = trim($nota);
-    $u = buscarUsuario($usuarioId);
-    $quem = trim((string)($u['nome'] ?? 'Equipe'));
+    $u = $usuarioId > 0 ? buscarUsuario($usuarioId) : null;
+    $quem = $usuarioId > 0 ? trim((string)($u['nome'] ?? 'Equipe')) : 'Sistema';
     $texto = ouvidoriaResumoTicketTexto($t, $nota, $quem);
     $jean = ouvidoriaDestinatarioJean();
 
@@ -349,7 +360,7 @@ function ouvidoriaNotificarJean(int $ticketId, string $nota, int $usuarioId): ar
     $sinoOk = false;
     if ($jean && (int)$jean['id'] !== $usuarioId) {
         try {
-            criarNotificacao((int)$jean['id'], 'ouvidoria', "🎫 {$quem} te mandou o ticket {$t['protocolo']}", mb_substr($nota !== '' ? $nota : (string)$t['resumo'], 0, 160), '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode((string)$t['telefone']));
+            criarNotificacao((int)$jean['id'], 'ouvidoria', ($usuarioId > 0 ? "🎫 {$quem} te mandou o ticket {$t['protocolo']}" : "🚨 Ticket urgente {$t['protocolo']}"), mb_substr($nota !== '' ? $nota : (string)$t['resumo'], 0, 160), '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode((string)$t['telefone']));
             $sinoOk = true;
         } catch (Throwable $e) {}
     }
@@ -357,7 +368,48 @@ function ouvidoriaNotificarJean(int $ticketId, string $nota, int $usuarioId): ar
         return ['ok' => false, 'erro' => $jean ? 'Não consegui avisar o Jean (WhatsApp e e-mail falharam).' : 'Nenhum usuário "Jean" ativo nem número de notificação configurado.'];
     }
     getDB()->prepare("UPDATE ouvidoria_tickets SET notificado_em = datetime('now','localtime'), notificado_por = ?, updated_at = datetime('now','localtime') WHERE id = ?")
-        ->execute([$usuarioId, $ticketId]);
+        ->execute([$usuarioId > 0 ? $usuarioId : null, $ticketId]);
     $canais = array_keys(array_filter(['WhatsApp' => $wppOk, 'e-mail' => $emailOk, 'sino' => $sinoOk]));
     return ['ok' => true, 'canais' => $canais, 'protocolo' => $t['protocolo']];
+}
+
+/** "Com quem está o carro" do ticket, pronto pra tela (null = sem placa ou placa não achada). */
+function ouvidoriaComQuemDoTicket(array $t): ?array {
+    $placa = ouvidoriaPlacaDoTicket($t);
+    if ($placa === '') return null;
+    $r = ouvidoriaComQuemEstaCarro($placa, !empty($t['data_ref']) ? (string)$t['data_ref'] : null);
+    return $r ?: ['com' => 'nao_achado', 'placa' => $placa, 'data_ref' => $t['data_ref'] ?? null];
+}
+
+function ouvidoriaComQuemHtml(?array $r): string {
+    if (!$r) return '<span style="color:var(--texto-fraco)">🚗 Sem placa no ticket — informe a placa pra saber com quem está o carro.</span>';
+    $quando = !empty($r['data_ref']) ? 'em ' . date('d/m/Y', strtotime($r['data_ref'])) : 'hoje';
+    if ($r['com'] === 'nao_achado') return '🚗 Placa <strong>' . e($r['placa']) . '</strong> não encontrada em nenhum veículo do sistema.';
+    $cab = '🚗 <strong>' . e($r['placa']) . '</strong> ' . e($r['veiculo']) . ' — ' . $quando . ' estava com: ';
+    if ($r['com'] === 'comprador') {
+        $tipo = $r['tipo_contrato'] === 'locacao' ? 'locação' : ($r['tipo_contrato'] === 'posse' ? 'transferência de posse' : 'venda');
+        $dados = array_filter([
+            $r['cpf'] ? 'CPF ' . $r['cpf'] : '', $r['cnh'] ? 'CNH ' . $r['cnh'] : '', $r['rg'] ? 'RG ' . $r['rg'] : '',
+            $r['telefone'] ? 'tel ' . $r['telefone'] : '', $r['endereco'] ? $r['endereco'] : '',
+        ]);
+        $copiar = trim($r['nome'] . "\n" . implode("\n", $dados));
+        return $cab . '<strong>' . e($r['nome'] ?: '—') . '</strong> (' . $tipo . ' <a href="/admin/venda.php?id=' . (int)$r['venda_id'] . '" target="_blank">#' . (int)$r['venda_id'] . '</a>, desde '
+            . e(date('d/m/Y', strtotime($r['desde']))) . ($r['ate'] ? ' até ' . e(date('d/m/Y', strtotime($r['ate']))) : '') . ')'
+            . ($dados ? ' · ' . e(implode(' · ', $dados)) : ' · <span style="color:var(--vermelho)">sem CPF/CNH cadastrados</span>')
+            . ' <button type="button" class="btn-texto" data-copiar="' . e($copiar) . '" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.copiar).then(()=>{this.textContent=\'✅ copiado\'})">📋 copiar pra indicação</button>';
+    }
+    if ($r['com'] === 'vendedor_original') {
+        return $cab . '<strong>' . e($r['nome'] ?: 'vendedor original') . '</strong> (antes de entregar pra Fastcar em ' . e(date('d/m/Y', strtotime($r['ate']))) . ') · <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">compra #' . (int)$r['oportunidade_id'] . '</a>';
+    }
+    return $cab . '<strong>Fastcar</strong> (no estoque, sem venda ativa nessa data) · <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">veículo #' . (int)$r['oportunidade_id'] . '</a>';
+}
+
+function ouvidoriaTicketSalvarPlaca(int $id, string $placa, string $data): array {
+    $t = ouvidoriaBuscarTicket($id);
+    if (!$t) return ['ok' => false, 'erro' => 'Ticket não encontrado.'];
+    $placa = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
+    if ($placa !== '' && !preg_match('/^[A-Z]{3}\d[A-Z0-9]\d{2}$/', $placa)) return ['ok' => false, 'erro' => 'Placa inválida.'];
+    $dt = $data !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data) ? $data : null;
+    getDB()->prepare("UPDATE ouvidoria_tickets SET placa = ?, data_ref = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$placa, $dt, $id]);
+    return ['ok' => true, 'ticket' => ouvidoriaBuscarTicket($id)];
 }

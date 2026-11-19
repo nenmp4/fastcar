@@ -12,7 +12,7 @@ require_once __DIR__ . '/../includes/paginacao.php';
 requireSuperAdmin();
 
 $status = (string)($_GET['status'] ?? '');
-if (!isset(OUVIDORIA_TICKET_STATUS[$status])) $status = '';
+if ($status !== 'urgente' && !isset(OUVIDORIA_TICKET_STATUS[$status])) $status = '';
 $assunto = (string)($_GET['assunto'] ?? '');
 if (!isset(OUVIDORIA_ASSUNTOS[$assunto])) $assunto = '';
 $busca = trim((string)($_GET['busca'] ?? ''));
@@ -70,6 +70,12 @@ function _ouvTicketsUrl(array $mudar): string {
 <p style="color:var(--texto-fraco);margin-top:-6px;font-size:13px">1 ticket por assunto. Abre sozinho quando o cliente escreve um assunto novo; vira "em atendimento" quando alguém responde pela caixa da ouvidoria.</p>
 
 <div class="stat-grid">
+    <?php if ((int)$resumo['urgentes'] > 0): ?>
+    <a class="stat-card alerta" href="<?= e(_ouvTicketsUrl(['status' => 'urgente'])) ?>">
+        <div class="valor">🚨 <?= (int)$resumo['urgentes'] ?></div>
+        <div class="rotulo">Urgentes (apreensão / quitação vencida)</div>
+    </a>
+    <?php endif; ?>
     <a class="stat-card <?= (int)$resumo['abertos'] > 0 ? 'alerta' : '' ?>" href="<?= e(_ouvTicketsUrl(['status' => 'aberto'])) ?>">
         <div class="valor"><?= (int)$resumo['abertos'] ?></div>
         <div class="rotulo">Abertos (sem resposta da equipe)</div>
@@ -101,6 +107,7 @@ function _ouvTicketsUrl(array $mudar): string {
     </form>
     <nav class="ouvt-filtros" aria-label="Status">
         <a href="<?= e(_ouvTicketsUrl(['status' => ''])) ?>" class="<?= $status === '' ? 'ativo' : '' ?>">Todos</a>
+        <a href="<?= e(_ouvTicketsUrl(['status' => 'urgente'])) ?>" class="<?= $status === 'urgente' ? 'ativo' : '' ?>">🚨 Urgentes</a>
         <?php foreach (OUVIDORIA_TICKET_STATUS as $k => $rot): ?>
             <a href="<?= e(_ouvTicketsUrl(['status' => $k])) ?>" class="<?= $status === $k ? 'ativo' : '' ?>"><?= e($rot) ?></a>
         <?php endforeach; ?>
@@ -123,16 +130,22 @@ function _ouvTicketsUrl(array $mudar): string {
         <?php endif; ?>
         <?php foreach ($tickets as $t):
             $semResp = $t['primeira_resposta_em'] === null && $t['status'] === 'aberto';
-            $atrasoSla = $semResp && (float)$t['horas_sem_resposta'] >= 24; ?>
+            $atrasoSla = ($semResp && (float)$t['horas_sem_resposta'] >= 24) || (!empty($t['urgente']) && $t['status'] !== 'resolvido'); ?>
             <tr class="<?= $atrasoSla ? 'linha-atrasada' : '' ?>">
-                <td><strong><?= e($t['protocolo']) ?></strong></td>
+                <td><strong><?= e($t['protocolo']) ?></strong><?php if (!empty($t['urgente']) && $t['status'] !== 'resolvido'): ?><br><span class="ouvt-sla">🚨 urgente</span><?php endif; ?></td>
                 <td>
                     <?= e($t['nome_exib'] ?: '—') ?><br>
                     <small style="color:var(--texto-fraco)"><?= e($t['telefone']) ?></small>
                     <?php if ($t['venda_id']): ?><br><a href="/admin/venda.php?id=<?= (int)$t['venda_id'] ?>">🛒 Venda #<?= (int)$t['venda_id'] ?></a><?php endif; ?>
                     <?php if ($t['oportunidade_id']): ?><br><a href="/admin/oportunidade.php?id=<?= (int)$t['oportunidade_id'] ?>">🚗 Compra #<?= (int)$t['oportunidade_id'] ?></a><?php endif; ?>
                 </td>
-                <td><?= e(OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto']) ?></td>
+                <td><?= e(OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto']) ?>
+                    <?php if ($t['status'] !== 'resolvido' && ($cq = ouvidoriaComQuemDoTicket($t))): ?>
+                        <div class="ouvt-res" style="margin-top:4px"><?= ouvidoriaComQuemHtml($cq) ?></div>
+                    <?php elseif ($t['status'] !== 'resolvido' && $t['assunto'] === 'multa'): ?>
+                        <div class="ouvt-res" style="margin-top:4px">🚗 sem placa — <a href="/admin/ouvidoria_inbox.php?telefone=<?= e(rawurlencode($t['telefone'])) ?>">informar na conversa</a></div>
+                    <?php endif; ?>
+                </td>
                 <td><?= e(OUVIDORIA_TICKET_STATUS[$t['status']] ?? $t['status']) ?></td>
                 <td><?= e(date('d/m/Y H:i', strtotime($t['aberto_em']))) ?></td>
                 <td>
@@ -147,7 +160,7 @@ function _ouvTicketsUrl(array $mudar): string {
                         <?= e($t['resolucao']) ?><br>
                         <small><?= e($t['resolvido_por_nome'] ?: '—') ?> · <?= $t['resolvido_em'] ? e(date('d/m/Y H:i', strtotime($t['resolvido_em']))) : '' ?></small>
                     <?php else: ?>
-                        <?= e(mb_strimwidth((string)$t['resumo'], 0, 120, '…')) ?>
+                        <?= e(mb_strimwidth((string)$t['resumo'], 0, 260, '…')) ?>
                     <?php endif; ?>
                 </td>
                 <td>

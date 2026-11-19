@@ -2530,6 +2530,9 @@ try {
     ");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_ouv_tickets_tel ON ouvidoria_tickets(telefone, status)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_ouv_tickets_status ON ouvidoria_tickets(status, aberto_em)");
+    foreach (["urgente INTEGER NOT NULL DEFAULT 0", "placa TEXT NOT NULL DEFAULT ''", "data_ref DATE"] as $colDef) {
+        try { $db->exec("ALTER TABLE ouvidoria_tickets ADD COLUMN {$colDef}"); } catch (Throwable $e) { /* já existe */ }
+    }
     echo "✅ ouvidoria_tickets: tabela pronta\n";
 } catch (Throwable $e) {
     echo "❌ ouvidoria_tickets: {$e->getMessage()}\n";
