@@ -69,6 +69,21 @@ if (!estaImpersonando() && !expedienteAcessoPermitido((int)$_SESSION['admin_id']
     exit;
 }
 
+// 20/11/2026 — falta marcada hoje no Cartão de ponto: desconecta (casa, celular, qualquer aparelho).
+if (!estaImpersonando() && pontoFaltaHojeBloqueia((int)$_SESSION['admin_id'], (string)($_SESSION['admin_perfil'] ?? ''))) {
+    auditoriaRegistrar('logout_falta_ponto', (int)$_SESSION['admin_id'], (string)($_SESSION['admin_nome'] ?? ''), 'usuario', (int)$_SESSION['admin_id'], 'Sessão encerrada: falta marcada hoje no Cartão de ponto.');
+    $_SESSION = [];
+    session_destroy();
+    if (isset($_GET['ajax']) || str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json')) {
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode(['erro' => 'falta']);
+        exit;
+    }
+    header('Location: /admin/login.php?falta=1');
+    exit;
+}
+
 // 20/11/2026 — cartão de ponto: 1º acesso do dia = entrada; depois "última atividade" a cada 10 min.
 if (!estaImpersonando()) pontoBaterAcesso((int)$_SESSION['admin_id']);
 

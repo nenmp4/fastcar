@@ -243,7 +243,9 @@ window.formatarValorBR = function (n) {
     <span aria-hidden="true">›</span><span aria-current="page"><?= e($tbTituloAtual) ?></span>
 </nav>
 <?php endif; ?>
-<?php if (isset($_GET['disponivel_bloqueado']) && $tbAqui !== 'index.php'): ?>
+<?php if (($_GET['disponivel_bloqueado'] ?? '') === 'falta' && $tbAqui !== 'index.php'): ?>
+<div class="aviso" style="margin:12px 24px 0"><span class="aviso-icone">🤒</span><div class="aviso-corpo">Você está com <strong>falta marcada hoje</strong> no Cartão de ponto — não dá pra entrar na fila. Se chegou, peça pra supervisão desfazer a falta.</div></div>
+<?php elseif (isset($_GET['disponivel_bloqueado']) && $tbAqui !== 'index.php'): ?>
 <div class="aviso" style="margin:12px 24px 0"><span class="aviso-icone">⏰</span><div class="aviso-corpo">Fora do horário de expediente (<?= e(filaDiasAbertosTexto()) ?>, <?= e(filaHorarioAbertura()) ?>–<?= e(filaHorarioFechamento()) ?>) — o "Disponível" só liga dentro do horário. Se precisar, o super admin liga em Configurações → Fila. A IA continua respondendo normalmente.</div></div>
 <?php endif; ?>
 <script>

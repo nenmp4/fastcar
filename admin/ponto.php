@@ -42,6 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $erro = $r['erro'];
             }
+        } elseif ($acao === 'definir_plantao') {
+            // 20/11/2026 — plantão de fim de expediente veio de Configurações → Fila pra cá.
+            $alvo = buscarUsuario($uid);
+            if ($alvo && in_array($alvo['perfil'], ['consultor', 'vendedor', 'avaliador'], true)) {
+                $ativo = !empty($_POST['ativo']);
+                definirPlantaoFimExpediente($uid, $ativo);
+                auditoriaRegistrar('ponto_plantao', $meuId, (string)$_SESSION['admin_nome'], 'usuario', $uid,
+                    ($ativo ? 'Plantão de fim de expediente ligado' : 'Plantão de fim de expediente removido') . " — {$alvo['nome']}.");
+                $sucesso = $ativo ? "{$alvo['nome']} marcado(a) como plantão de fim de expediente." : "Plantão de {$alvo['nome']} removido.";
+            } else {
+                $erro = 'Plantão só vale pra consultor, vendedor ou avaliador.';
+            }
         } elseif ($acao === 'desfazer_falta') {
             pontoDesmarcarFalta($uid, $dataPost);
             $alvo = buscarUsuario($uid);
@@ -54,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $rotuloPerfil = ['super_admin' => 'Super admin', 'supervisor' => 'Supervisor', 'consultor' => 'Consultor', 'vendedor' => 'Vendedor',
     'financeiro' => 'Financeiro', 'avaliador' => 'Avaliador'];
-$usuarios = $db->query("SELECT id, nome, perfil FROM usuarios WHERE bloqueado = 0 ORDER BY CASE perfil WHEN 'consultor' THEN 1 WHEN 'vendedor' THEN 2 WHEN 'avaliador' THEN 3 WHEN 'financeiro' THEN 4 WHEN 'supervisor' THEN 5 ELSE 6 END, nome")->fetchAll();
+$usuarios = $db->query("SELECT id, nome, perfil, plantao_fim_expediente FROM usuarios WHERE bloqueado = 0 ORDER BY CASE perfil WHEN 'consultor' THEN 1 WHEN 'vendedor' THEN 2 WHEN 'avaliador' THEN 3 WHEN 'financeiro' THEN 4 WHEN 'supervisor' THEN 5 ELSE 6 END, nome")->fetchAll();
 $registrosDia = $gestor ? pontoRegistrosDoDia($dia) : [];
 $diaSemanaPt = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 $hora = fn(?string $dt) => $dt ? date('H:i', strtotime($dt)) : '—';
@@ -85,7 +97,8 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
     <h2>🕒 Cartão de ponto</h2>
     <p><small>O ponto bate sozinho: <strong>entrada</strong> = 1º acesso ao sistema no dia (login ou abrir o sistema já logado);
         <strong>saída</strong> = clicar em Sair ou ser desconectado no fim do expediente — sem isso, vale o <strong>último acesso</strong>.
-        Falta é marcada aqui<?= $gestor ? '; consultor/vendedor marcado hoje sai da fila e os leads que chegaram hoje e ele ainda não atendeu vão pros outros' : ' pela supervisão' ?>.</small></p>
+        Falta é marcada aqui<?= $gestor ? '; quem tem falta hoje não entra no sistema (é desconectado em qualquer aparelho); consultor/vendedor sai da fila e os leads que chegaram hoje e ele ainda não atendeu vão pros outros. Se ele chegar atrasado, "Desfazer falta" libera o acesso e volta pra fila na hora' : ' pela supervisão' ?>.
+        <?php if ($gestor): ?><strong>Plantão</strong> = quem recebe lead quando ninguém está disponível na fila (fim de expediente).<?php endif; ?></small></p>
 </div>
 
 <?php if ($gestor): ?>
@@ -98,7 +111,7 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
         </form>
     </div>
     <table class="tabela-oportunidades">
-        <thead><tr><th>Pessoa</th><th>Perfil</th><th>Entrada</th><th>Saída / último acesso</th><th>Horas</th><th>Situação</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Pessoa</th><th>Perfil</th><th>Entrada</th><th>Saída / último acesso</th><th>Horas</th><th>Situação</th><th>Plantão</th><th>Falta</th></tr></thead>
         <tbody>
         <?php foreach ($usuarios as $u): $r = $registrosDia[(int)$u['id']] ?? null; $falta = $r && (int)$r['falta'] === 1; ?>
             <tr<?= $falta ? ' style="background:var(--vermelho-bg, #fef2f2)"' : '' ?>>
@@ -116,16 +129,26 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
                     <?php elseif ($r && $r['entrada']): ?><span class="badge badge-ok">✅ presente</span>
                     <?php else: ?><span class="badge">sem registro</span><?php endif; ?>
                 </td>
-                <td>
+                <td data-label="Plantão">
+                    <?php if (in_array($u['perfil'], ['consultor', 'vendedor', 'avaliador'], true)): ?>
+                        <?php if ($u['plantao_fim_expediente']): ?><span class="badge">🌙 plantão</span><br><?php endif; ?>
+                        <form method="post" class="inline">
+                            <?= csrfField() ?><input type="hidden" name="acao" value="definir_plantao"><input type="hidden" name="usuario_id" value="<?= (int)$u['id'] ?>">
+                            <input type="hidden" name="ativo" value="<?= $u['plantao_fim_expediente'] ? '0' : '1' ?>">
+                            <button type="submit" class="btn-texto"><?= $u['plantao_fim_expediente'] ? 'Remover plantão' : '🌙 Marcar plantão' ?></button>
+                        </form>
+                    <?php else: ?>—<?php endif; ?>
+                </td>
+                <td data-label="Falta">
                     <?php if ($falta): ?>
-                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Desfazer a falta de <?= e(addslashes($u['nome'])) ?>? Leads já redistribuídos não voltam sozinhos.');">
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Desfazer a falta de <?= e(addslashes($u['nome'])) ?>? Ele(a) volta a entrar no sistema e, dentro do expediente, volta pra fila de lead novo. Leads já redistribuídos não voltam sozinhos.');">
                             <?= csrfField() ?><input type="hidden" name="acao" value="desfazer_falta"><input type="hidden" name="usuario_id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="data" value="<?= e($dia) ?>">
                             <button type="submit" class="btn-texto">↩️ Desfazer falta</button>
                         </form>
                     <?php else: ?>
                         <details>
                             <summary class="btn-texto perigo" style="cursor:pointer">❌ Marcar falta</summary>
-                            <form method="post" style="margin-top:6px" onsubmit="return confirmarAcao(this, 'Marcar falta de <?= e(addslashes($u['nome'])) ?> em <?= e(date('d/m/Y', strtotime($dia))) ?>?<?= $dia === date('Y-m-d') && in_array($u['perfil'], ['consultor', 'vendedor'], true) ? ' Sai da fila agora e os leads que chegaram hoje (ainda não atendidos) vão pros outros.' : '' ?>');">
+                            <form method="post" style="margin-top:6px" onsubmit="return confirmarAcao(this, 'Marcar falta de <?= e(addslashes($u['nome'])) ?> em <?= e(date('d/m/Y', strtotime($dia))) ?>?<?= $dia === date('Y-m-d') && !in_array($u['perfil'], ['super_admin', 'supervisor'], true) ? ' Ele(a) é desconectado(a) e não entra mais no sistema hoje.' : '' ?><?= $dia === date('Y-m-d') && in_array($u['perfil'], ['consultor', 'vendedor'], true) ? ' Sai da fila agora e os leads que chegaram hoje (ainda não atendidos) vão pros outros.' : '' ?>');">
                                 <?= csrfField() ?><input type="hidden" name="acao" value="marcar_falta"><input type="hidden" name="usuario_id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="data" value="<?= e($dia) ?>">
                                 <input type="text" name="motivo" placeholder="Motivo (opcional — atestado, folga...)" maxlength="200">
                                 <button type="submit" class="perigo" style="margin-top:4px">Confirmar falta</button>

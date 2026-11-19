@@ -2101,7 +2101,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 
     <table class="tabela-oportunidades">
         <thead>
-            <tr><th>Nome</th><th>Status</th><th>Leads ativas</th><th>Último lead recebido</th><th>Plantão fim de expediente</th><th>Falta hoje</th></tr>
+            <tr><th>Nome</th><th>Status</th><th>Leads ativas</th><th>Último lead recebido</th><th>Plantão / falta</th></tr>
         </thead>
         <tbody>
         <?php foreach ($fila as $f): ?>
@@ -2116,7 +2116,6 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
                     <?php else: ?>
                         <span class="badge badge-atraso">⚪ offline</span>
                     <?php endif; ?>
-                    <?php if ($f['plantao_fim_expediente']): ?><span class="badge">🌙 plantão</span><?php endif; ?>
                     <?php if (!$faltouHoje): ?>
                     <form method="post" class="inline" style="margin-top:4px">
                         <?= csrfField() ?>
@@ -2137,25 +2136,8 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
                 </td>
                 <td><?= $f['ultimo_lead_recebido_em'] ? date('d/m H:i', strtotime($f['ultimo_lead_recebido_em'])) : '— nunca —' ?></td>
                 <td>
-                    <form method="post" class="inline">
-                        <?= csrfField() ?>
-                        <input type="hidden" name="acao" value="definir_plantao">
-                        <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
-                        <input type="hidden" name="ativo" value="<?= $f['plantao_fim_expediente'] ? '0' : '1' ?>">
-                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
-                            <?= $f['plantao_fim_expediente'] ? 'Remover plantão' : 'Marcar como plantão' ?>
-                        </button>
-                    </form>
-                </td>
-                <td>
-                    <form method="post" class="inline" onsubmit="<?= $faltouHoje ? '' : "return confirmarAcao(this, 'Marcar {$f['nome']} como ausente hoje? Os leads que chegaram hoje e ele(a) ainda não atendeu vão pros consultores disponíveis agora mesmo (os antigos ficam com ele).')" ?>">
-                        <?= csrfField() ?>
-                        <input type="hidden" name="acao" value="<?= $faltouHoje ? 'desmarcar_falta' : 'marcar_falta' ?>">
-                        <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
-                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
-                            <?= $faltouHoje ? '↩️ Desfazer falta' : '❌ Marcar falta' ?>
-                        </button>
-                    </form>
+                    <?php if ($f['plantao_fim_expediente']): ?><span class="badge">🌙 plantão</span><br><?php endif; ?>
+                    <a class="btn-texto" href="/admin/ponto.php#dia">🕒 no Cartão de ponto</a>
                 </td>
             </tr>
         <?php endforeach; ?>
@@ -2208,7 +2190,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 
     <table class="tabela-oportunidades">
         <thead>
-            <tr><th>Nome</th><th>Status</th><th>Negociações ativas</th><th>Último lead recebido</th><th>Plantão fim de expediente</th><th>Falta hoje</th></tr>
+            <tr><th>Nome</th><th>Status</th><th>Negociações ativas</th><th>Último lead recebido</th><th>Plantão / falta</th></tr>
         </thead>
         <tbody>
         <?php foreach ($filaVendas as $fv): ?>
@@ -2245,25 +2227,8 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
                 </td>
                 <td><?= $fv['ultimo_lead_recebido_em'] ? date('d/m H:i', strtotime($fv['ultimo_lead_recebido_em'])) : '— nunca —' ?></td>
                 <td>
-                    <form method="post" class="inline">
-                        <?= csrfField() ?>
-                        <input type="hidden" name="acao" value="definir_plantao">
-                        <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
-                        <input type="hidden" name="ativo" value="<?= $fv['plantao_fim_expediente'] ? '0' : '1' ?>">
-                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
-                            <?= $fv['plantao_fim_expediente'] ? 'Remover plantão' : 'Marcar como plantão' ?>
-                        </button>
-                    </form>
-                </td>
-                <td>
-                    <form method="post" class="inline" onsubmit="<?= $faltouHojeVendedor ? '' : "return confirmarAcao(this, 'Marcar {$fv['nome']} como ausente hoje? As negociações que chegaram hoje e ele(a) ainda não atendeu vão pros vendedores disponíveis agora mesmo (as antigas ficam com ele).')" ?>">
-                        <?= csrfField() ?>
-                        <input type="hidden" name="acao" value="<?= $faltouHojeVendedor ? 'desmarcar_falta_vendedor' : 'marcar_falta_vendedor' ?>">
-                        <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
-                        <button type="submit" style="margin-top:0;padding:4px 10px;font-size:12px">
-                            <?= $faltouHojeVendedor ? '↩️ Desfazer falta' : '❌ Marcar falta' ?>
-                        </button>
-                    </form>
+                    <?php if ($fv['plantao_fim_expediente']): ?><span class="badge">🌙 plantão</span><br><?php endif; ?>
+                    <a class="btn-texto" href="/admin/ponto.php#dia">🕒 no Cartão de ponto</a>
                 </td>
             </tr>
         <?php endforeach; ?>

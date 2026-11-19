@@ -103,9 +103,33 @@ function pontoDesmarcarFalta(int $usuarioId, string $data): void {
     if ($data === date('Y-m-d')) {
         try {
             $db->prepare("UPDATE usuarios SET faltou_em = NULL WHERE id = ? AND faltou_em = ?")->execute([$usuarioId, $data]);
+            // Chegou atrasado e a falta foi desfeita: volta pra fila na hora (dentro do expediente).
+            $perfil = (string)$db->query("SELECT perfil FROM usuarios WHERE id = " . (int)$usuarioId)->fetchColumn();
+            if (in_array($perfil, ['consultor', 'vendedor'], true) && (!function_exists('filaDentroExpediente') || filaDentroExpediente())) {
+                $db->prepare("UPDATE usuarios SET disponivel = 1 WHERE id = ? AND bloqueado = 0")->execute([$usuarioId]);
+            }
         } catch (Throwable $e) {}
     }
 }
+
+/**
+ * 20/11/2026, "marcou falta ele não consegue entrar em casa ou no celular" —
+ * com falta marcada HOJE a pessoa não entra no sistema (login recusado e quem
+ * já estava logado é desconectado). Super admin e supervisor nunca são barrados
+ * (são eles que marcam). Desfazer a falta libera na hora.
+ */
+function pontoFaltaHojeBloqueia(int $usuarioId, string $perfil): bool {
+    if (in_array($perfil, ['super_admin', 'supervisor'], true)) return false;
+    try {
+        $st = getDB()->prepare("SELECT 1 FROM ponto_registros WHERE usuario_id = ? AND data = ? AND falta = 1");
+        $st->execute([$usuarioId, date('Y-m-d')]);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        return false; // nunca trava o acesso por erro do ponto
+    }
+}
+
+const PONTO_MSG_FALTA_BLOQUEIO = 'Você está com falta marcada hoje — o acesso ao sistema fica bloqueado. Se chegou, peça pra supervisão desfazer a falta no Cartão de ponto e entre de novo.';
 
 /** Registros de um dia, indexados por usuario_id. */
 function pontoRegistrosDoDia(string $data): array {

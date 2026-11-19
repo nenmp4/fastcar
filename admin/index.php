@@ -861,6 +861,8 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <div class="alerta-sucesso">✅ <?= (int)$_GET['bulk_sucesso'] ?> oportunidade(s) marcada(s) como perdida(s)<?= isset($_GET['bulk_ignorados']) && (int)$_GET['bulk_ignorados'] > 0 ? ' — ' . (int)$_GET['bulk_ignorados'] . ' ignorada(s) (fora da carteira ou já encerrada)' : '' ?>.</div>
 <?php elseif (isset($_GET['bulk_erro'])): ?>
     <div class="alerta-erro">⚠️ <?= e((string)$_GET['bulk_erro']) ?></div>
+<?php elseif (($_GET['disponivel_bloqueado'] ?? '') === 'falta'): ?>
+    <div class="alerta-erro">🤒 Você está com <strong>falta marcada hoje</strong> no Cartão de ponto — não dá pra entrar na fila. Se chegou, peça pra supervisão desfazer a falta.</div>
 <?php elseif (isset($_GET['disponivel_bloqueado'])): ?>
     <div class="alerta-erro">⚠️ Fora do horário de expediente (<?= e(filaDiasAbertosTexto()) ?>, <?= e(filaHorarioAbertura()) ?>–<?= e(filaHorarioFechamento()) ?>) — não dá pra ficar disponível agora. A IA continua respondendo o cliente normalmente, só não entra na fila de novo lead fora desse horário.</div>
 <?php endif; ?>

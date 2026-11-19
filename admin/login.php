@@ -50,6 +50,12 @@ function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?arra
         header('Location: /admin/login.php?fora_expediente=1');
         exit;
     }
+    if (pontoFaltaHojeBloqueia($usuarioId, $perfil)) { // falta marcada hoje no Cartão de ponto
+        unset($_SESSION['2fa_pendente']);
+        auditoriaRegistrar('login_falta_ponto', $usuarioId, $nome, 'usuario', $usuarioId, 'Login recusado: falta marcada hoje no Cartão de ponto.');
+        header('Location: /admin/login.php?falta=1');
+        exit;
+    }
     session_regenerate_id(true);
     $_SESSION['admin_id']     = $usuarioId;
     $_SESSION['admin_nome']   = $nome;
@@ -74,6 +80,7 @@ function finalizarLoginEExit(int $usuarioId, string $nome, string $perfil, ?arra
 $erro = '';
 $aviso = '';
 if (!empty($_GET['fora_expediente'])) $erro = expedienteMensagemBloqueio();
+if (!empty($_GET['falta'])) $erro = PONTO_MSG_FALTA_BLOQUEIO;
 $acao = (string)($_POST['acao'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validateCSRF($_POST['csrf_token'] ?? '')) {
@@ -106,6 +113,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $acao === 'login') {
         $u = $resultado['user'];
         $erro = expedienteMensagemBloqueio();
         auditoriaRegistrar('login_fora_expediente', (int)$u['id'], $u['nome'], 'usuario', (int)$u['id'], 'Login recusado: fora do horário de expediente.');
+    } elseif (pontoFaltaHojeBloqueia((int)$resultado['user']['id'], (string)$resultado['user']['perfil'])) {
+        $u = $resultado['user'];
+        $erro = PONTO_MSG_FALTA_BLOQUEIO;
+        auditoriaRegistrar('login_falta_ponto', (int)$u['id'], $u['nome'], 'usuario', (int)$u['id'], 'Login recusado: falta marcada hoje no Cartão de ponto.');
     } else {
         $usuario = $resultado['user'];
 

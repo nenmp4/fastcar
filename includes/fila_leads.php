@@ -488,11 +488,17 @@ function equalizarFilaLeads(int $executadoPor): array {
  */
 function alternarDisponibilidade(int $usuarioId): array {
     $db = getDB();
-    $stmt = $db->prepare("SELECT disponivel FROM usuarios WHERE id = ?");
+    $stmt = $db->prepare("SELECT disponivel, faltou_em FROM usuarios WHERE id = ?");
     $stmt->execute([$usuarioId]);
-    $atual = (int)$stmt->fetchColumn();
+    $u = $stmt->fetch() ?: ['disponivel' => 0, 'faltou_em' => null];
+    $atual = (int)$u['disponivel'];
     $novo = $atual ? 0 : 1;
 
+    // 20/11/2026 — com falta marcada hoje (Cartão de ponto) não volta pra fila
+    // sozinho; usa o sistema normal, mas lead novo só depois de desfazer a falta.
+    if ($novo === 1 && ($u['faltou_em'] ?? '') === date('Y-m-d')) {
+        return ['ok' => false, 'disponivel' => false, 'motivo' => 'falta'];
+    }
     if ($novo === 1) {
         $agora = date('H:i');
         if (!filaDentroExpediente()) {
