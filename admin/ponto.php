@@ -54,6 +54,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $erro = 'Plantão só vale pra consultor, vendedor ou avaliador.';
             }
+        } elseif ($acao === 'feriado_add') {
+            $fData = (string)($_POST['feriado_data'] ?? '');
+            $fNome = trim((string)($_POST['feriado_nome'] ?? ''));
+            $fTipo = (string)($_POST['feriado_tipo'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fData) || $fNome === '' || !isset(FERIADO_TIPOS[$fTipo]) || $fTipo === 'nacional') {
+                $erro = 'Preencha data, nome e tipo do feriado.';
+            } else {
+                $lista = feriadosLocais();
+                $chave = !empty($_POST['feriado_todo_ano']) ? substr($fData, 5) : $fData;
+                $lista = array_values(array_filter($lista, fn($f) => $f['data'] !== $chave));
+                $lista[] = ['data' => $chave, 'nome' => mb_substr($fNome, 0, 80), 'tipo' => $fTipo];
+                feriadosLocaisSalvar($lista);
+                auditoriaRegistrar('ponto_feriado', $meuId, (string)$_SESSION['admin_nome'], '', null,
+                    'Feriado cadastrado: ' . date('d/m', strtotime($fData)) . (strlen($chave) === 5 ? ' (todo ano)' : '/' . substr($fData, 0, 4)) . " — {$fNome} (" . FERIADO_TIPOS[$fTipo] . ').');
+                $sucesso = "Feriado \"{$fNome}\" cadastrado — não conta como falta nem dia útil.";
+            }
+        } elseif ($acao === 'feriado_remover') {
+            $lista = feriadosLocais();
+            $i = (int)($_POST['idx'] ?? -1);
+            if (isset($lista[$i])) {
+                $rem = $lista[$i];
+                unset($lista[$i]);
+                feriadosLocaisSalvar($lista);
+                auditoriaRegistrar('ponto_feriado', $meuId, (string)$_SESSION['admin_nome'], '', null, "Feriado removido: {$rem['data']} — {$rem['nome']}.");
+                $sucesso = "Feriado \"{$rem['nome']}\" removido.";
+            }
         } elseif ($acao === 'desfazer_falta') {
             pontoDesmarcarFalta($uid, $dataPost);
             $alvo = buscarUsuario($uid);
@@ -71,9 +97,11 @@ $registrosDia = $gestor ? pontoRegistrosDoDia($dia) : [];
 // Faltas no mês do dia escolhido, por pessoa (coluna "Faltas no mês").
 $faltasMes = [];
 if ($gestor) {
-    $stF = $db->prepare("SELECT usuario_id, COUNT(*) FROM ponto_registros WHERE falta = 1 AND data BETWEEN ? AND ? GROUP BY usuario_id");
+    $stF = $db->prepare("SELECT usuario_id, data FROM ponto_registros WHERE falta = 1 AND data BETWEEN ? AND ?");
     $stF->execute([substr($dia, 0, 7) . '-01', date('Y-m-t', strtotime($dia))]);
-    $faltasMes = array_map('intval', $stF->fetchAll(PDO::FETCH_KEY_PAIR));
+    foreach ($stF->fetchAll() as $f) {
+        if (!isFeriado($f['data'])) $faltasMes[(int)$f['usuario_id']] = ($faltasMes[(int)$f['usuario_id']] ?? 0) + 1; // feriado não conta
+    }
 }
 // Relatório do período (faltas e horários de todo mundo).
 $relDe = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['de'] ?? '')) ? $_GET['de'] : date('Y-m-01');
@@ -117,7 +145,7 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
 <?php if ($gestor): ?>
 <div class="card" id="dia">
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
-        <h3 style="margin:0">📅 <?= e(ucfirst($diaSemanaPt[(int)date('w', strtotime($dia))])) ?>, <?= e(date('d/m/Y', strtotime($dia))) ?></h3>
+        <h3 style="margin:0">📅 <?= e(ucfirst($diaSemanaPt[(int)date('w', strtotime($dia))])) ?>, <?= e(date('d/m/Y', strtotime($dia))) ?><?php if ($fDia = feriadoNome($dia)): ?> <span class="badge">🎉 feriado: <?= e($fDia) ?></span><?php endif; ?></h3>
         <form method="get" action="#dia" style="display:flex;gap:6px;align-items:center;margin:0">
             <input type="date" name="dia" value="<?= e($dia) ?>" max="<?= date('Y-m-d') ?>" style="width:auto;margin:0" onchange="this.form.submit()">
             <noscript><button type="submit" class="btn">Ver</button></noscript>
@@ -192,7 +220,8 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
         </form>
     </div>
     <p><small><?= e(date('d/m/Y', strtotime($relatorio['de']))) ?> a <?= e(date('d/m/Y', strtotime($relatorio['ate']))) ?> ·
-        <?= (int)$relatorio['dias_uteis'] ?> dia(s) útil(eis) (dias abertos da fila) · <strong>atraso</strong> = entrada depois das <?= e($relatorio['limite_atraso']) ?>.</small></p>
+        <?= (int)$relatorio['dias_uteis'] ?> dia(s) útil(eis) (dias abertos da fila, sem feriado) ·
+        <?php if ($relatorio['feriados']): ?>🎉 feriado(s), não contam: <?= e(implode(', ', array_map(fn($d, $n) => date('d/m', strtotime($d)) . " $n", array_keys($relatorio['feriados']), $relatorio['feriados']))) ?> ·<?php endif; ?> <strong>atraso</strong> = entrada depois das <?= e($relatorio['limite_atraso']) ?>.</small></p>
     <table class="tabela-oportunidades">
         <thead><tr><th>Pessoa</th><th>Perfil</th><th>Presente</th><th>Faltas</th><th>Atrasos</th><th>Sem registro</th><th>Horas</th><th>Entrada média</th><th>Datas das faltas</th></tr></thead>
         <tbody>
@@ -206,11 +235,51 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
                 <td data-label="Sem registro"><?= count($l['sem_registro']) ?></td>
                 <td data-label="Horas"><?= e(pontoFormatarMinutos($l['minutos'])) ?></td>
                 <td data-label="Entrada média"><?= e($l['entrada_media'] ?? '—') ?></td>
-                <td data-label="Datas das faltas"><?= $l['faltas'] ? e(implode(' · ', array_map(fn($f) => date('d/m', strtotime($f['data'])) . ($f['motivo'] !== '' ? " ({$f['motivo']})" : ''), $l['faltas']))) : '—' ?></td>
+                <td data-label="Datas das faltas"><?= $l['faltas'] ? e(implode(' · ', array_map(fn($f) => date('d/m', strtotime($f['data'])) . ($f['motivo'] !== '' ? " ({$f['motivo']})" : ''), $l['faltas']))) : '—' ?><?php if ($l['faltas_feriado']): ?><br><small>em feriado, não conta: <?= e(implode(', ', array_map(fn($f) => date('d/m', strtotime($f['data'])), $l['faltas_feriado']))) ?></small><?php endif; ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
     </table>
+</div>
+<?php endif; ?>
+
+<?php if ($gestor): $anoFer = (int)substr($relAte, 0, 4); $listaFer = feriadosListaAno($anoFer); ?>
+<div class="card" id="feriados">
+    <h3 style="margin-top:0">🎉 Feriados <?= $anoFer ?></h3>
+    <p><small>Feriado não conta como dia útil, nem falta, nem "sem registro". Os <strong>nacionais</strong> vêm sozinhos (BrasilAPI).
+        Estadual, municipal (ex.: aniversário de Barueri) ou folga da empresa: cadastre abaixo.</small></p>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Feriado</th><th>Data</th><th>Tipo</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach ($listaFer as $f): ?>
+            <tr>
+                <td><strong><?= e($f['nome']) ?></strong></td>
+                <td data-label="Data"><?= e(date('d/m/Y', strtotime($f['data']))) ?> <small><?= e($diaSemanaPt[(int)date('w', strtotime($f['data']))]) ?></small><?= !empty($f['todo_ano']) ? ' <small>(todo ano)</small>' : '' ?></td>
+                <td data-label="Tipo"><span class="badge<?= $f['tipo'] === 'nacional' ? '' : ' badge-info' ?>"><?= e(FERIADO_TIPOS[$f['tipo']] ?? $f['tipo']) ?></span></td>
+                <td>
+                    <?php if ($f['local']): ?>
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Remover o feriado <?= e(addslashes($f['nome'])) ?>?');">
+                            <?= csrfField() ?><input type="hidden" name="acao" value="feriado_remover"><input type="hidden" name="idx" value="<?= (int)$f['idx'] ?>">
+                            <button type="submit" class="btn-texto perigo">Remover</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <details style="margin-top:10px">
+        <summary class="btn-texto" style="cursor:pointer">➕ Cadastrar feriado estadual, municipal ou folga</summary>
+        <form method="post" action="#feriados" style="max-width:480px;margin-top:8px">
+            <?= csrfField() ?><input type="hidden" name="acao" value="feriado_add">
+            <label>Data</label><input type="date" name="feriado_data" required>
+            <label>Nome</label><input type="text" name="feriado_nome" maxlength="80" placeholder="Ex.: Aniversário de Barueri" required>
+            <label>Tipo</label>
+            <select name="feriado_tipo"><?php foreach (FERIADO_TIPOS as $k => $n): if ($k === 'nacional') continue; ?><option value="<?= e($k) ?>"><?= e($n) ?></option><?php endforeach; ?></select>
+            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="feriado_todo_ano" value="1" style="width:auto" checked> Repete todo ano nessa data</label>
+            <button type="submit">Cadastrar feriado</button>
+        </form>
+    </details>
 </div>
 <?php endif; ?>
 
@@ -240,16 +309,17 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
             <?php for ($d = $ultimoDia; $d >= 1; $d--):
                 $data = sprintf('%s-%02d', $mes, $d); $r = $registrosMes[$data] ?? null;
                 $dow = (int)date('w', strtotime($data)); $falta = $r && (int)$r['falta'] === 1;
-                $min = $r ? pontoMinutosTrabalhados($r) : null;
-                if ($falta) $diasFalta++; elseif ($r && $r['entrada']) { $diasPresente++; $totMin += (int)$min; } ?>
+                $min = $r ? pontoMinutosTrabalhados($r) : null; $fer = feriadoNome($data);
+                if ($falta && !$fer) $diasFalta++; elseif ($r && $r['entrada']) { $diasPresente++; $totMin += (int)$min; } ?>
                 <tr<?= $falta ? ' style="background:var(--vermelho-bg, #fef2f2)"' : '' ?>>
                     <td><strong><?= e(date('d/m', strtotime($data))) ?></strong> <small><?= e($diaSemanaPt[$dow]) ?></small></td>
                     <td data-label="Entrada"><?= $r ? e($hora($r['entrada'])) : '—' ?></td>
                     <td data-label="Saída / último acesso"><?= $r ? e($hora(pontoFim($r))) . ($r['saida'] ? '' : ($r['ultima_atividade'] ? ' <small>(último acesso)</small>' : '')) : '—' ?></td>
                     <td data-label="Horas"><?= e(pontoFormatarMinutos($min)) ?></td>
                     <td data-label="Situação">
-                        <?php if ($falta): ?><span class="badge badge-atraso">❌ falta</span><?= $r['falta_motivo'] !== '' ? ' <small>' . e($r['falta_motivo']) . '</small>' : '' ?>
-                        <?php elseif ($r && $r['entrada']): ?><span class="badge badge-ok">✅ presente</span>
+                        <?php if ($falta): ?><span class="badge badge-atraso">❌ falta</span><?= $r['falta_motivo'] !== '' ? ' <small>' . e($r['falta_motivo']) . '</small>' : '' ?><?= $fer ? ' <small>(feriado — não conta)</small>' : '' ?>
+                        <?php elseif ($r && $r['entrada']): ?><span class="badge badge-ok">✅ presente</span><?= $fer ? ' <small>🎉 ' . e($fer) . '</small>' : '' ?>
+                        <?php elseif ($fer): ?><span class="badge">🎉 <?= e($fer) ?></span>
                         <?php elseif ($dow === 0): ?><small>domingo</small>
                         <?php else: ?><span class="badge">sem registro</span><?php endif; ?>
                     </td>

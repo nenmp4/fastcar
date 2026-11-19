@@ -18,6 +18,7 @@
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/feriados.php';
 
 const PONTO_ATIVIDADE_INTERVALO = 600; // segundos entre gravações de "última atividade"
 
@@ -189,6 +190,8 @@ const PONTO_ATRASO_TOLERANCIA_MIN = 10; // entrada até abertura da fila + 10 mi
  * de faltas e horários"). Só quem bate ponto (ativos, menos super admin).
  * Dia útil = dia aberto da fila (Configurações → Fila) até hoje.
  * Atraso = entrada depois da abertura da fila + PONTO_ATRASO_TOLERANCIA_MIN.
+ * Feriado nacional (includes/feriados.php) não é dia útil: não conta como
+ * falta nem "sem registro" (falta marcada em feriado aparece à parte).
  */
 function pontoRelatorioPeriodo(string $de, string $ate): array {
     $hoje = date('Y-m-d');
@@ -202,9 +205,11 @@ function pontoRelatorioPeriodo(string $de, string $ate): array {
     foreach ($st->fetchAll() as $r) $regs[(int)$r['usuario_id']][$r['data']] = $r;
 
     $diasUteis = [];
+    $feriados = [];
     if ($de <= $ate) {
         for ($t = strtotime($de); $t <= strtotime($ate); $t += 86400) {
             $d = date('Y-m-d', $t);
+            if (isFeriado($d)) { $feriados[$d] = feriadoNome($d); continue; }
             if (!function_exists('filaDiaAberto') || filaDiaAberto((int)date('N', $t))) $diasUteis[] = $d;
         }
     }
@@ -216,9 +221,11 @@ function pontoRelatorioPeriodo(string $de, string $ate): array {
     foreach ($us as $u) {
         $rs = $regs[(int)$u['id']] ?? [];
         $l = ['id' => (int)$u['id'], 'nome' => $u['nome'], 'perfil' => $u['perfil'], 'presentes' => 0, 'faltas' => [], 'atrasos' => [],
-              'sem_registro' => [], 'minutos' => 0, 'entradas' => [], 'dias' => []];
+              'sem_registro' => [], 'faltas_feriado' => [], 'minutos' => 0, 'entradas' => [], 'dias' => []];
         foreach ($rs as $data => $r) {
-            if ((int)$r['falta'] === 1) {
+            if ((int)$r['falta'] === 1 && isset($feriados[$data])) {
+                $l['faltas_feriado'][] = ['data' => $data, 'feriado' => $feriados[$data]];
+            } elseif ((int)$r['falta'] === 1) {
                 $l['faltas'][] = ['data' => $data, 'motivo' => (string)$r['falta_motivo']];
             } elseif ($r['entrada']) {
                 $l['presentes']++;
@@ -242,7 +249,7 @@ function pontoRelatorioPeriodo(string $de, string $ate): array {
         }
         $linhas[] = $l;
     }
-    return ['de' => $de, 'ate' => $ate, 'dias_uteis' => count($diasUteis), 'limite_atraso' => $limiteAtraso, 'linhas' => $linhas];
+    return ['de' => $de, 'ate' => $ate, 'dias_uteis' => count($diasUteis), 'feriados' => $feriados, 'limite_atraso' => $limiteAtraso, 'linhas' => $linhas];
 }
 
 /** Excel do relatório: aba Resumo (1 linha por pessoa) e aba Dias (1 linha por pessoa/dia). */
@@ -252,7 +259,8 @@ function pontoRelatorioExcel(array $rel): string {
     $per = date('d/m/Y', strtotime($rel['de'])) . ' a ' . date('d/m/Y', strtotime($rel['ate']));
     $res = [
         [['v' => 'Cartão de ponto — ' . $per, 's' => 'titulo']],
-        ['Dias úteis no período: ' . $rel['dias_uteis'] . ' · atraso = entrada depois das ' . $rel['limite_atraso']],
+        ['Dias úteis no período: ' . $rel['dias_uteis'] . ' · atraso = entrada depois das ' . $rel['limite_atraso']
+            . ($rel['feriados'] ? ' · feriados (não contam): ' . implode(', ', array_map(fn($d, $n) => date('d/m', strtotime($d)) . " $n", array_keys($rel['feriados']), $rel['feriados'])) : '')],
         [],
         array_map(fn($c) => ['v' => $c, 's' => 'cab'], ['Nome', 'Perfil', 'Dias presente', 'Faltas', 'Atrasos', 'Sem registro (dia útil)', 'Horas no total', 'Entrada média', 'Datas das faltas (motivo)']),
     ];
@@ -267,7 +275,8 @@ function pontoRelatorioExcel(array $rel): string {
             $falta = (int)$r['falta'] === 1;
             $ent = $r['entrada'] ? date('H:i', strtotime($r['entrada'])) : '';
             $fim = pontoFim($r);
-            $sit = $falta ? 'Falta' : ($ent ? ($ent > $rel['limite_atraso'] ? 'Atraso' : 'Presente') : 'Sem entrada');
+            $fer = feriadoNome($data);
+            $sit = $falta && $fer ? "Falta em feriado ({$fer}) — não conta" : ($falta ? 'Falta' : ($ent ? ($ent > $rel['limite_atraso'] ? 'Atraso' : 'Presente') : ($fer ? "Feriado ({$fer})" : 'Sem entrada')));
             $dias[] = [['v' => $data, 's' => 'data'], $l['nome'], $rot[$l['perfil']] ?? $l['perfil'], $ent,
                 $fim ? date('H:i', strtotime($fim)) . ($r['saida'] ? '' : ' (último acesso)') : '',
                 $falta ? '' : pontoFormatarMinutos(pontoMinutosTrabalhados($r)), $sit, $falta ? (string)$r['falta_motivo'] : ''];

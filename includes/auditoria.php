@@ -296,6 +296,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'avatar_atualizado' => '🖼️ Avatar atualizado',
         'ponto_falta_marcada' => '🕒 Ponto: falta marcada',
         'ponto_falta_desfeita' => '🕒 Ponto: falta desfeita',
+        'ponto_feriado' => '🎉 Feriado (cartão de ponto)',
         'ponto_plantao' => '🌙 Ponto: plantão alterado',
         'login_falta_ponto' => '🤒 Login recusado (falta marcada no ponto)',
         'logout_falta_ponto' => '🤒 Desconectado (falta marcada no ponto)',
