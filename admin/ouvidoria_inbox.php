@@ -73,6 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $idV = (int)($_POST['negocio_id'] ?? 0);
             if (in_array($tipoV, ['venda', 'compra'], true) && $idV > 0 && ouvidoriaResumoNegocio($tipoV, $idV)) {
                 ouvidoriaSalvarConversa($telPost, $tipoV === 'venda' ? ['venda_id' => $idV, 'oportunidade_id' => null] : ['oportunidade_id' => $idV, 'venda_id' => null]);
+                getDB()->prepare("UPDATE ouvidoria_tickets SET venda_id = ?, oportunidade_id = ?, updated_at = datetime('now','localtime') WHERE telefone = ? AND status != 'resolvido'")
+                    ->execute([$tipoV === 'venda' ? $idV : null, $tipoV === 'compra' ? $idV : null, $telPost]);
                 auditoriaRegistrar('ouvidoria_vinculada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], $tipoV === 'venda' ? 'venda' : 'oportunidade', $idV, "Telefone {$telPost} da ouvidoria vinculado.");
                 $sucesso = 'Conversa vinculada ao ' . ($tipoV === 'venda' ? 'contrato de venda' : 'negócio de compra') . " #{$idV}.";
             } else {
@@ -95,6 +97,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sucesso = 'Assunto alterado para ' . OUVIDORIA_ASSUNTOS[$novo] . '.';
             }
             $telefoneAtivo = $telPost;
+        } elseif ($acao === 'importar_historico') {
+            $diasImp = (int)($_POST['dias'] ?? 90);
+            if (!in_array($diasImp, [30, 90, 365, 0], true)) $diasImp = 90;
+            $r = ouvidoriaImportarHistorico($diasImp);
+            if ($r['ok']) {
+                auditoriaRegistrar('ouvidoria_historico_importado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], '', null,
+                    "{$r['mensagens']} mensagem(ns) de {$r['conversas']} conversa(s) importadas da instância da ouvidoria.");
+                $sucesso = "Histórico importado: {$r['mensagens']} mensagem(ns) em {$r['conversas']} conversa(s)"
+                    . ($r['falhas'] ? " ({$r['falhas']} conversa(s) não vieram — tente de novo depois)" : '') . '.';
+            } else {
+                $erro = $r['erro'];
+            }
+        } elseif ($acao === 'ticket_notificar_jean') {
+            $r = ouvidoriaNotificarJean((int)($_POST['ticket_id'] ?? 0), (string)($_POST['nota'] ?? ''), (int)$_SESSION['admin_id']);
+            if ($r['ok']) {
+                auditoriaRegistrar('ouvidoria_ticket_jean', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'ouvidoria_ticket', (int)($_POST['ticket_id'] ?? 0), "Resumo do ticket {$r['protocolo']} enviado ao Jean (" . implode(', ', $r['canais']) . ').');
+                $sucesso = "Resumo do {$r['protocolo']} enviado pro Jean (" . implode(', ', $r['canais']) . ').';
+            } else {
+                $erro = $r['erro'];
+            }
+            $telefoneAtivo = $telPost ?: $telefoneAtivo;
+            if (($_POST['voltar'] ?? '') === 'tickets') {
+                header('Location: /admin/ouvidoria_tickets.php?' . ($r['ok'] ? 'ok=' . rawurlencode($sucesso) : 'erro=' . rawurlencode($erro)));
+                exit;
+            }
+        } elseif ($acao === 'ticket_status') {
+            $res = ouvidoriaTicketMudarStatus((int)($_POST['ticket_id'] ?? 0), (string)($_POST['status'] ?? ''), (int)$_SESSION['admin_id'], (string)($_POST['resolucao'] ?? ''));
+            if ($res['ok']) {
+                $t = $res['ticket'];
+                auditoriaRegistrar('ouvidoria_ticket_status', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'ouvidoria_ticket', (int)$t['id'],
+                    "Ticket {$t['protocolo']} → " . OUVIDORIA_TICKET_STATUS[$t['status']] . ($t['resolucao'] !== '' && $t['status'] === 'resolvido' ? ": {$t['resolucao']}" : ''));
+                $sucesso = "Ticket {$t['protocolo']}: " . OUVIDORIA_TICKET_STATUS[$t['status']] . '.';
+                $telefoneAtivo = $t['telefone'];
+            } else {
+                $erro = $res['erro'];
+                $telefoneAtivo = $telPost ?: $telefoneAtivo;
+            }
+            if (($_POST['voltar'] ?? '') === 'tickets') {
+                header('Location: /admin/ouvidoria_tickets.php?' . ($res['ok'] ? 'ok=' . rawurlencode($sucesso) : 'erro=' . rawurlencode($erro)));
+                exit;
+            }
         } elseif ($acao === 'enviar_mensagem' && $telPost) {
             $resultado = enviarMensagemManualOuvidoria($telPost, (string)($_POST['texto'] ?? ''), (int)$_SESSION['admin_id']);
             if ($viaAjax) {
@@ -189,6 +232,22 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .ouv-res-item { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:6px 8px; border:1px solid var(--borda); border-radius:8px; margin-bottom:4px; background:var(--superficie); }
 .ouv-res-item form { margin:0; }
 .ouv-res-item button { margin:0; width:auto; padding:6px 12px; font-size:12.5px; }
+.ouv-importar { padding:6px 12px; border-bottom:1px solid var(--borda); font-size:12.5px; }
+.ouv-importar summary { list-style:none; cursor:pointer; color:var(--azul); }
+.ouv-importar summary::-webkit-details-marker { display:none; }
+.ouv-importar form { display:flex; gap:6px; margin:6px 0 4px; }
+.ouv-importar select, .ouv-importar button { margin:0; width:auto; padding:6px 10px; font-size:12.5px; }
+.ouv-importar small { color:var(--texto-fraco); }
+.ouv-tickets { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; padding:6px 20px; border-bottom:1px solid var(--borda); font-size:12.5px; }
+.ouv-ticket { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; }
+.ouv-ticket form { margin:0; }
+.ouv-ticket details { position:relative; }
+.ouv-ticket summary { list-style:none; cursor:pointer; color:var(--azul); }
+.ouv-ticket summary::-webkit-details-marker { display:none; }
+.ouv-ticket-resolver { display:flex; gap:6px; align-items:center; margin-top:4px; }
+.ouv-ticket-resolver input { margin:0; min-width:220px; }
+.ouv-ticket-resolver button { margin:0; width:auto; padding:6px 12px; font-size:12.5px; }
+.ouv-ticket-hist { color:var(--texto-fraco); }
 .ouv-acoes { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-size:12.5px; }
 .ouv-acoes form { margin:0; display:flex; gap:6px; align-items:center; }
 .ouv-acoes select, .ouv-acoes button { margin:0; width:auto; padding:6px 10px; font-size:12.5px; }
@@ -216,6 +275,21 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
             <?php if ($assuntoFiltro): ?><input type="hidden" name="assunto" value="<?= e($assuntoFiltro) ?>"><?php endif; ?>
             <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
         </form>
+        <details class="ouv-importar">
+            <summary class="btn-texto">📥 Puxar conversas antigas</summary>
+            <form method="post" onsubmit="return confirmarAcao(this, 'Puxar da instância da ouvidoria as conversas antigas? Só grava no histórico — nenhuma mensagem é enviada pro cliente.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="importar_historico">
+                <select name="dias" aria-label="Período">
+                    <option value="30">últimos 30 dias</option>
+                    <option value="90" selected>últimos 90 dias</option>
+                    <option value="365">último ano</option>
+                    <option value="0">tudo</option>
+                </select>
+                <button type="submit">Puxar</button>
+            </form>
+            <small>Só grava o histórico (mídia antiga entra como marcador). Nunca responde nem abre ticket. Pode rodar de novo — não duplica.</small>
+        </details>
         <nav class="ouv-chips">
             <a href="?<?= $busca ? 'busca=' . urlencode($busca) : '' ?>" class="<?= $assuntoFiltro === '' ? 'ativo' : '' ?>">Todos</a>
             <?php foreach (OUVIDORIA_ASSUNTOS as $k => $rot): ?>
@@ -334,6 +408,53 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
                     <div id="ouv-busca-res"></div>
                 </div>
             </div>
+
+            <?php $ticketsConv = ouvidoriaTicketsDoTelefone($telefoneAtivo); $ticketsAtivosConv = array_filter($ticketsConv, fn($t) => $t['status'] !== 'resolvido'); $nResolvidos = count($ticketsConv) - count($ticketsAtivosConv); ?>
+            <?php if ($ticketsConv): ?>
+            <div class="ouv-tickets">
+                <?php foreach ($ticketsAtivosConv as $t): ?>
+                    <div class="ouv-ticket">
+                        <span>🎫 <strong><?= e($t['protocolo']) ?></strong> · <?= e(OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto']) ?> · <?= e(OUVIDORIA_TICKET_STATUS[$t['status']]) ?></span>
+                        <?php if ($t['status'] === 'aberto'): ?>
+                        <form method="post">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="ticket_status">
+                            <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
+                            <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                            <input type="hidden" name="status" value="em_atendimento">
+                            <button type="submit" class="btn-texto">💬 em atendimento</button>
+                        </form>
+                        <?php endif; ?>
+                        <details>
+                            <summary class="btn-texto">✅ resolver</summary>
+                            <form method="post" class="ouv-ticket-resolver">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="ticket_status">
+                                <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
+                                <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                                <input type="hidden" name="status" value="resolvido">
+                                <input type="text" name="resolucao" required maxlength="500" placeholder="Como foi resolvido? (ex: baixa do pagamento feita)">
+                                <button type="submit">Resolver</button>
+                            </form>
+                        </details>
+                        <details>
+                            <summary class="btn-texto">🔔 notificar Jean<?= $t['notificado_em'] ? ' (enviado ' . e(date('d/m H:i', strtotime($t['notificado_em']))) . ')' : '' ?></summary>
+                            <form method="post" class="ouv-ticket-resolver">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="ticket_notificar_jean">
+                                <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
+                                <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                                <input type="text" name="nota" maxlength="500" placeholder="Recado pro Jean (opcional) — vai junto do resumo">
+                                <button type="submit">Enviar</button>
+                            </form>
+                        </details>
+                    </div>
+                <?php endforeach; ?>
+                <?php if ($nResolvidos > 0): ?>
+                    <a href="/admin/ouvidoria_tickets.php?busca=<?= e(rawurlencode($telefoneAtivo)) ?>" class="ouv-ticket-hist">📁 <?= $nResolvidos ?> resolvido(s)</a>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
 
             <div class="wpp-thread wpp-thread-scroll" id="wpp-thread">
                 <?php if (!$mensagens): ?>
@@ -572,7 +693,7 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 </script>
 
 <?php include __DIR__ . '/_pwa_register.php'; ?>
-<?php include __DIR__ . '/_notify.php'; ?>
+<?php $notifModulo = 'ouvidoria'; include __DIR__ . '/_notify.php'; ?>
 <?php include __DIR__ . '/_scroll_restore.php'; ?>
 <?php include __DIR__ . '/_acao_popup.php'; ?>
 <?php include __DIR__ . '/_confirm_dialog.php'; ?>

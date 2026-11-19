@@ -953,6 +953,79 @@ function evolutionListarConversas(?array $override = null): ?array {
 }
 
 /**
+ * Mensagens de UMA conversa guardadas na instância — 20/11/2026, "possive
+ * puxar todos as conversas hook mensagens antigas" (histórico da ouvidoria
+ * de antes do webhook existir). `POST /chat/findMessages/{instance}` com
+ * `{"where":{"key":{"remoteJid":...}},"limit":N}`. Formato da resposta nunca
+ * confirmado contra esta instância — aceita lista direta ou
+ * `messages.records`/`records`/`messages`. Mais antigas primeiro.
+ * @return array|null lista de ['id','de_mim','tipo','texto','ts','nome'] ou null em erro
+ */
+function evolutionBuscarMensagensConversa(string $telefone, ?array $override = null, int $limite = 200): ?array {
+    [$base, $instance, $apiKey] = $override ?? evolutionCredenciais();
+    if (!$base || !$instance || !$apiKey) {
+        _evolutionSetUltimoErro('Sem URL/instância/API key configurados.');
+        return null;
+    }
+    $jid = preg_replace('/\D/', '', $telefone) . '@s.whatsapp.net';
+    $ch = curl_init("{$base}/chat/findMessages/" . rawurlencode($instance));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode(['where' => ['key' => ['remoteJid' => $jid]], 'limit' => $limite, 'page' => 1]),
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_TIMEOUT => 60,
+    ] + _evolutionCurlSslOpts());
+    $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) { _evolutionSetUltimoErro("Falha de conexão: {$curlErr}"); return null; }
+    $json = json_decode((string)$resp, true);
+    if ($httpCode < 200 || $httpCode >= 300 || !is_array($json)) {
+        _evolutionSetUltimoErro(_evolutionErroDeResposta($json, $httpCode) . ' — resposta: ' . substr((string)$resp, 0, 500));
+        return null;
+    }
+    if (array_is_list($json)) $itens = $json;
+    elseif (isset($json['messages']['records'])) $itens = $json['messages']['records'];
+    elseif (isset($json['records'])) $itens = $json['records'];
+    elseif (isset($json['messages']) && is_array($json['messages']) && array_is_list($json['messages'])) $itens = $json['messages'];
+    else $itens = [];
+    $saida = [];
+    foreach ((array)$itens as $m) {
+        if (!is_array($m)) continue;
+        $key = (array)($m['key'] ?? []);
+        $rjid = (string)($key['remoteJid'] ?? '');
+        if ($rjid !== '' && $rjid !== $jid) continue; // nunca mistura conversa
+        $id = (string)($key['id'] ?? $m['id'] ?? '');
+        if ($id === '') continue;
+        $msg = (array)($m['message'] ?? []);
+        $tipo = 'text'; $texto = '';
+        if (isset($msg['conversation'])) $texto = (string)$msg['conversation'];
+        elseif (isset($msg['extendedTextMessage']['text'])) $texto = (string)$msg['extendedTextMessage']['text'];
+        elseif (isset($msg['imageMessage'])) { $tipo = 'image'; $texto = (string)($msg['imageMessage']['caption'] ?? ''); }
+        elseif (isset($msg['videoMessage'])) { $tipo = 'video'; $texto = (string)($msg['videoMessage']['caption'] ?? ''); }
+        elseif (isset($msg['audioMessage'])) { $tipo = 'audio'; }
+        elseif (isset($msg['documentMessage'])) { $tipo = 'document'; $texto = (string)($msg['documentMessage']['fileName'] ?? $msg['documentMessage']['caption'] ?? ''); }
+        elseif (isset($msg['documentWithCaptionMessage']['message']['documentMessage'])) { $tipo = 'document'; $texto = (string)($msg['documentWithCaptionMessage']['message']['documentMessage']['fileName'] ?? ''); }
+        else continue; // reação, protocolo, figurinha etc — nunca vira mensagem
+        $ts = (int)($m['messageTimestamp'] ?? 0);
+        if ($ts > 20000000000) $ts = (int)($ts / 1000);
+        $saida[] = [
+            'id' => $id,
+            'de_mim' => !empty($key['fromMe']),
+            'tipo' => $tipo,
+            'texto' => trim($texto),
+            'ts' => $ts ?: null,
+            'nome' => trim((string)($m['pushName'] ?? '')),
+        ];
+    }
+    usort($saida, fn($a, $b) => ($a['ts'] ?? 0) <=> ($b['ts'] ?? 0));
+    _evolutionSetUltimoErro(null);
+    return $saida;
+}
+
+/**
  * Status cacheado (60s TTL, mesmo padrão exato de zapiStatusPrincipalCache()/
  * oficialStatusCache()) — pro badge do topbar.
  *

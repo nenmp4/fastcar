@@ -63,15 +63,24 @@ const TIPOS_NOTIFICACAO_VENDAS = ['documentos_confirmados_venda', 'visita_confir
  * venda ({'not_in': [...]}, pra tipo novo de compra entrar sozinho). null
  * = sem filtro (mantido só por compatibilidade).
  */
+/**
+ * 20/11/2026, "adicione notificação da ouvidoria mais só na tela da
+ * ouvidoria" — eventos da ouvidoria só entram no sino das telas da
+ * ouvidoria (inbox + tickets); nunca no de compra/vendas.
+ */
+const TIPOS_NOTIFICACAO_OUVIDORIA = ['ouvidoria'];
+
 function tiposNotificacaoPorModulo(?string $modulo): ?array {
     if ($modulo === 'vendas') return TIPOS_NOTIFICACAO_VENDAS;
-    if ($modulo === 'compra') return ['not_in' => TIPOS_NOTIFICACAO_VENDAS];
+    if ($modulo === 'ouvidoria') return TIPOS_NOTIFICACAO_OUVIDORIA;
+    if ($modulo === 'compra') return ['not_in' => array_merge(TIPOS_NOTIFICACAO_VENDAS, TIPOS_NOTIFICACAO_OUVIDORIA)];
     return null;
 }
 
 /** Módulo do sino pra este usuário/página: vendedor é sempre vendas; resto é compra, salvo pedido explícito de vendas. */
 function moduloNotificacaoAtual(?string $moduloPedido, string $perfil): string {
     if ($perfil === 'vendedor' || $moduloPedido === 'vendas') return 'vendas';
+    if ($moduloPedido === 'ouvidoria' && $perfil === 'super_admin') return 'ouvidoria';
     return 'compra';
 }
 

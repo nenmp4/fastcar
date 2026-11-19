@@ -43,7 +43,8 @@ $meuId  = (int)$_SESSION['admin_id'];
 // 24/10/2026, "não misturar notificações vendas com compra": vendedor
 // sempre vê só vendas; nas telas de compra (e qualquer outra sem
 // ?modulo=vendas) os eventos de venda nunca aparecem.
-$modulo = moduloNotificacaoAtual(($_GET['modulo'] ?? '') === 'vendas' ? 'vendas' : null, (string)$perfil);
+$moduloGet = (string)($_GET['modulo'] ?? '');
+$modulo = moduloNotificacaoAtual(in_array($moduloGet, ['vendas', 'ouvidoria'], true) ? $moduloGet : null, (string)$perfil);
 $tiposFiltro = tiposNotificacaoPorModulo($modulo);
 
 if (isset($_GET['historico'])) {
@@ -107,7 +108,11 @@ $desdeNotifId = (int)($_GET['desde_notif_id'] ?? 0);
 // servidor — nunca precisou virar linha na tabela `notificacoes` (lead
 // novo já tem o próprio badge/contador, duplicar criaria 2 fontes de
 // verdade pro mesmo evento).
-if ($modulo === 'vendas') {
+if ($modulo === 'ouvidoria') {
+    // Ouvidoria: só os eventos da tabela (cada mensagem do cliente já vira
+    // notificação tipo 'ouvidoria'); nunca lead novo de compra/vendas.
+    $leads = [];
+} elseif ($modulo === 'vendas') {
     // 22/10/2026 — nunca existia feed de "lead novo" pro funil de vendas;
     // criado só aqui, escopado ao módulo, nunca aparecendo misturado com
     // compra em nenhuma outra tela. perfilVeTudo() (não `$perfil ===
@@ -242,7 +247,7 @@ $proximoNotifId = $eventosLinhas ? (int)end($eventosLinhas)['id'] : $desdeNotifI
 $desdeMsgId = (int)($_GET['desde_msg_id'] ?? 0);
 $msgs = [];
 $maxMsgId = (int)$db->query("SELECT COALESCE(MAX(id), 0) FROM whatsapp_mensagens")->fetchColumn();
-if ($desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admin', 'supervisor', 'consultor', 'vendedor'], true)) {
+if ($modulo !== 'ouvidoria' && $desdeMsgId > 0 && $desdeMsgId < $maxMsgId && in_array($perfil, ['super_admin', 'supervisor', 'consultor', 'vendedor'], true)) {
     $phEtapas = implode(',', array_fill(0, count(ETAPAS_ATIVAS), '?'));
     if ($modulo === 'vendas') {
         $filtroConversa = "EXISTS (SELECT 1 FROM vendas v WHERE v.comprador_telefone = m.telefone"

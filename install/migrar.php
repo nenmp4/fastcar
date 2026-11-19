@@ -2505,6 +2505,36 @@ try {
     echo "❌ ouvidoria_conversas: {$e->getMessage()}\n";
 }
 
+// 20/11/2026 — tickets da Ouvidoria.
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS ouvidoria_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            protocolo TEXT NOT NULL DEFAULT '',
+            telefone TEXT NOT NULL,
+            nome TEXT NOT NULL DEFAULT '',
+            assunto TEXT NOT NULL DEFAULT 'outro',
+            status TEXT NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto','em_atendimento','resolvido')),
+            resumo TEXT NOT NULL DEFAULT '',
+            venda_id INTEGER,
+            oportunidade_id INTEGER,
+            aberto_em DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+            primeira_resposta_em DATETIME,
+            resolvido_em DATETIME,
+            resolvido_por INTEGER REFERENCES usuarios(id),
+            resolucao TEXT NOT NULL DEFAULT '',
+            notificado_em DATETIME,
+            notificado_por INTEGER REFERENCES usuarios(id),
+            updated_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_ouv_tickets_tel ON ouvidoria_tickets(telefone, status)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_ouv_tickets_status ON ouvidoria_tickets(status, aberto_em)");
+    echo "✅ ouvidoria_tickets: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ ouvidoria_tickets: {$e->getMessage()}\n";
+}
+
 // 09/11/2026 — rede de segurança: as reconstruções antigas de tabela (CHECK de
 // usuarios.perfil etc.) copiam uma lista FIXA de colunas e, num banco bem
 // antigo (backup restaurado), apagavam colunas que o loop $migracoes do topo

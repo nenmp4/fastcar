@@ -156,13 +156,97 @@ function ouvidoriaMontarResposta(string $assunto, bool $temArquivo, bool $dentro
     }
 }
 
+/* ---------------------------------------------------------------------------
+ * TICKETS (20/11/2026, "será da para salvar esses tiket") — 1 ticket por
+ * assunto: assunto novo = ticket novo; mesmo assunto continua no ticket
+ * aberto; depois de resolvido, mensagem nova abre outro. Protocolo
+ * OUV-AAAA-NNNNN vai pro cliente na 1ª resposta do ticket.
+ * ------------------------------------------------------------------------- */
+
+const OUVIDORIA_TICKET_STATUS = [
+    'aberto'         => '🆕 Aberto',
+    'em_atendimento' => '💬 Em atendimento',
+    'resolvido'      => '✅ Resolvido',
+];
+
+function ouvidoriaTicketsAtivos(string $telefone): array {
+    $st = getDB()->prepare("SELECT * FROM ouvidoria_tickets WHERE telefone = ? AND status != 'resolvido' ORDER BY id DESC");
+    $st->execute([$telefone]);
+    return $st->fetchAll();
+}
+
+function ouvidoriaBuscarTicket(int $id): ?array {
+    $st = getDB()->prepare("SELECT * FROM ouvidoria_tickets WHERE id = ?");
+    $st->execute([$id]);
+    return $st->fetch() ?: null;
+}
+
+/**
+ * Acha o ticket certo pra esta mensagem ou abre um novo.
+ * Retorna [ticket, novo(bool)]. Um ticket 'outro' aberto vira o assunto real
+ * quando ele aparece (evita 2 tickets pra mesma conversa: "oi" + "paguei").
+ */
+function ouvidoriaTicketParaMensagem(string $telefone, string $assunto, string $nome, array $conv, string $resumo): array {
+    $db = getDB();
+    $ativos = ouvidoriaTicketsAtivos($telefone);
+    foreach ($ativos as $t) {
+        if ($t['assunto'] === $assunto) return [$t, false];
+    }
+    if ($assunto === 'outro' && $ativos) return [$ativos[0], false];
+    foreach ($ativos as $t) {
+        if ($t['assunto'] === 'outro') {
+            $db->prepare("UPDATE ouvidoria_tickets SET assunto = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+               ->execute([$assunto, $t['id']]);
+            $t['assunto'] = $assunto;
+            return [$t, false];
+        }
+    }
+    $db->prepare("INSERT INTO ouvidoria_tickets (telefone, nome, assunto, resumo, venda_id, oportunidade_id) VALUES (?, ?, ?, ?, ?, ?)")
+       ->execute([$telefone, $nome, $assunto, mb_substr($resumo, 0, 300),
+                  !empty($conv['venda_id']) ? (int)$conv['venda_id'] : null,
+                  !empty($conv['oportunidade_id']) ? (int)$conv['oportunidade_id'] : null]);
+    $id = (int)$db->lastInsertId();
+    $protocolo = 'OUV-' . date('Y') . '-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    $db->prepare("UPDATE ouvidoria_tickets SET protocolo = ? WHERE id = ?")->execute([$protocolo, $id]);
+    return [ouvidoriaBuscarTicket($id), true];
+}
+
+/** Humano respondeu: tickets abertos da conversa passam pra "em atendimento". */
+function ouvidoriaTicketsMarcarAtendimento(string $telefone): void {
+    getDB()->prepare("UPDATE ouvidoria_tickets SET status = 'em_atendimento',
+            primeira_resposta_em = COALESCE(primeira_resposta_em, datetime('now','localtime')),
+            updated_at = datetime('now','localtime')
+        WHERE telefone = ? AND status = 'aberto'")->execute([$telefone]);
+}
+
+function ouvidoriaTicketMudarStatus(int $id, string $status, int $usuarioId, string $resolucao = ''): array {
+    if (!isset(OUVIDORIA_TICKET_STATUS[$status])) return ['ok' => false, 'erro' => 'Status inválido.'];
+    $t = ouvidoriaBuscarTicket($id);
+    if (!$t) return ['ok' => false, 'erro' => 'Ticket não encontrado.'];
+    $resolucao = trim($resolucao);
+    if ($status === 'resolvido' && $resolucao === '') return ['ok' => false, 'erro' => 'Escreva como foi resolvido.'];
+    $db = getDB();
+    if ($status === 'resolvido') {
+        $db->prepare("UPDATE ouvidoria_tickets SET status = 'resolvido', resolucao = ?, resolvido_por = ?,
+                resolvido_em = datetime('now','localtime'),
+                primeira_resposta_em = COALESCE(primeira_resposta_em, datetime('now','localtime')),
+                updated_at = datetime('now','localtime') WHERE id = ?")->execute([$resolucao, $usuarioId, $id]);
+    } else {
+        // Reabrir limpa a resolução anterior.
+        $db->prepare("UPDATE ouvidoria_tickets SET status = ?, resolvido_em = NULL, resolvido_por = NULL,
+                resolucao = CASE WHEN ? = 'em_atendimento' AND status = 'resolvido' THEN '' ELSE resolucao END,
+                updated_at = datetime('now','localtime') WHERE id = ?")->execute([$status, $status, $id]);
+    }
+    return ['ok' => true, 'ticket' => ouvidoriaBuscarTicket($id)];
+}
+
 /** Avisa os super admins no sino (único perfil que vê este canal). */
-function ouvidoriaNotificarSuperAdmins(string $telefone, string $assunto, string $resumo): void {
+function ouvidoriaNotificarSuperAdmins(string $telefone, string $assunto, string $resumo, string $protocolo = ''): void {
     try {
         $ids = getDB()->query("SELECT id FROM usuarios WHERE perfil = 'super_admin' AND bloqueado = 0")->fetchAll(PDO::FETCH_COLUMN);
         $rot = OUVIDORIA_ASSUNTOS[$assunto] ?? OUVIDORIA_ASSUNTOS['outro'];
         foreach ($ids as $id) {
-            criarNotificacao((int)$id, 'ouvidoria', "📣 Ouvidoria — {$rot}", mb_substr($resumo, 0, 160), '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode($telefone));
+            criarNotificacao((int)$id, 'ouvidoria', "📣 Ouvidoria — {$rot}" . ($protocolo !== '' ? " ({$protocolo})" : ''), mb_substr($resumo, 0, 160), '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode($telefone));
         }
     } catch (Throwable $e) {
         // best-effort: notificação nunca derruba o webhook
@@ -257,7 +341,13 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     if ($assunto !== 'outro' || $conv['assunto'] === '') ouvidoriaSalvarConversa($telNorm, ['assunto' => $assunto]);
 
     $resumoNotif = ($conv['nome'] ?: $telNorm) . ': ' . ($textoUtil !== '' ? $textoUtil : (str_starts_with($texto, '[') ? 'mandou ' . $tipoRegistro : $texto));
-    ouvidoriaNotificarSuperAdmins($telNorm, $assunto, $resumoNotif);
+    $ticket = null; $ticketNovo = false;
+    try {
+        [$ticket, $ticketNovo] = ouvidoriaTicketParaMensagem($telNorm, $assunto, (string)$conv['nome'], $conv, $resumoNotif);
+    } catch (Throwable $e) {
+        // best-effort: ticket nunca derruba o webhook
+    }
+    ouvidoriaNotificarSuperAdmins($telNorm, $assunto, ($ticketNovo ? '🆕 ' : '') . $resumoNotif, (string)($ticket['protocolo'] ?? ''));
 
     if (!empty($conv['ia_pausada'])) {
         return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => true, 'instancia' => $instancia];
@@ -275,11 +365,15 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         // Texto do mesmo assunto (inclusive depois de já ter confirmado o arquivo) não repete em 12h.
         $responde = explode(':', $ultimaChave)[0] !== $assunto || (time() - $ultimaEm) > 12 * 3600;
     }
+    if ($ticketNovo) $responde = true; // ticket novo sempre recebe o protocolo
     if (!$responde) {
         return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => false];
     }
 
     $resposta = ouvidoriaMontarResposta($assunto, $temArquivo, ouvidoriaDentroHorario(), (string)$conv['nome']);
+    if ($ticketNovo && !empty($ticket['protocolo'])) {
+        $resposta .= "\n\nSeu protocolo de atendimento é *{$ticket['protocolo']}*.";
+    }
     $enviou = evolutionEnviarTexto($telNorm, $resposta, evolutionCredenciaisOuvidoria());
     if ($enviou) {
         registrarMensagem($telNorm, 'out', $resposta, null, true, 'text', null);
@@ -289,5 +383,6 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     return [
         'ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro,
         'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => $enviou,
+        'protocolo' => $ticket['protocolo'] ?? null, 'ticket_novo' => $ticketNovo,
     ];
 }
