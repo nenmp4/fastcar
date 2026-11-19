@@ -279,25 +279,30 @@ function ouvidoriaBuscarTicket(int $id): ?array {
 
 /**
  * Acha o ticket certo pra esta mensagem ou abre um novo.
- * Retorna [ticket, novo(bool)]. Um ticket 'outro' aberto vira o assunto real
- * quando ele aparece (evita 2 tickets pra mesma conversa: "oi" + "paguei").
+ * Retorna [ticket, novo(bool)].
+ * 20/11/2026, "cada mensagem que cliente manda ele gera protocolo" — enquanto a
+ * conversa tiver ticket aberto, TODA mensagem entra nele (1 protocolo por
+ * atendimento, não por assunto). O assunto do ticket só muda quando era
+ * 'outro' ou quando chega um assunto urgente. Ticket novo só depois de
+ * resolvido.
  */
 function ouvidoriaTicketParaMensagem(string $telefone, string $assunto, string $nome, array $conv, string $resumo): array {
     $db = getDB();
     $ativos = ouvidoriaTicketsAtivos($telefone);
-    foreach ($ativos as $t) {
-        if ($t['assunto'] === $assunto) return [$t, false];
-    }
-    if ($assunto === 'outro' && $ativos) return [$ativos[0], false];
-    foreach ($ativos as $t) {
-        if ($t['assunto'] === 'outro') {
+    if ($ativos) {
+        $t = $ativos[0];
+        $vira = $assunto !== 'outro' && $t['assunto'] !== $assunto
+            && ($t['assunto'] === 'outro'
+                || (in_array($assunto, OUVIDORIA_ASSUNTOS_URGENTES, true) && !in_array($t['assunto'], OUVIDORIA_ASSUNTOS_URGENTES, true)));
+        if ($vira) {
             $db->prepare("UPDATE ouvidoria_tickets SET assunto = ?, updated_at = datetime('now','localtime') WHERE id = ?")
                ->execute([$assunto, $t['id']]);
             auditoriaRegistrar('ouvidoria_ticket_reclassificado', null, 'Sistema', 'ouvidoria_ticket', (int)$t['id'],
-                "Ticket {$t['protocolo']} ({$telefone}): assunto 'outro' → " . (OUVIDORIA_ASSUNTOS[$assunto] ?? $assunto) . '.');
+                "Ticket {$t['protocolo']} ({$telefone}): assunto " . (OUVIDORIA_ASSUNTOS[$t['assunto']] ?? $t['assunto'])
+                . ' → ' . (OUVIDORIA_ASSUNTOS[$assunto] ?? $assunto) . '.');
             $t['assunto'] = $assunto;
-            return [$t, false];
         }
+        return [$t, false];
     }
     $db->prepare("INSERT INTO ouvidoria_tickets (telefone, nome, assunto, resumo, venda_id, oportunidade_id) VALUES (?, ?, ?, ?, ?, ?)")
        ->execute([$telefone, $nome, $assunto, mb_substr($resumo, 0, 300),

@@ -2545,6 +2545,31 @@ try {
     foreach (['ouvidoria_conversas', 'ouvidoria_tickets'] as $tb) {
         $db->exec("UPDATE {$tb} SET nome = '' WHERE TRIM(nome) IN ('Você','você','Voce','voce','VOCÊ','VOCE','You','you','Eu','eu')");
     }
+    // 20/11/2026 — "cada mensagem gera protocolo": junta os tickets abertos
+    // repetidos da mesma conversa no mais antigo (o 1º protocolo que o cliente
+    // recebeu). Os outros viram resolvidos com a nota; nada é apagado.
+    $repet = $db->query("SELECT telefone FROM ouvidoria_tickets WHERE status != 'resolvido' GROUP BY telefone HAVING COUNT(*) > 1")->fetchAll(PDO::FETCH_COLUMN);
+    $juntados = 0;
+    foreach ($repet as $telRep) {
+        $stT = $db->prepare("SELECT * FROM ouvidoria_tickets WHERE telefone = ? AND status != 'resolvido' ORDER BY id");
+        $stT->execute([$telRep]);
+        $ts = $stT->fetchAll();
+        $manter = array_shift($ts);
+        $resumo = (string)$manter['resumo'];
+        $urg = (int)$manter['urgente'];
+        $assuntoM = (string)$manter['assunto'];
+        foreach ($ts as $tx) {
+            $urg = max($urg, (int)$tx['urgente']);
+            if ($assuntoM === 'outro' && $tx['assunto'] !== 'outro') $assuntoM = (string)$tx['assunto'];
+            if ($tx['resumo'] !== '' && !str_contains($resumo, (string)$tx['resumo'])) $resumo = mb_substr(($resumo !== '' ? $resumo . ' | ' : '') . $tx['resumo'], 0, 600);
+            $db->prepare("UPDATE ouvidoria_tickets SET status = 'resolvido', resolvido_em = datetime('now','localtime'), resolucao = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+               ->execute(['Juntado ao protocolo ' . $manter['protocolo'] . ' (mesma conversa).', $tx['id']]);
+            $juntados++;
+        }
+        $db->prepare("UPDATE ouvidoria_tickets SET resumo = ?, urgente = ?, assunto = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$resumo, $urg, $assuntoM, $manter['id']]);
+    }
+    if ($juntados) echo "✅ ouvidoria_tickets: {$juntados} ticket(s) repetido(s) juntado(s) no protocolo mais antigo da conversa\n";
     echo "✅ ouvidoria_tickets: tabela pronta\n";
 } catch (Throwable $e) {
     echo "❌ ouvidoria_tickets: {$e->getMessage()}\n";
