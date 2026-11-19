@@ -141,3 +141,19 @@ function pontoFormatarMinutos(?int $min): string {
     if ($min === null) return '—';
     return sprintf('%dh%02d', intdiv($min, 60), $min % 60);
 }
+
+/** Resumo do dia pro card da tela inicial (só quem bate ponto: todos os ativos menos super admin). */
+function pontoResumoDia(?string $data = null): array {
+    $data = $data ?: date('Y-m-d');
+    $db = getDB();
+    $us = $db->query("SELECT id, nome FROM usuarios WHERE bloqueado = 0 AND perfil != 'super_admin' ORDER BY nome")->fetchAll();
+    $regs = pontoRegistrosDoDia($data);
+    $out = ['presentes' => [], 'faltas' => [], 'sem_registro' => []];
+    foreach ($us as $u) {
+        $r = $regs[(int)$u['id']] ?? null;
+        if ($r && (int)$r['falta'] === 1) $out['faltas'][] = $u['nome'];
+        elseif ($r && $r['entrada']) $out['presentes'][] = $u['nome'];
+        else $out['sem_registro'][] = $u['nome'];
+    }
+    return $out;
+}

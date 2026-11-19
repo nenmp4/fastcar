@@ -156,6 +156,7 @@ function avStatusBadge(string $status): string {
 </nav>
 
 <main>
+<?php include __DIR__ . '/_ponto_card.php'; ?>
 <?php if ($erro): ?><div class="alerta-erro"><?= e($erro) ?></div><?php endif; ?>
 
 <?php if ($podeCriarVistoria): ?>

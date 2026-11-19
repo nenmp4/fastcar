@@ -865,6 +865,8 @@ function moeda(float $v): string { return 'R$ ' . number_format($v, 2, ',', '.')
     <div class="alerta-erro">⚠️ Fora do horário de expediente (<?= e(filaDiasAbertosTexto()) ?>, <?= e(filaHorarioAbertura()) ?>–<?= e(filaHorarioFechamento()) ?>) — não dá pra ficar disponível agora. A IA continua respondendo o cliente normalmente, só não entra na fila de novo lead fora desse horário.</div>
 <?php endif; ?>
 
+<?php include __DIR__ . '/_ponto_card.php'; ?>
+
 <?php
 // Rótulo de cada ?filtro= especial, pro banner "filtro ativo" abaixo —
 // mesmo texto usado no rótulo do card que originou o clique.

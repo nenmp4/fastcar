@@ -666,6 +666,7 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
 </nav>
 
 <main>
+<?php include __DIR__ . '/_ponto_card.php'; ?>
 <?php if ($erroPromissoria): ?><div class="alerta-erro"><?= e($erroPromissoria) ?></div><?php endif; ?>
 <?php if ($erroLocacao): ?><div class="alerta-erro"><?= e($erroLocacao) ?></div><?php endif; ?>
 <?php if (isset($_GET['rap_ok'])): ?>

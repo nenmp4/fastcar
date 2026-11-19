@@ -250,6 +250,7 @@ $carrosVendidos = $stmtCarrosVendidos->fetch(PDO::FETCH_ASSOC) ?: ['qtd' => 0, '
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <?php include __DIR__ . '/_topbar.php'; ?>
 <main>
+<?php include __DIR__ . '/_ponto_card.php'; ?>
 
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem">
   <h1 style="margin:0">🧾 Financeiro</h1>
