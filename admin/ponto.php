@@ -85,7 +85,7 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
     <h2>🕒 Cartão de ponto</h2>
     <p><small>O ponto bate sozinho: <strong>entrada</strong> = 1º acesso ao sistema no dia (login ou abrir o sistema já logado);
         <strong>saída</strong> = clicar em Sair ou ser desconectado no fim do expediente — sem isso, vale o <strong>último acesso</strong>.
-        Falta é marcada aqui<?= $gestor ? '; consultor/vendedor marcado hoje sai da fila e os leads ainda não tocados são redistribuídos' : ' pela supervisão' ?>.</small></p>
+        Falta é marcada aqui<?= $gestor ? '; consultor/vendedor marcado hoje sai da fila e os leads que chegaram hoje e ele ainda não atendeu vão pros outros' : ' pela supervisão' ?>.</small></p>
 </div>
 
 <?php if ($gestor): ?>
@@ -125,7 +125,7 @@ $registrosMes = $usuarioMesDados ? pontoRegistrosDoMes($usuarioMes, $mes) : [];
                     <?php else: ?>
                         <details>
                             <summary class="btn-texto perigo" style="cursor:pointer">❌ Marcar falta</summary>
-                            <form method="post" style="margin-top:6px" onsubmit="return confirmarAcao(this, 'Marcar falta de <?= e(addslashes($u['nome'])) ?> em <?= e(date('d/m/Y', strtotime($dia))) ?>?<?= $dia === date('Y-m-d') && in_array($u['perfil'], ['consultor', 'vendedor'], true) ? ' Sai da fila agora e os leads ainda não tocados vão pros outros.' : '' ?>');">
+                            <form method="post" style="margin-top:6px" onsubmit="return confirmarAcao(this, 'Marcar falta de <?= e(addslashes($u['nome'])) ?> em <?= e(date('d/m/Y', strtotime($dia))) ?>?<?= $dia === date('Y-m-d') && in_array($u['perfil'], ['consultor', 'vendedor'], true) ? ' Sai da fila agora e os leads que chegaram hoje (ainda não atendidos) vão pros outros.' : '' ?>');">
                                 <?= csrfField() ?><input type="hidden" name="acao" value="marcar_falta"><input type="hidden" name="usuario_id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="data" value="<?= e($dia) ?>">
                                 <input type="text" name="motivo" placeholder="Motivo (opcional — atestado, folga...)" maxlength="200">
                                 <button type="submit" class="perigo" style="margin-top:4px">Confirmar falta</button>

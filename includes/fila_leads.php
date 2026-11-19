@@ -710,6 +710,7 @@ function marcarConsultorFaltou(int $usuarioId, int $executadoPor): array {
             JOIN clientes c ON c.id = o.cliente_id
             WHERE o.responsavel_id = ? AND o.etapa IN ({$etapasPh})
               AND o.consultor_tel_enviado_em IS NULL
+              AND date(o.created_at) = date('now','localtime') -- 20/11/2026: só os leads que chegaram hoje; os antigos ficam com ele
             ORDER BY o.created_at DESC
         ");
         $stmt->execute(array_merge([$usuarioId], FILA_LEADS_ETAPAS_NAO_TOCADAS));

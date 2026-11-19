@@ -192,6 +192,7 @@ function marcarVendedorFaltou(int $usuarioId, int $executadoPor): array {
             SELECT id, etapa, comprador_nome
             FROM vendas
             WHERE responsavel_id = ? AND etapa IN ({$etapasPh})
+              AND date(created_at) = date('now','localtime') -- 20/11/2026: só os leads que chegaram hoje
             ORDER BY created_at DESC
         ");
         $stmt->execute(array_merge([$usuarioId], ETAPAS_VENDA_LEAD_IA));

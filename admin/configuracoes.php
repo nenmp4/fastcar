@@ -2148,7 +2148,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
                     </form>
                 </td>
                 <td>
-                    <form method="post" class="inline" onsubmit="<?= $faltouHoje ? '' : "return confirmarAcao(this, 'Marcar {$f['nome']} como ausente hoje? As leads dele(a) ainda não tocadas vão ser redistribuídas pros consultores disponíveis agora mesmo.')" ?>">
+                    <form method="post" class="inline" onsubmit="<?= $faltouHoje ? '' : "return confirmarAcao(this, 'Marcar {$f['nome']} como ausente hoje? Os leads que chegaram hoje e ele(a) ainda não atendeu vão pros consultores disponíveis agora mesmo (os antigos ficam com ele).')" ?>">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="<?= $faltouHoje ? 'desmarcar_falta' : 'marcar_falta' ?>">
                         <input type="hidden" name="usuario_id" value="<?= (int)$f['id'] ?>">
@@ -2256,7 +2256,7 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
                     </form>
                 </td>
                 <td>
-                    <form method="post" class="inline" onsubmit="<?= $faltouHojeVendedor ? '' : "return confirmarAcao(this, 'Marcar {$fv['nome']} como ausente hoje? As negociações dele(a) ainda não tocadas vão ser redistribuídas pros vendedores disponíveis agora mesmo.')" ?>">
+                    <form method="post" class="inline" onsubmit="<?= $faltouHojeVendedor ? '' : "return confirmarAcao(this, 'Marcar {$fv['nome']} como ausente hoje? As negociações que chegaram hoje e ele(a) ainda não atendeu vão pros vendedores disponíveis agora mesmo (as antigas ficam com ele).')" ?>">
                         <?= csrfField() ?>
                         <input type="hidden" name="acao" value="<?= $faltouHojeVendedor ? 'desmarcar_falta_vendedor' : 'marcar_falta_vendedor' ?>">
                         <input type="hidden" name="usuario_id" value="<?= (int)$fv['id'] ?>">
