@@ -45,6 +45,7 @@ require_once __DIR__ . '/documentos.php'; // salvarArquivoGeradoComoDocumento()/
 require_once __DIR__ . '/financeiro.php'; // finGerarReceitaVendaAssinatura() — receita automática ao vender
 require_once __DIR__ . '/contratos.php'; // cancelarContratosAtivosVenda() — invalida contrato pendente ao trocar o veículo vinculado (16/10/2026). Circular (contratos.php também requer vendas.php) — seguro, nenhum dos dois chama função do outro fora de corpo de função, só na definição
 require_once __DIR__ . '/locacao.php'; // contrato de locação pura reaproveita esta tabela (27/10/2026)
+require_once __DIR__ . '/carro_reserva.php'; // carroReservaVeiculoBloqueado() — carro reserva fora do estoque (19/11/2026). Circular, seguro (só definições)
 
 // 'whatsapp'/'qualificacao_ia'/'sem_perfil' são exclusivas de leads que
 // entraram por origem='whatsapp' — negociação manual nunca passa por elas.
@@ -197,6 +198,8 @@ function veiculoDisponivelParaVenda(int $oportunidadeId): bool {
     $stmtOc = $db->prepare("SELECT COALESCE(oculto_estoque, 0) FROM oportunidades WHERE id = ?");
     $stmtOc->execute([$oportunidadeId]);
     if ((int)$stmtOc->fetchColumn() === 1) return false;
+    // 19/11/2026 — carro já liberado como reserva pra um cliente (busca e apreensão).
+    if (carroReservaVeiculoBloqueado($oportunidadeId)) return false;
     // Mesmo carro cadastrado 2x (mesma placa): só o "principal" vende —
     // nunca abre 2 negociações pro mesmo veículo físico.
     $principal = veiculoPrincipalPorPlaca((string)$op['veiculo_placa']);
@@ -583,7 +586,13 @@ function listarFrotaDisponivelParaVenda(int $limite = 30): array {
     // negociação": mesmo veículo físico (mesma placa) cadastrado em 2
     // oportunidades aparece 1 vez só — sempre o "principal".
     $saida = [];
+    // 19/11/2026 — carro liberado como reserva (pendente/com o cliente) sai da lista.
+    $reservados = [];
+    try {
+        $reservados = array_flip(array_map('intval', $db->query("SELECT oportunidade_reserva_id FROM veiculo_reservas WHERE status IN ('pendente','ativa')")->fetchAll(PDO::FETCH_COLUMN)));
+    } catch (Throwable $e) { /* tabela ainda não migrada */ }
     foreach ($stmt->fetchAll() as $r) {
+        if (isset($reservados[(int)$r['oportunidade_id']])) continue;
         $placaNorm = veiculoPlacaNormalizada((string)$r['veiculo_placa']);
         if ($placaNorm !== '' && veiculoPrincipalPorPlaca($placaNorm) !== (int)$r['oportunidade_id']) continue;
         $saida[] = $r;

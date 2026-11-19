@@ -630,7 +630,10 @@ details.frota-ba-form input { width: 100%; }
                     <br><a class="frota-sub frota-nowrap" href="/admin/veiculo_midias.php?id=<?= (int)$v['id'] ?>">📸 <?= (int)$v['total_midias'] ?> mídia(s)</a>
                 </td>
                 <td>
-                    <?php if ($v['venda_id'] === null): ?>
+                    <?php $reservaAtual = carroReservaAtualDoVeiculo((int)$v['id']); ?>
+                    <?php if ($reservaAtual): ?>
+                        <a href="/admin/carro_reserva.php?venda=<?= (int)$reservaAtual['venda_id'] ?>"><span class="badge badge-aviso" title="Liberado como carro reserva">🔑 reserva<?= $reservaAtual['status'] === 'pendente' ? ' (aguardando assinatura)' : '' ?> — <?= e((string)$reservaAtual['comprador_nome']) ?></span></a>
+                    <?php elseif ($v['venda_id'] === null): ?>
                         <form method="post" class="inline">
                             <?= csrfField() ?>
                             <input type="hidden" name="acao" value="iniciar_venda">
@@ -646,6 +649,7 @@ details.frota-ba-form input { width: 100%; }
                             <input type="hidden" name="motivo" value="">
                             <button type="submit" class="btn-texto" style="font-size:12px" title="O carro voltou pra Fastcar — desfaz a venda e libera pra vender de novo">🔙 Voltou pra Fastcar</button>
                         </form>
+                        <br><a class="btn-texto frota-nowrap" style="font-size:12px" href="/admin/carro_reserva.php?venda=<?= (int)$v['venda_id'] ?>" title="O banco tomou o carro do cliente — liberar outro carro da frota (termo assinado na tela)">🔑 Carro reserva</a>
                     <?php else: ?>
                         <a href="/admin/venda.php?id=<?= (int)$v['venda_id'] ?>"><span class="badge"><?= e(etapaVendaLabel($v['venda_etapa'], $v['venda_tipo_contrato'] ?? 'venda')) ?></span></a>
                     <?php endif; ?>

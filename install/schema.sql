@@ -1622,3 +1622,38 @@ CREATE TABLE IF NOT EXISTS ponto_registros (
     UNIQUE (usuario_id, data)
 );
 CREATE INDEX IF NOT EXISTS idx_ponto_data ON ponto_registros(data);
+
+-- Carro reserva (19/11/2026): o banco tomou o carro do cliente (busca e
+-- apreensão) e a Fastcar libera outro da frota — temporário ou troca
+-- definitiva; termo assinado na tela. Ver includes/carro_reserva.php.
+CREATE TABLE IF NOT EXISTS veiculo_reservas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    venda_id INTEGER NOT NULL REFERENCES vendas(id),
+    oportunidade_original_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    oportunidade_reserva_id INTEGER NOT NULL REFERENCES oportunidades(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('temporario', 'definitivo')),
+    motivo TEXT DEFAULT '',
+    prazo_devolucao DATE,
+    km_entrega INTEGER,
+    combustivel_entrega TEXT DEFAULT '',
+    obs_entrega TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'ativa', 'concluida', 'devolvida', 'cancelada')),
+    assinado_em DATETIME,
+    assinatura_ip TEXT DEFAULT '',
+    assinatura_user_agent TEXT DEFAULT '',
+    termo_drive_file_id TEXT DEFAULT '',
+    termo_arquivo_url TEXT DEFAULT '',
+    assinatura_drive_file_id TEXT DEFAULT '',
+    assinatura_arquivo_url TEXT DEFAULT '',
+    assinado_registrado_por INTEGER REFERENCES usuarios(id),
+    devolvido_em DATE,
+    km_devolucao INTEGER,
+    combustivel_devolucao TEXT DEFAULT '',
+    obs_devolucao TEXT DEFAULT '',
+    devolvido_registrado_por INTEGER REFERENCES usuarios(id),
+    criado_por INTEGER REFERENCES usuarios(id),
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_veiculo_reservas_venda ON veiculo_reservas(venda_id);
+CREATE INDEX IF NOT EXISTS idx_veiculo_reservas_reserva ON veiculo_reservas(oportunidade_reserva_id, status);

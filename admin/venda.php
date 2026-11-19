@@ -2176,6 +2176,12 @@ function adicionarParteEntrada() {
                 </form>
             <?php endif; ?>
             <hr>
+            <?php $reservasVenda = carroReservaListarDaVenda((int)$id);
+                  $reservaAndamento = array_values(array_filter($reservasVenda, fn($rv) => in_array($rv['status'], ['pendente', 'ativa'], true))); ?>
+            <p style="margin:0 0 6px"><strong>🔑 Carro reserva</strong> — o banco tomou o carro do cliente (busca e apreensão)? Libere outro da frota, temporário ou troca definitiva, com termo assinado na tela.
+                <?php if ($reservaAndamento): ?><br><span class="badge badge-aviso"><?= e(CARRO_RESERVA_STATUS[$reservaAndamento[0]['status']]) ?>: <?= e(trim($reservaAndamento[0]['res_marca'] . ' ' . $reservaAndamento[0]['res_modelo'] . ' ' . strtoupper((string)$reservaAndamento[0]['res_placa']))) ?></span><?php endif; ?></p>
+            <a class="btn" href="/admin/carro_reserva.php?venda=<?= (int)$id ?>">🔑 <?= $reservaAndamento ? 'Abrir carro reserva' : 'Carro reserva' ?><?= $reservasVenda && !$reservaAndamento ? ' (' . count($reservasVenda) . ' no histórico)' : '' ?></a>
+            <hr>
             <!-- 19/09/2026, "temos aquele problema de cliente devolver
                  veiculo agente vende para outro" — antes disso não existia
                  NENHUM jeito de reabrir um veículo já 'vendido' pra uma

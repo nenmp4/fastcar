@@ -142,7 +142,9 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // ("não consegue conferir a documentação fechar venda"): os links
         // "ver" dos documentos do comprador e "📄 Ver PDF" do contrato
         // redirecionavam pra vendas.php.
-        'ver_documento_venda.php', 'ver_contrato.php'];
+        'ver_documento_venda.php', 'ver_contrato.php',
+        // 19/11/2026 — carro reserva (busca e apreensão) + PDF do termo.
+        'carro_reserva.php', 'carro_reserva_termo.php'];
     if (!in_array($paginaAtualVendedor, $permitidasVendedor, true)) {
         header('Location: /admin/vendas.php');
         exit;
