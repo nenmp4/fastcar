@@ -49,6 +49,18 @@ function ouvidoriaDentroHorario(?int $ts = null): bool {
     return $hm >= '10:00' && $hm < '19:00';
 }
 
+/** Quando começou o "fora do horário" atual (ex: sexta 19h), andando pra trás de 15 em 15 min (máx. 4 dias). */
+function ouvidoriaInicioForaHorario(?int $agora = null): int {
+    $t = $agora ?? time();
+    if (ouvidoriaDentroHorario($t)) return $t;
+    $t -= $t % 900;
+    for ($i = 0; $i < 4 * 96; $i++) {
+        if (ouvidoriaDentroHorario($t - 900)) return $t;
+        $t -= 900;
+    }
+    return $t;
+}
+
 function ouvidoriaConversa(string $telefone): array {
     $st = getDB()->prepare('SELECT * FROM ouvidoria_conversas WHERE telefone = ?');
     $st->execute([normalizarTelefone($telefone) ?: $telefone]);
@@ -534,7 +546,12 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         } catch (Throwable $e) {}
     }
     $urgente = in_array($assunto, OUVIDORIA_ASSUNTOS_URGENTES, true) || ($assunto === 'quitacao' && !empty($GLOBALS['_ouvidoriaQuitacaoVencida']));
-    ouvidoriaNotificarSuperAdmins($telNorm, $assunto, ($urgente ? '🚨 URGENTE — ' : ($ticketNovo ? '🆕 ' : '')) . $resumoNotif, (string)($ticket['protocolo'] ?? ''));
+    // Sino: cliente mandando mensagem atrás de mensagem vira 1 aviso a cada 10 min
+    // (ticket novo e urgente sempre avisam na hora).
+    if ($ticketNovo || $urgente || !avisoRepetidoRecente('ouv_sino_' . $telNorm, 600)) {
+        if ($ticketNovo || $urgente) setConfig('ouv_sino_' . $telNorm, (string)time());
+        ouvidoriaNotificarSuperAdmins($telNorm, $assunto, ($urgente ? '🚨 URGENTE — ' : ($ticketNovo ? '🆕 ' : '')) . $resumoNotif, (string)($ticket['protocolo'] ?? ''));
+    }
     if ($urgente && $ticket && empty($ticket['urgente'])) {
         try { getDB()->prepare("UPDATE ouvidoria_tickets SET urgente = 1 WHERE id = ?")->execute([(int)$ticket['id']]); } catch (Throwable $e) {}
     }
@@ -558,6 +575,12 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     } else {
         // Texto do mesmo assunto (inclusive depois de já ter confirmado o arquivo) não repete em 12h.
         $responde = explode(':', $ultimaChave)[0] !== $assunto || (time() - $ultimaEm) > 12 * 3600;
+        // 20/11/2026, "se ele ficar mandando mensagem" — fora do horário (noite/
+        // fim de semana) o mesmo assunto só recebe 1 resposta até a ouvidoria abrir.
+        if ($responde && explode(':', $ultimaChave)[0] === $assunto && !ouvidoriaDentroHorario()
+            && $ultimaEm >= ouvidoriaInicioForaHorario()) {
+            $responde = false;
+        }
     }
     if ($ticketNovo) $responde = true; // ticket novo sempre recebe o protocolo
     if (!$responde) {
