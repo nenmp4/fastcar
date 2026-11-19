@@ -3719,6 +3719,7 @@ segue no schema sem uso novo, não removida sem ganho real),
   resumo no WhatsApp de notificação. 1ª execução marca as faixas de tempo
   sem avisar; risco sempre avisa. Nunca manda nada pro cliente. Testado em
   banco isolado + HTTP real (contagens, filtro, topo, 1366px/375px) + smoke.
+  **🚨 Sofreu busca e apreensão + média real** (19/11/2026, "Veirica média de ações de busca apreensão" → sem número oficial no mercado → "Botão pode colocar") — em `admin/veiculos.php`, cada veículo com financiamento em aberto tem "🚨 Sofreu busca e apreensão" (data — nunca no futuro — + observação opcional), grava `oportunidades.busca_apreensao_em`/`_obs`, histórico do veículo e auditoria (`veiculo_busca_apreensao`/`_desfeita`); "↩️ Desfazer" limpa. Veículo marcado sai dos cards de prazo/risco e do aviso diário. Linha de resumo no card de prazo: total, média de meses com a Fastcar até o banco tomar, separada por carro recente (risco alto) e antigo (`frotaBuscaApreensaoResumo()`, `includes/frota_prazo.php`); filtro `?prazo=busca`. Testado via HTTP em banco isolado + migração contra schema anterior + smoke.
   **Excluir veículo duplicado** (23/09/2026, "permita super admin excuir
   veiculo veio duas bianca que veio do outro sistema") — achado real via
   screenshot: 2 cadastros duplicados pra "Bianca Pereira Da Silva" (mesma

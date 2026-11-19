@@ -47,6 +47,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
         ")->execute([$quitar ? 1 : 0, $quitar ? date('Y-m-d H:i:s') : null, (int)$_POST['oportunidade_id']]);
         $sucesso = $quitar ? 'Veículo marcado como financiamento quitado.' : 'Veículo voltou a constar como financiamento em aberto.';
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['acao'] ?? '', ['marcar_busca_apreensao', 'desfazer_busca_apreensao'], true)) {
+    // 19/11/2026, "🚨 Sofreu busca e apreensão" — registra o dia real em que o
+    // banco tomou o carro (nunca inferido), pra medir em quantos meses o banco
+    // age por ano de carro (card "📊 Busca e apreensão" abaixo).
+    if (!validateCSRF($_POST['csrf_token'] ?? '')) {
+        $erro = 'Sessão expirada, recarregue a página e tente de novo.';
+    } else {
+        $opBa = (int)($_POST['oportunidade_id'] ?? 0);
+        $stBa = $db->prepare("SELECT id, etapa, busca_apreensao_em FROM oportunidades WHERE id = ? AND etapa = 'fechado'");
+        $stBa->execute([$opBa]);
+        $oBa = $stBa->fetch();
+        if (!$oBa) {
+            $erro = 'Veículo não encontrado na frota.';
+        } elseif ($_POST['acao'] === 'marcar_busca_apreensao') {
+            $dataBa = (string)($_POST['data'] ?? '');
+            $obsBa = trim(clean((string)($_POST['obs'] ?? '')));
+            $dt = DateTime::createFromFormat('Y-m-d', $dataBa);
+            if (!$dt || $dt->format('Y-m-d') !== $dataBa || $dataBa > date('Y-m-d')) {
+                $erro = 'Informe a data da busca e apreensão (não pode ser no futuro).';
+            } else {
+                $db->prepare("UPDATE oportunidades SET busca_apreensao_em = ?, busca_apreensao_obs = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+                   ->execute([$dataBa, $obsBa, $opBa]);
+                $obsHist = '🚨 Sofreu busca e apreensão em ' . $dt->format('d/m/Y') . ($obsBa !== '' ? ' — ' . $obsBa : '');
+                $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+                   ->execute([$opBa, (int)$_SESSION['admin_id'], $obsHist]);
+                auditoriaRegistrar('veiculo_busca_apreensao', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $opBa, $obsHist);
+                $sucesso = 'Busca e apreensão registrada.';
+            }
+        } elseif ($oBa['busca_apreensao_em']) {
+            $db->prepare("UPDATE oportunidades SET busca_apreensao_em = NULL, busca_apreensao_obs = '', updated_at = datetime('now','localtime') WHERE id = ?")->execute([$opBa]);
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+               ->execute([$opBa, (int)$_SESSION['admin_id'], '↩️ Registro de busca e apreensão desfeito (era ' . date('d/m/Y', strtotime($oBa['busca_apreensao_em'])) . ')']);
+            auditoriaRegistrar('veiculo_busca_apreensao_desfeita', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'oportunidade', $opBa);
+            $sucesso = 'Registro de busca e apreensão desfeito.';
+        }
+    }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'devolucao_veiculo') {
     // 27/10/2026, "esse carro foi vendido, agora está de volta na Fastcar,
     // vamos vender novamente — gera histórico". Mesma ação de
@@ -127,7 +163,7 @@ $joinContratoAssinado = "
 // marcado quitado (botão "✅ Marcar quitado"), some do alerta sozinho.
 require_once __DIR__ . '/../includes/frota_prazo.php';
 $fPrazo = (string)($_GET['prazo'] ?? '');
-if (!in_array($fPrazo, ['risco', 'medio'], true) && !isset(FROTA_PRAZO_FAIXAS[$fPrazo])) $fPrazo = '';
+if (!in_array($fPrazo, ['risco', 'medio', 'busca'], true) && !isset(FROTA_PRAZO_FAIXAS[$fPrazo])) $fPrazo = '';
 // 19/11/2026 — faixas 6/12/18+ meses + risco alto (carro recente, 21/11/2026), ver
 // includes/frota_prazo.php (mesma fonte do aviso diário).
 $faixasPrazo = array_map(fn($f) => [$f[0], $f[1]], FROTA_PRAZO_FAIXAS);
@@ -200,13 +236,15 @@ $repetidosFrota = $db->query("
       AND LENGTH(REPLACE(REPLACE(COALESCE(veiculo_chassi,''), '-', ''), ' ', '')) >= 10
     GROUP BY 2 HAVING COUNT(*) > 1
 ")->fetchAll();
-if ($fPrazo === 'risco') {
-    $where .= " AND o.financiamento_quitado = 0 AND " . frotaPrazoSqlRisco();
+if ($fPrazo === 'busca') {
+    $where .= " AND o.busca_apreensao_em IS NOT NULL";
+} elseif ($fPrazo === 'risco') {
+    $where .= " AND o.financiamento_quitado = 0 AND o.busca_apreensao_em IS NULL AND " . frotaPrazoSqlRisco();
 } elseif ($fPrazo === 'medio') {
-    $where .= " AND o.financiamento_quitado = 0 AND " . frotaPrazoSqlRiscoMedio();
+    $where .= " AND o.financiamento_quitado = 0 AND o.busca_apreensao_em IS NULL AND " . frotaPrazoSqlRiscoMedio();
 } elseif (isset($faixasPrazo[$fPrazo])) {
     [$diasMin, $diasMax] = $faixasPrazo[$fPrazo];
-    $where .= " AND o.financiamento_quitado = 0 AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
+    $where .= " AND o.financiamento_quitado = 0 AND o.busca_apreensao_em IS NULL AND {$diasPosseExpr} BETWEEN {$diasMin} AND {$diasMax}";
 }
 if ($filtroDataAtivo) {
     $where .= " AND date({$refPosseExpr}) BETWEEN ? AND ?";
@@ -266,7 +304,7 @@ $sql = "
         LIMIT 1
     )
     {$where}
-    ORDER BY CASE WHEN o.financiamento_quitado = 0 AND " . frotaPrazoSqlRisco() . " THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN o.financiamento_quitado = 0 AND o.busca_apreensao_em IS NULL AND " . frotaPrazoSqlRisco() . " THEN 0 ELSE 1 END,
              o.data_compra DESC, o.updated_at DESC
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
@@ -299,7 +337,9 @@ $rBuckets = $db->query("
     FROM oportunidades o
     {$joinContratoAssinado}
     WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND o.financiamento_quitado = 0
+      AND o.busca_apreensao_em IS NULL
 ")->fetch();
+$resumoBusca = frotaBuscaApreensaoResumo();
 if ($rBuckets) {
     foreach ($bucketsPrazo as $k => $_) $bucketsPrazo[$k] = (int)($rBuckets['b' . $k] ?? 0);
     $totalRiscoBanco = (int)($rBuckets['brisco'] ?? 0);
@@ -350,6 +390,14 @@ function mesesComAFastcar(?string $refPosse): int {
 .frota-tag.fxmedio { background: var(--amarelo-bg); color: var(--amarelo); }
 .frota-tag.fxrisco { background: var(--vermelho-bg); color: var(--vermelho); }
 .tabela-frota tr.linha-risco-banco td { background: var(--vermelho-bg); }
+.frota-ba { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--borda); display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; align-items: baseline; font-size: .9rem; }
+.frota-ba strong { font-variant-numeric: tabular-nums; }
+details.frota-ba-form { margin-top: 6px; }
+details.frota-ba-form summary { cursor: pointer; color: var(--vermelho); font-size: 12px; font-weight: 600; list-style: none; min-height: 32px; display: inline-flex; align-items: center; }
+details.frota-ba-form summary::-webkit-details-marker { display: none; }
+details.frota-ba-form form { display: grid; gap: 6px; margin-top: 6px; max-width: 240px; }
+details.frota-ba-form input { width: 100%; }
+@media (max-width: 700px) { details.frota-ba-form summary { min-height: 44px; } }
 .tabela-frota .frota-veiculo { font-weight: 600; color: var(--texto, inherit); text-decoration: none; }
 .tabela-frota .frota-veiculo:hover { color: var(--azul); text-decoration: underline; }
 .tabela-frota .frota-placa { font-family: monospace; font-size: 13px; letter-spacing: .5px; background: var(--fundo); padding: 1px 6px; border-radius: 4px; }
@@ -437,6 +485,17 @@ function mesesComAFastcar(?string $refPosse): int {
             <span class="fx-d">Carro até <?= frotaPrazoAnoMinimoRisco() - 1 ?> com 6+ meses</span>
         </a>
     </div>
+    <div class="frota-ba">
+        <a href="?<?= $baseQsPrazo ?><?= $baseQsPrazo ? '&' : '' ?>prazo=busca"<?= $fPrazo === 'busca' ? ' style="font-weight:700"' : '' ?>>📊 Busca e apreensão já sofridas: <strong><?= (int)$resumoBusca['total']['n'] ?></strong></a>
+        <?php if ($resumoBusca['total']['n'] > 0): ?>
+            <span>Média: <strong><?= number_format($resumoBusca['total']['media_meses'], 1, ',', '') ?> meses</strong> com a Fastcar até o banco tomar</span>
+            <?php foreach (['recente' => 'carro ' . frotaPrazoAnoMinimoRisco() . ' pra cá', 'antigo' => 'carro até ' . (frotaPrazoAnoMinimoRisco() - 1)] as $kb => $rotB): if ($resumoBusca[$kb]['n'] > 0): ?>
+                <span><?= e($rotB) ?>: <strong><?= number_format($resumoBusca[$kb]['media_meses'], 1, ',', '') ?> meses</strong> (<?= (int)$resumoBusca[$kb]['n'] ?>)</span>
+            <?php endif; endforeach; ?>
+        <?php else: ?>
+            <small class="frota-sub">Quando um carro for tomado pelo banco, registre no botão "🚨 Sofreu busca e apreensão" da linha — aqui aparece a média real.</small>
+        <?php endif; ?>
+    </div>
     <?php if ($fPrazo): ?><a href="?<?= $baseQsPrazo ?>" style="display:inline-block;margin-top:.5rem">Ver todos os veículos</a><?php endif; ?>
 </div>
 
@@ -478,8 +537,9 @@ function mesesComAFastcar(?string $refPosse): int {
             <?php
             $mesesFastcar = mesesComAFastcar($v['ref_posse']);
             $diasFastcar = $v['ref_posse'] ? (int)((strtotime('now') - strtotime($v['ref_posse'])) / 86400) : 0;
-            $faixaAlerta = $v['financiamento_quitado'] ? null : frotaPrazoFaixa($diasFastcar);
-            $riscoBanco = !$v['financiamento_quitado'] && frotaPrazoEhRisco($diasFastcar, $v['veiculo_ano']);
+            $sofreuBusca = !empty($v['busca_apreensao_em']);
+            $faixaAlerta = ($v['financiamento_quitado'] || $sofreuBusca) ? null : frotaPrazoFaixa($diasFastcar);
+            $riscoBanco = !$v['financiamento_quitado'] && !$sofreuBusca && frotaPrazoEhRisco($diasFastcar, $v['veiculo_ano']);
             ?>
             <tr<?= $riscoBanco ? ' class="linha-risco-banco"' : ($v['incompleto_import_antigo'] ? ' class="linha-sem-vinculo"' : '') ?>>
                 <td>
@@ -498,7 +558,7 @@ function mesesComAFastcar(?string $refPosse): int {
                     <strong><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></strong>
                     <br><small class="frota-sub"><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?> · <?= $mesesFastcar ?> mês(es)</small>
                     <?php if ($faixaAlerta): ?><br><span class="frota-tag fx<?= $faixaAlerta ?>">⏰ <?= $faixaAlerta ?>+ meses</span><?php endif; ?>
-                    <?php if ($riscoBanco): ?><br><span class="frota-tag fxrisco">🚨 Risco de busca e apreensão</span><?php elseif (!$v['financiamento_quitado'] && frotaPrazoEhRiscoMedio($diasFastcar, $v['veiculo_ano'])): ?><br><span class="frota-tag fxmedio">⚠️ Risco médio</span><?php endif; ?>
+                    <?php if ($riscoBanco): ?><br><span class="frota-tag fxrisco">🚨 Risco de busca e apreensão</span><?php elseif (!$v['financiamento_quitado'] && !$sofreuBusca && frotaPrazoEhRiscoMedio($diasFastcar, $v['veiculo_ano'])): ?><br><span class="frota-tag fxmedio">⚠️ Risco médio</span><?php endif; ?>
                 </td>
                 <td>
                     <?php if ($v['contrato_assinado'] ?? false): ?>
@@ -524,6 +584,31 @@ function mesesComAFastcar(?string $refPosse): int {
                             <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
                             <button type="submit" class="btn-texto" style="font-size:12px;margin-top:4px">✅ Marcar quitado</button>
                         </form>
+                    <?php endif; ?>
+                    <?php if ($sofreuBusca):
+                        $mesesAteBusca = $v['ref_posse'] ? max(0, (int)round((strtotime($v['busca_apreensao_em']) - strtotime($v['ref_posse'])) / 86400 / 30.44)) : null; ?>
+                        <br><span class="frota-tag fxrisco" title="<?= e((string)$v['busca_apreensao_obs']) ?>">🚨 Busca e apreensão em <?= date('d/m/Y', strtotime($v['busca_apreensao_em'])) ?></span>
+                        <?php if ($mesesAteBusca !== null): ?><br><small class="frota-sub"><?= $mesesAteBusca ?> mês(es) com a Fastcar</small><?php endif; ?>
+                        <?php if ((string)$v['busca_apreensao_obs'] !== ''): ?><br><small class="frota-sub"><?= e($v['busca_apreensao_obs']) ?></small><?php endif; ?>
+                        <form method="post" class="inline" onsubmit="return confirmarAcao(this, 'Desfazer o registro de busca e apreensão deste veículo?');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="acao" value="desfazer_busca_apreensao">
+                            <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
+                            <br><button type="submit" class="btn-texto" style="font-size:12px">↩️ Desfazer</button>
+                        </form>
+                    <?php elseif (!$v['financiamento_quitado']): ?>
+                        <details class="frota-ba-form">
+                            <summary>🚨 Sofreu busca e apreensão</summary>
+                            <form method="post" onsubmit="return confirmarAcao(this, 'Registrar que o banco tomou este veículo?');">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="acao" value="marcar_busca_apreensao">
+                                <input type="hidden" name="oportunidade_id" value="<?= (int)$v['id'] ?>">
+                                <label style="font-size:12px">Data em que o banco tomou
+                                    <input type="date" name="data" value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" required></label>
+                                <input type="text" name="obs" maxlength="200" placeholder="Observação (opcional): banco, judicial/cartório...">
+                                <button type="submit" class="perigo" style="margin-top:0">Registrar</button>
+                            </form>
+                        </details>
                     <?php endif; ?>
                 </td>
                 <td>

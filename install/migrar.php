@@ -172,6 +172,10 @@ $migracoes = [
     // em admin/veiculos.php, um clique só, sem precisar abrir formulário).
     'oportunidades.financiamento_quitado' => "ALTER TABLE oportunidades ADD COLUMN financiamento_quitado INTEGER NOT NULL DEFAULT 0",
     'oportunidades.financiamento_quitado_em' => "ALTER TABLE oportunidades ADD COLUMN financiamento_quitado_em DATETIME",
+    // 19/11/2026 — "🚨 Sofreu busca e apreensão" na Frota (data real em que o
+    // banco tomou o carro), pra medir em quantos meses o banco age por ano de carro.
+    'oportunidades.busca_apreensao_em' => "ALTER TABLE oportunidades ADD COLUMN busca_apreensao_em DATE",
+    'oportunidades.busca_apreensao_obs' => "ALTER TABLE oportunidades ADD COLUMN busca_apreensao_obs TEXT DEFAULT ''",
 
     // 19/09/2026 — "espelhar compra" no módulo de vendas: link de
     // documentos do comprador (mesmo mecanismo de

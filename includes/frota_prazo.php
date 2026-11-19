@@ -102,6 +102,7 @@ function frotaPrazoListarVeiculosEmAberto(): array {
         WHERE o.etapa = 'fechado'
           AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
           AND o.financiamento_quitado = 0
+          AND o.busca_apreensao_em IS NULL
           AND " . FROTA_PRAZO_DIAS_EXPR . " >= 183
         ORDER BY dias DESC
     ")->fetchAll();
@@ -204,4 +205,32 @@ function frotaPrazoProcessarAvisos(): array {
     }
 
     return ['novos' => count($novos), 'risco_total' => $riscoTotal, 'enviado_whatsapp' => $enviado, 'inicial' => $inicial];
+}
+
+/**
+ * 19/11/2026 — média real de busca e apreensão da própria Fastcar: veículos
+ * marcados "🚨 Sofreu busca e apreensão" na Frota, meses com a Fastcar até a
+ * apreensão, separado por risco alto (carro recente) e médio (mais antigo).
+ */
+function frotaBuscaApreensaoResumo(): array {
+    $rows = getDB()->query("
+        SELECT o.veiculo_ano,
+               CAST((julianday(o.busca_apreensao_em) - julianday(" . FROTA_PRAZO_REF_EXPR . ")) AS INTEGER) AS dias
+        FROM oportunidades o
+        " . FROTA_PRAZO_JOIN_CONTRATO . "
+        WHERE o.etapa = 'fechado' AND o.busca_apreensao_em IS NOT NULL
+    ")->fetchAll();
+    $min = frotaPrazoAnoMinimoRisco();
+    $g = ['total' => [], 'recente' => [], 'antigo' => [], 'sem_ano' => []];
+    foreach ($rows as $r) {
+        $meses = max(0, (int)$r['dias']) / 30.44;
+        $ano = frotaPrazoAnoVeiculo($r['veiculo_ano']);
+        $g['total'][] = $meses;
+        $g[$ano <= 0 ? 'sem_ano' : ($ano >= $min ? 'recente' : 'antigo')][] = $meses;
+    }
+    $out = [];
+    foreach ($g as $k => $lista) {
+        $out[$k] = ['n' => count($lista), 'media_meses' => $lista ? round(array_sum($lista) / count($lista), 1) : null];
+    }
+    return $out;
 }

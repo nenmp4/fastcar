@@ -303,6 +303,8 @@ function auditoriaRotuloEvento(string $evento): string {
         'comissao_aprovada' => '🤝 Comissão aprovada (baixa)',
         'lancamento_cancelado' => '🚫 Lançamento financeiro cancelado',
         'veiculo_devolvido' => '🔙 Veículo devolvido (voltou pra Fastcar)',
+        'veiculo_busca_apreensao' => '🚨 Busca e apreensão registrada',
+        'veiculo_busca_apreensao_desfeita' => '↩️ Busca e apreensão desfeita',
         'despesa_operacional_lancada' => '💸 Despesa operacional lançada (comprovante)',
         'impersonacao_iniciada' => '🎭 Impersonação iniciada',
         'impersonacao_finalizada' => '🎭 Impersonação encerrada',
