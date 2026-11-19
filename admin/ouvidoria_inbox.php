@@ -150,7 +150,11 @@ if ($contatoAtivo) {
 <script src="/admin/assets/mobile.js?v=<?= @filemtime(__DIR__ . '/assets/mobile.js') ?: 1 ?>" defer></script>
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 <style>
-.wpp-wrap { display: flex; height: calc(100vh - 61px); }
+html:has(body.wpp-page) { height: 100%; overflow: hidden; }
+body.wpp-page { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body.wpp-page > * { flex-shrink: 0; }
+body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
+.wpp-sidebar, .wpp-chat, .wpp-lista, .wpp-thread { min-height: 0; }
 .wpp-sidebar { width: 320px; flex-shrink: 0; border-right: 1px solid var(--borda); background: var(--superficie); display: flex; flex-direction: column; }
 .wpp-sidebar form { padding: 12px; border-bottom: 1px solid var(--borda); }
 .wpp-sidebar form input { margin: 0; }
@@ -199,7 +203,7 @@ if ($contatoAtivo) {
 <?= wppPreviewJs() ?>
 </script>
 </head>
-<body class="<?= ($telefoneAtivo && $contatoAtivo) ? 'wpp-tem-conversa' : '' ?>">
+<body class="wpp-page<?= ($telefoneAtivo && $contatoAtivo) ? ' wpp-tem-conversa' : '' ?>">
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <?php include __DIR__ . '/_topbar.php'; ?>
 
@@ -459,7 +463,13 @@ if ($contatoAtivo) {
         });
     }
 
-    if (thread) thread.scrollTop = thread.scrollHeight;
+    if (thread) {
+        thread.scrollTop = thread.scrollHeight;
+        // Foto do comprovante carrega depois e empurra a conversa: rola de novo pro fim.
+        var rolarFim = function () { thread.scrollTop = thread.scrollHeight; };
+        window.addEventListener('load', rolarFim);
+        thread.querySelectorAll('img').forEach(function (img) { if (!img.complete) img.addEventListener('load', rolarFim); });
+    }
 
     if (telefone) {
         setInterval(function () {
