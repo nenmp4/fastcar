@@ -105,15 +105,24 @@ function ouvidoriaClassificarTextoIA(string $texto): ?string {
     return null;
 }
 
-/** Foto/PDF sem texto: comprovante de pagamento ou notificação de multa? */
-function ouvidoriaClassificarMidiaIA(string $bytes, string $mime): ?string {
+/**
+ * Foto/PDF/vídeo: a IA olha o arquivo, diz o assunto e descreve em 1 frase
+ * (vai pro histórico da conversa, igual ao inbox de compra). Sem chave Gemini
+ * → null (a mídia continua salva e visível, só sem descrição).
+ */
+function ouvidoriaAnalisarMidiaIA(string $bytes, string $mime): ?array {
     $geminiKey = getConfig('gemini_api_key') ?: '';
-    if (!$geminiKey || $bytes === '' || !preg_match('#^(image/|application/pdf)#', $mime)) return null;
-    $prompt = "Esse arquivo foi mandado por um cliente pra ouvidoria de uma empresa de veículos. "
-        . "É um comprovante de pagamento (pix, boleto, transferência)? Uma notificação de multa/infração de trânsito? Ou outra coisa? "
-        . "Responda SÓ um JSON: {\"assunto\":\"pagamento|multa|outro\"}.";
-    $r = geminiCallComMidia($prompt, $mime, base64_encode($bytes), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 60, 0.0);
-    return $r !== '' ? _ouvidoriaExtrairAssuntoJson($r) : null;
+    if (!$geminiKey || $bytes === '' || !preg_match('#^(image/|video/|application/pdf)#', $mime)) return null;
+    $prompt = "Esse arquivo foi mandado por um cliente pra ouvidoria de uma empresa que compra e revende veículos. "
+        . "Diga o assunto: comprovante de pagamento (pix, boleto, transferência) = pagamento; notificação de multa/infração de trânsito = multa; "
+        . "contrato ou distrato = contrato/distrato; qualquer outra coisa = outro. "
+        . "E descreva em 1 frase curta o que é (se for comprovante, diga valor, data e quem pagou quando estiver visível; se for multa, data e valor da infração). "
+        . "Nunca invente o que não está visível. Responda SÓ um JSON: {\"assunto\":\"pagamento|multa|contrato|distrato|outro\",\"descricao\":\"...\"}.";
+    $r = geminiCallComMidia($prompt, $mime, base64_encode($bytes), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 300, 0.0);
+    if ($r === '') return null;
+    $desc = '';
+    if (preg_match('/"descricao"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/u', $r, $mm)) $desc = trim((string)json_decode('"' . $mm[1] . '"'));
+    return ['assunto' => _ouvidoriaExtrairAssuntoJson($r), 'descricao' => $desc];
 }
 
 /** Texto fixo da resposta (nunca gerado pela IA). */
@@ -183,6 +192,9 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     $tipoRegistro = 'text';
     $bytes = null;
     $mime = '';
+    $textoFalado = '';
+    $assuntoArquivo = null;
+    $legenda = '';
     if ($texto === null) {
         $tipoBruto = tipoMidia($payload);
         if ($tipoBruto === 'desconhecido') return ['ignored' => 'not_a_message', 'telefone' => $phone] + $vazio;
@@ -197,6 +209,24 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
             if (is_array($m) && !empty($m['bytes'])) {
                 $bytes = (string)$m['bytes'];
                 $mime = (string)($m['mime'] ?? '');
+            }
+        }
+        // Ouvir/ver (20/11/2026, "ouvir audio imagen"): áudio vira transcrição;
+        // foto/PDF/vídeo ganham assunto + descrição da IA. A mídia em si fica salva.
+        if ($bytes !== null && $tipoRegistro === 'audio') {
+            $transcricao = trim(descreverMidiaComGemini($bytes, $mime ?: 'audio/ogg', 'audio'));
+            if ($transcricao !== '') {
+                $texto = '🎤 ' . $transcricao;
+                $textoFalado = $transcricao;
+            }
+        } elseif ($bytes !== null && in_array($tipoRegistro, ['image', 'document', 'video'], true)) {
+            $analise = ouvidoriaAnalisarMidiaIA($bytes, $mime);
+            if ($analise) {
+                $assuntoArquivo = $analise['assunto'];
+                if ($analise['descricao'] !== '') {
+                    $pref = ['image' => '📷 ', 'document' => '📄 ', 'video' => '🎥 '][$tipoRegistro];
+                    $texto = $pref . $analise['descricao'] . ($legenda !== '' ? "\n" . $legenda : '');
+                }
             }
         }
     }
@@ -217,18 +247,16 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
 
     // Assunto: palavra-chave → IA (texto) → IA (arquivo) → assunto já da conversa → outro.
     $temArquivo = in_array($tipoRegistro, ['image', 'document'], true);
-    $textoUtil = str_starts_with($texto, '[') ? '' : $texto;
+    // Texto que o cliente escreveu (ou falou no áudio, ou a legenda) — nunca a descrição da IA.
+    $textoUtil = $tipoRegistro === 'text' ? $texto : ($textoFalado !== '' ? $textoFalado : $legenda);
     $assunto = $textoUtil !== '' ? ouvidoriaClassificarPorPalavra($textoUtil) : null;
     if (!$assunto && $textoUtil !== '') $assunto = ouvidoriaClassificarTextoIA($textoUtil);
-    if ((!$assunto || $assunto === 'outro') && $temArquivo && $bytes !== null) {
-        $assuntoArq = ouvidoriaClassificarMidiaIA($bytes, $mime);
-        if ($assuntoArq && $assuntoArq !== 'outro') $assunto = $assuntoArq;
-    }
+    if ((!$assunto || $assunto === 'outro') && $assuntoArquivo && $assuntoArquivo !== 'outro') $assunto = $assuntoArquivo;
     if ((!$assunto || $assunto === 'outro') && $conv['assunto'] !== '' && $conv['assunto'] !== 'outro') $assunto = $conv['assunto'];
     $assunto = $assunto ?: 'outro';
     if ($assunto !== 'outro' || $conv['assunto'] === '') ouvidoriaSalvarConversa($telNorm, ['assunto' => $assunto]);
 
-    $resumoNotif = ($conv['nome'] ?: $telNorm) . ': ' . ($textoUtil !== '' ? $textoUtil : ($temArquivo ? 'mandou um arquivo' : 'mandou ' . $tipoRegistro));
+    $resumoNotif = ($conv['nome'] ?: $telNorm) . ': ' . ($textoUtil !== '' ? $textoUtil : (str_starts_with($texto, '[') ? 'mandou ' . $tipoRegistro : $texto));
     ouvidoriaNotificarSuperAdmins($telNorm, $assunto, $resumoNotif);
 
     if (!empty($conv['ia_pausada'])) {
