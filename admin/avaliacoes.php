@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$fipeNovaVist || $fipeNovaVist <= 0) throw new RuntimeException('Informe o valor da Tabela FIPE do veículo (obrigatório).');
                 $novo = criarVeiculoManualFrota($nomeNovo, $telNovo, (string)($_POST['veiculo_marca'] ?? ''),
                     (string)($_POST['veiculo_modelo'] ?? ''), (string)($_POST['veiculo_ano'] ?? ''), $placaNova,
-                    '', '', null, $meuId, null, $fipeNovaVist);
+                    '', '', null, $meuId, null, $fipeNovaVist, true);
                 $opNova = (int)$novo['oportunidade_id'];
             }
             if ($opNova <= 0 || ($tipoNova === 'venda' && !$vendaNova)) {

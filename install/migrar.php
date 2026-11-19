@@ -2538,6 +2538,26 @@ try {
     echo "❌ ouvidoria_tickets: {$e->getMessage()}\n";
 }
 
+// 20/11/2026, "ele da categoria venda pasta venda não pasta compra" — veículo
+// cadastrado à mão (Estoque/Vendas/Vistoria) vai pra Frota mas não é compra de
+// consultor. Marca os já cadastrados: histórico "cadastrado manualmente direto
+// na frota", fora das importações (CRM antigo / contrato de compra da ZapSign).
+try {
+    if (!colunaExiste($db, 'oportunidades', 'sem_compra')) {
+        $db->exec("ALTER TABLE oportunidades ADD COLUMN sem_compra INTEGER DEFAULT 0");
+        $n = $db->exec("UPDATE oportunidades SET sem_compra = 1
+            WHERE EXISTS (SELECT 1 FROM oportunidade_historico h WHERE h.oportunidade_id = oportunidades.id AND h.observacao LIKE 'Veículo cadastrado manualmente direto na frota%')
+              AND NOT EXISTS (SELECT 1 FROM oportunidade_historico h WHERE h.oportunidade_id = oportunidades.id
+                              AND (h.observacao LIKE 'Importado do CRM antigo%' OR h.observacao LIKE 'Cadastrado manualmente — cliente fechou%'))
+              AND NOT EXISTS (SELECT 1 FROM contratos c WHERE c.oportunidade_id = oportunidades.id AND c.tipo = 'compra')");
+        echo "✅ oportunidades.sem_compra: criada ({$n} veículo(s) de cadastro manual marcados)\n";
+    } else {
+        echo "⏭️  oportunidades.sem_compra: já existia\n";
+    }
+} catch (Throwable $e) {
+    echo "❌ oportunidades.sem_compra: {$e->getMessage()}\n";
+}
+
 // 09/11/2026 — rede de segurança: as reconstruções antigas de tabela (CHECK de
 // usuarios.perfil etc.) copiam uma lista FIXA de colunas e, num banco bem
 // antigo (backup restaurado), apagavam colunas que o loop $migracoes do topo

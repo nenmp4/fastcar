@@ -569,7 +569,8 @@ function criarVeiculoManualFrota(
     ?float $valorPago,
     int $criadoPor,
     ?int $responsavelId = null,
-    ?float $valorFipe = null
+    ?float $valorFipe = null,
+    bool $semCompra = false
 ): array {
     $db = getDB();
     $telNorm = normalizarTelefone($vendedorTelefone);
@@ -607,9 +608,9 @@ function criarVeiculoManualFrota(
 
     $db->prepare('
         INSERT INTO oportunidades
-            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, valor_fipe_referencia, data_compra, fechado_por, responsavel_id, origem)
-        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?, \'manual\')
-    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, ($valorFipe !== null && $valorFipe > 0) ? $valorFipe : null, $responsavelId, $responsavelId]);
+            (cliente_id, etapa, veiculo_marca, veiculo_modelo, veiculo_ano, veiculo_placa, veiculo_chassi, veiculo_renavam, valor_final, valor_fipe_referencia, data_compra, fechado_por, responsavel_id, origem, sem_compra)
+        VALUES (?, \'fechado\', ?, ?, ?, ?, ?, ?, ?, ?, date(\'now\',\'localtime\'), ?, ?, \'manual\', ?)
+    ')->execute([$clienteId, clean($marca), clean($modelo), clean($ano), clean($placa), clean($chassi), clean($renavam), $valorPago, ($valorFipe !== null && $valorFipe > 0) ? $valorFipe : null, $responsavelId, $responsavelId, $semCompra ? 1 : 0]);
     $opId = (int)$db->lastInsertId();
 
     $db->prepare("

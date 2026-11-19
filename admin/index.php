@@ -432,6 +432,8 @@ switch ($filtroEspecial) {
 // card "Fechadas este mês" (?filtro=fechado_mes) — os dois terminam no
 // mesmo conjunto de etapa ('fechado').
 $etapaBuscandoFechadas = $etapasEscopo === ['fechado'];
+// 20/11/2026 — veículo cadastrado à mão (sem_compra) é Frota/pasta de venda, nunca pasta de compra.
+if ($etapaBuscandoFechadas) $extraWhere .= " AND COALESCE(o.sem_compra, 0) = 0";
 // "Escopo encerradas" filtra por responsavel_id igual às etapas ativas
 // (nunca teve um "fechado_por" próprio — só a transição pra 'fechado' grava
 // isso) — quem estava com a oportunidade quando ela foi perdida/desqualificada.
@@ -703,7 +705,7 @@ $totalAtivas = array_sum($contagemPorEtapa);
 // busca do bloco "Fechadas" acima, independente do filtro atual.
 $sqlFechadas = "SELECT COUNT(*) FROM oportunidades o
                 JOIN clientes c ON c.id = o.cliente_id
-                WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
+                WHERE o.etapa = 'fechado' AND COALESCE(o.sem_compra, 0) = 0 AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'";
 $paramsFechadas = [];
 if ($souDono) {
     $sqlFechadas .= " AND (o.fechado_por = ? OR o.responsavel_id = ?)";

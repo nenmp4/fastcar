@@ -125,7 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
                     valorMonetario((string)($_POST['veiculo_valor_final'] ?? '')),
                     $meuId,
                     null,
-                    $fipeNovoVp
+                    $fipeNovoVp,
+                    true // cadastro manual: Frota, não compra de consultor
                 );
                 $oportunidadeIdEscolhida = (int)$novoVeiculo['oportunidade_id'];
             }

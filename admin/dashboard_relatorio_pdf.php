@@ -81,6 +81,8 @@ switch ($filtroEspecial) {
         };
 }
 $etapaBuscandoFechadas = $etapasEscopo === ['fechado'];
+// 20/11/2026 — veículo cadastrado à mão (sem_compra) é Frota/pasta de venda, nunca pasta de compra.
+if ($etapaBuscandoFechadas) $extraWhere .= " AND COALESCE(o.sem_compra, 0) = 0";
 $placeholders = implode(',', array_fill(0, count($etapasEscopo), '?'));
 
 $where = "WHERE o.etapa IN ({$placeholders}){$extraWhere}";

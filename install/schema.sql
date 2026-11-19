@@ -284,6 +284,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     -- informação, não duplica edição) — ver atualizarObservacaoManual()
     -- em includes/oportunidades.php.
     observacao_manual TEXT DEFAULT '',
+    sem_compra INTEGER DEFAULT 0, -- 1 = veículo cadastrado à mão (Estoque/Vendas/Vistoria) sem compra no funil — vai pra Frota, nunca conta como compra de consultor nem pasta de compra (20/11/2026)
     origem TEXT NOT NULL DEFAULT 'whatsapp', -- 'whatsapp' (lead que chegou sozinho) | 'manual' (criada à mão: Nova oportunidade, Frota, importação) — 30/10/2026
 
     created_at DATETIME DEFAULT (datetime('now','localtime')),

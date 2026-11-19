@@ -67,7 +67,7 @@ function dashboardConsultor(int $usuarioId): array {
     $stmt = $db->prepare("
         SELECT COUNT(*), COALESCE(SUM(valor_final), 0)
         FROM oportunidades
-        WHERE fechado_por = ? AND etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND data_compra >= date('now','localtime','start of month')
+        WHERE fechado_por = ? AND etapa = 'fechado' AND COALESCE(sem_compra, 0) = 0 AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND data_compra >= date('now','localtime','start of month')
     ");
     $stmt->execute([$usuarioId]);
     [$fechadasMes, $valorFechadoMes] = $stmt->fetch(PDO::FETCH_NUM);
@@ -76,7 +76,7 @@ function dashboardConsultor(int $usuarioId): array {
     // ou perdeu, contando tudo desde sempre), quantas viraram negócio de verdade.
     $stmt = $db->prepare("
         SELECT
-            SUM(CASE WHEN etapa = 'fechado' THEN 1 ELSE 0 END) AS fechadas,
+            SUM(CASE WHEN etapa = 'fechado' AND COALESCE(sem_compra, 0) = 0 THEN 1 ELSE 0 END) AS fechadas,
             SUM(CASE WHEN etapa = 'perdido' THEN 1 ELSE 0 END) AS perdidas
         FROM oportunidades WHERE fechado_por = ? OR (responsavel_id = ? AND etapa = 'perdido')
     ");
@@ -273,12 +273,12 @@ function dashboardSuperAdmin(): array {
 
     $r = $db->query("
         SELECT COUNT(*) AS qtd, COALESCE(SUM(valor_final), 0) AS total
-        FROM oportunidades WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND data_compra >= date('now','localtime','start of month')
+        FROM oportunidades WHERE etapa = 'fechado' AND COALESCE(sem_compra, 0) = 0 AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND data_compra >= date('now','localtime','start of month')
     ")->fetch();
 
     $rConv = $db->query("
         SELECT
-            SUM(CASE WHEN etapa = 'fechado' THEN 1 ELSE 0 END) AS fechadas,
+            SUM(CASE WHEN etapa = 'fechado' AND COALESCE(sem_compra, 0) = 0 THEN 1 ELSE 0 END) AS fechadas,
             SUM(CASE WHEN etapa = 'perdido' THEN 1 ELSE 0 END) AS perdidas
         FROM oportunidades
     ")->fetch();
@@ -456,7 +456,7 @@ function dashboardFechadasPorConsultorMes(?string $mes = null): array {
         SELECT u.id, u.nome, COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total
         FROM oportunidades o
         JOIN usuarios u ON u.id = COALESCE(o.fechado_por, o.responsavel_id) AND u.perfil = 'consultor'
-        WHERE o.etapa = 'fechado'
+        WHERE o.etapa = 'fechado' AND COALESCE(o.sem_compra, 0) = 0
           AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
           AND o.data_compra BETWEEN ? AND ?
         GROUP BY u.id, u.nome
@@ -486,7 +486,7 @@ function produtividadeFunilPorConsultor(int $dias): array {
     $st->execute([$desde]);
     foreach ($st->fetchAll() as $r) $add((int)$r['u'], 'leads', (int)$r['n']);
     $st = $db->prepare("SELECT COALESCE(fechado_por, responsavel_id) AS u, COUNT(*) AS n, COALESCE(SUM(valor_final),0) AS v
-        FROM oportunidades WHERE etapa = 'fechado' AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
+        FROM oportunidades WHERE etapa = 'fechado' AND COALESCE(sem_compra, 0) = 0 AND COALESCE(oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%'
           AND data_compra >= ? AND COALESCE(fechado_por, responsavel_id) IS NOT NULL GROUP BY u");
     $st->execute([$desde]);
     foreach ($st->fetchAll() as $r) { $add((int)$r['u'], 'fechadas', (int)$r['n']); $add((int)$r['u'], 'valor', (float)$r['v']); }

@@ -240,7 +240,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'cadastr
             valorMonetario((string)($_POST['veiculo_valor_final'] ?? '')),
             (int)$_SESSION['admin_id'],
             null,
-            $fipeNovo
+            $fipeNovo,
+            true // cadastro manual: Frota, não compra de consultor
         );
         $novoOpId = (int)$novo['oportunidade_id'];
         $tipoV = in_array($_POST['tipo_veiculo'] ?? '', ['carro', 'moto', 'caminhao', 'outro'], true) ? $_POST['tipo_veiculo'] : null;
