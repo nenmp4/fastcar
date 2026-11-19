@@ -172,6 +172,13 @@ if ($evoInstFinanceiro && $evoKeyFinanceiro) {
     check('WhatsApp (Evolution)', 'Instância financeiro', $zapiMetaDesativado ? 'warn' : 'info', 'Não configurada', $zapiMetaDesativado ? 'Financeiro sem canal funcional — Z-API/Meta desativados, Evolution financeiro não configurada' : 'Configurações → Evolution API — Financeiro');
 }
 
+[, $evoInstOuvidoria, $evoKeyOuvidoria] = evolutionCredenciaisOuvidoria();
+if ($evoInstOuvidoria && $evoKeyOuvidoria) {
+    check('WhatsApp (Evolution)', 'Instância ouvidoria', 'ok', 'Configurada', "Instância: {$evoInstOuvidoria}");
+} else {
+    check('WhatsApp (Evolution)', 'Instância ouvidoria', 'info', 'Não configurada', 'Configurações → Evolution API — Ouvidoria');
+}
+
 // ── 4. IA (Gemini + fallback OpenAI) ─────────────────────────────────────
 $geminiKey = getConfig('gemini_api_key') ?: '';
 $openaiKey = getConfig('openai_api_key') ?: '';
@@ -435,6 +442,10 @@ if ($evoBase && $evoInstFinanceiro && $evoKeyFinanceiro) {
     $addReq('evolution_financeiro', $evoBase . '/instance/connectionState/' . rawurlencode($evoInstFinanceiro),
         [CURLOPT_HTTPHEADER => ['apikey: ' . $evoKeyFinanceiro]] + _evolutionCurlSslOpts());
 }
+if ($evoBase && $evoInstOuvidoria && $evoKeyOuvidoria) {
+    $addReq('evolution_ouvidoria', $evoBase . '/instance/connectionState/' . rawurlencode($evoInstOuvidoria),
+        [CURLOPT_HTTPHEADER => ['apikey: ' . $evoKeyOuvidoria]] + _evolutionCurlSslOpts());
+}
 if ($geminiKey) {
     $addReq('gemini', geminiBaseUrl() . '/models?key=' . $geminiKey);
 }
@@ -460,7 +471,7 @@ if (isset($resultados['zapi'])) {
     elseif ($r['code'] === 200) check('WhatsApp (Z-API)', 'Status da instância', 'error', 'Desconectado', 'Reconecte no painel Z-API (QR Code)');
     else check('WhatsApp (Z-API)', 'Status da instância', 'warn', "HTTP {$r['code']}", '');
 }
-foreach (['evolution_principal' => 'principal', 'evolution_vendas' => 'vendas', 'evolution_financeiro' => 'financeiro'] as $evoKey => $evoLabel) {
+foreach (['evolution_principal' => 'principal', 'evolution_vendas' => 'vendas', 'evolution_financeiro' => 'financeiro', 'evolution_ouvidoria' => 'ouvidoria'] as $evoKey => $evoLabel) {
     if (!isset($resultados[$evoKey])) continue;
     $r = $resultados[$evoKey];
     $d = json_decode($r['resp'] ?: '{}', true);

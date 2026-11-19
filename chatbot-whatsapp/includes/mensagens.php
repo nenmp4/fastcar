@@ -546,7 +546,7 @@ function salvarMidiaWhatsappRecebida(int $mensagemId, string $bytes, string $mim
  */
 function whatsappCanalRegistro(?string $novo = null): string {
     static $canal = 'compra';
-    if ($novo !== null && in_array($novo, ['compra', 'vendas', 'financeiro'], true)) $canal = $novo;
+    if ($novo !== null && in_array($novo, ['compra', 'vendas', 'financeiro', 'ouvidoria'], true)) $canal = $novo;
     return $canal;
 }
 

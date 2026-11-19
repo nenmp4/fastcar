@@ -167,6 +167,19 @@ function evolutionConfiguredFinanceiro(): bool {
     return $base !== '' && $instance !== '' && $key !== '';
 }
 
+/** 19/11/2026 — instância DEDICADA da ouvidoria (só responde quem escreve). */
+function evolutionCredenciaisOuvidoria(): array {
+    return [
+        evolutionBaseUrl(),
+        getConfig('evolution_ouvidoria_instance_name') ?: '',
+        getConfig('evolution_ouvidoria_api_key') ?: '',
+    ];
+}
+function evolutionConfiguredOuvidoria(): bool {
+    [$base, $instance, $key] = evolutionCredenciaisOuvidoria();
+    return $base !== '' && $instance !== '' && $key !== '';
+}
+
 /**
  * Identifica de qual instância Evolution veio um webhook, pelo nome da
  * instância (campo `instance` no envelope do payload) — mesmo papel de
@@ -199,6 +212,10 @@ function evolutionIdentificarCanal(string $instanceName): array {
     [, $instFinanceiro] = evolutionCredenciaisFinanceiro();
     if ($instFinanceiro !== '' && $instanceName === $instFinanceiro) {
         return ['tipo' => 'financeiro', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
+    }
+    [, $instOuvidoria] = evolutionCredenciaisOuvidoria();
+    if ($instOuvidoria !== '' && $instanceName === $instOuvidoria) {
+        return ['tipo' => 'ouvidoria', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
     }
     return ['tipo' => 'desconhecida', 'usuario_id' => null, 'client_token' => null, 'canal' => 'evolution'];
 }
@@ -948,6 +965,7 @@ function evolutionStatusCache(bool $forcar = false, string $canal = 'principal')
     $credenciais = match ($canal) {
         'vendas' => evolutionCredenciaisVendas(),
         'financeiro' => evolutionCredenciaisFinanceiro(),
+        'ouvidoria' => evolutionCredenciaisOuvidoria(),
         default => evolutionCredenciais(),
     };
     [$base, $instance, $apiKey] = $credenciais;
@@ -958,6 +976,7 @@ function evolutionStatusCache(bool $forcar = false, string $canal = 'principal')
     $chaveCache = match ($canal) {
         'vendas' => 'evolution_vendas_status_cache',
         'financeiro' => 'evolution_financeiro_status_cache',
+        'ouvidoria' => 'evolution_ouvidoria_status_cache',
         default => 'evolution_status_cache',
     };
     $cacheRaw = getConfig($chaveCache);

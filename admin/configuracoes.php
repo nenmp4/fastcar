@@ -90,6 +90,10 @@ $camposEvolutionFinanceiro = [
     'evolution_financeiro_instance_name' => 'Nome da instância (financeiro)',
     'evolution_financeiro_api_key'       => 'API Key (financeiro — da instância, ou a global)',
 ];
+$camposEvolutionOuvidoria = [
+    'evolution_ouvidoria_instance_name' => 'Nome da instância (ouvidoria)',
+    'evolution_ouvidoria_api_key'       => 'API Key (ouvidoria — da instância, ou a global)',
+];
 
 // 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só
 // permite mais um numero no aplicativo aprovado" → confirmado: só VENDAS
@@ -374,6 +378,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $confirmado = evolutionTestarConexao(evolutionCredenciaisFinanceiro());
                 $sucesso = "Evolution respondeu (financeiro): {$confirmado} — conexão funcionando.";
+            } catch (Throwable $e) {
+                $erro = 'Falha ao testar: ' . $e->getMessage();
+            }
+        } elseif ($acao === 'salvar_evolution_ouvidoria') {
+            foreach (array_keys($camposEvolutionOuvidoria) as $chave) {
+                setConfig($chave, trim((string)($_POST[$chave] ?? '')));
+            }
+            $sucesso = 'Configurações da Evolution API (ouvidoria) salvas.';
+        } elseif ($acao === 'testar_evolution_ouvidoria') {
+            try {
+                $confirmado = evolutionTestarConexao(evolutionCredenciaisOuvidoria());
+                $sucesso = "Evolution respondeu (ouvidoria): {$confirmado} — conexão funcionando.";
             } catch (Throwable $e) {
                 $erro = 'Falha ao testar: ' . $e->getMessage();
             }
@@ -807,6 +823,11 @@ foreach (array_keys($camposEvolutionFinanceiro) as $chave) {
     $valoresEvolutionFinanceiro[$chave] = getConfig($chave) ?? '';
 }
 $configuradoEvolutionFinanceiro = $valoresEvolution['evolution_base_url'] && $valoresEvolutionFinanceiro['evolution_financeiro_instance_name'] && $valoresEvolutionFinanceiro['evolution_financeiro_api_key'];
+$valoresEvolutionOuvidoria = [];
+foreach (array_keys($camposEvolutionOuvidoria) as $chave) {
+    $valoresEvolutionOuvidoria[$chave] = getConfig($chave) ?? '';
+}
+$configuradoEvolutionOuvidoria = $valoresEvolution['evolution_base_url'] && $valoresEvolutionOuvidoria['evolution_ouvidoria_instance_name'] && $valoresEvolutionOuvidoria['evolution_ouvidoria_api_key'];
 $zapiMetaDesativadoAtual = whatsappZapiMetaDesativado();
 // 28/10/2026 — "pode ocultar todos que estão desativados" → "pode ocultar
 // mesmo": Z-API, Meta e ZapCar desativados não aparecem. Pra religar/conferir,
@@ -1304,6 +1325,39 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
             <p><small>Preencha e salve o nome da instância/API key acima (e a URL base no card
                principal) antes de testar.</small></p>
         <?php endif; ?>
+    </form>
+</div>
+
+<div class="card">
+    <h2>🟣 Evolution API (self-hosted) — Ouvidoria</h2>
+    <p><small>Número dedicado da ouvidoria — mesma URL base da instância principal, nome de instância + API key
+       PRÓPRIOS. Só responde quem escreve (nunca inicia conversa). A IA identifica o assunto (pagamento, multa,
+       contrato, distrato) e responde com o texto padrão; atendimento seg–sex 10h–19h. As mensagens aparecem só em
+       <a href="/admin/ouvidoria_inbox.php">Ouvidoria</a> (super admin).</small></p>
+    <p>
+        Conexão da instância (ouvidoria):
+<?= badgeConexaoEvolution($configuradoEvolutionOuvidoria, 'ouvidoria') ?>
+        <?php if (!$valoresEvolution['evolution_base_url']): ?>
+            <br><small>Preencha e salve a "URL base" no card da instância principal primeiro.</small>
+        <?php endif; ?>
+    </p>
+    <form method="post" autocomplete="off">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_evolution_ouvidoria">
+        <?php foreach ($camposEvolutionOuvidoria as $chave => $label): ?>
+            <label for="<?= e($chave) ?>"><?= e($label) ?></label>
+            <input type="<?= str_ends_with($chave, '_api_key') ? 'password' : 'text' ?>" id="<?= e($chave) ?>" name="<?= e($chave) ?>"
+                   value="<?= e($valoresEvolutionOuvidoria[$chave]) ?>" autocomplete="off" placeholder="<?= $valoresEvolutionOuvidoria[$chave] ? '••••••••' : 'não configurado' ?>">
+        <?php endforeach; ?>
+        <button type="submit">Salvar configurações</button>
+    </form>
+    <hr>
+    <p><small>Webhook — mesma URL dos cards acima (evento MESSAGES_UPSERT).</small></p>
+    <hr>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="testar_evolution_ouvidoria">
+        <button type="submit" <?= $configuradoEvolutionOuvidoria ? '' : 'disabled' ?>>Testar conexão</button>
     </form>
 </div>
 

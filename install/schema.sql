@@ -1560,3 +1560,14 @@ CREATE TABLE IF NOT EXISTS aviso_lead_quente_envios (
 CREATE INDEX IF NOT EXISTS idx_aviso_quente_ref ON aviso_lead_quente_envios(ref_tipo, ref_id);
 CREATE INDEX IF NOT EXISTS idx_aviso_quente_enviado ON aviso_lead_quente_envios(enviado_em);
 CREATE INDEX IF NOT EXISTS idx_aviso_quente_wa ON aviso_lead_quente_envios(wa_message_id);
+
+-- 19/11/2026 — canal da Ouvidoria (só super admin): assunto que a IA identificou por conversa.
+CREATE TABLE IF NOT EXISTS ouvidoria_conversas (
+    telefone TEXT PRIMARY KEY,
+    nome TEXT NOT NULL DEFAULT '',
+    assunto TEXT NOT NULL DEFAULT '',
+    ia_pausada INTEGER NOT NULL DEFAULT 0,
+    ultima_auto_assunto TEXT NOT NULL DEFAULT '',
+    ultima_auto_em DATETIME,
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+);

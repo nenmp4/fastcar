@@ -2482,6 +2482,24 @@ try {
     echo "❌ aviso_lead_quente_envios: {$e->getMessage()}\n";
 }
 
+// 19/11/2026 — canal da Ouvidoria (assunto por conversa + IA pausada).
+try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS ouvidoria_conversas (
+            telefone TEXT PRIMARY KEY,
+            nome TEXT NOT NULL DEFAULT '',
+            assunto TEXT NOT NULL DEFAULT '',
+            ia_pausada INTEGER NOT NULL DEFAULT 0,
+            ultima_auto_assunto TEXT NOT NULL DEFAULT '',
+            ultima_auto_em DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    ");
+    echo "✅ ouvidoria_conversas: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ ouvidoria_conversas: {$e->getMessage()}\n";
+}
+
 // 09/11/2026 — rede de segurança: as reconstruções antigas de tabela (CHECK de
 // usuarios.perfil etc.) copiam uma lista FIXA de colunas e, num banco bem
 // antigo (backup restaurado), apagavam colunas que o loop $migracoes do topo

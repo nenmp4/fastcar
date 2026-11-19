@@ -45,6 +45,7 @@ require_once ROOT . '/includes/zapi_instancias.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens_vendas.php';
 require_once ROOT . '/chatbot-whatsapp/includes/mensagens_financeiro.php';
+require_once ROOT . '/chatbot-whatsapp/includes/mensagens_ouvidoria.php';
 
 header('Content-Type: application/json');
 
@@ -119,6 +120,7 @@ try {
     $resultado = match ($instancia['tipo']) {
         'vendas' => processarMensagemVendasZapi($payloadAdaptado, $instancia),
         'financeiro' => processarMensagemFinanceiroZapi($payloadAdaptado, $instancia),
+        'ouvidoria' => processarMensagemOuvidoria($payloadAdaptado, $instancia),
         default => processarMensagemZapi($payloadAdaptado, $instancia),
     };
 } catch (Throwable $e) {

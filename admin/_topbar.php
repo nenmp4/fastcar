@@ -86,6 +86,7 @@ $tbGrupos = [
         ['🔥 Avisos de lead quente', '/admin/avisos_lead_quente.php', $tbSuper],
     ],
     'Admin' => [
+        ['📣 Ouvidoria', '/admin/ouvidoria_inbox.php', $tbSuper],
         ['👤 Usuários', '/admin/usuarios.php', $tbSuper],
         ['🕵️ Auditoria', '/admin/auditoria.php', $tbSuper],
         ['🛡️ Conformidade WhatsApp', '/admin/whatsapp_conformidade.php', $tbVeTudo],
@@ -125,6 +126,7 @@ $tbMapa = [
     'financeiro-relatorios.php' => ['Relatórios financeiros', 'financeiro.php'],
     'financeiro-empresa.php' => ['Dados da empresa', 'financeiro-relatorios.php'],
     'financeiro_inbox.php' => ['WhatsApp cobrança', 'financeiro.php'],
+    'ouvidoria_inbox.php' => ['Ouvidoria', null],
     'relatorio_mes.php' => ['Relatório do mês', 'financeiro.php'],
     'produtividade.php' => ['Produtividade', null],
     'origem_leads.php' => ['Origem dos leads', null],
