@@ -25,6 +25,7 @@ require_once dirname(__DIR__, 2) . '/includes/whatsapp_evolution.php';
 require_once dirname(__DIR__, 2) . '/includes/gemini.php';
 require_once dirname(__DIR__, 2) . '/includes/openai.php';
 require_once dirname(__DIR__, 2) . '/includes/notificacoes.php';
+require_once dirname(__DIR__, 2) . '/includes/auditoria.php';
 require_once __DIR__ . '/mensagens.php';
 
 /** Assuntos que já entram como URGENTE (🚨 no ticket e aviso automático pro Jean). */
@@ -292,6 +293,8 @@ function ouvidoriaTicketParaMensagem(string $telefone, string $assunto, string $
         if ($t['assunto'] === 'outro') {
             $db->prepare("UPDATE ouvidoria_tickets SET assunto = ?, updated_at = datetime('now','localtime') WHERE id = ?")
                ->execute([$assunto, $t['id']]);
+            auditoriaRegistrar('ouvidoria_ticket_reclassificado', null, 'Sistema', 'ouvidoria_ticket', (int)$t['id'],
+                "Ticket {$t['protocolo']} ({$telefone}): assunto 'outro' → " . (OUVIDORIA_ASSUNTOS[$assunto] ?? $assunto) . '.');
             $t['assunto'] = $assunto;
             return [$t, false];
         }
@@ -303,6 +306,9 @@ function ouvidoriaTicketParaMensagem(string $telefone, string $assunto, string $
     $id = (int)$db->lastInsertId();
     $protocolo = 'OUV-' . date('Y') . '-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
     $db->prepare("UPDATE ouvidoria_tickets SET protocolo = ? WHERE id = ?")->execute([$protocolo, $id]);
+    auditoriaRegistrar('ouvidoria_ticket_aberto', null, 'Sistema', 'ouvidoria_ticket', $id,
+        "Protocolo {$protocolo} aberto — " . (OUVIDORIA_ASSUNTOS[$assunto] ?? $assunto) . " — {$telefone}" . ($nome !== '' ? " ({$nome})" : '')
+        . ($resumo !== '' ? ': ' . mb_substr($resumo, 0, 200) : ''));
     return [ouvidoriaBuscarTicket($id), true];
 }
 
@@ -554,10 +560,18 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     }
     if ($urgente && $ticket && empty($ticket['urgente'])) {
         try { getDB()->prepare("UPDATE ouvidoria_tickets SET urgente = 1 WHERE id = ?")->execute([(int)$ticket['id']]); } catch (Throwable $e) {}
+        auditoriaRegistrar('ouvidoria_ticket_urgente', null, 'Sistema', 'ouvidoria_ticket', (int)$ticket['id'],
+            "Ticket {$ticket['protocolo']} marcado URGENTE — " . ($assunto === 'quitacao' ? 'quitação com prazo do contrato vencido.' : (OUVIDORIA_ASSUNTOS[$assunto] ?? $assunto) . '.'));
     }
     // Assunto urgente (veículo apreendido, ou quitação com prazo do contrato vencido): o Jean recebe o resumo na hora, 1x por ticket.
     if ($urgente && $ticket && empty($ticket['notificado_em']) && function_exists('ouvidoriaNotificarJean')) {
-        try { ouvidoriaNotificarJean((int)$ticket['id'], $assunto === 'quitacao' ? 'Automático: cliente cobrando quitação e o prazo do contrato JÁ VENCEU.' : 'Automático: assunto urgente (veículo apreendido).', 0); } catch (Throwable $e) {}
+        try {
+            $rj = ouvidoriaNotificarJean((int)$ticket['id'], $assunto === 'quitacao' ? 'Automático: cliente cobrando quitação e o prazo do contrato JÁ VENCEU.' : 'Automático: assunto urgente (veículo apreendido).', 0);
+            if (!empty($rj['ok'])) {
+                auditoriaRegistrar('ouvidoria_ticket_jean', null, 'Sistema', 'ouvidoria_ticket', (int)$ticket['id'],
+                    "Resumo do ticket {$ticket['protocolo']} enviado automaticamente ao Jean (" . implode(', ', $rj['canais'] ?? []) . ').');
+            }
+        } catch (Throwable $e) {}
     }
 
     if (!empty($conv['ia_pausada'])) {

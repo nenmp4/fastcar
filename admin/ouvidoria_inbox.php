@@ -83,17 +83,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $telefoneAtivo = $telPost;
         } elseif ($acao === 'desvincular_negocio' && $telPost) {
             ouvidoriaSalvarConversa($telPost, ['venda_id' => null, 'oportunidade_id' => null]);
+            auditoriaRegistrar('ouvidoria_desvinculada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'ouvidoria', null, "Vínculo do telefone {$telPost} com venda/compra removido.");
             $sucesso = 'Vínculo removido.';
             $telefoneAtivo = $telPost;
         } elseif ($acao === 'ia_ouvidoria' && $telPost) {
             $pausar = ($_POST['pausar'] ?? '') === '1';
             ouvidoriaSalvarConversa($telPost, ['ia_pausada' => $pausar ? 1 : 0]);
+            auditoriaRegistrar($pausar ? 'ouvidoria_ia_pausada' : 'ouvidoria_ia_reativada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'ouvidoria', null, "Conversa {$telPost}.");
             $sucesso = $pausar ? 'IA pausada nesta conversa — só a equipe responde.' : 'IA reativada nesta conversa.';
             $telefoneAtivo = $telPost;
         } elseif ($acao === 'assunto_ouvidoria' && $telPost) {
             $novo = (string)($_POST['assunto'] ?? '');
             if (isset(OUVIDORIA_ASSUNTOS[$novo])) {
+                $antigo = (string)(ouvidoriaConversa($telPost)['assunto'] ?? '');
                 ouvidoriaSalvarConversa($telPost, ['assunto' => $novo]);
+                auditoriaRegistrar('ouvidoria_assunto_alterado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'ouvidoria', null,
+                    "Conversa {$telPost}: " . (OUVIDORIA_ASSUNTOS[$antigo] ?? ($antigo ?: '—')) . ' → ' . OUVIDORIA_ASSUNTOS[$novo] . '.');
                 $sucesso = 'Assunto alterado para ' . OUVIDORIA_ASSUNTOS[$novo] . '.';
             }
             $telefoneAtivo = $telPost;
@@ -124,7 +129,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($acao === 'ticket_placa') {
             $r = ouvidoriaTicketSalvarPlaca((int)($_POST['ticket_id'] ?? 0), (string)($_POST['placa'] ?? ''), (string)($_POST['data_ref'] ?? ''));
-            if ($r['ok']) $sucesso = 'Placa/data do ticket ' . $r['ticket']['protocolo'] . ' salvas.'; else $erro = $r['erro'];
+            if ($r['ok']) {
+                $sucesso = 'Placa/data do ticket ' . $r['ticket']['protocolo'] . ' salvas.';
+                auditoriaRegistrar('ouvidoria_ticket_placa', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'ouvidoria_ticket', (int)$r['ticket']['id'],
+                    "Ticket {$r['ticket']['protocolo']}: placa " . ($r['ticket']['placa'] ?: '—') . ', data ' . ($r['ticket']['data_ref'] ? date('d/m/Y', strtotime($r['ticket']['data_ref'])) : '—') . '.');
+            } else {
+                $erro = $r['erro'];
+            }
             $telefoneAtivo = $telPost ?: $telefoneAtivo;
             if (($_POST['voltar'] ?? '') === 'tickets') {
                 header('Location: /admin/ouvidoria_tickets.php?' . ($r['ok'] ? 'ok=' . rawurlencode($sucesso) : 'erro=' . rawurlencode($erro)));
@@ -161,6 +172,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($telefoneAtivo) {
     marcarConversaLida($telefoneAtivo, 'ouvidoria');
+    // Quem abriu a conversa (1 linha por pessoa/conversa a cada 30 min).
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        _auditoriaRegistrarDocumentoDedup('ouvidoria_conversa_aberta', 'ouvidoria', (int)$telefoneAtivo, "Conversa {$telefoneAtivo} aberta na caixa da ouvidoria.");
+    }
 }
 
 $busca = trim((string)($_GET['busca'] ?? ''));

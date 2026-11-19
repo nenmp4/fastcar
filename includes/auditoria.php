@@ -208,7 +208,10 @@ function auditoriaListar(int $limite = 200, string $evento = '', string $q = '')
     $db = getDB();
     $where = [];
     $params = [];
-    if ($evento !== '') {
+    if ($evento === '__ouvidoria') {
+        // Atalho: todos os eventos da ouvidoria (protocolos, respostas, status...).
+        $where[] = "evento LIKE 'ouvidoria\\_%' ESCAPE '\\'";
+    } elseif ($evento !== '') {
         $where[] = 'evento = ?';
         $params[] = $evento;
     }
@@ -269,6 +272,16 @@ function auditoriaRotuloEvento(string $evento): string {
         'ouvidoria_ticket_status' => '🎫 Ticket da ouvidoria: status alterado',
         'ouvidoria_historico_importado' => '📥 Histórico da ouvidoria importado',
         'ouvidoria_ticket_jean' => '🔔 Ticket da ouvidoria enviado ao Jean',
+        'ouvidoria_ticket_aberto' => '🎫 Ouvidoria: protocolo aberto',
+        'ouvidoria_ticket_reclassificado' => '🏷️ Ouvidoria: ticket reclassificado',
+        'ouvidoria_ticket_urgente' => '🚨 Ouvidoria: ticket urgente',
+        'ouvidoria_ticket_placa' => '🚗 Ouvidoria: placa/data do ticket',
+        'ouvidoria_mensagem_enviada' => '💬 Ouvidoria: resposta da equipe',
+        'ouvidoria_assunto_alterado' => '🏷️ Ouvidoria: assunto alterado',
+        'ouvidoria_ia_pausada' => '⏸️ Ouvidoria: IA pausada',
+        'ouvidoria_ia_reativada' => '▶️ Ouvidoria: IA reativada',
+        'ouvidoria_desvinculada' => '🔗 Ouvidoria: vínculo removido',
+        'ouvidoria_conversa_aberta' => '👁️ Ouvidoria: conversa aberta',
         'lead_movido_vendas_inbox' => '🛒 Lead movido pra vendas via WhatsApp Box',
         'veiculo_excluido' => '🗑️ Veículo excluído da frota',
         'venda_desfeita' => '↩️ Vendido desfeito (sem contrato)',

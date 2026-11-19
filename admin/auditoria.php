@@ -60,6 +60,7 @@ $linhas = auditoriaListar(200, $evento, $q);
             <label>Evento</label>
             <select name="evento">
                 <option value="">— Todos —</option>
+                <option value="__ouvidoria" <?= $evento === '__ouvidoria' ? 'selected' : '' ?>>📣 Ouvidoria (tudo: protocolos, respostas, status)</option>
                 <?php foreach ($eventos as $ev): ?>
                     <option value="<?= e($ev) ?>" <?= $evento === $ev ? 'selected' : '' ?>><?= e(auditoriaRotuloEvento($ev)) ?></option>
                 <?php endforeach; ?>

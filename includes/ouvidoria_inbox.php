@@ -11,6 +11,7 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/usuarios.php';
 require_once __DIR__ . '/email_templates.php';
 require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/auditoria.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens_ouvidoria.php';
 
 function listarConversasOuvidoria(string $busca = '', string $assunto = '', int $limite = 100): array {
@@ -79,7 +80,13 @@ function enviarMensagemManualOuvidoria(string $telefone, string $texto, int $usu
     $id = registrarMensagem($tel, 'out', $texto, null, false, 'text', $usuarioId);
     // Humano assumiu: a IA para de responder essa conversa.
     ouvidoriaSalvarConversa($tel, ['ia_pausada' => 1]);
-    try { ouvidoriaTicketsMarcarAtendimento($tel); } catch (Throwable $e) {}
+    $protocolos = [];
+    try {
+        foreach (ouvidoriaTicketsAtivos($tel) as $t) $protocolos[] = $t['protocolo'];
+        ouvidoriaTicketsMarcarAtendimento($tel);
+    } catch (Throwable $e) {}
+    auditoriaRegistrar('ouvidoria_mensagem_enviada', $usuarioId, $nome, 'ouvidoria', null,
+        "Resposta pela caixa da ouvidoria pra {$tel}" . ($protocolos ? ' (' . implode(', ', $protocolos) . ')' : '') . ': ' . mb_substr($texto, 0, 300));
     return ['ok' => true, 'id' => $id];
 }
 
