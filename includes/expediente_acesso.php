@@ -36,6 +36,18 @@ function expedienteToleranciaMin(): int {
     return ($v !== null && $v !== '' && ctype_digit((string)$v)) ? min(180, (int)$v) : 30;
 }
 
+/**
+ * Horário em que o acesso ABRE (20/11/2026, "tem dia que alguns chegam às 8, às 9").
+ * Separado da abertura da fila: a pessoa pode entrar e trabalhar mais cedo
+ * (inbox, leads dela, ponto), mas lead novo do rodízio continua só quando a fila
+ * abre. Vazio = igual à abertura da fila (comportamento de antes). Nunca depois dela.
+ */
+function expedienteHorarioEntrada(): string {
+    $v = (string)(getConfig('expediente_horario_entrada') ?? '');
+    $fila = filaHorarioAbertura();
+    return (preg_match('/^\d{2}:\d{2}$/', $v) && $v < $fila) ? $v : $fila;
+}
+
 /** Horário HH:MM em que o acesso cai (fechamento da fila + tolerância). */
 function expedienteHorarioCorte(): string {
     [$h, $m] = array_map('intval', explode(':', filaHorarioFechamento()));
@@ -54,7 +66,7 @@ function expedienteDentroJanela(?string $perfil = null): bool {
     // Vendedor não tem fila e pode atender comprador no fim de semana
     // ("não vendedor não"): pra ele só vale o horário, nunca o dia.
     $diaOk = $perfil === 'vendedor' || filaDiaAberto();
-    return $diaOk && $agora >= filaHorarioAbertura() && $agora < expedienteHorarioCorte();
+    return $diaOk && $agora >= expedienteHorarioEntrada() && $agora < expedienteHorarioCorte();
 }
 
 /** Minutos que faltam até o corte (null se fora da janela). */
@@ -91,7 +103,7 @@ function expedienteAvisoPessoalPermitido(?int $usuarioId): bool {
 }
 
 function expedienteMensagemBloqueio(): string {
-    return 'Fora do horário de expediente (' . filaDiasAbertosTexto() . ', ' . filaHorarioAbertura() . ' às ' . expedienteHorarioCorte()
+    return 'Fora do horário de expediente (' . filaDiasAbertosTexto() . ', ' . expedienteHorarioEntrada() . ' às ' . expedienteHorarioCorte()
         . '). Pra entrar agora, peça liberação ao supervisor.';
 }
 

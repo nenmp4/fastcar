@@ -41,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($acao === 'config' && $souSuper) {
             setConfig('expediente_bloqueio_login', !empty($_POST['ligado']) ? '1' : '0');
             setConfig('expediente_tolerancia_min', (string)max(0, min(180, (int)($_POST['tolerancia'] ?? 30))));
+            $entrada = trim((string)($_POST['entrada'] ?? ''));
+            setConfig('expediente_horario_entrada', preg_match('/^\d{2}:\d{2}$/', $entrada) ? $entrada : '');
             $sucesso = 'Configuração salva.';
         }
     }
@@ -75,8 +77,8 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
 
 <div class="card">
     <h2>🌙 Acesso fora do expediente</h2>
-    <p>Consultor, vendedor e avaliador só entram no sistema das <strong><?= e(filaHorarioAbertura()) ?></strong>
-       às <strong><?= e(expedienteHorarioCorte()) ?></strong> (fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância). Consultor e avaliador só nos dias <strong><?= e(filaDiasAbertosTexto()) ?></strong>; vendedor todos os dias.
+    <p>Consultor, vendedor e avaliador só entram no sistema das <strong><?= e(expedienteHorarioEntrada()) ?></strong>
+       às <strong><?= e(expedienteHorarioCorte()) ?></strong> (lead novo da fila só a partir das <?= e(filaHorarioAbertura()) ?>; fechamento da fila <?= e(filaHorarioFechamento()) ?> + <?= expedienteToleranciaMin() ?> min de tolerância). Consultor e avaliador só nos dias <strong><?= e(filaDiasAbertosTexto()) ?></strong>; vendedor todos os dias.
        Fora disso, quem estiver logado é desconectado.
        Supervisor e super admin podem liberar alguém até o fim do dia.</p>
     <p>
@@ -84,7 +86,7 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
         <?php elseif ($dentro): ?><span class="badge badge-ok">🟢 Agora: dentro do expediente</span>
         <?php else: ?><span class="badge badge-atraso">🌙 Agora: fora do expediente — acesso bloqueado</span><?php endif; ?>
     </p>
-    <p><small>O horário e os dias são os mesmos da fila de leads (Configurações → Fila).</small></p>
+    <p><small>Os dias e o fechamento são os mesmos da fila de leads (Configurações → Fila). A entrada pode ser mais cedo — ajuste abaixo.</small></p>
 </div>
 
 <div class="card">
@@ -126,6 +128,9 @@ $rotuloPerfil = ['consultor' => 'Consultor', 'vendedor' => 'Vendedor', 'avaliado
     <form method="post" style="max-width:420px">
         <?= csrfField() ?><input type="hidden" name="acao" value="config">
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="ligado" value="1" style="width:auto" <?= $ligado ? 'checked' : '' ?>> Bloquear acesso fora do expediente</label>
+        <label>Acesso libera a partir de</label>
+        <input type="time" name="entrada" value="<?= e(expedienteHorarioEntrada()) ?>">
+        <small style="display:block;margin-bottom:8px">Pode ser antes da fila (ex.: 08:00 pra quem chega cedo). Lead novo do rodízio continua só a partir das <?= e(filaHorarioAbertura()) ?>.</small>
         <label>Tolerância depois do fechamento (minutos)</label>
         <input type="number" inputmode="numeric" name="tolerancia" min="0" max="180" value="<?= expedienteToleranciaMin() ?>">
         <button type="submit">Salvar</button>
