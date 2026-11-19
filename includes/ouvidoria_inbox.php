@@ -90,6 +90,11 @@ function listarConversasOuvidoria(string $busca = '', string $assunto = '', int 
     return $st->fetchAll();
 }
 
+/** Quantas conversas têm mensagem do cliente ainda não lida (botão "Não lidas"). */
+function contarConversasNaoLidasOuvidoria(): int {
+    return (int)getDB()->query("SELECT COUNT(DISTINCT telefone) FROM whatsapp_mensagens WHERE canal = 'ouvidoria' AND direcao = 'in' AND lida = 0")->fetchColumn();
+}
+
 /** Negócios ligados ao telefone (pra abrir direto da conversa). */
 function ouvidoriaNegociosDoTelefone(string $telefone): array {
     $tel = normalizarTelefone($telefone) ?: $telefone;

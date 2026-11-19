@@ -221,6 +221,10 @@ $ordem = ($_GET['ordem'] ?? '') === 'espera' ? 'espera' : '';
 $conversas = listarConversasOuvidoria($busca, $assuntoFiltro, 100, $statusFiltro, $ordem);
 // Filtros ativos vão junto em todo link de conversa (nunca perde o filtro ao abrir uma).
 $qsFiltros = http_build_query(array_filter(['busca' => $busca, 'assunto' => $assuntoFiltro, 'status' => $statusFiltro, 'ordem' => $ordem]));
+// 21/11/2026, "inbox da ouvidoria não lidas deixar essa opção" — atalho
+// Todas / Não lidas sempre visível (o select de status continua igual).
+$totalNaoLidasOuv = contarConversasNaoLidasOuvidoria();
+$qsSemStatus = array_filter(['busca' => $busca, 'assunto' => $assuntoFiltro, 'ordem' => $ordem]);
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo, 50, 'ouvidoria') : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
@@ -293,6 +297,10 @@ body.ouv-page .breadcrumb { display: none; }
 .ouv-filtros-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .ouv-filtros-linha select[name="ordem"] { grid-column: 1 / -1; }
 .ouv-filtros select { padding: 6px 8px; font-size: 13px; }
+.ouv-atalhos { display: flex; gap: 6px; }
+.ouv-atalho { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--borda); border-radius: var(--raio-sm); font-size: 13px; font-weight: 600; color: var(--texto-suave); text-decoration: none; background: var(--superficie); }
+.ouv-atalho.ativo { background: var(--azul-claro); border-color: var(--azul); color: var(--azul-escuro); }
+.ouv-atalho .wpp-badge { position: static; }
 .ouv-limpar { font-size: 12px; align-self: flex-end; }
 .ouv-lista-vazia { padding: 16px; color: var(--texto-fraco); font-size: 13px; }
 .wpp-item .nome > .ouv-nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -367,6 +375,7 @@ body.ouv-page .breadcrumb { display: none; }
 @media (max-width: 700px) {
     .wpp-sidebar { width: 100%; }
     .ouv-filtros select, .ouv-filtros input { font-size: 16px; min-height: 44px; }
+    .ouv-atalho { min-height: 44px; font-size: 15px; }
     .ouv-faixa > summary { min-height: 44px; padding: 6px 12px; }
     .wpp-chat-header { flex-wrap: wrap; }
     .wpp-chat-header .ouv-acoes { width: 100%; }
@@ -390,6 +399,10 @@ body.ouv-page .breadcrumb { display: none; }
 <div class="wpp-wrap">
     <aside class="wpp-sidebar">
         <form method="get" class="ouv-filtros" id="ouv-filtros">
+            <div class="ouv-atalhos">
+                <a href="?<?= e(http_build_query($qsSemStatus)) ?>" class="ouv-atalho<?= $statusFiltro !== 'nao_lidas' ? ' ativo' : '' ?>">Todas</a>
+                <a href="?<?= e(http_build_query($qsSemStatus + ['status' => 'nao_lidas'])) ?>" class="ouv-atalho<?= $statusFiltro === 'nao_lidas' ? ' ativo' : '' ?>">🔵 Não lidas<?php if ($totalNaoLidasOuv > 0): ?> <span class="wpp-badge"><?= $totalNaoLidasOuv ?></span><?php endif; ?></a>
+            </div>
             <input type="search" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
             <div class="ouv-filtros-linha">
                 <select name="status" aria-label="Status" onchange="this.form.submit()">
