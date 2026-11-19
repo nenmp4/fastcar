@@ -1025,7 +1025,7 @@ if ($filtroEspecialLabel !== ''): ?>
                 <p style="color:var(--texto-suave);margin:10px 0 0">Nenhuma compra fechada por consultor nesse mês.</p>
             <?php else: ?>
                 <table class="tabela-oportunidades">
-                    <thead><tr><th>Consultor</th><th>Fechadas</th><th>Valor fechado</th><th></th></tr></thead>
+                    <thead><tr><th>Consultor</th><th>Fechadas</th><th>Valor fechado</th><th>Comissão ganha (após baixa)</th><th></th></tr></thead>
                     <tbody>
                     <?php foreach ($fechPorConsultor as $i => $fc): ?>
                         <tr>
@@ -1033,6 +1033,18 @@ if ($filtroEspecialLabel !== ''): ?>
                                 <div class="fech-barra"><span style="width:<?= round((int)$fc['qtd'] / $maxFech * 100) ?>%"></span></div></td>
                             <td data-label="Fechadas"><strong><?= (int)$fc['qtd'] ?></strong></td>
                             <td data-label="Valor fechado"><?= moeda((float)$fc['total']) ?></td>
+                            <td data-label="Comissão ganha">
+                                <strong><?= moeda((float)$fc['comissao_total']) ?></strong>
+                                <?php if ((float)$fc['comissao_pendente'] > 0): ?>
+                                    <br><span class="badge badge-aviso">⏳ <?= moeda((float)$fc['comissao_pendente']) ?> a aprovar</span>
+                                    <br><a class="btn" style="margin-top:4px" href="/admin/financeiro-lancamentos.php?origem=comissao_compra&amp;status=pendente&amp;todos_periodos=1<?= $fc['colaborador_id'] ? '&amp;funcionario=' . (int)$fc['colaborador_id'] : '' ?>">✅ Aprovar no financeiro (<?= (int)$fc['comissao_pendente_qtd'] ?>)</a>
+                                <?php elseif ((float)$fc['comissao_total'] > 0): ?>
+                                    <br><span class="badge badge-ok">✅ tudo baixado</span>
+                                <?php endif; ?>
+                                <?php if ((int)$fc['sem_comissao'] > 0): ?>
+                                    <br><small style="color:var(--texto-suave)"><?= (int)$fc['sem_comissao'] ?> sem comissão lançada (sem FIPE ou sem colaborador) — gere na aba Fechadas</small>
+                                <?php endif; ?>
+                            </td>
                             <td><a class="btn" href="/admin/index.php?etapa=fechado&amp;periodo=personalizado&amp;de=<?= $rankingIni ?>&amp;ate=<?= $rankingFim ?>&amp;consultor=<?= (int)$fc['id'] ?>">Ver</a></td>
                         </tr>
                     <?php endforeach; ?>
@@ -1512,7 +1524,10 @@ if ($podeSelecionarEmMassa):
                 <?php $cf = $comissaoFech[(int)$op['id']] ?? null; $fipeOp = (float)($op['valor_fipe_referencia'] ?? 0); ?>
                 <?php if ($cf): ?>
                     <?= moeda((float)$cf['valor']) ?>
-                    <br><span class="badge <?= $cf['status'] === 'pago' ? 'badge-ok' : 'badge-aviso' ?>"><?= $cf['status'] === 'pago' ? '✅ lançada' : '⏳ ' . e($cf['status']) ?></span>
+                    <br><span class="badge <?= $cf['status'] === 'pago' ? 'badge-ok' : 'badge-aviso' ?>"><?= $cf['status'] === 'pago' ? '✅ paga (baixa feita)' : '⏳ aguardando aprovação' ?></span>
+                    <?php if ($cf['status'] !== 'pago' && in_array($perfil, ['super_admin', 'financeiro'], true)): ?>
+                        <br><a class="btn-texto" href="/admin/financeiro-lancamentos.php?origem=comissao_compra&amp;status=pendente&amp;todos_periodos=1">✅ Aprovar no financeiro</a>
+                    <?php endif; ?>
                 <?php elseif ($fipeOp <= 0): ?>
                     <span class="badge badge-aviso">não lançada</span><br><small>falta FIPE de referência</small>
                 <?php elseif (empty($op['fechado_por']) || empty($colabAtivoFech[(int)$op['fechado_por']])): ?>

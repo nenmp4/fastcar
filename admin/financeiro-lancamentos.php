@@ -92,11 +92,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($acao === 'marcar_pago') {
             $id = (int)($_POST['id'] ?? 0);
-            $db->prepare("UPDATE fin_lancamentos SET data_pagamento=date('now','localtime'), status='pago', updated_at=datetime('now','localtime') WHERE id=? AND origem != 'asaas'")->execute([$id]);
+            $db->prepare("UPDATE fin_lancamentos SET data_pagamento=date('now','localtime'), status='pago',
+                descricao = CASE WHEN origem IN ('comissao_compra','comissao_venda') THEN REPLACE(descricao, ' — aguardando aprovação', '') ELSE descricao END,
+                updated_at=datetime('now','localtime') WHERE id=? AND origem != 'asaas'")->execute([$id]);
             $sucesso = 'Marcado como pago.';
             // 07/11/2026 — entrada de venda paga gera a comissão do vendedor (aguardando aprovação).
             $vendaIdPago = $db->query("SELECT venda_id FROM fin_lancamentos WHERE id = " . $id)->fetchColumn();
             if ($vendaIdPago) finRegistrarComissaoVendaFechada((int)$vendaIdPago);
+        } elseif ($acao === 'aprovar_comissoes') {
+            // 20/11/2026 — aprovar de uma vez as comissões pendentes da lista filtrada
+            // (ranking "Fechamentos por consultor" → "Aprovar no financeiro").
+            $ids = array_values(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
+            $n = 0;
+            if ($ids) {
+                $ph = implode(',', array_fill(0, count($ids), '?'));
+                $st = $db->prepare("UPDATE fin_lancamentos SET status='pago', data_pagamento=date('now','localtime'),
+                        descricao = REPLACE(descricao, ' — aguardando aprovação', ''), updated_at=datetime('now','localtime')
+                    WHERE id IN ({$ph}) AND origem IN ('comissao_compra','comissao_venda') AND status IN ('pendente','atrasado')");
+                $st->execute($ids);
+                $n = $st->rowCount();
+                if ($n) auditoriaRegistrar('comissao_aprovada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'fin_lancamento', null, "{$n} comissão(ões) aprovada(s): #" . implode(', #', $ids));
+            }
+            $sucesso = $n ? "{$n} comissão(ões) aprovada(s) e marcada(s) como paga(s)." : 'Nenhuma comissão pendente pra aprovar.';
         } elseif ($acao === 'excluir') {
             $id = (int)($_POST['id'] ?? 0);
             $db->prepare("DELETE FROM fin_lancamentos WHERE id=? AND origem != 'asaas'")->execute([$id]);
@@ -212,6 +229,7 @@ $fNatureza = in_array($_GET['natureza'] ?? '', ['fixa', 'variavel'], true) ? $_G
 // lançamento, mesmo padrão de $fNatureza (whitelist explícita, nunca o
 // valor cru do GET direto no SQL).
 $fOrigem = in_array($_GET['origem'] ?? '', ['comissao_compra', 'comissao_venda', 'trafego_pago'], true) ? $_GET['origem'] : '';
+$fFuncionario = (int)($_GET['funcionario'] ?? 0);
 $fTodos = !empty($_GET['todos_periodos']);
 $fDe = (string)($_GET['de'] ?? date('Y-m-01'));
 $fAte = (string)($_GET['ate'] ?? date('Y-m-t'));
@@ -235,6 +253,7 @@ if ($fTipo) { $where[] = 'l.tipo=?'; $params[] = $fTipo; }
 if ($fStatus) { $where[] = 'l.status=?'; $params[] = $fStatus; }
 if ($fNatureza) { $where[] = 'l.natureza=?'; $params[] = $fNatureza; }
 if ($fOrigem) { $where[] = 'l.origem=?'; $params[] = $fOrigem; }
+if ($fFuncionario > 0) { $where[] = 'l.funcionario_id=?'; $params[] = $fFuncionario; }
 if ($fStatus === 'atrasado' && $fAtraso) {
     $where[] = "l.data_vencimento IS NOT NULL AND " . ($fAtraso === 1 ? "{$diasAtrasoExpr} BETWEEN 1 AND 30" : ($fAtraso === 2 ? "{$diasAtrasoExpr} BETWEEN 31 AND 60" : "{$diasAtrasoExpr} >= 61"));
 }
@@ -467,6 +486,22 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <?php endforeach; ?>
     <?php if ($fAtraso): ?><a href="?<?= $baseQs ?>" style="align-self:center">Ver todos os atrasados</a><?php endif; ?>
   </div>
+</div>
+<?php endif; ?>
+
+<?php
+// 20/11/2026 — ranking "Fechamentos por consultor" manda pra cá filtrado nas comissões a aprovar.
+$comissoesPendentesLista = array_values(array_filter($lancamentos, fn($x) => in_array($x['origem'], ['comissao_compra', 'comissao_venda'], true) && in_array($x['status'], ['pendente', 'atrasado'], true)));
+if ($comissoesPendentesLista && in_array($fOrigem, ['comissao_compra', 'comissao_venda'], true)):
+    $totPendCom = array_sum(array_map(fn($x) => (float)$x['valor'], $comissoesPendentesLista)); ?>
+<div class="card" style="border-left:4px solid var(--azul)">
+  <h3 style="margin-top:0">🤝 Comissões aguardando aprovação</h3>
+  <p><?= count($comissoesPendentesLista) ?> comissão(ões) — total <strong>R$ <?= number_format($totPendCom, 2, ',', '.') ?></strong>. Aprovar dá baixa (marca como paga com a data de hoje). Dá pra aprovar uma a uma no ✅ da lista.</p>
+  <form method="POST" onsubmit="return confirmarAcao(this, 'Aprovar e dar baixa nas <?= count($comissoesPendentesLista) ?> comissão(ões) listadas (R$ <?= number_format($totPendCom, 2, ',', '.') ?>)?');">
+    <?= csrfField() ?><input type="hidden" name="acao" value="aprovar_comissoes">
+    <?php foreach ($comissoesPendentesLista as $x): ?><input type="hidden" name="ids[]" value="<?= (int)$x['id'] ?>"><?php endforeach; ?>
+    <button type="submit" class="btn-primary">✅ Aprovar todas e dar baixa</button>
+  </form>
 </div>
 <?php endif; ?>
 

@@ -453,7 +453,12 @@ function dashboardFechadasPorConsultorMes(?string $mes = null): array {
     $ini = ($mes && preg_match('/^\d{4}-\d{2}$/', $mes)) ? $mes . '-01' : date('Y-m-01');
     $fim = date('Y-m-t', strtotime($ini));
     $st = getDB()->prepare("
-        SELECT u.id, u.nome, COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total
+        SELECT u.id, u.nome, COUNT(*) AS qtd, COALESCE(SUM(o.valor_final), 0) AS total,
+               (SELECT fc.id FROM fin_colaboradores fc WHERE fc.usuario_id = u.id ORDER BY fc.status = 'ativo' DESC, fc.id LIMIT 1) AS colaborador_id,
+               COALESCE(SUM((SELECT SUM(l.valor) FROM fin_lancamentos l WHERE l.oportunidade_id = o.id AND l.origem = 'comissao_compra' AND l.status = 'pago')), 0) AS comissao_total,
+               COALESCE(SUM((SELECT SUM(l.valor) FROM fin_lancamentos l WHERE l.oportunidade_id = o.id AND l.origem = 'comissao_compra' AND l.status IN ('pendente','atrasado'))), 0) AS comissao_pendente,
+               COALESCE(SUM((SELECT COUNT(*) FROM fin_lancamentos l WHERE l.oportunidade_id = o.id AND l.origem = 'comissao_compra' AND l.status IN ('pendente','atrasado'))), 0) AS comissao_pendente_qtd,
+               SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM fin_lancamentos l WHERE l.oportunidade_id = o.id AND l.origem = 'comissao_compra' AND l.status != 'cancelado') THEN 1 ELSE 0 END) AS sem_comissao
         FROM oportunidades o
         JOIN usuarios u ON u.id = COALESCE(o.fechado_por, o.responsavel_id) AND u.perfil = 'consultor'
         WHERE o.etapa = 'fechado' AND COALESCE(o.sem_compra, 0) = 0

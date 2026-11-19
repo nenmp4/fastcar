@@ -520,16 +520,18 @@ function finRegistrarComissaoCompraFechada(int $oportunidadeId, float $valorFina
         $categoriaId = $db->query("SELECT id FROM fin_categorias WHERE nome = 'Comissão de consultor/vendedor'")->fetchColumn();
         $veiculo = trim(($op['veiculo_marca'] ?? '') . ' ' . ($op['veiculo_modelo'] ?? '')) ?: 'veículo';
         $descricao = sprintf(
-            'Comissão de compra — %s — %s (oportunidade #%d) — %.1f%% do valor FIPE de referência (R$ %s)',
+            'Comissão de compra — %s — %s (oportunidade #%d) — %.1f%% do valor FIPE de referência (R$ %s) — aguardando aprovação',
             $veiculo, $op['cliente_nome'], $oportunidadeId, $taxa, number_format($valorFipe, 2, ',', '.')
         );
 
         $data = $dataCompra ?: date('Y-m-d');
         $db->prepare("
             INSERT INTO fin_lancamentos
-                (tipo, categoria_id, descricao, valor, data_vencimento, data_pagamento, status, oportunidade_id, funcionario_id, origem, created_by)
-            VALUES ('despesa', ?, ?, ?, ?, ?, 'pago', ?, ?, 'comissao_compra', ?)
-        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $data, $data, $oportunidadeId, $colaboradorId, $fechadoPor]);
+                (tipo, categoria_id, descricao, valor, data_vencimento, status, oportunidade_id, funcionario_id, origem, created_by)
+            VALUES ('despesa', ?, ?, ?, ?, 'pendente', ?, ?, 'comissao_compra', ?)
+        ")->execute([$categoriaId ?: null, $descricao, $valorComissao, $data, $oportunidadeId, $colaboradorId, $fechadoPor]);
+        // 20/11/2026, "comissão ganhas clicar para aprovar no financeiro" — nasce
+        // pendente (igual à de venda); o financeiro aprova (marca paga) depois.
     } catch (Throwable $e) {
         // best-effort — nunca pode travar o fechamento da oportunidade
     }
