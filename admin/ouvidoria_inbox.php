@@ -54,8 +54,42 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'buscar_negocio') {
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
-    echo json_encode(['conversas' => listarConversasOuvidoria(trim((string)($_GET['busca'] ?? '')), (string)($_GET['assunto'] ?? ''))]);
+    $lst = listarConversasOuvidoria(trim((string)($_GET['busca'] ?? '')), (string)($_GET['assunto'] ?? ''), 100,
+        (string)($_GET['status'] ?? ''), (string)($_GET['ordem'] ?? ''));
+    foreach ($lst as &$cv) $cv['cor'] = abs(crc32((string)$cv['telefone'])) % 6; // mesma cor do avatar desenhado pelo PHP
+    unset($cv);
+    echo json_encode(['conversas' => $lst]);
     exit;
+}
+
+// Foto de perfil (21/11/2026, "arruma os avatares") — busca ao vivo pela instância
+// da OUVIDORIA (nunca a principal), cache em disco igual ao inbox de compra.
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'foto') {
+    header('Content-Type: application/json');
+    $telFoto = normalizarTelefone((string)($_GET['telefone'] ?? ''));
+    $url = '';
+    if ($telFoto && evolutionConfiguredOuvidoria()) {
+        $url = fotoContatoCacheada('ouvidoria', $telFoto, function () use ($telFoto) {
+            return evolutionBuscarContato($telFoto, evolutionCredenciaisOuvidoria())['foto_url'] ?? '';
+        });
+    }
+    echo json_encode(['foto_url' => $url]);
+    exit;
+}
+
+/** Círculo de iniciais (a foto real entra por cima via JS quando existir). Cor fixa por telefone. */
+function _ouvAvatar(string $tel, string $nome): string {
+    $base = $nome !== '' ? $nome : $tel;
+    $cor = abs(crc32($tel)) % 6;
+    return '<div class="wpp-avatar-placeholder av-c' . $cor . '" data-av-phone="' . e($tel) . '" data-nome="' . e($base) . '">'
+        . e(mb_strtoupper(mb_substr($base, 0, 1))) . '</div>';
+}
+
+/** "há 3h" / "há 2d" — tempo esperando resposta. */
+function _ouvEspera(?string $desde): string {
+    if (!$desde) return '';
+    $min = max(0, (int)floor((time() - strtotime($desde)) / 60));
+    return $min < 60 ? "{$min}min" : ($min < 1440 ? floor($min / 60) . 'h' : floor($min / 1440) . 'd');
 }
 
 $erro = '';
@@ -181,7 +215,12 @@ if ($telefoneAtivo) {
 $busca = trim((string)($_GET['busca'] ?? ''));
 $assuntoFiltro = (string)($_GET['assunto'] ?? '');
 if (!isset(OUVIDORIA_ASSUNTOS[$assuntoFiltro])) $assuntoFiltro = '';
-$conversas = listarConversasOuvidoria($busca, $assuntoFiltro);
+$statusFiltro = (string)($_GET['status'] ?? '');
+if (!isset(OUVIDORIA_FILTROS_STATUS[$statusFiltro])) $statusFiltro = '';
+$ordem = ($_GET['ordem'] ?? '') === 'espera' ? 'espera' : '';
+$conversas = listarConversasOuvidoria($busca, $assuntoFiltro, 100, $statusFiltro, $ordem);
+// Filtros ativos vão junto em todo link de conversa (nunca perde o filtro ao abrir uma).
+$qsFiltros = http_build_query(array_filter(['busca' => $busca, 'assunto' => $assuntoFiltro, 'status' => $statusFiltro, 'ordem' => $ordem]));
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo, 50, 'ouvidoria') : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
@@ -246,9 +285,59 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .wpp-vazio { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--texto-fraco); text-align: center; padding: 40px; }
 .wpp-voltar-mobile { display: none; }
 .ouv-assunto { display:inline-block; font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--azul-claro); color:var(--azul-escuro); }
-.ouv-chips { display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--borda); }
-.ouv-chips a { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--borda); color:inherit; text-decoration:none; }
-.ouv-chips a.ativo { background:var(--azul); color:#fff; border-color:var(--azul); }
+/* 21/11/2026 — notebook (1366×768, zoom 125/150%): filtros em select, faixa única
+   recolhível, só a conversa rola, campo de mensagem sempre visível. */
+body.ouv-page .breadcrumb { display: none; }
+.ouv-filtros { padding: 10px 12px; border-bottom: 1px solid var(--borda); display: flex; flex-direction: column; gap: 6px; }
+.ouv-filtros input, .ouv-filtros select { margin: 0; width: 100%; min-width: 0; }
+.ouv-filtros-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ouv-filtros-linha select[name="ordem"] { grid-column: 1 / -1; }
+.ouv-filtros select { padding: 6px 8px; font-size: 13px; }
+.ouv-limpar { font-size: 12px; align-self: flex-end; }
+.ouv-lista-vazia { padding: 16px; color: var(--texto-fraco); font-size: 13px; }
+.wpp-item .nome > .ouv-nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wpp-item .preview { min-width: 0; }
+.wpp-item .quando { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+.ouv-espera { font-size: 11px; font-weight: 600; color: var(--amarelo); background: var(--amarelo-bg); padding: 0 6px; border-radius: 999px; }
+.ouv-espera.atrasada { color: var(--vermelho); background: var(--vermelho-bg); }
+.wpp-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--azul-claro); }
+.wpp-chat-header .wpp-avatar { width: 40px; height: 40px; margin-right: 10px; }
+.av-c0 { background: var(--azul); } .av-c1 { background: var(--verde); } .av-c2 { background: var(--laranja); }
+.av-c3 { background: var(--roxo); } .av-c4 { background: var(--rosa); } .av-c5 { background: var(--navy); }
+.ouv-contato { min-width: 0; display: flex; flex-direction: column; }
+.ouv-contato strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ouv-contato small { font-size: 12px; color: var(--texto-fraco); }
+.wpp-chat-header { gap: 10px; }
+.wpp-chat-header > div:first-child { min-width: 0; flex: 1 1 auto; }
+.wpp-chat-header .ouv-acoes { flex-wrap: nowrap; flex-shrink: 0; }
+.wpp-chat-header .ouv-acoes select { max-width: 210px; }
+.wpp-chat-header .ouv-acoes button { white-space: nowrap; }
+/* Notebook estreito/zoom: menu mais curto nesta tela (só o ícone da conta). */
+@media (max-width: 1240px) and (min-width: 901px) { body.ouv-page .tb-conta-nome { display: none; } }
+.ouv-faixa { border-bottom: 1px solid var(--borda); background: var(--fundo); font-size: 12.5px; }
+.ouv-faixa > summary { list-style: none; cursor: pointer; display: flex; gap: 6px 14px; align-items: center; flex-wrap: wrap; padding: 7px 20px; min-height: 36px; }
+.ouv-faixa > summary::-webkit-details-marker { display: none; }
+.ouv-faixa-ticket, .ouv-faixa-vinculo { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ouv-faixa-abrir { margin-left: auto; color: var(--azul); }
+.ouv-faixa-abrir::after { content: ' ▾'; }
+.ouv-faixa[open] .ouv-faixa-abrir::after { content: ' ▴'; }
+.ouv-faixa.urgente > summary { background: var(--vermelho-bg); color: var(--vermelho); }
+.ouv-atraso { color: var(--vermelho); font-weight: 700; }
+.ouv-faixa-corpo { max-height: 45vh; overflow-y: auto; border-top: 1px solid var(--borda); }
+.ouv-faixa-corpo .ouv-vinculo, .ouv-faixa-corpo .ouv-tickets { border-bottom: 0; }
+.ouv-faixa-corpo .ouv-tickets { border-top: 1px dashed var(--borda); }
+.ouv-importar { border-top: 1px solid var(--borda); border-bottom: 0; }
+@media (max-height: 800px) {
+    body.ouv-page .topbar-v2 { min-height: 50px; padding-top: 4px; padding-bottom: 4px; }
+    .ouv-filtros { padding: 6px 10px; gap: 4px; }
+    .wpp-item { padding: 8px 12px; }
+    .wpp-chat-header { padding: 8px 16px; }
+    .wpp-thread { padding: 12px 16px; }
+    .wpp-form { padding: 8px 16px; }
+    .wpp-form textarea { min-height: 38px; }
+    .ouv-faixa > summary { padding: 5px 16px; min-height: 32px; }
+    .ouv-faixa-corpo { max-height: 35vh; }
+}
 .ouv-vinculo { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; padding:8px 20px; border-bottom:1px solid var(--borda); background:var(--fundo); font-size:12.5px; }
 .ouv-vinculo-info { flex:1; min-width:220px; overflow-wrap:anywhere; }
 #ouv-busca-box input { margin:6px 0; }
@@ -277,28 +366,77 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .ouv-acoes select, .ouv-acoes button { margin:0; width:auto; padding:6px 10px; font-size:12.5px; }
 @media (max-width: 700px) {
     .wpp-sidebar { width: 100%; }
+    .ouv-filtros select, .ouv-filtros input { font-size: 16px; min-height: 44px; }
+    .ouv-faixa > summary { min-height: 44px; padding: 6px 12px; }
+    .wpp-chat-header { flex-wrap: wrap; }
+    .wpp-chat-header .ouv-acoes { width: 100%; }
+    .wpp-chat-header .ouv-acoes select { flex: 1; max-width: none; }
+    .wpp-voltar-mobile { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; color: inherit; margin-right: 0; }
     body.wpp-tem-conversa .wpp-sidebar { display: none; }
     body:not(.wpp-tem-conversa) .wpp-chat { display: none; }
-    .wpp-voltar-mobile { display: inline-block; margin-right: 10px; }
 }
 </style>
 <script>
 <?= wppPreviewJs() ?>
 </script>
 </head>
-<body class="wpp-page<?= ($telefoneAtivo && $contatoAtivo) ? ' wpp-tem-conversa' : '' ?>">
+<body class="wpp-page ouv-page<?= ($telefoneAtivo && $contatoAtivo) ? ' wpp-tem-conversa' : '' ?>">
 <?php include __DIR__ . '/_impersonando_banner.php'; ?>
 <?php include __DIR__ . '/_topbar.php'; ?>
 
-<?php if ($erro): ?><div class="alerta-erro" style="margin:12px 20px"><?= e($erro) ?></div><?php endif; ?>
-<?php if ($sucesso): ?><div class="alerta-sucesso" style="margin:12px 20px"><?= e($sucesso) ?></div><?php endif; ?>
+<?php if ($erro): ?><div class="alerta-erro" style="margin:8px 20px"><?= e($erro) ?></div><?php endif; ?>
+<?php if ($sucesso): ?><div class="alerta-sucesso" style="margin:8px 20px"><?= e($sucesso) ?></div><?php endif; ?>
 
 <div class="wpp-wrap">
     <aside class="wpp-sidebar">
-        <form method="get">
-            <?php if ($assuntoFiltro): ?><input type="hidden" name="assunto" value="<?= e($assuntoFiltro) ?>"><?php endif; ?>
-            <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
+        <form method="get" class="ouv-filtros" id="ouv-filtros">
+            <input type="search" name="busca" value="<?= e($busca) ?>" placeholder="Buscar por nome ou telefone...">
+            <div class="ouv-filtros-linha">
+                <select name="status" aria-label="Status" onchange="this.form.submit()">
+                    <?php foreach (OUVIDORIA_FILTROS_STATUS as $k => $rot): ?>
+                        <option value="<?= e($k) ?>" <?= $statusFiltro === $k ? 'selected' : '' ?>><?= e($rot) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="assunto" aria-label="Assunto" onchange="this.form.submit()">
+                    <option value="">Todos os assuntos</option>
+                    <?php foreach (OUVIDORIA_ASSUNTOS as $k => $rot): ?>
+                        <option value="<?= e($k) ?>" <?= $assuntoFiltro === $k ? 'selected' : '' ?>><?= e($rot) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="ordem" aria-label="Ordem" onchange="this.form.submit()">
+                    <option value="">Mais recentes</option>
+                    <option value="espera" <?= $ordem === 'espera' ? 'selected' : '' ?>>Esperando há mais tempo</option>
+                </select>
+            </div>
+            <?php if ($qsFiltros !== ''): ?><a href="?" class="ouv-limpar">limpar filtros</a><?php endif; ?>
         </form>
+        <div class="wpp-lista" id="wpp-lista">
+            <?php if (!$conversas): ?>
+                <p class="ouv-lista-vazia">
+                    <?= ($qsFiltros !== '') ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — aparecem aqui assim que um cliente escrever pro número da ouvidoria.' ?>
+                </p>
+            <?php endif; ?>
+            <?php foreach ($conversas as $c): $esp = _ouvEspera($c['esperando_desde'] ?? null); ?>
+                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?<?= e(($qsFiltros !== '' ? $qsFiltros . '&' : '') . 'telefone=' . rawurlencode($c['telefone'])) ?>">
+                    <?= _ouvAvatar($c['telefone'], (string)$c['nome']) ?>
+                    <div class="wpp-corpo">
+                        <div class="nome">
+                            <span class="ouv-nome"><?= !empty($c['urgente']) ? '🚨 ' : '' ?><?= e($c['nome'] ?: $c['telefone']) ?></span>
+                            <?php if ((int)$c['nao_lidas'] > 0): ?><span class="wpp-badge"><?= (int)$c['nao_lidas'] ?></span><?php endif; ?>
+                        </div>
+                        <div class="preview">
+                            <?= $c['ultima_direcao'] === 'out' ? '✓ ' : '' ?>
+                            <?= wppPreviewHtml((string)$c['ultima_tipo'], (string)$c['ultima_mensagem']) ?>
+                        </div>
+                        <div class="quando">
+                            <span><?= date('d/m H:i', strtotime($c['ultima_em'])) ?></span>
+                            <?php if ($esp !== ''): ?><span class="ouv-espera <?= (time() - strtotime($c['esperando_desde'])) > 4 * 3600 ? 'atrasada' : '' ?>" title="Cliente esperando resposta">⏱ <?= e($esp) ?></span><?php endif; ?>
+                            <?php if ($c['assunto'] !== ''): ?><span class="ouv-assunto"><?= e(OUVIDORIA_ASSUNTOS[$c['assunto']] ?? $c['assunto']) ?></span><?php endif; ?>
+                        </div>
+                    </div>
+                </a>
+            <?php endforeach; ?>
+        </div>
         <details class="ouv-importar">
             <summary class="btn-texto">📥 Puxar conversas antigas</summary>
             <form method="post" onsubmit="return confirmarAcao(this, 'Puxar da instância da ouvidoria as conversas antigas? Só grava no histórico — nenhuma mensagem é enviada pro cliente.');">
@@ -314,38 +452,6 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
             </form>
             <small>Só grava o histórico (mídia antiga entra como marcador). Nunca responde nem abre ticket. Pode rodar de novo — não duplica.</small>
         </details>
-        <nav class="ouv-chips">
-            <a href="?<?= $busca ? 'busca=' . urlencode($busca) : '' ?>" class="<?= $assuntoFiltro === '' ? 'ativo' : '' ?>">Todos</a>
-            <?php foreach (OUVIDORIA_ASSUNTOS as $k => $rot): ?>
-                <a href="?assunto=<?= e($k) ?><?= $busca ? '&busca=' . urlencode($busca) : '' ?>" class="<?= $assuntoFiltro === $k ? 'ativo' : '' ?>"><?= e($rot) ?></a>
-            <?php endforeach; ?>
-        </nav>
-        <div class="wpp-lista" id="wpp-lista">
-            <?php if (!$conversas): ?>
-                <p style="padding:16px;color:var(--texto-fraco);font-size:13px">
-                    <?= ($busca || $assuntoFiltro) ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — aparecem aqui assim que um cliente escrever pro número da ouvidoria.' ?>
-                </p>
-            <?php endif; ?>
-            <?php foreach ($conversas as $c): ?>
-                <a class="wpp-item <?= $c['telefone'] === $telefoneAtivo ? 'ativo' : '' ?>" href="?telefone=<?= e($c['telefone']) ?>">
-                    <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($c['nome'] ?: $c['telefone'], 0, 1))) ?></div>
-                    <div class="wpp-corpo">
-                        <div class="nome">
-                            <span><?= e($c['nome'] ?: $c['telefone']) ?></span>
-                            <?php if ((int)$c['nao_lidas'] > 0): ?><span class="wpp-badge"><?= (int)$c['nao_lidas'] ?></span><?php endif; ?>
-                        </div>
-                        <div class="preview">
-                            <?= $c['ultima_direcao'] === 'out' ? '✓ ' : '' ?>
-                            <?= wppPreviewHtml((string)$c['ultima_tipo'], (string)$c['ultima_mensagem']) ?>
-                        </div>
-                        <div class="quando">
-                            <?= date('d/m H:i', strtotime($c['ultima_em'])) ?>
-                            <?php if ($c['assunto'] !== ''): ?> · <span class="ouv-assunto"><?= e(OUVIDORIA_ASSUNTOS[$c['assunto']] ?? $c['assunto']) ?></span><?php endif; ?>
-                        </div>
-                    </div>
-                </a>
-            <?php endforeach; ?>
-        </div>
     </aside>
 
     <section class="wpp-chat">
@@ -357,13 +463,11 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
         <?php else: ?>
             <div class="wpp-chat-header">
                 <div>
-                    <div class="wpp-avatar-placeholder"><?= e(mb_strtoupper(mb_substr($contatoAtivo['nome'] ?: $telefoneAtivo, 0, 1))) ?></div>
-                    <div>
-                        <a href="?" class="wpp-voltar-mobile" style="color:inherit">← Conversas</a>
+                    <a href="?<?= e($qsFiltros) ?>" class="wpp-voltar-mobile" aria-label="Voltar pras conversas">←</a>
+                    <?= _ouvAvatar($telefoneAtivo, (string)($contatoAtivo['nome'] ?? '')) ?>
+                    <div class="ouv-contato">
                         <strong><?= e($contatoAtivo['nome'] ?: $telefoneAtivo) ?></strong>
-                        <div style="font-size:12px;color:var(--texto-fraco)">
-                            <?= e($telefoneAtivo) ?>
-                        </div>
+                        <small><?= e($telefoneAtivo) ?></small>
                     </div>
                 </div>
                 <div class="ouv-acoes">
@@ -388,6 +492,36 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
                 </div>
             </div>
 
+            <?php $ticketsConv = ouvidoriaTicketsDoTelefone($telefoneAtivo); $ticketsAtivosConv = array_filter($ticketsConv, fn($t) => $t['status'] !== 'resolvido'); $nResolvidos = count($ticketsConv) - count($ticketsAtivosConv); ?>
+            <?php
+                $tPrinc = $ticketsAtivosConv ? reset($ticketsAtivosConv) : null;
+                $temUrgente = (bool)array_filter($ticketsAtivosConv, fn($t) => !empty($t['urgente']));
+            ?>
+            <details class="ouv-faixa<?= $temUrgente ? ' urgente' : '' ?>" id="ouv-faixa">
+                <summary>
+                    <span class="ouv-faixa-ticket">
+                        <?php if ($tPrinc): ?>
+                            <?= $temUrgente ? '🚨 ' : '🎫 ' ?><strong><?= e($tPrinc['protocolo']) ?></strong> · <?= e(OUVIDORIA_TICKET_STATUS[$tPrinc['status']] ?? $tPrinc['status']) ?>
+                            <?= count($ticketsAtivosConv) > 1 ? ' <span class="ouv-assunto">+' . (count($ticketsAtivosConv) - 1) . ' ticket(s)</span>' : '' ?>
+                        <?php elseif ($ticketsConv): ?>
+                            ✅ <?= count($ticketsConv) ?> ticket(s) resolvido(s)
+                        <?php else: ?>
+                            Sem ticket
+                        <?php endif; ?>
+                    </span>
+                    <span class="ouv-faixa-vinculo">
+                        <?php if ($vinculo): ?>
+                            <?= $vinculo['tipo'] === 'venda' ? '🛒 Venda' : '🚗 Compra' ?> #<?= (int)$vinculo['id'] ?>
+                            <?= $vinculo['placa'] ? ' · ' . e($vinculo['placa']) : '' ?>
+                            <?php if ($vinculo['tipo'] === 'venda' && !empty($vinculo['fin']) && (float)$vinculo['fin']['atrasado'] > 0): ?> · <span class="ouv-atraso">R$ <?= number_format((float)$vinculo['fin']['atrasado'], 2, ',', '.') ?> em atraso</span><?php endif; ?>
+                            <?= $vinculoSugerido ? ' · <em>confirmar vínculo</em>' : '' ?>
+                        <?php else: ?>
+                            🔗 sem vínculo
+                        <?php endif; ?>
+                    </span>
+                    <span class="ouv-faixa-abrir">detalhes</span>
+                </summary>
+                <div class="ouv-faixa-corpo">
             <div class="ouv-vinculo">
                 <?php if ($vinculo): ?>
                     <div class="ouv-vinculo-info">
@@ -433,7 +567,6 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
                 </div>
             </div>
 
-            <?php $ticketsConv = ouvidoriaTicketsDoTelefone($telefoneAtivo); $ticketsAtivosConv = array_filter($ticketsConv, fn($t) => $t['status'] !== 'resolvido'); $nResolvidos = count($ticketsConv) - count($ticketsAtivosConv); ?>
             <?php if ($ticketsConv): ?>
             <div class="ouv-tickets">
                 <?php foreach ($ticketsAtivosConv as $t): ?>
@@ -493,6 +626,8 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
                 <?php endif; ?>
             </div>
             <?php endif; ?>
+                </div>
+            </details>
 
             <div class="wpp-thread wpp-thread-scroll" id="wpp-thread">
                 <?php if (!$mensagens): ?>
@@ -646,39 +781,105 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
         }, 2000);
     }
 
+    // Faixa ticket/vínculo: lembra se a pessoa deixou aberta (por navegador).
+    var faixa = document.getElementById('ouv-faixa');
+    if (faixa) {
+        try { if (localStorage.getItem('ouv_faixa_aberta') === '1') faixa.open = true; } catch (e) {}
+        faixa.addEventListener('toggle', function () {
+            try { localStorage.setItem('ouv_faixa_aberta', faixa.open ? '1' : '0'); } catch (e) {}
+        });
+    }
+
+    // Fotos de perfil (21/11/2026): busca ao vivo, troca o círculo de iniciais
+    // só depois que a imagem carregou (nunca ícone quebrado) e guarda em memória
+    // pra o refresh da lista (5s) não piscar.
+    var fotoCache = {};
+    var fotoTentada = {};
+    function aplicarFoto(el, url) {
+        if (!url) return;
+        var img = document.createElement('img');
+        img.className = 'wpp-avatar';
+        img.alt = '';
+        img.setAttribute('data-av-phone', el.getAttribute('data-av-phone') || '');
+        img.onload = function () { if (el.parentNode) el.replaceWith(img); };
+        img.src = url;
+    }
+    function carregarFotos() {
+        var avs = Array.from(document.querySelectorAll('div.wpp-avatar-placeholder[data-av-phone]')).slice(0, 31);
+        var n = 0;
+        avs.forEach(function (el) {
+            var phone = el.getAttribute('data-av-phone');
+            if (!phone) return;
+            if (fotoCache[phone]) { aplicarFoto(el, fotoCache[phone]); return; }
+            if (fotoTentada[phone]) return;
+            fotoTentada[phone] = true;
+            var delay = Math.floor(n / 5) * 600 + (n % 5) * 80;
+            n++;
+            setTimeout(function () {
+                fetch('?ajax=foto&telefone=' + encodeURIComponent(phone))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (!d.foto_url) return;
+                        fotoCache[phone] = d.foto_url;
+                        document.querySelectorAll('div.wpp-avatar-placeholder[data-av-phone="' + phone + '"]').forEach(function (p) { aplicarFoto(p, d.foto_url); });
+                    })
+                    .catch(function () {});
+            }, delay);
+        });
+    }
+    carregarFotos();
+
+    function esperaTxt(desde) {
+        if (!desde) return '';
+        var min = Math.max(0, Math.floor((Date.now() - new Date(desde.replace(' ', 'T')).getTime()) / 60000));
+        return { txt: min < 60 ? min + 'min' : (min < 1440 ? Math.floor(min / 60) + 'h' : Math.floor(min / 1440) + 'd'), atrasada: min > 240 };
+    }
+
     setInterval(atualizarListaConversas, 5000);
 
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);
-        fetch('?ajax=conversas&busca=' + encodeURIComponent(params.get('busca') || '') + '&assunto=' + encodeURIComponent(params.get('assunto') || ''))
+        var qs = new URLSearchParams();
+        ['busca', 'assunto', 'status', 'ordem'].forEach(function (k) { if (params.get(k)) qs.set(k, params.get(k)); });
+        fetch('?ajax=conversas&' + qs.toString())
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 var lista = document.getElementById('wpp-lista');
                 if (!lista || !data.conversas) return;
+                var scroll = lista.scrollTop;
                 lista.innerHTML = '';
                 if (!data.conversas.length) {
                     var vazio = document.createElement('p');
-                    vazio.style.cssText = 'padding:16px;color:var(--texto-fraco);font-size:13px';
-                    vazio.textContent = 'Nenhuma conversa ainda.';
+                    vazio.className = 'ouv-lista-vazia';
+                    vazio.textContent = qs.toString() ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda.';
                     lista.appendChild(vazio);
                     return;
                 }
                 data.conversas.forEach(function (c) {
                     var a = document.createElement('a');
                     a.className = 'wpp-item' + (c.telefone === telefone ? ' ativo' : '');
-                    a.href = '?telefone=' + encodeURIComponent(c.telefone);
+                    var qsItem = new URLSearchParams(qs);
+                    qsItem.set('telefone', c.telefone);
+                    a.href = '?' + qsItem.toString();
                     var quando = new Date(c.ultima_em.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-                    var inicial = escapeHtml((c.nome || c.telefone).slice(0, 1).toUpperCase());
-                    var atrasadoHtml = c.assunto ? ' · <span class="ouv-assunto">' + escapeHtml(ASSUNTOS[c.assunto] || c.assunto) + '</span>' : '';
-                    a.innerHTML = '<div class="wpp-avatar-placeholder">' + inicial + '</div>' +
+                    var base = c.nome || c.telefone;
+                    var avatar = fotoCache[c.telefone]
+                        ? '<img class="wpp-avatar" alt="" src="' + escapeHtml(fotoCache[c.telefone]) + '" data-av-phone="' + escapeHtml(c.telefone) + '">'
+                        : '<div class="wpp-avatar-placeholder av-c' + (parseInt(c.cor, 10) || 0) + '" data-av-phone="' + escapeHtml(c.telefone) + '" data-nome="' + escapeHtml(base) + '">' + escapeHtml(base.slice(0, 1).toUpperCase()) + '</div>';
+                    var esp = esperaTxt(c.esperando_desde);
+                    var espHtml = esp ? '<span class="ouv-espera' + (esp.atrasada ? ' atrasada' : '') + '" title="Cliente esperando resposta">⏱ ' + esp.txt + '</span>' : '';
+                    var assuntoHtml = c.assunto ? '<span class="ouv-assunto">' + escapeHtml(ASSUNTOS[c.assunto] || c.assunto) + '</span>' : '';
+                    a.innerHTML = avatar +
                         '<div class="wpp-corpo">' +
-                        '<div class="nome"><span>' + escapeHtml(c.nome || c.telefone) + '</span>' +
+                        '<div class="nome"><span class="ouv-nome">' + (parseInt(c.urgente, 10) ? '🚨 ' : '') + escapeHtml(base) + '</span>' +
                         (c.nao_lidas > 0 ? '<span class="wpp-badge">' + c.nao_lidas + '</span>' : '') + '</div>' +
                         '<div class="preview">' + (c.ultima_direcao === 'out' ? '✓ ' : '') + wppPreviewHtml(c.ultima_tipo, c.ultima_mensagem) + '</div>' +
-                        '<div class="quando">' + quando + atrasadoHtml + '</div>' +
+                        '<div class="quando"><span>' + quando + '</span>' + espHtml + assuntoHtml + '</div>' +
                         '</div>';
                     lista.appendChild(a);
                 });
+                lista.scrollTop = scroll;
+                carregarFotos();
             })
             .catch(function () {});
     }

@@ -14,9 +14,29 @@ require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/auditoria.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens_ouvidoria.php';
 
-function listarConversasOuvidoria(string $busca = '', string $assunto = '', int $limite = 100): array {
+/** Filtros da lista (21/11/2026, item 10 do backlog: chips viraram selects). */
+const OUVIDORIA_FILTROS_STATUS = [
+    ''               => 'Todos os status',
+    'nao_lidas'      => '🔵 Não lidas',
+    'esperando'      => '⏱ Esperando resposta',
+    'urgente'        => '🚨 Urgentes',
+    'aberto'         => '🆕 Ticket aberto',
+    'em_atendimento' => '💬 Em atendimento',
+    'resolvido'      => '✅ Só resolvidos',
+];
+
+function listarConversasOuvidoria(string $busca = '', string $assunto = '', int $limite = 100, string $status = '', string $ordem = ''): array {
     $where = '';
     $params = [];
+    switch ($status) {
+        case 'nao_lidas':      $where .= ' AND nl.n > 0'; break;
+        case 'esperando':      $where .= " AND m.direcao = 'in'"; break;
+        case 'urgente':        $where .= " AND EXISTS (SELECT 1 FROM ouvidoria_tickets t WHERE t.telefone = m.telefone AND t.status != 'resolvido' AND t.urgente = 1)"; break;
+        case 'aberto':
+        case 'em_atendimento': $where .= ' AND EXISTS (SELECT 1 FROM ouvidoria_tickets t WHERE t.telefone = m.telefone AND t.status = ?)'; $params[] = $status; break;
+        case 'resolvido':      $where .= " AND EXISTS (SELECT 1 FROM ouvidoria_tickets t WHERE t.telefone = m.telefone)
+                                            AND NOT EXISTS (SELECT 1 FROM ouvidoria_tickets t WHERE t.telefone = m.telefone AND t.status != 'resolvido')"; break;
+    }
     if ($busca !== '') {
         $where .= ' AND (COALESCE(NULLIF(oc.nome,\'\'), c.nome, v.nome, \'\') LIKE ? OR m.telefone LIKE ?)';
         $like = '%' . $busca . '%';
@@ -36,13 +56,22 @@ function listarConversasOuvidoria(string $busca = '', string $assunto = '', int 
                         NULLIF(vv.comprador_nome,''), NULLIF(cc.nome,''), NULLIF(c.nome,''), NULLIF(v.nome,''), '') AS nome,
                COALESCE(oc.assunto, '') AS assunto,
                COALESCE(oc.ia_pausada, 0) AS ia_pausada,
-               (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'ouvidoria' AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas
+               COALESCE(nl.n, 0) AS nao_lidas,
+               -- Cliente falou por último e ninguém respondeu ainda: desde quando (selo de espera/SLA).
+               CASE WHEN m.direcao = 'in' THEN COALESCE(
+                   (SELECT MIN(m3.created_at) FROM whatsapp_mensagens m3 WHERE m3.telefone = m.telefone AND m3.canal = 'ouvidoria' AND m3.direcao = 'in'
+                      AND m3.id > COALESCE((SELECT MAX(m4.id) FROM whatsapp_mensagens m4 WHERE m4.telefone = m.telefone AND m4.canal = 'ouvidoria' AND m4.direcao = 'out'), 0)),
+                   m.created_at) END AS esperando_desde,
+               (SELECT t.status FROM ouvidoria_tickets t WHERE t.telefone = m.telefone AND t.status != 'resolvido' ORDER BY t.id DESC LIMIT 1) AS ticket_status,
+               (SELECT MAX(t.urgente) FROM ouvidoria_tickets t WHERE t.telefone = m.telefone AND t.status != 'resolvido') AS urgente
         FROM whatsapp_mensagens m
         JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'ouvidoria' GROUP BY telefone) ult
           ON ult.telefone = m.telefone AND ult.max_id = m.id
         LEFT JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'ouvidoria' AND direcao = 'in' GROUP BY telefone) ulti
           ON ulti.telefone = m.telefone
         LEFT JOIN whatsapp_mensagens mi ON mi.id = ulti.max_id
+        LEFT JOIN (SELECT telefone, COUNT(*) AS n FROM whatsapp_mensagens WHERE canal = 'ouvidoria' AND direcao = 'in' AND lida = 0 GROUP BY telefone) nl
+          ON nl.telefone = m.telefone
         LEFT JOIN ouvidoria_conversas oc ON oc.telefone = m.telefone
         LEFT JOIN clientes c ON c.telefone = m.telefone
         LEFT JOIN vendas vv ON vv.id = oc.venda_id
@@ -50,7 +79,9 @@ function listarConversasOuvidoria(string $busca = '', string $assunto = '', int 
         LEFT JOIN clientes cc ON cc.id = ov.cliente_id
         LEFT JOIN (SELECT comprador_telefone, MAX(comprador_nome) AS nome FROM vendas GROUP BY comprador_telefone) v ON v.comprador_telefone = m.telefone
         WHERE 1=1 {$where}
-        ORDER BY m.created_at DESC
+        ORDER BY " . ($ordem === 'espera'
+            ? "(m.direcao = 'in') DESC, esperando_desde ASC, m.created_at DESC"
+            : 'm.created_at DESC') . "
         LIMIT ?
     ";
     $params[] = $limite;
