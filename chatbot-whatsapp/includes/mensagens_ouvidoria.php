@@ -32,6 +32,7 @@ const OUVIDORIA_ASSUNTOS = [
     'multa'     => '🚦 Multa de trânsito',
     'contrato'  => '📄 Dúvida sobre contrato',
     'distrato'  => '✂️ Distrato',
+    'quitacao'  => '🏦 Quitação do financiamento',
     'outro'     => '💬 Outro assunto',
 ];
 
@@ -68,6 +69,9 @@ function ouvidoriaSalvarConversa(string $telefone, array $campos): void {
 function ouvidoriaClassificarPorPalavra(string $texto): ?string {
     $t = mb_strtolower(strtr($texto, ['á'=>'a','à'=>'a','ã'=>'a','â'=>'a','é'=>'e','ê'=>'e','í'=>'i','ó'=>'o','ô'=>'o','õ'=>'o','ú'=>'u','ç'=>'c','Á'=>'a','É'=>'e','Í'=>'i','Ó'=>'o','Ú'=>'u','Ç'=>'c']));
     if (preg_match('/\b(distrato|rescis|rescindir|cancelar (o |meu )?contrato|desistir|desisto|devolver (o |a )?(carro|moto|veiculo))/u', $t)) return 'distrato';
+    // 20/11/2026 — vendedor que passou o carro pra Fastcar e o banco está
+    // cobrando/ligando sobre a quitação. Antes de 'pagamento' ("quitar" ≠ "paguei").
+    if (preg_match('/\b(banco (esta |ta |fica |vive )?(me )?(ligando|ligou|liga|cobrando|cobra|mandando)|quitar|quitacao|quitam|quitarao|vao quitar|saldo devedor|financiamento (ainda |esta |ta )?(em aberto|no meu nome|nao (foi )?quitado)|nao quitaram|notificacao extrajudicial|busca e apreensao|nome (sujo|negativado)|negativad)/u', $t)) return 'quitacao';
     if (preg_match('/\b(multa|multas|infracao|autuacao|notificacao de transito|detran|radar|condutor)/u', $t)) return 'multa';
     if (preg_match('/\b(paguei|pago|pagamento|comprovante|pix|boleto|transferi|depositei|quitei|parcela paga)/u', $t)) return 'pagamento';
     if (preg_match('/\b(contrato|clausula|assinatura|assinar)/u', $t)) return 'contrato';
@@ -76,10 +80,11 @@ function ouvidoriaClassificarPorPalavra(string $texto): ?string {
 
 function _ouvidoriaPromptAssunto(): string {
     return "Você classifica mensagens que clientes da Fastcar (empresa que compra e revende veículos) mandam pra OUVIDORIA.\n"
-        . "Responda SÓ um JSON: {\"assunto\":\"pagamento|multa|contrato|distrato|outro\"}.\n"
+        . "Responda SÓ um JSON: {\"assunto\":\"pagamento|multa|contrato|distrato|quitacao|outro\"}.\n"
         . "- pagamento: pagou parcela/entrada, manda comprovante, pergunta de boleto/pix/baixa de pagamento.\n"
         . "- multa: multa de trânsito, notificação de infração, identificação de condutor.\n"
         . "- distrato: quer cancelar/encerrar o contrato, desistir, devolver o veículo.\n"
+        . "- quitacao: quem VENDEU o veículo pra Fastcar e o banco do financiamento está ligando/cobrando, pergunta quando a Fastcar vai quitar o financiamento, nome negativado, notificação do banco.\n"
         . "- contrato: dúvida sobre cláusulas, condições, prazos ou documentos do contrato.\n"
         . "- outro: qualquer outra coisa.\n";
 }
@@ -115,9 +120,9 @@ function ouvidoriaAnalisarMidiaIA(string $bytes, string $mime): ?array {
     if (!$geminiKey || $bytes === '' || !preg_match('#^(image/|video/|application/pdf)#', $mime)) return null;
     $prompt = "Esse arquivo foi mandado por um cliente pra ouvidoria de uma empresa que compra e revende veículos. "
         . "Diga o assunto: comprovante de pagamento (pix, boleto, transferência) = pagamento; notificação de multa/infração de trânsito = multa; "
-        . "contrato ou distrato = contrato/distrato; qualquer outra coisa = outro. "
+        . "contrato ou distrato = contrato/distrato; cobrança/notificação do BANCO do financiamento (saldo devedor, quitação, busca e apreensão) = quitacao; qualquer outra coisa = outro. "
         . "E descreva em 1 frase curta o que é (se for comprovante, diga valor, data e quem pagou quando estiver visível; se for multa, data e valor da infração). "
-        . "Nunca invente o que não está visível. Responda SÓ um JSON: {\"assunto\":\"pagamento|multa|contrato|distrato|outro\",\"descricao\":\"...\"}.";
+        . "Nunca invente o que não está visível. Responda SÓ um JSON: {\"assunto\":\"pagamento|multa|contrato|distrato|quitacao|outro\",\"descricao\":\"...\"}.";
     $r = geminiCallComMidia($prompt, $mime, base64_encode($bytes), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 300, 0.0);
     if ($r === '') return null;
     $desc = '';
@@ -126,7 +131,38 @@ function ouvidoriaAnalisarMidiaIA(string $bytes, string $mime): ?array {
 }
 
 /** Texto fixo da resposta (nunca gerado pela IA). */
-function ouvidoriaMontarResposta(string $assunto, bool $temArquivo, bool $dentroHorario, string $nome = ''): string {
+/**
+ * Prazo de quitação do contrato de COMPRA ligado ao telefone (20/11/2026,
+ * "banco está me ligando quando vão quitar financiamento"). Só devolve texto
+ * quando o contrato tem prazo E data de início — nunca chuta (regra #3).
+ */
+function ouvidoriaPrazoQuitacaoTexto(string $telefone, ?int $oportunidadeId = null): string {
+    try {
+        $db = getDB();
+        if (!$oportunidadeId) {
+            $st = $db->prepare("SELECT o.id FROM oportunidades o JOIN clientes c ON c.id = o.cliente_id
+                WHERE c.telefone = ? AND o.etapa = 'fechado' ORDER BY o.id DESC LIMIT 1");
+            $st->execute([$telefone]);
+            $oportunidadeId = (int)($st->fetchColumn() ?: 0) ?: null;
+        }
+        if (!$oportunidadeId) return '';
+        $st = $db->prepare("SELECT o.prazo_quitacao_meses, o.data_entrega_posse, o.data_compra,
+                (SELECT MIN(ct.assinado_em) FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status = 'assinado') AS assinado_em
+            FROM oportunidades o WHERE o.id = ? AND o.etapa = 'fechado'");
+        $st->execute([$oportunidadeId]);
+        $o = $st->fetch();
+        if (!$o || (int)$o['prazo_quitacao_meses'] <= 0) return '';
+        $inicio = $o['data_entrega_posse'] ?: ($o['assinado_em'] ?: $o['data_compra']);
+        if (!$inicio || !strtotime((string)$inicio)) return '';
+        $meses = (int)$o['prazo_quitacao_meses'];
+        $ate = date('m/Y', strtotime(date('Y-m-d', strtotime((string)$inicio)) . " +{$meses} months"));
+        return "No seu contrato, o prazo é de até {$meses} meses a partir de " . date('d/m/Y', strtotime((string)$inicio)) . " (previsão: até {$ate}).";
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+function ouvidoriaMontarResposta(string $assunto, bool $temArquivo, bool $dentroHorario, string $nome = '', string $extra = ''): string {
     $oi = $nome !== '' ? "Olá, {$nome}! " : 'Olá! ';
     $horario = $dentroHorario
         ? 'Um atendente da ouvidoria te responde por aqui em breve.'
@@ -148,6 +184,13 @@ function ouvidoriaMontarResposta(string $assunto, bool $temArquivo, bool $dentro
                 : 'Se preferir, podemos te atender presencialmente na nossa sede — é só combinar o melhor dia.';
             return "{$oi}Recebemos seu pedido sobre distrato. {$horarioFixo} {$presencial}"
                 . ($dentroHorario ? ' Um atendente te responde por aqui em breve.' : ' Respondemos no próximo dia útil.');
+        case 'quitacao':
+            $num = trim((string)(getConfig('ouvidoria_numero_publico') ?: ''));
+            $numTxt = $num !== '' ? "o número da nossa ouvidoria: *{$num}*" : 'este mesmo número da nossa ouvidoria';
+            return "{$oi}Fique tranquilo(a): pelo contrato, a quitação do financiamento junto ao banco é responsabilidade da Fastcar e é feita dentro do prazo combinado no contrato."
+                . ($extra !== '' ? " {$extra}" : '')
+                . " Se o banco te ligar, pode passar {$numTxt} — a gente atende e explica a situação pra eles. "
+                . "Se chegar alguma notificação por escrito do banco, manda a foto por aqui. {$horario}";
         case 'contrato':
             return "{$oi}Recebemos sua dúvida sobre o contrato. {$horarioFixo} "
                 . ($dentroHorario ? 'Um atendente te responde por aqui em breve.' : 'Respondemos no próximo dia útil.');
@@ -370,7 +413,8 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => false];
     }
 
-    $resposta = ouvidoriaMontarResposta($assunto, $temArquivo, ouvidoriaDentroHorario(), (string)$conv['nome']);
+    $extraResposta = $assunto === 'quitacao' ? ouvidoriaPrazoQuitacaoTexto($telNorm, !empty($conv['oportunidade_id']) ? (int)$conv['oportunidade_id'] : null) : '';
+    $resposta = ouvidoriaMontarResposta($assunto, $temArquivo, ouvidoriaDentroHorario(), (string)$conv['nome'], $extraResposta);
     if ($ticketNovo && !empty($ticket['protocolo'])) {
         $resposta .= "\n\nSeu protocolo de atendimento é *{$ticket['protocolo']}*.";
     }
