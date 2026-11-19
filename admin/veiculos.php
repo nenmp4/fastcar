@@ -126,7 +126,10 @@ $joinContratoAssinado = "
 // de cobrança. Só entra veículo com financiamento AINDA em aberto — uma vez
 // marcado quitado (botão "✅ Marcar quitado"), some do alerta sozinho.
 $fPrazo = (int)($_GET['prazo'] ?? 0);
-$faixasPrazo = ['12' => [365, 547], '18' => [548, 729], '24' => [730, 999999]];
+// 19/11/2026 — faixas viraram 6/12/18 meses + 3 anos (risco de banco), ver
+// includes/frota_prazo.php (mesma fonte do aviso diário).
+require_once __DIR__ . '/../includes/frota_prazo.php';
+$faixasPrazo = array_map(fn($f) => [$f[0], $f[1]], FROTA_PRAZO_FAIXAS);
 
 // 19/09/2026, achado direto no import do CRM antigo (Yaqar/IACAR):
 // "temos que descobrir clientes não está completo, eliminar ele do
@@ -258,7 +261,8 @@ $sql = "
         LIMIT 1
     )
     {$where}
-    ORDER BY o.data_compra DESC, o.updated_at DESC
+    ORDER BY CASE WHEN o.financiamento_quitado = 0 AND {$diasPosseExpr} >= 1095 THEN 0 ELSE 1 END,
+             o.data_compra DESC, o.updated_at DESC
     LIMIT " . ITENS_POR_PAGINA_PADRAO . " OFFSET " . paginacaoOffset();
 
 $stmt = $db->prepare($sql);
@@ -276,18 +280,19 @@ $totalPago = (float)($stmtTotalPago->fetchColumn() ?: 0);
 // (sem filtro de busca/prazo ativo), mesmo espírito dos badges de atraso do
 // financeiro: o número do badge sempre reflete o total real da faixa,
 // independente do que está sendo visto na tabela no momento.
-$bucketsPrazo = ['12' => 0, '18' => 0, '24' => 0];
+$bucketsPrazo = array_fill_keys(array_keys(FROTA_PRAZO_FAIXAS), 0);
+$somasFaixa = [];
+foreach (FROTA_PRAZO_FAIXAS as $k => [$mn, $mx]) {
+    $somasFaixa[] = "SUM(CASE WHEN {$diasPosseExpr} BETWEEN {$mn} AND {$mx} THEN 1 ELSE 0 END) AS b{$k}";
+}
 $rBuckets = $db->query("
-    SELECT
-        SUM(CASE WHEN {$diasPosseExpr} BETWEEN 365 AND 547 THEN 1 ELSE 0 END) AS b12,
-        SUM(CASE WHEN {$diasPosseExpr} BETWEEN 548 AND 729 THEN 1 ELSE 0 END) AS b18,
-        SUM(CASE WHEN {$diasPosseExpr} >= 730 THEN 1 ELSE 0 END) AS b24
+    SELECT " . implode(', ', $somasFaixa) . "
     FROM oportunidades o
     {$joinContratoAssinado}
     WHERE o.etapa = 'fechado' AND COALESCE(o.oculto_estoque_motivo, '') NOT LIKE 'Cadastro duplicado%' AND o.financiamento_quitado = 0
 ")->fetch();
 if ($rBuckets) {
-    $bucketsPrazo = ['12' => (int)($rBuckets['b12'] ?? 0), '18' => (int)($rBuckets['b18'] ?? 0), '24' => (int)($rBuckets['b24'] ?? 0)];
+    foreach ($bucketsPrazo as $k => $_) $bucketsPrazo[$k] = (int)($rBuckets['b' . $k] ?? 0);
 }
 
 /**
@@ -315,6 +320,23 @@ function mesesComAFastcar(?string $refPosse): int {
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 <style>
 .tabela-frota td { vertical-align: top; }
+.frota-faixas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem; }
+.frota-fx { display: grid; gap: 2px; padding: .8rem 1rem; border: 1px solid var(--borda); border-left-width: 4px; border-radius: var(--raio); background: var(--superficie); color: inherit; text-decoration: none; min-height: 44px; }
+.frota-fx:hover { box-shadow: var(--sombra); }
+.frota-fx.ativo { box-shadow: 0 0 0 2px var(--azul); }
+.frota-fx .fx-n { font-size: 1.7rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.frota-fx .fx-t { font-weight: 600; }
+.frota-fx .fx-d { font-size: .8rem; color: var(--texto-suave); }
+.frota-fx.fx6 { border-left-color: var(--azul); } .frota-fx.fx6 .fx-n { color: var(--azul); }
+.frota-fx.fx12 { border-left-color: var(--amarelo); } .frota-fx.fx12 .fx-n { color: var(--amarelo); }
+.frota-fx.fx18 { border-left-color: var(--laranja); } .frota-fx.fx18 .fx-n { color: var(--laranja); }
+.frota-fx.fx36 { border: 2px solid var(--vermelho); background: var(--vermelho-bg); } .frota-fx.fx36 .fx-n { color: var(--vermelho); }
+.frota-tag { display: inline-block; font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; margin-top: 4px; }
+.frota-tag.fx6 { background: var(--azul-claro); color: var(--azul); }
+.frota-tag.fx12 { background: var(--amarelo-bg); color: var(--amarelo); }
+.frota-tag.fx18 { background: var(--laranja-bg); color: var(--laranja); }
+.frota-tag.fx36 { background: var(--vermelho-bg); color: var(--vermelho); }
+.tabela-frota tr.linha-risco-banco td { background: var(--vermelho-bg); }
 .tabela-frota .frota-veiculo { font-weight: 600; color: var(--texto, inherit); text-decoration: none; }
 .tabela-frota .frota-veiculo:hover { color: var(--azul); text-decoration: underline; }
 .tabela-frota .frota-placa { font-family: monospace; font-size: 13px; letter-spacing: .5px; background: var(--fundo); padding: 1px 6px; border-radius: 4px; }
@@ -379,21 +401,20 @@ function mesesComAFastcar(?string $refPosse): int {
 
 <div class="card">
     <div style="font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:.5rem">
-        ⏰ Perto de negociar financiamento — tempo com a Fastcar desde a assinatura do contrato de compra
-        (financiamento ainda em aberto)
+        ⏰ Prazo de quitação — tempo com a Fastcar desde a assinatura do contrato de compra
+        (financiamento ainda em aberto) — clique pra filtrar
     </div>
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-        <?php
-        $baseQsPrazo = $busca ? ('busca=' . urlencode($busca)) : '';
-        $rotulosPrazo = ['12' => '12 a 17 meses', '18' => '18 a 23 meses', '24' => '24+ meses'];
-        ?>
-        <?php foreach ($rotulosPrazo as $n => $lbl): ?>
-            <a href="?<?= $baseQsPrazo ?><?= $baseQsPrazo ? '&' : '' ?>prazo=<?= $n ?>" class="btn<?= $fPrazo === (int)$n ? '-primary' : '' ?>" style="width:auto;text-decoration:none">
-                ⏰ <?= $lbl ?> — <strong><?= $bucketsPrazo[$n] ?></strong>
+    <div class="frota-faixas">
+        <?php $baseQsPrazo = $busca ? ('busca=' . urlencode($busca)) : ''; ?>
+        <?php foreach (FROTA_PRAZO_FAIXAS as $n => $fx): ?>
+            <a href="?<?= $baseQsPrazo ?><?= $baseQsPrazo ? '&' : '' ?>prazo=<?= $n ?>" class="frota-fx fx<?= $n ?><?= $fPrazo === (int)$n ? ' ativo' : '' ?>">
+                <span class="fx-n"><?= $bucketsPrazo[$n] ?></span>
+                <span class="fx-t"><?= (string)$n === '36' ? '🚨 ' : '' ?><?= e($fx[2]) ?></span>
+                <span class="fx-d"><?= e($fx[3]) ?></span>
             </a>
         <?php endforeach; ?>
-        <?php if ($fPrazo): ?><a href="?<?= $baseQsPrazo ?>" style="align-self:center">Ver todos os veículos</a><?php endif; ?>
     </div>
+    <?php if ($fPrazo): ?><a href="?<?= $baseQsPrazo ?>" style="display:inline-block;margin-top:.5rem">Ver todos os veículos</a><?php endif; ?>
 </div>
 
 <div class="card">
@@ -434,14 +455,10 @@ function mesesComAFastcar(?string $refPosse): int {
             <?php
             $mesesFastcar = mesesComAFastcar($v['ref_posse']);
             $diasFastcar = $v['ref_posse'] ? (int)((strtotime('now') - strtotime($v['ref_posse'])) / 86400) : 0;
-            $faixaAlerta = null;
-            if (!$v['financiamento_quitado']) {
-                if ($diasFastcar >= 730) $faixaAlerta = '24+';
-                elseif ($diasFastcar >= 548) $faixaAlerta = '18+';
-                elseif ($diasFastcar >= 365) $faixaAlerta = '12+';
-            }
+            $faixaAlerta = $v['financiamento_quitado'] ? null : frotaPrazoFaixa($diasFastcar);
+            $riscoBanco = $faixaAlerta === '36';
             ?>
-            <tr<?= $v['incompleto_import_antigo'] ? ' class="linha-sem-vinculo"' : '' ?>>
+            <tr<?= $riscoBanco ? ' class="linha-risco-banco"' : ($v['incompleto_import_antigo'] ? ' class="linha-sem-vinculo"' : '') ?>>
                 <td>
                     <a class="frota-veiculo" href="/admin/oportunidade.php?id=<?= (int)$v['id'] ?>"><?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e($v['veiculo_ano']) ?></a>
                     <br><?php if (trim((string)$v['veiculo_placa']) !== ''): ?><span class="placa-mercosul pm-sm" style="margin-top:4px"><span class="pm-faixa">BRASIL</span><span class="pm-num"><?= e(strtoupper((string)$v['veiculo_placa'])) ?></span></span><?php else: ?><small class="frota-sub">— sem placa</small><?php endif; ?>
@@ -457,7 +474,7 @@ function mesesComAFastcar(?string $refPosse): int {
                 <td class="frota-nowrap">
                     <strong><?= $v['valor_final'] !== null ? 'R$ ' . number_format((float)$v['valor_final'], 2, ',', '.') : '—' ?></strong>
                     <br><small class="frota-sub"><?= $v['data_compra'] ? date('d/m/Y', strtotime($v['data_compra'])) : '—' ?> · <?= $mesesFastcar ?> mês(es)</small>
-                    <?php if ($faixaAlerta): ?><br><span class="badge badge-aviso">⏰ <?= $faixaAlerta ?> meses</span><?php endif; ?>
+                    <?php if ($faixaAlerta): ?><br><span class="frota-tag fx<?= $faixaAlerta ?>"><?= $riscoBanco ? '🚨 Risco de banco' : '⏰ ' . $faixaAlerta . '+ meses' ?></span><?php endif; ?>
                 </td>
                 <td>
                     <?php if ($v['contrato_assinado'] ?? false): ?>
