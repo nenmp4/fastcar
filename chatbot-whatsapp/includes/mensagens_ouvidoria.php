@@ -367,7 +367,9 @@ function ouvidoriaComQuemEstaCarro(string $placa, ?string $data = null): ?array 
     $placa = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placa));
     if (strlen($placa) < 7) return null;
     $db = getDB();
-    $st = $db->prepare("SELECT o.id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, o.data_entrega_posse, o.data_compra, c.nome AS vendedor_nome
+    $st = $db->prepare("SELECT o.id, o.veiculo_marca, o.veiculo_modelo, o.veiculo_ano, o.veiculo_placa, o.data_entrega_posse, o.data_compra,
+            c.nome AS vendedor_nome, c.telefone AS vendedor_telefone,
+            (SELECT MIN(ct.assinado_em) FROM contratos ct WHERE ct.oportunidade_id = o.id AND ct.tipo = 'compra' AND ct.status = 'assinado') AS compra_assinada_em
         FROM oportunidades o LEFT JOIN clientes c ON c.id = o.cliente_id
         WHERE REPLACE(REPLACE(UPPER(COALESCE(o.veiculo_placa,'')),'-',''),' ','') = ?
         ORDER BY (o.etapa = 'fechado') DESC, o.id DESC LIMIT 1");
@@ -376,13 +378,19 @@ function ouvidoriaComQuemEstaCarro(string $placa, ?string $data = null): ?array 
     if (!$o) return null;
     $ref = $data ?: date('Y-m-d');
     $veiculo = trim(($o['veiculo_marca'] ?? '') . ' ' . ($o['veiculo_modelo'] ?? '') . ' ' . ($o['veiculo_ano'] ?? ''));
+    // Início da posse do comprador: data da venda; venda lançada à mão sem essa data
+    // cai na assinatura do contrato e, por último, em quando virou "vendido".
     $st = $db->prepare("SELECT v.*,
-            (SELECT MIN(h.created_at) FROM venda_historico h WHERE h.venda_id = v.id AND h.etapa_nova = 'cancelada') AS cancelada_em
-        FROM vendas v WHERE v.oportunidade_id = ? AND v.etapa IN ('vendido','cancelada') AND v.data_venda IS NOT NULL AND v.data_venda != ''
-        ORDER BY v.data_venda DESC, v.id DESC");
+            (SELECT MIN(h.created_at) FROM venda_historico h WHERE h.venda_id = v.id AND h.etapa_nova = 'cancelada') AS cancelada_em,
+            COALESCE(NULLIF(v.data_venda, ''),
+                (SELECT MIN(ct.assinado_em) FROM contratos ct WHERE ct.venda_id = v.id AND ct.status = 'assinado'),
+                (SELECT MIN(h.created_at) FROM venda_historico h WHERE h.venda_id = v.id AND h.etapa_nova = 'vendido')) AS inicio_posse
+        FROM vendas v WHERE v.oportunidade_id = ? AND v.etapa IN ('vendido','cancelada')
+        ORDER BY inicio_posse DESC, v.id DESC");
     $st->execute([(int)$o['id']]);
     foreach ($st->fetchAll() as $v) {
-        $ini = substr((string)$v['data_venda'], 0, 10);
+        if (empty($v['inicio_posse'])) continue;
+        $ini = substr((string)$v['inicio_posse'], 0, 10);
         $fim = $v['etapa'] === 'cancelada' ? substr((string)($v['cancelada_em'] ?: $v['updated_at']), 0, 10) : null;
         if ($ini <= $ref && ($fim === null || $fim >= $ref)) {
             return [
@@ -394,7 +402,18 @@ function ouvidoriaComQuemEstaCarro(string $placa, ?string $data = null): ?array 
             ];
         }
     }
-    $entrada = substr((string)($o['data_entrega_posse'] ?: $o['data_compra']), 0, 10);
+    $entrada = substr((string)($o['data_entrega_posse'] ?: $o['compra_assinada_em'] ?: $o['data_compra']), 0, 10);
+    // Veículo cadastrado à mão (sem contrato de compra assinado nem data de entrega):
+    // a data que existe é a do cadastro, não a da entrada real — nunca aponta um
+    // "vendedor" que pode ser placeholder ("Veículo recuperado...", telefone DDD 00).
+    $manual = empty($o['data_entrega_posse']) && empty($o['compra_assinada_em']);
+    if ($entrada !== '' && $ref < $entrada && $manual) {
+        $semVendedor = str_starts_with(preg_replace('/\D/', '', (string)$o['vendedor_telefone']), '5500')
+            || str_starts_with((string)$o['vendedor_nome'], 'Veículo recuperado');
+        return ['com' => 'antes_cadastro', 'venda_id' => null, 'oportunidade_id' => (int)$o['id'],
+                'nome' => $semVendedor ? '' : (string)$o['vendedor_nome'], 'cpf' => '', 'cnh' => '', 'rg' => '', 'endereco' => '', 'telefone' => '',
+                'desde' => null, 'ate' => $entrada, 'veiculo' => $veiculo, 'placa' => (string)$o['veiculo_placa'], 'data_ref' => $data, 'tipo_contrato' => ''];
+    }
     if ($entrada !== '' && $ref < $entrada) {
         return ['com' => 'vendedor_original', 'venda_id' => null, 'oportunidade_id' => (int)$o['id'], 'nome' => (string)$o['vendedor_nome'],
                 'cpf' => '', 'cnh' => '', 'rg' => '', 'endereco' => '', 'telefone' => '', 'desde' => null, 'ate' => $entrada,

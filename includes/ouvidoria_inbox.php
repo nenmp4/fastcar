@@ -323,7 +323,9 @@ function ouvidoriaResumoTicketTexto(array $t, string $nota, string $quem): strin
         $quando = !empty($cq['data_ref']) ? 'em ' . date('d/m/Y', strtotime($cq['data_ref'])) : 'hoje';
         $linhas[] = "🚗 {$cq['placa']} {$cq['veiculo']} — {$quando} estava com: " . ($cq['com'] === 'comprador'
             ? $cq['nome'] . ($cq['cpf'] ? " · CPF {$cq['cpf']}" : '') . ($cq['cnh'] ? " · CNH {$cq['cnh']}" : '') . " (venda #{$cq['venda_id']})"
-            : ($cq['com'] === 'fastcar' ? 'Fastcar (estoque)' : ($cq['nome'] ?: 'vendedor original') . ' (antes da compra)'));
+            : ($cq['com'] === 'fastcar' ? 'Fastcar (estoque)'
+            : ($cq['com'] === 'antes_cadastro' ? 'sem registro (data anterior ao cadastro manual do veículo' . ($cq['nome'] !== '' ? ", vendedor cadastrado: {$cq['nome']}" : '') . ')'
+            : ($cq['nome'] ?: 'vendedor original') . ' (antes da compra)')));
     }
     if ($nota !== '') $linhas[] = "\n📝 {$quem}: {$nota}";
     $st = $db->prepare("SELECT direcao, mensagem, created_at FROM whatsapp_mensagens
@@ -404,6 +406,11 @@ function ouvidoriaComQuemHtml(?array $r): string {
             . e(date('d/m/Y', strtotime($r['desde']))) . ($r['ate'] ? ' até ' . e(date('d/m/Y', strtotime($r['ate']))) : '') . ')'
             . ($dados ? ' · ' . e(implode(' · ', $dados)) : ' · <span style="color:var(--vermelho)">sem CPF/CNH cadastrados</span>')
             . ' <button type="button" class="btn-texto" data-copiar="' . e($copiar) . '" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.copiar).then(()=>{this.textContent=\'✅ copiado\'})">📋 copiar pra indicação</button>';
+    }
+    if ($r['com'] === 'antes_cadastro') {
+        return $cab . '<strong>sem registro</strong> — essa data é anterior ao cadastro manual do veículo (' . e(date('d/m/Y', strtotime($r['ate'])))
+            . ')' . ($r['nome'] !== '' ? ', provavelmente com <strong>' . e($r['nome']) . '</strong> (vendedor cadastrado)' : '')
+            . ' · confira a data de entrega na <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">compra #' . (int)$r['oportunidade_id'] . '</a>';
     }
     if ($r['com'] === 'vendedor_original') {
         return $cab . '<strong>' . e($r['nome'] ?: 'vendedor original') . '</strong> (antes de entregar pra Fastcar em ' . e(date('d/m/Y', strtotime($r['ate']))) . ') · <a href="/admin/oportunidade.php?id=' . (int)$r['oportunidade_id'] . '" target="_blank">compra #' . (int)$r['oportunidade_id'] . '</a>';
