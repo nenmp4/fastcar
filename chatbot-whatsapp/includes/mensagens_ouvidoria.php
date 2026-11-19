@@ -610,6 +610,13 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
             // best-effort: ticket nunca derruba o webhook
         }
     }
+    // 20/11/2026, "mensagens repetidas tem manter sempre mesmo contexto" — com
+    // ticket aberto, toda mensagem segue o assunto do ticket (resposta, aviso e
+    // conversa), nunca troca de assunto a cada mensagem nova.
+    if ($ticket && !empty($ticket['assunto']) && $ticket['assunto'] !== $assunto) {
+        $assunto = (string)$ticket['assunto'];
+        ouvidoriaSalvarConversa($telNorm, ['assunto' => $assunto]);
+    }
     $extraResposta = $assunto === 'quitacao' ? ouvidoriaPrazoQuitacaoTexto($telNorm, !empty($conv['oportunidade_id']) ? (int)$conv['oportunidade_id'] : null) : '';
     // O relato do cliente nas mensagens seguintes entra no resumo do ticket (até 600 caracteres).
     if ($ticket && !$ticketNovo && $textoUtil !== '' && mb_strlen($textoUtil) >= 15) {
