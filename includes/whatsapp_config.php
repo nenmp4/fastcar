@@ -1079,6 +1079,8 @@ function nomeWhatsappPareceValido(string $nome): bool {
         'ocupado', 'ocupada', 'ausente', 'away', 'busy', 'at work', 'no trabalho',
         'em uma ligacao', 'em uma ligação', 'em uma chamada', 'bateria fraca',
         'battery about to die', 'disponible',
+        // 21/11/2026 — pushName de mensagem que NÓS mandamos (o WhatsApp chama o dono de "Você").
+        'você', 'voce', 'you', 'eu',
         'hey there i am using whatsapp', 'hey there! i am using whatsapp.',
         'ola estou usando o whatsapp', 'olá estou usando o whatsapp',
         'ola, estou usando o whatsapp', 'olá, estou usando o whatsapp.',

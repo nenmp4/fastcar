@@ -942,7 +942,8 @@ function evolutionListarConversas(?array $override = null): ?array {
         $deMim = (is_array($ult) && isset($ult['key']['fromMe'])) ? (bool)$ult['key']['fromMe'] : null;
         $saida[] = [
             'telefone' => $tel,
-            'nome' => trim((string)($c['pushName'] ?? $c['name'] ?? (is_array($ult) ? ($ult['pushName'] ?? '') : ''))),
+            // pushName da última mensagem só quando ela é DO CLIENTE — se fomos nós, vem "Você".
+            'nome' => trim((string)($c['pushName'] ?? $c['name'] ?? ((is_array($ult) && $deMim === false) ? ($ult['pushName'] ?? '') : ''))),
             'atualizado_ts' => $ts,
             'ultima_de_mim' => $deMim,
             'raw' => $c,

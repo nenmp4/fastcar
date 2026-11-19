@@ -454,6 +454,49 @@ function ouvidoriaNotificarSuperAdmins(string $telefone, string $assunto, string
     }
 }
 
+/**
+ * Grava a mensagem que acabamos de mandar JÁ com o id do WhatsApp (21/11/2026,
+ * "saudação repetida") — sem o id, o eco da própria mensagem (fromMe) chegava
+ * pelo webhook e virava uma 2ª linha igual na conversa. Se o eco chegou antes,
+ * completa essa linha em vez de duplicar.
+ */
+function ouvidoriaRegistrarEnviada(string $tel, string $texto, bool $porIa, ?int $usuarioId = null): int {
+    $waId = evolutionConsumirUltimoIdEnviado();
+    $id = registrarMensagem($tel, 'out', $texto, $waId ?: null, $porIa, 'text', $usuarioId);
+    if (!$id && $waId) {
+        $db = getDB();
+        $db->prepare("UPDATE whatsapp_mensagens SET mensagem = ?, usuario_id = ?, enviado_por_ia = ?, direcao = 'out' WHERE zapi_message_id = ?")
+           ->execute([$texto, $usuarioId, $porIa ? 1 : 0, $waId]);
+        $st = $db->prepare("SELECT id FROM whatsapp_mensagens WHERE zapi_message_id = ?");
+        $st->execute([$waId]);
+        $id = (int)$st->fetchColumn();
+    }
+    return (int)$id;
+}
+
+/**
+ * Mensagem de cortesia ("Ok", "Obrigado", "Boa noite", 👍) — nunca abre ticket
+ * novo nem muda o assunto do ticket aberto (21/11/2026).
+ */
+function ouvidoriaMensagemCurta(string $texto): bool {
+    $t = mb_strtolower(trim($texto));
+    $t = strtr($t, ['á'=>'a','à'=>'a','ã'=>'a','â'=>'a','é'=>'e','ê'=>'e','í'=>'i','ó'=>'o','ô'=>'o','õ'=>'o','ú'=>'u','ç'=>'c']);
+    $t = trim(preg_replace('/[^a-z0-9 ]+/u', ' ', $t));
+    $t = preg_replace('/\s+/', ' ', $t);
+    if ($t === '') return true; // só emoji/pontuação
+    if (preg_match('/^(ok|okay|okk+|blz|beleza|certo|certinho|ta|ta bom|ta certo|ta otimo|show|top|perfeito|otimo|entendi|entendido|combinado|sim|nao|uhum|aham|valeu|vlw|obg|obrigad[oa]|muito obrigad[oa]|obrigad[oa] mesmo|grat[oa]|agradeco|de nada|oi|ola|opa|e ai|bom dia|boa tarde|boa noite|oi bom dia|oi boa tarde|oi boa noite|ola bom dia|ola boa tarde|ola boa noite|tudo bem|tudo bom|amem|deus abencoe|aguardo|fico no aguardo|ate mais|tchau)( (ok|obrigad[oa]|sim|bom dia|boa tarde|boa noite))?$/', $t)) return true;
+    return false;
+}
+
+/** Trava por conversa: 2 mensagens chegando juntas nunca respondem/abrem ticket em dobro. */
+function ouvidoriaTravarConversa(string $tel) {
+    $dir = dirname(__DIR__, 2) . '/storage';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $f = @fopen($dir . '/ouvidoria_' . md5($tel) . '.lock', 'c'); // md5: telefone nunca vai pro nome do arquivo
+    if ($f) flock($f, LOCK_EX);
+    return $f;
+}
+
 function processarMensagemOuvidoria(array $payload, ?array $instancia = null): array {
     whatsappCanalRegistro('ouvidoria');
     $vazio = ['ignored' => null, 'telefone' => '', 'texto' => null, 'tipo' => null, 'ia_pausada' => false, 'instancia' => $instancia];
@@ -524,6 +567,8 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         salvarMidiaWhatsappRecebida($msgId, $bytes, $mime ?: 'application/octet-stream', $tipoRegistro, (int)$cli['id'], (string)$cli['nome']);
     }
 
+    $trava = ouvidoriaTravarConversa($telNorm);
+    try {
     $conv = ouvidoriaConversa($telNorm);
     if ($nomeContato !== '' && nomeWhatsappPareceValido($nomeContato) && $conv['nome'] === '') {
         ouvidoriaSalvarConversa($telNorm, ['nome' => $nomeContato]);
@@ -534,19 +579,31 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     $temArquivo = in_array($tipoRegistro, ['image', 'document'], true);
     // Texto que o cliente escreveu (ou falou no áudio, ou a legenda) — nunca a descrição da IA.
     $textoUtil = $tipoRegistro === 'text' ? $texto : ($textoFalado !== '' ? $textoFalado : $legenda);
+    $curta = $tipoRegistro === 'text' && ouvidoriaMensagemCurta($textoUtil);
     $assunto = $textoUtil !== '' ? ouvidoriaClassificarPorPalavra($textoUtil) : null;
-    if (!$assunto && $textoUtil !== '') $assunto = ouvidoriaClassificarTextoIA($textoUtil);
+    if (!$assunto && $textoUtil !== '' && !$curta) $assunto = ouvidoriaClassificarTextoIA($textoUtil);
     if ((!$assunto || $assunto === 'outro') && $assuntoArquivo && $assuntoArquivo !== 'outro') $assunto = $assuntoArquivo;
     if ((!$assunto || $assunto === 'outro') && $conv['assunto'] !== '' && $conv['assunto'] !== 'outro') $assunto = $conv['assunto'];
+    // Cortesia com ticket aberto: fica no ticket mais recente, nunca muda o assunto.
+    if ($curta && !ouvidoriaClassificarPorPalavra($textoUtil) && ($ativosCurta = ouvidoriaTicketsAtivos($telNorm))) $assunto = (string)$ativosCurta[0]['assunto'];
     $assunto = $assunto ?: 'outro';
     if ($assunto !== 'outro' || $conv['assunto'] === '') ouvidoriaSalvarConversa($telNorm, ['assunto' => $assunto]);
 
     $resumoNotif = ($conv['nome'] ?: $telNorm) . ': ' . ($textoUtil !== '' ? $textoUtil : (str_starts_with($texto, '[') ? 'mandou ' . $tipoRegistro : $texto));
     $ticket = null; $ticketNovo = false;
-    try {
-        [$ticket, $ticketNovo] = ouvidoriaTicketParaMensagem($telNorm, $assunto, (string)$conv['nome'], $conv, $resumoNotif);
-    } catch (Throwable $e) {
-        // best-effort: ticket nunca derruba o webhook
+    // "Ok"/"Obrigado" depois de um ticket resolvido (últimos 7 dias) não abre outro.
+    $cortesiaPosResolvido = false;
+    if ($curta && !ouvidoriaTicketsAtivos($telNorm)) {
+        $st = getDB()->prepare("SELECT 1 FROM ouvidoria_tickets WHERE telefone = ? AND resolvido_em >= datetime('now','localtime','-7 days') LIMIT 1");
+        $st->execute([$telNorm]);
+        $cortesiaPosResolvido = (bool)$st->fetchColumn();
+    }
+    if (!$cortesiaPosResolvido) {
+        try {
+            [$ticket, $ticketNovo] = ouvidoriaTicketParaMensagem($telNorm, $assunto, (string)$conv['nome'], $conv, $resumoNotif);
+        } catch (Throwable $e) {
+            // best-effort: ticket nunca derruba o webhook
+        }
     }
     $extraResposta = $assunto === 'quitacao' ? ouvidoriaPrazoQuitacaoTexto($telNorm, !empty($conv['oportunidade_id']) ? (int)$conv['oportunidade_id'] : null) : '';
     // O relato do cliente nas mensagens seguintes entra no resumo do ticket (até 600 caracteres).
@@ -596,6 +653,11 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     if (!empty($conv['ia_pausada'])) {
         return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => true, 'instancia' => $instancia];
     }
+    // Atendente humano já está no ticket: a IA não responde por cima.
+    if ($ticket && ($ticket['status'] ?? '') === 'em_atendimento') {
+        return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => false, 'motivo' => 'humano_atendendo'];
+    }
+    $saudacaoPendente = $ticket && !empty($ticket['protocolo']) && empty($ticket['saudacao_enviada_em']);
 
     // Nunca repete a mesma resposta: mesmo assunto em até 12h só responde de
     // novo quando chega um arquivo (comprovante/notificação) — e aí no máximo
@@ -615,13 +677,14 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
             $responde = false;
         }
     }
-    if ($ticketNovo) $responde = true; // ticket novo sempre recebe o protocolo
+    if ($curta || $cortesiaPosResolvido) $responde = false; // "Ok", "Obrigado": nunca repete a resposta
+    if ($saudacaoPendente) $responde = true; // ticket sem protocolo enviado ainda: manda (1x por ticket)
     if (!$responde) {
         return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => false];
     }
 
     $resposta = ouvidoriaMontarResposta($assunto, $temArquivo, ouvidoriaDentroHorario(), (string)$conv['nome'], $extraResposta);
-    if ($ticketNovo && !empty($ticket['protocolo'])) {
+    if ($saudacaoPendente) {
         // 20/11/2026, "sempre pedir descreva situação, essa pergunta chave
         // pra entendermos o ticket" — toda abertura de ticket pede o relato.
         $resposta .= "\n\n👉 Pra gente entender seu caso: *descreva em poucas palavras a sua situação* (o que aconteceu, desde quando e o que você precisa).";
@@ -629,8 +692,11 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     }
     $enviou = evolutionEnviarTexto($telNorm, $resposta, evolutionCredenciaisOuvidoria());
     if ($enviou) {
-        registrarMensagem($telNorm, 'out', $resposta, null, true, 'text', null);
+        ouvidoriaRegistrarEnviada($telNorm, $resposta, true, null);
         ouvidoriaSalvarConversa($telNorm, ['ultima_auto_assunto' => $chaveResposta, 'ultima_auto_em' => date('Y-m-d H:i:s')]);
+        if ($saudacaoPendente) {
+            try { getDB()->prepare("UPDATE ouvidoria_tickets SET saudacao_enviada_em = datetime('now','localtime') WHERE id = ?")->execute([(int)$ticket['id']]); } catch (Throwable $e) {}
+        }
     }
 
     return [
@@ -638,4 +704,7 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => $enviou,
         'protocolo' => $ticket['protocolo'] ?? null, 'ticket_novo' => $ticketNovo,
     ];
+    } finally {
+        if ($trava) { flock($trava, LOCK_UN); fclose($trava); }
+    }
 }

@@ -27,15 +27,22 @@ function listarConversasOuvidoria(string $busca = '', string $assunto = '', int 
         $params[] = $assunto;
     }
     $sql = "
-        SELECT m.telefone, m.mensagem AS ultima_mensagem, m.direcao AS ultima_direcao,
-               m.tipo AS ultima_tipo, m.created_at AS ultima_em,
-               COALESCE(NULLIF(oc.nome,''), vv.comprador_nome, cc.nome, c.nome, v.nome, '') AS nome,
+        SELECT m.telefone,
+               -- 21/11/2026: prévia = última mensagem do CLIENTE (a do robô só se ele nunca escreveu).
+               COALESCE(mi.mensagem, m.mensagem) AS ultima_mensagem,
+               CASE WHEN mi.id IS NOT NULL THEN 'in' ELSE m.direcao END AS ultima_direcao,
+               COALESCE(mi.tipo, m.tipo) AS ultima_tipo, m.created_at AS ultima_em,
+               COALESCE(CASE WHEN TRIM(COALESCE(oc.nome,'')) IN ('', 'Você', 'você', 'Voce', 'voce', 'You') THEN NULL ELSE oc.nome END,
+                        NULLIF(vv.comprador_nome,''), NULLIF(cc.nome,''), NULLIF(c.nome,''), NULLIF(v.nome,''), '') AS nome,
                COALESCE(oc.assunto, '') AS assunto,
                COALESCE(oc.ia_pausada, 0) AS ia_pausada,
                (SELECT COUNT(*) FROM whatsapp_mensagens m2 WHERE m2.telefone = m.telefone AND m2.canal = 'ouvidoria' AND m2.direcao = 'in' AND m2.lida = 0) AS nao_lidas
         FROM whatsapp_mensagens m
         JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'ouvidoria' GROUP BY telefone) ult
           ON ult.telefone = m.telefone AND ult.max_id = m.id
+        LEFT JOIN (SELECT telefone, MAX(id) AS max_id FROM whatsapp_mensagens WHERE canal = 'ouvidoria' AND direcao = 'in' GROUP BY telefone) ulti
+          ON ulti.telefone = m.telefone
+        LEFT JOIN whatsapp_mensagens mi ON mi.id = ulti.max_id
         LEFT JOIN ouvidoria_conversas oc ON oc.telefone = m.telefone
         LEFT JOIN clientes c ON c.telefone = m.telefone
         LEFT JOIN vendas vv ON vv.id = oc.venda_id
@@ -77,7 +84,7 @@ function enviarMensagemManualOuvidoria(string $telefone, string $texto, int $usu
     if (!evolutionEnviarTexto($tel, $assinado, evolutionCredenciaisOuvidoria())) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pela instância da ouvidoria.' . whatsappDetalheUltimoErro()];
     }
-    $id = registrarMensagem($tel, 'out', $texto, null, false, 'text', $usuarioId);
+    $id = ouvidoriaRegistrarEnviada($tel, $texto, false, $usuarioId);
     // Humano assumiu: a IA para de responder essa conversa.
     ouvidoriaSalvarConversa($tel, ['ia_pausada' => 1]);
     $protocolos = [];
@@ -253,7 +260,7 @@ function ouvidoriaImportarHistorico(int $dias = 90, int $maxConversas = 300): ar
         $tel = $c['telefone'];
         $msgs = evolutionBuscarMensagensConversa($tel, $cred);
         if ($msgs === null) { $falhas++; continue; }
-        $novas = 0; $nome = $c['nome']; $textosCliente = [];
+        $novas = 0; $nome = nomeWhatsappPareceValido((string)$c['nome']) ? (string)$c['nome'] : ''; $textosCliente = [];
         try {
             $db->beginTransaction();
             foreach ($msgs as $m) {

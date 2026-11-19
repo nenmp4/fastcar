@@ -2530,8 +2530,16 @@ try {
     ");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_ouv_tickets_tel ON ouvidoria_tickets(telefone, status)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_ouv_tickets_status ON ouvidoria_tickets(status, aberto_em)");
-    foreach (["urgente INTEGER NOT NULL DEFAULT 0", "placa TEXT NOT NULL DEFAULT ''", "data_ref DATE"] as $colDef) {
+    foreach (["urgente INTEGER NOT NULL DEFAULT 0", "placa TEXT NOT NULL DEFAULT ''", "data_ref DATE", "saudacao_enviada_em DATETIME"] as $colDef) {
         try { $db->exec("ALTER TABLE ouvidoria_tickets ADD COLUMN {$colDef}"); } catch (Throwable $e) { /* já existe */ }
+    }
+    // 21/11/2026 — protocolo já mandado antes desta coluna existir: marca, pra nunca repetir.
+    $db->exec("UPDATE ouvidoria_tickets SET saudacao_enviada_em = aberto_em WHERE saudacao_enviada_em IS NULL
+        AND EXISTS (SELECT 1 FROM whatsapp_mensagens m WHERE m.telefone = ouvidoria_tickets.telefone AND m.canal = 'ouvidoria'
+                    AND m.direcao = 'out' AND m.mensagem LIKE '%' || ouvidoria_tickets.protocolo || '%')");
+    // 21/11/2026 — "Você" veio do pushName de mensagem NOSSA (histórico importado): nunca é o nome do cliente.
+    foreach (['ouvidoria_conversas', 'ouvidoria_tickets'] as $tb) {
+        $db->exec("UPDATE {$tb} SET nome = '' WHERE TRIM(nome) IN ('Você','você','Voce','voce','VOCÊ','VOCE','You','you','Eu','eu')");
     }
     echo "✅ ouvidoria_tickets: tabela pronta\n";
 } catch (Throwable $e) {
