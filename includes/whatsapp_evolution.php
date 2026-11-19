@@ -615,6 +615,51 @@ function evolutionTestarConexao(?array $override = null): string {
 }
 
 /**
+ * 19/11/2026, "caiu conexão coloca para fazer login no qr code no sistema
+ * mesmo" — pareia o WhatsApp sem abrir o Manager da Evolution.
+ * GET /instance/connect/{instance}: devolve o QR (base64) e/ou o código de
+ * pareamento por número. Instância já pareada responde só com o estado
+ * "open" — aí devolve conectado=true. Formato do campo da imagem nunca
+ * confirmado contra esta instância: tenta os nomes mais comuns e, se não
+ * achar nada, devolve a resposta crua no erro (nunca silêncio).
+ * Retorna ['conectado'=>bool, 'qr'=>data URI|'', 'codigo'=>string, 'erro'=>string].
+ */
+function evolutionObterQrCode(array $cred): array {
+    [$base, $instance, $apiKey] = $cred;
+    $out = ['conectado' => false, 'qr' => '', 'codigo' => '', 'erro' => ''];
+    if (!$base || !$instance || !$apiKey) { $out['erro'] = 'URL/instância/API key não configurados.'; return $out; }
+    $ch = curl_init("{$base}/instance/connect/" . rawurlencode($instance));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => _evolutionHeaders($apiKey),
+        CURLOPT_TIMEOUT => 20,
+    ] + _evolutionCurlSslOpts());
+    $resp = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) { $out['erro'] = "Falha de conexão: {$err}"; return $out; }
+    $j = json_decode((string)$resp, true);
+    if ($http !== 200 && $http !== 201) {
+        $out['erro'] = 'Evolution respondeu com erro: ' . _evolutionErroDeResposta($j, $http) . ' — ' . substr((string)$resp, 0, 300);
+        return $out;
+    }
+    $j = is_array($j) ? $j : [];
+    $estado = $j['instance']['state'] ?? $j['state'] ?? '';
+    if ($estado === 'open') { $out['conectado'] = true; return $out; }
+    $img = $j['base64'] ?? $j['qrcode']['base64'] ?? $j['qrcode'] ?? '';
+    if (is_string($img) && $img !== '') {
+        $out['qr'] = str_starts_with($img, 'data:') ? $img : 'data:image/png;base64,' . $img;
+    }
+    $cod = $j['pairingCode'] ?? $j['qrcode']['pairingCode'] ?? '';
+    if (is_string($cod)) $out['codigo'] = $cod;
+    if ($out['qr'] === '' && $out['codigo'] === '') {
+        $out['erro'] = 'A Evolution não devolveu QR code. Resposta: ' . substr((string)$resp, 0, 300);
+    }
+    return $out;
+}
+
+/**
  * GET /instance/fetchInstances — lista TODA instância cadastrada de
  * verdade nesse servidor. Diagnóstico manual, não usado em nenhum fluxo
  * automático: 09/10/2026, achado real — nem o valor mostrado com destaque

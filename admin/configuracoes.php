@@ -1134,6 +1134,80 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 </div>
 <?php endif; ?>
 
+<?php
+// 19/11/2026 — conectar/reconectar o WhatsApp (Evolution) por QR code aqui mesmo.
+$qrCanais = [];
+foreach (['principal' => ['📥 Compra (principal)', evolutionCredenciais()], 'vendas' => ['🛒 Vendas', evolutionCredenciaisVendas()],
+          'financeiro' => ['💳 Financeiro', evolutionCredenciaisFinanceiro()], 'ouvidoria' => ['📣 Ouvidoria', evolutionCredenciaisOuvidoria()]] as $k => [$rot, $c]) {
+    if ($c[0] && $c[1] && $c[2]) $qrCanais[$k] = $rot . ' — ' . $c[1];
+}
+?>
+<?php if ($qrCanais): ?>
+<div class="card" id="card-qr-whatsapp">
+    <h2>📲 Conectar WhatsApp (QR code)</h2>
+    <p><small>Caiu a conexão? Escolha o número, clique em <strong>Mostrar QR code</strong> e escaneie no celular:
+       WhatsApp → <em>Dispositivos conectados</em> → <em>Conectar um dispositivo</em>. A tela confirma sozinha quando conectar.</small></p>
+    <div class="qr-linha">
+        <select id="qr-canal" aria-label="Número do WhatsApp">
+            <?php foreach ($qrCanais as $k => $rot): ?><option value="<?= e($k) ?>"><?= e($rot) ?></option><?php endforeach; ?>
+        </select>
+        <button type="button" id="qr-status-btn" class="btn-secundario">🔄 Ver status</button>
+        <button type="button" id="qr-btn">📲 Mostrar QR code</button>
+    </div>
+    <p id="qr-msg" class="qr-msg"></p>
+    <div id="qr-area" class="qr-area" hidden>
+        <img id="qr-img" alt="QR code do WhatsApp" hidden>
+        <p id="qr-codigo" class="qr-codigo" hidden></p>
+    </div>
+</div>
+<style>
+.qr-linha { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.qr-linha select { flex:1 1 220px; max-width:100%; }
+.qr-linha button { margin-top:0; min-height:44px; }
+.qr-msg { margin:10px 0 0; }
+.qr-area { margin-top:12px; text-align:center; }
+.qr-area img { width:100%; max-width:280px; height:auto; border:1px solid var(--borda); border-radius:var(--raio); background:#fff; padding:8px; }
+.qr-codigo { font-size:22px; font-weight:700; letter-spacing:3px; }
+</style>
+<script>
+(function () {
+    var csrf = <?= json_encode(generateCSRF()) ?>;
+    var sel = document.getElementById('qr-canal'), msg = document.getElementById('qr-msg'),
+        area = document.getElementById('qr-area'), img = document.getElementById('qr-img'),
+        cod = document.getElementById('qr-codigo'), btn = document.getElementById('qr-btn'),
+        stBtn = document.getElementById('qr-status-btn'), timer = null, tentativas = 0;
+    function post(acao) {
+        var fd = new FormData(); fd.append('csrf_token', csrf); fd.append('acao', acao); fd.append('canal', sel.value);
+        return fetch('/admin/evolution_qr.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); });
+    }
+    function parar() { if (timer) { clearInterval(timer); timer = null; } }
+    function conectado() { parar(); area.hidden = true; msg.textContent = '✅ WhatsApp conectado.'; }
+    function status(silencioso) {
+        return post('status').then(function (d) {
+            if (d.conectado) { conectado(); return; }
+            if (!silencioso) msg.textContent = d.ok ? ('⚪ ' + (d.estado || 'desconectado')) : ('❌ ' + (d.erro || 'Erro ao consultar.'));
+        }).catch(function (e) { console.error(e); if (!silencioso) msg.textContent = '❌ Não deu pra consultar o status.'; });
+    }
+    stBtn.addEventListener('click', function () { msg.textContent = '⏳ Consultando...'; status(false); });
+    sel.addEventListener('change', function () { parar(); area.hidden = true; msg.textContent = ''; });
+    btn.addEventListener('click', function () {
+        parar(); btn.disabled = true; msg.textContent = '⏳ Gerando QR code...';
+        post('qrcode').then(function (d) {
+            btn.disabled = false;
+            if (d.conectado) { conectado(); return; }
+            if (!d.ok) { msg.textContent = '❌ ' + (d.erro || 'Não deu pra gerar o QR code.'); return; }
+            area.hidden = false;
+            img.hidden = !d.qr; if (d.qr) img.src = d.qr;
+            cod.hidden = !d.codigo; cod.textContent = d.codigo ? ('Código: ' + d.codigo) : '';
+            msg.textContent = '📱 Escaneie agora. O QR vence em ~40s — se vencer, clique de novo.';
+            tentativas = 0;
+            timer = setInterval(function () { if (++tentativas > 45) { parar(); msg.textContent = 'QR expirou — clique em Mostrar QR code de novo.'; return; } status(true); }, 4000);
+        }).catch(function (e) { console.error(e); btn.disabled = false; msg.textContent = '❌ Erro ao gerar o QR code.'; });
+    });
+})();
+</script>
+<?php endif; ?>
+
 <div class="card">
     <h2>🟣 Evolution API (self-hosted) — Canal principal</h2>
     <p><small>09/10/2026, depois de 4 números seguidos banidos na mesma conta Z-API (um deles sem

@@ -282,6 +282,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'ouvidoria_ia_reativada' => '▶️ Ouvidoria: IA reativada',
         'ouvidoria_desvinculada' => '🔗 Ouvidoria: vínculo removido',
         'ouvidoria_conversa_aberta' => '👁️ Ouvidoria: conversa aberta',
+        'evolution_qrcode' => '📲 WhatsApp: QR code pedido (conectar)',
         'lead_movido_vendas_inbox' => '🛒 Lead movido pra vendas via WhatsApp Box',
         'veiculo_excluido' => '🗑️ Veículo excluído da frota',
         'venda_desfeita' => '↩️ Vendido desfeito (sem contrato)',

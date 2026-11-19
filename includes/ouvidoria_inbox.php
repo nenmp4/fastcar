@@ -294,7 +294,11 @@ function ouvidoriaImportarHistorico(int $dias = 90, int $maxConversas = 300): ar
     foreach (array_slice($chats, 0, $maxConversas) as $c) {
         if ($corte && $c['atualizado_ts'] && $c['atualizado_ts'] < $corte) continue;
         $tel = $c['telefone'];
-        $msgs = evolutionBuscarMensagensConversa($tel, $cred);
+        // 19/11/2026, "essa instância derrubou todos os canais": as 4 instâncias rodam no
+        // MESMO servidor Evolution — buscar centenas de conversas sem pausa pesa nele e
+        // derruba os outros números junto. Pausa de 0,5s entre conversas.
+        if ($nConv + $falhas > 0) usleep(500000);
+        $msgs = evolutionBuscarMensagensConversa($tel, $cred, 100);
         if ($msgs === null) { $falhas++; continue; }
         $novas = 0; $nome = nomeWhatsappPareceValido((string)$c['nome']) ? (string)$c['nome'] : ''; $textosCliente = [];
         try {
