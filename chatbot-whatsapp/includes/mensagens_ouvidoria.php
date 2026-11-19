@@ -498,7 +498,17 @@ function ouvidoriaTravarConversa(string $tel) {
     $dir = dirname(__DIR__, 2) . '/storage';
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
     $f = @fopen($dir . '/ouvidoria_' . md5($tel) . '.lock', 'c'); // md5: telefone nunca vai pro nome do arquivo
-    if ($f) flock($f, LOCK_EX);
+    if (!$f) return null;
+    // Espera no máximo ~12s (19/11/2026, "sistema ficou lento caindo"): com espera
+    // sem limite, uma rajada de mensagens deixava vários workers do PHP-FPM parados
+    // na fila desta trava enquanto o 1º chamava IA/WhatsApp — e o sistema inteiro
+    // ficava sem worker livre. Passou do tempo, segue sem a trava (o dedup de
+    // saudação por ticket continua valendo).
+    $limite = microtime(true) + 12;
+    while (!flock($f, LOCK_EX | LOCK_NB)) {
+        if (microtime(true) >= $limite) { fclose($f); return null; }
+        usleep(200000);
+    }
     return $f;
 }
 
@@ -572,6 +582,15 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         salvarMidiaWhatsappRecebida($msgId, $bytes, $mime ?: 'application/octet-stream', $tipoRegistro, (int)$cli['id'], (string)$cli['nome']);
     }
 
+    // Assunto: palavra-chave → IA (texto) → IA (arquivo) → assunto já da conversa → outro.
+    // A chamada de IA fica FORA da trava (só depende do texto) — dentro dela segurava a fila.
+    $temArquivo = in_array($tipoRegistro, ['image', 'document'], true);
+    // Texto que o cliente escreveu (ou falou no áudio, ou a legenda) — nunca a descrição da IA.
+    $textoUtil = $tipoRegistro === 'text' ? $texto : ($textoFalado !== '' ? $textoFalado : $legenda);
+    $curta = $tipoRegistro === 'text' && ouvidoriaMensagemCurta($textoUtil);
+    $assunto = $textoUtil !== '' ? ouvidoriaClassificarPorPalavra($textoUtil) : null;
+    if (!$assunto && $textoUtil !== '' && !$curta) $assunto = ouvidoriaClassificarTextoIA($textoUtil);
+
     $trava = ouvidoriaTravarConversa($telNorm);
     try {
     $conv = ouvidoriaConversa($telNorm);
@@ -580,13 +599,6 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         $conv['nome'] = $nomeContato;
     }
 
-    // Assunto: palavra-chave → IA (texto) → IA (arquivo) → assunto já da conversa → outro.
-    $temArquivo = in_array($tipoRegistro, ['image', 'document'], true);
-    // Texto que o cliente escreveu (ou falou no áudio, ou a legenda) — nunca a descrição da IA.
-    $textoUtil = $tipoRegistro === 'text' ? $texto : ($textoFalado !== '' ? $textoFalado : $legenda);
-    $curta = $tipoRegistro === 'text' && ouvidoriaMensagemCurta($textoUtil);
-    $assunto = $textoUtil !== '' ? ouvidoriaClassificarPorPalavra($textoUtil) : null;
-    if (!$assunto && $textoUtil !== '' && !$curta) $assunto = ouvidoriaClassificarTextoIA($textoUtil);
     if ((!$assunto || $assunto === 'outro') && $assuntoArquivo && $assuntoArquivo !== 'outro') $assunto = $assuntoArquivo;
     if ((!$assunto || $assunto === 'outro') && $conv['assunto'] !== '' && $conv['assunto'] !== 'outro') $assunto = $conv['assunto'];
     // Cortesia com ticket aberto: fica no ticket mais recente, nunca muda o assunto.
