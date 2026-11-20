@@ -196,6 +196,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Content-Type: application/json');
             echo json_encode(ouvidoriaSugerirResposta($telPost, (string)($_POST['rascunho'] ?? '')));
             exit;
+        } elseif ($acao === 'enviar_anexo' && $telPost) {
+            header('Content-Type: application/json');
+            echo json_encode(enviarAnexoManualOuvidoria($telPost, (string)($_POST['anexo_base64'] ?? ''), (string)($_POST['nome_arquivo'] ?? ''),
+                (string)($_POST['legenda'] ?? ''), (int)$_SESSION['admin_id']));
+            exit;
         } elseif ($acao === 'enviar_mensagem' && $telPost) {
             $resultado = enviarMensagemManualOuvidoria($telPost, (string)($_POST['texto'] ?? ''), (int)$_SESSION['admin_id']);
             if ($viaAjax) {
@@ -678,6 +683,8 @@ body.ouv-page .breadcrumb { display: none; }
                 <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
                 <input type="hidden" name="ajax" value="1">
                 <textarea name="texto" placeholder="Digite uma mensagem..." required></textarea>
+                <input type="file" id="ouv-input-anexo" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" hidden>
+                <button type="button" class="btn-secundario ouv-sugerir ouv-anexo" id="ouv-btn-anexo" title="Enviar foto ou arquivo (PDF, Word, Excel). O texto digitado vai junto.">📎</button>
                 <button type="button" class="btn-secundario ouv-sugerir" id="ouv-sugerir" title="A IA lê a conversa, o ticket e o contrato e sugere a resposta (você revisa antes de enviar). Se já tiver texto digitado, ela melhora o seu rascunho.">🤖<span class="ouv-sug-txt"> Sugerir</span></button>
                 <button type="submit">Enviar</button>
             </form>
@@ -756,6 +763,39 @@ body.ouv-page .breadcrumb { display: none; }
                 })
                 .catch(function (err) { console.error(err); alert('Não deu pra sugerir agora — tente de novo.'); })
                 .finally(function () { btnSug.disabled = false; btnSug.innerHTML = rotulo; });
+        });
+    }
+
+    var btnAnexo = document.getElementById('ouv-btn-anexo');
+    var inputAnexo = document.getElementById('ouv-input-anexo');
+    if (btnAnexo && inputAnexo && form) {
+        btnAnexo.addEventListener('click', function () { inputAnexo.click(); });
+        inputAnexo.addEventListener('change', function () {
+            var f = inputAnexo.files && inputAnexo.files[0];
+            inputAnexo.value = '';
+            if (!f) return;
+            if (f.size > 20 * 1024 * 1024) { alert('Arquivo maior que 20MB.'); return; }
+            var ta = form.querySelector('textarea[name="texto"]');
+            var leitor = new FileReader();
+            leitor.onload = function () {
+                var fd = new FormData();
+                fd.append('csrf_token', csrf.value);
+                fd.append('acao', 'enviar_anexo');
+                fd.append('telefone', telefone);
+                fd.append('anexo_base64', String(leitor.result).split(',')[1] || '');
+                fd.append('nome_arquivo', f.name);
+                fd.append('legenda', ta.value.trim());
+                btnAnexo.disabled = true; btnAnexo.textContent = '⏳';
+                fetch(location.pathname + location.search, { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (!d.ok) { alert(d.erro || 'Não deu pra enviar o arquivo.'); return; }
+                        ta.value = '';
+                    })
+                    .catch(function (err) { console.error(err); alert('Não deu pra enviar o arquivo — tente de novo.'); })
+                    .finally(function () { btnAnexo.disabled = false; btnAnexo.textContent = '📎'; });
+            };
+            leitor.readAsDataURL(f);
         });
     }
 

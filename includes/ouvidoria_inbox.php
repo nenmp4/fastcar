@@ -133,6 +133,75 @@ function enviarMensagemManualOuvidoria(string $telefone, string $texto, int $usu
     return ['ok' => true, 'id' => $id];
 }
 
+/** Arquivos aceitos no anexo da ouvidoria (mime real → extensão). */
+const OUVIDORIA_ANEXO_MIMES = [
+    'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
+    'application/pdf' => 'pdf', 'application/msword' => 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    'application/vnd.ms-excel' => 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+    'text/plain' => 'txt', 'text/csv' => 'csv',
+];
+
+/**
+ * 📎 Foto ou arquivo pela caixa da ouvidoria (20/11/2026, "Permita enviar anexo
+ * e imagem inbox"). Sempre pela instância da ouvidoria, assinado, pausa a IA.
+ */
+function enviarAnexoManualOuvidoria(string $telefone, string $conteudoBase64, string $nomeArquivo, string $legenda, int $usuarioId): array {
+    whatsappCanalRegistro('ouvidoria');
+    $tel = normalizarTelefone($telefone);
+    if ($tel === '') return ['ok' => false, 'erro' => 'Telefone inválido.'];
+    $bytes = base64_decode($conteudoBase64, true);
+    if ($bytes === false || $bytes === '') return ['ok' => false, 'erro' => 'Nenhum arquivo selecionado.'];
+    if (strlen($bytes) > WHATSAPP_MIDIA_MAX_BYTES) {
+        return ['ok' => false, 'erro' => 'Arquivo maior que ' . (int)(WHATSAPP_MIDIA_MAX_BYTES / 1024 / 1024) . 'MB.'];
+    }
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
+    $extNome = strtolower(pathinfo($nomeArquivo, PATHINFO_EXTENSION));
+    // docx/xlsx são zip por dentro — confia na extensão só nesse caso.
+    if ($mime === 'application/zip' && in_array($extNome, ['docx', 'xlsx'], true)) $mime = (string)array_search($extNome, OUVIDORIA_ANEXO_MIMES, true);
+    if (!isset(OUVIDORIA_ANEXO_MIMES[$mime])) return ['ok' => false, 'erro' => 'Tipo de arquivo não aceito (foto, PDF, Word, Excel ou texto).'];
+    if (!evolutionConfiguredOuvidoria()) return ['ok' => false, 'erro' => 'Instância da ouvidoria não configurada (Configurações → Evolution API — Ouvidoria).'];
+
+    $ext = OUVIDORIA_ANEXO_MIMES[$mime];
+    $ehImagem = str_starts_with($mime, 'image/');
+    $nome = trim(preg_replace('/[^\w.\- ]+/u', '_', $nomeArquivo));
+    if ($nome === '' || $extNome === '') $nome = ($ehImagem ? 'foto.' : 'documento.') . $ext;
+    $legenda = trim($legenda);
+    $u = buscarUsuario($usuarioId);
+    $nomeUsuario = trim((string)($u['nome'] ?? ''));
+    $assinatura = $nomeUsuario !== '' ? "*{$nomeUsuario} (Ouvidoria):*" : '';
+    $dataUri = 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    $cred = evolutionCredenciaisOuvidoria();
+    $ok = $ehImagem
+        ? evolutionEnviarImagem($tel, $dataUri, trim($assinatura . ($legenda !== '' ? "\n{$legenda}" : '')), $cred)
+        : evolutionEnviarDocumento($tel, $dataUri, $nome, $cred);
+    if (!$ok) return ['ok' => false, 'erro' => 'Falha ao enviar pela instância da ouvidoria.' . whatsappDetalheUltimoErro()];
+    $waId = evolutionConsumirUltimoIdEnviado(); // guarda o id: o eco do WhatsApp nunca duplica a mensagem
+    $rotulo = ($ehImagem ? '📷 ' : '📎 ') . $nome . ($ehImagem && $legenda !== '' ? "\n" . $legenda : '');
+    $id = (int)registrarMensagem($tel, 'out', $rotulo, $waId ?: null, false, $ehImagem ? 'image' : 'document', $usuarioId);
+    if ($id > 0) {
+        $st = getDB()->prepare('SELECT id, nome FROM clientes WHERE telefone = ?');
+        $st->execute([$tel]);
+        $cli = $st->fetch() ?: ['id' => 0, 'nome' => ''];
+        salvarMidiaWhatsappRecebida($id, $bytes, $mime, $ehImagem ? 'image' : 'document', (int)$cli['id'], (string)$cli['nome']);
+    }
+    // Documento não leva legenda no WhatsApp: o texto digitado vai numa mensagem logo depois.
+    if (!$ehImagem && $legenda !== '') {
+        $textoExtra = $assinatura !== '' ? "{$assinatura}\n{$legenda}" : $legenda;
+        if (evolutionEnviarTexto($tel, $textoExtra, $cred)) ouvidoriaRegistrarEnviada($tel, $legenda, false, $usuarioId);
+    }
+    ouvidoriaSalvarConversa($tel, ['ia_pausada' => 1]);
+    $protocolos = [];
+    try {
+        foreach (ouvidoriaTicketsAtivos($tel) as $t) $protocolos[] = $t['protocolo'];
+        ouvidoriaTicketsMarcarAtendimento($tel);
+    } catch (Throwable $e) {}
+    auditoriaRegistrar('ouvidoria_mensagem_enviada', $usuarioId, $nomeUsuario, 'ouvidoria', null,
+        "Anexo pela caixa da ouvidoria pra {$tel}" . ($protocolos ? ' (' . implode(', ', $protocolos) . ')' : '') . ': ' . $nome);
+    return ['ok' => true, 'id' => $id];
+}
+
 /**
  * 20/11/2026, "associa numero ao compra ou venda dentro sistema ter acesso
  * cliente" — o cliente pode escrever de outro número; a equipe busca o
