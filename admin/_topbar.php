@@ -94,7 +94,7 @@ $tbGrupos = [
         ['🛡️ Conformidade WhatsApp', '/admin/whatsapp_conformidade.php', $tbVeTudo],
         ['💾 Backup', '/admin/backup.php', $tbSuper],
         ['🩺 Saúde do sistema', '/admin/saude.php', $tbSuper],
-        ['⚙️ Configurações', '/admin/configuracoes.php', $tbSuper],
+        ['⚙️ Configurações', '/admin/configuracoes.php', $tbSuper && podeAcessarConfiguracoes()],
     ],
 ];
 
@@ -155,7 +155,7 @@ foreach ($tbGrupos as $itens) {
         if ($vis) $tbVisiveis[basename(strtok($href, '?'))] = $href;
     }
 }
-$tbVisiveis['configuracoes.php'] = $tbSuper ? '/admin/configuracoes.php' : null;
+$tbVisiveis['configuracoes.php'] = ($tbSuper && podeAcessarConfiguracoes()) ? '/admin/configuracoes.php' : null;
 
 $tbAtivo = static function (string $href) use ($tbAqui): bool {
     return basename((string)strtok($href, '?')) === $tbAqui;

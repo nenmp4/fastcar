@@ -259,6 +259,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'usuario_perfil_alterado' => '🔄 Perfil alterado',
         'usuario_bloqueado' => '🚫 Usuário bloqueado',
         'usuario_desbloqueado' => '✅ Usuário desbloqueado',
+        'configuracoes_acesso_alterado' => '🔒 Acesso à tela de Configurações alterado',
         'usuario_tentativas_liberadas' => '🔓 Bloqueio temporário de login liberado antes do prazo',
         'usuario_senha_redefinida' => '🔑 Senha redefinida',
         'recuperacao_senha_solicitada' => '✉️ Link de recuperação de senha enviado',

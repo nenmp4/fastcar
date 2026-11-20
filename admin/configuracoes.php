@@ -12,6 +12,11 @@ require_once __DIR__ . '/../includes/vendas_formulario.php';
 require_once __DIR__ . '/../includes/vendas_followup.php';
 require_once __DIR__ . '/../includes/lembrete_visitas.php';
 requireSuperAdmin();
+// 20/11/2026 — tela pode ficar restrita a alguns super admins (card "🔒 Quem acessa").
+if (!podeAcessarConfiguracoes()) {
+    http_response_code(403);
+    exit('Acesso restrito — Configurações liberada só para alguns super admins.');
+}
 
 $campos = [
     'zapi_instance_id'  => 'ID da instância Z-API',
@@ -207,7 +212,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $acao = (string)($_POST['acao'] ?? '');
 
-        if ($acao === 'salvar') {
+        if ($acao === 'salvar_acesso_configuracoes') {
+            $antes = configuracoesAcessoIds();
+            $novos = salvarConfiguracoesAcessoIds((array)($_POST['acesso_ids'] ?? []), (int)$_SESSION['admin_id']);
+            if ($novos !== $antes) {
+                $nomes = [];
+                foreach (listarUsuarios() as $u) if (in_array((int)$u['id'], $novos, true)) $nomes[] = $u['nome'];
+                auditoriaRegistrar('configuracoes_acesso_alterado', (int)$_SESSION['admin_id'], (string)($_SESSION['admin_nome'] ?? ''),
+                    '', null, $novos ? 'Liberados: ' . implode(', ', $nomes) . '.' : 'Todos os super admins liberados.');
+            }
+            $sucesso = $novos ? 'Acesso à tela salvo — só os marcados entram.' : 'Acesso à tela salvo — todos os super admins entram.';
+        } elseif ($acao === 'salvar') {
             foreach (array_keys($campos) as $chave) {
                 // Credencial opaca — só trim, sem clean()/strip_tags que
                 // poderia mexer em caractere especial do token.
@@ -895,6 +910,26 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
 <div class="cfg-topo">
     <input type="search" id="cfg-busca" placeholder="🔎 Buscar (ex: vendas, IA, backup)" autocomplete="off">
     <button type="button" class="btn-secundario" id="cfg-abrir-tudo">Abrir tudo</button>
+</div>
+
+<?php $acessoIds = configuracoesAcessoIds();
+      $superAdmins = array_values(array_filter(listarUsuarios(), fn($u) => $u['perfil'] === 'super_admin')); ?>
+<div class="card">
+    <h2>🔒 Quem acessa esta tela</h2>
+    <p><small>Aqui ficam as chaves de API. Marque quais super admins podem abrir Configurações. Todos marcados = qualquer
+       super admin entra (como antes). Você nunca se tira da lista, então ninguém fica trancado do lado de fora.</small></p>
+    <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="acao" value="salvar_acesso_configuracoes">
+        <?php foreach ($superAdmins as $u): $uid = (int)$u['id']; $eu = $uid === (int)$_SESSION['admin_id']; ?>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:normal;min-height:44px">
+                <input type="checkbox" name="acesso_ids[]" value="<?= $uid ?>"
+                       <?= (!$acessoIds || in_array($uid, $acessoIds, true)) ? 'checked' : '' ?> <?= $eu ? 'checked disabled' : '' ?>>
+                <?= e($u['nome']) ?><?= $eu ? ' <small>(você — sempre liberado)</small>' : '' ?>
+            </label>
+        <?php endforeach; ?>
+        <button type="submit">Salvar acesso</button>
+    </form>
 </div>
 
 <div class="card">

@@ -289,3 +289,46 @@ function destravarEdicaoComSenhaSupervisor(string $alvoTipo, int $alvoId, int $s
     }
     return ['ok' => true, 'por' => (string)$sup['nome'], 'ate' => $ate];
 }
+
+// ── Quem pode abrir Configurações (20/11/2026) ────────────────────────────
+// "bloqueia tela para outros super admin" / "Tela de configuração" — as
+// chaves de API ficam na página de Configurações, então dá pra restringir
+// ela a alguns super admins. config.configuracoes_acesso_ids = JSON com os
+// ids liberados. Lista vazia (ou só com gente que saiu/foi bloqueada) =
+// todo super admin entra, igual antes — nunca tranca ninguém do lado de fora.
+
+/** Ids de super admin ATIVOS liberados; [] = todos liberados. */
+function configuracoesAcessoIds(): array {
+    $ids = json_decode((string)(getConfig('configuracoes_acesso_ids') ?? ''), true);
+    if (!is_array($ids) || !$ids) return [];
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) return [];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $st = getDB()->prepare("SELECT id FROM usuarios WHERE id IN ($ph) AND perfil = 'super_admin' AND bloqueado = 0");
+    $st->execute($ids);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+function podeAcessarConfiguracoes(): bool {
+    if (($_SESSION['admin_perfil'] ?? '') !== 'super_admin') return false;
+    $ids = configuracoesAcessoIds();
+    return !$ids || in_array((int)($_SESSION['admin_id'] ?? 0), $ids, true);
+}
+
+/**
+ * Salva a lista. Quem salva sempre fica dentro (nunca se tranca fora).
+ * Marcar todos os super admins ativos = lista vazia (todo mundo, inclusive
+ * super admin criado depois). Devolve a lista gravada.
+ */
+function salvarConfiguracoesAcessoIds(array $ids, int $quemSalva): array {
+    $ids = array_map('intval', $ids);
+    $ids[] = $quemSalva;
+    $todos = array_map('intval', getDB()->query(
+        "SELECT id FROM usuarios WHERE perfil = 'super_admin' AND bloqueado = 0")->fetchAll(PDO::FETCH_COLUMN));
+    $ids = array_values(array_unique(array_intersect($ids, $todos)));
+    sort($ids);
+    sort($todos);
+    if ($ids === $todos) $ids = [];
+    setConfig('configuracoes_acesso_ids', $ids ? json_encode($ids) : '');
+    return $ids;
+}
