@@ -11,8 +11,17 @@
 
 require_once __DIR__ . '/_bootstrap.php';
 requireAcessoFinanceiro();
+require_once __DIR__ . '/../includes/cobranca_ouvidoria.php';
 
 $db = getDB();
+
+// 💬 Cobrar pelo número da ouvidoria (20/11/2026) — monta a mensagem pro modal.
+if (($_GET['ajax'] ?? '') === 'cobranca') {
+    liberarSessao();
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(cobrancaPreparar((int)($_GET['id'] ?? 0)), JSON_UNESCAPED_UNICODE);
+    exit;
+}
 $erro = '';
 $sucesso = '';
 
@@ -21,6 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $erro = 'Sessão expirada, recarregue a página e tente de novo.';
     } else {
         $acao = (string)($_POST['acao'] ?? '');
+
+        if ($acao === 'enviar_cobranca') {
+            $r = cobrancaEnviarPelaOuvidoria((int)($_POST['id'] ?? 0), (string)($_POST['mensagem'] ?? ''), (int)($_SESSION['admin_id'] ?? 0), !empty($_POST['forcar']));
+            if ($r['ok']) $sucesso = 'Cobrança enviada pelo WhatsApp da ouvidoria' . ($r['nome'] ? ' pra ' . $r['nome'] : '') . '.';
+            else $erro = $r['erro'];
+        }
 
         if ($acao === 'salvar') {
             $id = (int)($_POST['id'] ?? 0);
@@ -556,6 +571,9 @@ if ($comissoesPendentesLista && in_array($fOrigem, ['comissao_compra', 'comissao
               <button type="submit" class="btn-texto perigo" title="Cancelar (nunca apaga — sempre fica registrado, mesmo lançamento automático/Asaas)">🚫 Cancelar</button>
             </form>
           <?php endif; ?>
+          <?php if ($l['tipo'] === 'receita' && in_array($l['status'], ['atrasado', 'pendente'], true)): ?>
+            <button type="button" class="btn-texto" style="color:#166534" onclick="fcAbrirCobranca(<?= (int)$l['id'] ?>)" title="Mandar cobrança pelo WhatsApp da ouvidoria">💬 Cobrar</button>
+          <?php endif; ?>
           <?php if ($semVinculo && $l['tipo'] === 'receita'): ?>
             <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="entrada"><button type="submit" class="btn-texto" style="color:#c2410c" title="Classificar como entrada da venda">🏷️ Entrada</button></form>
             <form method="POST" style="display:inline"><?= csrfField() ?><input type="hidden" name="acao" value="classificar"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="tipo_classificacao" value="parcela">
@@ -569,7 +587,56 @@ if ($comissoesPendentesLista && in_array($fOrigem, ['comissao_compra', 'comissao
   </table>
 </div>
 
+<dialog class="modal-lancamento" id="modal-cobranca">
+  <form method="POST" id="form-cobranca">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2 style="margin:0">💬 Gerar cobrança</h2>
+      <button type="button" class="btn-texto" onclick="document.getElementById('modal-cobranca').close()" aria-label="Fechar" style="font-size:1.4rem;min-width:44px;min-height:44px">×</button>
+    </div>
+    <?= csrfField() ?>
+    <input type="hidden" name="acao" value="enviar_cobranca">
+    <input type="hidden" name="id" id="cob-id" value="">
+    <p id="cob-info" style="color:var(--muted)">Carregando…</p>
+    <div id="cob-aviso"></div>
+    <label>Mensagem (confira antes de enviar)
+      <textarea name="mensagem" id="cob-msg" rows="12" style="width:100%"></textarea>
+    </label>
+    <label id="cob-forcar-wrap" style="display:none"><input type="checkbox" name="forcar" value="1"> Enviar mesmo assim</label>
+    <p style="font-size:.85rem;color:var(--muted)">Sai pelo WhatsApp da <strong>ouvidoria</strong>, assinada com seu nome. A resposta do cliente aparece em Admin → 📣 Ouvidoria.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="submit" class="btn-primary" id="cob-enviar" disabled>📤 Enviar cobrança</button>
+      <button type="button" class="btn-secundario" onclick="document.getElementById('modal-cobranca').close()">Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
+function fcAbrirCobranca(id) {
+    var dlg = document.getElementById('modal-cobranca');
+    var info = document.getElementById('cob-info'), aviso = document.getElementById('cob-aviso');
+    var msg = document.getElementById('cob-msg'), btn = document.getElementById('cob-enviar');
+    document.getElementById('cob-id').value = id;
+    info.textContent = 'Carregando…'; aviso.innerHTML = ''; msg.value = ''; btn.disabled = true;
+    document.getElementById('cob-forcar-wrap').style.display = 'none';
+    dlg.showModal();
+    fetch('?ajax=cobranca&id=' + encodeURIComponent(id), {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { info.textContent = d.erro || 'Não deu pra montar a cobrança.'; return; }
+        info.textContent = (d.nome || 'Cliente') + ' — ' + d.telefone + ' — ' + d.itens + ' lançamento(s) em aberto, R$ ' +
+            Number(d.total).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        var avisos = [];
+        if (!d.ouvidoria_ok) avisos.push('⚠️ Instância da ouvidoria não configurada em Configurações.');
+        if (!d.tem_link) avisos.push('ℹ️ Sem link do Asaas pra essa cobrança — a mensagem vai sem link de pagamento.');
+        if (d.ultima_cobranca) avisos.push('🕒 Última cobrança pra esse número: ' + d.ultima_cobranca + '.');
+        aviso.innerHTML = avisos.map(function (a) { var p = document.createElement('p'); p.className = 'alerta-info'; p.textContent = a; return p.outerHTML; }).join('');
+        if (d.recente) document.getElementById('cob-forcar-wrap').style.display = '';
+        msg.value = d.mensagem;
+        btn.disabled = !d.ouvidoria_ok;
+      })
+      .catch(function (err) { console.error(err); info.textContent = 'Erro ao carregar. Tente de novo.'; });
+}
+
 // 23/09/2026 — cancelar (nunca exclui, sempre fica no histórico) funciona
 // pra QUALQUER lançamento, inclusive origem='asaas' e os automáticos
 // (comissão, fechamento de compra, etc). Pede um motivo opcional só pra
