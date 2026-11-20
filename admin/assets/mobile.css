@@ -225,3 +225,51 @@ pre, code { overflow-x: auto; max-width: 100%; }
     main { padding: 20px; }
     .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ── Ouvidoria no celular (20/11/2026, auditoria a 375/360px) ──────────────
+   Chat: campos com 16px (sem zoom no iOS), botões do ticket com 44px e
+   formulários do ticket empilhados. Lista de tickets: filtros numa faixa
+   só que rola de lado, cards com resumo cortado em 3 linhas ("ver mais"). */
+@media (max-width: 700px) {
+    body.ouv-page .wpp-chat-header { padding: 8px 12px; gap: 6px; }
+    body.ouv-page .wpp-chat-header .ouv-acoes select,
+    body.ouv-page .ouv-faixa input, body.ouv-page .ouv-faixa select { font-size: 16px; min-height: 44px; }
+    body.ouv-page .ouv-acoes button { min-height: 44px; }
+    body.ouv-page .wpp-chat-header .ouv-acoes form:first-child { flex: 1 1 0; min-width: 0; }
+    body.ouv-page .wpp-chat-header .ouv-acoes form:first-child select { width: 100%; min-width: 0; }
+    body.ouv-page .wpp-chat-header .ouv-acoes button { padding-left: 12px; padding-right: 12px; }
+    body.ouv-page .ouv-tickets { padding: 6px 12px; }
+    body.ouv-page .ouv-ticket { width: 100%; }
+    body.ouv-page .ouv-ticket details { width: 100%; }
+    body.ouv-page .ouv-ticket summary, body.ouv-page .ouv-ticket .btn-texto,
+    body.ouv-page .ouv-ticket-hist, body.ouv-page .ouv-vinculo .btn-texto { min-height: 44px; display: inline-flex; align-items: center; }
+    body.ouv-page .ouv-comquem details { display: block !important; }
+    body.ouv-page .ouv-ticket-resolver { flex-wrap: wrap; width: 100%; }
+    body.ouv-page .ouv-ticket-resolver input { flex: 1 1 100%; min-width: 0 !important; max-width: none !important; width: 100%; font-size: 16px; min-height: 44px; }
+    body.ouv-page .ouv-ticket-resolver button { flex: 1 1 auto; min-height: 44px; }
+    body.ouv-page .ouv-vinculo { padding: 8px 12px; }
+    body.ouv-page .ouv-vinculo-info { min-width: 0; }
+    body.ouv-page .wpp-form { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); gap: 6px; }
+    body.ouv-page .wpp-form textarea { min-width: 0; font-size: 16px; }
+    body.ouv-page .wpp-thread .msg { overflow-wrap: anywhere; }
+
+    .ouvt-busca input { font-size: 16px; min-height: 44px; }
+    .ouvt-busca button { min-height: 44px; }
+    main .ouvt-filtros { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; padding-bottom: 4px; }
+    main .ouvt-filtros::-webkit-scrollbar { display: none; }
+    main .ouvt-filtros a { flex: 0 0 auto; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; scroll-snap-align: start; font-size: 14px; }
+    .ouvt-tabela-wrap { overflow: visible; }
+    table.tabela-cards td.ouvt-res { display: block; text-align: left !important; }
+    table.tabela-cards td.ouvt-res::before { display: block; margin-bottom: 4px; }
+    .ouvt-res-txt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .ouvt-res-txt.aberto { display: block; }
+    .ouvt-ver-mais { margin: 4px 0 0; min-height: 44px; padding: 0 12px; width: auto; background: var(--superficie); color: var(--azul); border: 1px solid var(--borda); box-shadow: none; font-size: 13px; }
+    table.tabela-cards tr.linha-atrasada { background: var(--vermelho-bg); }
+    table.tabela-cards td .acoes-linha { width: 100%; }
+    table.tabela-cards td .acoes-linha details { width: 100%; }
+    table.tabela-cards td .acoes-linha .chip-acao { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; }
+    table.tabela-cards td .ouvt-resolver { flex-wrap: wrap; width: 100%; }
+    table.tabela-cards td .ouvt-resolver input { flex: 1 1 100%; min-width: 0; max-width: none; font-size: 16px; min-height: 44px; }
+    table.tabela-cards td .ouvt-resolver button { flex: 1 1 auto; min-height: 44px; }
+    table.tabela-cards td .ouvt-res a { display: inline-flex; align-items: center; min-height: 44px; }
+}

@@ -158,9 +158,36 @@
         });
     }
 
+    /* ── 3. Ouvidoria (20/11/2026) ──────────────────────────────────────
+       Lista de tickets: resumo cortado em 3 linhas ganha "ver mais", e o
+       filtro ativo é rolado pra dentro da faixa de chips. Idempotente. */
+    function ouvidoriaTickets() {
+        if (window.innerWidth > 700) return;
+        Array.prototype.forEach.call(document.querySelectorAll('.ouvt-res-txt'), function (el) {
+            if (el.dataset.verMais || el.scrollHeight <= el.clientHeight + 2) return;
+            el.dataset.verMais = '1';
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'ouvt-ver-mais';
+            b.textContent = 'ver mais';
+            b.addEventListener('click', function () {
+                var aberto = el.classList.toggle('aberto');
+                b.textContent = aberto ? 'ver menos' : 'ver mais';
+            });
+            el.parentNode.insertBefore(b, el.nextSibling);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.ouvt-filtros'), function (nav) {
+            if (nav.dataset.rolou) return;
+            nav.dataset.rolou = '1';
+            var at = nav.querySelector('a.ativo');
+            if (at && at.offsetLeft + at.offsetWidth > nav.clientWidth) nav.scrollLeft = at.offsetLeft - (nav.clientWidth - at.offsetWidth) / 2;
+        });
+    }
+
     function iniciar() {
         montarMenu();
         tratarTudo();
+        ouvidoriaTickets();
         ajustarValoresStat();
         var tAjuste = null;
         window.addEventListener('resize', function () { clearTimeout(tAjuste); tAjuste = setTimeout(ajustarValoresStat, 150); });

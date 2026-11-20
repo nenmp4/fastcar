@@ -56,6 +56,7 @@ function _ouvTicketsUrl(array $mudar): string {
 .ouvt-resolver button { margin:0; width:auto; padding:6px 12px; font-size:12.5px; }
 .ouvt-sla { color:var(--vermelho); font-weight:700; }
 .ouvt-res { color:var(--texto-fraco); font-size:12.5px; overflow-wrap:anywhere; }
+.ouvt-tabela-wrap { width:100%; overflow-x:auto; }
 </style>
 </head>
 <body>
@@ -119,7 +120,7 @@ function _ouvTicketsUrl(array $mudar): string {
         <?php endforeach; ?>
     </nav>
 
-    <div class="tabela-scroll">
+    <div class="ouvt-tabela-wrap">
     <table class="tabela-oportunidades">
         <thead><tr>
             <th>Protocolo</th><th>Cliente</th><th>Assunto</th><th>Status</th><th>Aberto em</th><th>1ª resposta</th><th>Resolução</th><th>Ações</th>
@@ -156,12 +157,14 @@ function _ouvTicketsUrl(array $mudar): string {
                     <?php else: ?>—<?php endif; ?>
                 </td>
                 <td class="ouvt-res">
+                    <div class="ouvt-res-txt">
                     <?php if ($t['status'] === 'resolvido'): ?>
                         <?= e($t['resolucao']) ?><br>
                         <small><?= e($t['resolvido_por_nome'] ?: '—') ?> · <?= $t['resolvido_em'] ? e(date('d/m/Y H:i', strtotime($t['resolvido_em']))) : '' ?></small>
                     <?php else: ?>
                         <?= e(mb_strimwidth((string)$t['resumo'], 0, 260, '…')) ?>
                     <?php endif; ?>
+                    </div>
                 </td>
                 <td>
                     <div class="acoes-linha">

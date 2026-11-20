@@ -840,7 +840,10 @@ body.ouv-page .breadcrumb { display: none; }
     // Faixa ticket/vínculo: lembra se a pessoa deixou aberta (por navegador).
     var faixa = document.getElementById('ouv-faixa');
     if (faixa) {
-        try { if (localStorage.getItem('ouv_faixa_aberta') === '1') faixa.open = true; } catch (e) {}
+        // 20/11/2026 — no celular começa sempre fechada (só protocolo + status), senão a
+        // conversa fica sem espaço; no computador lembra como a pessoa deixou.
+        var celular = window.matchMedia && window.matchMedia('(max-width: 700px)').matches;
+        try { if (!celular && localStorage.getItem('ouv_faixa_aberta') === '1') faixa.open = true; } catch (e) {}
         faixa.addEventListener('toggle', function () {
             try { localStorage.setItem('ouv_faixa_aberta', faixa.open ? '1' : '0'); } catch (e) {}
         });
