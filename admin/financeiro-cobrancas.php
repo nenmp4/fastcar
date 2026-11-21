@@ -22,6 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $r = cobrancaEnviarPelaOuvidoria((int)($_POST['id'] ?? 0), (string)($_POST['mensagem'] ?? ''), (int)($_SESSION['admin_id'] ?? 0), !empty($_POST['forcar']));
         if ($r['ok']) $sucesso = 'Cobrança enviada pelo WhatsApp da ouvidoria' . ($r['nome'] ? ' pra ' . $r['nome'] : '') . '.';
         else $erro = $r['erro'];
+    } elseif (($_POST['acao'] ?? '') === 'dar_baixa') {
+        $r = cobrancaDarBaixa((array)($_POST['ids'] ?? []), (string)($_POST['data_pagamento'] ?? ''), (string)($_POST['forma_pagamento'] ?? ''),
+            (int)($_SESSION['admin_id'] ?? 0), (string)($_SESSION['admin_nome'] ?? ''));
+        if ($r['baixados']) $sucesso = "✅ {$r['baixados']} lançamento(s) baixado(s) — R$ " . number_format($r['total'], 2, ',', '.') . '.';
+        if ($r['erros']) $erro = 'Não baixado: ' . implode(' · ', $r['erros']);
+        elseif (!$r['ok']) $erro = $r['erro'];
     }
 }
 
@@ -41,8 +47,10 @@ foreach ($db->query("SELECT * FROM fin_lancamentos WHERE tipo = 'receita' AND st
     $t = $c['telefone'];
     if (!isset($clientes[$t])) {
         $clientes[$t] = ['telefone' => $t, 'nome' => $c['nome'], 'qtd' => 0, 'total' => 0.0, 'vencimento' => $l['data_vencimento'],
-                         'lancamento_id' => (int)$l['id'], 'venda_id' => $l['venda_id'] ? (int)$l['venda_id'] : null];
+                         'lancamento_id' => (int)$l['id'], 'venda_id' => $l['venda_id'] ? (int)$l['venda_id'] : null, 'itens' => []];
     }
+    $clientes[$t]['itens'][] = ['id' => (int)$l['id'], 'descricao' => (string)$l['descricao'], 'valor' => (float)$l['valor'],
+                                'vencimento' => $l['data_vencimento'] ? date('d/m/Y', strtotime($l['data_vencimento'])) : '', 'asaas' => $l['origem'] === 'asaas'];
     $clientes[$t]['qtd']++;
     $clientes[$t]['total'] += (float)$l['valor'];
     if (!$clientes[$t]['nome'] && $c['nome']) $clientes[$t]['nome'] = $c['nome'];
@@ -169,7 +177,8 @@ $qsBase = fn(array $extra) => http_build_query(array_filter(array_merge(['f' => 
     <tbody>
     <?php foreach ($semTelefone as $l): ?>
       <tr><td><?= e($l['descricao']) ?></td><td><?= e($l['_nome'] ?: '—') ?></td><td><?= $l['data_vencimento'] ? e(date('d/m/Y', strtotime($l['data_vencimento']))) : '—' ?></td><td><?= $fmt($l['valor']) ?></td>
-        <td><a class="btn" style="width:auto" href="/admin/financeiro-lancamentos.php?action=edit&id=<?= (int)$l['id'] ?>">Abrir</a></td></tr>
+        <td><button type="button" class="btn-texto" style="color:#166534" onclick='fcAbrirBaixa(<?= e(json_encode(['nome' => $l['_nome'] ?: $l['descricao'], 'itens' => [['id' => (int)$l['id'], 'descricao' => (string)$l['descricao'], 'valor' => (float)$l['valor'], 'vencimento' => $l['data_vencimento'] ? date('d/m/Y', strtotime($l['data_vencimento'])) : '', 'asaas' => $l['origem'] === 'asaas']]], JSON_UNESCAPED_UNICODE)) ?>)'>✅ Dar baixa</button>
+          <a class="btn-texto" href="/admin/financeiro-lancamentos.php?action=edit&id=<?= (int)$l['id'] ?>">📒 Abrir</a></td></tr>
     <?php endforeach; ?>
     <?php if (!$semTelefone): ?><tr><td colspan="5" style="text-align:center;color:var(--muted)">Nenhum.</td></tr><?php endif; ?>
     </tbody>
@@ -190,6 +199,7 @@ $qsBase = fn(array $extra) => http_build_query(array_filter(array_merge(['f' => 
         <td><?php if ($c['comprovante']): ?><span class="badge <?= $compDepois ? 'badge-ok' : 'badge-info' ?>">🧾 <?= e($quando($c['comprovante']['em'])) ?></span><?php else: ?>—<?php endif; ?></td>
         <td>
           <button type="button" class="btn-texto" style="color:#166534" onclick="fcAbrirCobranca(<?= $c['lancamento_id'] ?>)">💬 Cobrar</button>
+          <button type="button" class="btn-texto" style="color:#166534" onclick='fcAbrirBaixa(<?= e(json_encode(['nome' => $c['nome'] ?: $c['telefone'], 'itens' => $c['itens']], JSON_UNESCAPED_UNICODE)) ?>)'>✅ Dar baixa</button>
           <?php if (($_SESSION['admin_perfil'] ?? '') === 'super_admin'): ?><a class="btn-texto" href="/admin/ouvidoria_inbox.php?telefone=<?= rawurlencode($c['telefone']) ?>">💬 Conversa</a><?php endif; ?>
           <?php if ($c['venda_id'] && podeAcessarVendas()): ?><a class="btn-texto" href="/admin/venda.php?id=<?= $c['venda_id'] ?>">🛒 Venda</a><?php endif; ?>
           <a class="btn-texto" href="/admin/financeiro-lancamentos.php?action=edit&id=<?= $c['lancamento_id'] ?>">📒 Lançamento</a>
@@ -222,6 +232,77 @@ $qsBase = fn(array $extra) => http_build_query(array_filter(array_merge(['f' => 
   </table></div>
 </div>
 <?php endif; ?>
+
+<dialog class="modal-lancamento" id="modal-baixa">
+  <form method="POST" id="form-baixa" onsubmit="return fcConfirmarBaixa(this)">
+    <?= csrfField() ?>
+    <input type="hidden" name="acao" value="dar_baixa">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+      <h3 style="margin:0">✅ Dar baixa — <span id="baixa-nome"></span></h3>
+      <button type="button" class="btn-texto" onclick="document.getElementById('modal-baixa').close()" aria-label="Fechar" style="font-size:1.4rem">×</button>
+    </div>
+    <p style="color:var(--muted);margin:.4rem 0 .8rem">Marque o que o cliente pagou. Confira no extrato antes de baixar.</p>
+    <div id="baixa-itens" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.8rem"></div>
+    <div class="grid-2">
+      <label>Data do pagamento<input type="date" name="data_pagamento" id="baixa-data" max="<?= date('Y-m-d') ?>" required></label>
+      <label>Forma de pagamento
+        <select name="forma_pagamento">
+          <option value="pix">Pix</option><option value="transferencia">Transferência</option><option value="dinheiro">Dinheiro</option>
+          <option value="boleto">Boleto</option><option value="cartao">Cartão</option>
+        </select>
+      </label>
+    </div>
+    <p id="baixa-asaas" style="display:none;font-size:.9rem;color:#92400e;background:#fffbeb;padding:.5rem;border-radius:var(--raio)">⚠️ Cobrança do Asaas: a baixa também é registrada lá como "recebido por fora", senão a sincronização volta a mostrar atrasado.</p>
+    <p style="margin:.6rem 0 0"><strong>Total marcado: <span id="baixa-total">R$ 0,00</span></strong></p>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.8rem;flex-wrap:wrap">
+      <button type="button" class="btn-secundario" style="width:auto" onclick="document.getElementById('modal-baixa').close()">Cancelar</button>
+      <button type="submit" style="width:auto">✅ Confirmar baixa</button>
+    </div>
+  </form>
+</dialog>
+<script>
+(function () {
+  function brl(v) { return 'R$ ' + Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function atualizar() {
+    var t = 0, asaas = false;
+    document.querySelectorAll('#baixa-itens input[type=checkbox]').forEach(function (c) {
+      if (c.checked) { t += Number(c.dataset.valor); if (c.dataset.asaas === '1') asaas = true; }
+    });
+    document.getElementById('baixa-total').textContent = brl(t);
+    document.getElementById('baixa-asaas').style.display = asaas ? '' : 'none';
+  }
+  window.fcAbrirBaixa = function (d) {
+    document.getElementById('baixa-nome').textContent = d.nome || '';
+    var box = document.getElementById('baixa-itens');
+    box.textContent = '';
+    (d.itens || []).forEach(function (it, i) {
+      var lb = document.createElement('label');
+      lb.style.cssText = 'display:flex;gap:.6rem;align-items:center;padding:.5rem;border:1px solid var(--borda);border-radius:var(--raio);min-height:44px';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.name = 'ids[]'; cb.value = it.id; cb.checked = i === 0;
+      cb.dataset.valor = it.valor; cb.dataset.asaas = it.asaas ? '1' : '0';
+      cb.style.cssText = 'width:22px;height:22px;flex:none';
+      cb.addEventListener('change', atualizar);
+      var tx = document.createElement('span');
+      tx.style.cssText = 'flex:1;overflow-wrap:break-word';
+      tx.textContent = it.descricao + (it.vencimento ? ' — venc. ' + it.vencimento : '') + (it.asaas ? ' (Asaas)' : '');
+      var vl = document.createElement('strong');
+      vl.textContent = brl(it.valor);
+      lb.appendChild(cb); lb.appendChild(tx); lb.appendChild(vl);
+      box.appendChild(lb);
+    });
+    var hoje = new Date(); hoje.setMinutes(hoje.getMinutes() - hoje.getTimezoneOffset());
+    document.getElementById('baixa-data').value = hoje.toISOString().slice(0, 10);
+    atualizar();
+    document.getElementById('modal-baixa').showModal();
+  };
+  window.fcConfirmarBaixa = function (f) {
+    var n = f.querySelectorAll('#baixa-itens input:checked').length;
+    if (!n) { alert('Marque pelo menos um lançamento.'); return false; }
+    return confirmarAcao(f, 'Dar baixa em ' + n + ' lançamento(s) — ' + document.getElementById('baixa-total').textContent + '?');
+  };
+})();
+</script>
 
 <?php include __DIR__ . '/_modal_cobranca.php'; ?>
 </main>

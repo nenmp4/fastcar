@@ -290,3 +290,60 @@ function cobrancaAutoRodarLote(string $horario, ?callable $pausa = null, ?callab
     setConfig('cobranca_auto_ultimo_lote', date('d/m/Y H:i') . "|{$enviados}|{$falhas}");
     return ['enviados' => $enviados, 'falhas' => $falhas, 'fila' => count($fila)];
 }
+
+/**
+ * Confirma no Asaas o recebimento por fora (Pix na conta, dinheiro) —
+ * POST /payments/{id}/receiveInCash. Sem isso a sincronização
+ * (cron/asaas_sync.php) volta a cobrança pra "atrasado". Formato nunca
+ * confirmado contra a conta real: o erro devolvido pelo Asaas aparece na tela.
+ */
+function asaasConfirmarRecebimentoEmDinheiro(string $paymentId, string $data, float $valor): array {
+    if ($paymentId === '') return ['ok' => false, 'erro' => 'Cobrança sem id do Asaas.'];
+    $r = asaasRequest('POST', '/payments/' . rawurlencode($paymentId) . '/receiveInCash',
+        ['paymentDate' => $data, 'value' => round($valor, 2), 'notifyCustomer' => false]);
+    if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro'] ?: ('HTTP ' . $r['http'])];
+    return ['ok' => true];
+}
+
+/**
+ * 💰 Dar baixa (21/11/2026, "coloca botão dar baixa na cobrança") — marca
+ * receitas pendentes/atrasadas como pagas, com data e forma de pagamento.
+ * Lançamento vindo do Asaas: confirma lá antes (receiveInCash); se o Asaas
+ * recusar, NÃO baixa aqui (a sincronização desfaria). Entrada de venda paga
+ * gera a comissão do vendedor, igual ao ✅ de Lançamentos.
+ */
+function cobrancaDarBaixa(array $ids, string $data, string $forma, int $usuarioId, string $usuarioNome): array {
+    $db = getDB();
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) return ['ok' => false, 'erro' => 'Marque pelo menos um lançamento.', 'baixados' => 0, 'erros' => []];
+    $dt = DateTime::createFromFormat('Y-m-d', $data);
+    if (!$dt || $dt->format('Y-m-d') !== $data || $data > date('Y-m-d')) {
+        return ['ok' => false, 'erro' => 'Data de pagamento inválida (não pode ser no futuro).', 'baixados' => 0, 'erros' => []];
+    }
+    $formas = ['pix' => 'Pix', 'boleto' => 'Boleto', 'cartao' => 'Cartão', 'dinheiro' => 'Dinheiro', 'transferencia' => 'Transferência'];
+    if (!isset($formas[$forma])) $forma = 'pix';
+
+    $sel = $db->prepare("SELECT * FROM fin_lancamentos WHERE id = ? AND tipo = 'receita' AND status IN ('pendente','atrasado')");
+    $upd = $db->prepare("UPDATE fin_lancamentos SET status = 'pago', data_pagamento = ?, forma_pagamento = ?, updated_at = datetime('now','localtime') WHERE id = ? AND status IN ('pendente','atrasado')");
+    $baixados = 0; $total = 0.0; $erros = []; $feitos = [];
+    foreach ($ids as $id) {
+        $sel->execute([$id]);
+        $l = $sel->fetch(PDO::FETCH_ASSOC);
+        if (!$l) { $erros[] = "#{$id}: já pago, cancelado ou não encontrado"; continue; }
+        if ($l['origem'] === 'asaas' && !empty($l['asaas_payment_id'])) {
+            $r = asaasConfirmarRecebimentoEmDinheiro((string)$l['asaas_payment_id'], $data, (float)$l['valor']);
+            if (!$r['ok']) { $erros[] = "#{$id} ({$l['descricao']}): o Asaas recusou — {$r['erro']}"; continue; }
+        }
+        $upd->execute([$data, $forma, $id]);
+        if (!$upd->rowCount()) { $erros[] = "#{$id}: não foi possível baixar"; continue; }
+        $baixados++; $total += (float)$l['valor']; $feitos[] = "#{$id}";
+        if ($l['venda_id']) { try { finRegistrarComissaoVendaFechada((int)$l['venda_id']); } catch (Throwable $e) {} }
+    }
+    if ($baixados) {
+        auditoriaRegistrar('cobranca_baixa', $usuarioId, $usuarioNome, 'fin_lancamento', count($ids) === 1 ? $ids[0] : null,
+            "{$baixados} lançamento(s) baixado(s) — R$ " . number_format($total, 2, ',', '.') . " em " . date('d/m/Y', strtotime($data))
+            . " via {$formas[$forma]}: " . implode(', ', $feitos));
+    }
+    return ['ok' => $baixados > 0, 'baixados' => $baixados, 'total' => $total, 'erros' => $erros,
+            'erro' => $baixados ? '' : ($erros ? implode(' · ', $erros) : 'Nada foi baixado.')];
+}

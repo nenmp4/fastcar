@@ -279,6 +279,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'ouvidoria_ticket_placa' => '🚗 Ouvidoria: placa/data do ticket',
         'ouvidoria_mensagem_enviada' => '💬 Ouvidoria: resposta da equipe',
         'cobranca_enviada' => '💬 Cobrança enviada (WhatsApp da ouvidoria)',
+        'cobranca_baixa' => '💰 Baixa de cobrança (pagamento confirmado)',
         'cobranca_automatica' => '🤖 Cobrança automática (WhatsApp da ouvidoria)',
         'ouvidoria_comprovante' => '🧾 Comprovante recebido na ouvidoria',
         'ouvidoria_assunto_alterado' => '🏷️ Ouvidoria: assunto alterado',
