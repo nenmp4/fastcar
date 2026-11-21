@@ -40,6 +40,7 @@ CRON_LINES=$(cat <<EOF
 */10 * * * * $PHP_BIN $BASE_DIR/cron/vendas_negociacao_fim_turno.php >> $BASE_DIR/storage/logs/vendas_negociacao_fim_turno.log 2>&1 $MARK
 47 8 * * * $PHP_BIN $BASE_DIR/cron/frota_prazo_aviso.php >> $BASE_DIR/storage/logs/frota_prazo_aviso.log 2>&1 $MARK
 */10 * * * * $PHP_BIN $BASE_DIR/cron/lembrete_visitas.php >> $BASE_DIR/storage/logs/lembrete_visitas.log 2>&1 $MARK
+*/10 * * * * $PHP_BIN $BASE_DIR/cron/cobranca_auto.php >> $BASE_DIR/storage/logs/cobranca_auto_cron.log 2>&1 $MARK
 30 19 * * * $PHP_BIN $BASE_DIR/cron/resumo_produtividade.php >> $BASE_DIR/storage/logs/resumo_produtividade.log 2>&1 $MARK
 0 5 * * * $PHP_BIN $BASE_DIR/cron/lancamentos_fixos.php >> $BASE_DIR/storage/logs/lancamentos_fixos.log 2>&1 $MARK
 0 8 * * * $PHP_BIN $BASE_DIR/cron/financeiro_relatorio_mensal.php >> $BASE_DIR/storage/logs/financeiro_relatorio.log 2>&1 $MARK

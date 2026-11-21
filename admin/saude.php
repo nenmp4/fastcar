@@ -393,6 +393,16 @@ foreach ($cronsEsperados as $nome => [$rel, $maxGapMin]) {
     $st = $gapMin <= $maxGapMin ? 'ok' : ($gapMin <= $maxGapMin * 3 ? 'warn' : 'error');
     check('Crons', $nome, $st, date('d/m H:i', filemtime($caminho)), tempoAtras(filemtime($caminho)));
 }
+// Cobrança automática (só quando ligada).
+if (getConfig('cobranca_auto_ativa') === '1') {
+    $cobRun = (int)getConfig('cobranca_auto_ultimo_run');
+    $cobSt = $cobRun && (time() - $cobRun) <= 30 * 60 ? 'ok' : 'error';
+    $cobLote = explode('|', (string)getConfig('cobranca_auto_ultimo_lote'));
+    $cobErro = (string)getConfig('cobranca_auto_ultimo_erro');
+    check('Crons', 'Cobrança automática', $cobSt, $cobRun ? date('d/m H:i', $cobRun) : 'nunca rodou',
+        ($cobLote[0] !== '' ? "Último lote {$cobLote[0]}: " . ($cobLote[1] ?? 0) . ' enviada(s), ' . ($cobLote[2] ?? 0) . ' falha(s)' : 'Nenhum lote ainda')
+        . ($cobErro !== '' ? " — último erro: {$cobErro}" : ''));
+}
 $deployLog = $basePath . '/storage/logs/deploy_' . date('Y-m') . '.log';
 if (file_exists($deployLog)) {
     check('Crons', 'Deploy automático', 'info', date('d/m H:i', filemtime($deployLog)), tempoAtras(filemtime($deployLog)) . ' (último push aplicado)');

@@ -37,6 +37,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             else $erro = $r['erro'];
         }
 
+        if ($acao === 'salvar_cobranca_auto') {
+            $hs = [];
+            foreach (explode(',', (string)($_POST['horarios'] ?? '')) as $h) {
+                $h = trim($h);
+                if (preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $h)) $hs[] = $h;
+            }
+            if (!$hs) {
+                $erro = 'Informe pelo menos um horário no formato HH:MM (ex: 10:30, 15:30).';
+            } else {
+                $ativar = !empty($_POST['ativa']);
+                setConfig('cobranca_auto_ativa', $ativar ? '1' : '0');
+                setConfig('cobranca_auto_horarios', implode(',', array_unique($hs)));
+                setConfig('cobranca_auto_lote', (string)max(1, min(10, (int)($_POST['lote'] ?? 5))));
+                setConfig('cobranca_auto_intervalo_dias', (string)max(1, min(30, (int)($_POST['intervalo'] ?? 3))));
+                if ($ativar) {
+                    // Horários que já passaram hoje não disparam na hora de ligar.
+                    foreach (cobrancaAutoHorarios() as $h) {
+                        if ($h <= date('H:i')) setConfig('cobranca_auto_rodou_' . date('Y-m-d') . '_' . str_replace(':', '', $h), 'pulado');
+                    }
+                }
+                auditoriaRegistrar('cobranca_auto_config', (int)($_SESSION['admin_id'] ?? 0), (string)($_SESSION['admin_nome'] ?? ''), '', null,
+                    ($ativar ? 'Ligada' : 'Desligada') . ' — horários ' . implode(', ', cobrancaAutoHorarios()) . ', ' . cobrancaAutoLote() . ' por horário, repete a cada ' . cobrancaAutoIntervaloDias() . ' dia(s)');
+                $sucesso = 'Cobrança automática ' . ($ativar ? 'ligada' : 'desligada') . '.';
+            }
+        }
+
         if ($acao === 'salvar') {
             $id = (int)($_POST['id'] ?? 0);
             $existente = $id ? $db->query("SELECT origem FROM fin_lancamentos WHERE id=" . $id)->fetch(PDO::FETCH_ASSOC) : null;
@@ -485,6 +511,50 @@ $origemLabels = ['manual' => '', 'parcelamento_venda' => '🚗 plano de parcelam
     <button type="submit" style="width:auto">Filtrar</button>
   </form>
 </div>
+
+<?php
+$cobAuto = cobrancaAutoAtiva();
+$cobLote = explode('|', (string)getConfig('cobranca_auto_ultimo_lote'));
+$cobErro = (string)getConfig('cobranca_auto_ultimo_erro');
+$cobAbrir = ($acao ?? '') === 'salvar_cobranca_auto' || ($_GET['ver'] ?? '') === 'cobranca_auto';
+?>
+<details class="card" style="margin-bottom:1.5rem"<?= $cobAbrir ? ' open' : '' ?>>
+  <summary style="cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+    🤖 Cobrança automática pelo WhatsApp da ouvidoria
+    <span class="badge <?= $cobAuto ? 'badge-ok' : 'badge-info' ?>"><?= $cobAuto ? 'ligada' : 'desligada' ?></span>
+    <?php if ($cobAuto): ?><span style="font-weight:400;color:var(--muted);font-size:.85rem"><?= e(implode(' e ', cobrancaAutoHorarios())) ?> · <?= cobrancaAutoLote() ?> por horário</span><?php endif; ?>
+  </summary>
+  <p style="color:var(--muted);font-size:.9rem;margin:.75rem 0">
+    Seg a sáb, em cada horário, manda a cobrança pra até N clientes com parcela atrasada (do mais atrasado pro menos), com 20 a 60 segundos entre um e outro.
+    Cada cliente só recebe de novo depois do intervalo. Fica de fora quem pediu SAIR, quem está conversando com a equipe na ouvidoria e quem não tem telefone.
+    A mensagem é a mesma do botão 💬 Cobrar, assinada "Financeiro Fastcar".
+  </p>
+  <?php if ($cobLote[0] !== ''): ?><p style="font-size:.9rem;margin:.25rem 0">Último lote: <?= e($cobLote[0]) ?> — <?= (int)($cobLote[1] ?? 0) ?> enviada(s), <?= (int)($cobLote[2] ?? 0) ?> falha(s).</p><?php endif; ?>
+  <?php if ($cobErro !== ''): ?><p class="alerta-erro" style="font-size:.9rem">Último erro: <?= e($cobErro) ?></p><?php endif; ?>
+  <?php if (!evolutionConfiguredOuvidoria()): ?><p class="alerta-erro" style="font-size:.9rem">Instância da ouvidoria não configurada (Configurações → Evolution API — Ouvidoria) — nada sai enquanto isso.</p><?php endif; ?>
+  <form method="POST" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;align-items:end">
+    <?= csrfField() ?>
+    <input type="hidden" name="acao" value="salvar_cobranca_auto">
+    <label style="display:flex;gap:.5rem;align-items:center;min-height:44px"><input type="checkbox" name="ativa" value="1"<?= $cobAuto ? ' checked' : '' ?>> Ligada</label>
+    <label>Horários (separados por vírgula)<input type="text" name="horarios" value="<?= e(implode(', ', cobrancaAutoHorarios())) ?>" placeholder="10:30, 15:30"></label>
+    <label>Clientes por horário<input type="number" name="lote" min="1" max="10" inputmode="numeric" value="<?= cobrancaAutoLote() ?>"></label>
+    <label>Cobrar o mesmo cliente de novo a cada (dias)<input type="number" name="intervalo" min="1" max="30" inputmode="numeric" value="<?= cobrancaAutoIntervaloDias() ?>"></label>
+    <button type="submit" style="width:auto">Salvar</button>
+  </form>
+  <?php if ($cobAbrir): $prox = cobrancaAutoFila(cobrancaAutoLote()); ?>
+    <h4 style="margin:1rem 0 .5rem">Próximo lote (<?= count($prox) ?>)</h4>
+    <?php if (!$prox): ?><p style="color:var(--muted)">Ninguém na fila agora.</p><?php else: ?>
+    <div class="tabela-scroll"><table class="tabela-oportunidades">
+      <thead><tr><th>Cliente</th><th>Telefone</th><th>Vencimento mais antigo</th><th>Valor</th></tr></thead>
+      <tbody><?php foreach ($prox as $f): ?>
+        <tr><td><?= e($f['nome'] ?: '—') ?></td><td><?= e($f['telefone']) ?></td><td><?= $f['vencimento'] ? e(date('d/m/Y', strtotime($f['vencimento']))) : '—' ?></td><td>R$ <?= number_format($f['valor'], 2, ',', '.') ?></td></tr>
+      <?php endforeach; ?></tbody>
+    </table></div>
+    <?php endif; ?>
+  <?php else: ?>
+    <p style="margin-top:.75rem"><a href="?ver=cobranca_auto">👀 Ver quem entra no próximo lote</a></p>
+  <?php endif; ?>
+</details>
 
 <?php if ($fStatus === 'atrasado'): ?>
 <div class="card" style="margin-bottom:1.5rem">

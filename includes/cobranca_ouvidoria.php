@@ -130,16 +130,20 @@ function cobrancaEnviarPelaOuvidoria(int $lancamentoId, string $texto, int $usua
     if ($p['recente'] && !$forcar) {
         return ['ok' => false, 'erro' => "Esse cliente já recebeu cobrança em {$p['ultima_cobranca']}. Marque \"enviar mesmo assim\" se for de propósito."];
     }
-    $tel = $p['telefone'];
     $u = buscarUsuario($usuarioId);
-    $nomeUsuario = trim((string)($u['nome'] ?? ''));
-    $assinado = ($nomeUsuario !== '' ? "*{$nomeUsuario} — Financeiro Fastcar:*\n" : '') . $texto;
+    return _cobrancaEnviar($p, $lancamentoId, $texto, $usuarioId, trim((string)($u['nome'] ?? '')), false);
+}
+
+/** Núcleo do envio (manual ou automático). */
+function _cobrancaEnviar(array $p, int $lancamentoId, string $texto, int $usuarioId, string $nomeUsuario, bool $auto): array {
+    $tel = $p['telefone'];
+    $assinado = ($nomeUsuario !== '' ? "*{$nomeUsuario} — Financeiro Fastcar:*\n" : "*Financeiro Fastcar:*\n") . $texto;
 
     whatsappCanalRegistro('ouvidoria');
     if (!evolutionEnviarTexto($tel, $assinado, evolutionCredenciaisOuvidoria())) {
         return ['ok' => false, 'erro' => 'Falha ao enviar pela instância da ouvidoria.' . whatsappDetalheUltimoErro()];
     }
-    ouvidoriaRegistrarEnviada($tel, $texto, false, $usuarioId);
+    ouvidoriaRegistrarEnviada($tel, $texto, $auto, $usuarioId ?: null);
     setConfig(_cobrancaChaveUltima($tel), (string)time());
 
     // Liga a conversa da ouvidoria à venda, pra resposta do cliente já mostrar o contrato.
@@ -154,7 +158,128 @@ function cobrancaEnviarPelaOuvidoria(int $lancamentoId, string $texto, int $usua
         if ($campos) ouvidoriaSalvarConversa($tel, $campos);
     } catch (Throwable $e) {}
 
-    auditoriaRegistrar('cobranca_enviada', $usuarioId, $nomeUsuario, 'fin_lancamento', $lancamentoId,
-        "Cobrança pelo número da ouvidoria: {$p['itens']} lançamento(s), R$ " . number_format($p['total'], 2, ',', '.'));
+    auditoriaRegistrar($auto ? 'cobranca_automatica' : 'cobranca_enviada', $usuarioId ?: null, $nomeUsuario !== '' ? $nomeUsuario : 'Sistema', 'fin_lancamento', $lancamentoId,
+        ($auto ? 'Cobrança automática' : 'Cobrança') . " pelo número da ouvidoria: {$p['itens']} lançamento(s), R$ " . number_format($p['total'], 2, ',', '.'));
     return ['ok' => true, 'nome' => $p['nome']];
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 🤖 Cobrança automática (21/11/2026, "montar cron 5 clientes por vez...
+// 5 em um horário, mais 5 em outro, uma vez por dia"). Desligada até alguém
+// ligar no card de Lançamentos. Seg–sáb, nos horários configurados, manda pra
+// no máximo N clientes por horário (pausa de 20–60s entre um e outro). Cada
+// cliente só recebe de novo depois de X dias. Pula: quem pediu SAIR, quem já
+// está falando com alguém na ouvidoria, quem não tem telefone.
+// ─────────────────────────────────────────────────────────────────────────
+
+function cobrancaAutoAtiva(): bool { return getConfig('cobranca_auto_ativa') === '1'; }
+
+/** Horários HH:MM, ordenados. Padrão 10:30 e 15:30. */
+function cobrancaAutoHorarios(): array {
+    $raw = (string)(getConfig('cobranca_auto_horarios') ?: '10:30,15:30');
+    $hs = [];
+    foreach (explode(',', $raw) as $h) {
+        $h = trim($h);
+        if (preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $h)) $hs[$h] = true;
+    }
+    $hs = array_keys($hs);
+    sort($hs);
+    return $hs ?: ['10:30', '15:30'];
+}
+
+function cobrancaAutoLote(): int {
+    $n = (int)(getConfig('cobranca_auto_lote') ?: 5);
+    return max(1, min(10, $n));
+}
+
+function cobrancaAutoIntervaloDias(): int {
+    $n = (int)(getConfig('cobranca_auto_intervalo_dias') ?: 3);
+    return max(1, min(30, $n));
+}
+
+/** Motivo pra pular esse telefone (null = pode cobrar). */
+function _cobrancaAutoMotivoPular(string $tel): ?string {
+    $db = getDB();
+    $ultima = (int)getConfig(_cobrancaChaveUltima($tel));
+    if ($ultima && (time() - $ultima) < cobrancaAutoIntervaloDias() * 86400) return 'cobrado há pouco';
+    foreach (["SELECT 1 FROM clientes WHERE telefone = ? AND optout_whatsapp = 1", "SELECT 1 FROM vendas WHERE comprador_telefone = ? AND optout_whatsapp = 1"] as $sql) {
+        $st = $db->prepare($sql);
+        $st->execute([$tel]);
+        if ($st->fetchColumn()) return 'pediu SAIR';
+    }
+    $conv = ouvidoriaConversa($tel);
+    if (!empty($conv['ia_pausada'])) return 'conversando com a equipe';
+    $st = $db->prepare("SELECT 1 FROM ouvidoria_tickets WHERE telefone = ? AND status = 'em_atendimento' LIMIT 1");
+    $st->execute([$tel]);
+    if ($st->fetchColumn()) return 'ticket em atendimento';
+    return null;
+}
+
+/**
+ * Próximos da fila: 1 por cliente (o lançamento atrasado mais antigo dele),
+ * do mais atrasado pro menos. $limite = quantos devolver.
+ */
+function cobrancaAutoFila(int $limite): array {
+    $st = getDB()->query("
+        SELECT * FROM fin_lancamentos
+        WHERE tipo = 'receita' AND status = 'atrasado'
+        ORDER BY data_vencimento, id
+    ");
+    $vistos = [];
+    $fila = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $l) {
+        $c = cobrancaContatoDoLancamento($l);
+        if ($c['telefone'] === '' || isset($vistos[$c['telefone']])) continue;
+        $vistos[$c['telefone']] = true;
+        if (_cobrancaAutoMotivoPular($c['telefone']) !== null) continue;
+        $fila[] = ['id' => (int)$l['id'], 'telefone' => $c['telefone'], 'nome' => $c['nome'],
+                   'vencimento' => $l['data_vencimento'], 'valor' => (float)$l['valor']];
+        if (count($fila) >= $limite) break;
+    }
+    return $fila;
+}
+
+/** Horário da vez (último já passado hoje e ainda não rodado), ou null. */
+function cobrancaAutoHorarioDaVez(?int $agora = null): ?string {
+    $agora = $agora ?? time();
+    if ((int)date('w', $agora) === 0) return null; // domingo
+    $hhmm = date('H:i', $agora);
+    $daVez = null;
+    foreach (cobrancaAutoHorarios() as $h) if ($h <= $hhmm) $daVez = $h;
+    if ($daVez === null) return null;
+    if (getConfig('cobranca_auto_rodou_' . date('Y-m-d', $agora) . '_' . str_replace(':', '', $daVez))) return null;
+    return $daVez;
+}
+
+/**
+ * Roda 1 lote. $pausa = callable(int segundos) pra esperar entre envios
+ * (o cron usa sleep; teste pode passar uma função vazia).
+ */
+function cobrancaAutoRodarLote(string $horario, ?callable $pausa = null, ?callable $log = null): array {
+    $log = $log ?? function ($m) {};
+    $pausa = $pausa ?? function ($s) { sleep($s); };
+    setConfig('cobranca_auto_rodou_' . date('Y-m-d') . '_' . str_replace(':', '', $horario), (string)time());
+    if (!evolutionConfiguredOuvidoria()) {
+        setConfig('cobranca_auto_ultimo_erro', date('d/m/Y H:i') . ' — instância da ouvidoria não configurada');
+        return ['enviados' => 0, 'falhas' => 0, 'erro' => 'ouvidoria não configurada'];
+    }
+    $fila = cobrancaAutoFila(cobrancaAutoLote());
+    $enviados = 0; $falhas = 0; $seguidas = 0;
+    foreach ($fila as $i => $f) {
+        if ($i > 0) $pausa(random_int(20, 60));
+        $p = cobrancaPreparar($f['id']);
+        if (!$p['ok']) { $log("#{$f['id']}: {$p['erro']}"); continue; }
+        $r = _cobrancaEnviar($p, $f['id'], $p['mensagem'], 0, '', true);
+        if ($r['ok']) {
+            $enviados++; $seguidas = 0;
+            $log("#{$f['id']}: enviado ({$p['itens']} lançamento(s), R$ " . number_format($p['total'], 2, ',', '.') . ')');
+        } else {
+            $falhas++; $seguidas++;
+            $log("#{$f['id']}: FALHOU — {$r['erro']}");
+            setConfig('cobranca_auto_ultimo_erro', date('d/m/Y H:i') . ' — ' . $r['erro']);
+            if ($seguidas >= 2) { $log('2 falhas seguidas — para este lote.'); break; }
+        }
+    }
+    setConfig('cobranca_auto_ultimo_lote', date('d/m/Y H:i') . "|{$enviados}|{$falhas}");
+    return ['enviados' => $enviados, 'falhas' => $falhas, 'fila' => count($fila)];
 }
