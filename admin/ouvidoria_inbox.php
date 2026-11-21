@@ -262,7 +262,7 @@ if ($contatoAtivo) {
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>Ouvidoria — Fastcar CRM</title>
 <link rel="stylesheet" href="/admin/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?: 1 ?>">
 <link rel="stylesheet" href="/admin/assets/mobile.css?v=<?= @filemtime(__DIR__ . '/assets/mobile.css') ?: 1 ?>">
@@ -270,7 +270,9 @@ if ($contatoAtivo) {
 <?php include __DIR__ . '/_pwa_head.php'; ?>
 <style>
 html:has(body.wpp-page) { height: 100%; overflow: hidden; }
-body.wpp-page { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body.wpp-page { height: 100vh; height: 100dvh; height: var(--ouv-app-h, 100dvh); overflow: hidden; display: flex; flex-direction: column; }
+/* Balão do cliente visível (antes tinha a mesma cor do fundo da conversa). */
+.wpp-thread .msg-in { background: var(--superficie); border: 1px solid var(--borda); }
 body.wpp-page > * { flex-shrink: 0; }
 body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .wpp-sidebar, .wpp-chat, .wpp-lista, .wpp-thread { min-height: 0; }
@@ -398,7 +400,26 @@ body.ouv-page .breadcrumb { display: none; }
     .wpp-chat-header .ouv-acoes select { flex: 1; max-width: none; }
     .wpp-voltar-mobile { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; color: inherit; margin-right: 0; }
     body.wpp-tem-conversa .wpp-sidebar { display: none; }
+    /* 21/11/2026, "muitas conversas não dá para responder" — cabeçalho compacto
+       no celular: nome + assunto + IA numa faixa só, sobra espaço pra conversa
+       e o campo de responder fica sempre à vista. */
+    .wpp-chat-header { padding: 6px 10px; gap: 6px; }
+    .wpp-chat-header .wpp-avatar, .wpp-chat-header .wpp-avatar-placeholder { width: 32px; height: 32px; margin-right: 6px; font-size: 13px; }
+    .ouv-contato strong { font-size: 15px; }
+    .ouv-contato small { font-size: 11.5px; }
+    .wpp-chat-header .ouv-acoes { gap: 6px; }
+    .wpp-chat-header .ouv-acoes select, .wpp-chat-header .ouv-acoes button { font-size: 14px; padding: 6px 8px; min-height: 44px; }
+    .ouv-faixa > summary { min-height: 40px; padding: 4px 12px; font-size: 12px; }
+    .wpp-thread { padding: 10px 10px; }
+    .ouv-sugestao-aviso { padding: 0 10px 4px; }
     body:not(.wpp-tem-conversa) .wpp-chat { display: none; }
+}
+/* Celular com o teclado aberto (tela baixa): some o menu, o assunto/IA e a faixa
+   do ticket — fica só nome, conversa e o campo de responder. */
+@media (max-width: 700px) and (max-height: 560px) {
+    body.wpp-tem-conversa .topbar, body.wpp-tem-conversa .topbar-v2 { display: none; }
+    body.wpp-tem-conversa .wpp-chat-header .ouv-acoes, body.wpp-tem-conversa .ouv-faixa { display: none; }
+    body.wpp-tem-conversa .ouv-contato small { display: none; }
 }
 </style>
 <script>
@@ -852,6 +873,23 @@ body.ouv-page .breadcrumb { display: none; }
                 });
         });
     }
+
+    // 21/11/2026 — no Android o teclado (e a barra de navegação do PWA) cobria o
+    // campo de responder: a altura da tela passa a seguir a área visível de verdade.
+    (function () {
+        var vv = window.visualViewport;
+        if (!vv) return;
+        var ajustar = function () {
+            var pertoDoFim = thread && (thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80);
+            document.documentElement.style.setProperty('--ouv-app-h', Math.round(vv.height) + 'px');
+            window.scrollTo(0, 0);
+            if (thread && pertoDoFim) thread.scrollTop = thread.scrollHeight;
+        };
+        vv.addEventListener('resize', ajustar);
+        ajustar();
+        var ta = document.querySelector('.wpp-form textarea');
+        if (ta) ta.addEventListener('focus', function () { setTimeout(function () { if (thread) thread.scrollTop = thread.scrollHeight; ta.scrollIntoView({block: 'end'}); }, 300); });
+    })();
 
     if (thread) {
         thread.scrollTop = thread.scrollHeight;
