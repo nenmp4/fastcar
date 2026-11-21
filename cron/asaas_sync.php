@@ -49,6 +49,7 @@ if (!$ri['ok']) {
     log_asaas_sync('Erro ao importar cobranças: ' . $ri['erro']);
 } else {
     log_asaas_sync("Importação: {$ri['novos']} nova(s), {$ri['atualizados']} atualizada(s).");
+    setConfig('asaas_sync_ultimo_run', (string)time());
 }
 
 $rv = asaasVincularClientesAutomatico();

@@ -49,13 +49,24 @@ function cobrancaItensEmAberto(array $l): array {
     else return [$l];
     $st = getDB()->prepare("
         SELECT * FROM fin_lancamentos
-        WHERE {$campo} = ? AND tipo = 'receita'
+        WHERE {$campo} = ? AND tipo = 'receita' AND origem = 'asaas'
           AND (status = 'atrasado' OR id = ?)
           AND status NOT IN ('pago','cancelado')
         ORDER BY data_vencimento, id
     ");
     $st->execute([$valor, (int)$l['id']]);
     return $st->fetchAll(PDO::FETCH_ASSOC) ?: [$l];
+}
+
+/** Atualiza do Asaas (importa novas + status de todas) — botão da tela de Cobranças. */
+function cobrancaAtualizarDoAsaas(): array {
+    if (!asaasConfigured()) return ['ok' => false, 'erro' => 'Asaas não configurado.'];
+    $antes = (int)getDB()->query("SELECT COUNT(*) FROM fin_lancamentos WHERE origem = 'asaas' AND status = 'atrasado'")->fetchColumn();
+    $r = asaasImportarCobrancas();
+    if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro']];
+    setConfig('asaas_sync_ultimo_run', (string)time());
+    $depois = (int)getDB()->query("SELECT COUNT(*) FROM fin_lancamentos WHERE origem = 'asaas' AND status = 'atrasado'")->fetchColumn();
+    return ['ok' => true, 'novos' => (int)$r['novos'], 'atualizados' => (int)$r['atualizados'], 'antes' => $antes, 'depois' => $depois];
 }
 
 /** Link do boleto/Pix da cobrança no Asaas (null se não tiver). */
@@ -79,6 +90,11 @@ function cobrancaPreparar(int $lancamentoId): array {
     if (!$l) return ['ok' => false, 'erro' => 'Lançamento não encontrado.'];
     if ($l['tipo'] !== 'receita' || in_array($l['status'], ['pago', 'cancelado'], true)) {
         return ['ok' => false, 'erro' => 'Só dá pra cobrar receita em aberto.'];
+    }
+    // 21/11/2026 ("cobrança tem que vir do Asaas") — lançamento local (plano
+    // gerado no CRM) pode já estar pago no Asaas; nunca cobra por ele.
+    if ($l['origem'] !== 'asaas') {
+        return ['ok' => false, 'erro' => 'Só cobramos parcela que está no Asaas — esse lançamento foi criado no sistema e pode já estar pago lá. Confira no Asaas.'];
     }
     $c = cobrancaContatoDoLancamento($l);
     if ($c['telefone'] === '') return ['ok' => false, 'erro' => 'Esse lançamento não tem telefone do cliente (vincule a venda/cliente ou o cliente Asaas).'];
@@ -229,7 +245,7 @@ function _cobrancaAutoMotivoPular(string $tel): ?string {
 function cobrancaAutoFila(int $limite): array {
     $st = getDB()->query("
         SELECT * FROM fin_lancamentos
-        WHERE tipo = 'receita' AND status = 'atrasado'
+        WHERE tipo = 'receita' AND status = 'atrasado' AND origem = 'asaas'
         ORDER BY data_vencimento, id
     ");
     $vistos = [];

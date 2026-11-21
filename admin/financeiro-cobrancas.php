@@ -22,6 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $r = cobrancaEnviarPelaOuvidoria((int)($_POST['id'] ?? 0), (string)($_POST['mensagem'] ?? ''), (int)($_SESSION['admin_id'] ?? 0), !empty($_POST['forcar']));
         if ($r['ok']) $sucesso = 'Cobrança enviada pelo WhatsApp da ouvidoria' . ($r['nome'] ? ' pra ' . $r['nome'] : '') . '.';
         else $erro = $r['erro'];
+    } elseif (($_POST['acao'] ?? '') === 'atualizar_asaas') {
+        $r = cobrancaAtualizarDoAsaas();
+        if ($r['ok']) $sucesso = "🔄 Atualizado do Asaas: {$r['atualizados']} cobrança(s) conferida(s), {$r['novos']} nova(s). Em atraso: {$r['antes']} → {$r['depois']}.";
+        else $erro = 'Não deu pra atualizar do Asaas: ' . $r['erro'];
     } elseif (($_POST['acao'] ?? '') === 'dar_baixa') {
         $r = cobrancaDarBaixa((array)($_POST['ids'] ?? []), (string)($_POST['data_pagamento'] ?? ''), (string)($_POST['forma_pagamento'] ?? ''),
             (int)($_SESSION['admin_id'] ?? 0), (string)($_SESSION['admin_nome'] ?? ''));
@@ -41,7 +45,11 @@ $busca = trim((string)($_GET['q'] ?? ''));
 $clientes = [];
 $semTelefone = [];
 $hoje = strtotime(date('Y-m-d'));
-foreach ($db->query("SELECT * FROM fin_lancamentos WHERE tipo = 'receita' AND status = 'atrasado' ORDER BY data_vencimento, id")->fetchAll(PDO::FETCH_ASSOC) as $l) {
+// 21/11/2026 ("cobrança temos vim do Asaas") — só parcela do Asaas; o que foi
+// criado no sistema pode estar pago lá e nunca entra na cobrança.
+$foraAsaas = $db->query("SELECT COUNT(*) AS n, COALESCE(SUM(valor),0) AS v FROM fin_lancamentos WHERE tipo = 'receita' AND status = 'atrasado' AND origem != 'asaas'")->fetch(PDO::FETCH_ASSOC);
+$ultimaSyncAsaas = (int)getConfig('asaas_sync_ultimo_run');
+foreach ($db->query("SELECT * FROM fin_lancamentos WHERE tipo = 'receita' AND status = 'atrasado' AND origem = 'asaas' ORDER BY data_vencimento, id")->fetchAll(PDO::FETCH_ASSOC) as $l) {
     $c = cobrancaContatoDoLancamento($l);
     if ($c['telefone'] === '') { $semTelefone[] = $l + ['_nome' => $c['nome']]; continue; }
     $t = $c['telefone'];
@@ -133,7 +141,15 @@ $qsBase = fn(array $extra) => http_build_query(array_filter(array_merge(['f' => 
 <?php if ($sucesso): ?><div class="alerta-sucesso"><?= e($sucesso) ?></div><?php endif; ?>
 
 <h1 style="margin-bottom:.25rem">📞 Cobranças</h1>
-<p style="color:var(--muted);margin-top:0">Quem está em atraso, quando foi cobrado e quem já mandou comprovante. A cobrança sai pelo WhatsApp da ouvidoria.</p>
+<p style="color:var(--muted);margin-top:0">Só parcelas do <strong>Asaas</strong> em atraso, quando foi cobrado e quem já mandou comprovante. A cobrança sai pelo WhatsApp da ouvidoria.</p>
+<form method="POST" class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Atualizando…'">
+  <?= csrfField() ?><input type="hidden" name="acao" value="atualizar_asaas">
+  <span style="flex:1;min-width:200px">Status conferido com o Asaas: <strong><?= $ultimaSyncAsaas ? e(date('d/m H:i', $ultimaSyncAsaas)) : 'nunca' ?></strong> <small style="color:var(--muted)">(atualiza sozinho a cada 30 min)</small></span>
+  <button type="submit" style="width:auto">🔄 Atualizar do Asaas agora</button>
+</form>
+<?php if ((int)$foraAsaas['n'] > 0): ?>
+<p style="font-size:.9rem;color:var(--muted)">ℹ️ Fora daqui: <?= (int)$foraAsaas['n'] ?> lançamento(s) atrasado(s) criados no sistema (não no Asaas), <?= $fmt($foraAsaas['v']) ?> — podem já estar pagos no Asaas; confira e cancele em <a href="/admin/financeiro-lancamentos.php?status=atrasado&tipo=receita&todos_periodos=1">Lançamentos</a>.</p>
+<?php endif; ?>
 
 <div class="stat-grid">
   <a class="stat-card alerta" href="?<?= $qsBase(['f' => '']) ?>"><div class="valor"><?= count($clientes) ?></div><div class="rotulo">Clientes em atraso<br><small><?= $fmt($totalAtraso) ?></small></div></a>

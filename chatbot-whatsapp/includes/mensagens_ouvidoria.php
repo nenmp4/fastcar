@@ -195,7 +195,7 @@ function ouvidoriaLancamentosEmAbertoDoTelefone(string $tel): array {
     } catch (Throwable $e) {}
     if (!$conds) return [];
     $st = $db->prepare("SELECT id, descricao, valor, data_vencimento, status, parcela_numero, parcela_total, venda_id FROM fin_lancamentos
-        WHERE tipo = 'receita' AND status IN ('pendente','atrasado') AND (" . implode(' OR ', $conds) . ")
+        WHERE tipo = 'receita' AND origem = 'asaas' AND status IN ('pendente','atrasado') AND (" . implode(' OR ', $conds) . ")
         ORDER BY data_vencimento, id LIMIT 30");
     $st->execute($vals);
     return $st->fetchAll(PDO::FETCH_ASSOC);

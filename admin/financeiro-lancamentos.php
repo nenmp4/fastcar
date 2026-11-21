@@ -641,7 +641,7 @@ if ($comissoesPendentesLista && in_array($fOrigem, ['comissao_compra', 'comissao
               <button type="submit" class="btn-texto perigo" title="Cancelar (nunca apaga — sempre fica registrado, mesmo lançamento automático/Asaas)">🚫 Cancelar</button>
             </form>
           <?php endif; ?>
-          <?php if ($l['tipo'] === 'receita' && in_array($l['status'], ['atrasado', 'pendente'], true)): ?>
+          <?php if ($l['tipo'] === 'receita' && $l['origem'] === 'asaas' && in_array($l['status'], ['atrasado', 'pendente'], true)): ?>
             <button type="button" class="btn-texto" style="color:#166534" onclick="fcAbrirCobranca(<?= (int)$l['id'] ?>)" title="Mandar cobrança pelo WhatsApp da ouvidoria">💬 Cobrar</button>
           <?php endif; ?>
           <?php if ($semVinculo && $l['tipo'] === 'receita'): ?>
