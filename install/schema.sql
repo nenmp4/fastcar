@@ -1657,3 +1657,22 @@ CREATE TABLE IF NOT EXISTS veiculo_reservas (
 );
 CREATE INDEX IF NOT EXISTS idx_veiculo_reservas_venda ON veiculo_reservas(venda_id);
 CREATE INDEX IF NOT EXISTS idx_veiculo_reservas_reserva ON veiculo_reservas(oportunidade_reserva_id, status);
+
+-- 21/11/2026 — tela de Cobranças: cada cobrança enviada (manual/automática) e cada comprovante recebido na ouvidoria.
+CREATE TABLE IF NOT EXISTS cobranca_eventos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT NOT NULL CHECK (tipo IN ('envio','comprovante')),
+    origem TEXT NOT NULL DEFAULT '',
+    telefone TEXT NOT NULL,
+    nome TEXT NOT NULL DEFAULT '',
+    lancamento_id INTEGER,
+    venda_id INTEGER,
+    valor REAL,
+    itens INTEGER,
+    bate_lancamento_id INTEGER,
+    mensagem_id INTEGER,
+    usuario_id INTEGER,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_cobranca_eventos_tel ON cobranca_eventos(telefone, created_at);
+CREATE INDEX IF NOT EXISTS idx_cobranca_eventos_data ON cobranca_eventos(created_at);

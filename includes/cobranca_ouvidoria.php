@@ -158,6 +158,13 @@ function _cobrancaEnviar(array $p, int $lancamentoId, string $texto, int $usuari
         if ($campos) ouvidoriaSalvarConversa($tel, $campos);
     } catch (Throwable $e) {}
 
+    try {
+        $st = getDB()->prepare('SELECT venda_id FROM fin_lancamentos WHERE id = ?');
+        $st->execute([$lancamentoId]);
+        getDB()->prepare("INSERT INTO cobranca_eventos (tipo, origem, telefone, nome, lancamento_id, venda_id, valor, itens, usuario_id) VALUES ('envio', ?, ?, ?, ?, ?, ?, ?, ?)")
+            ->execute([$auto ? 'automatica' : 'manual', $tel, $p['nome'], $lancamentoId, ((int)$st->fetchColumn()) ?: null, $p['total'], $p['itens'], $usuarioId ?: null]);
+    } catch (Throwable $e) {}
+
     auditoriaRegistrar($auto ? 'cobranca_automatica' : 'cobranca_enviada', $usuarioId ?: null, $nomeUsuario !== '' ? $nomeUsuario : 'Sistema', 'fin_lancamento', $lancamentoId,
         ($auto ? 'Cobrança automática' : 'Cobrança') . " pelo número da ouvidoria: {$p['itens']} lançamento(s), R$ " . number_format($p['total'], 2, ',', '.'));
     return ['ok' => true, 'nome' => $p['nome']];

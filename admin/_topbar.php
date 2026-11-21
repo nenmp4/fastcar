@@ -71,6 +71,7 @@ $tbGrupos = [
     'Financeiro' => [
         ['🧾 Financeiro', '/admin/financeiro.php', $tbFin],
         ['📒 Lançamentos', '/admin/financeiro-lancamentos.php', $tbFin],
+        ['📞 Cobranças', '/admin/financeiro-cobrancas.php', $tbFin],
         ['📈 Relatórios financeiros', '/admin/financeiro-relatorios.php', $tbFin],
         ['💬 WhatsApp cobrança', '/admin/financeiro_inbox.php', $tbFin],
         ['📊 Lucro por veículo', '/admin/relatorio_lucro_veiculos.php', $tbSuper],
@@ -125,6 +126,7 @@ $tbMapa = [
     'financeiro-fornecedores.php' => ['Fornecedores', 'financeiro.php'],
     'financeiro-colaboradores.php' => ['Colaboradores', 'financeiro.php'],
     'financeiro-asaas.php' => ['Asaas', 'financeiro.php'],
+    'financeiro-cobrancas.php' => ['Cobranças', 'financeiro.php'],
     'financeiro-relatorios.php' => ['Relatórios financeiros', 'financeiro.php'],
     'financeiro-empresa.php' => ['Dados da empresa', 'financeiro-relatorios.php'],
     'financeiro_inbox.php' => ['WhatsApp cobrança', 'financeiro.php'],

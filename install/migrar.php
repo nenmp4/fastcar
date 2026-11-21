@@ -2509,6 +2509,30 @@ try {
     echo "❌ ouvidoria_conversas: {$e->getMessage()}\n";
 }
 
+// 21/11/2026 — tela de Cobranças (eventos de envio e comprovante).
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS cobranca_eventos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT NOT NULL CHECK (tipo IN ('envio','comprovante')),
+    origem TEXT NOT NULL DEFAULT '',
+    telefone TEXT NOT NULL,
+    nome TEXT NOT NULL DEFAULT '',
+    lancamento_id INTEGER,
+    venda_id INTEGER,
+    valor REAL,
+    itens INTEGER,
+    bate_lancamento_id INTEGER,
+    mensagem_id INTEGER,
+    usuario_id INTEGER,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_cobranca_eventos_tel ON cobranca_eventos(telefone, created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_cobranca_eventos_data ON cobranca_eventos(created_at)");
+    echo "✅ cobranca_eventos: tabela pronta\n";
+} catch (Throwable $e) {
+    echo "❌ cobranca_eventos: {$e->getMessage()}\n";
+}
+
 // 20/11/2026 — tickets da Ouvidoria.
 try {
     $db->exec("

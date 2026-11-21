@@ -260,6 +260,10 @@ function ouvidoriaAvisarComprovante(string $tel, string $nome, ?array $comp, str
                 : '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode($tel);
             criarNotificacao((int)$u['id'], 'comprovante', $titulo, $resumo, $url);
         }
+        try {
+            getDB()->prepare("INSERT INTO cobranca_eventos (tipo, origem, telefone, nome, valor, bate_lancamento_id, venda_id, mensagem_id) VALUES ('comprovante', 'ouvidoria', ?, ?, ?, ?, ?, ?)")
+                ->execute([$tel, $nome, $comp['valor'] ?? null, $bate ? (int)$bate['id'] : null, $bate && $bate['venda_id'] ? (int)$bate['venda_id'] : null, $msgId ?: null]);
+        } catch (Throwable $e) {}
         auditoriaRegistrar('ouvidoria_comprovante', null, 'Sistema', 'whatsapp_mensagem', $msgId ?: null,
             "Comprovante de {$tel}" . (!empty($comp['valor']) ? ' — ' . $fmt($comp['valor']) : '') . ($bate ? " (bate com lançamento #{$bate['id']})" : '') . ($enviou ? ' — aviso no WhatsApp' : ' — WhatsApp de aviso não enviado'));
         return $enviou;

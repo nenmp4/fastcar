@@ -167,7 +167,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'financeiro') {
         'ver_anexo_financeiro.php', 'fornecedor_cnpj_ajax.php', 'clientes.php',
         'cliente_detalhe.php', 'financeiro_inbox.php', 'financeiro-relatorio-dre.php',
         'financeiro-relatorio-extrato.php', 'financeiro-relatorios.php', 'financeiro-relatorio-excel.php',
-        'financeiro-empresa.php', 'meu_perfil.php', 'logout.php',
+        'financeiro-empresa.php', 'financeiro-cobrancas.php', 'meu_perfil.php', 'logout.php',
         // 29/09/2026 — impersonamento (ver nota equivalente no guard do vendedor acima).
         'parar_impersonar.php',
         // 08/10/2026 — sino de notificação + badge de status Z-API (ver
