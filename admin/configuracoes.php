@@ -99,6 +99,7 @@ $camposEvolutionOuvidoria = [
     'evolution_ouvidoria_instance_name' => 'Nome da instância (ouvidoria)',
     'evolution_ouvidoria_api_key'       => 'API Key (ouvidoria — da instância, ou a global)',
     'ouvidoria_numero_publico'          => 'Número da ouvidoria pra informar (ex: (11) 9 1234-5678) — vai na resposta de quitação, pro cliente passar ao banco',
+    'ouvidoria_comprovante_whatsapp'    => 'Avisar comprovante recebido nestes WhatsApp (separados por vírgula; vazio = números de notificação de leads)',
 ];
 
 // 30/09/2026, "zpi vendas zpi financeiro não faz mais sentido" → "meta só

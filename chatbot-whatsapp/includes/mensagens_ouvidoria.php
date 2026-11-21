@@ -26,6 +26,7 @@ require_once dirname(__DIR__, 2) . '/includes/gemini.php';
 require_once dirname(__DIR__, 2) . '/includes/openai.php';
 require_once dirname(__DIR__, 2) . '/includes/notificacoes.php';
 require_once dirname(__DIR__, 2) . '/includes/auditoria.php';
+require_once dirname(__DIR__, 2) . '/includes/email_templates.php';
 require_once __DIR__ . '/mensagens.php';
 
 /** Assuntos que já entram como URGENTE (🚨 no ticket e aviso automático pro Jean). */
@@ -151,12 +152,120 @@ function ouvidoriaAnalisarMidiaIA(string $bytes, string $mime): ?array {
         . "Diga o assunto: comprovante de pagamento (pix, boleto, transferência) = pagamento; notificação de multa/infração de trânsito = multa; "
         . "contrato ou distrato = contrato/distrato; cobrança/notificação do BANCO do financiamento (saldo devedor, quitação, busca e apreensão) = quitacao; auto/termo de apreensão, remoção ou recolhimento do veículo, boletim de ocorrência de roubo = apreensao; foto/vídeo de defeito, orçamento de oficina = defeito; CRLV, recibo, documento de transferência, IPVA/licenciamento = documentos; qualquer outra coisa = outro. "
         . "E descreva em 1 frase curta o que é (se for comprovante, diga valor, data e quem pagou quando estiver visível; se for multa: placa, data e valor da infração e o prazo pra indicar o condutor, quando estiver escrito). "
-        . "Nunca invente o que não está visível. Responda SÓ um JSON: {\"assunto\":\"apreensao|distrato|quitacao|multa|defeito|documentos|pagamento|contrato|outro\",\"descricao\":\"...\"}.";
+        . "Se for comprovante de pagamento, preencha também \"comprovante\" com o que estiver escrito: valor (número, ex 850.00), data (AAAA-MM-DD), pagador (nome de quem pagou), recebedor (nome de quem recebeu), tipo (pix|boleto|transferencia|deposito|outro); campo que não estiver visível fica null. Se não for comprovante, \"comprovante\": null. "
+        . "Nunca invente o que não está visível. Responda SÓ um JSON: {\"assunto\":\"apreensao|distrato|quitacao|multa|defeito|documentos|pagamento|contrato|outro\",\"descricao\":\"...\",\"comprovante\":null}.";
     $r = geminiCallComMidia($prompt, $mime, base64_encode($bytes), $geminiKey, getConfig('gemini_model') ?: 'gemini-3.5-flash-lite', 300, 0.0);
     if ($r === '') return null;
     $desc = '';
     if (preg_match('/"descricao"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/u', $r, $mm)) $desc = trim((string)json_decode('"' . $mm[1] . '"'));
-    return ['assunto' => _ouvidoriaExtrairAssuntoJson($r), 'descricao' => $desc];
+    $comprovante = null;
+    if (preg_match('/\{.*\}/s', $r, $mj)) {
+        $j = json_decode($mj[0], true);
+        if (is_array($j) && is_array($j['comprovante'] ?? null)) {
+            $c = $j['comprovante'];
+            $valor = is_numeric($c['valor'] ?? null) ? round((float)$c['valor'], 2) : (isset($c['valor']) && is_string($c['valor']) ? valorMonetario(preg_replace('/[^\d,.]/', '', $c['valor'])) : null);
+            $data = is_string($c['data'] ?? null) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $c['data']) && checkdate((int)substr($c['data'], 5, 2), (int)substr($c['data'], 8, 2), (int)substr($c['data'], 0, 4)) ? $c['data'] : null;
+            $comprovante = [
+                'valor' => $valor && $valor > 0 ? $valor : null,
+                'data' => $data,
+                'pagador' => mb_substr(trim((string)($c['pagador'] ?? '')), 0, 80),
+                'recebedor' => mb_substr(trim((string)($c['recebedor'] ?? '')), 0, 80),
+                'tipo' => in_array($c['tipo'] ?? '', ['pix', 'boleto', 'transferencia', 'deposito', 'outro'], true) ? $c['tipo'] : '',
+            ];
+        }
+    }
+    return ['assunto' => _ouvidoriaExtrairAssuntoJson($r), 'descricao' => $desc, 'comprovante' => $comprovante];
+}
+
+/** Receitas em aberto (pendente/atrasado) do cliente desse telefone — venda, cliente ou cliente Asaas. */
+function ouvidoriaLancamentosEmAbertoDoTelefone(string $tel): array {
+    $db = getDB();
+    $conds = []; $vals = [];
+    $st = $db->prepare('SELECT id FROM vendas WHERE comprador_telefone = ?'); $st->execute([$tel]);
+    if ($ids = $st->fetchAll(PDO::FETCH_COLUMN)) { $conds[] = 'venda_id IN (' . implode(',', array_map('intval', $ids)) . ')'; }
+    $st = $db->prepare('SELECT id FROM clientes WHERE telefone = ?'); $st->execute([$tel]);
+    if ($ids = $st->fetchAll(PDO::FETCH_COLUMN)) { $conds[] = 'cliente_id IN (' . implode(',', array_map('intval', $ids)) . ')'; }
+    try {
+        $st = $db->prepare('SELECT asaas_id FROM fin_asaas_clientes WHERE telefone = ? OR telefone = ?');
+        $st->execute([$tel, preg_replace('/^55/', '', $tel)]);
+        if ($ids = $st->fetchAll(PDO::FETCH_COLUMN)) {
+            $conds[] = 'asaas_customer_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
+            $vals = array_merge($vals, $ids);
+        }
+    } catch (Throwable $e) {}
+    if (!$conds) return [];
+    $st = $db->prepare("SELECT id, descricao, valor, data_vencimento, status, parcela_numero, parcela_total, venda_id FROM fin_lancamentos
+        WHERE tipo = 'receita' AND status IN ('pendente','atrasado') AND (" . implode(' OR ', $conds) . ")
+        ORDER BY data_vencimento, id LIMIT 30");
+    $st->execute($vals);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Cliente mandou comprovante na ouvidoria (21/11/2026, "se cliente mandar
+ * comprovante ia ler comprovante faz notificação para número do sistema").
+ * Avisa o(s) número(s) de Configurações → Ouvidoria ("avisar comprovante")
+ * — vazio = notificacao_leads_whatsapp — e o sino do financeiro/super admin.
+ * Só AVISA: nunca dá baixa sozinho (o financeiro confere no extrato).
+ */
+function ouvidoriaAvisarComprovante(string $tel, string $nome, ?array $comp, string $descricao, int $msgId): bool {
+    try {
+        $comp = $comp ?? [];
+        // 2 fotos do mesmo comprovante seguidas = 1 aviso só.
+        $chave = 'ouv_comprov_' . md5($tel . '|' . ($comp['valor'] ?? '') . '|' . ($comp['data'] ?? ''));
+        if (avisoRepetidoRecente($chave, 900)) return false;
+
+        $abertos = ouvidoriaLancamentosEmAbertoDoTelefone($tel);
+        $bate = null;
+        if (!empty($comp['valor'])) {
+            foreach ($abertos as $l) if (abs((float)$l['valor'] - (float)$comp['valor']) < 0.01) { $bate = $l; break; }
+        }
+        $fmt = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
+        $rotParcela = function (array $l): string {
+            if ($l['parcela_numero'] !== null) return (int)$l['parcela_numero'] === 0 ? 'Entrada' : 'Parcela ' . (int)$l['parcela_numero'] . ($l['parcela_total'] ? '/' . (int)$l['parcela_total'] : '');
+            return mb_substr((string)$l['descricao'], 0, 40);
+        };
+        $base = appBaseUrl();
+        $linhas = ["🧾 *Comprovante recebido na ouvidoria*", "Cliente: " . ($nome !== '' ? $nome : 'sem nome') . " ({$tel})"];
+        if (!empty($comp['valor'])) $linhas[] = 'Valor: ' . $fmt($comp['valor']);
+        if (!empty($comp['data'])) $linhas[] = 'Data: ' . date('d/m/Y', strtotime($comp['data']));
+        if (!empty($comp['tipo'])) $linhas[] = 'Tipo: ' . ['pix' => 'Pix', 'boleto' => 'Boleto', 'transferencia' => 'Transferência', 'deposito' => 'Depósito', 'outro' => 'Outro'][$comp['tipo']];
+        if (!empty($comp['pagador'])) $linhas[] = 'Pagou: ' . $comp['pagador'];
+        if (!empty($comp['recebedor'])) $linhas[] = 'Recebeu: ' . $comp['recebedor'];
+        if (empty($comp['valor']) && $descricao !== '') $linhas[] = 'Leitura: ' . mb_substr($descricao, 0, 200);
+        if (empty($comp['valor']) && $descricao === '') $linhas[] = 'Não deu pra ler o arquivo — confira na conversa.';
+        if ($bate) {
+            $linhas[] = "✅ Bate com: {$rotParcela($bate)} — venc. " . ($bate['data_vencimento'] ? date('d/m/Y', strtotime($bate['data_vencimento'])) : '—') . ' — ' . $fmt($bate['valor']) . " ({$bate['status']})";
+        } elseif ($abertos) {
+            $tot = array_sum(array_column($abertos, 'valor'));
+            $linhas[] = '⚠️ Não bate exato com nenhuma parcela. Em aberto: ' . count($abertos) . ' lançamento(s), ' . $fmt($tot) . '.';
+        } else {
+            $linhas[] = 'Nenhuma parcela em aberto achada pra esse telefone.';
+        }
+        $linhas[] = '';
+        $linhas[] = 'Conferir no extrato antes de dar baixa (o sistema não baixa sozinho).';
+        $linhas[] = $base . '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode($tel);
+        $msg = implode("\n", $linhas);
+
+        $numeros = array_filter(array_map('trim', explode(',', (string)(getConfig('ouvidoria_comprovante_whatsapp') ?: getConfig('notificacao_leads_whatsapp') ?: ''))));
+        $enviou = false;
+        foreach (array_unique($numeros) as $n) { if (zapiEnviarTextoInterno($n, $msg)) $enviou = true; }
+
+        // Sino: financeiro (lá abre Lançamentos) e super admin (abre a conversa).
+        $titulo = '🧾 Comprovante — ' . ($nome !== '' ? $nome : $tel) . (!empty($comp['valor']) ? ' — ' . $fmt($comp['valor']) : '');
+        $resumo = $bate ? 'Bate com ' . $rotParcela($bate) : (!empty($comp['valor']) ? 'Conferir no extrato' : 'Conferir o arquivo');
+        foreach (getDB()->query("SELECT id, perfil FROM usuarios WHERE bloqueado = 0 AND perfil IN ('super_admin','financeiro')")->fetchAll(PDO::FETCH_ASSOC) as $u) {
+            $url = $u['perfil'] === 'financeiro'
+                ? ($bate ? '/admin/financeiro-lancamentos.php?action=edit&id=' . (int)$bate['id'] : '/admin/financeiro-lancamentos.php?status=atrasado&todos_periodos=1')
+                : '/admin/ouvidoria_inbox.php?telefone=' . rawurlencode($tel);
+            criarNotificacao((int)$u['id'], 'comprovante', $titulo, $resumo, $url);
+        }
+        auditoriaRegistrar('ouvidoria_comprovante', null, 'Sistema', 'whatsapp_mensagem', $msgId ?: null,
+            "Comprovante de {$tel}" . (!empty($comp['valor']) ? ' — ' . $fmt($comp['valor']) : '') . ($bate ? " (bate com lançamento #{$bate['id']})" : '') . ($enviou ? ' — aviso no WhatsApp' : ' — WhatsApp de aviso não enviado'));
+        return $enviou;
+    } catch (Throwable $e) {
+        return false; // nunca derruba o webhook
+    }
 }
 
 /** Texto fixo da resposta (nunca gerado pela IA). */
@@ -537,6 +646,7 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     $mime = '';
     $textoFalado = '';
     $assuntoArquivo = null;
+    $analise = null;
     $legenda = '';
     if ($texto === null) {
         $tipoBruto = tipoMidia($payload);
@@ -580,6 +690,17 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         $st->execute([$telNorm]);
         $cli = $st->fetch() ?: ['id' => 0, 'nome' => ''];
         salvarMidiaWhatsappRecebida($msgId, $bytes, $mime ?: 'application/octet-stream', $tipoRegistro, (int)$cli['id'], (string)$cli['nome']);
+    }
+    // Comprovante de pagamento: avisa o número do sistema + sino do financeiro.
+    if (!empty($analise) && ($analise['assunto'] === 'pagamento' || !empty($analise['comprovante']))) {
+        $nomeAviso = (string)($cli['nome'] ?? '');
+        if ($nomeAviso === '') {
+            $st = getDB()->prepare('SELECT comprador_nome FROM vendas WHERE comprador_telefone = ? ORDER BY id DESC LIMIT 1');
+            $st->execute([$telNorm]);
+            $nomeAviso = ucwords(mb_strtolower((string)$st->fetchColumn()));
+        }
+        if ($nomeAviso === '') { $cv = ouvidoriaConversa($telNorm); $nomeAviso = (string)($cv['nome'] ?: $nomeContato); }
+        ouvidoriaAvisarComprovante($telNorm, $nomeAviso, $analise['comprovante'] ?? null, (string)$analise['descricao'], (int)$msgId);
     }
 
     // Assunto: palavra-chave → IA (texto) → IA (arquivo) → assunto já da conversa → outro.
