@@ -933,6 +933,28 @@ function badgeConexaoEvolution(bool $configurado, string $canal): string {
     </form>
 </div>
 
+<?php require_once __DIR__ . '/../includes/contratos_modelos.php'; ?>
+<div class="card">
+    <h2>📄 Modelos de contrato</h2>
+    <p><small>Contratos em branco, com o mesmo texto que o sistema usa hoje — os campos saem como linhas pra preencher.
+       Pra gerar um contrato já preenchido, use a tela da oportunidade ou da venda.</small></p>
+    <table class="tabela-oportunidades">
+        <thead><tr><th>Modelo</th><th>Para que serve</th><th>Ações</th></tr></thead>
+        <tbody>
+        <?php foreach (CONTRATO_MODELOS as $tipoModelo => [$tituloModelo, $descModelo]): ?>
+            <tr>
+                <td><strong><?= e($tituloModelo) ?></strong></td>
+                <td><small><?= e($descModelo) ?></small></td>
+                <td><div class="acoes-linha">
+                    <a class="chip-acao" href="/admin/modelo_contrato.php?tipo=<?= e($tipoModelo) ?>" target="_blank" rel="noopener">👁️ Abrir</a>
+                    <a class="chip-acao" href="/admin/modelo_contrato.php?tipo=<?= e($tipoModelo) ?>&amp;baixar=1">⬇️ Baixar</a>
+                </div></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+
 <div class="card">
     <h2>🗂️ Layout das telas de oportunidade e venda</h2>
     <p><small>Ligado: os cards da oportunidade/venda ficam separados em abas (Cliente, Veículo, Contrato, Documentos,
