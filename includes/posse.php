@@ -65,6 +65,16 @@ const POSSE_CAMPOS = [
 /** Os que aparecem direto no modal/card; o resto fica em "➕ Mais condições". */
 const POSSE_CAMPOS_PRINCIPAIS = ['prazo_quitacao_meses', 'comissao_aplicavel', 'entrega_data', 'servico_quitacao', 'servico_forma_pagamento', 'servico_vencimento'];
 
+/** Modelo do contrato de venda: 'promissoria' | 'posse' | 'quitacao' (23/11/2026, 3º modelo). */
+function vendaModeloContrato(array $v): string {
+    $m = (string)($v['modelo_contrato'] ?? 'promissoria');
+    return in_array($m, ['promissoria', 'posse', 'quitacao'], true) ? $m : 'promissoria';
+}
+
+function vendaEhQuitacao(array $v): bool {
+    return ($v['tipo_contrato'] ?? 'venda') === 'venda' && vendaModeloContrato($v) === 'quitacao';
+}
+
 function vendaEhPosse(array $v): bool {
     return ($v['tipo_contrato'] ?? 'venda') === 'venda' && ($v['modelo_contrato'] ?? 'promissoria') === 'posse';
 }

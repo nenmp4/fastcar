@@ -104,6 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar
         if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
         if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
         $vendaId = criarVenda((int)$_POST['oportunidade_id'], (int)$_SESSION['admin_id']);
+        // 23/11/2026, "temos 3 contratos": esse botão gera o contrato de quitação futura (não o de promissória).
+        getDB()->prepare("UPDATE vendas SET modelo_contrato = 'quitacao' WHERE id = ? AND tipo_contrato = 'venda'")->execute([$vendaId]);
         // 30/10/2026, "no estoque adicionar quem comprou e abrir negociação"
         $compNome = trim((string)($_POST['comprador_nome'] ?? ''));
         $compTel = normalizarTelefone((string)($_POST['comprador_telefone'] ?? ''));

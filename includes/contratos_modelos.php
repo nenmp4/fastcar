@@ -6,26 +6,23 @@
  * Os modelos atuais são gerados NA HORA pelas mesmas funções que o sistema usa
  * pra gerar o contrato de verdade (includes/contratos_pdf.php) — o texto nunca
  * fica desatualizado. Os campos saem como linhas pra preencher.
- * O de VENDA com quitação futura não é mais gerado pelo sistema (trocado pelo
- * de promissória em 27/10/2026); fica como PDF fixo em includes/modelos_contrato/.
  */
 require_once __DIR__ . '/contratos_pdf.php';
 require_once __DIR__ . '/promissoria.php';
 require_once __DIR__ . '/posse.php';
 require_once __DIR__ . '/locacao.php';
+require_once __DIR__ . '/contrato_venda_quitacao_pdf.php';
 
 const CONTRATO_MODELOS = [
     'compra'            => ['Compra com quitação futura do financiamento', 'Contrato-mestre de compra (Fastcar compra o veículo financiado).', 'gerarPdfContratoCompra'],
-    'venda_quitacao'    => ['Venda com quitação futura do financiamento (antigo)', 'Modelo antigo de venda — o sistema não gera mais (trocado pelo de promissória em 27/10/2026).', null],
+    'venda_quitacao'    => ['Venda com quitação futura do financiamento', 'Contrato-mestre de compra e venda — a Fastcar quita o financiamento no prazo combinado.', 'gerarPdfContratoVendaQuitacao'],
     'promissoria'       => ['Venda na promissória', 'Aquisição de posse com promessa condicionada de compra e venda — o contrato de venda gerado hoje.', 'gerarPdfContratoVenda'],
     'posse'             => ['Transferência de posse', 'Cessão onerosa e transferência de posse veicular com intermediação.', 'gerarPdfContratoPosse'],
     'locacao'           => ['Locação de veículo', 'Aluguel semanal ou mensal.', 'gerarPdfContratoLocacao'],
     'termo_retirada'    => ['Termo de devolução amigável', 'Termo de retirada do veículo, impresso e assinado à mão.', 'gerarPdfTermoRetiradaAmigavel'],
 ];
 
-const CONTRATO_MODELO_ARQUIVO_FIXO = [
-    'venda_quitacao' => __DIR__ . '/modelos_contrato/Contrato_FASTCAR_Venda_Quitacao_Futura.pdf',
-];
+const CONTRATO_MODELO_ARQUIVO_FIXO = [];
 
 /** Campos em branco pro modelo: todo $c['x'] usado no arquivo vira linha; valores em R$ ficam vazios. */
 function contratoModeloCamposEmBranco(): array {

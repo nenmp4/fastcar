@@ -197,6 +197,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'vender_
             // (includes/posse.php): só marca o modelo e grava o Quadro-Resumo.
             if (($_POST['modelo_contrato'] ?? '') === 'posse') {
                 salvarDadosPosse((int)$resultadoPromissoria['venda_id'], parseCamposPossePost((array)($_POST['posse'] ?? [])));
+            } elseif (($_POST['modelo_contrato'] ?? '') === 'quitacao') {
+                // 23/11/2026 — 3º modelo: mesmo cadastro, contrato de quitação futura.
+                getDB()->prepare("UPDATE vendas SET modelo_contrato = 'quitacao' WHERE id = ? AND tipo_contrato = 'venda'")
+                    ->execute([(int)$resultadoPromissoria['venda_id']]);
             }
 
             header('Location: /admin/venda.php?id=' . $resultadoPromissoria['venda_id'] . '&criado=1');
@@ -715,6 +719,10 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
             🤝 Transferência de Posse<br><small style="font-weight:400">O comprador quita o financiamento em até 15 meses — a Fastcar assina pelo dono original (procuração)</small>
         </button>
         <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
+                onclick="document.getElementById('modal-tipo-contrato').close();vpAbrirModo('quitacao')">
+            📄 Quitação futura<br><small style="font-weight:400">Contrato-mestre de compra e venda com quitação futura do financiamento pela Fastcar</small>
+        </button>
+        <button type="button" class="btn-primary" style="width:100%;min-height:56px;text-align:left"
                 onclick="document.getElementById('modal-tipo-contrato').close();document.getElementById('modal-locacao').showModal()">
             🔑 Locação<br><small style="font-weight:400">Aluguel do veículo — sem promessa de compra, o carro continua da Fastcar</small>
         </button>
@@ -800,21 +808,23 @@ function moedaVenda(float $v): string { return 'R$ ' . number_format($v, 2, ',',
     }
     if (!$vpPartes) $vpPartes = [['valor' => '', 'data_prevista' => '', 'forma' => 'pix']];
 ?>
-<?php $vpModo = ($postVp['modelo_contrato'] ?? '') === 'posse' ? 'posse' : 'promissoria'; ?>
+<?php $vpModo = in_array($postVp['modelo_contrato'] ?? '', ['posse', 'quitacao'], true) ? $postVp['modelo_contrato'] : 'promissoria'; ?>
 <style>
     #modal-promissoria.modo-posse .so-promissoria, #modal-promissoria:not(.modo-posse) .so-posse { display: none; }
+    #modal-promissoria:not(.modo-quitacao) .so-quitacao, #modal-promissoria.modo-quitacao .so-promissoria-titulo { display: none; }
     .vp-modo-faixa { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: var(--raio); margin: .4rem 0 .8rem; font-size: .92rem; }
     .vp-modo-faixa.promissoria { background: var(--azul-claro, #eef4ff); border: 1px solid var(--borda); }
     .vp-modo-faixa.posse { background: var(--verde-bg); border: 1px solid #bbf7d0; }
     .vp-cedente-box { padding: 10px 14px; border-radius: var(--raio); border: 1px dashed var(--borda); background: var(--fundo, #fafbfc); margin-top: .6rem; font-size: .9rem; }
     .vp-cedente-box.falta { border-color: var(--vermelho, #dc2626); }
 </style>
-<dialog id="modal-promissoria" class="modal-lancamento<?= $vpModo === 'posse' ? ' modo-posse' : '' ?>">
+<dialog id="modal-promissoria" class="modal-lancamento<?= $vpModo === 'posse' ? ' modo-posse' : ($vpModo === 'quitacao' ? ' modo-quitacao' : '') ?>">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-        <h2 style="margin:0"><span class="so-promissoria">💳 Vender na Promissória</span><span class="so-posse">🤝 Transferência de Posse</span></h2>
+        <h2 style="margin:0"><span class="so-promissoria so-promissoria-titulo">💳 Vender na Promissória</span><span class="so-quitacao">📄 Venda com quitação futura</span><span class="so-posse">🤝 Transferência de Posse</span></h2>
         <button type="button" onclick="document.getElementById('modal-promissoria').close()" style="background:none;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;line-height:1;padding:0 .25rem;color:var(--texto-suave)" aria-label="Fechar">&times;</button>
     </div>
-    <div class="vp-modo-faixa promissoria so-promissoria">💳 <span><strong>Promissória:</strong> a Fastcar vende o carro com entrada + parcelas e quita o financiamento depois.</span></div>
+    <div class="vp-modo-faixa promissoria so-promissoria so-promissoria-titulo">💳 <span><strong>Promissória:</strong> a Fastcar vende o carro com entrada + parcelas e quita o financiamento depois.</span></div>
+    <div class="vp-modo-faixa promissoria so-quitacao">📄 <span><strong>Quitação futura:</strong> contrato-mestre de compra e venda — a Fastcar quita o financiamento no prazo combinado e depois transfere o carro.</span></div>
     <div class="vp-modo-faixa posse so-posse">🤝 <span><strong>Transferência de posse:</strong> o <strong>comprador</strong> quita o financiamento direto com o banco
         (prazo padrão de <strong>15 meses</strong>). A Fastcar intermedeia e cobra 15% da FIPE de comissão; o <strong>dono original</strong>
         do carro não assina — a Fastcar assina por ele (procuração). Assinam o comprador, a Fastcar e as testemunhas.</span></div>
@@ -1179,6 +1189,8 @@ function vpRevisar() {
             (servEl && servEl.value === 'sim' ? ' — com serviço de negociação da Fastcar (+ R$ 1.000,00)' : ' — sem o serviço de negociação') + '</p>');
         linhas.push('<p><strong>💼 Comissão de 15% da FIPE:</strong> ' + (comEl && comEl.value === 'nao' ? 'não se aplica' : 'sim') + '</p>');
         linhas.push('<p><strong>🤝 Vendedor/cedente:</strong> não nomeado — FASTCAR assina por procuração.</p>');
+    } else if (document.getElementById('vp-modelo').value === 'quitacao') {
+        linhas.unshift('<p><strong>📄 Contrato:</strong> Venda com quitação futura</p>');
     } else {
         linhas.unshift('<p><strong>💳 Contrato:</strong> Venda na Promissória</p>');
     }
@@ -1193,6 +1205,7 @@ function vpAbrirModo(modo) {
     var dlg = document.getElementById('modal-promissoria');
     document.getElementById('vp-modelo').value = modo;
     dlg.classList.toggle('modo-posse', modo === 'posse');
+    dlg.classList.toggle('modo-quitacao', modo === 'quitacao');
     vpVoltarEditar();
     vpAtualizarCedente();
     dlg.showModal();
