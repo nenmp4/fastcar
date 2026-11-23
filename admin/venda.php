@@ -210,15 +210,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($acao === 'trocar_modelo_contrato') {
                 // 09/11/2026 — Promissória <-> Transferência de Posse antes de
                 // assinar (mesmo financeiro; só muda o PDF e o Quadro-Resumo).
-                $novoModelo = in_array($_POST['modelo_contrato'] ?? '', ['posse', 'quitacao'], true) ? $_POST['modelo_contrato'] : 'promissoria';
-                $rotuloModelo = ['promissoria' => '💳 Promissória', 'posse' => '🤝 Transferência de Posse', 'quitacao' => '📄 Quitação futura'][$novoModelo];
+                $novoModelo = ($_POST['modelo_contrato'] ?? '') === 'posse' ? 'posse' : 'promissoria';
                 if (($v['tipo_contrato'] ?? 'venda') !== 'venda') {
                     $erro = 'Locação não troca de modelo.';
                 } else {
                     $db->prepare("UPDATE vendas SET modelo_contrato = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$novoModelo, $id]);
                     auditoriaRegistrar('quadro_promissoria_alterado', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'],
-                        'venda', $id, 'Modelo do contrato: ' . $rotuloModelo);
-                    $sucesso = 'Modelo do contrato: ' . $rotuloModelo
+                        'venda', $id, 'Modelo do contrato: ' . ($novoModelo === 'posse' ? 'Transferência de Posse' : 'Promissória'));
+                    $sucesso = 'Modelo do contrato: ' . ($novoModelo === 'posse' ? '🤝 Transferência de Posse' : '💳 Promissória')
                         . '. Se já tinha um contrato gerado, gere de novo pra sair no modelo certo.';
                 }
             } elseif ($acao === 'salvar_fipe_venda') {
@@ -987,7 +986,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
     <h2>#<?= (int)$v['id'] ?> — <?= e(trim($v['veiculo_marca'] . ' ' . $v['veiculo_modelo'])) ?: '—' ?> <?= e((string)($v['veiculo_ano'] ?? '')) ?>
         <span class="badge"><?= e(etapaVendaLabel($v['etapa'], $v['tipo_contrato'] ?? 'venda')) ?></span>
         <?php if (($v['tipo_contrato'] ?? 'venda') === 'locacao'): ?><span class="badge badge-info">🔑 Locação</span><?php endif; ?>
-        <?php if (vendaEhPosse($v)): ?><span class="badge badge-info">🤝 Transferência de Posse</span><?php elseif (vendaEhQuitacao($v)): ?><span class="badge badge-info">📄 Quitação futura</span><?php endif; ?>
+        <?php if (vendaEhPosse($v)): ?><span class="badge badge-info">🤝 Transferência de Posse</span><?php endif; ?>
         <?php if ($atrasada): ?><span class="badge badge-atraso">⚠️ ação atrasada</span><?php endif; ?>
         <?php if ($v['temperatura_lead']): ?>
             <span class="badge" title="Leitura da IA sobre a prontidão de compra do lead">
@@ -1713,28 +1712,19 @@ function adicionarParteEntrada() {
     </form>
 
     <hr>
-    <?php $ehPosse = vendaEhPosse($v); $modeloAtual = vendaModeloContrato($v);
-          $modelosVenda = ['promissoria' => ['💳', 'Venda na Promissória', 'a Fastcar quita o financiamento depois'],
-                           'posse' => ['🤝', 'Transferência de Posse', 'o comprador quita o financiamento; a FASTCAR assina pelo dono original (procuração)'],
-                           'quitacao' => ['📄', 'Quitação futura', 'contrato-mestre de compra e venda com quitação futura do financiamento pela FASTCAR']]; ?>
+    <?php $ehPosse = vendaEhPosse($v); ?>
     <div class="card" style="background:var(--fundo);margin-bottom:14px">
         <strong style="font-size:13px">📄 Modelo do contrato:</strong>
-        <?= $modelosVenda[$modeloAtual][0] ?> <strong><?= e($modelosVenda[$modeloAtual][1]) ?></strong> — <?= e($modelosVenda[$modeloAtual][2]) ?>
-        <div class="acoes-linha" style="margin-top:8px">
-        <?php foreach ($modelosVenda as $mk => [$mi, $mt]): if ($mk === $modeloAtual) continue; ?>
-            <form method="post" style="display:inline" onsubmit="return confirmarAcao(this, 'Trocar o modelo do contrato? Se já gerou o contrato, vai precisar gerar de novo.')">
-                <?= csrfField() ?>
-                <input type="hidden" name="acao" value="trocar_modelo_contrato">
-                <input type="hidden" name="modelo_contrato" value="<?= e($mk) ?>">
-                <button type="submit" class="chip-acao">🔁 Trocar pra <?= $mi ?> <?= e($mt) ?></button>
-            </form>
-        <?php endforeach; ?>
-        </div>
+        <?= $ehPosse ? '🤝 <strong>Transferência de Posse</strong> — o comprador quita o financiamento; a FASTCAR assina pelo dono original (procuração)'
+                     : '💳 <strong>Venda na Promissória</strong> — a Fastcar quita o financiamento depois' ?>
+        <form method="post" style="display:inline" onsubmit="return confirmarAcao(this, 'Trocar o modelo do contrato? Se já gerou o contrato, vai precisar gerar de novo.')">
+            <?= csrfField() ?>
+            <input type="hidden" name="acao" value="trocar_modelo_contrato">
+            <input type="hidden" name="modelo_contrato" value="<?= $ehPosse ? 'promissoria' : 'posse' ?>">
+            <button type="submit" class="btn-texto" style="margin-left:8px">🔁 Trocar pra <?= $ehPosse ? 'Promissória' : 'Transferência de Posse' ?></button>
+        </form>
     </div>
-    <?php if ($modeloAtual === 'quitacao'): ?>
-    <p><small>📄 O Quadro-Resumo do contrato de quitação futura sai dos cards acima: preço, entrada, saldo, prazo pra quitar,
-       multa por atraso, FIPE e dados do financiamento do veículo.</small></p>
-    <?php elseif ($ehPosse): ?>
+    <?php if ($ehPosse): ?>
     <h3>🧾 Quadro-Resumo da Transferência de Posse</h3>
     <p><small>Preço, entrada, parcelas, FIPE e banco já vêm dos cards acima; comissão de <?= PROMISSORIA_COMISSAO_PCT ?>% da FIPE,
        abatimento na entrada e total a pagar são calculados. O <strong>vendedor/cedente</strong> é o dono original do veículo — não assina: a FASTCAR assina por ele (procuração). Assinam o comprador, a FASTCAR e as testemunhas.</small></p>

@@ -18,7 +18,6 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/contratos_pdf.php';
-require_once __DIR__ . '/contrato_venda_quitacao_pdf.php'; // 23/11/2026 — 3º modelo de venda
 require_once __DIR__ . '/zapsign.php';
 require_once __DIR__ . '/fipe.php'; // consultaFipeDoValorAtual() no Quadro-Resumo
 require_once __DIR__ . '/google_drive.php';
@@ -864,7 +863,6 @@ function verificarCamposObrigatoriosContratoVenda(array $campos): array {
 function _contratoVendaGerarPdfPorModelo(array $campos): array {
     if (($campos['_tipo_contrato'] ?? 'venda') === 'locacao') return [gerarPdfContratoLocacao($campos), 'Contrato de Locação', 'contrato_locacao_'];
     if (($campos['_modelo_contrato'] ?? '') === 'posse') return [gerarPdfContratoPosse($campos), 'Contrato de Transferência de Posse', 'contrato_posse_'];
-    if (($campos['_modelo_contrato'] ?? '') === 'quitacao') return [gerarPdfContratoVendaQuitacao($campos), 'Contrato de Venda (quitação futura)', 'contrato_venda_quitacao_'];
     return [gerarPdfContratoVenda($campos), 'Contrato de Venda', 'contrato_venda_'];
 }
 

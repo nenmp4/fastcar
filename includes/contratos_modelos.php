@@ -11,18 +11,14 @@ require_once __DIR__ . '/contratos_pdf.php';
 require_once __DIR__ . '/promissoria.php';
 require_once __DIR__ . '/posse.php';
 require_once __DIR__ . '/locacao.php';
-require_once __DIR__ . '/contrato_venda_quitacao_pdf.php';
 
 const CONTRATO_MODELOS = [
     'compra'            => ['Compra com quitação futura do financiamento', 'Contrato-mestre de compra (Fastcar compra o veículo financiado).', 'gerarPdfContratoCompra'],
-    'venda_quitacao'    => ['Venda com quitação futura do financiamento', 'Contrato-mestre de compra e venda — a Fastcar quita o financiamento no prazo combinado.', 'gerarPdfContratoVendaQuitacao'],
     'promissoria'       => ['Venda na promissória', 'Aquisição de posse com promessa condicionada de compra e venda — o contrato de venda gerado hoje.', 'gerarPdfContratoVenda'],
     'posse'             => ['Transferência de posse', 'Cessão onerosa e transferência de posse veicular com intermediação.', 'gerarPdfContratoPosse'],
     'locacao'           => ['Locação de veículo', 'Aluguel semanal ou mensal.', 'gerarPdfContratoLocacao'],
     'termo_retirada'    => ['Termo de devolução amigável', 'Termo de retirada do veículo, impresso e assinado à mão.', 'gerarPdfTermoRetiradaAmigavel'],
 ];
-
-const CONTRATO_MODELO_ARQUIVO_FIXO = [];
 
 /** Campos em branco pro modelo: todo $c['x'] usado no arquivo vira linha; valores em R$ ficam vazios. */
 function contratoModeloCamposEmBranco(): array {
@@ -48,14 +44,9 @@ function contratoModeloCamposEmBranco(): array {
     return $c;
 }
 
-/** Caminho de um PDF do modelo (gerado agora, em arquivo temporário, ou o fixo). Lança se não existir. */
+/** Caminho de um PDF do modelo (gerado agora, em arquivo temporário). Lança se não existir. */
 function contratoModeloPdf(string $tipo): string {
     if (!isset(CONTRATO_MODELOS[$tipo])) throw new RuntimeException('Modelo inexistente.');
-    if (isset(CONTRATO_MODELO_ARQUIVO_FIXO[$tipo])) {
-        $arq = CONTRATO_MODELO_ARQUIVO_FIXO[$tipo];
-        if (!is_file($arq)) throw new RuntimeException('Arquivo do modelo não encontrado.');
-        return $arq;
-    }
     $fn = CONTRATO_MODELOS[$tipo][2];
     $c = contratoModeloCamposEmBranco();
     if ($tipo === 'locacao') $c['_tipo_contrato'] = 'locacao';

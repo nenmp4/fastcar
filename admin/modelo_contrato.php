@@ -34,4 +34,4 @@ header('Content-Disposition: ' . (isset($_GET['baixar']) ? 'attachment' : 'inlin
 header('Content-Length: ' . filesize($caminho));
 header('Cache-Control: private, no-store');
 readfile($caminho);
-if (!isset(CONTRATO_MODELO_ARQUIVO_FIXO[$tipo])) @unlink($caminho);
+@unlink($caminho);

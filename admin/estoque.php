@@ -95,32 +95,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_
         $erro = $e->getMessage();
     }
 }
-// 24/10/2026, "botão que abre modal — tipo de venda: promissória ou
-// quitação futura". Quitação futura = mesmo fluxo do botão "Vender" da
-// Frota (criarVenda() → negociação com o contrato de venda com quitação
-// futura). Promissória = abre o modal de promissória em Vendas já com o carro.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'iniciar_venda_quitacao') {
-    try {
-        if (!validateCSRF($_POST['csrf_token'] ?? '')) throw new RuntimeException('Sessão expirada, recarregue a página.');
-        if ($_SESSION['admin_perfil'] === 'supervisor') throw new RuntimeException('Supervisor só acompanha.');
-        $vendaId = criarVenda((int)$_POST['oportunidade_id'], (int)$_SESSION['admin_id']);
-        // 23/11/2026, "temos 3 contratos": esse botão gera o contrato de quitação futura (não o de promissória).
-        getDB()->prepare("UPDATE vendas SET modelo_contrato = 'quitacao' WHERE id = ? AND tipo_contrato = 'venda'")->execute([$vendaId]);
-        // 30/10/2026, "no estoque adicionar quem comprou e abrir negociação"
-        $compNome = trim((string)($_POST['comprador_nome'] ?? ''));
-        $compTel = normalizarTelefone((string)($_POST['comprador_telefone'] ?? ''));
-        if ($compNome !== '' || $compTel) {
-            getDB()->prepare("UPDATE vendas SET comprador_nome = CASE WHEN ? != '' THEN ? ELSE comprador_nome END,
-                comprador_telefone = CASE WHEN ? != '' THEN ? ELSE comprador_telefone END WHERE id = ?")
-                ->execute([clean($compNome), clean($compNome), (string)$compTel, (string)$compTel, $vendaId]);
-        }
-        header('Location: /admin/venda.php?id=' . $vendaId);
-        exit;
-    } catch (Throwable $e) {
-        $erro = $e->getMessage();
-    }
-}
-
 // 24/10/2026, "crie link pra mandar o catálogo inteiro do estoque" —
 // mesmo fluxo do envio de 1 carro, só que manda o link do catálogo.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'enviar_catalogo_cliente') {
@@ -671,18 +645,11 @@ function vmLerCrlv() {
             <strong>Locação</strong>
             <small>Aluguel semanal ou mensal (motorista de aplicativo). Abre o formulário de locação já com este carro.</small>
         </a>
-        <form method="post" style="margin:0" onsubmit="mvCopiarComprador(this); return confirmarAcao(this, 'Abrir uma negociação de venda com quitação futura para este veículo?');">
-            <?= csrfField() ?>
-            <input type="hidden" name="acao" value="iniciar_venda_quitacao">
-            <input type="hidden" name="oportunidade_id" id="modal-vender-op" value="">
-            <input type="hidden" name="comprador_nome" value="">
-            <input type="hidden" name="comprador_telefone" value="">
-            <button type="submit" class="tipo-venda-opcao" style="width:100%;margin:0;text-align:left">
-                <span class="tv-icone">📄</span>
-                <strong>Quitação futura</strong>
-                <small>Contrato de venda com quitação futura do financiamento. Abre a negociação pra preencher comprador e condições.</small>
-            </button>
-        </form>
+        <a id="modal-vender-posse" class="tipo-venda-opcao" href="#">
+            <span class="tv-icone">🤝</span>
+            <strong>Transferência de Posse</strong>
+            <small>O comprador quita o financiamento (padrão 15 meses); a Fastcar assina pelo dono original. Abre o formulário já com este carro.</small>
+        </a>
     </div>
 </dialog>
 <style>
@@ -704,7 +671,6 @@ var mvOpAtual = 0;
 function abrirModalVender(opId, titulo) {
     mvOpAtual = opId;
     document.getElementById('modal-vender-titulo').textContent = titulo;
-    document.getElementById('modal-vender-op').value = opId;
     document.getElementById('modal-vender').showModal();
 }
 function mvQsComprador() {
@@ -712,12 +678,11 @@ function mvQsComprador() {
     var t = document.getElementById('mv-comprador-tel').value.trim();
     return (n ? '&comprador_nome=' + encodeURIComponent(n) : '') + (t ? '&comprador_telefone=' + encodeURIComponent(t) : '');
 }
-function mvCopiarComprador(form) {
-    form.querySelector('[name=comprador_nome]').value = document.getElementById('mv-comprador-nome').value.trim();
-    form.querySelector('[name=comprador_telefone]').value = document.getElementById('mv-comprador-tel').value.trim();
-}
 document.getElementById('modal-vender-promissoria').addEventListener('click', function (e) {
     e.preventDefault(); window.location.href = '/admin/vendas.php?vender_op=' + mvOpAtual + mvQsComprador();
+});
+document.getElementById('modal-vender-posse').addEventListener('click', function (e) {
+    e.preventDefault(); window.location.href = '/admin/vendas.php?vender_op=' + mvOpAtual + '&modelo=posse' + mvQsComprador();
 });
 document.getElementById('modal-vender-locacao').addEventListener('click', function (e) {
     e.preventDefault(); window.location.href = '/admin/vendas.php?locar_op=' + mvOpAtual + mvQsComprador();
