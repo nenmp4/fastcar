@@ -13,10 +13,10 @@ require_once __DIR__ . '/posse.php';
 require_once __DIR__ . '/locacao.php';
 
 const CONTRATO_MODELOS = [
-    'compra'            => ['Compra com quitação futura do financiamento', 'Contrato-mestre de compra (Fastcar compra o veículo financiado).', 'gerarPdfContratoCompra'],
-    'promissoria'       => ['Venda na promissória', 'Aquisição de posse com promessa condicionada de compra e venda — o contrato de venda gerado hoje.', 'gerarPdfContratoVenda'],
-    'posse'             => ['Transferência de posse', 'Cessão onerosa e transferência de posse veicular com intermediação.', 'gerarPdfContratoPosse'],
-    'locacao'           => ['Locação de veículo', 'Aluguel semanal ou mensal.', 'gerarPdfContratoLocacao'],
+    'compra'            => ['Compra com quitação futura do financiamento', 'A Fastcar COMPRA o veículo financiado do dono e quita o financiamento depois.', 'gerarPdfContratoCompra'],
+    'promissoria'       => ['Venda na promissória (Fastcar quita)', 'A Fastcar VENDE com entrada + parcelas e a FASTCAR quita o financiamento no banco.', 'gerarPdfContratoVenda'],
+    'posse'             => ['Transferência de posse (cliente quita)', 'A Fastcar passa a posse e o CLIENTE quita o financiamento direto no banco (padrão 15 meses).', 'gerarPdfContratoPosse'],
+    'locacao'           => ['Locação de veículo', 'Aluguel semanal ou mensal — ninguém quita, o carro continua da Fastcar.', 'gerarPdfContratoLocacao'],
     'termo_retirada'    => ['Termo de devolução amigável', 'Termo de retirada do veículo, impresso e assinado à mão.', 'gerarPdfTermoRetiradaAmigavel'],
 ];
 
