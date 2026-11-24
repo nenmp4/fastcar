@@ -308,6 +308,7 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
         $stmtEtapa = $db->prepare("SELECT etapa FROM vendas WHERE id = ?");
         $stmtEtapa->execute([$vendaLead['venda_id']]);
         $etapaAtual = $stmtEtapa->fetchColumn();
+        $stmtEtapa->closeCursor(); // senão a espera do debounce não vê mensagens novas (WAL)
 
         if (in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
             if ($tipoRegistro === 'text') {
@@ -335,9 +336,13 @@ function processarMensagemVendasZapi(array $payload, ?array $instancia = null): 
                     }
                 }
             } else {
-                $textoAck = 'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?';
-                if (zapiEnviarTexto($phone, $textoAck, $credenciaisVendas)) {
-                    registrarMensagem($phone, 'out', $textoAck, null, true);
+                // 24/11/2026 — rajada de fotos: só a última responde e no
+                // máximo 1 aviso a cada 30 min (avisoMidiaRecente()).
+                if (aguardarSilencioOuAbortar($phone, $idMensagemRecebida) && !avisoMidiaRecente($phone)) {
+                    $textoAck = 'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?';
+                    if (zapiEnviarTexto($phone, $textoAck, $credenciaisVendas)) {
+                        registrarMensagem($phone, 'out', $textoAck, null, true);
+                    }
                 }
             }
         }

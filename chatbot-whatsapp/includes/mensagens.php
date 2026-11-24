@@ -687,6 +687,11 @@ function iaResgatarMensagensSemResposta(int $limite = 10, ?callable $log = null)
         $chave = 'ia_resgate_msg_' . (int)$r['msg_id'];
         if (getConfig($chave)) continue;
         if (iaPausada($tel)) continue;
+        // Já saiu alguma resposta pra esse telefone depois da mensagem (em
+        // qualquer canal)? Então não é mensagem sem resposta — não responde de novo.
+        $stOut = $db->prepare("SELECT 1 FROM whatsapp_mensagens WHERE telefone = ? AND direcao = 'out' AND id > ? LIMIT 1");
+        $stOut->execute([$tel, (int)$r['msg_id']]);
+        if ($stOut->fetchColumn()) continue;
         $dec = iaUltimaDecisao($tel);
         if ($dec && strtotime($dec['quando']) >= strtotime((string)$r['created_at'])) continue;
 
@@ -713,6 +718,18 @@ function iaResgatarMensagensSemResposta(int $limite = 10, ?callable $log = null)
         }
     }
     return $feitos;
+}
+
+/**
+ * Já mandou o aviso "recebi, me conta em texto ou áudio" pra esse telefone
+ * nos últimos 30 min? Marca agora quando não mandou (1 aviso por janela).
+ */
+function avisoMidiaRecente(string $telefone): bool {
+    $chave = 'aviso_midia_' . (normalizarTelefone($telefone) ?: $telefone);
+    $ultimo = (string)(getConfig($chave) ?? '');
+    if ($ultimo !== '' && strtotime($ultimo) > time() - 1800) return true;
+    try { setConfig($chave, date('Y-m-d H:i:s')); } catch (Throwable $e) {}
+    return false;
 }
 
 function aguardarSilencioOuAbortar(string $telefone, int $idMensagem): bool {
@@ -967,6 +984,7 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         $stCliMidia = getDB()->prepare("SELECT id FROM clientes WHERE telefone = ?");
         $stCliMidia->execute([$phone]);
         $cliMidia = (int)$stCliMidia->fetchColumn();
+        $stCliMidia->closeCursor();
         if ($cliMidia > 0) $salvarMidiaSePendente($cliMidia);
     }
 
@@ -1110,6 +1128,10 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
         $stmtEtapa = $db->prepare("SELECT etapa FROM oportunidades WHERE id = ?");
         $stmtEtapa->execute([$oportunidade['oportunidade_id']]);
         $etapaAtual = $stmtEtapa->fetchColumn();
+        // Fecha a leitura antes da espera do debounce: consulta aberta segura
+        // uma "foto" antiga do banco (WAL) e aí a espera não enxerga as
+        // mensagens que chegaram depois — cada foto de uma rajada respondia.
+        $stmtEtapa->closeCursor();
 
         if (!in_array($etapaAtual, ['whatsapp', 'qualificacao_ia'], true)) {
             iaRegistrarDecisao($phone, 'etapa_humana', (string)$etapaAtual);
@@ -1178,15 +1200,30 @@ function processarMensagemZapi(array $payload, ?array $instancia = null): array 
                 // Variações (21/09/2026, mesmo racional documentado em
                 // includes/recuperacao_leads.php) — evita repetir texto
                 // idêntico em volume ao longo do tempo.
-                $textoAck = variarMensagem([
-                    'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?',
-                    'Chegou aqui! 🙂 Consegue me explicar em texto ou mandar um áudio?',
-                    'Recebi! Pode me contar em texto ou áudio, por favor? 😊',
-                    'Chegou por aqui, obrigado! Consegue me passar isso em texto ou áudio?',
-                ]);
-                iaRegistrarDecisao($phone, 'midia');
-                if (zapiEnviarTextoPeloCanal($phone, $textoAck, $instancia['canal'] ?? null)) {
-                    registrarMensagem($phone, 'out', $textoAck, null, true);
+                //
+                // 24/11/2026, achado real: cliente mandou várias fotos do carro
+                // de uma vez e recebeu 7 avisos seguidos ("Chegou por aqui...").
+                // Agora: espera a rajada acabar (só a última mídia responde) e
+                // manda no máximo 1 aviso por conversa a cada 30 min.
+                if (!aguardarSilencioOuAbortar($phone, $idMensagemRecebida)) {
+                    iaRegistrarDecisao($phone, 'debounce');
+                } elseif (avisoMidiaRecente($phone)) {
+                    iaRegistrarDecisao($phone, 'midia', 'aviso já enviado nos últimos 30 min');
+                } else {
+                    $textoAck = $tipoRegistro === 'image'
+                        ? variarMensagem([
+                            'Recebi as fotos, obrigado! 😊 Me conta em texto ou áudio um pouco sobre o veículo?',
+                            'Chegou aqui, obrigado pelas fotos! 🙂 Consegue me contar em texto ou áudio sobre o veículo?',
+                        ])
+                        : variarMensagem([
+                            'Recebi por aqui! 😊 Consegue me contar em texto ou áudio?',
+                            'Chegou aqui! 🙂 Consegue me explicar em texto ou mandar um áudio?',
+                            'Recebi! Pode me contar em texto ou áudio, por favor? 😊',
+                        ]);
+                    iaRegistrarDecisao($phone, 'midia');
+                    if (zapiEnviarTextoPeloCanal($phone, $textoAck, $instancia['canal'] ?? null)) {
+                        registrarMensagem($phone, 'out', $textoAck, null, true);
+                    }
                 }
             }
         }
