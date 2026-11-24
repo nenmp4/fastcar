@@ -606,6 +606,48 @@ function ouvidoriaMensagemCurta(string $texto): bool {
     return false;
 }
 
+/**
+ * Mensagem "fromMe" que não é nossa: resposta automática da IA (qualquer modelo
+ * de ouvidoriaMontarResposta), mensagem assinada pela caixa/cobrança ("*Nome:*")
+ * ou igual a uma enviada nos últimos 10 min. Tudo o resto = humano no celular.
+ */
+function ouvidoriaPareceMensagemDoSistema(string $tel, string $texto): bool {
+    $t = trim($texto);
+    if ($t === '' || str_starts_with($t, '[')) return true; // mídia/evento: não decide nada
+    if (preg_match('/^\*[^*\n]{1,80}:\*/u', $t)) return true;
+    if (str_contains($t, 'protocolo de atendimento')) return true;
+    $st = getDB()->prepare("SELECT 1 FROM whatsapp_mensagens WHERE telefone = ? AND direcao = 'out' AND mensagem = ?
+        AND created_at >= datetime('now','localtime','-10 minutes') AND id NOT IN (SELECT MAX(id) FROM whatsapp_mensagens WHERE telefone = ?) LIMIT 1");
+    $st->execute([$tel, $t, $tel]);
+    if ($st->fetchColumn()) return true;
+    $conv = ouvidoriaConversa($tel);
+    $inicio = mb_substr($t, 0, 80);
+    foreach (array_keys(OUVIDORIA_ASSUNTOS) as $a) {
+        foreach ([false, true] as $arq) {
+            foreach ([false, true] as $hor) {
+                foreach ([(string)$conv['nome'], ''] as $nome) {
+                    if (mb_substr(ouvidoriaMontarResposta($a, $arq, $hor, $nome), 0, 80) === $inicio) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/** Humano respondeu pelo celular: tickets abertos viram "em atendimento" e a IA para de responder. */
+function ouvidoriaHumanoRespondeuPeloCelular(string $tel): void {
+    try {
+        foreach (ouvidoriaTicketsAtivos($tel) as $t) {
+            if (($t['status'] ?? '') !== 'aberto') continue;
+            auditoriaRegistrar('ouvidoria_ticket_status', null, 'Sistema', 'ouvidoria_ticket', (int)$t['id'],
+                "Ticket {$t['protocolo']}: em atendimento (resposta digitada no celular da ouvidoria) — IA parou de responder.");
+        }
+        ouvidoriaTicketsMarcarAtendimento($tel);
+    } catch (Throwable $e) {
+        // best-effort: nunca derruba o webhook
+    }
+}
+
 /** Trava por conversa: 2 mensagens chegando juntas nunca respondem/abrem ticket em dobro. */
 function ouvidoriaTravarConversa(string $tel) {
     $dir = dirname(__DIR__, 2) . '/storage';
@@ -638,8 +680,25 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
     if ($isGroup) return ['ignored' => 'group', 'telefone' => $phone] + $vazio;
     if ($messageId && jaProcessado($messageId)) return ['ignored' => 'duplicate', 'telefone' => $phone] + $vazio;
     if ($fromMe) {
-        registrarMensagem($phone, 'out', extrairTexto($payload) ?? '[' . tipoMidia($payload) . ']', $messageId ?: null, false, 'text', null);
-        return ['ignored' => 'from_me', 'telefone' => $phone] + $vazio;
+        $textoEu = extrairTexto($payload) ?? '[' . tipoMidia($payload) . ']';
+        $telEu = normalizarTelefone($phone) ?: $phone;
+        // 24/11/2026: resposta digitada NO CELULAR da ouvidoria ("deu certo")
+        // nunca pausava a IA — ela seguia mandando a mesma mensagem por cima.
+        // Espera a trava da conversa (quem manda a resposta automática segura
+        // ela até gravar o id) pra não confundir o eco da nossa própria mensagem.
+        $travaEu = ouvidoriaTravarConversa($telEu);
+        try {
+            $jaEra = $messageId !== '' && jaProcessado($messageId);
+            if (!$jaEra) {
+                registrarMensagem($phone, 'out', $textoEu, $messageId ?: null, false, 'text', null);
+                if (!ouvidoriaPareceMensagemDoSistema($telEu, $textoEu)) {
+                    ouvidoriaHumanoRespondeuPeloCelular($telEu);
+                }
+            }
+        } finally {
+            if ($travaEu) { flock($travaEu, LOCK_UN); fclose($travaEu); }
+        }
+        return ['ignored' => $jaEra ? 'duplicate' : 'from_me', 'telefone' => $phone] + $vazio;
     }
 
     $telNorm = normalizarTelefone($phone) ?: $phone;
@@ -842,9 +901,15 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         $resposta .= "\n\nSeu protocolo de atendimento é *{$ticket['protocolo']}*.";
     }
     $enviou = evolutionEnviarTexto($telNorm, $resposta, evolutionCredenciaisOuvidoria());
+    // 24/11/2026: a Evolution às vezes demora e o envio "falha" por tempo
+    // esgotado mesmo a mensagem chegando — sem marcar, a próxima mensagem/evento
+    // mandava a mesma resposta de novo. Tempo esgotado conta como enviada pro
+    // anti-repetição; erro HTTP ou conexão recusada (certeza de que não saiu) não.
+    if ($enviou || stripos((string)evolutionUltimoErro(), 'timed out') !== false) {
+        ouvidoriaSalvarConversa($telNorm, ['ultima_auto_assunto' => $chaveResposta, 'ultima_auto_em' => date('Y-m-d H:i:s')]);
+    }
     if ($enviou) {
         ouvidoriaRegistrarEnviada($telNorm, $resposta, true, null);
-        ouvidoriaSalvarConversa($telNorm, ['ultima_auto_assunto' => $chaveResposta, 'ultima_auto_em' => date('Y-m-d H:i:s')]);
         if ($saudacaoPendente) {
             try { getDB()->prepare("UPDATE ouvidoria_tickets SET saudacao_enviada_em = datetime('now','localtime') WHERE id = ?")->execute([(int)$ticket['id']]); } catch (Throwable $e) {}
         }
