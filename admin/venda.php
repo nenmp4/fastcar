@@ -779,6 +779,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     auditoriaRegistrar('venda_desfeita', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id, 'Vendido desfeito (sem contrato assinado) → ' . $voltaPara);
                     $sucesso = 'Venda desfeita — voltou pra ' . etapaVendaLabel($voltaPara) . '.' . ($nCom->rowCount() ? ' A comissão automática foi cancelada no financeiro.' : '');
                 }
+            } elseif ($acao === 'reabrir_venda') {
+                // 25/11/2026, "tem como reativar negociação" — ver reabrirVenda().
+                $rR = reabrirVenda($id, (int)$_SESSION['admin_id']);
+                if ($rR['ok']) {
+                    auditoriaRegistrar('venda_reativada', (int)$_SESSION['admin_id'], (string)$_SESSION['admin_nome'], 'venda', $id, 'Negociação reativada → ' . $rR['etapa']);
+                    $sucesso = 'Negociação reativada — voltou pra ' . etapaVendaLabel($rR['etapa'], $v['tipo_contrato'] ?? 'venda') . '.'
+                        . ($rR['parcelas_restauradas'] ? ' ' . $rR['parcelas_restauradas'] . ' lançamento(s) do financeiro voltaram pra pendente.' : '')
+                        . ($rR['asaas_perdidas'] ? ' ' . $rR['asaas_perdidas'] . ' cobrança(s) do Asaas foram canceladas lá e precisam ser geradas de novo.' : '');
+                } else {
+                    $erro = $rR['erro'];
+                }
             } elseif ($acao === 'subir_contrato_assinado') {
                 // 31/10/2026 — contrato assinado fora do sistema (papel):
                 // super admin sobe o arquivo e a venda passa a contar.
@@ -2213,6 +2224,13 @@ function adicionarParteEntrada() {
                automaticamente e aparece aqui pra mudar de etapa.</p>
         <?php else: ?>
             <p>Negociação encerrada — <?= e(etapaVendaLabel($v['etapa'])) ?><?= $v['motivo_cancelamento'] ? ': ' . e($v['motivo_cancelamento']) : ($v['motivo_perda'] ? ': ' . e($v['motivo_perda']) : '') ?>.</p>
+            <?php if ($v['etapa'] === 'cancelada' && ($_SESSION['admin_perfil'] ?? '') !== 'supervisor'): ?>
+                <form method="post" onsubmit="return confirmarAcao(this, 'Reativar esta negociação? Ela volta pra etapa em que estava antes do cancelamento.');">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="acao" value="reabrir_venda">
+                    <button type="submit">↩️ Reativar negociação</button>
+                </form>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>

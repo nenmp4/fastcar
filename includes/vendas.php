@@ -358,6 +358,80 @@ function mudarEtapaVenda(int $vendaId, string $etapaNova, ?int $responsavelId = 
 }
 
 /**
+ * Reativa uma negociação cancelada por engano (25/11/2026, "tem como
+ * reativar negociação"). Volta pra etapa em que estava ANTES do
+ * cancelamento (lida de venda_historico), limpa o motivo e grava histórico.
+ * Direto no banco, nunca via mudarEtapaVenda(): voltar pra 'vendido' por lá
+ * trocaria a data da venda pra hoje e tentaria gerar receita de novo.
+ * Recusa se o veículo já tem outra negociação ativa/vendida. Parcelas que o
+ * cancelamento cancelou no financeiro (lançamentos locais, no mesmo
+ * instante do cancelamento) voltam pra pendente; cobrança do Asaas já foi
+ * cancelada lá e não volta — gerar de novo.
+ *
+ * @return array{ok:bool, erro?:string, etapa?:string, parcelas_restauradas?:int, asaas_perdidas?:int}
+ */
+function reabrirVenda(int $vendaId, ?int $responsavelId = null): array {
+    $db = getDB();
+    $st = $db->prepare("SELECT id, etapa, oportunidade_id, comprador_nome FROM vendas WHERE id = ?");
+    $st->execute([$vendaId]);
+    $v = $st->fetch();
+    if (!$v) return ['ok' => false, 'erro' => 'Negociação não encontrada.'];
+    if ($v['etapa'] !== 'cancelada') return ['ok' => false, 'erro' => 'Só dá pra reativar negociação cancelada.'];
+
+    $stH = $db->prepare("SELECT etapa_anterior, created_at FROM venda_historico WHERE venda_id = ? AND etapa_nova = 'cancelada' ORDER BY id DESC LIMIT 1");
+    $stH->execute([$vendaId]);
+    $h = $stH->fetch();
+    $voltaPara = (string)($h['etapa_anterior'] ?? '');
+    if (!in_array($voltaPara, ETAPAS_VENDA_VALIDAS, true) || in_array($voltaPara, ['cancelada', 'sem_perfil'], true)) {
+        $voltaPara = 'negociacao';
+    }
+
+    $opId = (int)$v['oportunidade_id'];
+    if ($opId > 0) {
+        $stO = $db->prepare("SELECT id, comprador_nome FROM vendas WHERE oportunidade_id = ? AND id != ?
+            AND (etapa IN ('negociacao', 'contrato_enviado', 'vendido')
+                 OR (etapa != 'cancelada' AND EXISTS (SELECT 1 FROM contratos c WHERE c.venda_id = vendas.id AND c.tipo = 'venda' AND c.status = 'assinado')))
+            LIMIT 1");
+        $stO->execute([$opId, $vendaId]);
+        if ($outra = $stO->fetch()) {
+            return ['ok' => false, 'erro' => 'Esse veículo já está em outra negociação (#' . (int)$outra['id'] . ' — ' . ($outra['comprador_nome'] ?: 'comprador') . '). Cancele aquela antes de reativar esta.'];
+        }
+    }
+
+    $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE vendas SET etapa = ?, motivo_cancelamento = '', updated_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$voltaPara, $vendaId]);
+        $db->prepare("INSERT INTO venda_historico (venda_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'cancelada', ?, ?, ?)")
+           ->execute([$vendaId, $voltaPara, $responsavelId, 'Negociação reativada (estava cancelada).']);
+        $restauradas = 0; $asaas = 0;
+        if ($h && $h['created_at']) {
+            $de = $h['created_at'];
+            $ate = date('Y-m-d H:i:s', strtotime($de) + 120);
+            $stA = $db->prepare("SELECT COUNT(*) FROM fin_lancamentos WHERE venda_id = ? AND status = 'cancelado' AND origem = 'asaas' AND updated_at BETWEEN ? AND ?");
+            $stA->execute([$vendaId, $de, $ate]);
+            $asaas = (int)$stA->fetchColumn();
+            $stR = $db->prepare("UPDATE fin_lancamentos SET status = 'pendente', updated_at = datetime('now','localtime')
+                WHERE venda_id = ? AND status = 'cancelado' AND origem != 'asaas' AND updated_at BETWEEN ? AND ?");
+            $stR->execute([$vendaId, $de, $ate]);
+            $restauradas = $stR->rowCount();
+        }
+        if ($opId > 0) {
+            $db->prepare("INSERT INTO oportunidade_historico (oportunidade_id, etapa_anterior, etapa_nova, responsavel_id, observacao) VALUES (?, 'fechado', 'fechado', ?, ?)")
+               ->execute([$opId, $responsavelId, "Negociação de venda #{$vendaId} pra " . ($v['comprador_nome'] ?: 'comprador') . ' reativada (estava cancelada).']);
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        return ['ok' => false, 'erro' => 'Não deu pra reativar: ' . $e->getMessage()];
+    }
+    if ($restauradas > 0 && function_exists('finRecalcularAtrasados')) {
+        try { finRecalcularAtrasados(); } catch (Throwable $e) {}
+    }
+    return ['ok' => true, 'etapa' => $voltaPara, 'parcelas_restauradas' => $restauradas, 'asaas_perdidas' => $asaas];
+}
+
+/**
  * Seleção em massa (29/09/2026, mesmo pedido do lado de compra — ver
  * marcarPerdidaEmMassa() em includes/oportunidades.php) — cancela várias
  * negociações de venda numa passada só, mesmo motivo pra todas. Reaproveita

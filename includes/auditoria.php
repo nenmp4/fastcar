@@ -291,6 +291,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'lead_movido_vendas_inbox' => '🛒 Lead movido pra vendas via WhatsApp Box',
         'veiculo_excluido' => '🗑️ Veículo excluído da frota',
         'venda_desfeita' => '↩️ Vendido desfeito (sem contrato)',
+        'venda_reativada' => '↩️ Negociação de venda reativada',
         'contrato_assinado_cancelado' => '🚫 Contrato assinado cancelado (com senha)',
         'senha_confirmacao_falhou' => '🔑 Senha errada ao confirmar ação',
         'edicao_bloqueada_contrato' => '🔒 Tentou alterar contrato assinado (bloqueado)',
