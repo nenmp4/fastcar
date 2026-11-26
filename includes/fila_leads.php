@@ -132,13 +132,21 @@ function proximoDaFila(bool $disponivelOnly, bool $apenasPlantao = false): ?int 
         return null;
     }
 
-    // posicao_fila menor = há mais tempo (ou nunca) sem receber — próximo
-    // da fila. id ASC só desempata o caso raro de dois nunca terem
-    // recebido nada ainda (posicao_fila=0 nos dois).
+    // Plantão: posicao_fila menor = há mais tempo (ou nunca) sem receber.
+    // Rodízio normal (26/11/2026, "equilíbrio de lead distribuição" — relatório
+    // do dia com 5/3/1): vai pra quem recebeu MENOS leads HOJE (oportunidades
+    // criadas hoje que estão com ele, inclusive as da madrugada/plantão);
+    // posicao_fila só desempata. Quem entra mais tarde, volta de pausa ou
+    // saiu do teto recebe primeiro até igualar.
+    $ordemHoje = ($disponivelOnly && !$apenasPlantao)
+        ? "(SELECT COUNT(*) FROM oportunidades o
+              WHERE o.responsavel_id = usuarios.id
+                AND date(o.created_at) = date('now','localtime')) ASC,"
+        : '';
     $stmt = $db->query("
         SELECT id FROM usuarios
         WHERE {$where}
-        ORDER BY posicao_fila ASC, id ASC
+        ORDER BY {$ordemHoje} posicao_fila ASC, id ASC
     ");
     $candidatos = $stmt->fetchAll(PDO::FETCH_COLUMN);
 

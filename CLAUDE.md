@@ -1497,6 +1497,7 @@ segue no schema sem uso novo, não removida sem ganho real),
   função REAL já corrigida deu 0 duplicados — sempre alternou entre os 2
   consultores, não importa quem venceu a corrida pelo lock — + `php -l` +
   `tests/smoke.php` limpos. Nenhuma mudança de schema.
+  **Rodízio equilibra por "quem recebeu menos leads hoje"** (26/11/2026, "equilíbrio de lead distribuição" — relatório do dia com Anderson 5 / Jéssica 3 / Dayane 1). O rodízio puro (`posicao_fila`) só alternava entre quem estava 🟢 na hora; lead da madrugada (plantão), consultor que entra mais tarde, volta de pausa ou sai do teto nunca era compensado. `proximoDaFila()` (`includes/fila_leads.php`), só no rodízio normal (nunca no plantão), ordena os candidatos pela quantidade de oportunidades criadas HOJE que estão com cada um (inclui as da madrugada); `posicao_fila` só desempata; teto continua valendo. Vale daqui pra frente, não mexe em lead já distribuído (pra isso: "⚖️ Equalizar entre disponíveis"). Testado em banco isolado (5/1/0 hoje + 1 de ontem que não conta → 6 leads novos saem 3,2,3,2,3,2, nunca pro que tinha 5) + smoke.
 - **Qualificação por IA** — `includes/ia_qualificacao.php` +
   `includes/gemini.php` + `includes/openai.php`: Gemini como principal, GPT
   como fallback (ver pendência #3). Conversa livre, sem menu/opção numerada,
