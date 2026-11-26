@@ -289,7 +289,7 @@ $sql = "
            vd.id AS venda_id, vd.etapa AS venda_etapa, vd.tipo_contrato AS venda_tipo_contrato,
            vd.comprador_nome AS venda_comprador_nome, vd.comprador_telefone AS venda_comprador_telefone, vd.data_venda AS venda_data,
            -- 09/11/2026 — última venda desfeita por devolução (voltou pra Fastcar).
-           (SELECT vx.comprador_nome || '|' || COALESCE(vx.updated_at, '') FROM vendas vx
+           (SELECT vx.comprador_nome || '|' || COALESCE(vx.updated_at, '') || '|' || vx.id FROM vendas vx
              WHERE vx.oportunidade_id = o.id AND vx.etapa = 'cancelada' AND vx.data_venda IS NOT NULL
              ORDER BY vx.id DESC LIMIT 1) AS ultima_devolucao,
            {$refPosseExpr} AS ref_posse,
@@ -665,8 +665,9 @@ details.frota-ba-form input { width: 100%; }
                         <small>—</small>
                     <?php endif; ?>
                     <?php if ($v['ultima_devolucao'] && ($v['venda_id'] === null || $v['venda_etapa'] !== 'vendido')):
-                        [$devNome, $devQuando] = array_pad(explode('|', (string)$v['ultima_devolucao'], 2), 2, ''); ?>
+                        [$devNome, $devQuando, $devVendaId] = array_pad(explode('|', (string)$v['ultima_devolucao'], 3), 3, ''); ?>
                         <br><small title="Venda desfeita — o carro voltou pra Fastcar">↩️ voltou de <?= e($devNome ?: 'comprador') ?><?= $devQuando ? ' em ' . e(date('d/m/Y', strtotime($devQuando))) : '' ?></small>
+                        <?php if ((int)$devVendaId > 0): ?><br><a href="/admin/venda.php?id=<?= (int)$devVendaId ?>" class="btn-texto">📄 Abrir negociação</a><?php endif; ?>
                     <?php endif; ?>
                 </td>
                 <td class="frota-nowrap">
