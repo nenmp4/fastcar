@@ -13,18 +13,18 @@ o carro ainda em financiamento, Fastcar avalia e compra). Stack decidida:
 - **Responsável de negócio:** Jean Susej (define fluxo, negociação e fechamento — bloco 6/7 do funil)
 - **Dev:** José (mesmo dev do JurídicoSaaS)
 
-### Números do projeto (atualizado em 14/11/2026)
+### Números do projeto (atualizado em 26/11/2026)
 
 | Métrica | Valor |
 |---|---|
-| Commits na `main` desde o início (12/09/2026) | 761 (~12/dia) |
-| Linhas de código (PHP+SQL+CSS+JS+Shell) | 76.161 em 264 arquivos |
-| — PHP | 72.857 |
-| — SQL (`install/schema.sql` etc) | 1.551 |
-| — CSS | 1.321 |
-| — JavaScript (arquivos `.js`; o resto é inline no PHP) | 291 |
-| — Shell | 141 |
-| Este `CLAUDE.md` | ~14.300 linhas |
+| Commits na `main` desde o início (12/09/2026) | 839 (~11/dia) |
+| Linhas de código (PHP+SQL+CSS+JS+Shell) | 85.253 em 292 arquivos |
+| — PHP | 81.733 |
+| — SQL (`install/schema.sql` etc) | 1.678 |
+| — CSS | 1.379 |
+| — JavaScript (arquivos `.js`; o resto é inline no PHP) | 318 |
+| — Shell | 145 |
+| Este `CLAUDE.md` | ~14.500 linhas |
 
 Pra recalcular (rodar na raiz do repo):
 
