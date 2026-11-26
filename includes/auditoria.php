@@ -314,6 +314,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'veiculo_busca_apreensao_desfeita' => '↩️ Busca e apreensão desfeita',
         'carro_reserva_liberado' => '🔑 Carro reserva liberado',
         'carro_reserva_assinado' => '✍️ Termo de carro reserva assinado',
+        'termo_debitos_assinado' => '✍️ Termo de débitos do veículo assinado',
         'carro_reserva_devolvido' => '↩️ Carro reserva devolvido',
         'carro_reserva_cancelado' => '🚫 Carro reserva cancelado',
         'despesa_operacional_lancada' => '💸 Despesa operacional lançada (comprovante)',

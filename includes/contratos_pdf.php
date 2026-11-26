@@ -1534,11 +1534,28 @@ function gerarPdfTermoRetiradaAmigavel(array $c): string {
 
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
-    $pdf->Cell(0, 6, _pdfTexto('Local e data: ______________________________, ______ de ____________________ de ________.'), 0, 1, 'L');
+    if ($assinaturaPng) {
+        // Assinado na tela do sistema (canvas) — registra data, hora e IP.
+        $quando = date('d/m/Y \à\s H:i', strtotime($meta['assinado_em'] ?? 'now'));
+        $pdf->MultiCell(0, 5, _pdfTexto("Barueri/SP, {$quando}. Assinado eletronicamente pelo(a) LOCATÁRIO(A)/PROMITENTE COMPRADOR(A) na tela do sistema da FASTCAR" .
+            (!empty($meta['ip']) ? " (IP {$meta['ip']})" : '') . '.'));
+    } else {
+        $pdf->Cell(0, 6, _pdfTexto('Local e data: ______________________________, ______ de ____________________ de ________.'), 0, 1, 'L');
+    }
 
-    $assinatura = function (string $titulo, string $nome = '', string $cpf = '') use ($pdf) {
+    $primeira = true;
+    $assinatura = function (string $titulo, string $nome = '', string $cpf = '') use ($pdf, $assinaturaPng, &$primeira) {
         if ($pdf->GetY() > 250) $pdf->AddPage();
-        $pdf->Ln(12);
+        if ($primeira && $assinaturaPng && is_file($assinaturaPng) && ($dim = @getimagesize($assinaturaPng)) && $dim[0] > 0) {
+            $h = min(18, 60 * $dim[1] / $dim[0]);
+            $w = $h * $dim[0] / $dim[1];
+            $pdf->Ln(2);
+            $pdf->Image($assinaturaPng, (210 - $w) / 2, $pdf->GetY(), $w, $h);
+            $pdf->Ln($h - 2);
+        } else {
+            $pdf->Ln(12);
+        }
+        $primeira = false;
         $pdf->SetFont('Helvetica', '', 8.5);
         $pdf->Cell(0, 5, _pdfTexto('____________________________________________________'), 0, 1, 'C');
         $pdf->SetFont('Helvetica', 'B', 8.5);
@@ -1567,7 +1584,7 @@ function gerarPdfTermoRetiradaAmigavel(array $c): string {
  * 'termo_debitos_veiculo'. Valor/descrição/prazo vêm do formulário (nunca
  * chutados). ⚠️ Texto escrito pelo sistema — revisar com o Jean.
  */
-function gerarPdfTermoDebitosVeiculo(array $c, float $valor, string $descricao, int $prazoDias): string {
+function gerarPdfTermoDebitosVeiculo(array $c, float $valor, string $descricao, int $prazoDias, ?string $assinaturaPng = null, array $meta = []): string {
     $linha = '________________________________________';
     $ou = fn($v) => trim((string)$v) !== '' ? (string)$v : $linha;
     $prefixo = ($c['_tipo_contrato'] ?? 'venda') === 'locacao' ? 'LOC-' : 'VENDA-';
@@ -1626,11 +1643,28 @@ function gerarPdfTermoDebitosVeiculo(array $c, float $valor, string $descricao, 
 
     $pdf->Ln(6);
     $pdf->SetFont('Helvetica', '', 9);
-    $pdf->Cell(0, 6, _pdfTexto('Local e data: ______________________________, ______ de ____________________ de ________.'), 0, 1, 'L');
+    if ($assinaturaPng) {
+        // Assinado na tela do sistema (canvas) — registra data, hora e IP.
+        $quando = date('d/m/Y \à\s H:i', strtotime($meta['assinado_em'] ?? 'now'));
+        $pdf->MultiCell(0, 5, _pdfTexto("Barueri/SP, {$quando}. Assinado eletronicamente pelo(a) LOCATÁRIO(A)/PROMITENTE COMPRADOR(A) na tela do sistema da FASTCAR" .
+            (!empty($meta['ip']) ? " (IP {$meta['ip']})" : '') . '.'));
+    } else {
+        $pdf->Cell(0, 6, _pdfTexto('Local e data: ______________________________, ______ de ____________________ de ________.'), 0, 1, 'L');
+    }
 
-    $assinatura = function (string $titulo, string $nome = '', string $cpf = '') use ($pdf) {
+    $primeira = true;
+    $assinatura = function (string $titulo, string $nome = '', string $cpf = '') use ($pdf, $assinaturaPng, &$primeira) {
         if ($pdf->GetY() > 250) $pdf->AddPage();
-        $pdf->Ln(12);
+        if ($primeira && $assinaturaPng && is_file($assinaturaPng) && ($dim = @getimagesize($assinaturaPng)) && $dim[0] > 0) {
+            $h = min(18, 60 * $dim[1] / $dim[0]);
+            $w = $h * $dim[0] / $dim[1];
+            $pdf->Ln(2);
+            $pdf->Image($assinaturaPng, (210 - $w) / 2, $pdf->GetY(), $w, $h);
+            $pdf->Ln($h - 2);
+        } else {
+            $pdf->Ln(12);
+        }
+        $primeira = false;
         $pdf->SetFont('Helvetica', '', 8.5);
         $pdf->Cell(0, 5, _pdfTexto('____________________________________________________'), 0, 1, 'C');
         $pdf->SetFont('Helvetica', 'B', 8.5);
@@ -1639,9 +1673,11 @@ function gerarPdfTermoDebitosVeiculo(array $c, float $valor, string $descricao, 
         $pdf->Cell(0, 5, _pdfTexto('Nome: ' . ($nome ?: '______________________________') . '   CPF: ' . ($cpf ?: '____________________')), 0, 1, 'C');
     };
     $assinatura('LOCATÁRIO(A)/PROMITENTE COMPRADOR(A)', (string)$c['comprador_nome'], (string)$c['comprador_cpf']);
-    $assinatura('FASTCAR SOLUTIONS LTDA. – REPRESENTANTE');
-    $assinatura('TESTEMUNHA 1');
-    $assinatura('TESTEMUNHA 2');
+    if (!$assinaturaPng) { // impresso: assinaturas à mão; assinado na tela: só o comprador (data/hora/IP acima)
+        $assinatura('FASTCAR SOLUTIONS LTDA. – REPRESENTANTE');
+        $assinatura('TESTEMUNHA 1');
+        $assinatura('TESTEMUNHA 2');
+    }
 
     _pdfRodapeEndereco($pdf);
 

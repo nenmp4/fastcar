@@ -43,7 +43,7 @@ if (!$v) {
 }
 
 $erro = '';
-$sucesso = '';
+$sucesso = ($_GET['termo_debitos'] ?? '') === 'assinado' ? '✍️ Termo de débitos assinado — salvo nos documentos da negociação.' : '';
 $promRepetir = null; // Quadro-Resumo reexibido aguardando confirmação da comissão
 
 const VENDA_ACOES_TRAVADAS = ['vincular_veiculo', 'atualizar_comprador', 'atualizar_condicoes', 'salvar_entrada_partes',
@@ -1464,19 +1464,19 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
                     <?php if ($tipo === 'termo_debitos_veiculo'): ?>
                         <?php $debitosSugeridos = (float)($v['debito_ipva'] ?? 0) + (float)($v['debito_licenciamento'] ?? 0) + (float)($v['debito_multas'] ?? 0); ?>
                         <details style="display:inline-block;margin-left:6px">
-                            <summary class="btn">🖨️ Gerar termo</summary>
-                            <form method="get" action="/admin/termo_debitos.php" target="_blank" style="margin-top:8px;max-width:420px">
+                            <summary class="btn">✍️ Gerar e assinar</summary>
+                            <form method="get" action="/admin/termo_debitos.php" style="margin-top:8px;max-width:420px">
                                 <input type="hidden" name="id" value="<?= (int)$id ?>">
                                 <label>Valor dos débitos (R$)
                                     <input type="text" name="valor" inputmode="decimal" required placeholder="5.200,00" value="<?= $debitosSugeridos > 0 ? e(number_format($debitosSugeridos, 2, ',', '.')) : '' ?>">
                                 </label>
                                 <label>Quais débitos
-                                    <input type="text" name="descricao" maxlength="300" placeholder="Multas e IPVA 2026" value="Multas e IPVA">
+                                    <input type="text" name="descricao" maxlength="300" placeholder="Multas e IPVA" value="Multas e IPVA">
                                 </label>
                                 <label>Prazo pra regularizar (dias)
                                     <input type="number" name="prazo" min="1" max="365" value="30" required>
                                 </label>
-                                <button type="submit">🖨️ Gerar PDF</button>
+                                <button type="submit">Continuar → assinatura na tela</button>
                             </form>
                         </details>
                     <?php else: ?>
@@ -1488,7 +1488,7 @@ $percentualFipe = ($v['valor_fipe_referencia'] && $v['preco_venda'])
         </tbody>
     </table>
     <p><small>🖨️ <strong>Termo de retirada amigável:</strong> imprima, o cliente preenche local/data e assina à mão — depois anexe a cópia assinada aqui embaixo escolhendo "Termo de devolução amigável".</small></p>
-    <p><small>🖨️ <strong>Termo de débitos (opcional):</strong> use quando o carro sai com multa/IPVA em aberto — o comprador assume pagar no prazo e os custos se o carro for apreendido. Imprima, ele assina, e anexe a cópia escolhendo "Termo de ciência e confissão de débitos".</small></p>
+    <p><small>🖨️ <strong>Termo de débitos (opcional):</strong> use quando o carro sai com multa/IPVA em aberto — o comprador assume pagar no prazo e os custos se o carro for apreendido. Informe o valor e o comprador assina na tela — o termo assinado fica salvo aqui sozinho.</small></p>
 
     <?php if ($_SESSION['admin_perfil'] !== 'supervisor'): ?>
         <form method="post" enctype="multipart/form-data" style="margin-top:12px">
