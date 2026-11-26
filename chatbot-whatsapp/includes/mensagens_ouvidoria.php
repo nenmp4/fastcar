@@ -634,6 +634,28 @@ function ouvidoriaPareceMensagemDoSistema(string $tel, string $texto): bool {
     return false;
 }
 
+/**
+ * 26/11/2026 ("repetição da mesma mensagem — sempre manter contexto", print da
+ * conversa SERJEIRA de novo): a trava de repetição dependia só de
+ * `ouvidoria_conversas.ultima_auto_em` — se essa gravação falhava (banco
+ * ocupado) ou a mensagem do cliente chegava com outro identificador, a mesma
+ * resposta saía de novo. Aqui confere o histórico de verdade (o que já foi
+ * mandado/ecoado pra esse número): mesma resposta automática nas últimas
+ * `$horas` = não manda.
+ */
+function ouvidoriaJaMandouMesmaResposta(string $tel, string $resposta, int $horas = 12): bool {
+    $inicio = mb_substr(trim($resposta), 0, 70);
+    if (mb_strlen($inicio) < 20) return false;
+    try {
+        $st = getDB()->prepare("SELECT 1 FROM whatsapp_mensagens WHERE telefone = ? AND direcao = 'out'
+            AND substr(mensagem, 1, ?) = ? AND created_at >= datetime('now','localtime', ?) LIMIT 1");
+        $st->execute([$tel, mb_strlen($inicio), $inicio, '-' . $horas . ' hours']);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 /** Humano respondeu pelo celular: tickets abertos viram "em atendimento" e a IA para de responder. */
 function ouvidoriaHumanoRespondeuPeloCelular(string $tel): void {
     try {
@@ -899,6 +921,12 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
         // pra entendermos o ticket" — toda abertura de ticket pede o relato.
         $resposta .= "\n\n👉 Pra gente entender seu caso: *descreva em poucas palavras a sua situação* (o que aconteceu, desde quando e o que você precisa).";
         $resposta .= "\n\nSeu protocolo de atendimento é *{$ticket['protocolo']}*.";
+    }
+    // Mesma resposta já saiu pra esse número nas últimas 12h: não repete (só
+    // ressincroniza a marcação). Saudação de ticket novo leva protocolo próprio, passa.
+    if (!$saudacaoPendente && ouvidoriaJaMandouMesmaResposta($telNorm, $resposta)) {
+        ouvidoriaSalvarConversa($telNorm, ['ultima_auto_assunto' => $chaveResposta, 'ultima_auto_em' => date('Y-m-d H:i:s')]);
+        return ['ignored' => null, 'telefone' => $phone, 'texto' => $texto, 'tipo' => $tipoRegistro, 'ia_pausada' => false, 'instancia' => $instancia, 'assunto' => $assunto, 'respondeu' => false, 'motivo' => 'ja_respondido'];
     }
     $enviou = evolutionEnviarTexto($telNorm, $resposta, evolutionCredenciaisOuvidoria());
     // 24/11/2026: a Evolution às vezes demora e o envio "falha" por tempo

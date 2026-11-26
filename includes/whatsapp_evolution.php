@@ -1176,6 +1176,16 @@ function evolutionAdaptarPayloadParaZapi(array $body): ?array {
     $remoteJid = (string)($key['remoteJid'] ?? '');
     if ($remoteJid === '') return null;
 
+    // 26/11/2026: contato "LID" — o WhatsApp manda um id interno (…@lid) no
+    // lugar do telefone. Sem trocar pelo telefone real, a mesma pessoa virava
+    // 2 conversas e a resposta automática saía de novo (sem contexto). Usa o
+    // telefone de um dos campos alternativos quando vier (nomes nunca
+    // confirmados contra esta instância; sem nenhum, segue como antes).
+    if (str_ends_with($remoteJid, '@lid')) {
+        foreach ([$key['remoteJidAlt'] ?? '', $key['senderPn'] ?? '', $key['participantAlt'] ?? '', $data['senderPn'] ?? '', $data['remoteJidAlt'] ?? ''] as $alt) {
+            if (is_string($alt) && str_ends_with($alt, '@s.whatsapp.net')) { $remoteJid = $alt; break; }
+        }
+    }
     $isGroup = str_ends_with($remoteJid, '@g.us');
     $phone = (string)preg_replace('/@.*/', '', $remoteJid); // tira @s.whatsapp.net / @g.us
 
