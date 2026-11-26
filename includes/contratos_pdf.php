@@ -1557,3 +1557,95 @@ function gerarPdfTermoRetiradaAmigavel(array $c): string {
     $pdf->Output('F', $caminho);
     return $caminho;
 }
+
+/**
+ * Termo de ciência e confissão de débitos do veículo (26/11/2026, "faz termo
+ * confissão veículo tem 5200 de multas IPVA, responsabilidade regularizar em
+ * até 30 dias, ele se responsabiliza custo carro seja apreendido" + "coloca
+ * no sistema isso opcional"). Opcional — só quando o carro sai com débito em
+ * aberto. Impresso e assinado à mão; a cópia assinada volta como documento
+ * 'termo_debitos_veiculo'. Valor/descrição/prazo vêm do formulário (nunca
+ * chutados). ⚠️ Texto escrito pelo sistema — revisar com o Jean.
+ */
+function gerarPdfTermoDebitosVeiculo(array $c, float $valor, string $descricao, int $prazoDias): string {
+    $linha = '________________________________________';
+    $ou = fn($v) => trim((string)$v) !== '' ? (string)$v : $linha;
+    $prefixo = ($c['_tipo_contrato'] ?? 'venda') === 'locacao' ? 'LOC-' : 'VENDA-';
+    $contrato = $prefixo . $c['_venda_id'];
+    $valorTxt = 'R$ ' . number_format($valor, 2, ',', '.');
+    $descricao = trim($descricao) !== '' ? trim($descricao) : 'multas, IPVA e/ou licenciamento';
+    $prazoTxt = (string)$prazoDias;
+
+    $pdf = _pdfNovo();
+    _pdfCabecalho($pdf, 'TERMO DE CIÊNCIA E CONFISSÃO DE DÉBITOS DO VEÍCULO');
+
+    $pdf->SetFont('Helvetica', 'B', 10);
+    $pdf->Cell(0, 6, _pdfTexto("FASTCAR SOLUTIONS  |  CONTRATO Nº {$contrato}"), 0, 1, 'C');
+    $pdf->Ln(2);
+    _pdfCorpo($pdf,
+        'Pelo presente instrumento, o(a) LOCATÁRIO(A)/PROMITENTE COMPRADOR(A) identificado(a) abaixo declara, perante a ' .
+        'FASTCAR SOLUTIONS LTDA., CNPJ nº 66.934.500/0001-09, estar ciente dos débitos existentes sobre o veículo relacionado ' .
+        'ao contrato indicado e assume a responsabilidade por sua regularização, nos termos a seguir.'
+    );
+    $pdf->Ln(2);
+    _pdfLinhaResumo($pdf, 'Nome', $ou($c['comprador_nome']));
+    _pdfLinhaResumo($pdf, 'CPF', $ou($c['comprador_cpf']));
+    _pdfLinhaResumo($pdf, 'Telefone', $ou($c['comprador_telefone']));
+    _pdfLinhaResumo($pdf, 'Contrato nº', $contrato);
+    _pdfLinhaResumo($pdf, 'Marca / modelo / ano', $ou(trim("{$c['veiculo_marca']} {$c['veiculo_modelo']} {$c['veiculo_ano']}")));
+    _pdfLinhaResumo($pdf, 'Placa / RENAVAM / chassi', ($c['veiculo_placa'] ?: '______') . ' / ' . ($c['veiculo_renavam'] ?: '______') . ' / ' . ($c['veiculo_chassi'] ?: '______'));
+    _pdfLinhaResumo($pdf, 'Débitos em aberto', $descricao);
+    _pdfLinhaResumo($pdf, 'Valor dos débitos', $valorTxt);
+    _pdfLinhaResumo($pdf, 'Prazo para regularizar', "{$prazoTxt} dias corridos a partir da assinatura deste termo");
+
+    _pdfTituloClausula($pdf, '1. CIÊNCIA E CONFISSÃO DOS DÉBITOS');
+    _pdfCorpo($pdf,
+        "O(A) LOCATÁRIO(A)/PROMITENTE COMPRADOR(A) declara que, antes de receber a posse do veículo, foi informado(a) de que " .
+        "existem débitos vinculados a ele ({$descricao}) no valor de {$valorTxt}, apurado na data deste termo, e reconhece " .
+        "esse valor como de sua responsabilidade."
+    );
+    _pdfTituloClausula($pdf, '2. PRAZO PARA REGULARIZAÇÃO');
+    _pdfCorpo($pdf,
+        "O(A) LOCATÁRIO(A)/PROMITENTE COMPRADOR(A) se obriga a quitar ou regularizar integralmente os débitos indicados no " .
+        "prazo de {$prazoTxt} dias corridos contados da assinatura deste termo, apresentando à FASTCAR os comprovantes de " .
+        "pagamento dentro do mesmo prazo. Débitos, multas e encargos gerados sobre o veículo a partir da entrega da posse " .
+        "também são de sua responsabilidade."
+    );
+    _pdfTituloClausula($pdf, '3. APREENSÃO OU REMOÇÃO DO VEÍCULO');
+    _pdfCorpo($pdf,
+        'Se o veículo for apreendido, removido ou retido por falta de pagamento ou de licenciamento, o(a) LOCATÁRIO(A)/' .
+        'PROMITENTE COMPRADOR(A) arcará com todos os custos decorrentes — guincho, diárias de pátio, taxas, multas e demais ' .
+        'despesas para a liberação —, providenciando a liberação às suas expensas, sem qualquer ônus para a FASTCAR.'
+    );
+    _pdfTituloClausula($pdf, '4. DESCUMPRIMENTO');
+    _pdfCorpo($pdf,
+        'Não regularizados os débitos no prazo, ou havendo pagamento pela FASTCAR de qualquer valor previsto neste termo, ' .
+        'o valor pago poderá ser cobrado do(a) LOCATÁRIO(A)/PROMITENTE COMPRADOR(A), acrescido das despesas comprovadas, ' .
+        'sem prejuízo das demais condições do contrato indicado, do qual este termo passa a fazer parte.'
+    );
+
+    $pdf->Ln(6);
+    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->Cell(0, 6, _pdfTexto('Local e data: ______________________________, ______ de ____________________ de ________.'), 0, 1, 'L');
+
+    $assinatura = function (string $titulo, string $nome = '', string $cpf = '') use ($pdf) {
+        if ($pdf->GetY() > 250) $pdf->AddPage();
+        $pdf->Ln(12);
+        $pdf->SetFont('Helvetica', '', 8.5);
+        $pdf->Cell(0, 5, _pdfTexto('____________________________________________________'), 0, 1, 'C');
+        $pdf->SetFont('Helvetica', 'B', 8.5);
+        $pdf->Cell(0, 5, _pdfTexto($titulo), 0, 1, 'C');
+        $pdf->SetFont('Helvetica', '', 8.5);
+        $pdf->Cell(0, 5, _pdfTexto('Nome: ' . ($nome ?: '______________________________') . '   CPF: ' . ($cpf ?: '____________________')), 0, 1, 'C');
+    };
+    $assinatura('LOCATÁRIO(A)/PROMITENTE COMPRADOR(A)', (string)$c['comprador_nome'], (string)$c['comprador_cpf']);
+    $assinatura('FASTCAR SOLUTIONS LTDA. – REPRESENTANTE');
+    $assinatura('TESTEMUNHA 1');
+    $assinatura('TESTEMUNHA 2');
+
+    _pdfRodapeEndereco($pdf);
+
+    $caminho = tempnam(sys_get_temp_dir(), 'termo_debitos_') . '.pdf';
+    $pdf->Output('F', $caminho);
+    return $caminho;
+}

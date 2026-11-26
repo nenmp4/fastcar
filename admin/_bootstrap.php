@@ -108,7 +108,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'vendedor') {
         // 27/10/2026 — busca FIPE pela placa no card "📊 Valor FIPE do veículo" da venda.
         'fipe_ajax.php',
         // 27/10/2026 — PDF do termo de retirada amigável (admin/venda.php).
-        'termo_retirada.php',
+        'termo_retirada.php', 'termo_debitos.php',
         // 26/09/2026 — leitura de CRLV por IA no modal "Vender na
         // Promissória" (admin/vendas.php, "cadastrar veículo novo").
         'veiculo_crlv_ajax.php',
@@ -216,7 +216,7 @@ if (($_SESSION['admin_perfil'] ?? '') === 'avaliador') {
         // 11/11/2026 — avaliador que também vende confere a documentação e o
         // contrato pra fechar a venda (mesma lista do vendedor).
         'ver_documento_venda.php', 'ver_contrato.php',
-        'clientes.php', 'fipe_ajax.php', 'termo_retirada.php'];
+        'clientes.php', 'fipe_ajax.php', 'termo_retirada.php', 'termo_debitos.php'];
     if (!in_array($paginaAtualAval, $permitidasAval, true)) {
         header('Location: /admin/avaliacoes.php');
         exit;

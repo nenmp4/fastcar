@@ -62,6 +62,8 @@ const TIPOS_DOCUMENTOS_VENDA_CONTRATO = [
  */
 const TIPOS_DOCUMENTOS_VENDA_EXTRA = [
     'termo_retirada_amigavel' => 'Termo de devolução amigável / autorização de retirada (assinado)',
+    // 26/11/2026 — opcional, só quando o veículo sai com multa/IPVA em aberto (admin/termo_debitos.php).
+    'termo_debitos_veiculo'   => 'Termo de ciência e confissão de débitos do veículo (assinado)',
 ];
 
 /**
