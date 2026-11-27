@@ -13,6 +13,7 @@ require_once __DIR__ . '/email_templates.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/auditoria.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens_ouvidoria.php';
+require_once __DIR__ . '/whatsapp_inbox.php'; // inboxPodeApagarMensagem()/inboxApagarMensagem() — excluir mensagem
 
 /** Filtros da lista (21/11/2026, item 10 do backlog: chips viraram selects). */
 const OUVIDORIA_FILTROS_STATUS = [
@@ -154,6 +155,38 @@ function enviarMensagemManualOuvidoria(string $telefone, string $texto, int $usu
     auditoriaRegistrar('ouvidoria_mensagem_enviada', $usuarioId, $nome, 'ouvidoria', null,
         "Resposta pela caixa da ouvidoria pra {$tel}" . ($protocolos ? ' (' . implode(', ', $protocolos) . ')' : '') . ': ' . mb_substr($texto, 0, 300));
     return ['ok' => true, 'id' => $id];
+}
+
+/**
+ * 🗑️ Excluir mensagem na caixa da ouvidoria (27/11/2026, "Permita excluir mensagens").
+ * Mensagem nossa com id do WhatsApp, até INBOX_APAGAR_PRAZO_HORAS depois do envio:
+ * apaga pra todos (some do WhatsApp do cliente) e fica "🚫 Você apagou esta mensagem".
+ * Qualquer outra (do cliente, ou nossa antiga): sai só do sistema — o cliente
+ * continua vendo no celular. Reentrega do webhook nunca traz de volta (jaProcessado()).
+ */
+function ouvidoriaExcluirMensagem(int $mensagemId, string $telefone, int $usuarioId): array {
+    $db = getDB();
+    $tel = normalizarTelefone($telefone);
+    $st = $db->prepare("SELECT * FROM whatsapp_mensagens WHERE id = ? AND telefone = ? AND canal = 'ouvidoria'");
+    $st->execute([$mensagemId, $tel]);
+    $m = $st->fetch();
+    if (!$m) return ['ok' => false, 'erro' => 'Mensagem não encontrada nessa conversa.'];
+    $u = buscarUsuario($usuarioId);
+    $nome = (string)($u['nome'] ?? '');
+    $trecho = mb_substr((string)$m['mensagem'], 0, 200);
+    if (inboxPodeApagarMensagem($m)) {
+        $r = inboxApagarMensagem($mensagemId, $tel, 'ouvidoria');
+        if (!$r['ok']) return $r;
+        auditoriaRegistrar('ouvidoria_mensagem_excluida', $usuarioId, $nome, 'ouvidoria', null,
+            "Mensagem #{$mensagemId} apagada pra todos na conversa {$tel}: {$trecho}");
+        return ['ok' => true, 'msg' => 'Mensagem apagada pra todos (sumiu também do WhatsApp do cliente).'];
+    }
+    $db->prepare("DELETE FROM whatsapp_mensagens WHERE id = ?")->execute([$mensagemId]);
+    if (!empty($m['zapi_message_id'])) setConfig('wpp_msg_excluida_' . sha1((string)$m['zapi_message_id']), '1');
+    $quem = $m['direcao'] === 'in' ? 'do cliente' : 'enviada';
+    auditoriaRegistrar('ouvidoria_mensagem_excluida', $usuarioId, $nome, 'ouvidoria', null,
+        "Mensagem #{$mensagemId} ({$quem}) excluída só do sistema na conversa {$tel}: {$trecho}");
+    return ['ok' => true, 'msg' => 'Mensagem excluída do sistema. No WhatsApp do cliente ela continua.'];
 }
 
 /** Arquivos aceitos no anexo da ouvidoria (mime real → extensão). */

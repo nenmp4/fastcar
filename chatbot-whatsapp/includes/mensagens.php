@@ -47,7 +47,10 @@ function jaProcessado(string $messageId): bool {
     $db = getDB();
     $stmt = $db->prepare("SELECT 1 FROM whatsapp_mensagens WHERE zapi_message_id = ? LIMIT 1");
     $stmt->execute([$messageId]);
-    return (bool)$stmt->fetchColumn();
+    if ($stmt->fetchColumn()) return true;
+    // Mensagem excluída do sistema pela equipe (27/11/2026): reentrega do webhook
+    // ou "puxar conversas antigas" nunca trazem ela de volta.
+    return getConfig('wpp_msg_excluida_' . sha1($messageId)) === '1';
 }
 
 /**

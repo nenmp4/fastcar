@@ -749,6 +749,7 @@ function inboxCredenciaisEvolution(string $canal): ?array {
     require_once __DIR__ . '/whatsapp_evolution.php';
     if ($canal === 'vendas' && evolutionConfiguredVendas()) return evolutionCredenciaisVendas();
     if ($canal === 'financeiro' && evolutionConfiguredFinanceiro()) return evolutionCredenciaisFinanceiro();
+    if ($canal === 'ouvidoria' && evolutionConfiguredOuvidoria()) return evolutionCredenciaisOuvidoria();
     return null; // principal
 }
 
@@ -772,7 +773,8 @@ function inboxApagarMensagem(int $mensagemId, string $telefone, string $canal): 
     require_once __DIR__ . '/whatsapp_evolution.php';
     $cred = inboxCredenciaisEvolution($canal);
     $ok = evolutionApagarParaTodos((string)$m['telefone'], (string)$m['zapi_message_id'], $cred);
-    if (!$ok && $cred !== null) $ok = evolutionApagarParaTodos((string)$m['telefone'], (string)$m['zapi_message_id']);
+    // Ouvidoria nunca tenta pela principal (a mensagem saiu pela instância dela).
+    if (!$ok && $cred !== null && $canal !== 'ouvidoria') $ok = evolutionApagarParaTodos((string)$m['telefone'], (string)$m['zapi_message_id']);
     if (!$ok) return ['ok' => false, 'erro' => 'O WhatsApp não apagou (' . (evolutionUltimoErro() ?: 'sem detalhe') . ').'];
     $db->prepare("UPDATE whatsapp_mensagens SET apagada_em = datetime('now','localtime') WHERE id = ?")->execute([$mensagemId]);
     return ['ok' => true];

@@ -13,7 +13,11 @@ requireSuperAdmin();
 whatsappCanalRegistro('ouvidoria');
 
 function _ouvMsgsComMidia(array $msgs): array {
-    foreach ($msgs as &$m) $m['midia_html'] = renderizarMidiaWhatsapp($m);
+    foreach ($msgs as &$m) {
+        $m['midia_html'] = renderizarMidiaWhatsapp($m);
+        $m['pode_apagar'] = inboxPodeApagarMensagem($m);
+        unset($m['zapi_message_id']);
+    }
     return $msgs;
 }
 
@@ -201,6 +205,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(enviarAnexoManualOuvidoria($telPost, (string)($_POST['anexo_base64'] ?? ''), (string)($_POST['nome_arquivo'] ?? ''),
                 (string)($_POST['legenda'] ?? ''), (int)$_SESSION['admin_id']));
             exit;
+        } elseif ($acao === 'excluir_mensagem' && $telPost) {
+            // 27/11/2026 — nossa (até 48h): apaga pra todos; o resto: só do sistema.
+            $r = ouvidoriaExcluirMensagem((int)($_POST['mensagem_id'] ?? 0), $telPost, (int)$_SESSION['admin_id']);
+            if ($r['ok']) $sucesso = $r['msg']; else $erro = $r['erro'];
+            $telefoneAtivo = $telPost;
         } elseif ($acao === 'enviar_mensagem' && $telPost) {
             $resultado = enviarMensagemManualOuvidoria($telPost, (string)($_POST['texto'] ?? ''), (int)$_SESSION['admin_id']);
             if ($viaAjax) {
@@ -304,6 +313,12 @@ body.wpp-page > .wpp-wrap { display: flex; flex: 1 1 0; min-height: 0; }
 .wpp-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--borda); display: flex; justify-content: space-between; align-items: center; background: var(--superficie); }
 .wpp-thread { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background: var(--fundo); }
 .wpp-thread .msg small { display: block; margin-top: 3px; opacity: .65; font-size: 10.5px; }
+.ouv-msg-excluir { background: none; border: none; box-shadow: none; padding: 0 4px; margin: 0 0 0 6px; color: var(--texto-fraco); font-size: 12px; cursor: pointer; min-height: 0; opacity: 0; }
+.msg:hover .ouv-msg-excluir, .ouv-msg-excluir:focus { opacity: 1; }
+.ouv-msg-excluir:hover { color: var(--vermelho); }
+@media (hover: none) { .ouv-msg-excluir { opacity: .8; min-width: 44px; min-height: 44px; margin: -14px -10px -14px 0; } }
+.msg.msg-apagada { font-style: italic; opacity: .6; }
+.msg.msg-apagada img, .msg.msg-apagada audio, .msg.msg-apagada video, .msg.msg-apagada a, .msg.msg-apagada .ouv-msg-excluir[data-todos="1"] { display: none; }
 .wpp-form { padding: 14px 20px; border-top: 1px solid var(--borda); background: var(--superficie); display: flex; gap: 10px; }
 .wpp-form textarea { flex: 1; margin: 0; resize: none; min-height: 42px; max-height: 120px; }
 .wpp-form button { margin: 0; white-space: nowrap; }
@@ -713,18 +728,26 @@ body.ouv-page .breadcrumb { display: none; }
                 <?php if ($mensagens): ?>
                     <button type="button" id="wpp-carregar-anteriores" style="align-self:center;margin-bottom:12px;padding:6px 14px;font-size:12.5px;background:var(--superficie);color:var(--texto-fraco);border:1px solid var(--borda);box-shadow:none">⬆️ Carregar mensagens anteriores</button>
                 <?php endif; ?>
-                <?php foreach ($mensagens as $m): ?>
-                    <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?>" data-id="<?= (int)$m['id'] ?>">
+                <?php foreach ($mensagens as $m): $apagada = !empty($m['apagada_em']); ?>
+                    <div class="msg <?= $m['direcao'] === 'in' ? 'msg-in' : 'msg-out' ?><?= $apagada ? ' msg-apagada' : '' ?>" data-id="<?= (int)$m['id'] ?>">
+                        <?php if ($apagada): ?><div>🚫 Você apagou esta mensagem</div><?php endif; ?>
                         <?= nl2br(e($m['mensagem'])) ?>
                         <?= renderizarMidiaWhatsapp($m) ?>
                         <small>
                             <?= date('d/m H:i', strtotime($m['created_at'])) ?>
                             <?= $m['usuario_nome'] ? ' · 👤 ' . e($m['usuario_nome']) : (!empty($m['enviado_por_ia']) ? ' · 🤖 IA' : '') ?>
+                            <button type="button" class="ouv-msg-excluir" data-id="<?= (int)$m['id'] ?>" data-todos="<?= inboxPodeApagarMensagem($m) ? '1' : '0' ?>"
+                                    title="<?= inboxPodeApagarMensagem($m) ? 'Apagar pra todos' : 'Excluir do sistema' ?>" aria-label="Excluir mensagem">🗑️</button>
                         </small>
                     </div>
                 <?php endforeach; ?>
             </div>
-
+            <form method="post" id="ouv-form-excluir-msg" style="display:none">
+                <?= csrfField() ?>
+                <input type="hidden" name="acao" value="excluir_mensagem">
+                <input type="hidden" name="telefone" value="<?= e($telefoneAtivo) ?>">
+                <input type="hidden" name="mensagem_id" value="">
+            </form>
             <form method="post" class="wpp-form" id="wpp-form">
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="enviar_mensagem">
@@ -855,13 +878,32 @@ body.ouv-page .breadcrumb { display: none; }
 
     function renderMsg(m) {
         var div = document.createElement('div');
-        div.className = 'msg ' + (m.direcao === 'in' ? 'msg-in' : 'msg-out');
+        div.className = 'msg ' + (m.direcao === 'in' ? 'msg-in' : 'msg-out') + (m.apagada_em ? ' msg-apagada' : '');
         div.dataset.id = m.id;
         var rodape = new Date(m.created_at.replace(' ', 'T')).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
         if (m.usuario_nome) rodape += ' · 👤 ' + m.usuario_nome;
         else if (parseInt(m.enviado_por_ia, 10)) rodape += ' · 🤖 IA';
-        div.innerHTML = escapeHtml(m.mensagem).replace(/\n/g, '<br>') + (m.midia_html || '') + '<small>' + escapeHtml(rodape) + '</small>';
+        var todos = m.pode_apagar ? '1' : '0';
+        div.innerHTML = (m.apagada_em ? '<div>🚫 Você apagou esta mensagem</div>' : '')
+            + escapeHtml(m.mensagem).replace(/\n/g, '<br>') + (m.midia_html || '') + '<small>' + escapeHtml(rodape)
+            + ' <button type="button" class="ouv-msg-excluir" data-id="' + parseInt(m.id, 10) + '" data-todos="' + todos + '" title="'
+            + (todos === '1' ? 'Apagar pra todos' : 'Excluir do sistema') + '" aria-label="Excluir mensagem">🗑️</button></small>';
         return div;
+    }
+
+    // 🗑️ excluir mensagem (27/11/2026): nossa até 48h some pra todos; o resto só do sistema.
+    var formExcluirMsg = document.getElementById('ouv-form-excluir-msg');
+    if (thread && formExcluirMsg) {
+        thread.addEventListener('click', function (ev) {
+            var b = ev.target.closest && ev.target.closest('.ouv-msg-excluir');
+            if (!b) return;
+            formExcluirMsg.querySelector('[name="mensagem_id"]').value = b.dataset.id;
+            var txt = b.dataset.todos === '1'
+                ? 'Apagar essa mensagem pra todos? Ela some também do WhatsApp do cliente.'
+                : 'Excluir essa mensagem do sistema? No WhatsApp do cliente ela continua aparecendo.';
+            if (window.confirmarAcao) window.confirmarAcao(formExcluirMsg, txt);
+            else if (confirm(txt)) formExcluirMsg.submit();
+        });
     }
 
     function jaRenderizada(id) {
