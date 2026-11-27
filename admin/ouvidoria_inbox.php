@@ -1106,11 +1106,13 @@ body.ouv-page .breadcrumb { display: none; }
     if (form) {
         form.addEventListener('submit', function (ev) {
             ev.preventDefault();
+            // Enter várias vezes duplicava a mensagem (27/11/2026): 1 envio por vez.
+            if (form.dataset.enviando === '1') return;
             var textarea = form.querySelector('textarea[name="texto"]');
             var texto = textarea.value.trim();
             if (!texto) return;
             var btn = form.querySelector('button[type="submit"]');
-            btn.disabled = true;
+            btn.disabled = true; form.dataset.enviando = '1';
             var body = new URLSearchParams();
             body.set('csrf_token', csrf.value);
             body.set('acao', 'enviar_mensagem');
@@ -1120,7 +1122,7 @@ body.ouv-page .breadcrumb { display: none; }
             fetch('', { method: 'POST', body: body })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
-                    btn.disabled = false;
+                    btn.disabled = false; form.dataset.enviando = '';
                     if (data.ok) {
                         textarea.value = '';
                         var avSug = document.getElementById('ouv-sugestao-aviso'); if (avSug) avSug.remove();
@@ -1139,7 +1141,7 @@ body.ouv-page .breadcrumb { display: none; }
                         alert(data.erro || 'Falha ao enviar.');
                     }
                 })
-                .catch(function () { btn.disabled = false; alert('Falha ao enviar — confira sua conexão.'); });
+                .catch(function () { btn.disabled = false; form.dataset.enviando = ''; alert('Falha ao enviar — confira sua conexão.'); });
         });
         form.querySelector('textarea').addEventListener('keydown', function (ev) {
             if (ev.key === 'Enter' && !ev.shiftKey) {

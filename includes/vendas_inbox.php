@@ -145,6 +145,7 @@ function enviarMensagemManualVendas(string $telefone, string $texto, int $usuari
     if ($texto === '') {
         return ['ok' => false, 'erro' => 'Mensagem vazia.'];
     }
+    if ($dup = inboxEnvioDuplicado($telNorm, $texto, $usuarioId)) return $dup;
     $usuario = buscarUsuario($usuarioId);
     $nomeVendedor = trim((string)($usuario['nome'] ?? ''));
     $textoAssinado = $nomeVendedor !== '' ? "*{$nomeVendedor}:*\n{$texto}" : $texto;

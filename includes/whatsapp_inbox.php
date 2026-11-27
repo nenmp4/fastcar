@@ -497,6 +497,32 @@ function whatsappVariantesTelefone(string $telefone): array {
  * pausar — pode ser o próprio bot ecoando), aqui a ação É de um humano
  * mandando pela caixa, então pausar é sempre certo.
  */
+/**
+ * Trava contra envio repetido (27/11/2026, "apertou enter várias vezes duplicou").
+ * Mesmo texto + mesma pessoa + mesmo telefone: enquanto um envio está em andamento
+ * (flock) ou se já saiu nos últimos 15s, não manda de novo. null = pode enviar
+ * (a trava fica presa até o fim da requisição); array = resposta pra devolver.
+ */
+function inboxEnvioDuplicado(string $telNorm, string $texto, int $usuarioId): ?array {
+    static $travas = [];
+    $chave = md5($telNorm . '|' . $usuarioId . '|' . $texto);
+    $dir = dirname(__DIR__) . '/storage/cache/envio_lock';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $fh = @fopen($dir . '/' . $chave . '.lock', 'c');
+    if ($fh) {
+        if (!flock($fh, LOCK_EX | LOCK_NB)) {
+            fclose($fh);
+            return ['ok' => false, 'erro' => 'Essa mensagem já está sendo enviada — aguarde.'];
+        }
+        $travas[$chave] = $fh; // solta sozinha no fim da requisição
+    }
+    $st = getDB()->prepare("SELECT id FROM whatsapp_mensagens WHERE telefone = ? AND direcao = 'out' AND usuario_id = ? AND mensagem = ?
+                            AND created_at >= datetime('now','localtime','-15 seconds') ORDER BY id DESC LIMIT 1");
+    $st->execute([$telNorm, $usuarioId, $texto]);
+    $id = (int)$st->fetchColumn();
+    return $id ? ['ok' => true, 'id' => $id, 'duplicado' => true] : null;
+}
+
 function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usuarioId): array {
     $telNorm = normalizarTelefone($telefone);
     $texto = trim($texto);
@@ -512,6 +538,7 @@ function enviarMensagemManualWhatsapp(string $telefone, string $texto, int $usua
     $usuario = buscarUsuario($usuarioId);
     $nomeConsultor = trim((string)($usuario['nome'] ?? ''));
     $textoAssinado = $nomeConsultor !== '' ? "*{$nomeConsultor}:*\n{$texto}" : $texto;
+    if ($dup = inboxEnvioDuplicado($telNorm, $texto, $usuarioId)) return $dup;
     if (!zapiEnviarTexto($telNorm, $textoAssinado)) {
         return ['ok' => false, 'erro' => 'Falha ao enviar WhatsApp — confira a configuração do canal ativo em Configurações.' . whatsappDetalheUltimoErro()];
     }

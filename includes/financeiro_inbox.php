@@ -30,6 +30,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/whatsapp_inbox.php'; // inboxEnvioDuplicado()
 require_once __DIR__ . '/usuarios.php';
 require_once dirname(__DIR__) . '/chatbot-whatsapp/includes/mensagens.php'; // registrarMensagem()
 
@@ -136,6 +137,7 @@ function enviarMensagemManualFinanceiro(string $telefone, string $texto, int $us
     if ($texto === '') {
         return ['ok' => false, 'erro' => 'Mensagem vazia.'];
     }
+    if ($dup = inboxEnvioDuplicado($telNorm, $texto, $usuarioId)) return $dup;
     $usuario = buscarUsuario($usuarioId);
     $nome = trim((string)($usuario['nome'] ?? ''));
     $textoAssinado = $nome !== '' ? "*{$nome}:*\n{$texto}" : $texto;

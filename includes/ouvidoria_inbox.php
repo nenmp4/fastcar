@@ -138,6 +138,7 @@ function enviarMensagemManualOuvidoria(string $telefone, string $texto, int $usu
     if ($tel === '') return ['ok' => false, 'erro' => 'Telefone inválido.'];
     if ($texto === '') return ['ok' => false, 'erro' => 'Mensagem vazia.'];
     if (!evolutionConfiguredOuvidoria()) return ['ok' => false, 'erro' => 'Instância da ouvidoria não configurada (Configurações → Evolution API — Ouvidoria).'];
+    if ($dup = inboxEnvioDuplicado($tel, $texto, $usuarioId)) return $dup;
     $u = buscarUsuario($usuarioId);
     $nome = trim((string)($u['nome'] ?? ''));
     $assinado = $nome !== '' ? "*{$nome} (Ouvidoria):*\n{$texto}" : $texto;
