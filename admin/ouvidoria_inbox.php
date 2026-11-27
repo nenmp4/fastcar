@@ -429,11 +429,17 @@ body.ouv-page .breadcrumb { display: none; }
     body:not(.wpp-tem-conversa) .wpp-chat { display: none; }
 }
 /* Celular com o teclado aberto (tela baixa): some o menu, o assunto/IA e a faixa
-   do ticket — fica só nome, conversa e o campo de responder. */
+   do ticket — fica só nome, conversa e o campo de responder.
+   27/11/2026 ("bug no encerramento no celular não para escrever"): se o campo com
+   foco está DENTRO da faixa/ações (nota de resolução, placa, recado pro Jean), a
+   faixa nunca some — antes o teclado abria, a faixa sumia com o campo e o foco caía. */
 @media (max-width: 700px) and (max-height: 560px) {
     body.wpp-tem-conversa .topbar, body.wpp-tem-conversa .topbar-v2 { display: none; }
-    body.wpp-tem-conversa .wpp-chat-header .ouv-acoes, body.wpp-tem-conversa .ouv-faixa { display: none; }
+    body.wpp-tem-conversa:not(.ouv-foco-faixa) .wpp-chat-header .ouv-acoes,
+    body.wpp-tem-conversa:not(.ouv-foco-faixa) .ouv-faixa { display: none; }
     body.wpp-tem-conversa .ouv-contato small { display: none; }
+    body.ouv-foco-faixa .wpp-thread, body.ouv-foco-faixa .wpp-form { display: none; }
+    body.ouv-foco-faixa .ouv-faixa-corpo { max-height: none; }
 }
 </style>
 <script>
@@ -908,6 +914,17 @@ body.ouv-page .breadcrumb { display: none; }
         };
         vv.addEventListener('resize', ajustar);
         ajustar();
+        // Campo da faixa do ticket / ações com foco: mantém a faixa visível com o teclado aberto.
+        var dentroFaixa = function (el) { return el && el.closest && el.closest('#ouv-faixa, .ouv-acoes') && el.matches('input, textarea, select'); };
+        document.addEventListener('focusin', function (e) {
+            if (!dentroFaixa(e.target)) return;
+            document.body.classList.add('ouv-foco-faixa');
+            setTimeout(function () { e.target.scrollIntoView({block: 'center'}); }, 300);
+        });
+        document.addEventListener('focusout', function (e) {
+            if (!dentroFaixa(e.target)) return;
+            setTimeout(function () { if (!dentroFaixa(document.activeElement)) document.body.classList.remove('ouv-foco-faixa'); }, 150);
+        });
         var ta = document.querySelector('.wpp-form textarea');
         if (ta) ta.addEventListener('focus', function () { setTimeout(function () { if (thread) thread.scrollTop = thread.scrollHeight; ta.scrollIntoView({block: 'end'}); }, 300); });
     })();

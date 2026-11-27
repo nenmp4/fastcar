@@ -417,6 +417,22 @@ function ouvidoriaTicketParaMensagem(string $telefone, string $assunto, string $
         }
         return [$t, false];
     }
+    // 27/11/2026, "se cliente abrir se for mesmo assunto mantém mesmo protocolo":
+    // ticket resolvido nos últimos 30 dias com o MESMO assunto reabre (mesmo
+    // protocolo); assunto diferente abre ticket novo. Mensagem sem assunto claro
+    // ('outro') já chega aqui com o assunto da conversa, então também reabre.
+    $st = $db->prepare("SELECT * FROM ouvidoria_tickets WHERE telefone = ? AND status = 'resolvido'
+        AND resolvido_em >= datetime('now','localtime','-30 days') ORDER BY id DESC LIMIT 1");
+    $st->execute([$telefone]);
+    $ultimo = $st->fetch();
+    if ($ultimo && ($ultimo['assunto'] === $assunto || $assunto === 'outro')) {
+        $db->prepare("UPDATE ouvidoria_tickets SET status = 'aberto', resolvido_em = NULL, resolvido_por = NULL,
+                updated_at = datetime('now','localtime') WHERE id = ?")->execute([(int)$ultimo['id']]);
+        auditoriaRegistrar('ouvidoria_ticket_reaberto', null, 'Sistema', 'ouvidoria_ticket', (int)$ultimo['id'],
+            "Protocolo {$ultimo['protocolo']} reaberto — cliente voltou a escrever sobre " . (OUVIDORIA_ASSUNTOS[$ultimo['assunto']] ?? $ultimo['assunto'])
+            . ($resumo !== '' ? ': ' . mb_substr($resumo, 0, 200) : '') . '.');
+        return [ouvidoriaBuscarTicket((int)$ultimo['id']), false];
+    }
     $db->prepare("INSERT INTO ouvidoria_tickets (telefone, nome, assunto, resumo, venda_id, oportunidade_id) VALUES (?, ?, ?, ?, ?, ?)")
        ->execute([$telefone, $nome, $assunto, mb_substr($resumo, 0, 300),
                   !empty($conv['venda_id']) ? (int)$conv['venda_id'] : null,
@@ -814,12 +830,16 @@ function processarMensagemOuvidoria(array $payload, ?array $instancia = null): a
 
     $resumoNotif = ($conv['nome'] ?: $telNorm) . ': ' . ($textoUtil !== '' ? $textoUtil : (str_starts_with($texto, '[') ? 'mandou ' . $tipoRegistro : $texto));
     $ticket = null; $ticketNovo = false;
-    // "Ok"/"Obrigado" depois de um ticket resolvido (últimos 7 dias) não abre outro.
+    // "Ok"/"Obrigado" depois de um ticket resolvido (últimos 30 dias) não abre nem reabre.
     $cortesiaPosResolvido = false;
     if ($curta && !ouvidoriaTicketsAtivos($telNorm)) {
-        $st = getDB()->prepare("SELECT 1 FROM ouvidoria_tickets WHERE telefone = ? AND resolvido_em >= datetime('now','localtime','-7 days') LIMIT 1");
+        $st = getDB()->prepare("SELECT 1 FROM ouvidoria_tickets WHERE telefone = ? AND resolvido_em >= datetime('now','localtime','-30 days') LIMIT 1");
         $st->execute([$telNorm]);
         $cortesiaPosResolvido = (bool)$st->fetchColumn();
+        // "Ok"/"Obrigado" depois de resolver não traz a conversa de volta pra lista.
+        if ($cortesiaPosResolvido) {
+            try { getDB()->prepare("UPDATE whatsapp_mensagens SET lida = 1 WHERE telefone = ? AND canal = 'ouvidoria' AND direcao = 'in' AND lida = 0")->execute([$telNorm]); } catch (Throwable $e) {}
+        }
     }
     if (!$cortesiaPosResolvido) {
         try {

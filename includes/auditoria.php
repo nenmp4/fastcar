@@ -275,6 +275,7 @@ function auditoriaRotuloEvento(string $evento): string {
         'ouvidoria_ticket_jean' => '🔔 Ticket da ouvidoria enviado ao Jean',
         'ouvidoria_ticket_aberto' => '🎫 Ouvidoria: protocolo aberto',
         'ouvidoria_ticket_reclassificado' => '🏷️ Ouvidoria: ticket reclassificado',
+        'ouvidoria_ticket_reaberto' => '↩️ Ouvidoria: protocolo reaberto (mesmo assunto)',
         'ouvidoria_ticket_urgente' => '🚨 Ouvidoria: ticket urgente',
         'ouvidoria_ticket_placa' => '🚗 Ouvidoria: placa/data do ticket',
         'ouvidoria_mensagem_enviada' => '💬 Ouvidoria: resposta da equipe',

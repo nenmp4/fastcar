@@ -41,6 +41,15 @@ function listarConversasOuvidoria(string $busca = '', string $assunto = '', int 
     $where = '';
     $params = [];
     $where .= ' AND ' . (ouvidoriaAbaValida($aba) === 'cobranca' ? '' : 'NOT ') . sprintf(OUVIDORIA_SQL_E_COBRANCA, 'm.telefone');
+    // 27/11/2026, "toda conversa resolvido sumir do inbox": conversa cujos tickets
+    // estão todos resolvidos e sem mensagem não lida some da lista — volta sozinha
+    // quando o cliente escreve de novo (ticket reabre). Aparece no filtro
+    // "✅ Só resolvidos" e na busca.
+    if ($status !== 'resolvido' && trim($busca) === '') {
+        $where .= " AND NOT (COALESCE(nl.n, 0) = 0
+                    AND EXISTS (SELECT 1 FROM ouvidoria_tickets t WHERE t.telefone = m.telefone)
+                    AND NOT EXISTS (SELECT 1 FROM ouvidoria_tickets t WHERE t.telefone = m.telefone AND t.status != 'resolvido'))";
+    }
     switch ($status) {
         case 'nao_lidas':      $where .= ' AND nl.n > 0'; break;
         case 'esperando':      $where .= " AND m.direcao = 'in'"; break;
