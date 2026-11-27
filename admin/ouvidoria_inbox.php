@@ -55,7 +55,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'buscar_negocio') {
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'conversas') {
     header('Content-Type: application/json');
     $lst = listarConversasOuvidoria(trim((string)($_GET['busca'] ?? '')), (string)($_GET['assunto'] ?? ''), 100,
-        (string)($_GET['status'] ?? ''), (string)($_GET['ordem'] ?? ''));
+        (string)($_GET['status'] ?? ''), (string)($_GET['ordem'] ?? ''), (string)($_GET['aba'] ?? ''));
     foreach ($lst as &$cv) $cv['cor'] = abs(crc32((string)$cv['telefone'])) % 6; // mesma cor do avatar desenhado pelo PHP
     unset($cv);
     echo json_encode(['conversas' => $lst]);
@@ -228,13 +228,22 @@ if (!isset(OUVIDORIA_ASSUNTOS[$assuntoFiltro])) $assuntoFiltro = '';
 $statusFiltro = (string)($_GET['status'] ?? '');
 if (!isset(OUVIDORIA_FILTROS_STATUS[$statusFiltro])) $statusFiltro = '';
 $ordem = ($_GET['ordem'] ?? '') === 'espera' ? 'espera' : '';
-$conversas = listarConversasOuvidoria($busca, $assuntoFiltro, 100, $statusFiltro, $ordem);
+$aba = ouvidoriaAbaValida((string)($_GET['aba'] ?? ''));
+// Conversa aberta pelo link direto cai na aba certa (cobrança x ouvidoria).
+if ($telefoneAtivo && !isset($_GET['aba'])) {
+    $stAba = getDB()->prepare("SELECT 1 FROM cobranca_eventos WHERE telefone = ? AND tipo = 'envio' LIMIT 1");
+    $stAba->execute([$telefoneAtivo]);
+    if ($stAba->fetchColumn()) $aba = 'cobranca';
+}
+$conversas = listarConversasOuvidoria($busca, $assuntoFiltro, 100, $statusFiltro, $ordem, $aba);
 // Filtros ativos vão junto em todo link de conversa (nunca perde o filtro ao abrir uma).
-$qsFiltros = http_build_query(array_filter(['busca' => $busca, 'assunto' => $assuntoFiltro, 'status' => $statusFiltro, 'ordem' => $ordem]));
+$qsFiltros = http_build_query(array_filter(['aba' => $aba, 'busca' => $busca, 'assunto' => $assuntoFiltro, 'status' => $statusFiltro, 'ordem' => $ordem]));
 // 21/11/2026, "inbox da ouvidoria não lidas deixar essa opção" — atalho
 // Todas / Não lidas sempre visível (o select de status continua igual).
-$totalNaoLidasOuv = contarConversasNaoLidasOuvidoria();
-$qsSemStatus = array_filter(['busca' => $busca, 'assunto' => $assuntoFiltro, 'ordem' => $ordem]);
+$totalNaoLidasOuv = contarConversasNaoLidasOuvidoria($aba);
+$naoLidasAbaOuv = $aba === '' ? $totalNaoLidasOuv : contarConversasNaoLidasOuvidoria('');
+$naoLidasAbaCob = $aba === 'cobranca' ? $totalNaoLidasOuv : contarConversasNaoLidasOuvidoria('cobranca');
+$qsSemStatus = array_filter(['aba' => $aba, 'busca' => $busca, 'assunto' => $assuntoFiltro, 'ordem' => $ordem]);
 $mensagens = $telefoneAtivo ? buscarMensagensConversa($telefoneAtivo, 50, 'ouvidoria') : [];
 $ultimoId = $mensagens ? (int)end($mensagens)['id'] : 0;
 $primeiroId = $mensagens ? (int)$mensagens[0]['id'] : 0;
@@ -311,6 +320,10 @@ body.ouv-page .breadcrumb { display: none; }
 .ouv-filtros-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .ouv-filtros-linha select[name="ordem"] { grid-column: 1 / -1; }
 .ouv-filtros select { padding: 6px 8px; font-size: 13px; }
+.ouv-abas { display: flex; gap: 0; border-bottom: 2px solid var(--borda); }
+.ouv-aba { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; font-size: 14px; font-weight: 700; color: var(--texto-suave); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.ouv-aba.ativo { color: var(--azul-escuro); border-bottom-color: var(--azul); }
+.ouv-aba .wpp-badge { position: static; }
 .ouv-atalhos { display: flex; gap: 6px; }
 .ouv-atalho { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--borda); border-radius: var(--raio-sm); font-size: 13px; font-weight: 600; color: var(--texto-suave); text-decoration: none; background: var(--superficie); }
 .ouv-atalho.ativo { background: var(--azul-claro); border-color: var(--azul); color: var(--azul-escuro); }
@@ -394,6 +407,7 @@ body.ouv-page .breadcrumb { display: none; }
     .wpp-sidebar { width: 100%; }
     .ouv-filtros select, .ouv-filtros input { font-size: 16px; min-height: 44px; }
     .ouv-atalho { min-height: 44px; font-size: 15px; }
+    .ouv-aba { min-height: 44px; font-size: 15px; }
     .ouv-faixa > summary { min-height: 44px; padding: 6px 12px; }
     .wpp-chat-header { flex-wrap: wrap; }
     .wpp-chat-header .ouv-acoes { width: 100%; }
@@ -436,6 +450,11 @@ body.ouv-page .breadcrumb { display: none; }
 <div class="wpp-wrap">
     <aside class="wpp-sidebar">
         <form method="get" class="ouv-filtros" id="ouv-filtros">
+            <?php if ($aba !== ''): ?><input type="hidden" name="aba" value="<?= e($aba) ?>"><?php endif; ?>
+            <div class="ouv-abas" role="tablist">
+                <a href="?" role="tab" class="ouv-aba<?= $aba === '' ? ' ativo' : '' ?>">📣 Ouvidoria<?php if ($naoLidasAbaOuv > 0): ?> <span class="wpp-badge"><?= $naoLidasAbaOuv ?></span><?php endif; ?></a>
+                <a href="?aba=cobranca" role="tab" class="ouv-aba<?= $aba === 'cobranca' ? ' ativo' : '' ?>">💰 Cobrança<?php if ($naoLidasAbaCob > 0): ?> <span class="wpp-badge"><?= $naoLidasAbaCob ?></span><?php endif; ?></a>
+            </div>
             <div class="ouv-atalhos">
                 <a href="?<?= e(http_build_query($qsSemStatus)) ?>" class="ouv-atalho<?= $statusFiltro !== 'nao_lidas' ? ' ativo' : '' ?>">Todas</a>
                 <a href="?<?= e(http_build_query($qsSemStatus + ['status' => 'nao_lidas'])) ?>" class="ouv-atalho<?= $statusFiltro === 'nao_lidas' ? ' ativo' : '' ?>">🔵 Não lidas<?php if ($totalNaoLidasOuv > 0): ?> <span class="wpp-badge"><?= $totalNaoLidasOuv ?></span><?php endif; ?></a>
@@ -458,12 +477,14 @@ body.ouv-page .breadcrumb { display: none; }
                     <option value="espera" <?= $ordem === 'espera' ? 'selected' : '' ?>>Esperando há mais tempo</option>
                 </select>
             </div>
-            <?php if ($qsFiltros !== ''): ?><a href="?" class="ouv-limpar">limpar filtros</a><?php endif; ?>
+            <?php if ($busca !== '' || $assuntoFiltro !== '' || $statusFiltro !== '' || $ordem !== ''): ?><a href="?<?= $aba !== '' ? 'aba=' . e($aba) : '' ?>" class="ouv-limpar">limpar filtros</a><?php endif; ?>
         </form>
         <div class="wpp-lista" id="wpp-lista">
             <?php if (!$conversas): ?>
                 <p class="ouv-lista-vazia">
-                    <?= ($qsFiltros !== '') ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda — aparecem aqui assim que um cliente escrever pro número da ouvidoria.' ?>
+                    <?php if ($busca !== '' || $assuntoFiltro !== '' || $statusFiltro !== ''): ?>Nenhuma conversa encontrada.
+                    <?php elseif ($aba === 'cobranca'): ?>Nenhuma conversa de cobrança ainda — aparecem aqui assim que o Financeiro cobrar um cliente pelo número da ouvidoria.
+                    <?php else: ?>Nenhuma conversa ainda — aparecem aqui assim que um cliente escrever pro número da ouvidoria.<?php endif; ?>
                 </p>
             <?php endif; ?>
             <?php foreach ($conversas as $c): $esp = _ouvEspera($c['esperando_desde'] ?? null); ?>
@@ -972,12 +993,14 @@ body.ouv-page .breadcrumb { display: none; }
         return { txt: min < 60 ? min + 'min' : (min < 1440 ? Math.floor(min / 60) + 'h' : Math.floor(min / 1440) + 'd'), atrasada: min > 240 };
     }
 
+    var OUV_ABA = <?= json_encode($aba) ?>;
     setInterval(atualizarListaConversas, 5000);
 
     function atualizarListaConversas() {
         var params = new URLSearchParams(window.location.search);
         var qs = new URLSearchParams();
         ['busca', 'assunto', 'status', 'ordem'].forEach(function (k) { if (params.get(k)) qs.set(k, params.get(k)); });
+        if (OUV_ABA) qs.set('aba', OUV_ABA);
         fetch('?ajax=conversas&' + qs.toString())
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -988,7 +1011,7 @@ body.ouv-page .breadcrumb { display: none; }
                 if (!data.conversas.length) {
                     var vazio = document.createElement('p');
                     vazio.className = 'ouv-lista-vazia';
-                    vazio.textContent = qs.toString() ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda.';
+                    vazio.textContent = (params.get('busca') || params.get('assunto') || params.get('status')) ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda.';
                     lista.appendChild(vazio);
                     return;
                 }

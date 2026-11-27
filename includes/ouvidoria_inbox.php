@@ -25,9 +25,22 @@ const OUVIDORIA_FILTROS_STATUS = [
     'resolvido'      => '✅ Só resolvidos',
 ];
 
-function listarConversasOuvidoria(string $busca = '', string $assunto = '', int $limite = 100, string $status = '', string $ordem = ''): array {
+/**
+ * Aba da caixa (27/11/2026, "criar aba só as conversas de cobrança, não misturar
+ * com da ouvidoria"): conversa de cobrança = telefone que já recebeu cobrança pelo
+ * Financeiro (cobranca_eventos tipo 'envio', manual ou automática). Ela fica SÓ na
+ * aba Cobrança, mesmo se o cliente responder ou abrir ticket depois.
+ */
+const OUVIDORIA_SQL_E_COBRANCA = "EXISTS (SELECT 1 FROM cobranca_eventos ce WHERE ce.telefone = %s AND ce.tipo = 'envio')";
+
+function ouvidoriaAbaValida(string $aba): string {
+    return $aba === 'cobranca' ? 'cobranca' : '';
+}
+
+function listarConversasOuvidoria(string $busca = '', string $assunto = '', int $limite = 100, string $status = '', string $ordem = '', string $aba = ''): array {
     $where = '';
     $params = [];
+    $where .= ' AND ' . (ouvidoriaAbaValida($aba) === 'cobranca' ? '' : 'NOT ') . sprintf(OUVIDORIA_SQL_E_COBRANCA, 'm.telefone');
     switch ($status) {
         case 'nao_lidas':      $where .= ' AND nl.n > 0'; break;
         case 'esperando':      $where .= " AND m.direcao = 'in'"; break;
@@ -91,8 +104,9 @@ function listarConversasOuvidoria(string $busca = '', string $assunto = '', int 
 }
 
 /** Quantas conversas têm mensagem do cliente ainda não lida (botão "Não lidas"). */
-function contarConversasNaoLidasOuvidoria(): int {
-    return (int)getDB()->query("SELECT COUNT(DISTINCT telefone) FROM whatsapp_mensagens WHERE canal = 'ouvidoria' AND direcao = 'in' AND lida = 0")->fetchColumn();
+function contarConversasNaoLidasOuvidoria(string $aba = ''): int {
+    $cond = (ouvidoriaAbaValida($aba) === 'cobranca' ? '' : 'NOT ') . sprintf(OUVIDORIA_SQL_E_COBRANCA, 'w.telefone');
+    return (int)getDB()->query("SELECT COUNT(DISTINCT w.telefone) FROM whatsapp_mensagens w WHERE w.canal = 'ouvidoria' AND w.direcao = 'in' AND w.lida = 0 AND {$cond}")->fetchColumn();
 }
 
 /** Negócios ligados ao telefone (pra abrir direto da conversa). */
