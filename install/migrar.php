@@ -2196,6 +2196,8 @@ foreach ([
     ['termo_ciente_canal', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_ciente_canal TEXT DEFAULT '' CHECK (termo_ciente_canal IN ('', 'link', 'presencial'))"],
     ['termo_ciente_assinatura_drive_file_id', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_ciente_assinatura_drive_file_id TEXT DEFAULT ''"],
     ['termo_ciente_assinatura_arquivo_url', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_ciente_assinatura_arquivo_url TEXT DEFAULT ''"],
+    // 28/11/2026, cláusula opcional de responsabilidade do comprador no termo.
+    ['termo_clausula_responsabilidade', "ALTER TABLE veiculo_avaliacoes ADD COLUMN termo_clausula_responsabilidade INTEGER DEFAULT 1"],
 ] as [$coluna, $sql]) {
     if (!colunaExiste($db, 'veiculo_avaliacoes', $coluna)) {
         try {

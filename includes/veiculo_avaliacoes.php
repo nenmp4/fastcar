@@ -975,6 +975,27 @@ function buscarAvaliacaoPorTermoCienteToken(string $token): ?array {
  * link" já usado nos contratos (26/09/2026), nunca trava a operação por
  * falta de canal.
  */
+/**
+ * 28/11/2026, "em termo de vistoria adcione opcional - que cliente está
+ * retirando veiculo nas condições que toda responsabilidade do veiculo de
+ * sua inteira responsabilidade fastcar não se responsabilizar custos de
+ * manutenção e outros". Cláusula opcional do termo de venda (padrão: inclui).
+ * Mesmo texto no PDF e na página pública do Termo Ciente.
+ * ⚠️ Texto escrito pelo sistema — revisar com o Jean.
+ */
+const VEICULO_AVALIACAO_CLAUSULA_RESP_TITULO = 'RESPONSABILIDADE PELO VEÍCULO APÓS A RETIRADA';
+const VEICULO_AVALIACAO_CLAUSULA_RESP_TEXTO = [
+    'O comprador declara que vistoriou o veículo e o retira no estado em que se encontra, conforme o checklist acima. A partir da retirada, o veículo passa a ser de sua inteira responsabilidade, incluindo uso, guarda, conservação, manutenção, multas, tributos e eventuais danos.',
+    'A FASTCAR SOLUTIONS não se responsabiliza por custos de manutenção, reparos, peças, desgaste natural ou quaisquer outras despesas relacionadas ao veículo após a retirada.',
+];
+
+/** Grava se o termo leva a cláusula de responsabilidade. Nunca muda termo já confirmado. */
+function definirClausulaResponsabilidadeTermo(int $avaliacaoId, bool $incluir): void {
+    $stmt = getDB()->prepare("UPDATE veiculo_avaliacoes SET termo_clausula_responsabilidade = ?
+        WHERE id = ? AND tipo = 'venda' AND COALESCE(termo_status, '') != 'confirmado'");
+    $stmt->execute([$incluir ? 1 : 0, $avaliacaoId]);
+}
+
 function gerarEEnviarTermoAvaliacao(int $avaliacaoId): array {
     $av = buscarAvaliacao($avaliacaoId);
     if (!$av) {

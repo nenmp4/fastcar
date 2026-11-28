@@ -134,6 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
             $resultado = aprovarFotoParaCatalogo((int)($_POST['foto_id'] ?? 0), $meuId);
             if ($resultado['ok']) { $sucesso = 'Foto aprovada — já disponível no catálogo de vendas.'; } else { $erro = $resultado['erro']; }
         } elseif ($acao === 'confirmar_assinatura_presencial' && $podeEditarChecklist) {
+            definirClausulaResponsabilidadeTermo($id, ($_POST['clausula_responsabilidade'] ?? '1') === '1');
             $resultado = confirmarTermoCientePresencial($id, (string)($_POST['assinatura_dados'] ?? ''), $meuId);
             if ($resultado['ok']) {
                 $sucesso = '✍️ Assinatura registrada — retirada confirmada.';
@@ -141,6 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
                 $erro = $resultado['erro'];
             }
         } elseif ($acao === 'gerar_termo' && $podeEditarChecklist) {
+            definirClausulaResponsabilidadeTermo($id, ($_POST['clausula_responsabilidade'] ?? '1') === '1');
             $resultado = gerarEEnviarTermoAvaliacao($id);
             if ($resultado['ok']) {
                 $sucesso = $resultado['aviso'] ?: 'Termo gerado e link mandado por e-mail pro comprador.';
@@ -523,7 +525,16 @@ function avTermoStatusLabel(string $status): string {
         <p><small>Nenhum termo confirmado ainda.</small></p>
     <?php endif; ?>
 
+    <?php if ($av['termo_status'] === 'confirmado'): ?>
+        <p><small><?= (int)($av['termo_clausula_responsabilidade'] ?? 1) === 1 ? '📌 Com a cláusula de responsabilidade do comprador.' : 'Sem a cláusula de responsabilidade do comprador.' ?></small></p>
+    <?php endif; ?>
+
     <?php if ($podeEditarChecklist && $av['termo_status'] !== 'confirmado'): ?>
+        <label class="av-clausula-resp" for="ck-clausula-resp">
+            <input type="checkbox" id="ck-clausula-resp" <?= (int)($av['termo_clausula_responsabilidade'] ?? 1) === 1 ? 'checked' : '' ?>>
+            <span><strong>Incluir cláusula de responsabilidade do comprador</strong><br>
+            <small>O comprador declara que retira o veículo nas condições do checklist e que, a partir da retirada, assume toda a responsabilidade por ele. A FASTCAR não arca com manutenção e outros custos.</small></span>
+        </label>
         <div class="av-assinatura-presencial" style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e4ea">
             <h4 style="margin:0 0 6px">✍️ Assinar na tela agora (presencial)</h4>
             <p><small>Mostre esta tela pro comprador e peça pra assinar com o dedo — mais rápido que esperar o
@@ -540,6 +551,7 @@ function avTermoStatusLabel(string $status): string {
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="confirmar_assinatura_presencial">
                 <input type="hidden" name="assinatura_dados" id="assinatura-dados">
+                <input type="hidden" name="clausula_responsabilidade" class="inp-clausula-resp" value="<?= (int)($av['termo_clausula_responsabilidade'] ?? 1) === 1 ? '1' : '0' ?>">
             </form>
         </div>
 
@@ -548,6 +560,7 @@ function avTermoStatusLabel(string $status): string {
             <form method="post" onsubmit="return confirmarAcao(this, 'Gerar o termo e mandar o link de ciência pro comprador agora?');">
                 <?= csrfField() ?>
                 <input type="hidden" name="acao" value="gerar_termo">
+                <input type="hidden" name="clausula_responsabilidade" class="inp-clausula-resp" value="<?= (int)($av['termo_clausula_responsabilidade'] ?? 1) === 1 ? '1' : '0' ?>">
                 <button type="submit" style="min-height:48px;font-size:15px">
                     <?= $av['termo_status'] ? '📧 Gerar de novo e reenviar o link' : '📧 Gerar e enviar o link por e-mail' ?>
                 </button>
@@ -566,6 +579,15 @@ function avTermoStatusLabel(string $status): string {
 <?php endif; ?>
 </main>
 <script>
+// 28/11/2026, cláusula opcional de responsabilidade — 1 checkbox alimenta
+// os 2 forms (assinatura presencial e envio por e-mail).
+(function () {
+    var ck = document.getElementById('ck-clausula-resp');
+    if (!ck) return;
+    ck.addEventListener('change', function () {
+        document.querySelectorAll('.inp-clausula-resp').forEach(function (i) { i.value = ck.checked ? '1' : '0'; });
+    });
+})();
 // Botão "📋 Copiar" do link do Termo Ciente — mesmo padrão já usado em
 // admin/oportunidade.php/admin/venda.php pro link de documentos/contrato.
 function copiarTexto(texto, btn) {

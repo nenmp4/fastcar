@@ -135,6 +135,7 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .ck-ok .ck-badge { background: var(--ok-bg); color: var(--ok); }
 .ck-warn .ck-badge { background: var(--warn-bg); color: var(--warn); }
 .ck-neutral .ck-badge { background: var(--neutro-bg); color: var(--neutro); }
+.ck-item > div { min-width: 0; overflow-wrap: anywhere; }
 .ck-label { font-size: 13.5px; font-weight: 600; }
 .ck-obs { font-size: 12.5px; color: #666; margin-top: 2px; }
 .score-box { display: flex; align-items: center; gap: 16px; margin-top: 10px; padding: 14px 16px; border-radius: 10px; background: #f3f6fd; }
@@ -153,6 +154,8 @@ button { width: 100%; margin-top: 18px; padding: 14px; border: none; border-radi
 .conf-check { width: 56px; height: 56px; border-radius: 50%; background: var(--ok-bg); color: var(--ok);
     display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 4px auto 14px; }
 .conf-wrap { text-align: center; }
+.clausula-resp { margin-top: 16px; padding: 12px 14px; border-radius: 10px; border: 2px solid var(--blue); background: #eef3ff; font-size: 13px; color: var(--texto); }
+.clausula-resp p { margin: 6px 0 0; }
 .rodape-empresa { text-align: center; font-size: 11.5px; color: #6b7aa0; line-height: 1.7; margin-top: 28px;
     padding: 18px 16px 4px; border-top: 2px solid transparent;
     border-image: linear-gradient(90deg, transparent, var(--blue) 50%, transparent) 1; }
@@ -227,6 +230,13 @@ button { width: 100%; margin-top: 18px; padding: 14px; border: none; border-radi
                         <img src="<?= e($src) ?>" alt="Foto da vistoria" loading="lazy">
                     <?php endif; ?>
                 <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ((int)($av['termo_clausula_responsabilidade'] ?? 1) === 1): ?>
+            <div class="clausula-resp">
+                <strong><?= e(VEICULO_AVALIACAO_CLAUSULA_RESP_TITULO) ?></strong>
+                <?php foreach (VEICULO_AVALIACAO_CLAUSULA_RESP_TEXTO as $paragrafo): ?><p><?= e($paragrafo) ?></p><?php endforeach; ?>
             </div>
         <?php endif; ?>
 

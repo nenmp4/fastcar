@@ -1099,6 +1099,9 @@ CREATE TABLE IF NOT EXISTS veiculo_avaliacoes (
     termo_ciente_canal TEXT DEFAULT '' CHECK (termo_ciente_canal IN ('', 'link', 'presencial')),
     termo_ciente_assinatura_drive_file_id TEXT DEFAULT '',
     termo_ciente_assinatura_arquivo_url TEXT DEFAULT '',
+    -- 28/11/2026, cláusula opcional no termo da venda: comprador assume toda a
+    -- responsabilidade pelo veículo após a retirada (1 = inclui, padrão).
+    termo_clausula_responsabilidade INTEGER DEFAULT 1,
     drive_file_id TEXT DEFAULT '',
     arquivo_url TEXT DEFAULT '',
     created_by INTEGER REFERENCES usuarios(id),

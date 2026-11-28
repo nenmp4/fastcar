@@ -873,6 +873,9 @@ button.av-btn-status.ativo-nao_verificado { background: var(--fundo); color: var
    pra compra (mesma cor da marca), laranja pra venda (mesma cor já usada
    pra "lead quente"/destaque) — nunca a mesma cor pros dois, contraste
    visual reforça a diferença. */
+/* 28/11/2026, cláusula opcional de responsabilidade no termo de venda */
+.av-clausula-resp { display: flex; gap: 12px; align-items: flex-start; margin: 14px 0 4px; padding: 12px 14px; border: 2px solid var(--azul); background: var(--azul-claro); border-radius: var(--raio); cursor: pointer; }
+.av-clausula-resp input { width: 22px; height: 22px; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--azul); }
 .av-tipo-banner {
     border-radius: var(--raio-sm);
     padding: 14px 16px;

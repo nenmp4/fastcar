@@ -101,6 +101,15 @@ function gerarPdfTermoAvaliacao(array $av, array $itens, ?array $score = null, ?
           'condições descritas neste checklist, no estado em que se encontra.'
     );
 
+    // 28/11/2026, cláusula opcional de responsabilidade do comprador (só venda).
+    if ($av['tipo'] === 'venda' && (int)($av['termo_clausula_responsabilidade'] ?? 1) === 1) {
+        $pdf->Ln(3);
+        _pdfTituloClausula($pdf, VEICULO_AVALIACAO_CLAUSULA_RESP_TITULO);
+        foreach (VEICULO_AVALIACAO_CLAUSULA_RESP_TEXTO as $paragrafo) {
+            _pdfCorpo($pdf, $paragrafo);
+        }
+    }
+
     // 08/10/2026, assinatura presencial — quando o comprador assinou
     // direto na tela do avaliador (em vez do link por e-mail), embute a
     // imagem desenhada de verdade no PDF, como prova visual a mais além
